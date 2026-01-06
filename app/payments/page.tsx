@@ -67,6 +67,22 @@ interface InvoiceRow { id: string; invoice_number: string; invoice_date?: string
 interface PORow { id: string; po_number: string; total_amount: number; received_amount: number; status: string }
 interface BillRow { id: string; bill_number: string; bill_date?: string; total_amount: number; paid_amount: number; status: string }
 interface Account { id: string; account_code: string; account_name: string; account_type: string }
+interface AccountMapping {
+  companyId: string;
+  ar: string | undefined;
+  ap: string | undefined;
+  cash: string | undefined;
+  bank: string | undefined;
+  revenue: string | undefined;
+  inventory: string | undefined;
+  cogs: string | undefined;
+  vatPayable: string | undefined;
+  shippingAccount: string | undefined;
+  supplierAdvance: string | undefined;
+  customerAdvance: string | undefined;
+  branchId: string | null;
+  costCenterId: string | null;
+}
 
 export default function PaymentsPage() {
   const supabase = useSupabase()
@@ -816,7 +832,7 @@ export default function PaymentsPage() {
     }
   }
 
-  const findAccountIds = async () => {
+  const findAccountIds = async (): Promise<AccountMapping | null> => {
     if (!companyId) return null
     const { data: accounts } = await supabase
       .from("chart_of_accounts")
@@ -1185,23 +1201,36 @@ export default function PaymentsPage() {
       const invOrExp = mapping.inventory || mapping.cogs
       const billLines: any[] = []
 
-      // Debit: المخزون أو المصروفات (المجموع الفرعي)
-      if (invOrExp && Number(bill.subtotal || 0) > 0) {
+      // ✅ حساب المبالغ بناءً على total_amount الحالي (بعد المرتجعات)
+      // حساب الإجمالي الأصلي (قبل المرتجعات)
+      const originalTotal = Number(bill.total_amount || 0) + Number(bill.returned_amount || 0)
+      const currentTotal = Number(bill.total_amount || 0)
+      
+      // حساب نسبة المرتجع لتطبيقها على subtotal و tax_amount
+      const returnRatio = originalTotal > 0 ? currentTotal / originalTotal : 1
+      
+      // حساب subtotal و tax_amount الحاليين بناءً على النسبة
+      const currentSubtotal = Number(bill.subtotal || 0) * returnRatio
+      const currentTaxAmount = Number(bill.tax_amount || 0) * returnRatio
+      const currentShipping = Number(bill.shipping_charge || 0) * returnRatio
+
+      // Debit: المخزون أو المصروفات (المجموع الفرعي الحالي)
+      if (invOrExp && currentSubtotal > 0) {
         billLines.push({
           journal_entry_id: billEntry.id,
           account_id: invOrExp,
-          debit_amount: Number(bill.subtotal || 0),
+          debit_amount: currentSubtotal,
           credit_amount: 0,
           description: mapping.inventory ? "المخزون" : "تكلفة البضاعة المباعة",
-          original_debit: Number(bill.subtotal || 0),
+          original_debit: currentSubtotal,
           original_credit: 0,
           original_currency: billCurrency,
           exchange_rate_used: billExRate
         })
       }
 
-      // Debit: الضريبة (إن وجدت)
-      if (Number(bill.tax_amount || 0) > 0) {
+      // Debit: الضريبة (إن وجدت) - المبلغ الحالي بعد المرتجع
+      if (currentTaxAmount > 0) {
         const vatInputAccount = accounts.find(a =>
           a.account_type === 'asset' && (
             (a as any).sub_type === 'vat_input' ||
@@ -1214,10 +1243,10 @@ export default function PaymentsPage() {
           billLines.push({
             journal_entry_id: billEntry.id,
             account_id: vatInputAccount.id,
-            debit_amount: Number(bill.tax_amount || 0),
+            debit_amount: currentTaxAmount,
             credit_amount: 0,
             description: "ضريبة المدخلات",
-            original_debit: Number(bill.tax_amount || 0),
+            original_debit: currentTaxAmount,
             original_credit: 0,
             original_currency: billCurrency,
             exchange_rate_used: billExRate
@@ -1225,15 +1254,30 @@ export default function PaymentsPage() {
         }
       }
 
-      // Credit: الحسابات الدائنة (الإجمالي)
+      // Debit: الشحن (إن وجد) - المبلغ الحالي بعد المرتجع
+      if (currentShipping > 0 && mapping.shippingAccount) {
+        billLines.push({
+          journal_entry_id: billEntry.id,
+          account_id: mapping.shippingAccount,
+          debit_amount: currentShipping,
+          credit_amount: 0,
+          description: "مصاريف الشحن",
+          original_debit: currentShipping,
+          original_credit: 0,
+          original_currency: billCurrency,
+          exchange_rate_used: billExRate
+        })
+      }
+
+      // Credit: الحسابات الدائنة (الإجمالي الحالي بعد المرتجع)
       billLines.push({
         journal_entry_id: billEntry.id,
         account_id: mapping.ap,
         debit_amount: 0,
-        credit_amount: Number(bill.total_amount || 0),
+        credit_amount: currentTotal,
         description: "حسابات دائنة",
         original_debit: 0,
-        original_credit: Number(bill.total_amount || 0),
+        original_credit: currentTotal,
         original_currency: billCurrency,
         exchange_rate_used: billExRate
       })
@@ -1491,7 +1535,7 @@ export default function PaymentsPage() {
       const amount = Math.min(applyAmount, remaining)
 
       // 🔍 التحقق من كفاية الرصيد قبل تطبيق الدفعة
-      const paymentAccountId = selectedPayment.account_id || mapping.cash || mapping.bank
+      const paymentAccountId = selectedPayment.account_id || mapping.cash || mapping.bank || null
       const balanceCheck = await checkAccountBalance(
         paymentAccountId,
         amount,
@@ -1565,23 +1609,36 @@ export default function PaymentsPage() {
         const invOrExp = mapping.inventory || mapping.cogs
         const billLines: any[] = []
 
-        // Debit: المخزون أو المصروفات (المجموع الفرعي)
-        if (invOrExp && Number(bill.subtotal || 0) > 0) {
+        // ✅ حساب المبالغ بناءً على total_amount الحالي (بعد المرتجعات)
+        // حساب الإجمالي الأصلي (قبل المرتجعات)
+        const originalTotal = Number(bill.total_amount || 0) + Number(bill.returned_amount || 0)
+        const currentTotal = Number(bill.total_amount || 0)
+        
+        // حساب نسبة المرتجع لتطبيقها على subtotal و tax_amount
+        const returnRatio = originalTotal > 0 ? currentTotal / originalTotal : 1
+        
+        // حساب subtotal و tax_amount الحاليين بناءً على النسبة
+        const currentSubtotal = Number(bill.subtotal || 0) * returnRatio
+        const currentTaxAmount = Number(bill.tax_amount || 0) * returnRatio
+        const currentShipping = Number(bill.shipping_charge || 0) * returnRatio
+
+        // Debit: المخزون أو المصروفات (المجموع الفرعي الحالي)
+        if (invOrExp && currentSubtotal > 0) {
           billLines.push({
             journal_entry_id: billEntry.id,
             account_id: invOrExp,
-            debit_amount: Number(bill.subtotal || 0),
+            debit_amount: currentSubtotal,
             credit_amount: 0,
             description: mapping.inventory ? "المخزون" : "تكلفة البضاعة المباعة",
-            original_debit: Number(bill.subtotal || 0),
+            original_debit: currentSubtotal,
             original_credit: 0,
             original_currency: billCurrency,
             exchange_rate_used: billExRate
           })
         }
 
-        // Debit: الضريبة (إن وجدت)
-        if (Number(bill.tax_amount || 0) > 0) {
+        // Debit: الضريبة (إن وجدت) - المبلغ الحالي بعد المرتجع
+        if (currentTaxAmount > 0) {
           const vatInputAccount = accounts.find(a =>
             a.account_type === 'asset' && (
               (a as any).sub_type === 'vat_input' ||
@@ -1594,10 +1651,10 @@ export default function PaymentsPage() {
             billLines.push({
               journal_entry_id: billEntry.id,
               account_id: vatInputAccount.id,
-              debit_amount: Number(bill.tax_amount || 0),
+              debit_amount: currentTaxAmount,
               credit_amount: 0,
               description: "ضريبة المدخلات",
-              original_debit: Number(bill.tax_amount || 0),
+              original_debit: currentTaxAmount,
               original_credit: 0,
               original_currency: billCurrency,
               exchange_rate_used: billExRate
@@ -1605,30 +1662,30 @@ export default function PaymentsPage() {
           }
         }
 
-        // Debit: الشحن (إن وجد)
-        if (Number(bill.shipping_charge || 0) > 0 && mapping.shippingAccount) {
+        // Debit: الشحن (إن وجد) - المبلغ الحالي بعد المرتجع
+        if (currentShipping > 0 && mapping.shippingAccount) {
           billLines.push({
             journal_entry_id: billEntry.id,
             account_id: mapping.shippingAccount,
-            debit_amount: Number(bill.shipping_charge || 0),
+            debit_amount: currentShipping,
             credit_amount: 0,
             description: "مصاريف الشحن",
-            original_debit: Number(bill.shipping_charge || 0),
+            original_debit: currentShipping,
             original_credit: 0,
             original_currency: billCurrency,
             exchange_rate_used: billExRate
           })
         }
 
-        // Credit: الحسابات الدائنة (الإجمالي)
+        // Credit: الحسابات الدائنة (الإجمالي الحالي بعد المرتجع)
         billLines.push({
           journal_entry_id: billEntry.id,
           account_id: mapping.ap,
           debit_amount: 0,
-          credit_amount: Number(bill.total_amount || 0),
+          credit_amount: currentTotal,
           description: "حسابات دائنة",
           original_debit: 0,
-          original_credit: Number(bill.total_amount || 0),
+          original_credit: currentTotal,
           original_currency: billCurrency,
           exchange_rate_used: billExRate
         })
