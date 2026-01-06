@@ -2447,7 +2447,37 @@ export default function PaymentsPage() {
                   </div>
                   <div>
                     <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
-                    <select className="w-full border rounded px-2 py-1" value={editFields.account_id} onChange={(e) => setEditFields({ ...editFields, account_id: e.target.value })}>
+                    <select 
+                      className="w-full border rounded px-2 py-1" 
+                      value={editFields.account_id} 
+                      onChange={async (e) => {
+                        const newAccountId = e.target.value
+                        const oldAccountId = editingPayment?.account_id || ""
+                        
+                        // التحقق من رصيد الحساب عند تغيير الحساب
+                        if (editingPayment && newAccountId && newAccountId !== oldAccountId) {
+                          const balanceCheck = await checkAccountBalance(
+                            newAccountId,
+                            editingPayment.amount,
+                            editFields.payment_date || editingPayment.payment_date
+                          )
+                          
+                          if (!balanceCheck.sufficient) {
+                            toast({
+                              title: appLang === 'en' ? 'Insufficient Balance' : 'رصيد غير كافٍ',
+                              description: appLang === 'en'
+                                ? `The account "${balanceCheck.accountName || 'Selected Account'}" has insufficient balance. Current balance: ${balanceCheck.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Required: ${editingPayment.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
+                                : `رصيد الحساب "${balanceCheck.accountName || 'الحساب المختار'}" غير كافٍ. الرصيد الحالي: ${balanceCheck.currentBalance.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. المطلوب: ${editingPayment.amount.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
+                              variant: 'destructive'
+                            })
+                            // إعادة الحساب الأصلي
+                            return
+                          }
+                        }
+                        
+                        setEditFields({ ...editFields, account_id: newAccountId })
+                      }}
+                    >
                       <option value="">اختر حساب الدفع</option>
                       {accounts.map((a) => (
                         <option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>
@@ -2514,6 +2544,28 @@ export default function PaymentsPage() {
 
                     // قيد جديد بالقيم المحدّثة
                     const cashAccountIdNew = editFields.account_id || (mapping ? (mapping.cash || mapping.bank) : undefined)
+                    
+                    // 🔍 التحقق من رصيد الحساب الجديد قبل التعديل (للدفعات غير المرتبطة)
+                    if (cashAccountIdNew && cashAccountIdOriginal && cashAccountIdNew !== cashAccountIdOriginal) {
+                      const balanceCheck = await checkAccountBalance(
+                        cashAccountIdNew,
+                        editingPayment.amount,
+                        editFields.payment_date || editingPayment.payment_date
+                      )
+                      
+                      if (!balanceCheck.sufficient) {
+                        toast({
+                          title: appLang === 'en' ? 'Insufficient Balance' : 'رصيد غير كافٍ',
+                          description: appLang === 'en'
+                            ? `The account "${balanceCheck.accountName || 'Selected Account'}" has insufficient balance. Current balance: ${balanceCheck.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Required: ${editingPayment.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
+                            : `رصيد الحساب "${balanceCheck.accountName || 'الحساب المختار'}" غير كافٍ. الرصيد الحالي: ${balanceCheck.currentBalance.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. المطلوب: ${editingPayment.amount.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
+                          variant: 'destructive'
+                        })
+                        setSaving(false)
+                        return
+                      }
+                    }
+                    
                     if (mapping && cashAccountIdNew) {
                       const { data: newEntry } = await supabase
                         .from("journal_entries").insert({
