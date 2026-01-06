@@ -1751,11 +1751,16 @@ export default function BillsPage() {
                           </p>
                         </div>
                       </div>
-                      {/* Show expected refund for paid bills with cash/bank */}
-                      {returnMethod !== 'credit' && returnBillData.paymentStatus !== 'unpaid' && (
+                      {/* Show expected refund for cash/bank method */}
+                      {returnMethod !== 'credit' && (
                         <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-700">
                           <p className="text-gray-600 dark:text-gray-300">
-                            💵 {appLang === 'en' ? 'Expected Refund Amount' : 'المبلغ المتوقع استرداده'}: <strong className="text-green-700 dark:text-green-300">{Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)} {returnBillCurrency}</strong>
+                            💵 {appLang === 'en' ? 'Expected Refund Amount' : 'المبلغ المتوقع استرداده'}: <strong className="text-green-700 dark:text-green-300">
+                              {returnBillData.paymentStatus !== 'unpaid' 
+                                ? `${Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)} ${returnBillCurrency}`
+                                : `0.00 ${returnBillCurrency} ${appLang === 'en' ? '(No payment made)' : '(لم يتم الدفع)'}`
+                              }
+                            </strong>
                           </p>
                         </div>
                       )}
@@ -1770,11 +1775,19 @@ export default function BillsPage() {
                         <p>1️⃣ {appLang === 'en' ? 'Purchase Return Entry:' : 'قيد مرتجع المشتريات:'}</p>
                         <p className="ms-4">• {appLang === 'en' ? 'Debit: Accounts Payable (Supplier)' : 'مدين: الذمم الدائنة (المورد)'} - {returnTotal.toFixed(2)}</p>
                         <p className="ms-4">• {appLang === 'en' ? 'Credit: Inventory' : 'دائن: المخزون'} - {returnTotal.toFixed(2)}</p>
-                        {returnMethod !== 'credit' && returnBillData.paymentStatus !== 'unpaid' && (
+                        {returnMethod !== 'credit' && (
                           <>
                             <p className="mt-2">2️⃣ {appLang === 'en' ? 'Refund Entry:' : 'قيد الاسترداد:'}</p>
-                            <p className="ms-4">• {appLang === 'en' ? 'Debit:' : 'مدين:'} {returnMethod === 'cash' ? (appLang === 'en' ? 'Cash' : 'الخزينة') : (appLang === 'en' ? 'Bank' : 'البنك')} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
-                            <p className="ms-4">• {appLang === 'en' ? 'Credit: Accounts Payable' : 'دائن: الذمم الدائنة'} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
+                            {returnBillData.paymentStatus !== 'unpaid' ? (
+                              <>
+                                <p className="ms-4">• {appLang === 'en' ? 'Debit:' : 'مدين:'} {returnMethod === 'cash' ? (appLang === 'en' ? 'Cash' : 'الخزينة') : (appLang === 'en' ? 'Bank' : 'البنك')} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
+                                <p className="ms-4">• {appLang === 'en' ? 'Credit: Accounts Payable' : 'دائن: الذمم الدائنة'} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
+                              </>
+                            ) : (
+                              <p className="ms-4 text-gray-500 dark:text-gray-400 italic">
+                                {appLang === 'en' ? '(No refund entry - bill is unpaid)' : '(لا يوجد قيد استرداد - الفاتورة غير مدفوعة)'}
+                              </p>
+                            )}
                           </>
                         )}
                       </div>
