@@ -96,6 +96,8 @@ export default function PaymentsPage() {
   const [supplierPayments, setSupplierPayments] = useState<Payment[]>([])
   const [invoiceNumbers, setInvoiceNumbers] = useState<Record<string, string>>({})
   const [billNumbers, setBillNumbers] = useState<Record<string, string>>({})
+  const [poNumbers, setPoNumbers] = useState<Record<string, string>>({})
+  const [billToPoMap, setBillToPoMap] = useState<Record<string, string>>({}) // Map bill_id -> purchase_order_id
   const [loading, setLoading] = useState(true)
 
   // Currency support - using CurrencyService
@@ -394,10 +396,28 @@ export default function PaymentsPage() {
       try {
         const ids = Array.from(new Set((supplierPayments || []).map((p) => p.bill_id).filter(Boolean))) as string[]
         if (!ids.length) { setBillNumbers({}); return }
-        const { data: bills } = await supabase.from("bills").select("id, bill_number").in("id", ids)
+        const { data: bills } = await supabase.from("bills").select("id, bill_number, purchase_order_id").in("id", ids)
         const map: Record<string, string> = {}
-          ; (bills || []).forEach((r: any) => { map[r.id] = r.bill_number })
+        const billPoMap: Record<string, string> = {} // bill_id -> purchase_order_id
+          ; (bills || []).forEach((r: any) => { 
+            map[r.id] = r.bill_number
+            if (r.purchase_order_id) {
+              billPoMap[r.id] = r.purchase_order_id
+            }
+          })
         setBillNumbers(map)
+        setBillToPoMap(billPoMap)
+        
+        // ✅ جلب أرقام أوامر الشراء المرتبطة بالفواتير
+        const poIds = Array.from(new Set((bills || []).map((b: any) => b.purchase_order_id).filter(Boolean))) as string[]
+        if (poIds.length > 0) {
+          const { data: pos } = await supabase.from("purchase_orders").select("id, po_number").in("id", poIds)
+          const poMap: Record<string, string> = {}
+          ; (pos || []).forEach((po: any) => { poMap[po.id] = po.po_number })
+          setPoNumbers(poMap)
+        } else {
+          setPoNumbers({})
+        }
       } catch (e) { /* ignore */ }
     })()
   }, [supplierPayments])
@@ -1559,7 +1579,12 @@ export default function PaymentsPage() {
       const isFirstPayment = originalPaid === 0 && (bill.status === 'sent' || bill.status === 'received')
 
       {
-        const { error: payErr } = await supabase.from("payments").update({ bill_id: bill.id }).eq("id", selectedPayment.id)
+        // ✅ ربط الدفعة بالفاتورة وأمر الشراء المرتبط (إن وجد)
+        const updateData: any = { bill_id: bill.id }
+        if (bill.purchase_order_id) {
+          updateData.purchase_order_id = bill.purchase_order_id
+        }
+        const { error: payErr } = await supabase.from("payments").update(updateData).eq("id", selectedPayment.id)
         if (payErr) throw payErr
       }
       {
@@ -1805,7 +1830,12 @@ export default function PaymentsPage() {
 
       // 1) Link payment first to avoid updating bill when link fails (RLS/constraints)
       {
-        const { error: payErr } = await supabase.from("payments").update({ bill_id: bill.id }).eq("id", payment.id)
+        // ✅ ربط الدفعة بالفاتورة وأمر الشراء المرتبط (إن وجد)
+        const updateData: any = { bill_id: bill.id }
+        if (bill.purchase_order_id) {
+          updateData.purchase_order_id = bill.purchase_order_id
+        }
+        const { error: payErr } = await supabase.from("payments").update(updateData).eq("id", payment.id)
         if (payErr) throw payErr
         linkedPayment = true
       }
@@ -2326,7 +2356,30 @@ export default function PaymentsPage() {
                           "غير مرتبط"
                         )}
                       </td>
-                      <td className="px-2 py-2">{p.purchase_order_id ? p.purchase_order_id : "غير مرتبط"}</td>
+                      <td className="px-2 py-2">
+                        {(() => {
+                          // ✅ أولاً: تحقق من purchase_order_id المباشر في الدفعة
+                          if (p.purchase_order_id) {
+                            const poNumber = poNumbers[p.purchase_order_id]
+                            return poNumber ? (
+                              <Link href={`/purchase-orders/${p.purchase_order_id}`} className="text-blue-600 hover:underline">
+                                {poNumber}
+                              </Link>
+                            ) : p.purchase_order_id
+                          }
+                          // ✅ ثانياً: تحقق من purchase_order_id من الفاتورة المرتبطة
+                          if (p.bill_id && billToPoMap[p.bill_id]) {
+                            const poId = billToPoMap[p.bill_id]
+                            const poNumber = poNumbers[poId]
+                            return poNumber ? (
+                              <Link href={`/purchase-orders/${poId}`} className="text-blue-600 hover:underline">
+                                {poNumber}
+                              </Link>
+                            ) : poId
+                          }
+                          return "غير مرتبط"
+                        })()}
+                      </td>
                       <td className="px-2 py-2">
                         <div className="flex gap-2">
                           {!p.bill_id && permWrite && (
