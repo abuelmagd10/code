@@ -19,7 +19,7 @@ import { BranchCostCenterSelector } from "@/components/branch-cost-center-select
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 
 type Supplier = { id: string; name: string }
-type Product = { id: string; name: string; purchase_price: number; sku?: string | null; item_type?: 'product' | 'service'; quantity_on_hand?: number }
+type Product = { id: string; name: string; cost_price: number | null; purchase_price?: number | null; sku?: string | null; item_type?: 'product' | 'service'; quantity_on_hand?: number }
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
 type TaxRate = { id: string; name: string; rate: number; scope?: string }
 
@@ -89,7 +89,8 @@ export default function NewVendorCreditPage() {
       const { data: sups } = await supabase.from("suppliers").select("id, name").eq("company_id", loadedCompanyId)
       setSuppliers((sups || []) as any)
 
-      const { data: prods } = await supabase.from("products").select("id, name, purchase_price, sku, item_type, quantity_on_hand").eq("company_id", loadedCompanyId)
+      const { data: prods } = await supabase.from("products").select("id, name, cost_price, purchase_price, sku, item_type, quantity_on_hand").eq("company_id", loadedCompanyId)
+      console.log('📦 [Vendor Credits] Loaded products:', prods?.length || 0, prods)
       setProducts((prods || []) as any)
 
       const { data: accs } = await supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type").eq("company_id", loadedCompanyId)
@@ -306,13 +307,18 @@ export default function NewVendorCreditPage() {
                         <td className="p-2">
                           <ProductSearchSelect
                             products={products.map(p => ({
-                              ...p,
-                              unit_price: p.purchase_price ?? 0
+                              id: p.id,
+                              name: p.name || '',
+                              sku: p.sku || null,
+                              unit_price: Number(p.cost_price ?? p.purchase_price ?? 0),
+                              item_type: (p.item_type || 'product') as 'product' | 'service',
+                              quantity_on_hand: p.quantity_on_hand ?? 0
                             }))}
                             value={it.product_id || ""}
                             onValueChange={(v) => {
                               const prod = products.find(p => p.id === v)
-                              updateItem(idx, { product_id: v || null, unit_price: prod?.purchase_price || 0 })
+                              const price = Number(prod?.cost_price ?? prod?.purchase_price ?? 0)
+                              updateItem(idx, { product_id: v || null, unit_price: price })
                             }}
                             lang="ar"
                             currency={credit.currency}
