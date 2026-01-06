@@ -16,9 +16,10 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
+import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 
 type Supplier = { id: string; name: string }
-type Product = { id: string; name: string; purchase_price: number }
+type Product = { id: string; name: string; purchase_price: number; sku?: string | null; item_type?: 'product' | 'service'; quantity_on_hand?: number }
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
 type TaxRate = { id: string; name: string; rate: number; scope?: string }
 
@@ -88,7 +89,7 @@ export default function NewVendorCreditPage() {
       const { data: sups } = await supabase.from("suppliers").select("id, name").eq("company_id", loadedCompanyId)
       setSuppliers((sups || []) as any)
 
-      const { data: prods } = await supabase.from("products").select("id, name, purchase_price").eq("company_id", loadedCompanyId)
+      const { data: prods } = await supabase.from("products").select("id, name, purchase_price, sku, item_type, quantity_on_hand").eq("company_id", loadedCompanyId)
       setProducts((prods || []) as any)
 
       const { data: accs } = await supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type").eq("company_id", loadedCompanyId)
@@ -303,13 +304,22 @@ export default function NewVendorCreditPage() {
                     {items.map((it, idx) => (
                       <tr key={idx} className="border-t">
                         <td className="p-2">
-                          <select className="w-full border rounded px-2 py-1" value={it.product_id || ""} onChange={(e) => {
-                            const prod = products.find(p => p.id === e.target.value)
-                            updateItem(idx, { product_id: e.target.value || null, unit_price: prod?.purchase_price || 0 })
-                          }}>
-                            <option value="">—</option>
-                            {products.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
-                          </select>
+                          <ProductSearchSelect
+                            products={products.map(p => ({
+                              ...p,
+                              unit_price: p.purchase_price ?? 0
+                            }))}
+                            value={it.product_id || ""}
+                            onValueChange={(v) => {
+                              const prod = products.find(p => p.id === v)
+                              updateItem(idx, { product_id: v || null, unit_price: prod?.purchase_price || 0 })
+                            }}
+                            lang="ar"
+                            currency={credit.currency}
+                            showStock={true}
+                            showPrice={true}
+                            productsOnly={true}
+                          />
                         </td>
                         <td className="p-2"><Input value={it.description} onChange={(e) => updateItem(idx, { description: e.target.value })} /></td>
                         <td className="p-2">
