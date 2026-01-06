@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Plus, Edit2, Trash2, Search, Truck, Wallet, ArrowDownLeft, CreditCard } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, Truck, ArrowDownLeft } from "lucide-react"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { SupplierReceiptDialog } from "@/components/suppliers/supplier-receipt-dialog"
 import { getExchangeRate, getActiveCurrencies, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
@@ -448,7 +448,7 @@ export default function SuppliersPage() {
       type: 'text',
       align: 'left',
       hidden: 'sm',
-      format: (value) => value || '-'
+      format: (value) => value || '—'
     },
     {
       key: 'city',
@@ -456,25 +456,20 @@ export default function SuppliersPage() {
       type: 'text',
       align: 'left',
       hidden: 'md',
-      format: (value) => value || '-'
+      format: (value) => value || '—'
     },
     {
       key: 'id',
       header: appLang === 'en' ? 'Payables' : 'ذمم دائنة',
       type: 'currency',
       align: 'right',
-      className: 'text-right',
       format: (_, row) => {
         const balance = balances[row.id] || { advances: 0, payables: 0, debitCredits: 0 }
-        return balance.payables > 0 ? (
-          <div className="flex items-center gap-1 justify-end">
-            <CreditCard className="w-4 h-4 text-red-600 dark:text-red-400" />
-            <span className="text-red-600 dark:text-red-400 font-semibold">
-              {`${currencySymbol} ${balance.payables.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
-            </span>
-          </div>
-        ) : (
-          <span className="text-gray-400 text-right block">-</span>
+        const payables = balance.payables || 0
+        return (
+          <span className={payables > 0 ? "text-red-600 dark:text-red-400 font-semibold" : "text-gray-400 dark:text-gray-500"}>
+            {payables > 0 ? `${payables.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${currencySymbol}` : '—'}
+          </span>
         )
       }
     },
@@ -483,18 +478,14 @@ export default function SuppliersPage() {
       header: appLang === 'en' ? 'Debit Credits' : 'رصيد مدين',
       type: 'currency',
       align: 'right',
-      className: 'text-right',
+      hidden: 'sm',
       format: (_, row) => {
         const balance = balances[row.id] || { advances: 0, payables: 0, debitCredits: 0 }
-        return balance.debitCredits > 0 ? (
-          <div className="flex items-center gap-1 justify-end">
-            <Wallet className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <span className="text-blue-600 dark:text-blue-400 font-semibold">
-              {`${currencySymbol} ${balance.debitCredits.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
-            </span>
-          </div>
-        ) : (
-          <span className="text-gray-400 text-right block">-</span>
+        const debitCredits = balance.debitCredits || 0
+        return (
+          <span className={debitCredits > 0 ? "text-blue-600 dark:text-blue-400 font-semibold" : "text-gray-600 dark:text-gray-400"}>
+            {debitCredits > 0 ? `${debitCredits.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${currencySymbol}` : '—'}
+          </span>
         )
       }
     },
@@ -503,22 +494,21 @@ export default function SuppliersPage() {
       header: appLang === 'en' ? 'Actions' : 'إجراءات',
       type: 'actions',
       align: 'center',
-      className: 'text-center',
       format: (_, row) => {
         const balance = balances[row.id] || { advances: 0, payables: 0, debitCredits: 0 }
         return (
-          <div className="flex gap-1 flex-wrap justify-center items-center">
+          <div className="flex gap-1 flex-wrap justify-center">
             {balance.debitCredits > 0 && (
               <Button
                 variant="outline"
                 size="sm"
+                className="h-8 text-xs px-2"
                 onClick={(e) => {
                   e.stopPropagation()
                   openReceiptDialog(row)
                 }}
-                className="text-blue-600 hover:text-blue-700 border-blue-300"
                 disabled={!permWrite}
-                title={!permWrite ? (appLang === 'en' ? 'No permission to create receipt' : 'لا توجد صلاحية لإنشاء سند') : ''}
+                title={!permWrite ? (appLang === 'en' ? 'No permission to create receipt' : 'لا توجد صلاحية لإنشاء سند') : (appLang === 'en' ? 'Create receipt' : 'إنشاء سند')}
               >
                 <ArrowDownLeft className="w-4 h-4" />
                 {appLang === 'en' ? 'Receipt' : 'سند'}
