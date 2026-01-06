@@ -15,6 +15,7 @@ import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/curre
 import { getActiveCompanyId } from "@/lib/company"
 import { canReturnBill, getBillOperationError, billRequiresJournalEntries, calculatePurchaseReturnEffects } from "@/lib/validation"
 import { validatePurchaseReturnStock, formatStockShortageMessage } from "@/lib/purchase-return-validation"
+import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
 
 type Supplier = { id: string; name: string; phone?: string | null }
 type Bill = { id: string; bill_number: string; supplier_id: string; total_amount: number; status: string; branch_id?: string | null; cost_center_id?: string | null; warehouse_id?: string | null }
@@ -408,17 +409,61 @@ export default function NewPurchaseReturnPage() {
         await supabase.from("bills").update({ returned_amount: newReturnedAmount, return_status: returnStatus }).eq("id", form.bill_id)
       }
 
-      // ===== 🔒 منطق Supplier Debit Credit وفقاً للمواصفات =====
-      // ❌ لا رصيد مدين إلا إذا المرتجع > المتبقي للمورد
-      // المتبقي للمورد = إجمالي الفاتورة - المدفوع - المرتجعات السابقة
-      // Supplier Debit Credit = المرتجع - المتبقي (إذا كان موجب)
-      if (form.settlement_method === "debit_note" && total > 0 && form.bill_id) {
+      // ===== ✅ إنشاء Vendor Credit تلقائياً للفواتير المدفوعة (Paid/Partially Paid) =====
+      // وفقاً للمواصفات الإلزامية:
+      // ✅ Paid / Partially Paid: إنشاء Vendor Credit تلقائياً
+      // ❌ Received / Draft: لا يتم إنشاء Vendor Credit
+      if (needsJournalEntry && purchaseReturn?.id) {
+        console.log(`📋 Creating Vendor Credit for return ${form.return_number} (Bill Status: ${billStatus})`)
+
+        const vendorCreditResult = await createVendorCreditForReturn(supabase, {
+          companyId,
+          supplierId: form.supplier_id,
+          billId: form.bill_id,
+          purchaseReturnId: purchaseReturn.id,
+          returnNumber: form.return_number,
+          returnDate: form.return_date,
+          subtotal: finalBaseSubtotal,
+          taxAmount: finalBaseTax,
+          totalAmount: finalBaseTotal,
+          branchId: billBranchId,
+          costCenterId: billCostCenterId,
+          warehouseId: billWarehouseId,
+          journalEntryId: journalEntryId,
+          items: validItems.map(item => ({
+            productId: item.product_id,
+            description: item.product_name,
+            quantity: item.quantity,
+            unitPrice: item.unit_price,
+            taxRate: item.tax_rate,
+            discountPercent: item.discount_percent,
+            lineTotal: item.line_total
+          })),
+          currency: form.currency,
+          exchangeRate: exchangeRate.rate,
+          exchangeRateId: exchangeRate.rateId
+        })
+
+        if (vendorCreditResult.success) {
+          console.log(`✅ Vendor Credit created successfully: ${vendorCreditResult.vendorCreditId}`)
+        } else {
+          console.error(`❌ Failed to create Vendor Credit: ${vendorCreditResult.error}`)
+          // لا نوقف العملية، فقط نسجل الخطأ
+        }
+      } else {
+        console.log(`ℹ️ No Vendor Credit created: Bill status is ${billStatus} (not Paid/Partially Paid)`)
+      }
+
+      // ===== 🔒 منطق Supplier Debit Credit (القديم - للحالات الخاصة) =====
+      // ملاحظة: هذا المنطق القديم يُستخدم فقط في حالات خاصة
+      // الآن نستخدم Vendor Credit بدلاً منه
+      if (form.settlement_method === "debit_note" && total > 0 && form.bill_id && !needsJournalEntry) {
         // المتبقي للمورد قبل هذا المرتجع
         const previousReturns = newReturnedAmount - total // المرتجعات السابقة
         const remainingPayable = billTotalAmount - billPaidAmount - previousReturns // المتبقي للمورد
         const excessReturn = total - remainingPayable // الفائض من المرتجع
 
-        console.log("📊 Supplier Debit Credit Calculation:", {
+        console.log("📊 Supplier Debit Credit Calculation (Legacy):", {
           billPaidAmount,
           billTotalAmount,
           previousReturns,

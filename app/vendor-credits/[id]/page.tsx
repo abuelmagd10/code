@@ -30,6 +30,11 @@ type VendorCredit = {
   applied_amount: number
   status: string
   notes: string
+  source_purchase_invoice_id?: string | null
+  source_purchase_return_id?: string | null
+  reference_type?: string | null
+  branch_id?: string | null
+  cost_center_id?: string | null
 }
 
 type Supplier = { id: string; name: string }
@@ -62,6 +67,10 @@ export default function VendorCreditViewPage() {
   const [bills, setBills] = useState<any[]>([])
   const [selectedBillId, setSelectedBillId] = useState<string>("")
   const [applyAmount, setApplyAmount] = useState<string>("")
+  const [purchaseReturn, setPurchaseReturn] = useState<any>(null)
+  const [sourceBill, setSourceBill] = useState<any>(null)
+  const [branch, setBranch] = useState<any>(null)
+  const [costCenter, setCostCenter] = useState<any>(null)
 
   useEffect(() => {
     if (!id) return
@@ -73,6 +82,46 @@ export default function VendorCreditViewPage() {
           setSupplier(sup as any)
           const { data: rows } = await supabase.from("vendor_credit_items").select("id, description, quantity, unit_price, discount_percent, tax_rate, line_total").eq("vendor_credit_id", id)
           setItems((rows || []) as any)
+
+          // جلب معلومات المرتجع المرتبط
+          if (vc.source_purchase_return_id) {
+            const { data: pr } = await supabase
+              .from("purchase_returns")
+              .select("id, return_number, return_date, status")
+              .eq("id", vc.source_purchase_return_id)
+              .single()
+            setPurchaseReturn(pr)
+          }
+
+          // جلب معلومات الفاتورة المصدر
+          if (vc.source_purchase_invoice_id) {
+            const { data: bill } = await supabase
+              .from("bills")
+              .select("id, bill_number, bill_date, status")
+              .eq("id", vc.source_purchase_invoice_id)
+              .single()
+            setSourceBill(bill)
+          }
+
+          // جلب معلومات الفرع
+          if (vc.branch_id) {
+            const { data: br } = await supabase
+              .from("branches")
+              .select("id, name")
+              .eq("id", vc.branch_id)
+              .single()
+            setBranch(br)
+          }
+
+          // جلب معلومات مركز التكلفة
+          if (vc.cost_center_id) {
+            const { data: cc } = await supabase
+              .from("cost_centers")
+              .select("id, name")
+              .eq("id", vc.cost_center_id)
+              .single()
+            setCostCenter(cc)
+          }
         }
       })()
   }, [id])
@@ -176,6 +225,59 @@ export default function VendorCreditViewPage() {
                 <div className="font-medium">{supplier?.name || "—"}</div>
               </div>
             </div>
+
+            {/* معلومات المرتجع المرتبط */}
+            {(purchaseReturn || sourceBill || branch || costCenter || credit.reference_type === 'purchase_return') && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg space-y-2 text-sm">
+                <div className="font-semibold text-blue-900 dark:text-blue-100">
+                  {appLang === 'en' ? '📋 Source Information' : '📋 معلومات المصدر'}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {credit.reference_type && (
+                    <div>
+                      <div className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Type' : 'النوع'}</div>
+                      <div className="font-medium">
+                        {credit.reference_type === 'purchase_return' ? (appLang === 'en' ? 'Purchase Return' : 'مرتجع مشتريات') : credit.reference_type}
+                      </div>
+                    </div>
+                  )}
+                  {purchaseReturn && (
+                    <div>
+                      <div className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Return Number' : 'رقم المرتجع'}</div>
+                      <div className="font-medium">
+                        <Link href={`/purchase-returns`} className="text-blue-600 hover:underline">
+                          {purchaseReturn.return_number}
+                        </Link>
+                        <span className="text-xs text-gray-500 mr-2">({purchaseReturn.return_date})</span>
+                      </div>
+                    </div>
+                  )}
+                  {sourceBill && (
+                    <div>
+                      <div className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Source Bill' : 'الفاتورة الأصلية'}</div>
+                      <div className="font-medium">
+                        <Link href={`/bills/${sourceBill.id}`} className="text-blue-600 hover:underline">
+                          {sourceBill.bill_number}
+                        </Link>
+                        <span className="text-xs text-gray-500 mr-2">({sourceBill.bill_date})</span>
+                      </div>
+                    </div>
+                  )}
+                  {branch && (
+                    <div>
+                      <div className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Branch' : 'الفرع'}</div>
+                      <div className="font-medium">{branch.name}</div>
+                    </div>
+                  )}
+                  {costCenter && (
+                    <div>
+                      <div className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Cost Center' : 'مركز التكلفة'}</div>
+                      <div className="font-medium">{costCenter.name}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

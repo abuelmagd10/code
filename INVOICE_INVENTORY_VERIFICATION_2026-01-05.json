@@ -1,0 +1,36 @@
+{
+  "timestamp": "2026-01-05T19:10:35.555Z",
+  "company": "تست",
+  "checks": {
+    "Check Sent Invoices Count": {
+      "status": "PASS",
+      "message": "عدد فواتير البيع المرسلة: 0",
+      "details": {
+        "count": 0
+      },
+      "timestamp": "2026-01-05T19:10:36.460Z"
+    },
+    "Check Received Bills Count": {
+      "status": "PASS",
+      "message": "عدد فواتير الشراء المستلمة: 0",
+      "details": {
+        "count": 0
+      },
+      "timestamp": "2026-01-05T19:10:36.983Z"
+    },
+    "Check Paid Invoices Count": {
+      "status": "PASS",
+      "message": "عدد فواتير البيع المدفوعة: 0",
+      "details": {
+        "count": 0
+      },
+      "timestamp": "2026-01-05T19:10:37.176Z"
+    }
+  },
+  "summary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "warnings": 0
+  }
+}

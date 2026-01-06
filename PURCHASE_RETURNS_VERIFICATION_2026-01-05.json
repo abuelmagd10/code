@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-01-05T19:40:40.851Z",
+  "company": "تست",
+  "checks": {
+    "Check Returned Bills Count": {
+      "status": "PASS",
+      "message": "عدد فواتير المشتريات المرتجعة: 1",
+      "details": {
+        "count": 1
+      },
+      "timestamp": "2026-01-05T19:40:41.483Z"
+    },
+    "Bill BILL-0001 - Inventory Stock Out": {
+      "status": "PASS",
+      "message": "تم خصم المخزون بشكل صحيح (1 حركة)",
+      "details": null,
+      "timestamp": "2026-01-05T19:40:41.670Z"
+    },
+    "Bill BILL-0001 - Product suk- 1001 Return Transaction Applied": {
+      "status": "PASS",
+      "message": "حركة المرتجع صحيحة (quantity_change: -100000, current stock: -100000)",
+      "details": null,
+      "timestamp": "2026-01-05T19:40:41.851Z"
+    },
+    "Bill BILL-0001 - Has Journal Entries": {
+      "status": "PASS",
+      "message": "تحتوي على 1 قيد محاسبي",
+      "details": null,
+      "timestamp": "2026-01-05T19:40:42.033Z"
+    },
+    "Bill BILL-0001 - Bill Items Returned Quantity": {
+      "status": "PASS",
+      "message": "تم تحديث returned_quantity في بنود الفاتورة",
+      "details": null,
+      "timestamp": "2026-01-05T19:40:42.220Z"
+    }
+  },
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "warnings": 0
+  }
+}
