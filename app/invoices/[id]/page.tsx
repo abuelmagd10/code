@@ -469,6 +469,13 @@ export default function InvoiceDetailPage() {
         }
         console.log("✅ Invoice status updated successfully")
 
+        // ✅ إرسال حدث لتحديث صفحة بضائع لدى الغير
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('invoice_status_changed', { 
+            detail: { invoiceId, newStatus } 
+          }))
+        }
+
         // ===== 📌 ERP Accounting & Inventory Core Logic (MANDATORY FINAL SPECIFICATION) =====
         // 📌 النمط المحاسبي الصارم:
         // Sent: خصم المخزون فقط (Stock Out) - ❌ لا قيد محاسبي

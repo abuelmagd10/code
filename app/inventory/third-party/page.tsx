@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { FilterContainer } from "@/components/ui/filter-container"
 import { type UserContext } from "@/lib/validation"
+import { StatusBadge } from "@/components/DataTableFormatters"
 
 interface ThirdPartyItem {
   id: string
@@ -28,7 +29,17 @@ interface ThirdPartyItem {
   shipping_provider_id: string
   created_at: string
   created_by?: string
-  invoices?: { invoice_number: string; customer_id: string; invoice_date?: string; customers?: { name: string; phone?: string } }
+  invoices?: { 
+    invoice_number: string
+    customer_id: string
+    invoice_date?: string
+    status?: string
+    branch_id?: string | null
+    warehouse_id?: string | null
+    customers?: { name: string; phone?: string }
+    branches?: { name: string }
+    warehouses?: { name: string }
+  }
   products?: { name: string; sku: string }
   shipping_providers?: { provider_name: string }
 }
@@ -101,6 +112,38 @@ export default function ThirdPartyInventoryPage() {
 
   useEffect(() => {
     loadData()
+  }, [])
+
+  // ✅ تحديث تلقائي عند تغيير حالة الفاتورة
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadData()
+      }
+    }
+
+    const handleInvoiceUpdate = () => {
+      loadData()
+    }
+
+    // تحديث عند ظهور الصفحة
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    // تحديث عند تغيير حالة الفاتورة (من خلال custom event)
+    window.addEventListener('invoice_status_changed', handleInvoiceUpdate)
+    
+    // تحديث دوري كل 5 ثوانٍ
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadData()
+      }
+    }, 5000)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('invoice_status_changed', handleInvoiceUpdate)
+      clearInterval(interval)
+    }
   }, [])
 
   const loadData = async () => {
@@ -180,20 +223,77 @@ export default function ThirdPartyInventoryPage() {
         }
       }))
 
-      // جلب بضائع لدى الغير
-      const { data: itemsData } = await supabase
+      // ✅ جلب الفواتير المرسلة (Sent/Confirmed) مع شركات الشحن
+      // ثم ربطها مع third_party_inventory للحصول على الكميات
+      const { data: sentInvoices, error: invoicesErr } = await supabase
+        .from("invoices")
+        .select(`
+          id,
+          invoice_number,
+          customer_id,
+          invoice_date,
+          status,
+          shipping_provider_id,
+          branch_id,
+          warehouse_id,
+          customers(name, phone),
+          branches(name),
+          warehouses(name)
+        `)
+        .eq("company_id", companyId)
+        .in("status", ["sent", "confirmed"])
+        .not("shipping_provider_id", "is", null)
+        .order("invoice_date", { ascending: false })
+
+      if (invoicesErr) {
+        console.error("Error loading sent invoices:", invoicesErr)
+        setItems([])
+        return
+      }
+
+      // جلب بضائع لدى الغير المرتبطة بهذه الفواتير
+      const invoiceIds = (sentInvoices || []).map((inv: any) => inv.id)
+      if (invoiceIds.length === 0) {
+        setItems([])
+        return
+      }
+
+      const { data: thirdPartyData, error: thirdPartyErr } = await supabase
         .from("third_party_inventory")
         .select(`
           *,
-          invoices(invoice_number, customer_id, invoice_date, customers(name, phone)),
           products(name, sku),
           shipping_providers(provider_name)
         `)
         .eq("company_id", companyId)
-        .eq("status", "open")
-        .order("created_at", { ascending: false })
+        .in("invoice_id", invoiceIds)
 
-      setItems(itemsData || [])
+      if (thirdPartyErr) {
+        console.error("Error loading third party inventory:", thirdPartyErr)
+        setItems([])
+        return
+      }
+
+      // دمج البيانات: ربط third_party_inventory مع بيانات الفاتورة
+      const mergedItems = (thirdPartyData || []).map((tpi: any) => {
+        const invoice = (sentInvoices || []).find((inv: any) => inv.id === tpi.invoice_id)
+        return {
+          ...tpi,
+          invoices: invoice ? {
+            invoice_number: invoice.invoice_number,
+            customer_id: invoice.customer_id,
+            invoice_date: invoice.invoice_date,
+            status: invoice.status,
+            branch_id: invoice.branch_id,
+            warehouse_id: invoice.warehouse_id,
+            customers: invoice.customers,
+            branches: invoice.branches,
+            warehouses: invoice.warehouses
+          } : null
+        }
+      })
+
+      setItems(mergedItems)
     } catch (error) {
       console.error("Error loading data:", error)
     } finally {
@@ -578,7 +678,7 @@ export default function ThirdPartyInventoryPage() {
                   <TableBody>
                     {filteredItems.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                           <Truck className="h-12 w-12 mx-auto mb-2 opacity-50" />
                           {isAr ? "لا توجد بضائع لدى الغير" : "No third party goods found"}
                         </TableCell>
@@ -587,6 +687,7 @@ export default function ThirdPartyInventoryPage() {
                       filteredItems.map(item => {
                         const availableQty = getAvailableQty(item)
                         const value = availableQty * Number(item.unit_cost)
+                        const invoiceStatus = item.invoices?.status || 'sent'
                         return (
                           <TableRow key={item.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                             <TableCell>
@@ -611,6 +712,15 @@ export default function ThirdPartyInventoryPage() {
                               <Badge variant="secondary" className="text-xs font-bold">
                                 {availableQty}
                               </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs sm:text-sm hidden lg:table-cell">
+                              {item.invoices?.branches?.name || '-'}
+                            </TableCell>
+                            <TableCell className="text-xs sm:text-sm hidden lg:table-cell">
+                              {item.invoices?.warehouses?.name || '-'}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <StatusBadge status={invoiceStatus} lang={appLang} />
                             </TableCell>
                             <TableCell className="text-xs sm:text-sm text-center hidden sm:table-cell">
                               {Number(item.unit_cost).toLocaleString()}
