@@ -1045,7 +1045,7 @@ export default function BillsPage() {
         // مدين: الذمم الدائنة (تقليل المستحق للمورد)
         // دائن: المخزون (خروج البضاعة المرتجعة)
         if (ap && baseReturnTotal > 0) {
-          lines.push({
+          const line: any = {
             journal_entry_id: entryId,
             account_id: ap,
             debit_amount: baseReturnTotal,
@@ -1055,14 +1055,15 @@ export default function BillsPage() {
             original_debit: returnTotalOriginal,
             original_credit: 0,
             exchange_rate_used: returnExRate.rate,
-            exchange_rate_id: returnExRate.rateId,
             rate_source: returnExRate.source
-          })
+          }
+          if (returnExRate.rateId) line.exchange_rate_id = returnExRate.rateId
+          lines.push(line)
         }
 
         // Credit Inventory
         if (inventory && baseReturnedNet > 0) {
-          lines.push({
+          const line: any = {
             journal_entry_id: entryId,
             account_id: inventory,
             debit_amount: 0,
@@ -1072,14 +1073,15 @@ export default function BillsPage() {
             original_debit: 0,
             original_credit: returnedNetOriginal,
             exchange_rate_used: returnExRate.rate,
-            exchange_rate_id: returnExRate.rateId,
             rate_source: returnExRate.source
-          })
+          }
+          if (returnExRate.rateId) line.exchange_rate_id = returnExRate.rateId
+          lines.push(line)
         }
 
         // Credit VAT Receivable
         if (vatRecv && baseReturnedTax > 0) {
-          lines.push({
+          const line: any = {
             journal_entry_id: entryId,
             account_id: vatRecv,
             debit_amount: 0,
@@ -1089,12 +1091,19 @@ export default function BillsPage() {
             original_debit: 0,
             original_credit: returnedTaxOriginal,
             exchange_rate_used: returnExRate.rate,
-            exchange_rate_id: returnExRate.rateId,
             rate_source: returnExRate.source
-          })
+          }
+          if (returnExRate.rateId) line.exchange_rate_id = returnExRate.rateId
+          lines.push(line)
         }
 
-        if (lines.length > 0) await supabase.from("journal_entry_lines").insert(lines)
+        if (lines.length > 0) {
+          const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
+          if (linesError) {
+            console.error("❌ Error inserting journal entry lines:", linesError)
+            throw new Error(`فشل إنشاء القيود المحاسبية: ${linesError.message}`)
+          }
+        }
       }
 
       // القيد 2: استرداد النقد من المورد (للمرتجع النقدي/البنكي فقط)
@@ -1116,7 +1125,7 @@ export default function BillsPage() {
 
         if (refundEntry?.id) {
           const baseRefundAmount = returnCurrency === appCurrency ? refundAmount : Math.round(refundAmount * returnExRate.rate * 10000) / 10000
-          const refundLines = [
+          const refundLines: any[] = [
             // مدين: الخزينة/البنك (استلام النقد)
             {
               journal_entry_id: refundEntry.id,
@@ -1130,7 +1139,6 @@ export default function BillsPage() {
               original_debit: refundAmount,
               original_credit: 0,
               exchange_rate_used: returnExRate.rate,
-              exchange_rate_id: returnExRate.rateId,
               rate_source: returnExRate.source
             },
             // دائن: الذمم الدائنة (المورد سدد لنا)
@@ -1144,11 +1152,20 @@ export default function BillsPage() {
               original_debit: 0,
               original_credit: refundAmount,
               exchange_rate_used: returnExRate.rate,
-              exchange_rate_id: returnExRate.rateId,
               rate_source: returnExRate.source
             }
           ]
-          await supabase.from("journal_entry_lines").insert(refundLines)
+          // إضافة exchange_rate_id فقط إذا كان موجوداً
+          if (returnExRate.rateId) {
+            refundLines.forEach(line => {
+              line.exchange_rate_id = returnExRate.rateId
+            })
+          }
+          const { error: refundLinesError } = await supabase.from("journal_entry_lines").insert(refundLines)
+          if (refundLinesError) {
+            console.error("❌ Error inserting refund journal entry lines:", refundLinesError)
+            throw new Error(`فشل إنشاء قيد الاسترداد: ${refundLinesError.message}`)
+          }
         }
       }
 
