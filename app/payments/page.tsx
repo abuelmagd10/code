@@ -2385,9 +2385,15 @@ export default function PaymentsPage() {
                           {!p.bill_id && permWrite && (
                             <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
                           )}
-                          {!p.purchase_order_id && permWrite && (
-                            <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang === 'en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
-                          )}
+                          {(() => {
+                            // ✅ إخفاء زر "على أمر شراء" إذا كان هناك أمر شراء مرتبط (مباشر أو عبر الفاتورة)
+                            const hasDirectPO = !!p.purchase_order_id
+                            const hasPOViaBill = !!(p.bill_id && billToPoMap[p.bill_id])
+                            const hasAnyPO = hasDirectPO || hasPOViaBill
+                            return !hasAnyPO && permWrite && (
+                              <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang === 'en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
+                            )
+                          })()}
                           {permUpdate && (
                             <Button variant="ghost" disabled={!online} onClick={() => {
                               setEditingPayment(p)
