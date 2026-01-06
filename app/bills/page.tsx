@@ -949,9 +949,14 @@ export default function BillsPage() {
     if (returnOpen) updateRate()
   }, [returnCurrency, appCurrency, returnOpen])
 
-  // Calculate return total
+  // Calculate return total (including tax)
+  // ✅ يجب أن يتطابق مع حساب returnTotalOriginal في submitPurchaseReturn
   const returnTotal = useMemo(() => {
-    return returnItems.reduce((sum, it) => sum + (it.qtyToReturn * it.unit_price), 0)
+    return returnItems.reduce((sum, it) => {
+      const lineTotal = it.qtyToReturn * it.unit_price
+      const taxAmount = lineTotal * (it.tax_rate || 0) / 100
+      return sum + lineTotal + taxAmount
+    }, 0)
   }, [returnItems])
 
   const submitPurchaseReturn = async () => {
@@ -1010,9 +1015,28 @@ export default function BillsPage() {
       const oldPaid = Number(billRow.paid_amount || 0)
       const oldReturned = Number(billRow.returned_amount || 0)
       const oldTotal = Number(billRow.total_amount || 0)
+      
+      // ✅ حساب الإجمالي الأصلي (قبل أي مرتجع)
+      // الإجمالي الأصلي = الإجمالي الحالي + المرتجع السابق
+      const originalTotal = oldTotal + oldReturned
+      
+      // ✅ حساب المرتجع الجديد والإجمالي الجديد
       const newReturned = oldReturned + baseReturnTotal
-      const newTotal = Math.max(oldTotal - baseReturnTotal, 0)
+      const newTotal = Math.max(originalTotal - newReturned, 0)
+      
+      // ✅ حساب مبلغ الاسترداد (فقط إذا كانت الفاتورة مدفوعة)
       const refundAmount = Math.max(0, oldPaid - newTotal)
+      
+      console.log("📊 Purchase Return Calculation:", {
+        originalTotal,
+        oldTotal,
+        oldReturned,
+        baseReturnTotal,
+        newReturned,
+        newTotal,
+        oldPaid,
+        refundAmount
+      })
 
       // Determine refund account based on method
       let refundAccountId: string | null = returnAccountId || null
