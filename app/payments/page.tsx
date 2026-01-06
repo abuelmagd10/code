@@ -97,7 +97,8 @@ export default function PaymentsPage() {
   const [invoiceNumbers, setInvoiceNumbers] = useState<Record<string, string>>({})
   const [billNumbers, setBillNumbers] = useState<Record<string, string>>({})
   const [poNumbers, setPoNumbers] = useState<Record<string, string>>({})
-  const [billToPoMap, setBillToPoMap] = useState<Record<string, string>>({}) // Map bill_id -> purchase_order_id
+  const [billToPoMap, setBillToPoMap] = useState<Record<string, string>>({})
+  const [accountNames, setAccountNames] = useState<Record<string, string>>({}) // Map bill_id -> purchase_order_id
   const [loading, setLoading] = useState(true)
 
   // Currency support - using CurrencyService
@@ -421,6 +422,22 @@ export default function PaymentsPage() {
       } catch (e) { /* ignore */ }
     })()
   }, [supplierPayments])
+
+  // Load account names for displayed supplier payments
+  useEffect(() => {
+    ; (async () => {
+      try {
+        const accountIds = Array.from(new Set((supplierPayments || []).map((p) => p.account_id).filter(Boolean))) as string[]
+        if (!accountIds.length) { setAccountNames({}); return }
+        const { data: accs } = await supabase.from("chart_of_accounts").select("id, account_name, account_code").in("id", accountIds)
+        const map: Record<string, string> = {}
+        ; (accs || []).forEach((a: any) => { 
+          map[a.id] = `${a.account_name} (${a.account_code})`
+        })
+        setAccountNames(map)
+      } catch (e) { /* ignore */ }
+    })()
+  }, [supplierPayments, supabase])
 
   // جلب فواتير العميل غير المسددة بالكامل عند اختيار عميل في نموذج إنشاء دفعة
   useEffect(() => {
@@ -2336,6 +2353,7 @@ export default function PaymentsPage() {
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Reference' : 'مرجع'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Supplier Bill' : 'فاتورة المورد المرتبطة'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Purchase Order' : 'أمر الشراء المرتبط'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Action' : 'إجراء'}</th>
@@ -2347,6 +2365,7 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{p.payment_date}</td>
                       <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
+                      <td className="px-2 py-2">{p.account_id ? (accountNames[p.account_id] || "-") : "-"}</td>
                       <td className="px-2 py-2">
                         {p.bill_id ? (
                           <Link href={`/bills/${p.bill_id}`} className="text-blue-600 hover:underline">
