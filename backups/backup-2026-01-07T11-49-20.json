@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-01-07T11:49:20.544Z",
+  "tables": {
+    "customer_debit_notes": {
+      "count": 0,
+      "data": []
+    },
+    "customer_debit_note_items": {
+      "count": 0,
+      "data": []
+    },
+    "customer_debit_note_applications": {
+      "count": 0,
+      "data": []
+    }
+  }
+}

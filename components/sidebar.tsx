@@ -150,6 +150,7 @@ export function Sidebar() {
     if (href.includes('/sales-orders')) return 'sales_orders'
     if (href.includes('/sales-returns')) return 'sales_returns'
     if (href.includes('/sent-invoice-returns')) return 'sent_invoice_returns'
+    if (href.includes('/customer-debit-notes')) return 'customer_debit_notes'
     if (href.includes('/invoices')) return 'invoices'
     if (href.includes('/customers')) return 'customers'
     if (href.includes('/estimates')) return 'estimates'
@@ -510,16 +511,16 @@ export function Sidebar() {
                         // 🔹 حفظ اسم ولوجو الشركة الجديدة
                         localStorage.setItem('company_name', company.name || '')
                         localStorage.setItem('company_logo_url', company.logo_url || '')
-                        
+
                         // مسح كاش الصلاحيات
                         clearPermissionsCache()
-                        
+
                         // 🔄 إطلاق حدث التحديث
                         window.dispatchEvent(new CustomEvent('company_updated', {
                           detail: { companyId: company.id, companyName: company.name }
                         }))
                         window.dispatchEvent(new Event('permissions_updated'))
-                        
+
                         // ✅ الحصول على أول صفحة مسموح بها والتوجيه إليها
                         try {
                           const res = await fetch('/api/first-allowed-page')
@@ -695,6 +696,7 @@ export function Sidebar() {
                     { label: (appLanguage === 'en' ? 'Sales Orders' : 'أوامر البيع'), href: `/sales-orders${q}`, icon: ShoppingCart },
                     { label: (appLanguage === 'en' ? 'Sales Invoices' : 'فواتير المبيعات'), href: `/invoices${q}`, icon: FileText },
                     { label: (appLanguage === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'), href: `/sales-returns${q}`, icon: FileText },
+                    { label: (appLanguage === 'en' ? 'Customer Debit Notes' : 'إشعارات مدين العملاء'), href: `/customer-debit-notes${q}`, icon: FileText },
                   ]
                 },
                 {
@@ -775,13 +777,13 @@ export function Sidebar() {
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       {myRole && (
                         <span className="text-xs text-blue-400 bg-blue-900/30 px-1.5 py-0.5 rounded">
-                          {myRole === 'owner' ? 'مالك' : 
-                           myRole === 'admin' ? 'مدير عام' : 
-                           myRole === 'manager' ? 'مدير' : 
-                           myRole === 'accountant' ? 'محاسب' : 
-                           myRole === 'store_manager' ? 'مسؤول مخزن' : 
-                           myRole === 'staff' ? 'موظف' : 
-                           myRole === 'viewer' ? 'عرض فقط' : myRole}
+                          {myRole === 'owner' ? 'مالك' :
+                            myRole === 'admin' ? 'مدير عام' :
+                              myRole === 'manager' ? 'مدير' :
+                                myRole === 'accountant' ? 'محاسب' :
+                                  myRole === 'store_manager' ? 'مسؤول مخزن' :
+                                    myRole === 'staff' ? 'موظف' :
+                                      myRole === 'viewer' ? 'عرض فقط' : myRole}
                         </span>
                       )}
                       {userBranch && (
