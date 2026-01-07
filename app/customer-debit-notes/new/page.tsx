@@ -11,7 +11,10 @@ import { Plus, Trash2, Save } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
-import { toast } from "@/hooks/use-toast"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
+import { canAction } from "@/lib/authz"
 
 type Customer = {
   id: string
@@ -38,13 +41,23 @@ type ItemRow = {
 export default function NewCustomerDebitNotePage() {
   const router = useRouter()
   const supabase = useSupabase()
+  const { toast } = useToast()
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
-  const [branchId, setBranchId] = useState<string | null>(null)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [saving, setSaving] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Branch, Cost Center, Warehouse
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
+  const [warehouseId, setWarehouseId] = useState<string | null>(null)
+  const [canOverrideContext, setCanOverrideContext] = useState(false)
+
+  // Permissions
+  const [permWriteCustomers, setPermWriteCustomers] = useState(false)
 
   // تهيئة اللغة بعد hydration
   useEffect(() => {
@@ -64,30 +77,67 @@ export default function NewCustomerDebitNotePage() {
     { description: '', quantity: 1, unit_price: 0, tax_rate: 14, item_type: 'charge', line_total: 0 }
   ])
 
+  // Check permissions
+  useEffect(() => {
+    const checkPerms = async () => {
+      const writeCustomers = await canAction(supabase, "customers", "write")
+      setPermWriteCustomers(writeCustomers)
+    }
+    checkPerms()
+  }, [supabase])
+
   async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    try {
+      setIsLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
-    const { data: member } = await supabase
-      .from('company_members')
-      .select('company_id, branch_id')
-      .eq('user_id', user.id)
-      .single()
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const loadedCompanyId = await getActiveCompanyId(supabase)
+      if (!loadedCompanyId) return
 
-    if (!member?.company_id) return
+      setCompanyId(loadedCompanyId)
+      setUserId(user.id)
 
-    setCompanyId(member.company_id)
-    setUserId(user.id)
-    if (member.branch_id) setBranchId(member.branch_id)
+      // Get user context (branch, cost center, warehouse)
+      const { data: memberData } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id, warehouse_id")
+        .eq("company_id", loadedCompanyId)
+        .eq("user_id", user.id)
+        .maybeSingle()
 
-    // Load customers
-    const { data: customersList } = await supabase
-      .from('customers')
-      .select('id, name, phone')
-      .eq('company_id', member.company_id)
-      .order('name')
+      const { data: companyData } = await supabase
+        .from("companies")
+        .select("user_id")
+        .eq("id", loadedCompanyId)
+        .single()
 
-    setCustomers(customersList || [])
+      const isOwner = companyData?.user_id === user.id
+      const role = isOwner ? "owner" : (memberData?.role || "staff")
+
+      // Set default context from user
+      if (memberData?.branch_id) setBranchId(memberData.branch_id)
+      if (memberData?.cost_center_id) setCostCenterId(memberData.cost_center_id)
+      if (memberData?.warehouse_id) setWarehouseId(memberData.warehouse_id)
+
+      // Check if user can override context
+      setCanOverrideContext(["owner", "admin", "manager"].includes(role))
+
+      // Load customers
+      const { data: customersList } = await supabase
+        .from('customers')
+        .select('id, name, phone')
+        .eq('company_id', loadedCompanyId)
+        .order('name')
+
+      setCustomers(customersList || [])
+      setIsLoading(false)
+    } catch (error) {
+      console.error("Error loading data:", error)
+      setIsLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -104,12 +154,14 @@ export default function NewCustomerDebitNotePage() {
   }, [form.customer_id, companyId])
 
   async function loadInvoices() {
+    if (!companyId || !form.customer_id) return
+
     const { data } = await supabase
       .from('invoices')
-      .select('id, invoice_number, invoice_date, total_amount')
+      .select('id, invoice_number, invoice_date, total_amount, branch_id, cost_center_id, warehouse_id')
       .eq('company_id', companyId)
       .eq('customer_id', form.customer_id)
-      .eq('status', 'sent')
+      .in('status', ['sent', 'paid', 'partially_paid'])
       .order('invoice_date', { ascending: false })
       .limit(50)
 
@@ -153,18 +205,18 @@ export default function NewCustomerDebitNotePage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    if (!companyId || !userId || !branchId) {
-      toast({ title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'Missing required data' : 'بيانات مفقودة', variant: 'destructive' })
+    if (!companyId || !userId) {
+      toastActionError(toast, appLang === 'en' ? 'Missing required data' : 'بيانات مفقودة', appLang)
       return
     }
 
     if (!form.customer_id || !form.source_invoice_id) {
-      toast({ title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'Please select customer and invoice' : 'الرجاء اختيار العميل والفاتورة', variant: 'destructive' })
+      toastActionError(toast, appLang === 'en' ? 'Please select customer and invoice' : 'الرجاء اختيار العميل والفاتورة', appLang)
       return
     }
 
     if (items.length === 0 || items.every(it => !it.description)) {
-      toast({ title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'Please add at least one item' : 'الرجاء إضافة بند واحد على الأقل', variant: 'destructive' })
+      toastActionError(toast, appLang === 'en' ? 'Please add at least one item' : 'الرجاء إضافة بند واحد على الأقل', appLang)
       return
     }
 
@@ -186,7 +238,7 @@ export default function NewCustomerDebitNotePage() {
       const { data, error } = await supabase.rpc('create_customer_debit_note', {
         p_company_id: companyId,
         p_branch_id: branchId,
-        p_cost_center_id: null,
+        p_cost_center_id: costCenterId,
         p_customer_id: form.customer_id,
         p_source_invoice_id: form.source_invoice_id,
         p_debit_note_date: form.debit_note_date,
@@ -199,19 +251,11 @@ export default function NewCustomerDebitNotePage() {
 
       if (error) throw error
 
-      toast({
-        title: appLang === 'en' ? 'Success' : 'نجح',
-        description: appLang === 'en' ? 'Debit note created successfully' : 'تم إنشاء الإشعار بنجاح'
-      })
-
-      router.push(`/customer-debit-notes/${data.debit_note_id}`)
+      toastActionSuccess(toast, appLang === 'en' ? 'Debit note created successfully' : 'تم إنشاء الإشعار بنجاح', appLang)
+      router.push('/customer-debit-notes')
     } catch (error: any) {
       console.error('Error creating debit note:', error)
-      toast({
-        title: appLang === 'en' ? 'Error' : 'خطأ',
-        description: error.message || (appLang === 'en' ? 'Failed to create debit note' : 'فشل إنشاء الإشعار'),
-        variant: 'destructive'
-      })
+      toastActionError(toast, error.message || (appLang === 'en' ? 'Failed to create debit note' : 'فشل إنشاء الإشعار'), appLang)
     } finally {
       setSaving(false)
     }
@@ -229,6 +273,17 @@ export default function NewCustomerDebitNotePage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Branch & Cost Center Selector */}
+              <BranchCostCenterSelector
+                companyId={companyId}
+                branchId={branchId}
+                costCenterId={costCenterId}
+                onBranchChange={setBranchId}
+                onCostCenterChange={setCostCenterId}
+                canOverride={canOverrideContext}
+                lang={appLang}
+              />
+
               {/* Header Info */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
@@ -238,6 +293,7 @@ export default function NewCustomerDebitNotePage() {
                     value={form.customer_id}
                     onValueChange={(v) => setForm({ ...form, customer_id: v, source_invoice_id: '' })}
                     placeholder={appLang === 'en' ? 'Select customer' : 'اختر العميل'}
+                    canCreate={permWriteCustomers}
                   />
                 </div>
 
