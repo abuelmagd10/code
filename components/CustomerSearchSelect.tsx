@@ -43,24 +43,29 @@ export function CustomerSearchSelect({
     if (!query) return customers
 
     const lowerQuery = query.toLowerCase()
-    
+
     // Check if query is purely numeric (phone search)
     const isNumeric = /^\d+$/.test(query)
     // Check if query is purely letters/arabic (name search)
     const isAlphabetic = /^[\u0600-\u06FF\u0750-\u077Fa-zA-Z\s]+$/.test(query)
 
     return customers.filter((customer) => {
+      // ✅ تأكد من وجود customer وأن له id
+      if (!customer || !customer.id) return false
+
       if (isNumeric) {
         // Search by phone only
-        const phone = String(customer.phone || "").replace(/[\s\-\(\)]/g, "")
+        const phone = customer.phone ? String(customer.phone).replace(/[\s\-\(\)]/g, "") : ""
         return phone.includes(query)
       } else if (isAlphabetic) {
         // Search by name only
-        return String(customer.name || "").toLowerCase().includes(lowerQuery)
+        const name = customer.name ? String(customer.name) : ""
+        return name.toLowerCase().includes(lowerQuery)
       } else {
         // Mixed - search in both
-        const nameMatch = String(customer.name || "").toLowerCase().includes(lowerQuery)
-        const phone = String(customer.phone || "").replace(/[\s\-\(\)]/g, "")
+        const name = customer.name ? String(customer.name) : ""
+        const nameMatch = name.toLowerCase().includes(lowerQuery)
+        const phone = customer.phone ? String(customer.phone).replace(/[\s\-\(\)]/g, "") : ""
         const phoneMatch = phone.includes(query.replace(/[\s\-\(\)]/g, ""))
         return nameMatch || phoneMatch
       }
@@ -104,9 +109,9 @@ export function CustomerSearchSelect({
           <div className="text-xs text-gray-400 mt-1 px-1">
             {searchQuery && (
               <span>
-                {/^\d+$/.test(searchQuery.trim()) ? "🔍 بحث برقم الهاتف" : 
-                 /^[\u0600-\u06FF\u0750-\u077Fa-zA-Z\s]+$/.test(searchQuery.trim()) ? "🔍 بحث بالاسم" :
-                 "🔍 بحث بالاسم والهاتف"}
+                {/^\d+$/.test(searchQuery.trim()) ? "🔍 بحث برقم الهاتف" :
+                  /^[\u0600-\u06FF\u0750-\u077Fa-zA-Z\s]+$/.test(searchQuery.trim()) ? "🔍 بحث بالاسم" :
+                    "🔍 بحث بالاسم والهاتف"}
               </span>
             )}
           </div>
