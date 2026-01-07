@@ -1,21 +1,18 @@
-'use client'
+"use client"
 
-import { useState, useEffect, useMemo } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Plus, Eye, FileText, DollarSign, CheckCircle, Clock } from 'lucide-react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { CompanyHeader } from '@/components/company-header'
-import { getActiveCompanyId } from '@/lib/company'
-import { usePagination } from '@/lib/pagination'
-import { DataPagination } from '@/components/data-pagination'
-import { ListErrorBoundary } from '@/components/list-error-boundary'
-import { PageHeaderList } from '@/components/PageHeader'
-import { DataTable, type DataTableColumn } from '@/components/DataTable'
-import { StatusBadge } from '@/components/DataTableFormatters'
+import { useEffect, useState, useMemo } from "react"
+import Link from "next/link"
+import { Sidebar } from "@/components/sidebar"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { useSupabase } from "@/lib/supabase/hooks"
+import { Plus, Eye, FileText, DollarSign, CheckCircle, Clock } from "lucide-react"
+import { usePagination } from "@/lib/pagination"
+import { DataPagination } from "@/components/data-pagination"
+import { ListErrorBoundary } from "@/components/list-error-boundary"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { StatusBadge } from "@/components/DataTableFormatters"
 
 type CustomerDebitNote = {
   id: string
@@ -31,30 +28,33 @@ type CustomerDebitNote = {
 }
 
 export default function CustomerDebitNotesPage() {
-  const router = useRouter()
-  const supabase = createClient()
-  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
-  const [companyId, setCompanyId] = useState<string | null>(null)
+  const supabase = useSupabase()
   const [debitNotes, setDebitNotes] = useState<CustomerDebitNote[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [searchQuery, setSearchQuery] = useState('')
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(10)
   const [currencySymbol, setCurrencySymbol] = useState('EGP')
 
+  // تهيئة اللغة بعد hydration
   useEffect(() => {
-    const lang = localStorage.getItem('appLanguage') as 'ar' | 'en' || 'ar'
-    setAppLang(lang)
-    loadData()
+    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
   }, [])
 
   async function loadData() {
-    setIsLoading(true)
-    const loadedCompanyId = await getActiveCompanyId()
-    if (!loadedCompanyId) {
-      router.push('/dashboard')
-      return
-    }
-    setCompanyId(loadedCompanyId)
+    setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { data: member } = await supabase
+      .from('company_members')
+      .select('company_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!member?.company_id) return
+    setCompanyId(member.company_id)
 
     // Load debit notes with customer info
     const { data: notes } = await supabase
@@ -71,7 +71,7 @@ export default function CustomerDebitNotesPage() {
         reference_type,
         customers (name)
       `)
-      .eq('company_id', loadedCompanyId)
+      .eq('company_id', member.company_id)
       .order('debit_note_date', { ascending: false })
 
     const formattedNotes = (notes || []).map((note: any) => ({
@@ -85,15 +85,19 @@ export default function CustomerDebitNotesPage() {
     const { data: company } = await supabase
       .from('companies')
       .select('default_currency_id, currencies(code)')
-      .eq('id', loadedCompanyId)
+      .eq('id', member.company_id)
       .single()
 
     if (company?.currencies?.code) {
       setCurrencySymbol(company.currencies.code)
     }
 
-    setIsLoading(false)
+    setLoading(false)
   }
+
+  useEffect(() => {
+    loadData()
+  }, [])
 
   // Filtered debit notes
   const filteredNotes = useMemo(() => {
@@ -226,24 +230,27 @@ export default function CustomerDebitNotesPage() {
   ], [appLang, currencySymbol])
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-950">
-      <CompanyHeader />
-      <main className="container mx-auto px-4 py-6 max-w-7xl">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+      <Sidebar />
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
         <ListErrorBoundary>
           {/* Header */}
-          <PageHeaderList
-            title={appLang === 'en' ? 'Customer Debit Notes' : 'إشعارات مدين العملاء'}
-            description={appLang === 'en' ? 'Manage additional charges to customers' : 'إدارة الرسوم الإضافية للعملاء'}
-            icon={FileText}
-            actions={
-              <Link href="/customer-debit-notes/new">
-                <Button className="bg-blue-600 hover:bg-blue-700">
-                  <Plus className="h-4 w-4 mr-2" />
-                  {appLang === 'en' ? 'New Debit Note' : 'إشعار جديد'}
-                </Button>
-              </Link>
-            }
-          />
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+                {appLang === 'en' ? 'Customer Debit Notes' : 'إشعارات مدين العملاء'}
+              </h1>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                {appLang === 'en' ? 'Manage additional charges to customers' : 'إدارة الرسوم الإضافية للعملاء'}
+              </p>
+            </div>
+            <Link href="/customer-debit-notes/new">
+              <Button className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="h-4 w-4 mr-2" />
+                {appLang === 'en' ? 'New Debit Note' : 'إشعار جديد'}
+              </Button>
+            </Link>
+          </div>
 
           {/* Statistics */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -297,7 +304,7 @@ export default function CustomerDebitNotesPage() {
           </div>
 
           {/* Search */}
-          <Card className="mb-6">
+          <Card className="mb-4 dark:bg-slate-900 dark:border-slate-800">
             <CardContent className="pt-6">
               <Input
                 placeholder={appLang === 'en' ? 'Search by debit note number or customer...' : 'بحث برقم الإشعار أو العميل...'}
@@ -309,26 +316,34 @@ export default function CustomerDebitNotesPage() {
           </Card>
 
           {/* Table */}
-          <Card>
+          <Card className="dark:bg-slate-900 dark:border-slate-800">
             <CardContent className="p-0">
-              <DataTable
-                columns={tableColumns}
-                data={paginatedNotes}
-                keyField="id"
-                lang={appLang}
-                minWidth="min-w-[800px]"
-                emptyMessage={appLang === 'en' ? 'No debit notes found' : 'لا توجد إشعارات'}
-              />
-              {filteredNotes.length > 0 && (
-                <DataPagination
-                  currentPage={currentPage}
-                  totalPages={totalPages}
-                  totalItems={totalItems}
-                  pageSize={pageSize}
-                  onPageChange={goToPage}
-                  onPageSizeChange={setPageSize}
-                  lang={appLang}
-                />
+              {loading ? (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  {appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}
+                </div>
+              ) : (
+                <>
+                  <DataTable
+                    columns={tableColumns}
+                    data={paginatedNotes}
+                    keyField="id"
+                    lang={appLang}
+                    minWidth="min-w-[800px]"
+                    emptyMessage={appLang === 'en' ? 'No debit notes found' : 'لا توجد إشعارات'}
+                  />
+                  {filteredNotes.length > 0 && (
+                    <DataPagination
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      totalItems={totalItems}
+                      pageSize={pageSize}
+                      onPageChange={goToPage}
+                      onPageSizeChange={setPageSize}
+                      lang={appLang}
+                    />
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

@@ -1,18 +1,17 @@
-'use client'
+"use client"
 
-import { useState, useEffect, useMemo } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Plus, Trash2, Save } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import { Sidebar } from '@/components/sidebar'
-import { getActiveCompanyId } from '@/lib/company'
-import { CustomerSearchSelect } from '@/components/CustomerSearchSelect'
-import { toast } from '@/hooks/use-toast'
+import { useState, useEffect, useMemo } from "react"
+import { useSupabase } from "@/lib/supabase/hooks"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Plus, Trash2, Save } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Sidebar } from "@/components/sidebar"
+import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
+import { toast } from "@/hooks/use-toast"
 
 type Customer = {
   id: string
@@ -38,7 +37,7 @@ type ItemRow = {
 
 export default function NewCustomerDebitNotePage() {
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useSupabase()
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
@@ -46,6 +45,11 @@ export default function NewCustomerDebitNotePage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [saving, setSaving] = useState(false)
+
+  // تهيئة اللغة بعد hydration
+  useEffect(() => {
+    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+  }, [])
 
   const [form, setForm] = useState({
     customer_id: '',
@@ -60,43 +64,35 @@ export default function NewCustomerDebitNotePage() {
     { description: '', quantity: 1, unit_price: 0, tax_rate: 14, item_type: 'charge', line_total: 0 }
   ])
 
-  useEffect(() => {
-    const lang = localStorage.getItem('appLanguage') as 'ar' | 'en' || 'ar'
-    setAppLang(lang)
-    loadData()
-  }, [])
-
   async function loadData() {
-    const loadedCompanyId = await getActiveCompanyId()
-    if (!loadedCompanyId) {
-      router.push('/dashboard')
-      return
-    }
-    setCompanyId(loadedCompanyId)
-
-    // Get user ID
     const { data: { user } } = await supabase.auth.getUser()
-    if (user) setUserId(user.id)
+    if (!user) return
 
-    // Get user's branch
     const { data: member } = await supabase
       .from('company_members')
-      .select('branch_id')
-      .eq('company_id', loadedCompanyId)
-      .eq('user_id', user?.id)
+      .select('company_id, branch_id')
+      .eq('user_id', user.id)
       .single()
 
-    if (member?.branch_id) setBranchId(member.branch_id)
+    if (!member?.company_id) return
+
+    setCompanyId(member.company_id)
+    setUserId(user.id)
+    if (member.branch_id) setBranchId(member.branch_id)
 
     // Load customers
     const { data: customersList } = await supabase
       .from('customers')
       .select('id, name, phone')
-      .eq('company_id', loadedCompanyId)
+      .eq('company_id', member.company_id)
       .order('name')
 
     setCustomers(customersList || [])
   }
+
+  useEffect(() => {
+    loadData()
+  }, [])
 
   // Load invoices when customer changes
   useEffect(() => {
