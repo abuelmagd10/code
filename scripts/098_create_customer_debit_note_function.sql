@@ -1,6 +1,11 @@
 -- =============================================
--- Create Customer Debit Note with Journal Entry
--- إنشاء إشعار مدين للعميل مع القيد المحاسبي
+-- Create Customer Debit Note - CLAIM ONLY (No Journal Entry)
+-- إنشاء إشعار مدين للعميل - مطالبة فقط (بدون قيد محاسبي)
+-- =============================================
+-- 🔒 IMPORTANT: This creates a CLAIM, not revenue
+-- Journal entry is created ONLY when:
+--   1. Debit note is approved AND applied to invoice/payment
+--   2. Using apply_customer_debit_note() function
 -- =============================================
 
 CREATE OR REPLACE FUNCTION create_customer_debit_note(
@@ -15,54 +20,53 @@ CREATE OR REPLACE FUNCTION create_customer_debit_note(
   p_items JSONB, -- Array of items: [{description, quantity, unit_price, tax_rate, item_type, product_id}]
   p_notes TEXT DEFAULT NULL,
   p_currency_id UUID DEFAULT NULL,
-  p_exchange_rate DECIMAL(15,6) DEFAULT 1
+  p_exchange_rate DECIMAL(15,6) DEFAULT 1,
+  p_created_by UUID DEFAULT NULL
 )
 RETURNS TABLE(
   debit_note_id UUID,
   debit_note_number VARCHAR(50),
   total_amount DECIMAL(15,2),
-  journal_entry_id UUID,
+  approval_status VARCHAR(20),
   success BOOLEAN,
   message TEXT
 ) AS $$
 DECLARE
   v_debit_note_id UUID;
   v_debit_note_number VARCHAR(50);
-  v_journal_entry_id UUID;
   v_subtotal DECIMAL(15,2) := 0;
   v_tax_amount DECIMAL(15,2) := 0;
   v_total_amount DECIMAL(15,2) := 0;
   v_item JSONB;
   v_line_total DECIMAL(15,2);
   v_line_tax DECIMAL(15,2);
-  v_ar_account_id UUID;
-  v_revenue_account_id UUID;
   v_customer_name TEXT;
   v_invoice_number TEXT;
   v_original_currency VARCHAR(3);
+  v_approval_status VARCHAR(20) := 'draft';
 BEGIN
   -- 1️⃣ Validate inputs
   IF p_company_id IS NULL OR p_customer_id IS NULL OR p_source_invoice_id IS NULL THEN
-    RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::UUID, FALSE, 
+    RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE,
       'Missing required fields: company_id, customer_id, or source_invoice_id';
     RETURN;
   END IF;
-  
+
   IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN
-    RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::UUID, FALSE, 
+    RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE,
       'At least one item is required';
     RETURN;
   END IF;
-  
+
   -- 2️⃣ Get customer and invoice info
   SELECT c.name INTO v_customer_name
   FROM customers c WHERE c.id = p_customer_id;
-  
+
   SELECT i.invoice_number INTO v_invoice_number
   FROM invoices i WHERE i.id = p_source_invoice_id;
-  
+
   IF v_customer_name IS NULL OR v_invoice_number IS NULL THEN
-    RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::UUID, FALSE, 
+    RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE,
       'Customer or invoice not found';
     RETURN;
   END IF;
@@ -89,7 +93,7 @@ BEGIN
     FROM currencies WHERE id = p_currency_id;
   END IF;
   
-  -- 6️⃣ Create debit note
+  -- 6️⃣ Create debit note (DRAFT status, NO journal entry)
   INSERT INTO customer_debit_notes (
     company_id,
     branch_id,
@@ -109,9 +113,11 @@ BEGIN
     original_total_amount,
     exchange_rate,
     status,
+    approval_status,
     reference_type,
     reason,
-    notes
+    notes,
+    created_by
   ) VALUES (
     p_company_id,
     p_branch_id,
@@ -131,9 +137,11 @@ BEGIN
     v_total_amount,
     p_exchange_rate,
     'open',
+    'draft', -- approval_status
     p_reference_type,
     p_reason,
-    p_notes
+    p_notes,
+    p_created_by
   ) RETURNING id INTO v_debit_note_id;
   
   -- 7️⃣ Create debit note items
@@ -162,94 +170,30 @@ BEGIN
     );
   END LOOP;
   
-  -- 8️⃣ Get accounting accounts
-  -- AR account (Accounts Receivable)
-  SELECT account_id INTO v_ar_account_id
-  FROM profit_distribution_settings
-  WHERE company_id = p_company_id AND setting_key = 'accounts_receivable_account';
-  
-  -- Revenue account (or other appropriate account based on reference_type)
-  SELECT account_id INTO v_revenue_account_id
-  FROM profit_distribution_settings
-  WHERE company_id = p_company_id AND setting_key = 'sales_account';
-  
-  -- 9️⃣ Create journal entry if accounts are configured
-  IF v_ar_account_id IS NOT NULL AND v_revenue_account_id IS NOT NULL THEN
-    -- Create journal entry
-    INSERT INTO journal_entries (
-      company_id,
-      branch_id,
-      cost_center_id,
-      reference_type,
-      reference_id,
-      entry_date,
-      description,
-      status
-    ) VALUES (
-      p_company_id,
-      p_branch_id,
-      p_cost_center_id,
-      'customer_debit',
-      v_debit_note_id,
-      p_debit_note_date,
-      'Customer Debit Note ' || v_debit_note_number || ' - ' || v_customer_name || ' - Invoice ' || v_invoice_number,
-      'posted'
-    ) RETURNING id INTO v_journal_entry_id;
-
-    -- Debit: Accounts Receivable (increases customer balance)
-    INSERT INTO journal_entry_lines (
-      journal_entry_id,
-      account_id,
-      debit_amount,
-      credit_amount,
-      description,
-      branch_id,
-      cost_center_id
-    ) VALUES (
-      v_journal_entry_id,
-      v_ar_account_id,
-      v_total_amount * p_exchange_rate, -- Convert to base currency
-      0,
-      'AR - Customer Debit Note ' || v_debit_note_number,
-      p_branch_id,
-      p_cost_center_id
-    );
-
-    -- Credit: Revenue/Other Account (increases revenue or other account)
-    INSERT INTO journal_entry_lines (
-      journal_entry_id,
-      account_id,
-      debit_amount,
-      credit_amount,
-      description,
-      branch_id,
-      cost_center_id
-    ) VALUES (
-      v_journal_entry_id,
-      v_revenue_account_id,
-      0,
-      v_total_amount * p_exchange_rate, -- Convert to base currency
-      'Revenue - Customer Debit Note ' || v_debit_note_number,
-      p_branch_id,
-      p_cost_center_id
-    );
-
-    -- Update debit note with journal entry ID
-    UPDATE customer_debit_notes
-    SET journal_entry_id = v_journal_entry_id
-    WHERE id = v_debit_note_id;
-
-    RETURN QUERY SELECT v_debit_note_id, v_debit_note_number, v_total_amount, v_journal_entry_id, TRUE,
-      'Customer debit note created successfully with journal entry';
-  ELSE
-    RETURN QUERY SELECT v_debit_note_id, v_debit_note_number, v_total_amount, NULL::UUID, TRUE,
-      'Customer debit note created successfully (no journal entry - accounts not configured)';
-  END IF;
+  -- 8️⃣ Return success (NO JOURNAL ENTRY - created as CLAIM/DRAFT)
+  RETURN QUERY SELECT
+    v_debit_note_id,
+    v_debit_note_number,
+    v_total_amount,
+    v_approval_status,
+    TRUE,
+    'Customer debit note created successfully as DRAFT. Submit for approval before applying.';
 
 EXCEPTION
   WHEN OTHERS THEN
-    RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::UUID, FALSE,
+    RETURN QUERY SELECT
+      NULL::UUID,
+      NULL::VARCHAR(50),
+      0::DECIMAL(15,2),
+      NULL::VARCHAR(20),
+      FALSE,
       'Error creating customer debit note: ' || SQLERRM;
 END;
 $$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION create_customer_debit_note IS
+'Creates a customer debit note as DRAFT (claim only).
+NO journal entry is created at this stage.
+Workflow: create → submit_for_approval → approve → apply (journal entry created on application)';
+
 

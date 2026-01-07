@@ -45,29 +45,30 @@ ADD CONSTRAINT chk_debit_item_valid_amounts CHECK (
 COMMENT ON CONSTRAINT chk_debit_item_valid_amounts ON customer_debit_note_items IS
 'Ensures debit note item amounts are calculated correctly';
 
--- 4️⃣ Trigger: Prevent modification of posted debit notes
+-- 4️⃣ Trigger: Prevent modification of approved/applied debit notes
 CREATE OR REPLACE FUNCTION prevent_customer_debit_note_modification()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Prevent modification if journal entry exists
-  IF OLD.journal_entry_id IS NOT NULL AND (
+  -- Prevent modification if approved (except approval fields)
+  IF OLD.approval_status = 'approved' AND (
     NEW.total_amount != OLD.total_amount OR
     NEW.customer_id != OLD.customer_id OR
-    NEW.source_invoice_id != OLD.source_invoice_id
+    NEW.source_invoice_id != OLD.source_invoice_id OR
+    NEW.reference_type != OLD.reference_type
   ) THEN
-    RAISE EXCEPTION 'Cannot modify customer debit note % - it has a posted journal entry', 
+    RAISE EXCEPTION 'Cannot modify approved customer debit note % (only draft/pending can be modified)',
       OLD.debit_note_number;
   END IF;
-  
+
   -- Prevent modification if partially or fully applied
   IF OLD.applied_amount > 0 AND (
     NEW.total_amount < OLD.total_amount OR
     NEW.customer_id != OLD.customer_id
   ) THEN
-    RAISE EXCEPTION 'Cannot modify customer debit note % - it has been applied (%.2f applied)', 
+    RAISE EXCEPTION 'Cannot modify customer debit note % - it has been applied (%.2f applied)',
       OLD.debit_note_number, OLD.applied_amount;
   END IF;
-  
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -158,6 +159,85 @@ CREATE INDEX IF NOT EXISTS idx_customer_debit_applications_applied_to
 ON customer_debit_note_applications(applied_to_type, applied_to_id);
 
 -- 8️⃣ Add reference_type to validation list
-COMMENT ON COLUMN customer_debit_notes.reference_type IS 
+COMMENT ON COLUMN customer_debit_notes.reference_type IS
 'Type of debit note: price_difference, additional_fees, penalty, correction, shipping, service_charge, late_fee, other';
+
+-- =============================================
+-- 🆕 NEW GUARDS - APPROVAL & APPLICATION WORKFLOW
+-- =============================================
+
+-- 9️⃣ Guard: Prevent direct INSERT into applications (must use function)
+CREATE OR REPLACE FUNCTION prevent_direct_debit_application()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Check if called from apply_customer_debit_note function
+  -- This is a simplified check - in production, use session variables or other mechanisms
+  IF current_setting('application.name', TRUE) != 'apply_customer_debit_note' THEN
+    RAISE NOTICE 'Direct INSERT into customer_debit_note_applications is discouraged. Use apply_customer_debit_note() function instead.';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_prevent_direct_debit_application ON customer_debit_note_applications;
+CREATE TRIGGER trg_prevent_direct_debit_application
+  BEFORE INSERT ON customer_debit_note_applications
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_direct_debit_application();
+
+-- 🔟 Guard: Time-lock for old invoices (configurable)
+CREATE OR REPLACE FUNCTION check_invoice_time_lock()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_invoice_date DATE;
+  v_time_lock_days INTEGER := 90; -- Configurable: 90 days default
+  v_days_old INTEGER;
+BEGIN
+  -- Get invoice date
+  SELECT invoice_date INTO v_invoice_date
+  FROM invoices
+  WHERE id = NEW.source_invoice_id;
+
+  -- Calculate age
+  v_days_old := CURRENT_DATE - v_invoice_date;
+
+  -- Check if invoice is too old
+  IF v_days_old > v_time_lock_days THEN
+    RAISE EXCEPTION 'Cannot create debit note for invoice older than % days (invoice is % days old). Contact administrator for override.',
+      v_time_lock_days, v_days_old;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_check_invoice_time_lock ON customer_debit_notes;
+CREATE TRIGGER trg_check_invoice_time_lock
+  BEFORE INSERT ON customer_debit_notes
+  FOR EACH ROW
+  EXECUTE FUNCTION check_invoice_time_lock();
+
+-- 1️⃣1️⃣ Additional Indexes for Approval Workflow
+CREATE INDEX IF NOT EXISTS idx_customer_debit_notes_approval_status
+ON customer_debit_notes(approval_status)
+WHERE approval_status IN ('pending_approval', 'approved');
+
+CREATE INDEX IF NOT EXISTS idx_customer_debit_notes_created_by
+ON customer_debit_notes(created_by);
+
+CREATE INDEX IF NOT EXISTS idx_customer_debit_notes_approved_by
+ON customer_debit_notes(approved_by)
+WHERE approved_by IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_customer_debit_applications_applied_by
+ON customer_debit_note_applications(applied_by)
+WHERE applied_by IS NOT NULL;
+
+-- 1️⃣2️⃣ Comments for new workflow
+COMMENT ON FUNCTION prevent_direct_debit_application IS
+'Discourages direct INSERT into applications. Use apply_customer_debit_note() function for proper validation.';
+
+COMMENT ON FUNCTION check_invoice_time_lock IS
+'Prevents creating debit notes for invoices older than configured days (default: 90 days)';
 

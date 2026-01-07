@@ -70,13 +70,20 @@ CREATE TRIGGER trg_sync_debit_applied_delete
   FOR EACH ROW
   EXECUTE FUNCTION sync_customer_debit_note_applied_amount();
 
--- 3️⃣ Function: Prevent deletion of applied debit notes
+-- 3️⃣ Function: Prevent deletion of applied or approved debit notes
 CREATE OR REPLACE FUNCTION prevent_customer_debit_note_deletion()
 RETURNS TRIGGER AS $$
 BEGIN
+  -- Cannot delete if applied
   IF OLD.applied_amount > 0 THEN
-    RAISE EXCEPTION 'Cannot delete customer debit note % - it has been applied (%.2f applied)', 
+    RAISE EXCEPTION 'Cannot delete customer debit note % - it has been applied (%.2f applied)',
       OLD.debit_note_number, OLD.applied_amount;
+  END IF;
+
+  -- Cannot delete if approved (unless draft or rejected)
+  IF OLD.approval_status IN ('approved', 'pending_approval') THEN
+    RAISE EXCEPTION 'Cannot delete customer debit note % - it is % (only draft/rejected can be deleted)',
+      OLD.debit_note_number, OLD.approval_status;
   END IF;
   
   IF OLD.journal_entry_id IS NOT NULL THEN
@@ -168,6 +175,158 @@ BEGIN
   v_debit_number := v_prefix || '-DN-' || LPAD(v_next_number::TEXT, 4, '0');
   
   RETURN v_debit_number;
+END;
+$$ LANGUAGE plpgsql;
+
+-- =============================================
+-- 🆕 NEW FUNCTIONS - APPROVAL & APPLICATION WORKFLOW
+-- =============================================
+
+-- 6️⃣ Function: Approve Customer Debit Note
+CREATE OR REPLACE FUNCTION approve_customer_debit_note(
+  p_debit_note_id UUID,
+  p_approved_by UUID,
+  p_notes TEXT DEFAULT NULL
+)
+RETURNS TABLE(
+  success BOOLEAN,
+  message TEXT,
+  debit_note_id UUID
+) AS $$
+DECLARE
+  v_debit_note RECORD;
+  v_creator_id UUID;
+  v_reference_type VARCHAR(50);
+BEGIN
+  -- Get debit note details
+  SELECT * INTO v_debit_note
+  FROM customer_debit_notes
+  WHERE id = p_debit_note_id;
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT FALSE, 'Debit note not found', NULL::UUID;
+    RETURN;
+  END IF;
+
+  -- Check if already approved
+  IF v_debit_note.approval_status = 'approved' THEN
+    RETURN QUERY SELECT FALSE, 'Debit note is already approved', NULL::UUID;
+    RETURN;
+  END IF;
+
+  -- Check if rejected
+  IF v_debit_note.approval_status = 'rejected' THEN
+    RETURN QUERY SELECT FALSE, 'Cannot approve rejected debit note', NULL::UUID;
+    RETURN;
+  END IF;
+
+  -- 🔒 GUARD: Creator cannot approve their own debit note
+  IF v_debit_note.created_by = p_approved_by THEN
+    RETURN QUERY SELECT FALSE, 'Creator cannot approve their own debit note (separation of duties)', NULL::UUID;
+    RETURN;
+  END IF;
+
+  -- Update approval status
+  UPDATE customer_debit_notes
+  SET
+    approval_status = 'approved',
+    approved_by = p_approved_by,
+    approved_at = NOW(),
+    notes = CASE
+      WHEN p_notes IS NOT NULL THEN COALESCE(notes, '') || E'\n[APPROVAL] ' || p_notes
+      ELSE notes
+    END,
+    updated_at = NOW()
+  WHERE id = p_debit_note_id;
+
+  RETURN QUERY SELECT TRUE, 'Debit note approved successfully', p_debit_note_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 7️⃣ Function: Reject Customer Debit Note
+CREATE OR REPLACE FUNCTION reject_customer_debit_note(
+  p_debit_note_id UUID,
+  p_rejected_by UUID,
+  p_rejection_reason TEXT
+)
+RETURNS TABLE(
+  success BOOLEAN,
+  message TEXT
+) AS $$
+DECLARE
+  v_debit_note RECORD;
+BEGIN
+  -- Get debit note details
+  SELECT * INTO v_debit_note
+  FROM customer_debit_notes
+  WHERE id = p_debit_note_id;
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT FALSE, 'Debit note not found';
+    RETURN;
+  END IF;
+
+  -- Check if already applied
+  IF v_debit_note.applied_amount > 0 THEN
+    RETURN QUERY SELECT FALSE, 'Cannot reject debit note - it has been applied';
+    RETURN;
+  END IF;
+
+  -- Update to rejected
+  UPDATE customer_debit_notes
+  SET
+    approval_status = 'rejected',
+    rejection_reason = p_rejection_reason,
+    updated_at = NOW()
+  WHERE id = p_debit_note_id;
+
+  RETURN QUERY SELECT TRUE, 'Debit note rejected';
+END;
+$$ LANGUAGE plpgsql;
+
+-- 8️⃣ Function: Submit for Approval (draft → pending_approval)
+CREATE OR REPLACE FUNCTION submit_debit_note_for_approval(
+  p_debit_note_id UUID,
+  p_submitted_by UUID
+)
+RETURNS TABLE(
+  success BOOLEAN,
+  message TEXT,
+  requires_owner_approval BOOLEAN
+) AS $$
+DECLARE
+  v_debit_note RECORD;
+  v_requires_owner BOOLEAN := FALSE;
+BEGIN
+  -- Get debit note details
+  SELECT * INTO v_debit_note
+  FROM customer_debit_notes
+  WHERE id = p_debit_note_id;
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT FALSE, 'Debit note not found', FALSE;
+    RETURN;
+  END IF;
+
+  -- Check if already submitted
+  IF v_debit_note.approval_status != 'draft' THEN
+    RETURN QUERY SELECT FALSE, 'Debit note is not in draft status', FALSE;
+    RETURN;
+  END IF;
+
+  -- Check if penalties or corrections require owner approval
+  IF v_debit_note.reference_type IN ('penalty', 'correction') THEN
+    v_requires_owner := TRUE;
+  END IF;
+
+  -- Update to pending approval
+  UPDATE customer_debit_notes
+  SET
+    approval_status = 'pending_approval',
+    updated_at = NOW()
+  WHERE id = p_debit_note_id;
+
+  RETURN QUERY SELECT TRUE, 'Debit note submitted for approval', v_requires_owner;
 END;
 $$ LANGUAGE plpgsql;
 

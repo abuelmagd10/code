@@ -40,21 +40,25 @@ CREATE TABLE IF NOT EXISTS customer_debit_notes (
   exchange_rate DECIMAL(15,6) DEFAULT 1,
   exchange_rate_id UUID REFERENCES exchange_rates(id) ON DELETE SET NULL,
   
-  -- 📊 Status Management
+  -- 📊 Status Management (Application Status)
   status VARCHAR(20) DEFAULT 'open' CHECK (status IN ('open', 'partially_applied', 'applied', 'cancelled')),
-  
+
+  -- ✅ Approval Workflow (NEW - REQUIRED)
+  approval_status VARCHAR(20) DEFAULT 'draft' CHECK (approval_status IN ('draft', 'pending_approval', 'approved', 'rejected')),
+  approved_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  approved_at TIMESTAMPTZ,
+  rejection_reason TEXT,
+
   -- 🔗 Reference Information
-  reference_type VARCHAR(50) NOT NULL, -- 'price_difference', 'additional_fees', 'penalty', 'correction'
+  reference_type VARCHAR(50) NOT NULL, -- 'price_difference', 'additional_fees', 'penalty', 'correction', 'shipping', 'service_charge', 'late_fee', 'other'
   reference_id UUID, -- Additional reference if needed
-  
+
   -- 📝 Notes and Description
   reason TEXT NOT NULL, -- Required: Why this debit note was created
   notes TEXT,
-  
-  -- 🧾 Journal Entry Link
-  journal_entry_id UUID REFERENCES journal_entries(id) ON DELETE SET NULL,
-  
-  -- 📅 Timestamps
+
+  -- 👤 Audit Trail (Enhanced)
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   
@@ -108,27 +112,34 @@ CREATE TABLE IF NOT EXISTS customer_debit_note_items (
 
 -- 3️⃣ Create customer_debit_note_applications table
 -- Track how debit notes are applied to invoices or payments
+-- 🔒 IMPORTANT: Applications create journal entries (revenue recognition)
 CREATE TABLE IF NOT EXISTS customer_debit_note_applications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  
+
   -- 🏢 Company Context
   company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  
+  branch_id UUID REFERENCES branches(id) ON DELETE SET NULL,
+
   -- 🔗 References
   customer_debit_note_id UUID NOT NULL REFERENCES customer_debit_notes(id) ON DELETE CASCADE,
   applied_to_type VARCHAR(50) NOT NULL, -- 'invoice', 'payment', 'settlement'
   applied_to_id UUID NOT NULL, -- invoice_id or payment_id
-  
+
   -- 💰 Application Details
   applied_date DATE NOT NULL DEFAULT CURRENT_DATE,
   amount_applied DECIMAL(15,2) NOT NULL,
-  
+
+  -- 🧾 Journal Entry Link (MOVED HERE - created on application)
+  journal_entry_id UUID REFERENCES journal_entries(id) ON DELETE SET NULL,
+
   -- 📝 Notes
   notes TEXT,
-  
-  -- 📅 Timestamps
+  application_method VARCHAR(50) DEFAULT 'manual', -- 'manual', 'automatic', 'settlement'
+
+  -- 👤 Audit Trail
+  applied_by UUID REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  
+
   -- ✅ Constraints
   CONSTRAINT chk_debit_application_amount CHECK (amount_applied > 0),
   UNIQUE(customer_debit_note_id, applied_to_type, applied_to_id)
@@ -145,7 +156,12 @@ CREATE INDEX IF NOT EXISTS idx_customer_debit_note_items_note ON customer_debit_
 CREATE INDEX IF NOT EXISTS idx_customer_debit_applications_note ON customer_debit_note_applications(customer_debit_note_id);
 
 -- 5️⃣ Add Comments for Documentation
-COMMENT ON TABLE customer_debit_notes IS 'Customer debit notes for additional charges on invoices';
+COMMENT ON TABLE customer_debit_notes IS 'Customer debit notes - CLAIMS for additional charges. No revenue recognition until approved and applied.';
 COMMENT ON TABLE customer_debit_note_items IS 'Line items for customer debit notes';
-COMMENT ON TABLE customer_debit_note_applications IS 'Track application of debit notes to invoices/payments';
+COMMENT ON TABLE customer_debit_note_applications IS 'Track application of debit notes to invoices/payments. Journal entries created HERE on application.';
+
+COMMENT ON COLUMN customer_debit_notes.approval_status IS 'Approval workflow: draft → pending_approval → approved/rejected';
+COMMENT ON COLUMN customer_debit_notes.status IS 'Application status: open → partially_applied → applied';
+COMMENT ON COLUMN customer_debit_note_applications.journal_entry_id IS 'Journal entry created when debit note is applied (revenue recognition point)';
+COMMENT ON COLUMN customer_debit_notes.reference_type IS 'penalty and correction types require owner approval';
 
