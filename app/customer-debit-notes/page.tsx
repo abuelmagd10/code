@@ -179,15 +179,15 @@ export default function CustomerDebitNotesPage() {
 
     setDebitNotes(formattedNotes)
 
-    // Load currency
+    // Load currency from company's base_currency
     const { data: company } = await supabase
       .from('companies')
-      .select('default_currency_id, currencies(code)')
+      .select('base_currency')
       .eq('id', companyId)
       .single()
 
-    if (company?.currencies?.code) {
-      setCurrencySymbol(company.currencies.code)
+    if (company?.base_currency) {
+      setCurrencySymbol(company.base_currency)
     }
 
     setLoading(false)
