@@ -5,12 +5,15 @@ import Link from "next/link"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getActiveCompanyId } from "@/lib/company"
 import { FileCheck, FileText, AlertCircle, CheckCircle, Clock, Eye } from "lucide-react"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
+import { type UserContext, getAccessFilter } from "@/lib/validation"
 
 type VendorCredit = {
   id: string
@@ -20,9 +23,18 @@ type VendorCredit = {
   total_amount: number
   applied_amount: number
   status: string
+  created_by: string
 }
 
 type Supplier = { id: string; name: string }
+
+// نوع بيانات الموظف للفلترة
+interface Employee {
+  user_id: string
+  display_name: string
+  role: string
+  email?: string
+}
 
 export default function VendorCreditsPage() {
   const supabase = useSupabase()
@@ -32,6 +44,14 @@ export default function VendorCreditsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // User context and permissions
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<string>('staff')
+  const [canViewAllCredits, setCanViewAllCredits] = useState(false)
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [filterEmployeeId, setFilterEmployeeId] = useState<string>('all')
 
   // تهيئة اللغة بعد hydration
   useEffect(() => {
@@ -75,20 +95,99 @@ export default function VendorCreditsPage() {
       return
     }
 
+    setCurrentUserId(user.id)
+
     // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
-    const { getActiveCompanyId } = await import("@/lib/company")
-    const loadedCompanyId = await getActiveCompanyId(supabase)
-    if (!loadedCompanyId) {
+    const companyId = await getActiveCompanyId(supabase)
+    if (!companyId) {
       setLoading(false)
       return
     }
-    setCompanyId(loadedCompanyId)
+    setCompanyId(companyId)
 
-    const { data: list } = await supabase.from("vendor_credits").select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status").eq("company_id", loadedCompanyId).order("credit_date", { ascending: false })
+    // جلب دور المستخدم الحالي مع الفرع ومركز التكلفة
+    const { data: member } = await supabase
+      .from('company_members')
+      .select('role, branch_id, cost_center_id, warehouse_id')
+      .eq('company_id', companyId)
+      .eq('user_id', user.id)
+      .single()
+
+    const role = member?.role || 'staff'
+    setCurrentUserRole(role)
+
+    // owner, admin, accountant, manager يرون كل الإشعارات - staff يرى فقط إشعاراته
+    const canViewAll = ['owner', 'admin', 'accountant', 'manager'].includes(role)
+    setCanViewAllCredits(canViewAll)
+
+    // 🔐 ERP Access Control - تعيين سياق المستخدم
+    const context: UserContext = {
+      user_id: user.id,
+      company_id: companyId,
+      branch_id: member?.branch_id || null,
+      cost_center_id: member?.cost_center_id || null,
+      warehouse_id: member?.warehouse_id || null,
+      role: role
+    }
+    setUserContext(context)
+
+    // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها)
+    if (canViewAll) {
+      const { data: members } = await supabase
+        .from('company_members')
+        .select('user_id, role')
+        .eq('company_id', companyId)
+
+      if (members && members.length > 0) {
+        const userIds = members.map((m: { user_id: string }) => m.user_id)
+        const { data: profiles } = await supabase
+          .from('user_profiles')
+          .select('user_id, display_name, username')
+          .in('user_id', userIds)
+
+        const profileMap = new Map((profiles || []).map((p: { user_id: string; display_name?: string; username?: string }) => [p.user_id, p]))
+
+        const roleLabels: Record<string, string> = {
+          owner: appLang === 'en' ? 'Owner' : 'مالك',
+          admin: appLang === 'en' ? 'Admin' : 'مدير',
+          staff: appLang === 'en' ? 'Staff' : 'موظف',
+          accountant: appLang === 'en' ? 'Accountant' : 'محاسب',
+          manager: appLang === 'en' ? 'Manager' : 'مدير'
+        }
+
+        const employeesList: Employee[] = members.map((m: { user_id: string; role: string }) => {
+          const profile = profileMap.get(m.user_id) as { user_id: string; display_name?: string; username?: string } | undefined
+          return {
+            user_id: m.user_id,
+            display_name: profile?.display_name || profile?.username || m.user_id.slice(0, 8),
+            role: roleLabels[m.role] || m.role,
+            email: profile?.username
+          }
+        })
+        setEmployees(employeesList)
+      }
+    }
+
+    // 🔐 ERP Access Control - تحميل الإشعارات مع تصفية حسب سياق المستخدم
+    let creditsQuery = supabase
+      .from("vendor_credits")
+      .select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status, created_by")
+      .eq("company_id", companyId)
+
+    // تصفية حسب الفرع ومركز التكلفة (للأدوار غير المديرة)
+    const canOverride = ['owner', 'admin', 'manager'].includes(role)
+    if (!canOverride && member?.branch_id) {
+      creditsQuery = creditsQuery.eq('branch_id', member.branch_id)
+    }
+    if (!canOverride && member?.cost_center_id) {
+      creditsQuery = creditsQuery.eq('cost_center_id', member.cost_center_id)
+    }
+
+    const { data: list } = await creditsQuery.order("credit_date", { ascending: false })
     setCredits((list || []) as any)
 
     // Load all suppliers for filter
-    const { data: allSuppliers } = await supabase.from("suppliers").select("id, name").eq("company_id", loadedCompanyId)
+    const { data: allSuppliers } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId)
     setSuppliersList(allSuppliers || [])
 
     const supplierIds: string[] = Array.from(new Set((list || []).map((c: any) => c.supplier_id)))
@@ -98,6 +197,7 @@ export default function VendorCreditsPage() {
       (sups || []).forEach((s: any) => { map[s.id] = s; });
       setSuppliers(map)
     }
+
     setLoading(false)
   }
 
@@ -107,6 +207,15 @@ export default function VendorCreditsPage() {
   // Filtered credits
   const filteredCredits = useMemo(() => {
     return credits.filter((vc) => {
+      // 🔐 فلترة الموظفين - على مستوى العرض
+      if (canViewAllCredits && filterEmployeeId && filterEmployeeId !== 'all') {
+        // المدير اختار موظف معين
+        if (vc.created_by !== filterEmployeeId) return false
+      } else if (!canViewAllCredits && currentUserId) {
+        // الموظف العادي يرى فقط إشعاراته
+        if (vc.created_by !== currentUserId) return false
+      }
+
       // Supplier filter
       if (filterSuppliers.length > 0 && !filterSuppliers.includes(vc.supplier_id)) return false
 
@@ -127,7 +236,7 @@ export default function VendorCreditsPage() {
 
       return true
     })
-  }, [credits, filterSuppliers, filterStatuses, dateFrom, dateTo, searchQuery, suppliers])
+  }, [credits, filterSuppliers, filterStatuses, dateFrom, dateTo, searchQuery, suppliers, canViewAllCredits, filterEmployeeId, currentUserId])
 
   // Pagination logic
   const {
@@ -295,6 +404,26 @@ export default function VendorCreditsPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Employee Filter (للمدراء فقط) */}
+                {canViewAllCredits && employees.length > 0 && (
+                  <Select value={filterEmployeeId} onValueChange={setFilterEmployeeId}>
+                    <SelectTrigger className="h-10 text-sm">
+                      <SelectValue placeholder={appLang === 'en' ? 'Employee' : 'الموظف'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        {appLang === 'en' ? 'All Employees' : 'جميع الموظفين'}
+                      </SelectItem>
+                      {employees.map((emp) => (
+                        <SelectItem key={emp.user_id} value={emp.user_id}>
+                          {emp.display_name} ({emp.role})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
                 {/* Status Filter */}
                 <MultiSelect
                   options={statusOptions}
