@@ -212,8 +212,8 @@ export default function CustomerDebitNotesPage() {
       // فلتر البحث
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase()
-        const noteNumber = (note.debit_note_number || '').toLowerCase()
-        const customerName = (note.customer_name || '').toLowerCase()
+        const noteNumber = note.debit_note_number ? String(note.debit_note_number).toLowerCase() : ''
+        const customerName = note.customer_name ? String(note.customer_name).toLowerCase() : ''
         if (!noteNumber.includes(q) && !customerName.includes(q)) return false
       }
 

@@ -616,9 +616,9 @@ export default function BillsPage() {
       // فلتر البحث
       if (!searchQuery.trim()) return true
       const q = searchQuery.trim().toLowerCase()
-      const supplierName = (bill.suppliers?.name || suppliers[bill.supplier_id]?.name || "").toLowerCase()
-      const supplierPhone = (bill.suppliers?.phone || suppliers[bill.supplier_id]?.phone || "").toLowerCase()
-      const billNumber = (bill.bill_number || "").toLowerCase()
+      const supplierName = String(bill.suppliers?.name || suppliers[bill.supplier_id]?.name || "").toLowerCase()
+      const supplierPhone = String(bill.suppliers?.phone || suppliers[bill.supplier_id]?.phone || "").toLowerCase()
+      const billNumber = bill.bill_number ? String(bill.bill_number).toLowerCase() : ""
       return supplierName.includes(q) || supplierPhone.includes(q) || billNumber.includes(q)
     })
   }, [bills, filterStatuses, filterSuppliers, filterProducts, filterShippingProviders, billItems, dateFrom, dateTo, searchQuery, suppliers])
@@ -1015,18 +1015,18 @@ export default function BillsPage() {
       const oldPaid = Number(billRow.paid_amount || 0)
       const oldReturned = Number(billRow.returned_amount || 0)
       const oldTotal = Number(billRow.total_amount || 0)
-      
+
       // ✅ حساب الإجمالي الأصلي (قبل أي مرتجع)
       // الإجمالي الأصلي = الإجمالي الحالي + المرتجع السابق
       const originalTotal = oldTotal + oldReturned
-      
+
       // ✅ حساب المرتجع الجديد والإجمالي الجديد
       const newReturned = oldReturned + baseReturnTotal
       const newTotal = Math.max(originalTotal - newReturned, 0)
-      
+
       // ✅ حساب مبلغ الاسترداد (فقط إذا كانت الفاتورة مدفوعة)
       const refundAmount = Math.max(0, oldPaid - newTotal)
-      
+
       console.log("📊 Purchase Return Calculation:", {
         originalTotal,
         oldTotal,
@@ -1182,7 +1182,7 @@ export default function BillsPage() {
             refundLines[0].original_credit = 0
             refundLines[0].exchange_rate_used = returnExRate.rate
             if (returnExRate.rateId) refundLines[0].exchange_rate_id = returnExRate.rateId
-            
+
             refundLines[1].original_currency = returnCurrency
             refundLines[1].original_debit = 0
             refundLines[1].original_credit = refundAmount
@@ -1201,7 +1201,7 @@ export default function BillsPage() {
       if (toReturn.length > 0) {
         // فلترة المنتجات فقط (ليس services)
         const productReturns = toReturn.filter((r) => r.product_id)
-        
+
         if (productReturns.length > 0) {
           // جلب معلومات المنتجات للتحقق من item_type
           const productIds = productReturns.map((r) => r.product_id).filter(Boolean)
@@ -1209,7 +1209,7 @@ export default function BillsPage() {
             .from("products")
             .select("id, item_type")
             .in("id", productIds)
-          
+
           // فلترة المنتجات فقط (استبعاد services)
           const validProductReturns = productReturns.filter((r) => {
             const prod = (productsInfo || []).find((p: any) => p.id === r.product_id)
@@ -1228,18 +1228,18 @@ export default function BillsPage() {
                 ? `Purchase return for bill ${returnBillNumber}`
                 : (returnMode === "partial" ? "مرتجع جزئي لفاتورة المورد" : "مرتجع كامل لفاتورة المورد")
             }))
-            
+
             const { error: invError } = await supabase.from("inventory_transactions").insert(invTx)
-            
+
             if (invError) {
               console.error("❌ Failed to create inventory transactions for purchase return:", invError)
               throw new Error(`فشل إنشاء حركات المخزون: ${invError.message}`)
             }
-            
+
             console.log(`✅ Created ${invTx.length} inventory transactions for purchase return`)
           }
         }
-        
+
         // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
         // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
       }
@@ -1801,7 +1801,7 @@ export default function BillsPage() {
                         <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-700">
                           <p className="text-gray-600 dark:text-gray-300">
                             💵 {appLang === 'en' ? 'Expected Refund Amount' : 'المبلغ المتوقع استرداده'}: <strong className="text-green-700 dark:text-green-300">
-                              {returnBillData.paymentStatus !== 'unpaid' 
+                              {returnBillData.paymentStatus !== 'unpaid'
                                 ? `${Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)} ${returnBillCurrency}`
                                 : `0.00 ${returnBillCurrency} ${appLang === 'en' ? '(No payment made)' : '(لم يتم الدفع)'}`
                               }

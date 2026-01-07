@@ -258,9 +258,9 @@ function SalesOrdersContent() {
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
-        const customerName = (customers.find(c => c.id === order.customer_id)?.name || "").toLowerCase();
-        const customerPhone = (customers.find(c => c.id === order.customer_id)?.phone || "").toLowerCase();
-        const soNumber = (order.so_number || "").toLowerCase();
+        const customerName = String(customers.find(c => c.id === order.customer_id)?.name || "").toLowerCase();
+        const customerPhone = String(customers.find(c => c.id === order.customer_id)?.phone || "").toLowerCase();
+        const soNumber = order.so_number ? String(order.so_number).toLowerCase() : "";
         if (!customerName.includes(q) && !customerPhone.includes(q) && !soNumber.includes(q)) return false;
       }
 

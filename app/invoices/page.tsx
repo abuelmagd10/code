@@ -651,9 +651,9 @@ export default function InvoicesPage() {
       // البحث
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase()
-        const customerName = (inv.customers?.name || "").toLowerCase()
-        const customerPhone = (inv.customers?.phone || "").toLowerCase()
-        const invoiceNumber = (inv.invoice_number || "").toLowerCase()
+        const customerName = String(inv.customers?.name || "").toLowerCase()
+        const customerPhone = String(inv.customers?.phone || "").toLowerCase()
+        const invoiceNumber = inv.invoice_number ? String(inv.invoice_number).toLowerCase() : ""
         if (!customerName.includes(q) && !customerPhone.includes(q) && !invoiceNumber.includes(q)) return false
       }
 

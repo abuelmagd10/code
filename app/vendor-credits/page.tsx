@@ -229,8 +229,8 @@ export default function VendorCreditsPage() {
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase()
-        const supplierName = getSupplierName(vc.supplier_id).toLowerCase()
-        const creditNumber = (vc.credit_number || "").toLowerCase()
+        const supplierName = String(getSupplierName(vc.supplier_id) || '').toLowerCase()
+        const creditNumber = vc.credit_number ? String(vc.credit_number).toLowerCase() : ''
         if (!supplierName.includes(q) && !creditNumber.includes(q)) return false
       }
 
