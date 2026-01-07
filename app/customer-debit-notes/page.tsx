@@ -6,13 +6,24 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getActiveCompanyId } from "@/lib/company"
 import { Plus, Eye, FileText, DollarSign, CheckCircle, Clock } from "lucide-react"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
+import { type UserContext, getAccessFilter } from "@/lib/validation"
+
+// نوع بيانات الموظف للفلترة
+interface Employee {
+  user_id: string
+  display_name: string
+  role: string
+  email?: string
+}
 
 type CustomerDebitNote = {
   id: string
@@ -25,6 +36,7 @@ type CustomerDebitNote = {
   status: string
   approval_status: string
   reference_type: string
+  created_by: string
 }
 
 export default function CustomerDebitNotesPage() {
@@ -37,6 +49,14 @@ export default function CustomerDebitNotesPage() {
   const [pageSize, setPageSize] = useState(10)
   const [currencySymbol, setCurrencySymbol] = useState('EGP')
 
+  // User context and permissions
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<string>('staff')
+  const [canViewAllNotes, setCanViewAllNotes] = useState(false)
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [filterEmployeeId, setFilterEmployeeId] = useState<string>('all')
+
   // تهيئة اللغة بعد hydration
   useEffect(() => {
     try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
@@ -45,19 +65,86 @@ export default function CustomerDebitNotesPage() {
   async function loadData() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) {
+      setLoading(false)
+      return
+    }
 
+    setCurrentUserId(user.id)
+
+    // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+    const companyId = await getActiveCompanyId(supabase)
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    setCompanyId(companyId)
+
+    // جلب دور المستخدم الحالي مع الفرع ومركز التكلفة
     const { data: member } = await supabase
       .from('company_members')
-      .select('company_id')
+      .select('role, branch_id, cost_center_id, warehouse_id')
+      .eq('company_id', companyId)
       .eq('user_id', user.id)
       .single()
 
-    if (!member?.company_id) return
-    setCompanyId(member.company_id)
+    const role = member?.role || 'staff'
+    setCurrentUserRole(role)
 
-    // Load debit notes with customer info
-    const { data: notes } = await supabase
+    // owner, admin, accountant, manager يرون كل الإشعارات - staff يرى فقط إشعاراته
+    const canViewAll = ['owner', 'admin', 'accountant', 'manager'].includes(role)
+    setCanViewAllNotes(canViewAll)
+
+    // 🔐 ERP Access Control - تعيين سياق المستخدم
+    const context: UserContext = {
+      user_id: user.id,
+      company_id: companyId,
+      branch_id: member?.branch_id || null,
+      cost_center_id: member?.cost_center_id || null,
+      warehouse_id: member?.warehouse_id || null,
+      role: role
+    }
+    setUserContext(context)
+
+    // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها)
+    if (canViewAll) {
+      const { data: members } = await supabase
+        .from('company_members')
+        .select('user_id, role')
+        .eq('company_id', companyId)
+
+      if (members && members.length > 0) {
+        const userIds = members.map((m: { user_id: string }) => m.user_id)
+        const { data: profiles } = await supabase
+          .from('user_profiles')
+          .select('user_id, display_name, username')
+          .in('user_id', userIds)
+
+        const profileMap = new Map((profiles || []).map((p: { user_id: string; display_name?: string; username?: string }) => [p.user_id, p]))
+
+        const roleLabels: Record<string, string> = {
+          owner: appLang === 'en' ? 'Owner' : 'مالك',
+          admin: appLang === 'en' ? 'Admin' : 'مدير',
+          staff: appLang === 'en' ? 'Staff' : 'موظف',
+          accountant: appLang === 'en' ? 'Accountant' : 'محاسب',
+          manager: appLang === 'en' ? 'Manager' : 'مدير'
+        }
+
+        const employeesList: Employee[] = members.map((m: { user_id: string; role: string }) => {
+          const profile = profileMap.get(m.user_id) as { user_id: string; display_name?: string; username?: string } | undefined
+          return {
+            user_id: m.user_id,
+            display_name: profile?.display_name || profile?.username || m.user_id.slice(0, 8),
+            role: roleLabels[m.role] || m.role,
+            email: profile?.username
+          }
+        })
+        setEmployees(employeesList)
+      }
+    }
+
+    // 🔐 ERP Access Control - تحميل الإشعارات مع تصفية حسب سياق المستخدم
+    let notesQuery = supabase
       .from('customer_debit_notes')
       .select(`
         id,
@@ -69,10 +156,21 @@ export default function CustomerDebitNotesPage() {
         status,
         approval_status,
         reference_type,
+        created_by,
         customers (name)
       `)
-      .eq('company_id', member.company_id)
-      .order('debit_note_date', { ascending: false })
+      .eq('company_id', companyId)
+
+    // تصفية حسب الفرع ومركز التكلفة (للأدوار غير المديرة)
+    const canOverride = ['owner', 'admin', 'manager'].includes(role)
+    if (!canOverride && member?.branch_id) {
+      notesQuery = notesQuery.eq('branch_id', member.branch_id)
+    }
+    if (!canOverride && member?.cost_center_id) {
+      notesQuery = notesQuery.eq('cost_center_id', member.cost_center_id)
+    }
+
+    const { data: notes } = await notesQuery.order('debit_note_date', { ascending: false })
 
     const formattedNotes = (notes || []).map((note: any) => ({
       ...note,
@@ -85,7 +183,7 @@ export default function CustomerDebitNotesPage() {
     const { data: company } = await supabase
       .from('companies')
       .select('default_currency_id, currencies(code)')
-      .eq('id', member.company_id)
+      .eq('id', companyId)
       .single()
 
     if (company?.currencies?.code) {
@@ -102,15 +200,26 @@ export default function CustomerDebitNotesPage() {
   // Filtered debit notes
   const filteredNotes = useMemo(() => {
     return debitNotes.filter((note) => {
+      // 🔐 فلترة الموظفين - على مستوى العرض
+      if (canViewAllNotes && filterEmployeeId && filterEmployeeId !== 'all') {
+        // المدير اختار موظف معين
+        if (note.created_by !== filterEmployeeId) return false
+      } else if (!canViewAllNotes && currentUserId) {
+        // الموظف العادي يرى فقط إشعاراته
+        if (note.created_by !== currentUserId) return false
+      }
+
+      // فلتر البحث
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase()
         const noteNumber = (note.debit_note_number || '').toLowerCase()
         const customerName = (note.customer_name || '').toLowerCase()
         if (!noteNumber.includes(q) && !customerName.includes(q)) return false
       }
+
       return true
     })
-  }, [debitNotes, searchQuery])
+  }, [debitNotes, searchQuery, canViewAllNotes, filterEmployeeId, currentUserId])
 
   // Pagination
   const {
@@ -303,15 +412,36 @@ export default function CustomerDebitNotesPage() {
             </Card>
           </div>
 
-          {/* Search */}
+          {/* Search & Filters */}
           <Card className="mb-4 dark:bg-slate-900 dark:border-slate-800">
             <CardContent className="pt-6">
-              <Input
-                placeholder={appLang === 'en' ? 'Search by debit note number or customer...' : 'بحث برقم الإشعار أو العميل...'}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="max-w-md"
-              />
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Input
+                  placeholder={appLang === 'en' ? 'Search by debit note number or customer...' : 'بحث برقم الإشعار أو العميل...'}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="flex-1"
+                />
+
+                {/* Employee Filter (للمدراء فقط) */}
+                {canViewAllNotes && employees.length > 0 && (
+                  <Select value={filterEmployeeId} onValueChange={setFilterEmployeeId}>
+                    <SelectTrigger className="w-full sm:w-[250px]">
+                      <SelectValue placeholder={appLang === 'en' ? 'Filter by employee' : 'فلترة حسب الموظف'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        {appLang === 'en' ? 'All Employees' : 'جميع الموظفين'}
+                      </SelectItem>
+                      {employees.map((emp) => (
+                        <SelectItem key={emp.user_id} value={emp.user_id}>
+                          {emp.display_name} ({emp.role})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </CardContent>
           </Card>
 
