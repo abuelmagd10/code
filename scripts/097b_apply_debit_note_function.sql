@@ -151,11 +151,90 @@ BEGIN
     'manual',
     p_applied_by
   ) RETURNING id INTO v_application_id;
-  
-  -- Note: Journal entry creation will be handled separately or by trigger
-  -- This maintains separation of concerns
-  
-  RETURN QUERY SELECT TRUE, 'Debit note applied successfully', v_application_id, v_journal_id;
+
+  -- 8️⃣ ✅ CREATE JOURNAL ENTRY (Revenue Recognition Point)
+  INSERT INTO journal_entries (
+    company_id,
+    branch_id,
+    cost_center_id,
+    reference_type,
+    reference_id,
+    entry_date,
+    description,
+    status,
+    created_by
+  ) VALUES (
+    v_debit_note.company_id,
+    v_debit_note.branch_id,
+    v_debit_note.cost_center_id,
+    'customer_debit_application',
+    v_application_id,
+    CURRENT_DATE,
+    'Customer Debit Note Applied - ' || v_debit_note.debit_note_number,
+    'posted',
+    p_applied_by
+  ) RETURNING id INTO v_journal_id;
+
+  -- 9️⃣ Create journal entry lines
+  -- Debit: Accounts Receivable (increases customer balance)
+  INSERT INTO journal_entry_lines (
+    journal_entry_id,
+    account_id,
+    debit_amount,
+    credit_amount,
+    description
+  ) VALUES (
+    v_journal_id,
+    v_ar_account_id,
+    p_amount_to_apply,
+    0,
+    'AR - Customer Debit Note Applied'
+  );
+
+  -- Credit: Revenue Account (recognizes revenue)
+  INSERT INTO journal_entry_lines (
+    journal_entry_id,
+    account_id,
+    debit_amount,
+    credit_amount,
+    description
+  ) VALUES (
+    v_journal_id,
+    v_revenue_account_id,
+    0,
+    p_amount_to_apply,
+    'Revenue - Customer Debit Note Applied'
+  );
+
+  -- 🔟 Update application with journal entry ID
+  UPDATE customer_debit_note_applications
+  SET journal_entry_id = v_journal_id
+  WHERE id = v_application_id;
+
+  -- 1️⃣1️⃣ Update debit note applied amount
+  UPDATE customer_debit_notes
+  SET applied_amount = applied_amount + p_amount_to_apply,
+      status = CASE
+        WHEN (applied_amount + p_amount_to_apply) >= total_amount THEN 'applied'
+        ELSE 'partially_applied'
+      END
+  WHERE id = p_debit_note_id;
+
+  -- 1️⃣2️⃣ Update invoice balance (if applicable)
+  IF p_applied_to_type = 'invoice' THEN
+    UPDATE invoices
+    SET total_amount = total_amount + p_amount_to_apply,
+        balance_due = balance_due + p_amount_to_apply
+    WHERE id = p_applied_to_id;
+  END IF;
+
+  RETURN QUERY SELECT TRUE, 'Debit note applied successfully - journal entry created', v_application_id, v_journal_id;
 END;
 $$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION apply_customer_debit_note IS
+'Applies an approved customer debit note to an invoice or payment.
+✅ THIS IS THE ONLY PLACE where journal entry is created for customer debit notes.
+Revenue is recognized at this point (IFRS 15 / ASC 606 compliant).
+Enforces separation of duties: applier must be different from creator.';
 
