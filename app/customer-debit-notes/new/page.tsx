@@ -117,7 +117,7 @@ export default function NewCustomerDebitNotePage() {
       const isOwner = companyData?.user_id === user.id
       const role = isOwner ? "owner" : (memberData?.role || "staff")
 
-      // Set default context from user
+      // 🔐 Set default context from user (مركز التكلفة يُقرأ تلقائياً)
       if (memberData?.branch_id) setBranchId(memberData.branch_id)
       if (memberData?.cost_center_id) setCostCenterId(memberData.cost_center_id)
       if (memberData?.warehouse_id) setWarehouseId(memberData.warehouse_id)
@@ -125,14 +125,79 @@ export default function NewCustomerDebitNotePage() {
       // Check if user can override context
       setCanOverrideContext(["owner", "admin", "manager"].includes(role))
 
-      // Load customers
-      const { data: customersList } = await supabase
-        .from('customers')
-        .select('id, name, phone')
-        .eq('company_id', loadedCompanyId)
-        .order('name')
+      // 🔐 Load customers based on access control (نفس نمط صفحة العملاء)
+      const { getAccessFilter } = await import("@/lib/validation")
+      const accessFilter = getAccessFilter({
+        user_id: user.id,
+        company_id: loadedCompanyId,
+        branch_id: memberData?.branch_id || null,
+        cost_center_id: memberData?.cost_center_id || null,
+        warehouse_id: memberData?.warehouse_id || null,
+        role: role
+      })
 
-      setCustomers(customersList || [])
+      let customersList: Customer[] = []
+
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        // موظف عادي: يرى فقط العملاء الذين أنشأهم
+        const { data: ownCust } = await supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("company_id", loadedCompanyId)
+          .eq("created_by_user_id", accessFilter.createdByUserId)
+          .order('name')
+        customersList = ownCust || []
+
+        // جلب العملاء المشتركين (permission_sharing)
+        const { data: sharedPerms } = await supabase
+          .from("permission_sharing")
+          .select("grantor_user_id")
+          .eq("grantee_user_id", user.id)
+          .eq("company_id", loadedCompanyId)
+          .eq("is_active", true)
+
+        if (sharedPerms && sharedPerms.length > 0) {
+          const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id)
+          const { data: sharedData } = await supabase
+            .from("customers")
+            .select("id, name, phone")
+            .eq("company_id", loadedCompanyId)
+            .in("created_by_user_id", grantorIds)
+            .order('name')
+          const existingIds = new Set(customersList.map(c => c.id))
+            ; (sharedData || []).forEach((c: Customer) => {
+              if (!existingIds.has(c.id)) customersList.push(c)
+            })
+        }
+      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        // مدير: يرى عملاء الفرع
+        const { data: branchCust } = await supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("company_id", loadedCompanyId)
+          .eq("branch_id", accessFilter.branchId)
+          .order('name')
+        customersList = branchCust || []
+      } else if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
+        // مشرف: يرى عملاء مركز التكلفة
+        const { data: ccCust } = await supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("company_id", loadedCompanyId)
+          .eq("cost_center_id", accessFilter.costCenterId)
+          .order('name')
+        customersList = ccCust || []
+      } else {
+        // owner/admin: جميع العملاء
+        const { data: allCust } = await supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("company_id", loadedCompanyId)
+          .order('name')
+        customersList = allCust || []
+      }
+
+      setCustomers(customersList)
       setIsLoading(false)
     } catch (error) {
       console.error("Error loading data:", error)
@@ -154,18 +219,55 @@ export default function NewCustomerDebitNotePage() {
   }, [form.customer_id, companyId])
 
   async function loadInvoices() {
-    if (!companyId || !form.customer_id) return
+    if (!companyId || !form.customer_id || !userId) return
 
-    const { data } = await supabase
-      .from('invoices')
-      .select('id, invoice_number, invoice_date, total_amount, branch_id, cost_center_id, warehouse_id')
-      .eq('company_id', companyId)
-      .eq('customer_id', form.customer_id)
-      .in('status', ['sent', 'paid', 'partially_paid'])
-      .order('invoice_date', { ascending: false })
-      .limit(50)
+    try {
+      // 🔐 تحميل الفواتير مع مراعاة صلاحيات المستخدم
+      const { data: memberData } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id")
+        .eq("company_id", companyId)
+        .eq("user_id", userId)
+        .maybeSingle()
 
-    setInvoices(data || [])
+      const { data: companyData } = await supabase
+        .from("companies")
+        .select("user_id")
+        .eq("id", companyId)
+        .single()
+
+      const isOwner = companyData?.user_id === userId
+      const role = isOwner ? "owner" : (memberData?.role || "staff")
+
+      let query = supabase
+        .from('invoices')
+        .select('id, invoice_number, invoice_date, total_amount, branch_id, cost_center_id, warehouse_id, created_by_user_id')
+        .eq('company_id', companyId)
+        .eq('customer_id', form.customer_id)
+        .in('status', ['sent', 'paid', 'partially_paid', 'overdue'])
+
+      // تصفية حسب الصلاحيات
+      if (role === 'staff') {
+        // الموظف يرى فقط فواتيره
+        query = query.eq('created_by_user_id', userId)
+      } else if (role === 'manager' && memberData?.branch_id) {
+        // المدير يرى فواتير فرعه
+        query = query.eq('branch_id', memberData.branch_id)
+      } else if (role === 'accountant' && memberData?.cost_center_id) {
+        // المحاسب يرى فواتير مركز تكلفته
+        query = query.eq('cost_center_id', memberData.cost_center_id)
+      }
+      // owner/admin يرون جميع الفواتير
+
+      const { data } = await query
+        .order('invoice_date', { ascending: false })
+        .limit(100)
+
+      setInvoices(data || [])
+    } catch (error) {
+      console.error('Error loading invoices:', error)
+      setInvoices([])
+    }
   }
 
   // Update item calculations
