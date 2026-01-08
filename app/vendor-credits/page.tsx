@@ -227,8 +227,8 @@ export default function VendorCreditsPage() {
       if (dateTo && vc.credit_date > dateTo) return false
 
       // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase()
+      if (searchQuery && String(searchQuery).trim()) {
+        const q = String(searchQuery).trim().toLowerCase()
         const supplierName = String(getSupplierName(vc.supplier_id) || '').toLowerCase()
         const creditNumber = vc.credit_number ? String(vc.credit_number).toLowerCase() : ''
         if (!supplierName.includes(q) && !creditNumber.includes(q)) return false
