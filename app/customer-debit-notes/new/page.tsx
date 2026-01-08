@@ -127,14 +127,12 @@ export default function NewCustomerDebitNotePage() {
 
       // 🔐 Load customers based on access control (نفس نمط صفحة العملاء)
       const { getAccessFilter } = await import("@/lib/validation")
-      const accessFilter = getAccessFilter({
-        user_id: user.id,
-        company_id: loadedCompanyId,
-        branch_id: memberData?.branch_id || null,
-        cost_center_id: memberData?.cost_center_id || null,
-        warehouse_id: memberData?.warehouse_id || null,
-        role: role
-      })
+      const accessFilter = getAccessFilter(
+        role,
+        user.id,
+        memberData?.branch_id || null,
+        memberData?.cost_center_id || null
+      )
 
       let customersList: Customer[] = []
 
