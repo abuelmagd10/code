@@ -78,15 +78,20 @@ export function ProductSearchSelect({
     }
 
     // Apply search
-    const query = searchQuery.trim()
+    const query = String(searchQuery || "").trim()
     if (!query) return result
 
-    const lowerQuery = query.toLowerCase()
+    const lowerQuery = String(query).toLowerCase()
 
     return result.filter((product) => {
-      const nameMatch = String(product.name || "").toLowerCase().includes(lowerQuery)
-      const skuMatch = product.sku ? String(product.sku).toLowerCase().includes(lowerQuery) : false
-      return nameMatch || skuMatch
+      try {
+        const productName = String(product?.name || "").toLowerCase()
+        const productSku = product?.sku ? String(product.sku).toLowerCase() : ""
+        return productName.includes(lowerQuery) || productSku.includes(lowerQuery)
+      } catch (err) {
+        console.error("Error filtering product:", err, product)
+        return false
+      }
     })
   }, [products, searchQuery, typeFilter, productsOnly])
 

@@ -306,14 +306,16 @@ export default function NewVendorCreditPage() {
                       <tr key={idx} className="border-t">
                         <td className="p-2">
                           <ProductSearchSelect
-                            products={products.map(p => ({
-                              id: String(p.id),
-                              name: String(p.name || ''),
-                              sku: p.sku ? String(p.sku) : null,
-                              unit_price: Number(p.cost_price ?? 0),
-                              item_type: (p.item_type || 'product') as 'product' | 'service',
-                              quantity_on_hand: Number(p.quantity_on_hand ?? 0)
-                            }))}
+                            products={products
+                              .filter(p => p && p.id && p.name) // Filter out invalid products
+                              .map(p => ({
+                                id: String(p.id || ''),
+                                name: String(p.name || ''),
+                                sku: p.sku ? String(p.sku) : null,
+                                unit_price: Number(p.cost_price ?? 0),
+                                item_type: (p.item_type || 'product') as 'product' | 'service',
+                                quantity_on_hand: Number(p.quantity_on_hand ?? 0)
+                              }))}
                             value={it.product_id || ""}
                             onValueChange={(v) => {
                               const prod = products.find(p => p.id === v)
