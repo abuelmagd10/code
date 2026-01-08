@@ -307,12 +307,12 @@ export default function NewVendorCreditPage() {
                         <td className="p-2">
                           <ProductSearchSelect
                             products={products.map(p => ({
-                              id: p.id,
-                              name: p.name || '',
-                              sku: p.sku || null,
+                              id: String(p.id),
+                              name: String(p.name || ''),
+                              sku: p.sku ? String(p.sku) : null,
                               unit_price: Number(p.cost_price ?? 0),
                               item_type: (p.item_type || 'product') as 'product' | 'service',
-                              quantity_on_hand: p.quantity_on_hand ?? 0
+                              quantity_on_hand: Number(p.quantity_on_hand ?? 0)
                             }))}
                             value={it.product_id || ""}
                             onValueChange={(v) => {

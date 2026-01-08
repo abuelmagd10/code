@@ -85,7 +85,7 @@ export function ProductSearchSelect({
 
     return result.filter((product) => {
       const nameMatch = String(product.name || "").toLowerCase().includes(lowerQuery)
-      const skuMatch = String(product.sku || "").toLowerCase().includes(lowerQuery)
+      const skuMatch = product.sku ? String(product.sku).toLowerCase().includes(lowerQuery) : false
       return nameMatch || skuMatch
     })
   }, [products, searchQuery, typeFilter, productsOnly])
