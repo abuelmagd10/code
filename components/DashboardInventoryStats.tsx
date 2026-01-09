@@ -106,9 +106,12 @@ export default function DashboardInventoryStats({
         
         if (allowedWarehouseIds.length > 0) {
           // فلترة حسب branch_id أو warehouse_id في فرع المستخدم
-          transactionsQuery = transactionsQuery.or(
-            `branch_id.eq.${userBranchId},warehouse_id.in.(${allowedWarehouseIds.join(',')})`
-          )
+          // بناء OR condition بشكل صحيح لـ Supabase PostgREST
+          const orConditions = [
+            `branch_id.eq.${userBranchId}`,
+            ...allowedWarehouseIds.map((wid: string) => `warehouse_id.eq.${wid}`)
+          ]
+          transactionsQuery = transactionsQuery.or(orConditions.join(','))
         } else {
           // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
           transactionsQuery = transactionsQuery.eq('branch_id', userBranchId)
