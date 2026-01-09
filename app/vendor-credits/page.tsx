@@ -53,9 +53,16 @@ export default function VendorCreditsPage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>('all')
 
-  // تهيئة اللغة بعد hydration
+  // تهيئة اللغة والعملة بعد hydration
   useEffect(() => {
-    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+    try {
+      const lang = (localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar'
+      setAppLang(lang)
+    } catch { }
+    try {
+      const currency = localStorage.getItem('app_currency') || 'EGP'
+      setAppCurrency(currency)
+    } catch { }
   }, [])
 
   // Pagination state
@@ -71,19 +78,19 @@ export default function VendorCreditsPage() {
   // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
   const [isPending, startTransition] = useTransition()
 
-  // Currency
+  // Currency state to avoid hydration mismatch
+  const [appCurrency, setAppCurrency] = useState<string>('EGP')
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
   }
-  const appCurrency = typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP'
-  const currencySymbol = currencySymbols[appCurrency] || appCurrency
+  const currencySymbol = useMemo(() => currencySymbols[appCurrency] || appCurrency, [appCurrency])
 
-  // Status options
-  const statusOptions = [
+  // Status options - memoized to prevent hydration issues
+  const statusOptions = useMemo(() => [
     { value: "open", label: appLang === 'en' ? "Open" : "مفتوح" },
     { value: "applied", label: appLang === 'en' ? "Applied" : "مطبّق" },
     { value: "closed", label: appLang === 'en' ? "Closed" : "مغلق" },
-  ]
+  ], [appLang])
 
   useEffect(() => { loadData() }, [])
 
