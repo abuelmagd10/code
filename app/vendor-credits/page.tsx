@@ -14,6 +14,7 @@ import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { type UserContext, getAccessFilter } from "@/lib/validation"
+import { getVendorCreditAccessFilter, applyVendorCreditAccessFilter, type AccessFilter } from "@/lib/vendor-credits-access"
 
 type VendorCredit = {
   id: string
@@ -24,6 +25,7 @@ type VendorCredit = {
   applied_amount: number
   status: string
   created_by: string
+  approval_status?: string
 }
 
 type Supplier = { id: string; name: string }
@@ -52,6 +54,7 @@ export default function VendorCreditsPage() {
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>('all')
+  const [accessFilter, setAccessFilter] = useState<AccessFilter | null>(null)
 
   // تهيئة اللغة والعملة بعد hydration
   useEffect(() => {
@@ -138,6 +141,10 @@ export default function VendorCreditsPage() {
     }
     setUserContext(context)
 
+    // 🔐 الحصول على فلتر الوصول لإشعارات الدائن
+    const filter = await getVendorCreditAccessFilter(supabase, companyId, user.id)
+    setAccessFilter(filter)
+
     // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها)
     if (canViewAll) {
       const { data: members } = await supabase
@@ -178,16 +185,12 @@ export default function VendorCreditsPage() {
     // 🔐 ERP Access Control - تحميل الإشعارات مع تصفية حسب سياق المستخدم
     let creditsQuery = supabase
       .from("vendor_credits")
-      .select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status, created_by")
+      .select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status, created_by, approval_status")
       .eq("company_id", companyId)
 
-    // تصفية حسب الفرع ومركز التكلفة (للأدوار غير المديرة)
-    const canOverride = ['owner', 'admin', 'manager'].includes(role)
-    if (!canOverride && member?.branch_id) {
-      creditsQuery = creditsQuery.eq('branch_id', member.branch_id)
-    }
-    if (!canOverride && member?.cost_center_id) {
-      creditsQuery = creditsQuery.eq('cost_center_id', member.cost_center_id)
+    // تطبيق فلتر الوصول
+    if (filter) {
+      creditsQuery = applyVendorCreditAccessFilter(creditsQuery, filter)
     }
 
     const { data: list } = await creditsQuery.order("credit_date", { ascending: false })
