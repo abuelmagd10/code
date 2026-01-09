@@ -251,18 +251,23 @@ export default function InventoryPage() {
         .select("*, products(name, sku)")
         .eq("company_id", companyId)
 
-      // 🔐 فلترة حسب الفرع للمحاسب والمدير
+      // 🔐 فلترة حسب الفرع والمخزن - تطبيق نفس منطق الموظف على المحاسب والمدير
       if (isAccountantOrManager && userBranchId) {
-        // للمحاسب: فلترة حسب branch_id أولاً
+        // للمحاسب والمدير: فلترة حسب branch_id أولاً
         transactionsQuery = transactionsQuery.eq("branch_id", userBranchId)
         
-        // إذا كان مخزن محدد، تأكد أنه ينتمي لفرع المحاسب
-        if (selectedWarehouseId !== 'all' && allowedWarehouseIds.length > 0) {
-          if (allowedWarehouseIds.includes(selectedWarehouseId)) {
+        // تطبيق فلترة warehouse_id مثل الموظف
+        if (selectedWarehouseId !== 'all') {
+          // إذا كان مخزن محدد، تأكد أنه ينتمي لفرع المحاسب/المدير
+          if (allowedWarehouseIds.length > 0 && allowedWarehouseIds.includes(selectedWarehouseId)) {
             transactionsQuery = transactionsQuery.eq("warehouse_id", selectedWarehouseId)
-          } else {
-            // المخزن المختار لا ينتمي لفرع المحاسب، فلترة حسب branch_id فقط
-            // (سيتم تجاهل selectedWarehouseId)
+          }
+          // إذا المخزن لا ينتمي لفرع المستخدم، فلن نضيف فلترة warehouse_id (سيتم الفلترة حسب branch_id فقط)
+        } else if (context.warehouse_id) {
+          // إذا كان selectedWarehouseId === 'all' وكان هناك warehouse_id في context، استخدمه
+          // تأكد أن warehouse_id ينتمي لفرع المستخدم
+          if (allowedWarehouseIds.length === 0 || allowedWarehouseIds.includes(context.warehouse_id)) {
+            transactionsQuery = transactionsQuery.eq("warehouse_id", context.warehouse_id)
           }
         }
       } else {
@@ -294,17 +299,24 @@ export default function InventoryPage() {
         .select("product_id, quantity_change, transaction_type, warehouse_id, branch_id, is_deleted")
         .eq("company_id", companyId)
 
-      // 🔐 فلترة حسب الفرع للمحاسب والمدير
+      // 🔐 فلترة حسب الفرع والمخزن - تطبيق نفس منطق الموظف على المحاسب والمدير
       if (isAccountantOrManager && userBranchId) {
-        // للمحاسب: فلترة حسب branch_id أولاً
+        // للمحاسب والمدير: فلترة حسب branch_id أولاً
         allTransactionsQuery = allTransactionsQuery.eq("branch_id", userBranchId)
         
-        // إذا كان مخزن محدد، تأكد أنه ينتمي لفرع المحاسب
-        if (selectedWarehouseId !== 'all' && allowedWarehouseIds.length > 0) {
-          if (allowedWarehouseIds.includes(selectedWarehouseId)) {
+        // تطبيق فلترة warehouse_id مثل الموظف
+        if (selectedWarehouseId !== 'all') {
+          // إذا كان مخزن محدد، تأكد أنه ينتمي لفرع المحاسب/المدير
+          if (allowedWarehouseIds.length > 0 && allowedWarehouseIds.includes(selectedWarehouseId)) {
             allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", selectedWarehouseId)
           }
-          // إذا المخزن لا ينتمي لفرع المحاسب، فلن نضيف فلترة warehouse_id
+          // إذا المخزن لا ينتمي لفرع المستخدم، فلن نضيف فلترة warehouse_id (سيتم الفلترة حسب branch_id فقط)
+        } else if (context.warehouse_id) {
+          // إذا كان selectedWarehouseId === 'all' وكان هناك warehouse_id في context، استخدمه
+          // تأكد أن warehouse_id ينتمي لفرع المستخدم
+          if (allowedWarehouseIds.length === 0 || allowedWarehouseIds.includes(context.warehouse_id)) {
+            allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", context.warehouse_id)
+          }
         }
       } else {
         // للموظفين الآخرين: تصفية حسب المخزن المختار
