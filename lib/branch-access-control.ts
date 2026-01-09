@@ -54,7 +54,8 @@ export async function checkBranchAccess(
 
   // التحقق من الوصول لمركز التكلفة
   if (config.requiredCostCenterId && member.cost_center_id !== config.requiredCostCenterId) {
-    if (!['owner', 'admin'].includes(member.role)) {
+    // السماح للمالك والمدير العام والمحاسب بالوصول لمراكز التكلفة في فرعهم
+    if (!['owner', 'admin', 'accountant'].includes(member.role)) {
       return {
         hasAccess: false,
         error: 'لا يمكن الوصول لمركز التكلفة هذا'
@@ -64,7 +65,8 @@ export async function checkBranchAccess(
 
   // التحقق من الوصول للمخزن
   if (config.requiredWarehouseId && member.warehouse_id !== config.requiredWarehouseId) {
-    if (!['owner', 'admin', 'store_manager'].includes(member.role)) {
+    // السماح للمالك والمدير العام ومدير المخزن والمحاسب بالوصول للمخازن في فرعهم
+    if (!['owner', 'admin', 'store_manager', 'accountant'].includes(member.role)) {
       return {
         hasAccess: false,
         error: 'لا يمكن الوصول لهذا المخزن'
