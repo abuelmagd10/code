@@ -382,11 +382,18 @@ export function Sidebar() {
     const loadUnreadCount = async () => {
       try {
         const { data: { user } } = await supabaseHook.auth.getUser()
-        if (!user) return
+        if (!user) {
+          setCurrentUserId("")
+          setUnreadCount(0)
+          return
+        }
         
         setCurrentUserId(user.id)
         const cid = await getActiveCompanyId(supabaseHook)
-        if (!cid) return
+        if (!cid) {
+          setUnreadCount(0)
+          return
+        }
 
         // جلب branch_id و role من company_members
         const { data: member } = await supabaseHook
@@ -396,15 +403,28 @@ export function Sidebar() {
           .eq('user_id', user.id)
           .maybeSingle()
 
-        const count = await getUnreadNotificationCount(
-          user.id, 
-          cid,
-          member?.branch_id || undefined,
-          member?.role || undefined
-        )
-        setUnreadCount(count || 0)
+        try {
+          const count = await getUnreadNotificationCount(
+            user.id, 
+            cid,
+            member?.branch_id || undefined,
+            member?.role || undefined
+          )
+          setUnreadCount(count || 0)
+        } catch (notifError: any) {
+          // إذا كان الجدول غير موجود (404)، لا نعرض خطأ
+          if (notifError?.message?.includes('404') || notifError?.message?.includes('does not exist')) {
+            console.warn("Notifications table not found - run SQL script first")
+            setUnreadCount(0)
+          } else {
+            console.error("Error loading unread count:", notifError)
+            setUnreadCount(0)
+          }
+        }
       } catch (error) {
-        console.error("Error loading unread count:", error)
+        // لا نعطل باقي الوظائف عند فشل تحميل الإشعارات
+        console.error("Error in loadUnreadCount:", error)
+        setUnreadCount(0)
       }
     }
     
@@ -413,14 +433,6 @@ export function Sidebar() {
     // تحديث عدد الإشعارات عند تغيير الشركة أو عند استقبال حدث
     const handleNotificationsUpdate = () => {
       loadUnreadCount()
-    }
-    
-    window.addEventListener('notifications_updated', handleNotificationsUpdate)
-    window.addEventListener('company_updated', handleNotificationsUpdate)
-    
-    return () => {
-      window.removeEventListener('notifications_updated', handleNotificationsUpdate)
-      window.removeEventListener('company_updated', handleNotificationsUpdate)
     }
     
     // جلب ملف المستخدم (username)
@@ -491,7 +503,11 @@ export function Sidebar() {
       const v = typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar'
       setAppLanguage(v === 'en' ? 'en' : 'ar')
     }
-    const onCompanyUpdated = () => { loadCompany(); loadUserRoleAndBranch() }
+    const onCompanyUpdated = () => { 
+      loadCompany()
+      loadUserRoleAndBranch()
+      handleNotificationsUpdate() // تحديث عدد الإشعارات عند تغيير الشركة
+    }
     const onPermissionsUpdated = () => { loadPerms() }
     const onProfileUpdated = () => { loadUserProfile() }
     if (typeof window !== 'undefined') {
@@ -500,6 +516,8 @@ export function Sidebar() {
       window.addEventListener('company_updated', onCompanyUpdated)
       window.addEventListener('permissions_updated', onPermissionsUpdated)
       window.addEventListener('profile_updated', onProfileUpdated)
+      window.addEventListener('notifications_updated', handleNotificationsUpdate)
+      // company_updated يتم التعامل معه في onCompanyUpdated
     }
     setHydrated(true)
     return () => {
@@ -508,6 +526,7 @@ export function Sidebar() {
         window.removeEventListener('company_updated', onCompanyUpdated)
         window.removeEventListener('permissions_updated', onPermissionsUpdated)
         window.removeEventListener('profile_updated', onProfileUpdated)
+        window.removeEventListener('notifications_updated', handleNotificationsUpdate)
       }
     }
   }, [])
