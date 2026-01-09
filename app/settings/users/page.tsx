@@ -742,6 +742,15 @@ export default function UsersSettingsPage() {
       }
       
       await refreshMembers()
+      
+      // إطلاق event لتحديث الصلاحيات في الصفحات الأخرى (بعد تأخير بسيط لتجنب مشاكل hydration)
+      setTimeout(() => {
+        try {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('permissions_updated'))
+          }
+        } catch { }
+      }, 100)
     } finally {
       setLoading(false)
     }

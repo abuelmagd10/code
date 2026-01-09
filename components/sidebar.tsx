@@ -508,7 +508,12 @@ export function Sidebar() {
       loadUserRoleAndBranch()
       handleNotificationsUpdate() // تحديث عدد الإشعارات عند تغيير الشركة
     }
-    const onPermissionsUpdated = () => { loadPerms() }
+    const onPermissionsUpdated = () => { 
+      // تأخير بسيط لتجنب مشاكل hydration
+      setTimeout(() => {
+        loadPerms()
+      }, 50)
+    }
     const onProfileUpdated = () => { loadUserProfile() }
     if (typeof window !== 'undefined') {
       window.addEventListener('app_language_changed', handler)
