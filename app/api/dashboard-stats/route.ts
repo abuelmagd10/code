@@ -187,7 +187,7 @@ export async function GET(request: NextRequest) {
       .eq("company_id", companyId)
       .or("item_type.is.null,item_type.eq.product")
 
-    // 🔐 فلترة حسب الفرع للمحاسب والمدير
+    // 🔐 فلترة حسب الفرع والمخزن للمحاسب والمدير - تطبيق نفس منطق الموظف
     let transactionsQuery = supabase
       .from("inventory_transactions")
       .select("product_id, quantity_change")
@@ -196,6 +196,9 @@ export async function GET(request: NextRequest) {
 
     const isAccountantOrManager = member.role && ["accountant", "manager"].includes(member.role)
     if (isAccountantOrManager && branchId) {
+      // فلترة حسب branch_id أولاً
+      transactionsQuery = transactionsQuery.eq("branch_id", branchId)
+      
       // جلب المخازن في الفرع
       const { data: branchWarehouses } = await supabase
         .from("warehouses")
@@ -206,17 +209,12 @@ export async function GET(request: NextRequest) {
       
       const allowedWarehouseIds = (branchWarehouses || []).map((w: any) => w.id)
       
-      if (allowedWarehouseIds.length > 0) {
-        // فلترة حسب branch_id أو warehouse_id في فرع المستخدم
-        // بناء OR condition بشكل صحيح لـ Supabase PostgREST
-        const orConditions = [
-          `branch_id.eq.${branchId}`,
-          ...allowedWarehouseIds.map((wid: string) => `warehouse_id.eq.${wid}`)
-        ]
-        transactionsQuery = transactionsQuery.or(orConditions.join(','))
-      } else {
-        // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
-        transactionsQuery = transactionsQuery.eq("branch_id", branchId)
+      // تطبيق فلترة warehouse_id مثل الموظف
+      if (warehouseId) {
+        // تأكد أن warehouse_id ينتمي لفرع المستخدم
+        if (allowedWarehouseIds.length === 0 || allowedWarehouseIds.includes(warehouseId)) {
+          transactionsQuery = transactionsQuery.eq("warehouse_id", warehouseId)
+        }
       }
     }
 

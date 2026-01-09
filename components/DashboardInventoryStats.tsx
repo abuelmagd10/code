@@ -61,20 +61,22 @@ export default function DashboardInventoryStats({
     if (!companyId) return
     setLoading(true)
     try {
-      // 🔐 جلب معلومات المستخدم للفلترة حسب الفرع
+      // 🔐 جلب معلومات المستخدم للفلترة حسب الفرع والمخزن
       const { data: { user } } = await supabase.auth.getUser()
       let userBranchId: string | null = null
+      let userWarehouseId: string | null = null
       let userRole: string | null = null
 
       if (user) {
         const { data: member } = await supabase
           .from('company_members')
-          .select('role, branch_id')
+          .select('role, branch_id, warehouse_id')
           .eq('company_id', companyId)
           .eq('user_id', user.id)
           .maybeSingle()
         
         userBranchId = member?.branch_id || null
+        userWarehouseId = member?.warehouse_id || null
         userRole = member?.role || null
       }
 
@@ -91,9 +93,12 @@ export default function DashboardInventoryStats({
         .eq('company_id', companyId)
         .or('is_deleted.is.null,is_deleted.eq.false')
 
-      // 🔐 فلترة حسب الفرع للمحاسب والمدير - استخدام المخازن في الفرع
+      // 🔐 فلترة حسب الفرع والمخزن للمحاسب والمدير - تطبيق نفس منطق الموظف
       const isAccountantOrManager = userRole && ["accountant", "manager"].includes(userRole)
       if (isAccountantOrManager && userBranchId) {
+        // فلترة حسب branch_id أولاً
+        transactionsQuery = transactionsQuery.eq('branch_id', userBranchId)
+        
         // جلب المخازن في الفرع
         const { data: branchWarehouses } = await supabase
           .from('warehouses')
@@ -104,17 +109,12 @@ export default function DashboardInventoryStats({
         
         const allowedWarehouseIds = (branchWarehouses || []).map((w: any) => w.id)
         
-        if (allowedWarehouseIds.length > 0) {
-          // فلترة حسب branch_id أو warehouse_id في فرع المستخدم
-          // بناء OR condition بشكل صحيح لـ Supabase PostgREST
-          const orConditions = [
-            `branch_id.eq.${userBranchId}`,
-            ...allowedWarehouseIds.map((wid: string) => `warehouse_id.eq.${wid}`)
-          ]
-          transactionsQuery = transactionsQuery.or(orConditions.join(','))
-        } else {
-          // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
-          transactionsQuery = transactionsQuery.eq('branch_id', userBranchId)
+        // تطبيق فلترة warehouse_id مثل الموظف
+        if (userWarehouseId) {
+          // تأكد أن warehouse_id ينتمي لفرع المستخدم
+          if (allowedWarehouseIds.length === 0 || allowedWarehouseIds.includes(userWarehouseId)) {
+            transactionsQuery = transactionsQuery.eq('warehouse_id', userWarehouseId)
+          }
         }
       }
 
