@@ -40,11 +40,15 @@ export function NotificationCenter({
   const [filterPriority, setFilterPriority] = useState<NotificationPriority | "all">("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
     try {
-      const lang = localStorage.getItem('app_language') || 'ar'
-      setAppLang(lang === 'en' ? 'en' : 'ar')
+      if (typeof window !== 'undefined') {
+        const lang = localStorage.getItem('app_language') || 'ar'
+        setAppLang(lang === 'en' ? 'en' : 'ar')
+      }
     } catch { }
   }, [])
 
@@ -261,6 +265,11 @@ export function NotificationCenter({
     return labels[appLang][priority]
   }
 
+  // تجنب مشاكل hydration
+  if (!mounted) {
+    return null
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col p-0">
@@ -365,10 +374,10 @@ export function NotificationCenter({
                       </p>
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-gray-500">
-                          {formatDistanceToNow(new Date(notification.created_at), {
+                          {typeof window !== 'undefined' ? formatDistanceToNow(new Date(notification.created_at), {
                             addSuffix: true,
                             locale: appLang === 'ar' ? ar : undefined
-                          })}
+                          }) : new Date(notification.created_at).toLocaleDateString()}
                         </span>
                         <div className="flex items-center gap-2">
                           {notification.status !== 'actioned' && (

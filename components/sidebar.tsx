@@ -908,15 +908,15 @@ export function Sidebar() {
       )}
       
       {/* Notification Center */}
-      {currentUserId && activeCompanyId && userBranch && (
+      {currentUserId && activeCompanyId && (
         <NotificationCenter
           open={notificationCenterOpen}
           onOpenChange={setNotificationCenterOpen}
           userId={currentUserId}
           companyId={activeCompanyId}
-          branchId={userBranch.id}
+          branchId={userBranch?.id}
           warehouseId={undefined}
-          userRole={myRole}
+          userRole={myRole || ''}
         />
       )}
     </>
