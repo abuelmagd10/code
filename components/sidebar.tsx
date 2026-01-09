@@ -28,7 +28,7 @@ import { createClient } from "@/lib/supabase/client"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { getCachedPermissions, clearPermissionsCache } from "@/lib/permissions-context"
+import { getCachedPermissions, clearPermissionsCache, getResourceFromPath } from "@/lib/permissions-context"
 import { NotificationCenter } from "@/components/NotificationCenter"
 import { getUnreadNotificationCount } from "@/lib/governance-layer"
 
@@ -508,11 +508,39 @@ export function Sidebar() {
       loadUserRoleAndBranch()
       handleNotificationsUpdate() // تحديث عدد الإشعارات عند تغيير الشركة
     }
-    const onPermissionsUpdated = () => { 
+    const onPermissionsUpdated = async () => { 
       // تأخير بسيط لتجنب مشاكل hydration
-      setTimeout(() => {
+      setTimeout(async () => {
         loadPerms()
-      }, 50)
+        
+        // 🔐 التحقق من الصفحة الحالية وإعادة التوجيه إذا لزم الأمر
+        try {
+          const currentPath = pathname
+          if (!currentPath || currentPath === '/auth/login' || currentPath === '/auth/callback' || currentPath.startsWith('/invitations/') || currentPath === '/no-permissions') {
+            return // لا نتحقق من صفحات المصادقة أو صفحة "لا توجد صلاحيات"
+          }
+          
+          // التحقق من صلاحية الصفحة الحالية
+          const checkRes = await fetch(`/api/check-page-access?path=${encodeURIComponent(currentPath)}`)
+          if (!checkRes.ok) return
+          
+          const checkData = await checkRes.json()
+          
+          // إذا لم يكن المستخدم لديه صلاحية للصفحة الحالية، قم بإعادة التوجيه
+          if (!checkData.allowed) {
+            // الحصول على أول صفحة مسموح بها
+            const res = await fetch('/api/first-allowed-page')
+            if (res.ok) {
+              const data = await res.json()
+              const allowedPath = data.path || '/no-permissions'
+              router.replace(allowedPath)
+            }
+          }
+        } catch (error) {
+          console.error("Error checking page access after permissions update:", error)
+          // لا نوقف العملية إذا فشل التحقق
+        }
+      }, 100)
     }
     const onProfileUpdated = () => { loadUserProfile() }
     if (typeof window !== 'undefined') {
