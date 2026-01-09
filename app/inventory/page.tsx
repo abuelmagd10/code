@@ -292,14 +292,19 @@ export default function InventoryPage() {
         .eq("company_id", companyId)
 
       // 🔐 فلترة حسب الفرع للمحاسب والمدير - استخدام المخازن في الفرع
-      if (isAccountantOrManager && userBranchId && allowedWarehouseIds.length > 0) {
-        // فلترة حسب branch_id أو warehouse_id في فرع المستخدم
-        allTransactionsQuery = allTransactionsQuery.or(
-          `branch_id.eq.${userBranchId},warehouse_id.in.(${allowedWarehouseIds.join(',')})`
-        )
-      } else if (isAccountantOrManager && userBranchId) {
-        // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
-        allTransactionsQuery = allTransactionsQuery.eq("branch_id", userBranchId)
+      if (isAccountantOrManager && userBranchId) {
+        if (allowedWarehouseIds.length > 0) {
+          // فلترة حسب branch_id أو warehouse_id في فرع المستخدم
+          // بناء OR condition بشكل صحيح لـ Supabase PostgREST
+          const orConditions = [
+            `branch_id.eq.${userBranchId}`,
+            ...allowedWarehouseIds.map(wid => `warehouse_id.eq.${wid}`)
+          ]
+          allTransactionsQuery = allTransactionsQuery.or(orConditions.join(','))
+        } else {
+          // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
+          allTransactionsQuery = allTransactionsQuery.eq("branch_id", userBranchId)
+        }
       }
 
       // تصفية حسب المخزن المختار
