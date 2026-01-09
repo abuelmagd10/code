@@ -19,7 +19,7 @@ export interface BranchAccessResult {
 export async function checkBranchAccess(
   config: BranchAccessConfig
 ): Promise<BranchAccessResult> {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   // الحصول على معلومات المستخدم
   const { data: member, error } = await supabase
@@ -83,7 +83,7 @@ export async function checkBranchAccess(
 }
 
 export async function getUserBranchData(userId: string, companyId: string) {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   // ✅ جلب بيانات العضو أولاً (بدون العلاقات لتجنب مشاكل RLS)
   const { data: member, error: memberError } = await supabase
