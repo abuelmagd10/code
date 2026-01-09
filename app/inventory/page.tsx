@@ -56,33 +56,6 @@ export default function InventoryPage() {
   const { toast } = useToast()
   const [hydrated, setHydrated] = useState(false)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
-  
-  useEffect(() => {
-    setHydrated(true)
-    const handler = () => {
-      try {
-        const v = localStorage.getItem('app_language') || 'ar'
-        setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch { }
-    }
-    handler()
-    window.addEventListener('app_language_changed', handler)
-    return () => window.removeEventListener('app_language_changed', handler)
-  }, [])
-  
-  // منع hydration mismatch - عرض محتوى افتراضي حتى يتم hydration
-  if (!hydrated) {
-    return (
-      <div className="flex h-screen">
-        <Sidebar />
-        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
-          <div className="flex items-center justify-center h-full">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-          </div>
-        </main>
-      </div>
-    )
-  }
   const [transactions, setTransactions] = useState<InventoryTransaction[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [computedQty, setComputedQty] = useState<Record<string, number>>({})
@@ -111,6 +84,19 @@ export default function InventoryPage() {
   const [allowedBranchIds, setAllowedBranchIds] = useState<string[]>([])
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('all')
   const [canOverride, setCanOverride] = useState(false)
+
+  useEffect(() => {
+    setHydrated(true)
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch { }
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
 
   // فلترة المخازن حسب الفروع المصرح بها
   const filteredWarehouses = warehouses.filter(w => {
@@ -382,6 +368,20 @@ export default function InventoryPage() {
   const totalSold = Object.values(soldTotals).reduce((a, b) => a + b, 0)
   // عد المنتجات منخفضة المخزون فقط من المنتجات المعروضة (حسب المخزن المحدد)
   const lowStockCount = displayedProducts.filter(p => (computedQty[p.id] ?? 0) < 5 && (computedQty[p.id] ?? 0) > 0).length
+
+  // منع hydration mismatch - عرض محتوى افتراضي حتى يتم hydration
+  if (!hydrated) {
+    return (
+      <div className="flex h-screen">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="flex items-center justify-center h-full">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
