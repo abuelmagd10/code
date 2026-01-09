@@ -229,13 +229,33 @@ export default function InventoryPage() {
       const isAccountantOrManager = ["accountant", "manager"].includes(role)
       const userBranchId = context.branch_id || null
 
+      // جلب المخازن في الفرع للمحاسب/المدير
+      let allowedWarehouseIds: string[] = []
+      if (isAccountantOrManager && userBranchId) {
+        const { data: branchWarehouses } = await supabase
+          .from("warehouses")
+          .select("id")
+          .eq("company_id", companyId)
+          .eq("branch_id", userBranchId)
+          .eq("is_active", true)
+        
+        allowedWarehouseIds = (branchWarehouses || []).map((w: any) => w.id)
+      }
+
       // Load recent transactions with filtering by warehouse and branch
       let transactionsQuery = supabase
         .from("inventory_transactions")
         .select("*, products(name, sku)")
         .eq("company_id", companyId)
 
-      if (isAccountantOrManager && userBranchId) {
+      // 🔐 فلترة حسب الفرع للمحاسب والمدير - استخدام المخازن في الفرع
+      if (isAccountantOrManager && userBranchId && allowedWarehouseIds.length > 0) {
+        // فلترة حسب branch_id أو warehouse_id في فرع المستخدم
+        transactionsQuery = transactionsQuery.or(
+          `branch_id.eq.${userBranchId},warehouse_id.in.(${allowedWarehouseIds.join(',')})`
+        )
+      } else if (isAccountantOrManager && userBranchId) {
+        // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
         transactionsQuery = transactionsQuery.eq("branch_id", userBranchId)
       }
 
@@ -266,8 +286,14 @@ export default function InventoryPage() {
         .select("product_id, quantity_change, transaction_type, warehouse_id, branch_id, is_deleted")
         .eq("company_id", companyId)
 
-      // 🔐 فلترة حسب الفرع للمحاسب والمدير
-      if (isAccountantOrManager && userBranchId) {
+      // 🔐 فلترة حسب الفرع للمحاسب والمدير - استخدام المخازن في الفرع
+      if (isAccountantOrManager && userBranchId && allowedWarehouseIds.length > 0) {
+        // فلترة حسب branch_id أو warehouse_id في فرع المستخدم
+        allTransactionsQuery = allTransactionsQuery.or(
+          `branch_id.eq.${userBranchId},warehouse_id.in.(${allowedWarehouseIds.join(',')})`
+        )
+      } else if (isAccountantOrManager && userBranchId) {
+        // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
         allTransactionsQuery = allTransactionsQuery.eq("branch_id", userBranchId)
       }
 

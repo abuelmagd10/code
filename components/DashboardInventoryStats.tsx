@@ -91,10 +91,28 @@ export default function DashboardInventoryStats({
         .eq('company_id', companyId)
         .or('is_deleted.is.null,is_deleted.eq.false')
 
-      // 🔐 فلترة حسب الفرع للمحاسب والمدير
+      // 🔐 فلترة حسب الفرع للمحاسب والمدير - استخدام المخازن في الفرع
       const isAccountantOrManager = userRole && ["accountant", "manager"].includes(userRole)
       if (isAccountantOrManager && userBranchId) {
-        transactionsQuery = transactionsQuery.eq('branch_id', userBranchId)
+        // جلب المخازن في الفرع
+        const { data: branchWarehouses } = await supabase
+          .from('warehouses')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('branch_id', userBranchId)
+          .eq('is_active', true)
+        
+        const allowedWarehouseIds = (branchWarehouses || []).map((w: any) => w.id)
+        
+        if (allowedWarehouseIds.length > 0) {
+          // فلترة حسب branch_id أو warehouse_id في فرع المستخدم
+          transactionsQuery = transactionsQuery.or(
+            `branch_id.eq.${userBranchId},warehouse_id.in.(${allowedWarehouseIds.join(',')})`
+          )
+        } else {
+          // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
+          transactionsQuery = transactionsQuery.eq('branch_id', userBranchId)
+        }
       }
 
       const { data: transactions } = await transactionsQuery

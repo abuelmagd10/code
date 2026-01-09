@@ -196,7 +196,25 @@ export async function GET(request: NextRequest) {
 
     const isAccountantOrManager = member.role && ["accountant", "manager"].includes(member.role)
     if (isAccountantOrManager && branchId) {
-      transactionsQuery = transactionsQuery.eq("branch_id", branchId)
+      // جلب المخازن في الفرع
+      const { data: branchWarehouses } = await supabase
+        .from("warehouses")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("branch_id", branchId)
+        .eq("is_active", true)
+      
+      const allowedWarehouseIds = (branchWarehouses || []).map((w: any) => w.id)
+      
+      if (allowedWarehouseIds.length > 0) {
+        // فلترة حسب branch_id أو warehouse_id في فرع المستخدم
+        transactionsQuery = transactionsQuery.or(
+          `branch_id.eq.${branchId},warehouse_id.in.(${allowedWarehouseIds.join(',')})`
+        )
+      } else {
+        // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
+        transactionsQuery = transactionsQuery.eq("branch_id", branchId)
+      }
     }
 
     const { data: transactions } = await transactionsQuery
