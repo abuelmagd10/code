@@ -178,7 +178,7 @@ export default function InventoryPage() {
       setBranches(branchesRes.data || [])
 
       // تحديد الفروع المصرح بها
-      const accessedBranchIds = (branchAccessRes.data || []).map(a => a.branch_id)
+      const accessedBranchIds = (branchAccessRes.data || []).map((a: { branch_id: string }) => a.branch_id)
       // إذا كان للمستخدم فرع محدد في company_members، أضفه
       if (member?.branch_id && !accessedBranchIds.includes(member.branch_id)) {
         accessedBranchIds.push(member.branch_id)
@@ -191,7 +191,7 @@ export default function InventoryPage() {
           setSelectedWarehouseId(member.warehouse_id)
         } else {
           // إذا لم يكن للمستخدم مخزن محدد، اختر أول مخزن متاح له
-          const availableWarehouses = (warehousesRes.data || []).filter((w: any) => {
+          const availableWarehouses = (warehousesRes.data || []).filter((w: WarehouseData) => {
             if (!w.branch_id) return true // المخازن بدون فرع متاحة
             return accessedBranchIds.includes(w.branch_id)
           })
@@ -222,13 +222,22 @@ export default function InventoryPage() {
     try {
       setIsLoadingInventory(true) // 🆕 بدء التحميل
       const companyId = context.company_id
-      const isCanOverride = ["owner", "admin", "manager"].includes(context.role)
+      const role = context.role || ""
+      const isCanOverride = ["owner", "admin", "manager"].includes(role)
+      
+      // 🔐 فلترة حسب الفرع للمحاسب والمدير
+      const isAccountantOrManager = ["accountant", "manager"].includes(role)
+      const userBranchId = context.branch_id || null
 
-      // Load recent transactions with filtering by warehouse
+      // Load recent transactions with filtering by warehouse and branch
       let transactionsQuery = supabase
         .from("inventory_transactions")
         .select("*, products(name, sku)")
         .eq("company_id", companyId)
+
+      if (isAccountantOrManager && userBranchId) {
+        transactionsQuery = transactionsQuery.eq("branch_id", userBranchId)
+      }
 
       // تصفية حسب المخزن المختار
       if (selectedWarehouseId !== 'all') {
@@ -254,8 +263,13 @@ export default function InventoryPage() {
       // حساب الكميات من inventory_transactions
       let allTransactionsQuery = supabase
         .from("inventory_transactions")
-        .select("product_id, quantity_change, transaction_type, warehouse_id, is_deleted")
+        .select("product_id, quantity_change, transaction_type, warehouse_id, branch_id, is_deleted")
         .eq("company_id", companyId)
+
+      // 🔐 فلترة حسب الفرع للمحاسب والمدير
+      if (isAccountantOrManager && userBranchId) {
+        allTransactionsQuery = allTransactionsQuery.eq("branch_id", userBranchId)
+      }
 
       // تصفية حسب المخزن المختار
       if (selectedWarehouseId !== 'all') {

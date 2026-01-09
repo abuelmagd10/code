@@ -187,11 +187,19 @@ export async function GET(request: NextRequest) {
       .eq("company_id", companyId)
       .or("item_type.is.null,item_type.eq.product")
 
-    const { data: transactions } = await supabase
+    // 🔐 فلترة حسب الفرع للمحاسب والمدير
+    let transactionsQuery = supabase
       .from("inventory_transactions")
       .select("product_id, quantity_change")
       .eq("company_id", companyId)
       .or("is_deleted.is.null,is_deleted.eq.false")
+
+    const isAccountantOrManager = member.role && ["accountant", "manager"].includes(member.role)
+    if (isAccountantOrManager && branchId) {
+      transactionsQuery = transactionsQuery.eq("branch_id", branchId)
+    }
+
+    const { data: transactions } = await transactionsQuery
 
     const qtyByProduct: Record<string, number> = {}
     for (const t of transactions || []) {

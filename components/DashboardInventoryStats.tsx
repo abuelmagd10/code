@@ -61,6 +61,23 @@ export default function DashboardInventoryStats({
     if (!companyId) return
     setLoading(true)
     try {
+      // 🔐 جلب معلومات المستخدم للفلترة حسب الفرع
+      const { data: { user } } = await supabase.auth.getUser()
+      let userBranchId: string | null = null
+      let userRole: string | null = null
+
+      if (user) {
+        const { data: member } = await supabase
+          .from('company_members')
+          .select('role, branch_id')
+          .eq('company_id', companyId)
+          .eq('user_id', user.id)
+          .maybeSingle()
+        
+        userBranchId = member?.branch_id || null
+        userRole = member?.role || null
+      }
+
       // 1. حساب قيمة المخزون من inventory_transactions
       const { data: products } = await supabase
         .from('products')
@@ -68,11 +85,19 @@ export default function DashboardInventoryStats({
         .eq('company_id', companyId)
         .or('item_type.is.null,item_type.eq.product')
 
-      const { data: transactions } = await supabase
+      let transactionsQuery = supabase
         .from('inventory_transactions')
         .select('product_id, quantity_change')
         .eq('company_id', companyId)
         .or('is_deleted.is.null,is_deleted.eq.false')
+
+      // 🔐 فلترة حسب الفرع للمحاسب والمدير
+      const isAccountantOrManager = userRole && ["accountant", "manager"].includes(userRole)
+      if (isAccountantOrManager && userBranchId) {
+        transactionsQuery = transactionsQuery.eq('branch_id', userBranchId)
+      }
+
+      const { data: transactions } = await transactionsQuery
 
       const productMap = new Map((products || []).map((p: Product) => [p.id, p]))
       const qtyByProduct: Record<string, number> = {}
