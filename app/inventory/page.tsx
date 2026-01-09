@@ -253,38 +253,32 @@ export default function InventoryPage() {
 
       // 🔐 فلترة حسب الفرع والمخزن - تطبيق نفس منطق الموظف على المحاسب والمدير
       if (isAccountantOrManager && userBranchId) {
-        // للمحاسب والمدير: استخدام نفس منطق الموظف (فلترة حسب warehouse_id)
-        // مع إضافة فلترة branch_id كشرط OR للتعامل مع السجلات القديمة
-        let warehouseIdToUse: string | null = null
+        // للمحاسب والمدير: استخدام نفس منطق الموظف (فلترة حسب warehouse_id من context)
+        // ولكن أيضاً فلترة حسب branch_id لتغطية جميع المخازن في الفرع
         
+        // أولاً: محاولة استخدام نفس منطق الموظف (warehouse_id من context)
         if (selectedWarehouseId !== 'all') {
-          // إذا كان مخزن محدد، استخدمه إذا كان ينتمي لفرع المستخدم
-          if (allowedWarehouseIds.length === 0 || allowedWarehouseIds.includes(selectedWarehouseId)) {
-            warehouseIdToUse = selectedWarehouseId
+          // إذا كان مخزن محدد، تأكد أنه ينتمي لفرع المستخدم
+          if (allowedWarehouseIds.length > 0 && allowedWarehouseIds.includes(selectedWarehouseId)) {
+            // فلترة حسب warehouse_id المحدد
+            transactionsQuery = transactionsQuery.eq("warehouse_id", selectedWarehouseId)
+          } else {
+            // المخزن المحدد لا ينتمي لفرع المستخدم، لا نعرض شيئاً
+            // أو يمكننا عرض جميع المخازن في الفرع بدلاً من ذلك
+            if (allowedWarehouseIds.length > 0) {
+              transactionsQuery = transactionsQuery.in("warehouse_id", allowedWarehouseIds)
+            } else {
+              // لا يوجد مخازن، فلترة حسب branch_id
+              transactionsQuery = transactionsQuery.eq("branch_id", userBranchId)
+            }
           }
-        } else if (context.warehouse_id) {
-          // إذا كان selectedWarehouseId === 'all' وكان هناك warehouse_id في context، استخدمه
-          if (allowedWarehouseIds.length === 0 || allowedWarehouseIds.includes(context.warehouse_id)) {
-            warehouseIdToUse = context.warehouse_id
-          }
-        }
-        
-        // تطبيق الفلترة بنفس منطق الموظف مع إضافة branch_id
-        if (warehouseIdToUse) {
-          // استخدام OR: (warehouse_id = selected) OR (branch_id = userBranchId)
-          // هذا يغطي السجلات القديمة التي لا تحتوي على branch_id
-          const orConditions = [
-            `warehouse_id.eq.${warehouseIdToUse}`,
-            `branch_id.eq.${userBranchId}`
-          ]
-          transactionsQuery = transactionsQuery.or(orConditions.join(','))
+        } else if (context.warehouse_id && allowedWarehouseIds.length > 0 && allowedWarehouseIds.includes(context.warehouse_id)) {
+          // إذا كان selectedWarehouseId === 'all' وكان هناك warehouse_id في context ينتمي لفرع المستخدم
+          // استخدام نفس منطق الموظف: فلترة حسب warehouse_id من context
+          transactionsQuery = transactionsQuery.eq("warehouse_id", context.warehouse_id)
         } else if (allowedWarehouseIds.length > 0) {
-          // إذا لم يتم تحديد warehouse_id، فلترة حسب branch_id أو warehouse_id في الفرع
-          const orConditions = [
-            `branch_id.eq.${userBranchId}`,
-            ...allowedWarehouseIds.map(wid => `warehouse_id.eq.${wid}`)
-          ]
-          transactionsQuery = transactionsQuery.or(orConditions.join(','))
+          // إذا لم يتم تحديد warehouse_id أو لا ينتمي للفرع، فلترة حسب جميع المخازن في الفرع
+          transactionsQuery = transactionsQuery.in("warehouse_id", allowedWarehouseIds)
         } else {
           // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
           transactionsQuery = transactionsQuery.eq("branch_id", userBranchId)
@@ -320,38 +314,32 @@ export default function InventoryPage() {
 
       // 🔐 فلترة حسب الفرع والمخزن - تطبيق نفس منطق الموظف على المحاسب والمدير
       if (isAccountantOrManager && userBranchId) {
-        // للمحاسب والمدير: استخدام نفس منطق الموظف (فلترة حسب warehouse_id)
-        // مع إضافة فلترة branch_id كشرط OR للتعامل مع السجلات القديمة
-        let warehouseIdToUse: string | null = null
+        // للمحاسب والمدير: استخدام نفس منطق الموظف (فلترة حسب warehouse_id من context)
+        // ولكن أيضاً فلترة حسب branch_id لتغطية جميع المخازن في الفرع
         
+        // أولاً: محاولة استخدام نفس منطق الموظف (warehouse_id من context)
         if (selectedWarehouseId !== 'all') {
-          // إذا كان مخزن محدد، استخدمه إذا كان ينتمي لفرع المستخدم
-          if (allowedWarehouseIds.length === 0 || allowedWarehouseIds.includes(selectedWarehouseId)) {
-            warehouseIdToUse = selectedWarehouseId
+          // إذا كان مخزن محدد، تأكد أنه ينتمي لفرع المستخدم
+          if (allowedWarehouseIds.length > 0 && allowedWarehouseIds.includes(selectedWarehouseId)) {
+            // فلترة حسب warehouse_id المحدد
+            allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", selectedWarehouseId)
+          } else {
+            // المخزن المحدد لا ينتمي لفرع المستخدم، لا نعرض شيئاً
+            // أو يمكننا عرض جميع المخازن في الفرع بدلاً من ذلك
+            if (allowedWarehouseIds.length > 0) {
+              allTransactionsQuery = allTransactionsQuery.in("warehouse_id", allowedWarehouseIds)
+            } else {
+              // لا يوجد مخازن، فلترة حسب branch_id
+              allTransactionsQuery = allTransactionsQuery.eq("branch_id", userBranchId)
+            }
           }
-        } else if (context.warehouse_id) {
-          // إذا كان selectedWarehouseId === 'all' وكان هناك warehouse_id في context، استخدمه
-          if (allowedWarehouseIds.length === 0 || allowedWarehouseIds.includes(context.warehouse_id)) {
-            warehouseIdToUse = context.warehouse_id
-          }
-        }
-        
-        // تطبيق الفلترة بنفس منطق الموظف مع إضافة branch_id
-        if (warehouseIdToUse) {
-          // استخدام OR: (warehouse_id = selected) OR (branch_id = userBranchId)
-          // هذا يغطي السجلات القديمة التي لا تحتوي على branch_id
-          const orConditions = [
-            `warehouse_id.eq.${warehouseIdToUse}`,
-            `branch_id.eq.${userBranchId}`
-          ]
-          allTransactionsQuery = allTransactionsQuery.or(orConditions.join(','))
+        } else if (context.warehouse_id && allowedWarehouseIds.length > 0 && allowedWarehouseIds.includes(context.warehouse_id)) {
+          // إذا كان selectedWarehouseId === 'all' وكان هناك warehouse_id في context ينتمي لفرع المستخدم
+          // استخدام نفس منطق الموظف: فلترة حسب warehouse_id من context
+          allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", context.warehouse_id)
         } else if (allowedWarehouseIds.length > 0) {
-          // إذا لم يتم تحديد warehouse_id، فلترة حسب branch_id أو warehouse_id في الفرع
-          const orConditions = [
-            `branch_id.eq.${userBranchId}`,
-            ...allowedWarehouseIds.map(wid => `warehouse_id.eq.${wid}`)
-          ]
-          allTransactionsQuery = allTransactionsQuery.or(orConditions.join(','))
+          // إذا لم يتم تحديد warehouse_id أو لا ينتمي للفرع، فلترة حسب جميع المخازن في الفرع
+          allTransactionsQuery = allTransactionsQuery.in("warehouse_id", allowedWarehouseIds)
         } else {
           // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
           allTransactionsQuery = allTransactionsQuery.eq("branch_id", userBranchId)
