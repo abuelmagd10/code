@@ -248,27 +248,27 @@ export default function InventoryPage() {
         .select("*, products(name, sku)")
         .eq("company_id", companyId)
 
-      // 🔐 فلترة حسب الفرع للمحاسب والمدير - استخدام المخازن في الفرع
+      // 🔐 فلترة حسب الفرع للمحاسب والمدير
       if (isAccountantOrManager && userBranchId) {
-        if (allowedWarehouseIds.length > 0) {
-          // فلترة حسب branch_id أو warehouse_id في فرع المستخدم
-          // بناء OR condition بشكل صحيح لـ Supabase PostgREST
-          const orConditions = [
-            `branch_id.eq.${userBranchId}`,
-            ...allowedWarehouseIds.map(wid => `warehouse_id.eq.${wid}`)
-          ]
-          transactionsQuery = transactionsQuery.or(orConditions.join(','))
-        } else {
-          // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
-          transactionsQuery = transactionsQuery.eq("branch_id", userBranchId)
+        // للمحاسب: فلترة حسب branch_id أولاً
+        transactionsQuery = transactionsQuery.eq("branch_id", userBranchId)
+        
+        // إذا كان مخزن محدد، تأكد أنه ينتمي لفرع المحاسب
+        if (selectedWarehouseId !== 'all' && allowedWarehouseIds.length > 0) {
+          if (allowedWarehouseIds.includes(selectedWarehouseId)) {
+            transactionsQuery = transactionsQuery.eq("warehouse_id", selectedWarehouseId)
+          } else {
+            // المخزن المختار لا ينتمي لفرع المحاسب، فلترة حسب branch_id فقط
+            // (سيتم تجاهل selectedWarehouseId)
+          }
         }
-      }
-
-      // تصفية حسب المخزن المختار
-      if (selectedWarehouseId !== 'all') {
-        transactionsQuery = transactionsQuery.eq("warehouse_id", selectedWarehouseId)
-      } else if (!isCanOverride && context.warehouse_id) {
-        transactionsQuery = transactionsQuery.eq("warehouse_id", context.warehouse_id)
+      } else {
+        // للموظفين الآخرين: تصفية حسب المخزن المختار
+        if (selectedWarehouseId !== 'all') {
+          transactionsQuery = transactionsQuery.eq("warehouse_id", selectedWarehouseId)
+        } else if (!isCanOverride && context.warehouse_id) {
+          transactionsQuery = transactionsQuery.eq("warehouse_id", context.warehouse_id)
+        }
       }
 
       const { data: transactionsData } = await transactionsQuery
@@ -291,27 +291,25 @@ export default function InventoryPage() {
         .select("product_id, quantity_change, transaction_type, warehouse_id, branch_id, is_deleted")
         .eq("company_id", companyId)
 
-      // 🔐 فلترة حسب الفرع للمحاسب والمدير - استخدام المخازن في الفرع
+      // 🔐 فلترة حسب الفرع للمحاسب والمدير
       if (isAccountantOrManager && userBranchId) {
-        if (allowedWarehouseIds.length > 0) {
-          // فلترة حسب branch_id أو warehouse_id في فرع المستخدم
-          // بناء OR condition بشكل صحيح لـ Supabase PostgREST
-          const orConditions = [
-            `branch_id.eq.${userBranchId}`,
-            ...allowedWarehouseIds.map(wid => `warehouse_id.eq.${wid}`)
-          ]
-          allTransactionsQuery = allTransactionsQuery.or(orConditions.join(','))
-        } else {
-          // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
-          allTransactionsQuery = allTransactionsQuery.eq("branch_id", userBranchId)
+        // للمحاسب: فلترة حسب branch_id أولاً
+        allTransactionsQuery = allTransactionsQuery.eq("branch_id", userBranchId)
+        
+        // إذا كان مخزن محدد، تأكد أنه ينتمي لفرع المحاسب
+        if (selectedWarehouseId !== 'all' && allowedWarehouseIds.length > 0) {
+          if (allowedWarehouseIds.includes(selectedWarehouseId)) {
+            allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", selectedWarehouseId)
+          }
+          // إذا المخزن لا ينتمي لفرع المحاسب، فلن نضيف فلترة warehouse_id
         }
-      }
-
-      // تصفية حسب المخزن المختار
-      if (selectedWarehouseId !== 'all') {
-        allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", selectedWarehouseId)
-      } else if (!isCanOverride && context.warehouse_id) {
-        allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", context.warehouse_id)
+      } else {
+        // للموظفين الآخرين: تصفية حسب المخزن المختار
+        if (selectedWarehouseId !== 'all') {
+          allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", selectedWarehouseId)
+        } else if (!isCanOverride && context.warehouse_id) {
+          allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", context.warehouse_id)
+        }
       }
 
       const { data: allTransactionsRaw } = await allTransactionsQuery
