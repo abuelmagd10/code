@@ -292,6 +292,24 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       }
 
       toast({ title: appLang === 'en' ? 'Transfer started successfully' : 'تم بدء النقل بنجاح' })
+      
+      // إنشاء إشعار لمسؤول المخزن الوجهة
+      try {
+        const { notifyStockTransferRequest } = await import('@/lib/notification-helpers')
+        await notifyStockTransferRequest({
+          companyId,
+          transferId: transfer.id,
+          sourceBranchId: transfer.source_branch_id || undefined,
+          destinationBranchId: transfer.destination_branch_id || undefined,
+          destinationWarehouseId: transfer.destination_warehouse_id,
+          createdBy: user.id,
+          appLang
+        })
+      } catch (notifError) {
+        console.error("Error creating notification:", notifError)
+        // لا نوقف العملية إذا فشل إنشاء الإشعار
+      }
+      
       loadData()
     } catch (error: any) {
       console.error("Error:", error)

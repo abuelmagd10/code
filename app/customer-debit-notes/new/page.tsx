@@ -351,6 +351,24 @@ export default function NewCustomerDebitNotePage() {
 
       if (error) throw error
 
+      // إنشاء إشعار للمحاسب والمدير
+      if (data && data.id) {
+        try {
+          const { notifyCustomerDebitNoteCreated } = await import('@/lib/notification-helpers')
+          await notifyCustomerDebitNoteCreated({
+            companyId,
+            debitNoteId: data.id,
+            branchId: branchId || undefined,
+            costCenterId: costCenterId || undefined,
+            createdBy: userId,
+            appLang
+          })
+        } catch (notifError) {
+          console.error("Error creating notification:", notifError)
+          // لا نوقف العملية إذا فشل إنشاء الإشعار
+        }
+      }
+
       toastActionSuccess(toast, appLang === 'en' ? 'Debit note created successfully' : 'تم إنشاء الإشعار بنجاح', appLang)
       router.push('/customer-debit-notes')
     } catch (error: any) {

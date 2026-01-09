@@ -20,13 +20,17 @@ import {
   Plus,
   Truck,
   ArrowLeftRight,
+  Bell,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { createClient } from "@/lib/supabase/client"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getCachedPermissions, clearPermissionsCache } from "@/lib/permissions-context"
+import { NotificationCenter } from "@/components/NotificationCenter"
+import { getUnreadNotificationCount } from "@/lib/governance-layer"
 
 function buildMenuItems(lang: string) {
   const ar = {
@@ -112,6 +116,9 @@ export function Sidebar() {
   const [myRole, setMyRole] = useState<string>(cachedPermissions.current.role)
   const [userProfile, setUserProfile] = useState<{ username?: string; display_name?: string } | null>(null)
   const [userBranch, setUserBranch] = useState<{ id: string; name: string } | null>(null)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notificationCenterOpen, setNotificationCenterOpen] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string>("")
   // دالة مساعدة لتحويل المسار إلى اسم المورد
   const getResourceFromHref = (href: string): string => {
     // Important: Check more specific paths before general ones
@@ -370,6 +377,52 @@ export function Sidebar() {
       setPermissionsReady(true)
     }
     loadPerms()
+    
+    // جلب عدد الإشعارات غير المقروءة
+    const loadUnreadCount = async () => {
+      try {
+        const { data: { user } } = await supabaseHook.auth.getUser()
+        if (!user) return
+        
+        setCurrentUserId(user.id)
+        const cid = await getActiveCompanyId(supabaseHook)
+        if (!cid) return
+
+        // جلب branch_id و role من company_members
+        const { data: member } = await supabaseHook
+          .from('company_members')
+          .select('branch_id, role')
+          .eq('company_id', cid)
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        const count = await getUnreadNotificationCount(
+          user.id, 
+          cid,
+          member?.branch_id || undefined,
+          member?.role || undefined
+        )
+        setUnreadCount(count || 0)
+      } catch (error) {
+        console.error("Error loading unread count:", error)
+      }
+    }
+    
+    loadUnreadCount()
+    
+    // تحديث عدد الإشعارات عند تغيير الشركة أو عند استقبال حدث
+    const handleNotificationsUpdate = () => {
+      loadUnreadCount()
+    }
+    
+    window.addEventListener('notifications_updated', handleNotificationsUpdate)
+    window.addEventListener('company_updated', handleNotificationsUpdate)
+    
+    return () => {
+      window.removeEventListener('notifications_updated', handleNotificationsUpdate)
+      window.removeEventListener('company_updated', handleNotificationsUpdate)
+    }
+    
     // جلب ملف المستخدم (username)
     const loadUserProfile = async () => {
       try {
@@ -759,6 +812,25 @@ export function Sidebar() {
 
           {/* User Profile & Logout */}
           <div className="mt-6 sm:mt-8 pt-6 sm:pt-8 border-t border-slate-700 space-y-3">
+            {/* Notification Bell */}
+            {currentUserId && activeCompanyId && (
+              <Button
+                variant="ghost"
+                className="w-full justify-start text-gray-300 hover:text-white hover:bg-slate-800 py-3 relative"
+                onClick={() => setNotificationCenterOpen(true)}
+              >
+                <Bell className="w-5 h-5 ml-2" />
+                <span suppressHydrationWarning>
+                  {(hydrated && appLanguage === 'en') ? 'Notifications' : 'الإشعارات'}
+                </span>
+                {unreadCount > 0 && (
+                  <Badge className="absolute top-1 right-1 h-5 min-w-5 px-1.5 bg-red-500 text-white text-xs flex items-center justify-center">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Badge>
+                )}
+              </Button>
+            )}
+            
             {/* عرض معلومات المستخدم */}
             {userProfile && (
               <div className="px-2 py-2 rounded-lg bg-slate-800/50">
@@ -813,6 +885,19 @@ export function Sidebar() {
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9997] md:hidden top-16"
           onClick={() => setIsOpen(false)}
+        />
+      )}
+      
+      {/* Notification Center */}
+      {currentUserId && activeCompanyId && userBranch && (
+        <NotificationCenter
+          open={notificationCenterOpen}
+          onOpenChange={setNotificationCenterOpen}
+          userId={currentUserId}
+          companyId={activeCompanyId}
+          branchId={userBranch.id}
+          warehouseId={undefined}
+          userRole={myRole}
         />
       )}
     </>

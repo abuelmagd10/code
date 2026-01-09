@@ -581,6 +581,23 @@ export default function UsersSettingsPage() {
       ))
 
       toastActionSuccess(toast, "حفظ", "فروع الموظف")
+      
+      // إنشاء إشعار للمستخدم عند تغيير فرعه
+      try {
+        const { notifyUserBranchChanged } = await import('@/lib/notification-helpers')
+        const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+        await notifyUserBranchChanged({
+          companyId,
+          userId: editingMemberId,
+          branchId: primaryBranch || undefined,
+          changedBy: currentUserId,
+          appLang
+        })
+      } catch (notifError) {
+        console.error("Error creating notification:", notifError)
+        // لا نوقف العملية إذا فشل إنشاء الإشعار
+      }
+      
       setShowMemberBranchDialog(false)
       loadPermissionData()
 
@@ -698,11 +715,32 @@ export default function UsersSettingsPage() {
         const hasOtherAdmin = members.some((x) => x.user_id !== currentUserId && ["owner", "admin"].includes(x.role))
         if (!hasOtherAdmin) { setActionError("لا يمكن خفض دورك دون وجود مدير/مالك آخر"); return }
       }
+      const oldRole = m.role
       const { error } = await supabase
         .from("company_members")
         .update({ role })
         .eq("id", id)
       if (error) { setActionError(error.message || "تعذر التحديث"); return }
+      
+      // إنشاء إشعار للمستخدم عند تغيير دوره
+      if (oldRole !== role) {
+        try {
+          const { notifyUserRoleChanged } = await import('@/lib/notification-helpers')
+          const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+          await notifyUserRoleChanged({
+            companyId,
+            userId: m.user_id,
+            oldRole,
+            newRole: role,
+            changedBy: currentUserId,
+            appLang
+          })
+        } catch (notifError) {
+          console.error("Error creating notification:", notifError)
+          // لا نوقف العملية إذا فشل إنشاء الإشعار
+        }
+      }
+      
       await refreshMembers()
     } finally {
       setLoading(false)

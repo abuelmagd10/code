@@ -214,6 +214,26 @@ export default function NewVendorCreditPage() {
       const { error: itemsErr } = await supabase.from("vendor_credit_items").insert(rows)
       if (itemsErr) throw itemsErr
 
+      // إنشاء إشعار للمحاسب والمدير
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const { notifyVendorCreditCreated } = await import('@/lib/notification-helpers')
+          const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+          await notifyVendorCreditCreated({
+            companyId,
+            vendorCreditId: vc.id,
+            branchId: branchId || undefined,
+            costCenterId: costCenterId || undefined,
+            createdBy: user.id,
+            appLang
+          })
+        }
+      } catch (notifError) {
+        console.error("Error creating notification:", notifError)
+        // لا نوقف العملية إذا فشل إنشاء الإشعار
+      }
+
       toastActionSuccess(toast, "الإنشاء", "الإشعار الدائن")
       router.push(`/vendor-credits/${vc.id}`)
     } catch (err) {
