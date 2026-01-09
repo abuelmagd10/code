@@ -33,7 +33,7 @@ const errorTexts = {
 export default function GlobalError({ error, reset }: GlobalErrorProps) {
   useEffect(() => {
     console.error('Global error occurred:', error)
-    
+
     if (typeof window !== 'undefined' && (window as any).gtag) {
       (window as any).gtag('event', 'exception', {
         description: error.toString(),
@@ -48,14 +48,14 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
     }
   }
 
-  const lang = typeof window !== 'undefined' ? 
+  const lang = typeof window !== 'undefined' ?
     (localStorage.getItem('app_language') || 'ar') as 'ar' | 'en' : 'ar'
-  
+
   const texts = errorTexts[lang]
 
   return (
-    <html lang={lang} dir={lang === 'en' ? 'ltr' : 'rtl'}>
-      <body className="min-h-screen bg-background flex items-center justify-center p-4">
+    <html lang={lang} dir={lang === 'en' ? 'ltr' : 'rtl'} suppressHydrationWarning>
+      <body className="min-h-screen bg-background flex items-center justify-center p-4" suppressHydrationWarning>
         <Card className="w-full max-w-2xl">
           <CardHeader className="text-center">
             <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-destructive/10 flex items-center justify-center">
@@ -70,7 +70,7 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button 
+              <Button
                 onClick={reset}
                 variant="default"
                 className="gap-2"
@@ -78,7 +78,7 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
                 <RefreshCw className="h-4 w-4" />
                 {texts.refresh}
               </Button>
-              <Button 
+              <Button
                 onClick={handleGoHome}
                 variant="outline"
                 className="gap-2"
