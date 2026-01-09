@@ -54,8 +54,11 @@ interface BranchData {
 export default function InventoryPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
+  const [hydrated, setHydrated] = useState(false)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  
   useEffect(() => {
+    setHydrated(true)
     const handler = () => {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
@@ -66,6 +69,20 @@ export default function InventoryPage() {
     window.addEventListener('app_language_changed', handler)
     return () => window.removeEventListener('app_language_changed', handler)
   }, [])
+  
+  // منع hydration mismatch - عرض محتوى افتراضي حتى يتم hydration
+  if (!hydrated) {
+    return (
+      <div className="flex h-screen">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="flex items-center justify-center h-full">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+          </div>
+        </main>
+      </div>
+    )
+  }
   const [transactions, setTransactions] = useState<InventoryTransaction[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [computedQty, setComputedQty] = useState<Record<string, number>>({})
