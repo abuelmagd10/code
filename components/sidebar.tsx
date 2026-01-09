@@ -763,70 +763,72 @@ export function Sidebar() {
         <div className="p-3 sm:p-4 md:p-6 pt-2 md:pt-0">
           <nav className="space-y-1 sm:space-y-2">
             {(() => {
-              const q = appLanguage === 'en' ? '?lang=en' : ''
+              // استخدام appLanguage فقط بعد hydration لتجنب مشاكل hydration
+              const lang = hydrated ? appLanguage : 'ar'
+              const q = lang === 'en' ? '?lang=en' : ''
               const allowHr = ["owner", "admin", "manager"].includes(myRole)
               const groups: Array<{ key: string; icon: any; label: string; items: Array<{ label: string; href: string; icon: any }> }> = [
-                { key: 'dashboard', icon: BarChart3, label: (appLanguage === 'en' ? 'Dashboard' : 'لوحة التحكم'), items: [{ label: (appLanguage === 'en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 }] },
+                { key: 'dashboard', icon: BarChart3, label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), items: [{ label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 }] },
                 {
-                  key: 'sales', icon: FileText, label: (appLanguage === 'en' ? 'Sales' : 'المبيعات'), items: [
-                    { label: (appLanguage === 'en' ? 'Customers' : 'العملاء'), href: `/customers${q}`, icon: Users },
-                    { label: (appLanguage === 'en' ? 'Sales Orders' : 'أوامر البيع'), href: `/sales-orders${q}`, icon: ShoppingCart },
-                    { label: (appLanguage === 'en' ? 'Sales Invoices' : 'فواتير المبيعات'), href: `/invoices${q}`, icon: FileText },
-                    { label: (appLanguage === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'), href: `/sales-returns${q}`, icon: FileText },
-                    { label: (appLanguage === 'en' ? 'Customer Debit Notes' : 'إشعارات مدين العملاء'), href: `/customer-debit-notes${q}`, icon: FileText },
+                  key: 'sales', icon: FileText, label: (lang === 'en' ? 'Sales' : 'المبيعات'), items: [
+                    { label: (lang === 'en' ? 'Customers' : 'العملاء'), href: `/customers${q}`, icon: Users },
+                    { label: (lang === 'en' ? 'Sales Orders' : 'أوامر البيع'), href: `/sales-orders${q}`, icon: ShoppingCart },
+                    { label: (lang === 'en' ? 'Sales Invoices' : 'فواتير المبيعات'), href: `/invoices${q}`, icon: FileText },
+                    { label: (lang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'), href: `/sales-returns${q}`, icon: FileText },
+                    { label: (lang === 'en' ? 'Customer Debit Notes' : 'إشعارات مدين العملاء'), href: `/customer-debit-notes${q}`, icon: FileText },
                   ]
                 },
                 {
-                  key: 'purchases', icon: ShoppingCart, label: (appLanguage === 'en' ? 'Purchases' : 'المشتريات'), items: [
-                    { label: (appLanguage === 'en' ? 'Suppliers' : 'الموردين'), href: `/suppliers${q}`, icon: ShoppingCart },
-                    { label: (appLanguage === 'en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart },
-                    { label: (appLanguage === 'en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText },
-                    { label: (appLanguage === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'), href: `/purchase-returns${q}`, icon: FileText },
-                    { label: (appLanguage === 'en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'), href: `/vendor-credits${q}`, icon: FileText },
+                  key: 'purchases', icon: ShoppingCart, label: (lang === 'en' ? 'Purchases' : 'المشتريات'), items: [
+                    { label: (lang === 'en' ? 'Suppliers' : 'الموردين'), href: `/suppliers${q}`, icon: ShoppingCart },
+                    { label: (lang === 'en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart },
+                    { label: (lang === 'en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText },
+                    { label: (lang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'), href: `/purchase-returns${q}`, icon: FileText },
+                    { label: (lang === 'en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'), href: `/vendor-credits${q}`, icon: FileText },
                   ]
                 },
                 {
-                  key: 'inventory', icon: Package, label: (appLanguage === 'en' ? 'Inventory' : 'المخزون'), items: [
-                    { label: (appLanguage === 'en' ? 'Products & Services' : 'المنتجات والخدمات'), href: `/products${q}`, icon: Package },
-                    { label: (appLanguage === 'en' ? 'Inventory' : 'المخزون'), href: `/inventory${q}`, icon: DollarSign },
-                    { label: (appLanguage === 'en' ? 'Inventory Transfers' : 'نقل المخزون'), href: `/inventory-transfers${q}`, icon: ArrowLeftRight },
-                    { label: (appLanguage === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
-                    { label: (appLanguage === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
+                  key: 'inventory', icon: Package, label: (lang === 'en' ? 'Inventory' : 'المخزون'), items: [
+                    { label: (lang === 'en' ? 'Products & Services' : 'المنتجات والخدمات'), href: `/products${q}`, icon: Package },
+                    { label: (lang === 'en' ? 'Inventory' : 'المخزون'), href: `/inventory${q}`, icon: DollarSign },
+                    { label: (lang === 'en' ? 'Inventory Transfers' : 'نقل المخزون'), href: `/inventory-transfers${q}`, icon: ArrowLeftRight },
+                    { label: (lang === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
+                    { label: (lang === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
                   ]
                 },
                 {
-                  key: 'accounting', icon: BookOpen, label: (appLanguage === 'en' ? 'Accounting' : 'الحسابات'), items: [
-                    { label: (appLanguage === 'en' ? 'Payments' : 'المدفوعات'), href: `/payments${q}`, icon: DollarSign },
-                    { label: (appLanguage === 'en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
-                    { label: (appLanguage === 'en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
-                    { label: (appLanguage === 'en' ? 'Chart of Accounts' : 'الشجرة المحاسبية'), href: `/chart-of-accounts${q}`, icon: BookOpen },
-                    { label: (appLanguage === 'en' ? 'Taxes' : 'الضرائب'), href: `/settings/taxes${q}`, icon: Settings },
-                    { label: (appLanguage === 'en' ? 'Shareholders' : 'المساهمون'), href: `/shareholders${q}`, icon: Users },
-                    { label: (appLanguage === 'en' ? 'Financial Reports' : 'التقارير المالية'), href: `/reports${q}`, icon: BarChart3 },
+                  key: 'accounting', icon: BookOpen, label: (lang === 'en' ? 'Accounting' : 'الحسابات'), items: [
+                    { label: (lang === 'en' ? 'Payments' : 'المدفوعات'), href: `/payments${q}`, icon: DollarSign },
+                    { label: (lang === 'en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
+                    { label: (lang === 'en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
+                    { label: (lang === 'en' ? 'Chart of Accounts' : 'الشجرة المحاسبية'), href: `/chart-of-accounts${q}`, icon: BookOpen },
+                    { label: (lang === 'en' ? 'Taxes' : 'الضرائب'), href: `/settings/taxes${q}`, icon: Settings },
+                    { label: (lang === 'en' ? 'Shareholders' : 'المساهمون'), href: `/shareholders${q}`, icon: Users },
+                    { label: (lang === 'en' ? 'Financial Reports' : 'التقارير المالية'), href: `/reports${q}`, icon: BarChart3 },
                   ]
                 },
                 {
-                  key: 'fixed_assets', icon: Building2, label: (appLanguage === 'en' ? 'Fixed Assets' : 'الأصول الثابتة'), items: [
-                    { label: (appLanguage === 'en' ? 'Assets List' : 'قائمة الأصول'), href: `/fixed-assets${q}`, icon: Package },
-                    { label: (appLanguage === 'en' ? 'Add Asset' : 'إضافة أصل'), href: `/fixed-assets/new${q}`, icon: Plus },
-                    { label: (appLanguage === 'en' ? 'Asset Categories' : 'فئات الأصول'), href: `/fixed-assets/categories${q}`, icon: FileText },
-                    { label: (appLanguage === 'en' ? 'Asset Reports' : 'تقارير الأصول'), href: `/fixed-assets/reports${q}`, icon: BarChart3 },
+                  key: 'fixed_assets', icon: Building2, label: (lang === 'en' ? 'Fixed Assets' : 'الأصول الثابتة'), items: [
+                    { label: (lang === 'en' ? 'Assets List' : 'قائمة الأصول'), href: `/fixed-assets${q}`, icon: Package },
+                    { label: (lang === 'en' ? 'Add Asset' : 'إضافة أصل'), href: `/fixed-assets/new${q}`, icon: Plus },
+                    { label: (lang === 'en' ? 'Asset Categories' : 'فئات الأصول'), href: `/fixed-assets/categories${q}`, icon: FileText },
+                    { label: (lang === 'en' ? 'Asset Reports' : 'تقارير الأصول'), href: `/fixed-assets/reports${q}`, icon: BarChart3 },
                   ]
                 },
                 ...(allowHr ? [{
-                  key: 'hr', icon: Users, label: (appLanguage === 'en' ? 'HR & Payroll' : 'الموظفون والمرتبات'), items: [
-                    { label: (appLanguage === 'en' ? 'Employees' : 'الموظفون'), href: `/hr/employees${q}`, icon: Users },
-                    { label: (appLanguage === 'en' ? 'Attendance' : 'الحضور والانصراف'), href: `/hr/attendance${q}`, icon: FileText },
-                    { label: (appLanguage === 'en' ? 'Payroll' : 'المرتبات'), href: `/hr/payroll${q}`, icon: DollarSign },
+                  key: 'hr', icon: Users, label: (lang === 'en' ? 'HR & Payroll' : 'الموظفون والمرتبات'), items: [
+                    { label: (lang === 'en' ? 'Employees' : 'الموظفون'), href: `/hr/employees${q}`, icon: Users },
+                    { label: (lang === 'en' ? 'Attendance' : 'الحضور والانصراف'), href: `/hr/attendance${q}`, icon: FileText },
+                    { label: (lang === 'en' ? 'Payroll' : 'المرتبات'), href: `/hr/payroll${q}`, icon: DollarSign },
                   ]
                 }] : []),
                 {
-                  key: 'settings', icon: Settings, label: (appLanguage === 'en' ? 'Settings' : 'الإعدادات'), items: [
-                    { label: (appLanguage === 'en' ? 'General Settings' : 'الإعدادات العامة'), href: `/settings${q}`, icon: Settings },
-                    { label: (appLanguage === 'en' ? 'Branches' : 'الفروع'), href: `/branches${q}`, icon: Building2 },
-                    { label: (appLanguage === 'en' ? 'Cost Centers' : 'مراكز التكلفة'), href: `/cost-centers${q}`, icon: DollarSign },
-                    { label: (appLanguage === 'en' ? 'Warehouses' : 'المخازن'), href: `/warehouses${q}`, icon: Package },
-                    { label: (appLanguage === 'en' ? 'My Profile' : 'ملفي الشخصي'), href: `/settings/profile${q}`, icon: Users },
+                  key: 'settings', icon: Settings, label: (lang === 'en' ? 'Settings' : 'الإعدادات'), items: [
+                    { label: (lang === 'en' ? 'General Settings' : 'الإعدادات العامة'), href: `/settings${q}`, icon: Settings },
+                    { label: (lang === 'en' ? 'Branches' : 'الفروع'), href: `/branches${q}`, icon: Building2 },
+                    { label: (lang === 'en' ? 'Cost Centers' : 'مراكز التكلفة'), href: `/cost-centers${q}`, icon: DollarSign },
+                    { label: (lang === 'en' ? 'Warehouses' : 'المخازن'), href: `/warehouses${q}`, icon: Package },
+                    { label: (lang === 'en' ? 'My Profile' : 'ملفي الشخصي'), href: `/settings/profile${q}`, icon: Users },
                   ]
                 },
               ]
@@ -845,7 +847,7 @@ export function Sidebar() {
               >
                 <Bell className="w-5 h-5 ml-2" />
                 <span suppressHydrationWarning>
-                  {(hydrated && appLanguage === 'en') ? 'Notifications' : 'الإشعارات'}
+                  {hydrated ? ((appLanguage === 'en') ? 'Notifications' : 'الإشعارات') : 'الإشعارات'}
                 </span>
                 {unreadCount > 0 && (
                   <Badge className="absolute top-1 right-1 h-5 min-w-5 px-1.5 bg-red-500 text-white text-xs flex items-center justify-center">
