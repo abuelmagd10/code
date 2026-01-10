@@ -52,6 +52,9 @@ export function PageGuard({
     }
   }, [])
 
+  // Flag لمنع إعادة التوجيه أثناء تحديث الصلاحيات
+  const isRefreshingRef = useRef(false)
+
   useEffect(() => {
     // انتظار تحميل الصلاحيات
     if (!isReady || isLoading) {
@@ -70,7 +73,15 @@ export function PageGuard({
 
     if (hasAccess) {
       setAccessState("allowed")
+      isRefreshingRef.current = false // إعادة تعيين عند التأكيد من الصلاحية
     } else {
+      // إذا كانت الصفحة هي settings/users، لا نعيد التوجيه (قد يكون المستخدم يقوم بتعديل صلاحياته)
+      if (pathname === "/settings/users" && isRefreshingRef.current) {
+        // نحن في صفحة users ونحدث الصلاحيات - لا نعيد التوجيه
+        setAccessState("allowed")
+        return
+      }
+
       setAccessState("denied")
 
       // إذا لم يكن showAccessDenied مفعلاً، قم بالتوجيه
@@ -79,7 +90,26 @@ export function PageGuard({
         router.replace(redirectTo)
       }
     }
-  }, [isReady, isLoading, canAccessPage, targetResource, router, fallbackPath, showAccessDenied])
+  }, [isReady, isLoading, canAccessPage, targetResource, router, fallbackPath, showAccessDenied, pathname])
+
+  // الاستماع لتحديثات الصلاحيات
+  useEffect(() => {
+    const handlePermissionsUpdate = () => {
+      // إذا كنا في صفحة users، نضع flag لمنع إعادة التوجيه
+      if (pathname === "/settings/users") {
+        isRefreshingRef.current = true
+        // إعادة تعيين بعد 2 ثانية
+        setTimeout(() => {
+          isRefreshingRef.current = false
+        }, 2000)
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("permissions_updated", handlePermissionsUpdate)
+      return () => window.removeEventListener("permissions_updated", handlePermissionsUpdate)
+    }
+  }, [pathname])
 
   // حالة التحميل - لا تعرض أي محتوى
   if (accessState === "loading") {
