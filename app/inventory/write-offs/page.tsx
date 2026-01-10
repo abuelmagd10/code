@@ -19,6 +19,7 @@ import { Sidebar } from "@/components/sidebar"
 import { CompanyHeader } from "@/components/company-header"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { validateInventoryTransaction, type UserContext } from "@/lib/validation"
+import { validateWriteOffItems, type WriteOffItemValidation } from "@/lib/write-off-governance"
 
 // تنسيق العملة
 function formatCurrency(amount: number, currency: string = "EGP"): string {
@@ -47,6 +48,7 @@ interface WriteOffItem {
   id?: string
   product_id: string
   product_name?: string
+  product_sku?: string
   quantity: number
   unit_cost: number
   total_cost: number
@@ -69,6 +71,9 @@ interface WriteOff {
   created_at: string
   approved_by?: string
   approved_at?: string
+  warehouse_id?: string | null
+  branch_id?: string | null
+  cost_center_id?: string | null
   items?: WriteOffItem[]
   notes?: string
 }
@@ -293,8 +298,8 @@ export default function WriteOffsPage() {
     }])
   }
 
-  // تحديث عنصر
-  const updateItem = (index: number, field: string, value: any) => {
+  // تحديث عنصر مع جلب الرصيد المتاح بناءً على warehouse/branch/cost_center
+  const updateItem = async (index: number, field: string, value: any) => {
     const updated = [...newItems]
       ; (updated[index] as any)[field] = value
 
@@ -303,8 +308,45 @@ export default function WriteOffsPage() {
       if (prod) {
         updated[index].unit_cost = prod.cost_price || 0
         updated[index].product_name = prod.name
-        updated[index].available_qty = prod.quantity_on_hand
+        updated[index].product_sku = prod.sku
         updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
+
+        // 🧾 Governance Rule: جلب الرصيد المتاح بناءً على warehouse/branch/cost_center
+        if (companyId && warehouseId && value) {
+          try {
+            // جلب branch_id من warehouse إذا لم يكن محدداً
+            let finalBranchId = branchId
+            if (!finalBranchId && warehouseId) {
+              const { data: warehouse } = await supabase
+                .from("warehouses")
+                .select("branch_id")
+                .eq("id", warehouseId)
+                .single()
+              
+              if (warehouse?.branch_id) {
+                finalBranchId = warehouse.branch_id
+              }
+            }
+
+            // استخدام RPC function للحصول على الرصيد المتاح
+            const { data: availableQty } = await supabase.rpc("get_available_inventory_quantity", {
+              p_company_id: companyId,
+              p_branch_id: finalBranchId,
+              p_warehouse_id: warehouseId,
+              p_cost_center_id: costCenterId,
+              p_product_id: value,
+            })
+
+            updated[index].available_qty = availableQty || 0
+          } catch (error) {
+            console.error("Error fetching available quantity:", error)
+            // Fallback: استخدام quantity_on_hand من المنتج
+            updated[index].available_qty = prod.quantity_on_hand || 0
+          }
+        } else {
+          // Fallback: استخدام quantity_on_hand من المنتج
+          updated[index].available_qty = prod.quantity_on_hand || 0
+        }
       }
     }
 
@@ -349,7 +391,7 @@ export default function WriteOffsPage() {
       }
     }
 
-    // التحقق من الكميات
+    // التحقق الأساسي من البيانات
     for (const item of newItems) {
       if (!item.product_id) {
         toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "اختر منتج لكل عنصر" : "Select product for each item", variant: "destructive" })
@@ -359,15 +401,71 @@ export default function WriteOffsPage() {
         toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "الكمية يجب أن تكون أكبر من صفر" : "Quantity must be greater than zero", variant: "destructive" })
         return
       }
-      if (item.available_qty !== undefined && item.quantity > item.available_qty) {
+    }
+
+    // 🧾 Governance Rule: التحقق من الرصيد المتاح قبل الحفظ
+    // التحقق في UI + API + Database (3 طبقات)
+    if (!warehouseId) {
+      toast({
+        title: isAr ? "خطأ" : "Error",
+        description: isAr ? "يجب تحديد المخزن للإهلاك" : "Warehouse must be specified for write-off",
+        variant: "destructive"
+      })
+      return
+    }
+
+    // استخدام API للتحقق (طبقة 2)
+    try {
+      const validationItems: WriteOffItemValidation[] = newItems.map((item) => ({
+        product_id: item.product_id,
+        product_name: item.product_name,
+        product_sku: item.product_sku,
+        quantity: item.quantity,
+        warehouse_id: warehouseId,
+        branch_id: branchId,
+        cost_center_id: costCenterId,
+      }))
+
+      const validationResponse = await fetch("/api/write-off/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: validationItems,
+          warehouse_id: warehouseId,
+          branch_id: branchId,
+          cost_center_id: costCenterId,
+        }),
+      })
+
+      const validationResult = await validationResponse.json()
+
+      if (!validationResult.isValid && validationResult.errors && validationResult.errors.length > 0) {
+        const errorMessages = validationResult.errors.map((err: any) => {
+          const productName = err.product_name || "منتج غير معروف"
+          const productSku = err.product_sku ? ` (SKU: ${err.product_sku})` : ""
+          return `${productName}${productSku}: ${err.message}`
+        }).join("\n")
+
         toast({
-          title: isAr ? "خطأ" : "Error",
-          description: isAr ? `الكمية المطلوبة (${item.quantity}) أكبر من المتاحة (${item.available_qty}) للمنتج ${item.product_name}` :
-            `Requested quantity (${item.quantity}) exceeds available (${item.available_qty}) for ${item.product_name}`,
-          variant: "destructive"
+          title: isAr ? "🧾 الرصيد غير كافٍ" : "🧾 Insufficient Stock",
+          description: isAr 
+            ? `لا يمكن إهلاك المخزون بدون رصيد فعلي:\n${errorMessages}`
+            : `Cannot write-off inventory without real stock:\n${errorMessages}`,
+          variant: "destructive",
+          duration: 10000,
         })
         return
       }
+    } catch (validationError: any) {
+      console.error("Error validating write-off items:", validationError)
+      toast({
+        title: isAr ? "تحذير" : "Warning",
+        description: isAr 
+          ? "فشل التحقق من الرصيد. سيتم التحقق في قاعدة البيانات قبل الاعتماد."
+          : "Failed to validate stock. Validation will occur in database before approval.",
+        variant: "destructive"
+      })
+      // نتابع الحفظ لأن التحقق سيحدث في Database Trigger عند الاعتماد
     }
 
     setSaving(true)
@@ -449,6 +547,7 @@ export default function WriteOffsPage() {
       items: (items || []).map((it: any) => ({
         ...it,
         product_name: it.products?.name,
+        product_sku: it.products?.sku,
       })),
     }
 
@@ -468,6 +567,7 @@ export default function WriteOffsPage() {
       ...item,
       product_id: item.product_id,
       product_name: item.product_name,
+      product_sku: item.product_sku,
       quantity: item.quantity,
       unit_cost: item.unit_cost,
       total_cost: item.total_cost,
@@ -493,8 +593,8 @@ export default function WriteOffsPage() {
     setIsEditMode(false)
   }
 
-  // تحديث عنصر في وضع التعديل
-  const updateEditItem = (index: number, field: string, value: any) => {
+  // تحديث عنصر في وضع التعديل مع جلب الرصيد المتاح
+  const updateEditItem = async (index: number, field: string, value: any) => {
     const updated = [...editItems]
       ; (updated[index] as any)[field] = value
 
@@ -503,8 +603,45 @@ export default function WriteOffsPage() {
       if (prod) {
         updated[index].unit_cost = prod.cost_price || 0
         updated[index].product_name = prod.name
-        updated[index].available_qty = prod.quantity_on_hand
+        updated[index].product_sku = prod.sku
         updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
+
+        // 🧾 Governance Rule: جلب الرصيد المتاح بناءً على warehouse/branch/cost_center
+        if (companyId && selectedWriteOff?.warehouse_id && value) {
+          try {
+            // جلب branch_id من warehouse إذا لم يكن محدداً
+            let finalBranchId = branchId
+            if (!finalBranchId && selectedWriteOff.warehouse_id) {
+              const { data: warehouse } = await supabase
+                .from("warehouses")
+                .select("branch_id")
+                .eq("id", selectedWriteOff.warehouse_id)
+                .single()
+              
+              if (warehouse?.branch_id) {
+                finalBranchId = warehouse.branch_id
+              }
+            }
+
+            // استخدام RPC function للحصول على الرصيد المتاح
+            const { data: availableQty } = await supabase.rpc("get_available_inventory_quantity", {
+              p_company_id: companyId,
+              p_branch_id: finalBranchId,
+              p_warehouse_id: selectedWriteOff.warehouse_id,
+              p_cost_center_id: costCenterId,
+              p_product_id: value,
+            })
+
+            updated[index].available_qty = availableQty || 0
+          } catch (error) {
+            console.error("Error fetching available quantity:", error)
+            // Fallback: استخدام quantity_on_hand من المنتج
+            updated[index].available_qty = prod.quantity_on_hand || 0
+          }
+        } else {
+          // Fallback: استخدام quantity_on_hand من المنتج
+          updated[index].available_qty = prod.quantity_on_hand || 0
+        }
       }
     }
 
@@ -567,6 +704,56 @@ export default function WriteOffsPage() {
           variant: "destructive"
         })
         return
+      }
+    }
+
+    // 🧾 Governance Rule: التحقق من الرصيد المتاح قبل التعديل
+    const writeOffWarehouseId = selectedWriteOff.warehouse_id || warehouseId
+    if (writeOffWarehouseId && companyId) {
+      try {
+        const validationItems: WriteOffItemValidation[] = editItems.map((item) => ({
+          product_id: item.product_id,
+          product_name: item.product_name,
+          product_sku: item.product_sku,
+          quantity: item.quantity,
+          warehouse_id: writeOffWarehouseId,
+          branch_id: branchId,
+          cost_center_id: costCenterId,
+        }))
+
+        const validationResponse = await fetch("/api/write-off/validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: validationItems,
+            warehouse_id: writeOffWarehouseId,
+            branch_id: branchId,
+            cost_center_id: costCenterId,
+          }),
+        })
+
+        const validationResult = await validationResponse.json()
+
+        if (!validationResult.isValid && validationResult.errors && validationResult.errors.length > 0) {
+          const errorMessages = validationResult.errors.map((err: any) => {
+            const productName = err.product_name || "منتج غير معروف"
+            const productSku = err.product_sku ? ` (SKU: ${err.product_sku})` : ""
+            return `${productName}${productSku}: ${err.message}`
+          }).join("\n")
+
+          toast({
+            title: isAr ? "🧾 الرصيد غير كافٍ" : "🧾 Insufficient Stock",
+            description: isAr 
+              ? `لا يمكن تعديل الإهلاك بدون رصيد فعلي:\n${errorMessages}`
+              : `Cannot update write-off without real stock:\n${errorMessages}`,
+            variant: "destructive",
+            duration: 10000,
+          })
+          return
+        }
+      } catch (validationError: any) {
+        console.error("Error validating write-off items during edit:", validationError)
+        // نتابع لأن التحقق سيحدث في Database Trigger
       }
     }
 
@@ -693,14 +880,37 @@ export default function WriteOffsPage() {
       })
 
       if (error) throw error
-      if (!result?.success) throw new Error(result?.error || "Unknown error")
+      if (!result?.success) {
+        // 🧾 Governance Rule: رسالة خطأ مفصلة عند فشل التحقق من الرصيد
+        const errorMessage = result?.error || "Unknown error"
+        toast({
+          title: isAr ? "🧾 فشل اعتماد الإهلاك" : "🧾 Write-off Approval Failed",
+          description: isAr 
+            ? `لا يمكن اعتماد الإهلاك بدون رصيد فعلي:\n${errorMessage}`
+            : `Cannot approve write-off without real stock:\n${errorMessage}`,
+          variant: "destructive",
+          duration: 10000,
+        })
+        return
+      }
 
       toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم اعتماد الإهلاك" : "Write-off approved" })
       setShowApproveDialog(false)
       setShowViewDialog(false)
       loadData()
     } catch (err: any) {
-      toast({ title: isAr ? "خطأ" : "Error", description: err.message, variant: "destructive" })
+      // 🧾 Governance Rule: رسالة خطأ مفصلة
+      const errorMessage = err.message || (isAr ? "فشل اعتماد الإهلاك" : "Failed to approve write-off")
+      toast({
+        title: isAr ? "🧾 خطأ" : "🧾 Error",
+        description: errorMessage.includes("الرصيد") || errorMessage.includes("stock")
+          ? errorMessage
+          : isAr
+          ? `فشل اعتماد الإهلاك: ${errorMessage}`
+          : `Failed to approve write-off: ${errorMessage}`,
+        variant: "destructive",
+        duration: 10000,
+      })
     } finally {
       setSaving(false)
     }
