@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import { usePermissions } from "@/lib/permissions-context"
 import Link from "next/link"
 import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch, Search, Copy } from "lucide-react"
 
@@ -31,6 +32,7 @@ export default function UsersSettingsPage() {
 
   const supabase = useSupabase()
   const { toast } = useToast()
+  const { refreshPermissions } = usePermissions()
   const [companyId, setCompanyId] = useState<string>("")
   const [companyName, setCompanyName] = useState<string>("")
   const [members, setMembers] = useState<Member[]>([])
@@ -1033,7 +1035,17 @@ export default function UsersSettingsPage() {
                               if (res.ok && js?.ok) {
                                 setMembers((prev) => prev.map((x) => x.user_id === m.user_id ? { ...x, role: nr } : x))
                                 toastActionSuccess(toast, "تحديث", "الدور")
-                                try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('permissions_updated')) } catch { }
+                                // تحديث الصلاحيات مع تأخير لتجنب إعادة التوجيه
+                                setTimeout(async () => {
+                                  try {
+                                    await refreshPermissions()
+                                    if (typeof window !== 'undefined') {
+                                      window.dispatchEvent(new Event('permissions_updated'))
+                                    }
+                                  } catch (err) {
+                                    console.error('Error refreshing permissions:', err)
+                                  }
+                                }, 500)
                               } else {
                                 toastActionError(toast, "تحديث", "الدور", js?.error || undefined)
                               }
@@ -1806,8 +1818,21 @@ export default function UsersSettingsPage() {
                   setRolePerms(perms || [])
                   setActionError(null)
                   toastActionSuccess(toast, "حفظ", "الصلاحيات")
-                  // إرسال حدث لتحديث الـ Sidebar
-                  try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('permissions_updated')) } catch { }
+                  
+                  // تحديث الصلاحيات مع تأخير للتأكد من حفظ البيانات أولاً
+                  // لا نحدث الصلاحيات فوراً لتجنب إعادة التوجيه
+                  setTimeout(async () => {
+                    try {
+                      // تحديث الصلاحيات مباشرة من hook
+                      await refreshPermissions()
+                      // إرسال حدث لتحديث الـ Sidebar (بعد التأكد من تحديث الصلاحيات)
+                      if (typeof window !== 'undefined') {
+                        window.dispatchEvent(new Event('permissions_updated'))
+                      }
+                    } catch (err) {
+                      console.error('Error refreshing permissions:', err)
+                    }
+                  }, 500) // تأخير 500ms للتأكد من حفظ البيانات أولاً
                 } finally {
                   setLoading(false)
                 }
