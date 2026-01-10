@@ -14,7 +14,7 @@ import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { type UserContext, getAccessFilter } from "@/lib/validation"
-import { getVendorCreditAccessFilter, applyVendorCreditAccessFilter, type AccessFilter } from "@/lib/vendor-credits-access"
+import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
 
 type VendorCredit = {
   id: string
@@ -54,7 +54,6 @@ export default function VendorCreditsPage() {
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>('all')
-  const [accessFilter, setAccessFilter] = useState<AccessFilter | null>(null)
 
   // تهيئة اللغة والعملة بعد hydration
   useEffect(() => {
@@ -141,10 +140,6 @@ export default function VendorCreditsPage() {
     }
     setUserContext(context)
 
-    // 🔐 الحصول على فلتر الوصول لإشعارات الدائن
-    const filter = await getVendorCreditAccessFilter(supabase, companyId, user.id)
-    setAccessFilter(filter)
-
     // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها)
     if (canViewAll) {
       const { data: members } = await supabase
@@ -182,19 +177,28 @@ export default function VendorCreditsPage() {
       }
     }
 
-    // 🔐 ERP Access Control - تحميل الإشعارات مع تصفية حسب سياق المستخدم
+    // 🔐 ERP Access Control - تحميل الإشعارات مع تطبيق نظام Data Visibility الموحد
+    const visibilityRules = buildDataVisibilityFilter(context)
+    
     let creditsQuery = supabase
       .from("vendor_credits")
       .select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status, created_by, approval_status")
-      .eq("company_id", companyId)
+      .eq("company_id", visibilityRules.companyId)
 
-    // تطبيق فلتر الوصول
-    if (filter) {
-      creditsQuery = applyVendorCreditAccessFilter(creditsQuery, filter)
-    }
+    // ✅ تطبيق قواعد الرؤية الموحدة
+    creditsQuery = applyDataVisibilityFilter(creditsQuery, visibilityRules, "vendor_credits")
 
     const { data: list } = await creditsQuery.order("credit_date", { ascending: false })
-    setCredits((list || []) as any)
+    
+    // ✅ فلترة إضافية في JavaScript للحالات المعقدة
+    let filteredCredits = list || []
+    if (visibilityRules.filterByCostCenter && visibilityRules.costCenterId && list) {
+      filteredCredits = list.filter((credit: any) => {
+        return !credit.cost_center_id || credit.cost_center_id === visibilityRules.costCenterId
+      })
+    }
+    
+    setCredits(filteredCredits as any)
 
     // Load all suppliers for filter
     const { data: allSuppliers } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId)

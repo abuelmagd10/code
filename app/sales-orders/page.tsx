@@ -27,6 +27,7 @@ import { DataPagination } from "@/components/data-pagination";
 import { OrderActions } from "@/components/OrderActions";
 import { getActiveCompanyId } from "@/lib/company";
 import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordModification } from "@/lib/validation";
+import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control";
 import { PageHeaderList } from "@/components/PageHeader";
 import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { StatusBadge } from "@/components/DataTableFormatters";
@@ -727,28 +728,31 @@ function SalesOrdersContent() {
       const { data: prod } = await supabase.from("products").select("id, name, unit_price, item_type").eq("company_id", activeCompanyId).order("name");
       setProducts(prod || []);
 
-      // 🔐 ERP Access Control - تحميل الأوامر مع تطبيق الفلترة على مستوى قاعدة البيانات
+      // 🔐 ERP Access Control - تحميل الأوامر مع تطبيق نظام Data Visibility الموحد
+      if (!userContext) {
+        setLoading(false);
+        return;
+      }
+      
+      const visibilityRules = buildDataVisibilityFilter(userContext)
+      
       let ordersQuery = supabase
         .from("sales_orders")
         .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id, branch_id, cost_center_id, warehouse_id")
-        .eq("company_id", activeCompanyId);
+        .eq("company_id", visibilityRules.companyId);
 
-      // تطبيق فلتر الفرع (للمدراء والمحاسبين)
-      if (accessFilter.filterByBranch && accessFilter.branchId) {
-        ordersQuery = ordersQuery.eq("branch_id", accessFilter.branchId);
-      }
-
-      // تطبيق فلتر مركز التكلفة (للمشرفين)
-      if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
-        ordersQuery = ordersQuery.eq("cost_center_id", accessFilter.costCenterId);
-      }
-
-      // تطبيق فلتر المنشئ (للموظفين العاديين)
-      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-        ordersQuery = ordersQuery.eq("created_by_user_id", accessFilter.createdByUserId);
-      }
+      // ✅ تطبيق قواعد الرؤية الموحدة
+      ordersQuery = applyDataVisibilityFilter(ordersQuery, visibilityRules, "sales_orders")
 
       const { data: so } = await ordersQuery.order("created_at", { ascending: false });
+      
+      // ✅ فلترة إضافية في JavaScript للحالات المعقدة (cost_center_id مع branch_id)
+      let filteredOrders = so || []
+      if (visibilityRules.filterByCostCenter && visibilityRules.costCenterId && so) {
+        filteredOrders = so.filter((order: any) => {
+          return !order.cost_center_id || order.cost_center_id === visibilityRules.costCenterId
+        })
+      }
 
       // 🔐 جلب أوامر البيع المشتركة
       let sharedOrders: SalesOrder[] = []
@@ -763,9 +767,9 @@ function SalesOrdersContent() {
       }
 
       // دمج الأوامر الأصلية مع المشتركة (بدون تكرار)
-      const allOrderIds = new Set((so || []).map((o: SalesOrder) => o.id))
+      const allOrderIds = new Set((filteredOrders || []).map((o: SalesOrder) => o.id))
       const uniqueSharedOrders = sharedOrders.filter((o: SalesOrder) => !allOrderIds.has(o.id))
-      const mergedOrders = [...(so || []), ...uniqueSharedOrders]
+      const mergedOrders = [...(filteredOrders || []), ...uniqueSharedOrders]
 
       setOrders(mergedOrders);
 

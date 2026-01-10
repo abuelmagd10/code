@@ -20,6 +20,7 @@ import { getActiveCompanyId } from "@/lib/company";
 import { usePagination } from "@/lib/pagination";
 import { DataPagination } from "@/components/data-pagination";
 import { type UserContext, canViewPurchasePrices, getAccessFilter } from "@/lib/validation";
+import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control";
 import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { StatusBadge } from "@/components/DataTableFormatters";
 import { PageHeaderList } from "@/components/PageHeader";
@@ -255,24 +256,28 @@ export default function PurchaseOrdersPage() {
       const { data: prod } = await supabase.from("products").select("id, name, cost_price, item_type").eq("company_id", companyId).order("name");
       setProducts(prod || []);
 
-      // 🔐 ERP Access Control - تصفية أوامر الشراء حسب الفرع ومركز التكلفة
+      // 🔐 ERP Access Control - تصفية أوامر الشراء باستخدام نظام Data Visibility الموحد
+      const visibilityRules = buildDataVisibilityFilter(context)
+      
       let poQuery = supabase
         .from("purchase_orders")
         .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, branch_id, cost_center_id, warehouse_id, suppliers(name, phone)")
-        .eq("company_id", companyId);
+        .eq("company_id", visibilityRules.companyId);
 
-      // تطبيق فلترة الصلاحيات للأدوار غير المديرة
-      if (!canOverride) {
-        if (member?.branch_id) {
-          poQuery = poQuery.eq("branch_id", member.branch_id);
-        }
-        if (member?.cost_center_id) {
-          poQuery = poQuery.eq("cost_center_id", member.cost_center_id);
-        }
-      }
+      // ✅ تطبيق قواعد الرؤية الموحدة
+      poQuery = applyDataVisibilityFilter(poQuery, visibilityRules, "purchase_orders")
 
       const { data: po } = await poQuery.order("created_at", { ascending: false });
-      setOrders(po || []);
+      
+      // ✅ فلترة إضافية في JavaScript للحالات المعقدة
+      let filteredOrders = po || []
+      if (visibilityRules.filterByCostCenter && visibilityRules.costCenterId && po) {
+        filteredOrders = po.filter((order: any) => {
+          return !order.cost_center_id || order.cost_center_id === visibilityRules.costCenterId
+        })
+      }
+      
+      setOrders(filteredOrders);
 
       // Load linked bills with full details
       const billIds = (po || []).filter((o: PurchaseOrder) => o.bill_id).map((o: PurchaseOrder) => o.bill_id);

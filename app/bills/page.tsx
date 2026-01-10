@@ -35,6 +35,7 @@ import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { type UserContext, getAccessFilter } from "@/lib/validation"
+import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 
@@ -311,24 +312,29 @@ export default function BillsPage() {
       }
       setUserContext(context)
 
-      // تحميل الفواتير مع تصفية حسب سياق المستخدم
+      // 🔐 ERP Access Control - تحميل الفواتير مع تطبيق نظام Data Visibility الموحد
+      const visibilityRules = buildDataVisibilityFilter(context)
+      
       let billsQuery = supabase
         .from("bills")
         .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, display_currency, display_total, original_currency, original_total, suppliers(name, phone)")
-        .eq("company_id", companyId)
+        .eq("company_id", visibilityRules.companyId)
         .neq("status", "voided")
 
-      // تصفية حسب الفرع ومركز التكلفة (للأدوار غير المديرة)
-      const canOverride = ["owner", "admin", "manager"].includes(role)
-      if (!canOverride && member?.branch_id) {
-        billsQuery = billsQuery.eq("branch_id", member.branch_id)
-      }
-      if (!canOverride && member?.cost_center_id) {
-        billsQuery = billsQuery.eq("cost_center_id", member.cost_center_id)
-      }
+      // ✅ تطبيق قواعد الرؤية الموحدة
+      billsQuery = applyDataVisibilityFilter(billsQuery, visibilityRules, "bills")
 
       const { data: billData } = await billsQuery.order("bill_date", { ascending: false })
-      setBills(billData || [])
+      
+      // ✅ فلترة إضافية في JavaScript للحالات المعقدة (cost_center_id مع branch_id)
+      let filteredBills = billData || []
+      if (visibilityRules.filterByCostCenter && visibilityRules.costCenterId && billData) {
+        filteredBills = billData.filter((bill: any) => {
+          return !bill.cost_center_id || bill.cost_center_id === visibilityRules.costCenterId
+        })
+      }
+      
+      setBills(filteredBills)
 
       // 🔐 جلب الصلاحيات المشتركة للمستخدم الحالي
       let sharedGrantorUserIds: string[] = [];

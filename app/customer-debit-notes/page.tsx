@@ -19,6 +19,7 @@ import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { type UserContext, getAccessFilter } from "@/lib/validation"
+import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
 
 // نوع بيانات الموظف للفلترة
 interface Employee {
@@ -146,7 +147,7 @@ export default function CustomerDebitNotesPage() {
     setCanViewAllNotes(canViewAll)
 
     // 🔐 ERP Access Control - تعيين سياق المستخدم
-    const context: UserContext = {
+    const userContextValue: UserContext = {
       user_id: user.id,
       company_id: companyId,
       branch_id: member?.branch_id || null,
@@ -154,7 +155,7 @@ export default function CustomerDebitNotesPage() {
       warehouse_id: member?.warehouse_id || null,
       role: role
     }
-    setUserContext(context)
+    setUserContext(userContextValue)
 
     // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها)
     if (canViewAll) {
@@ -193,7 +194,9 @@ export default function CustomerDebitNotesPage() {
       }
     }
 
-    // 🔐 ERP Access Control - تحميل الإشعارات مع تصفية حسب سياق المستخدم
+    // 🔐 ERP Access Control - تحميل الإشعارات مع تطبيق نظام Data Visibility الموحد
+    const visibilityRules = buildDataVisibilityFilter(userContextValue)
+    
     let notesQuery = supabase
       .from('customer_debit_notes')
       .select(`
@@ -209,20 +212,22 @@ export default function CustomerDebitNotesPage() {
         created_by,
         customers (name)
       `)
-      .eq('company_id', companyId)
+      .eq('company_id', visibilityRules.companyId)
 
-    // تصفية حسب الفرع ومركز التكلفة (للأدوار غير المديرة)
-    const canOverride = ['owner', 'admin', 'manager'].includes(role)
-    if (!canOverride && member?.branch_id) {
-      notesQuery = notesQuery.eq('branch_id', member.branch_id)
-    }
-    if (!canOverride && member?.cost_center_id) {
-      notesQuery = notesQuery.eq('cost_center_id', member.cost_center_id)
-    }
+    // ✅ تطبيق قواعد الرؤية الموحدة
+    notesQuery = applyDataVisibilityFilter(notesQuery, visibilityRules, "customer_debit_notes")
 
     const { data: notes } = await notesQuery.order('debit_note_date', { ascending: false })
+    
+    // ✅ فلترة إضافية في JavaScript للحالات المعقدة
+    let filteredNotes = notes || []
+    if (visibilityRules.filterByCostCenter && visibilityRules.costCenterId && notes) {
+      filteredNotes = notes.filter((note: any) => {
+        return !note.cost_center_id || note.cost_center_id === visibilityRules.costCenterId
+      })
+    }
 
-    const formattedNotes = (notes || []).map((note: any) => ({
+    const formattedNotes = filteredNotes.map((note: any) => ({
       ...note,
       customer_name: note.customers?.name || 'Unknown'
     }))

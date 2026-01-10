@@ -8,7 +8,9 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import Link from "next/link"
 import { Plus, Eye, RotateCcw, FileText, AlertCircle, CheckCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { canAction, getAccessFilter } from "@/lib/authz"
+import { canAction } from "@/lib/authz"
+import { type UserContext, getAccessFilter } from "@/lib/validation"
+import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
@@ -96,12 +98,45 @@ export default function SalesReturnsPage() {
 
         // ===== 🔧 إصلاح: جلب المرتجعات من الفواتير مباشرة =====
         // بدلاً من الاعتماد على journal_entries فقط، نجلب الفواتير التي بها مرتجعات
-        const { data: invoicesWithReturns, error } = await supabase
+        // 🔐 ERP Access Control - استخدام نظام Data Visibility الموحد
+        const { data: memberData } = await supabase
+          .from("company_members")
+          .select("role, branch_id, cost_center_id, warehouse_id")
+          .eq("company_id", companyId)
+          .eq("user_id", user.id)
+          .maybeSingle()
+        
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("user_id")
+          .eq("id", companyId)
+          .single()
+        
+        const isOwner = companyData?.user_id === user.id
+        const role = isOwner ? "owner" : (memberData?.role || "viewer")
+        
+        const userContext: UserContext = {
+          user_id: user.id,
+          company_id: companyId,
+          branch_id: memberData?.branch_id || null,
+          cost_center_id: memberData?.cost_center_id || null,
+          warehouse_id: memberData?.warehouse_id || null,
+          role: role
+        }
+        
+        const visibilityRules = buildDataVisibilityFilter(userContext)
+        
+        let invoicesQuery = supabase
           .from("invoices")
           .select("id, invoice_number, invoice_date, customer_id, returned_amount, return_status, customers(name)")
-          .eq("company_id", companyId)
+          .eq("company_id", visibilityRules.companyId)
           .not("return_status", "is", null)
           .gt("returned_amount", 0)
+
+        // ✅ تطبيق قواعد الرؤية الموحدة
+        invoicesQuery = applyDataVisibilityFilter(invoicesQuery, visibilityRules, "invoices")
+        
+        const { data: invoicesWithReturns, error } = await invoicesQuery
           .order("invoice_date", { ascending: false })
 
         if (error) {
@@ -119,11 +154,7 @@ export default function SalesReturnsPage() {
           return
         }
 
-        // 🔐 ERP Access Control - جلب العملاء مع تطبيق الصلاحيات
-        const { data: memberData } = await supabase.from("company_members").select("role, branch_id, cost_center_id").eq("company_id", companyId).eq("user_id", user.id).maybeSingle();
-        const { data: companyData } = await supabase.from("companies").select("user_id").eq("id", companyId).single();
-        const isOwner = companyData?.user_id === user.id;
-        const role = isOwner ? "owner" : (memberData?.role || "viewer");
+        // 🔐 ERP Access Control - جلب العملاء مع تطبيق الصلاحيات (يستخدم userContext الذي تم إنشاؤه أعلاه)
         const accessFilter = getAccessFilter(role, user.id, memberData?.branch_id || null, memberData?.cost_center_id || null);
 
         let allCustomers: Customer[] = [];
@@ -285,8 +316,7 @@ export default function SalesReturnsPage() {
       format: () => (
         <StatusBadge
           status="completed"
-          label={appLang === 'en' ? 'Completed' : 'مكتمل'}
-          variant="success"
+          lang={appLang}
         />
       )
     },

@@ -17,6 +17,7 @@ import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCar
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { type UserContext, getAccessFilter } from "@/lib/validation"
+import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control"
 import { CompanyHeader } from "@/components/company-header"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
@@ -420,25 +421,33 @@ export default function InvoicesPage() {
       setProducts(productsData || [])
 
       // 🔐 ERP Access Control - تحميل الفواتير مع تصفية حسب سياق المستخدم
+      // ✅ استخدام نظام Data Visibility & Access Control الموحد
+      const visibilityRules = buildDataVisibilityFilter(context)
+      
       let invoicesQuery = supabase
         .from("invoices")
         .select("*, customers(name, phone)")
-        .eq("company_id", companyId)
+        .eq("company_id", visibilityRules.companyId)
 
-      // تصفية حسب الفرع ومركز التكلفة (للأدوار غير المديرة)
-      const canOverride = ["owner", "admin", "manager"].includes(role)
-      if (!canOverride && member?.branch_id) {
-        invoicesQuery = invoicesQuery.eq("branch_id", member.branch_id)
-      }
-      if (!canOverride && member?.cost_center_id) {
-        invoicesQuery = invoicesQuery.eq("cost_center_id", member.cost_center_id)
-      }
+      // ✅ تطبيق قواعد الرؤية الموحدة
+      invoicesQuery = applyDataVisibilityFilter(invoicesQuery, visibilityRules, "invoices")
 
-      const { data } = await invoicesQuery.order("invoice_date", { ascending: false })
-      setInvoices(data || [])
+      const { data: rawData } = await invoicesQuery.order("invoice_date", { ascending: false })
+      
+      // ✅ فلترة إضافية في JavaScript للحالات المعقدة (cost_center_id مع branch_id)
+      // لأن Supabase لا يدعم فلترة معقدة مثل: (branch_id = X OR NULL) AND (cost_center_id = Y OR NULL)
+      let filteredInvoices = rawData || []
+      if (visibilityRules.filterByCostCenter && visibilityRules.costCenterId && rawData) {
+        filteredInvoices = rawData.filter((inv: any) => {
+          // يجب أن يطابق cost_center_id أو يكون NULL (للفواتير القديمة)
+          return !inv.cost_center_id || inv.cost_center_id === visibilityRules.costCenterId
+        })
+      }
+      
+      setInvoices(filteredInvoices)
 
       // تحميل المدفوعات من جدول payments لحساب المبالغ المدفوعة الفعلية
-      const invoiceIds = Array.from(new Set((data || []).map((inv: any) => inv.id)))
+      const invoiceIds = Array.from(new Set((filteredInvoices || []).map((inv: any) => inv.id)))
       if (invoiceIds.length) {
         const { data: payData } = await supabase
           .from("payments")
@@ -461,20 +470,20 @@ export default function InvoicesPage() {
           .in("invoice_id", invoiceIds)
 
         if (salesReturns && salesReturns.length > 0) {
-          const srIds = salesReturns.map(sr => sr.id)
+          const srIds = salesReturns.map((sr: any) => sr.id)
           const { data: srItems } = await supabase
             .from("sales_return_items")
             .select("sales_return_id, product_id, quantity")
             .in("sales_return_id", srIds)
 
-          const returnedQty: ReturnedQuantity[] = (srItems || []).map(item => {
-            const sr = salesReturns.find(s => s.id === item.sales_return_id)
+          const returnedQty: ReturnedQuantity[] = (srItems || []).map((item: any) => {
+            const sr = salesReturns.find((s: any) => s.id === item.sales_return_id)
             return {
               invoice_id: sr?.invoice_id || '',
               product_id: item.product_id || '',
               quantity: item.quantity || 0
             }
-          }).filter(r => r.invoice_id && r.product_id)
+          }).filter((r: any) => r.invoice_id && r.product_id)
           setReturnedQuantities(returnedQty)
         } else {
           setReturnedQuantities([])
@@ -486,7 +495,7 @@ export default function InvoicesPage() {
       }
 
       // تحميل أوامر البيع المرتبطة بالفواتير لمعرفة الموظف المنشئ
-      const salesOrderIds = (data || []).filter((inv: any) => inv.sales_order_id).map((inv: any) => inv.sales_order_id)
+      const salesOrderIds = (filteredInvoices || []).filter((inv: any) => inv.sales_order_id).map((inv: any) => inv.sales_order_id)
       if (salesOrderIds.length > 0) {
         const { data: salesOrders } = await supabase
           .from("sales_orders")
@@ -495,7 +504,7 @@ export default function InvoicesPage() {
 
         // بناء خريطة: invoice_id -> created_by_user_id
         const invToEmpMap: Record<string, string> = {}
-        for (const inv of (data || [])) {
+        for (const inv of (filteredInvoices || [])) {
           if (inv.sales_order_id) {
             const so = (salesOrders || []).find((s: any) => s.id === inv.sales_order_id)
             if (so?.created_by_user_id) {
