@@ -146,39 +146,42 @@ export default function WriteOffsPage() {
 
       // 🔐 ERP Access Control - جلب سياق المستخدم
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data: memberData } = await supabase
-          .from("company_members")
-          .select("role, branch_id, cost_center_id, warehouse_id")
-          .eq("company_id", cid)
-          .eq("user_id", user.id)
-          .maybeSingle()
-
-        const { data: companyData } = await supabase
-          .from("companies")
-          .select("user_id")
-          .eq("id", cid)
-          .single()
-
-        const isOwner = companyData?.user_id === user.id
-        const role = isOwner ? "owner" : (memberData?.role || "viewer")
-
-        const context: UserContext = {
-          user_id: user.id,
-          company_id: cid,
-          branch_id: isOwner ? null : (memberData?.branch_id || null),
-          cost_center_id: isOwner ? null : (memberData?.cost_center_id || null),
-          warehouse_id: isOwner ? null : (memberData?.warehouse_id || null),
-          role: role,
-        }
-        setUserContext(context)
-        setCanOverrideContext(["owner", "admin", "manager"].includes(role))
-
-        // تعيين القيم الافتراضية من سياق المستخدم
-        if (context.branch_id && !branchId) setBranchId(context.branch_id)
-        if (context.cost_center_id && !costCenterId) setCostCenterId(context.cost_center_id)
-        if (context.warehouse_id && !warehouseId) setWarehouseId(context.warehouse_id)
+      if (!user) {
+        setLoading(false)
+        return
       }
+
+      const { data: memberData } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id, warehouse_id")
+        .eq("company_id", cid)
+        .eq("user_id", user.id)
+        .maybeSingle()
+
+      const { data: companyData } = await supabase
+        .from("companies")
+        .select("user_id")
+        .eq("id", cid)
+        .single()
+
+      const isOwner = companyData?.user_id === user.id
+      const role = isOwner ? "owner" : (memberData?.role || "viewer")
+
+      const context: UserContext = {
+        user_id: user.id,
+        company_id: cid,
+        branch_id: isOwner ? null : (memberData?.branch_id || null),
+        cost_center_id: isOwner ? null : (memberData?.cost_center_id || null),
+        warehouse_id: isOwner ? null : (memberData?.warehouse_id || null),
+        role: role,
+      }
+      setUserContext(context)
+      setCanOverrideContext(["owner", "admin", "manager"].includes(role))
+
+      // تعيين القيم الافتراضية من سياق المستخدم (فقط عند التغيير)
+      if (context.branch_id && context.branch_id !== branchId) setBranchId(context.branch_id)
+      if (context.cost_center_id && context.cost_center_id !== costCenterId) setCostCenterId(context.cost_center_id)
+      if (context.warehouse_id && context.warehouse_id !== warehouseId) setWarehouseId(context.warehouse_id)
 
       // Check permissions
       const [create, edit, approve, cancel, exportPerm] = await Promise.all([
@@ -194,17 +197,12 @@ export default function WriteOffsPage() {
       setCanCancel(cancel)
       setCanExport(exportPerm)
 
-      // 🔐 فلترة حسب الفرع والمخزن ومركز التكلفة والدور
-      if (!userContext) {
-        setLoading(false)
-        return
-      }
-
-      const role = userContext.role || "viewer"
-      const isCanOverride = ["owner", "admin", "manager"].includes(role)
-      const isAccountantOrManager = ["accountant", "manager"].includes(role)
-      const userBranchId = userContext.branch_id || null
-      const userWarehouseId = userContext.warehouse_id || null
+      // 🔐 فلترة حسب الفرع والمخزن ومركز التكلفة والدور - استخدام context المحلي
+      const userRole = context.role || "viewer"
+      const isCanOverride = ["owner", "admin", "manager"].includes(userRole)
+      const isAccountantOrManager = ["accountant", "manager"].includes(userRole)
+      const userBranchId = context.branch_id || null
+      const userWarehouseId = context.warehouse_id || null
 
       // جلب المخازن في الفرع للمحاسب والمدير
       let allowedWarehouseIds: string[] = []
@@ -263,15 +261,8 @@ export default function WriteOffsPage() {
         .eq("is_active", true)
         .neq("item_type", "service")
 
-      // 🔐 فلترة المنتجات حسب الفرع والمخزن - نفس منطق المخزون
-      // للمحاسب والمدير: يمكنهم رؤية جميع المنتجات في الفرع
-      // للموظف: يرى المنتجات في مخزنه فقط
-      // للمالك والمدير: يرى جميع المنتجات
-      if (!isCanOverride && userWarehouseId) {
-        // للموظف: فلترة حسب warehouse_id من خلال inventory_transactions
-        // نستخدم نهج أبسط: عرض جميع المنتجات (الفلترة ستكون عند الإهلاك)
-        // أو يمكننا عرض المنتجات التي لها حركات في المخزن
-      }
+      // 🔐 فلترة المنتجات - عرض جميع المنتجات (الفلترة على مستوى الإهلاك نفسه)
+      // لا نحتاج لفلترة المنتجات هنا لأن الفلترة تتم على مستوى الإهلاكات
 
       const { data: prods } = await productsQuery
       setProducts(prods || [])
@@ -286,7 +277,7 @@ export default function WriteOffsPage() {
     } finally {
       setLoading(false)
     }
-  }, [supabase, statusFilter, dateFrom, dateTo, userContext])
+  }, [supabase, statusFilter, dateFrom, dateTo])
 
   useEffect(() => { loadData() }, [loadData])
 
