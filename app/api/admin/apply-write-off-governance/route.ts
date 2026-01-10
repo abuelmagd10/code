@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
     }
 
     // التحقق من التطبيق
+    const supabaseClient = await createClient()
     let verification = {
       functionExists: false,
       functionWorks: false,
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const { data, error: testError } = await supabase.rpc('get_available_inventory_quantity', {
+      const { data, error: testError } = await supabaseClient.rpc('get_available_inventory_quantity', {
         p_company_id: '00000000-0000-0000-0000-000000000000',
         p_branch_id: null,
         p_warehouse_id: null,
