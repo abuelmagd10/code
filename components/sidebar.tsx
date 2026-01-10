@@ -509,13 +509,22 @@ export function Sidebar() {
       handleNotificationsUpdate() // تحديث عدد الإشعارات عند تغيير الشركة
     }
     const onPermissionsUpdated = async () => { 
+      // ✅ لا نعيد التوجيه إذا كنا في صفحة users (قد يكون المستخدم يقوم بتعديل صلاحياته)
+      const currentPath = pathname
+      if (currentPath === '/settings/users') {
+        // نحن في صفحة users - نحدث الصلاحيات فقط بدون إعادة التوجيه
+        setTimeout(() => {
+          loadPerms()
+        }, 100)
+        return
+      }
+
       // تأخير بسيط لتجنب مشاكل hydration
       setTimeout(async () => {
         loadPerms()
         
         // 🔐 التحقق من الصفحة الحالية وإعادة التوجيه إذا لزم الأمر
         try {
-          const currentPath = pathname
           if (!currentPath || currentPath === '/auth/login' || currentPath === '/auth/callback' || currentPath.startsWith('/invitations/') || currentPath === '/no-permissions') {
             return // لا نتحقق من صفحات المصادقة أو صفحة "لا توجد صلاحيات"
           }
@@ -533,7 +542,10 @@ export function Sidebar() {
             if (res.ok) {
               const data = await res.json()
               const allowedPath = data.path || '/no-permissions'
-              router.replace(allowedPath)
+              // ✅ لا نعيد التوجيه إذا كنا في صفحة users
+              if (currentPath !== '/settings/users') {
+                router.replace(allowedPath)
+              }
             }
           }
         } catch (error) {

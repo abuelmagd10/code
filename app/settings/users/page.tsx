@@ -745,20 +745,13 @@ export default function UsersSettingsPage() {
       
       await refreshMembers()
       
-      // تحديث الصلاحيات مع تأخير للتأكد من حفظ البيانات أولاً
-      // لا نحدث الصلاحيات فوراً لتجنب إعادة التوجيه
-      setTimeout(async () => {
-        try {
-          // تحديث الصلاحيات مباشرة من hook
-          await refreshPermissions()
-          // إرسال حدث لتحديث الـ Sidebar (بعد التأكد من تحديث الصلاحيات)
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new Event('permissions_updated'))
-          }
-        } catch (err) {
-          console.error('Error refreshing permissions:', err)
-        }
-      }, 500) // تأخير 500ms للتأكد من حفظ البيانات أولاً
+      // ✅ تحديث الصلاحيات فقط إذا كان المستخدم الذي تم تغيير صلاحياته هو المستخدم الحالي
+      // في حالة تغيير الدور، نتحقق من ذلك في مكان آخر (عند تغيير الدور مباشرة)
+      // هنا نحن فقط نحدث الـ Sidebar لأن تغيير الدور تم في مكان آخر
+      if (typeof window !== 'undefined') {
+        // نرسل event للـ Sidebar فقط (لن يسبب إعادة تحميل الصلاحيات)
+        window.dispatchEvent(new Event('sidebar_refresh'))
+      }
     } finally {
       setLoading(false)
     }
@@ -1041,17 +1034,26 @@ export default function UsersSettingsPage() {
                               if (res.ok && js?.ok) {
                                 setMembers((prev) => prev.map((x) => x.user_id === m.user_id ? { ...x, role: nr } : x))
                                 toastActionSuccess(toast, "تحديث", "الدور")
-                                // تحديث الصلاحيات مع تأخير لتجنب إعادة التوجيه
-                                setTimeout(async () => {
-                                  try {
-                                    await refreshPermissions()
-                                    if (typeof window !== 'undefined') {
-                                      window.dispatchEvent(new Event('permissions_updated'))
+                                
+                                // ✅ تحديث الصلاحيات فقط إذا كنا نغير دور المستخدم الحالي
+                                if (m.user_id === currentUserId) {
+                                  // نحن نغير دور المستخدم الحالي - نحدث الصلاحيات
+                                  setTimeout(async () => {
+                                    try {
+                                      await refreshPermissions()
+                                      if (typeof window !== 'undefined') {
+                                        window.dispatchEvent(new Event('permissions_updated'))
+                                      }
+                                    } catch (err) {
+                                      console.error('Error refreshing permissions:', err)
                                     }
-                                  } catch (err) {
-                                    console.error('Error refreshing permissions:', err)
+                                  }, 500)
+                                } else {
+                                  // نغير دور مستخدم آخر - نحدث فقط الـ Sidebar
+                                  if (typeof window !== 'undefined') {
+                                    window.dispatchEvent(new Event('sidebar_refresh'))
                                   }
-                                }, 500)
+                                }
                               } else {
                                 toastActionError(toast, "تحديث", "الدور", js?.error || undefined)
                               }
@@ -1825,20 +1827,30 @@ export default function UsersSettingsPage() {
                   setActionError(null)
                   toastActionSuccess(toast, "حفظ", "الصلاحيات")
                   
-                  // تحديث الصلاحيات مع تأخير للتأكد من حفظ البيانات أولاً
-                  // لا نحدث الصلاحيات فوراً لتجنب إعادة التوجيه
-                  setTimeout(async () => {
-                    try {
-                      // تحديث الصلاحيات مباشرة من hook
-                      await refreshPermissions()
-                      // إرسال حدث لتحديث الـ Sidebar (بعد التأكد من تحديث الصلاحيات)
-                      if (typeof window !== 'undefined') {
-                        window.dispatchEvent(new Event('permissions_updated'))
+                  // ✅ تحديث الصلاحيات فقط إذا كنا نحفظ صلاحيات للمستخدم الحالي
+                  // إذا كنا نحفظ صلاحيات لدور آخر، لا نحدث الصلاحيات (لأنها لا تتأثر)
+                  if (permRole === currentRole) {
+                    // نحفظ صلاحيات لدور المستخدم الحالي - نحدث الصلاحيات
+                    setTimeout(async () => {
+                      try {
+                        // تحديث الصلاحيات مباشرة من hook
+                        await refreshPermissions()
+                        // إرسال حدث لتحديث الـ Sidebar (بعد التأكد من تحديث الصلاحيات)
+                        if (typeof window !== 'undefined') {
+                          window.dispatchEvent(new Event('permissions_updated'))
+                        }
+                      } catch (err) {
+                        console.error('Error refreshing permissions:', err)
                       }
-                    } catch (err) {
-                      console.error('Error refreshing permissions:', err)
+                    }, 500) // تأخير 500ms للتأكد من حفظ البيانات أولاً
+                  } else {
+                    // نحفظ صلاحيات لدور آخر - نحدث فقط الـ Sidebar بدون إعادة تحميل الصلاحيات
+                    // هذا يمنع إعادة التوجيه غير الضرورية
+                    if (typeof window !== 'undefined') {
+                      // نرسل event منفصل للـ Sidebar فقط (بدون permissions_updated)
+                      window.dispatchEvent(new Event('sidebar_refresh'))
                     }
-                  }, 500) // تأخير 500ms للتأكد من حفظ البيانات أولاً
+                  }
                 } finally {
                   setLoading(false)
                 }
