@@ -745,14 +745,20 @@ export default function UsersSettingsPage() {
       
       await refreshMembers()
       
-      // إطلاق event لتحديث الصلاحيات في الصفحات الأخرى (بعد تأخير بسيط لتجنب مشاكل hydration)
-      setTimeout(() => {
+      // تحديث الصلاحيات مع تأخير للتأكد من حفظ البيانات أولاً
+      // لا نحدث الصلاحيات فوراً لتجنب إعادة التوجيه
+      setTimeout(async () => {
         try {
+          // تحديث الصلاحيات مباشرة من hook
+          await refreshPermissions()
+          // إرسال حدث لتحديث الـ Sidebar (بعد التأكد من تحديث الصلاحيات)
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new Event('permissions_updated'))
           }
-        } catch { }
-      }, 100)
+        } catch (err) {
+          console.error('Error refreshing permissions:', err)
+        }
+      }, 500) // تأخير 500ms للتأكد من حفظ البيانات أولاً
     } finally {
       setLoading(false)
     }
