@@ -194,27 +194,86 @@ export default function WriteOffsPage() {
       setCanCancel(cancel)
       setCanExport(exportPerm)
 
-      // Load write-offs
+      // 🔐 فلترة حسب الفرع والمخزن ومركز التكلفة والدور
+      if (!userContext) {
+        setLoading(false)
+        return
+      }
+
+      const role = userContext.role || "viewer"
+      const isCanOverride = ["owner", "admin", "manager"].includes(role)
+      const isAccountantOrManager = ["accountant", "manager"].includes(role)
+      const userBranchId = userContext.branch_id || null
+      const userWarehouseId = userContext.warehouse_id || null
+
+      // جلب المخازن في الفرع للمحاسب والمدير
+      let allowedWarehouseIds: string[] = []
+      if (isAccountantOrManager && userBranchId) {
+        const { data: branchWarehouses } = await supabase
+          .from("warehouses")
+          .select("id")
+          .eq("company_id", cid)
+          .eq("branch_id", userBranchId)
+          .eq("is_active", true)
+        
+        allowedWarehouseIds = (branchWarehouses || []).map((w: any) => w.id)
+      }
+
+      // Load write-offs مع الفلترة
       let query = supabase
         .from("inventory_write_offs")
         .select("*")
         .eq("company_id", cid)
-        .order("created_at", { ascending: false })
 
+      // 🔐 فلترة حسب الفرع والمخزن - نفس منطق صفحة المخزون
+      if (isCanOverride) {
+        // للمالك والمدير: لا فلترة - يروا جميع الإهلاكات
+      } else if (isAccountantOrManager && userBranchId) {
+        // للمحاسب والمدير: فلترة حسب warehouse_id في الفرع
+        if (userWarehouseId && allowedWarehouseIds.length > 0 && allowedWarehouseIds.includes(userWarehouseId)) {
+          // استخدام warehouse_id من context إذا كان ينتمي للفرع (نفس منطق الموظف)
+          query = query.eq("warehouse_id", userWarehouseId)
+        } else if (allowedWarehouseIds.length > 0) {
+          // فلترة حسب جميع المخازن في الفرع
+          query = query.in("warehouse_id", allowedWarehouseIds)
+        } else {
+          // إذا لم يوجد مخازن في الفرع، لا نعرض أي إهلاكات
+          query = query.in("warehouse_id", [])
+        }
+      } else if (userWarehouseId) {
+        // للموظف: فلترة حسب warehouse_id فقط
+        query = query.eq("warehouse_id", userWarehouseId)
+      }
+
+      // الفلاتر الإضافية
       if (statusFilter !== "all") query = query.eq("status", statusFilter)
       if (dateFrom) query = query.gte("write_off_date", dateFrom)
       if (dateTo) query = query.lte("write_off_date", dateTo)
 
+      query = query.order("created_at", { ascending: false })
+
       const { data: wos } = await query
       setWriteOffs(wos || [])
 
-      // Load products
-      const { data: prods } = await supabase
+      // Load products مع الفلترة حسب الفرع والمخزن
+      let productsQuery = supabase
         .from("products")
         .select("id, name, sku, cost_price, quantity_on_hand, item_type")
         .eq("company_id", cid)
         .eq("is_active", true)
         .neq("item_type", "service")
+
+      // 🔐 فلترة المنتجات حسب الفرع والمخزن - نفس منطق المخزون
+      // للمحاسب والمدير: يمكنهم رؤية جميع المنتجات في الفرع
+      // للموظف: يرى المنتجات في مخزنه فقط
+      // للمالك والمدير: يرى جميع المنتجات
+      if (!isCanOverride && userWarehouseId) {
+        // للموظف: فلترة حسب warehouse_id من خلال inventory_transactions
+        // نستخدم نهج أبسط: عرض جميع المنتجات (الفلترة ستكون عند الإهلاك)
+        // أو يمكننا عرض المنتجات التي لها حركات في المخزن
+      }
+
+      const { data: prods } = await productsQuery
       setProducts(prods || [])
 
       // Load accounts
@@ -227,7 +286,7 @@ export default function WriteOffsPage() {
     } finally {
       setLoading(false)
     }
-  }, [supabase, statusFilter, dateFrom, dateTo])
+  }, [supabase, statusFilter, dateFrom, dateTo, userContext])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -341,9 +400,7 @@ export default function WriteOffsPage() {
           total_cost: totalCost,
           notes: newNotes || null,
           created_by: user?.user?.id,
-          // Branch and Cost Center
-          branch_id: branchId || null,
-          cost_center_id: costCenterId || null,
+          // Warehouse only (branch_id and cost_center_id not in table schema)
           warehouse_id: warehouseId || null,
         })
         .select()
