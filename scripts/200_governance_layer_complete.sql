@@ -379,7 +379,16 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+DECLARE
+  v_user_role VARCHAR(50);
 BEGIN
+  -- ✅ جلب دور المستخدم في الشركة - تحديد الجدول بوضوح لتجنب ambiguity
+  SELECT cm.role INTO v_user_role
+  FROM company_members cm
+  WHERE cm.user_id = p_user_id
+    AND cm.company_id = p_company_id
+  LIMIT 1;
+
   RETURN QUERY
   SELECT
     n.id,
@@ -393,13 +402,21 @@ BEGIN
     b.name AS branch_name,
     w.name AS warehouse_name
   FROM notifications n
-  LEFT JOIN branches b ON n.branch_id = b.id
-  LEFT JOIN warehouses w ON n.warehouse_id = w.id
+  -- ✅ إصلاح ambiguity: إضافة شرط company_id في JOIN conditions
+  LEFT JOIN branches b ON (n.branch_id = b.id AND b.company_id = p_company_id)
+  LEFT JOIN warehouses w ON (n.warehouse_id = w.id AND w.company_id = p_company_id)
   WHERE n.company_id = p_company_id
     AND (n.assigned_to_user = p_user_id OR n.assigned_to_user IS NULL)
+    AND (
+      n.assigned_to_role = v_user_role 
+      OR n.assigned_to_role IS NULL
+      OR v_user_role IS NULL
+    )
     AND (p_branch_id IS NULL OR n.branch_id = p_branch_id OR n.branch_id IS NULL)
     AND (p_warehouse_id IS NULL OR n.warehouse_id = p_warehouse_id OR n.warehouse_id IS NULL)
     AND (p_status IS NULL OR n.status = p_status)
+    AND (n.expires_at IS NULL OR n.expires_at > NOW())
+    AND n.status != 'archived'
   ORDER BY
     CASE n.priority
       WHEN 'urgent' THEN 1

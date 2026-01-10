@@ -45,17 +45,48 @@ export async function POST(request: NextRequest) {
     }
 
     // تقسيم SQL إلى statements وتنفيذها
-    const statements = sqlScript
-      .split(/;\s*(?=CREATE|DROP|ALTER)/i)
-      .map(s => s.trim())
-      .filter(s => {
-        const trimmed = s.trim()
-        return trimmed.length > 20 && 
-               !trimmed.startsWith('--') && 
-               !trimmed.startsWith('/*') &&
-               (trimmed.toUpperCase().startsWith('CREATE') || 
-                trimmed.toUpperCase().startsWith('DROP'))
-      })
+    // نستخدم طريقة أكثر ذكاءً لتقسيم SQL statements
+    const statements: string[] = []
+    let currentStatement = ''
+    let inMultiLineComment = false
+    
+    const lines = sqlScript.split('\n')
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim()
+      
+      // تخطي التعليقات
+      if (trimmedLine.startsWith('--')) continue
+      if (trimmedLine.startsWith('/*')) {
+        inMultiLineComment = true
+        continue
+      }
+      if (trimmedLine.endsWith('*/')) {
+        inMultiLineComment = false
+        continue
+      }
+      if (inMultiLineComment) continue
+      if (!trimmedLine) continue
+      
+      currentStatement += line + '\n'
+      
+      // إذا انتهى statement ب semicolon
+      if (trimmedLine.endsWith(';') && !trimmedLine.endsWith('$$;')) {
+        const statement = currentStatement.trim()
+        if (statement.length > 10 && 
+            (statement.toUpperCase().startsWith('CREATE') || 
+             statement.toUpperCase().startsWith('DROP') ||
+             statement.toUpperCase().startsWith('ALTER'))) {
+          statements.push(statement)
+        }
+        currentStatement = ''
+      }
+    }
+    
+    // إضافة آخر statement إذا لم ينته بـ semicolon
+    if (currentStatement.trim().length > 10) {
+      statements.push(currentStatement.trim())
+    }
 
     const results = {
       total: statements.length,
@@ -64,9 +95,40 @@ export async function POST(request: NextRequest) {
       errors: [] as string[]
     }
 
+    // محاولة إنشاء exec_sql function أولاً (إذا لم تكن موجودة)
+    try {
+      const createExecSqlFunction = `
+        CREATE OR REPLACE FUNCTION exec_sql(sql_query TEXT)
+        RETURNS TEXT
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        AS $$
+        BEGIN
+          EXECUTE sql_query;
+          RETURN 'OK';
+        EXCEPTION
+          WHEN OTHERS THEN
+            RETURN 'ERROR: ' || SQLERRM;
+        END;
+        $$;
+      `
+      
+      const createFunctionResponse = await fetch(`${supabaseUrl}/rest/v1/rpc/exec_sql`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': serviceRoleKey,
+          'Authorization': `Bearer ${serviceRoleKey}`
+        },
+        body: JSON.stringify({ sql_query: createExecSqlFunction })
+      })
+    } catch (e) {
+      // تجاهل الخطأ - قد تكون الدالة موجودة بالفعل أو لا يمكن إنشاؤها بهذه الطريقة
+    }
+
     // تنفيذ كل statement
     for (let i = 0; i < statements.length; i++) {
-      const statement = statements[i] + ';'
+      const statement = statements[i]
       
       try {
         // استخدام REST API مباشرة
@@ -81,11 +143,17 @@ export async function POST(request: NextRequest) {
         })
 
         if (response.ok) {
-          results.success++
+          const result = await response.text()
+          if (result.includes('ERROR:')) {
+            results.failed++
+            results.errors.push(`Statement ${i + 1}: ${result}`)
+          } else {
+            results.success++
+          }
         } else {
           const errorText = await response.text()
           results.failed++
-          results.errors.push(`Statement ${i + 1}: ${errorText.substring(0, 200)}`)
+          results.errors.push(`Statement ${i + 1}: HTTP ${response.status} - ${errorText.substring(0, 200)}`)
         }
       } catch (err: any) {
         results.failed++

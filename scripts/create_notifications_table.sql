@@ -53,45 +53,48 @@ CREATE INDEX IF NOT EXISTS idx_notifications_reference ON notifications(referenc
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
 -- Policy: المستخدمون يمكنهم رؤية الإشعارات المخصصة لهم أو لدورهم
+-- ✅ إصلاح ambiguity: تحديد الجدول بوضوح في جميع subqueries
 CREATE POLICY "Users can view their own notifications"
   ON notifications
   FOR SELECT
   USING (
-    company_id IN (
-      SELECT company_id FROM company_members WHERE user_id = auth.uid()
+    notifications.company_id IN (
+      SELECT cm.company_id FROM company_members cm WHERE cm.user_id = auth.uid()
     )
     AND (
-      assigned_to_user = auth.uid()
-      OR assigned_to_user IS NULL
-      OR assigned_to_role IN (
-        SELECT role FROM company_members 
-        WHERE user_id = auth.uid() 
-        AND company_id = notifications.company_id
+      notifications.assigned_to_user = auth.uid()
+      OR notifications.assigned_to_user IS NULL
+      OR notifications.assigned_to_role IN (
+        SELECT cm2.role FROM company_members cm2
+        WHERE cm2.user_id = auth.uid() 
+        AND cm2.company_id = notifications.company_id
       )
     )
   );
 
 -- Policy: المستخدمون يمكنهم إنشاء إشعارات
+-- ✅ إصلاح ambiguity: تحديد الجدول بوضوح
 CREATE POLICY "Users can create notifications"
   ON notifications
   FOR INSERT
   WITH CHECK (
-    company_id IN (
-      SELECT company_id FROM company_members WHERE user_id = auth.uid()
+    notifications.company_id IN (
+      SELECT cm.company_id FROM company_members cm WHERE cm.user_id = auth.uid()
     )
-    AND created_by = auth.uid()
+    AND notifications.created_by = auth.uid()
   );
 
 -- Policy: المستخدمون يمكنهم تحديث الإشعارات المخصصة لهم
+-- ✅ إصلاح ambiguity: تحديد الجدول بوضوح
 CREATE POLICY "Users can update their own notifications"
   ON notifications
   FOR UPDATE
   USING (
-    assigned_to_user = auth.uid()
-    OR assigned_to_role IN (
-      SELECT role FROM company_members 
-      WHERE user_id = auth.uid() 
-      AND company_id = notifications.company_id
+    notifications.assigned_to_user = auth.uid()
+    OR notifications.assigned_to_role IN (
+      SELECT cm.role FROM company_members cm
+      WHERE cm.user_id = auth.uid() 
+      AND cm.company_id = notifications.company_id
     )
   );
 
@@ -186,11 +189,11 @@ AS $$
 DECLARE
   v_user_role VARCHAR(50);
 BEGIN
-  -- جلب دور المستخدم في الشركة
-  SELECT role INTO v_user_role
-  FROM company_members
-  WHERE user_id = p_user_id
-    AND company_id = p_company_id
+  -- جلب دور المستخدم في الشركة - ✅ تحديد الجدول بوضوح لتجنب ambiguity
+  SELECT cm.role INTO v_user_role
+  FROM company_members cm
+  WHERE cm.user_id = p_user_id
+    AND cm.company_id = p_company_id
   LIMIT 1;
 
   RETURN QUERY
@@ -219,10 +222,13 @@ BEGIN
     AND (
       n.assigned_to_role = v_user_role 
       OR n.assigned_to_role IS NULL
+      OR v_user_role IS NULL
     )
     AND (p_branch_id IS NULL OR n.branch_id = p_branch_id OR n.branch_id IS NULL)
     AND (p_warehouse_id IS NULL OR n.warehouse_id = p_warehouse_id OR n.warehouse_id IS NULL)
     AND (p_status IS NULL OR n.status = p_status)
+    AND (n.expires_at IS NULL OR n.expires_at > NOW())
+    AND n.status != 'archived'
   ORDER BY
     CASE n.priority
       WHEN 'urgent' THEN 1

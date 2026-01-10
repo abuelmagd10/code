@@ -265,14 +265,41 @@ export function NotificationCenter({
     return labels[appLang][priority]
   }
 
-  // تجنب مشاكل hydration
+  // ✅ تجنب مشاكل hydration - عرض محتوى بسيط أثناء التحميل
   if (!mounted) {
-    return null
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent 
+          className="max-w-2xl max-h-[80vh] flex flex-col p-0"
+          aria-describedby="notifications-loading-description"
+        >
+          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+            <DialogTitle className="text-xl font-bold">
+              {appLang === 'en' ? 'Notifications' : 'الإشعارات'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-center min-h-[200px]">
+            <p className="text-gray-500 dark:text-gray-400">
+              {appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}
+            </p>
+          </div>
+          <span id="notifications-loading-description" className="sr-only">
+            {appLang === 'en' ? 'Loading notifications' : 'جاري تحميل الإشعارات'}
+          </span>
+        </DialogContent>
+      </Dialog>
+    )
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col p-0">
+      <DialogContent 
+        className="max-w-2xl max-h-[80vh] flex flex-col p-0"
+        aria-describedby="notifications-description"
+      >
+        <span id="notifications-description" className="sr-only">
+          {appLang === 'en' ? 'Notifications center with filters and search functionality' : 'مركز الإشعارات مع إمكانية الفلترة والبحث'}
+        </span>
         <DialogHeader className="px-6 pt-6 pb-4 border-b">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-xl font-bold">
