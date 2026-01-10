@@ -135,23 +135,36 @@ export function canAccessPageSync(resource: string): boolean {
   return !deniedResources.includes(resource)
 }
 
-// خريطة المسارات للموارد
+// خريطة المسارات للموارد - جميع الصفحات الموجودة في التطبيق
 const PATH_TO_RESOURCE: Record<string, string> = {
+  // 📊 التقارير واللوحة الرئيسية
   '/dashboard': 'dashboard',
+  '/reports': 'reports',
+  
+  // 💰 المبيعات
   '/customers': 'customers',
   '/invoices': 'invoices',
   '/sales-orders': 'sales_orders',
   '/sales-returns': 'sales_returns',
   '/sent-invoice-returns': 'sent_invoice_returns',
+  '/estimates': 'estimates',
+  '/customer-debit-notes': 'customer_debit_notes',
+  
+  // 🛒 المشتريات
   '/suppliers': 'suppliers',
   '/bills': 'bills',
   '/purchase-orders': 'purchase_orders',
   '/purchase-returns': 'purchase_returns',
   '/vendor-credits': 'vendor_credits',
+  
+  // 📦 المخزون
   '/products': 'products',
   '/inventory': 'inventory',
   '/inventory/third-party': 'third_party_inventory',
   '/inventory/write-offs': 'write_offs',
+  '/inventory-transfers': 'inventory_transfers',
+  
+  // 🏦 المالية والمحاسبة
   '/payments': 'payments',
   '/journal-entries': 'journal_entries',
   '/chart-of-accounts': 'chart_of_accounts',
@@ -160,14 +173,19 @@ const PATH_TO_RESOURCE: Record<string, string> = {
   '/fixed-assets': 'fixed_assets',
   '/fixed-assets/categories': 'asset_categories',
   '/fixed-assets/reports': 'fixed_assets_reports',
-  '/reports': 'reports',
+  
+  // 👥 الموارد البشرية
   '/hr': 'hr',
   '/hr/employees': 'employees',
   '/hr/attendance': 'attendance',
   '/hr/payroll': 'payroll',
+  
+  // 🏢 الهيكل التنظيمي
   '/branches': 'branches',
   '/cost-centers': 'cost_centers',
   '/warehouses': 'warehouses',
+  
+  // ⚙️ الإعدادات
   '/settings': 'settings',
   '/settings/users': 'users',
   '/settings/taxes': 'taxes',
@@ -178,7 +196,8 @@ const PATH_TO_RESOURCE: Record<string, string> = {
   '/settings/profile': 'profile',
   '/settings/orders-rules': 'orders_rules',
   '/settings/accounting-maintenance': 'accounting_maintenance',
-  '/estimates': 'estimates',
+  '/settings/fix-cogs': 'accounting_maintenance', // نفس صلاحية accounting_maintenance
+  '/settings/tooltips': 'settings', // نفس صلاحية settings العامة
 }
 
 export function getResourceFromPath(path: string): string {

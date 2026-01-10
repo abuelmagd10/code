@@ -790,13 +790,11 @@ export default function UsersSettingsPage() {
 
   // تصنيف الموارد حسب الفئات للعرض المنظم - جميع الصفحات الموجودة فعلياً في التطبيق
   const resourceCategories = {
-    inventory: {
-      label: '📦 المخزون',
+    reports: {
+      label: '📊 التقارير واللوحة الرئيسية',
       resources: [
-        { value: 'products', label: 'المنتجات' },
-        { value: 'inventory', label: 'حركات المخزون' },
-        { value: 'write_offs', label: 'إهلاك المخزون' },
-        { value: 'third_party_inventory', label: 'مخزون الطرف الثالث' },
+        { value: 'dashboard', label: 'لوحة التحكم' },
+        { value: 'reports', label: 'التقارير العامة' },
       ]
     },
     sales: {
@@ -808,6 +806,7 @@ export default function UsersSettingsPage() {
         { value: 'sales_orders', label: 'أوامر المبيعات' },
         { value: 'sales_returns', label: 'مرتجعات المبيعات' },
         { value: 'sent_invoice_returns', label: 'مرتجعات الفواتير المرسلة' },
+        { value: 'customer_debit_notes', label: 'إشعارات دائن العملاء' },
       ]
     },
     purchases: {
@@ -818,6 +817,16 @@ export default function UsersSettingsPage() {
         { value: 'purchase_orders', label: 'أوامر الشراء' },
         { value: 'purchase_returns', label: 'مرتجعات المشتريات' },
         { value: 'vendor_credits', label: 'إشعارات دائن الموردين' },
+      ]
+    },
+    inventory: {
+      label: '📦 المخزون',
+      resources: [
+        { value: 'products', label: 'المنتجات' },
+        { value: 'inventory', label: 'حركات المخزون' },
+        { value: 'inventory_transfers', label: 'تحويلات المخزون' },
+        { value: 'write_offs', label: 'إهلاك المخزون' },
+        { value: 'third_party_inventory', label: 'مخزون الطرف الثالث' },
       ]
     },
     finance: {
@@ -842,11 +851,12 @@ export default function UsersSettingsPage() {
         { value: 'payroll', label: 'الرواتب' },
       ]
     },
-    reports: {
-      label: '📊 التقارير',
+    organization: {
+      label: '🏢 الهيكل التنظيمي',
       resources: [
-        { value: 'reports', label: 'التقارير العامة' },
-        { value: 'dashboard', label: 'لوحة التحكم' },
+        { value: 'branches', label: 'الفروع' },
+        { value: 'cost_centers', label: 'مراكز التكلفة' },
+        { value: 'warehouses', label: 'المستودعات' },
       ]
     },
     settings: {
@@ -863,14 +873,6 @@ export default function UsersSettingsPage() {
         { value: 'profile', label: 'الملف الشخصي' },
         { value: 'orders_rules', label: 'قواعد الطلبات' },
         { value: 'accounting_maintenance', label: 'صيانة المحاسبة' },
-      ]
-    },
-    organization: {
-      label: '🏢 الهيكل التنظيمي',
-      resources: [
-        { value: 'branches', label: 'الفروع' },
-        { value: 'cost_centers', label: 'مراكز التكلفة' },
-        { value: 'warehouses', label: 'المستودعات' },
       ]
     },
     permissions: {
