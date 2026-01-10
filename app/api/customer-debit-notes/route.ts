@@ -1,7 +1,7 @@
 /**
- * 🔒 API الفواتير مع نظام التحكم في الرؤية الموحد
+ * 🔒 API إشعارات مدين العملاء مع نظام التحكم في الرؤية الموحد
  * 
- * GET /api/invoices - جلب الفواتير مع تطبيق قواعد الرؤية
+ * GET /api/customer-debit-notes - جلب إشعارات مدين العملاء مع تطبيق قواعد الرؤية
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -10,8 +10,8 @@ import { getActiveCompanyId } from "@/lib/company"
 import { applyDataVisibilityFilter } from "@/lib/data-visibility-control"
 
 /**
- * GET /api/invoices
- * جلب الفواتير مع تطبيق الصلاحيات
+ * GET /api/customer-debit-notes
+ * جلب إشعارات مدين العملاء مع تطبيق قواعد الرؤية
  */
 export async function GET(request: NextRequest) {
   try {
@@ -32,10 +32,9 @@ export async function GET(request: NextRequest) {
     // 3️⃣ تطبيق نظام التحكم في الرؤية
     const { searchParams } = new URL(request.url)
     const status = searchParams.get("status") || undefined
-    const invoiceType = searchParams.get("type") || undefined
     
     let query = supabase
-      .from("invoices")
+      .from("customer_debit_notes")
       .select(`
         *,
         customers:customer_id (id, name, phone, city)
@@ -46,40 +45,36 @@ export async function GET(request: NextRequest) {
     if (status && status !== "all") {
       query = query.eq("status", status)
     }
-    if (invoiceType && invoiceType !== "all") {
-      query = query.eq("invoice_type", invoiceType)
-    }
 
     // 4️⃣ تطبيق قواعد الرؤية
-    query = await applyDataVisibilityFilter(supabase, query, "invoices", user.id, companyId)
+    query = await applyDataVisibilityFilter(supabase, query, "customer_debit_notes", user.id, companyId)
     
     // ترتيب حسب التاريخ
     query = query.order("created_at", { ascending: false })
 
-    const { data: invoices, error: dbError } = await query
+    const { data: debitNotes, error: dbError } = await query
 
     if (dbError) {
-      console.error("[API /invoices] Database error:", dbError)
+      console.error("[API /customer-debit-notes] Database error:", dbError)
       return NextResponse.json({ 
         error: dbError.message, 
-        error_ar: "خطأ في جلب الفواتير" 
+        error_ar: "خطأ في جلب إشعارات مدين العملاء" 
       }, { status: 500 })
     }
 
     return NextResponse.json({
       success: true,
-      data: invoices || [],
+      data: debitNotes || [],
       meta: {
-        total: (invoices || []).length
+        total: (debitNotes || []).length
       }
     })
 
   } catch (error: any) {
-    console.error("[API /invoices] Unexpected error:", error)
+    console.error("[API /customer-debit-notes] Unexpected error:", error)
     return NextResponse.json({ 
       error: error.message, 
       error_ar: "حدث خطأ غير متوقع" 
     }, { status: 500 })
   }
 }
-
