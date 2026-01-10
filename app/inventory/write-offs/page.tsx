@@ -335,8 +335,8 @@ export default function WriteOffsPage() {
                   }
                 }
 
-                // استخدام RPC function للحصول على الرصيد المتاح
-                const { data: availableQty } = await supabase.rpc("get_available_inventory_quantity", {
+                // استخدام RPC function للحصول على الرصيد المتاح (مع fallback)
+                const { data: availableQty, error: rpcError } = await supabase.rpc("get_available_inventory_quantity", {
                   p_company_id: companyId,
                   p_branch_id: finalBranchId,
                   p_warehouse_id: warehouseId,
@@ -344,14 +344,41 @@ export default function WriteOffsPage() {
                   p_product_id: value,
                 })
 
-                // تحديث الرصيد بعد الحصول عليه (مع التحقق من أن المنتج لم يتغير)
-                setNewItems(prevItems => {
-                  const newUpdated = [...prevItems]
-                  if (newUpdated[index]?.product_id === value) {
-                    newUpdated[index] = { ...newUpdated[index], available_qty: availableQty || 0 }
-                  }
-                  return newUpdated
-                })
+                // إذا كانت الدالة غير موجودة، استخدم حساب fallback مباشرة
+                if (rpcError && (rpcError.code === "42883" || rpcError.code === "P0001" || rpcError.message?.includes("does not exist") || rpcError.message?.includes("404"))) {
+                  // حساب مباشر من inventory_transactions
+                  let fallbackQuery = supabase
+                    .from("inventory_transactions")
+                    .select("quantity_change")
+                    .eq("company_id", companyId)
+                    .eq("product_id", value)
+                    .or("is_deleted.is.null,is_deleted.eq.false")
+
+                  if (finalBranchId) fallbackQuery = fallbackQuery.eq("branch_id", finalBranchId)
+                  if (warehouseId) fallbackQuery = fallbackQuery.eq("warehouse_id", warehouseId)
+                  if (costCenterId) fallbackQuery = fallbackQuery.eq("cost_center_id", costCenterId)
+
+                  const { data: transactions } = await fallbackQuery
+                  const calculatedQty = Math.max(0, (transactions || []).reduce((sum: number, tx: any) => sum + Number(tx.quantity_change || 0), 0))
+
+                  // تحديث الرصيد المحسوب
+                  setNewItems(prevItems => {
+                    const newUpdated = [...prevItems]
+                    if (newUpdated[index]?.product_id === value) {
+                      newUpdated[index] = { ...newUpdated[index], available_qty: calculatedQty }
+                    }
+                    return newUpdated
+                  })
+                } else if (!rpcError && availableQty !== null && availableQty !== undefined) {
+                  // تحديث الرصيد بعد الحصول عليه (مع التحقق من أن المنتج لم يتغير)
+                  setNewItems(prevItems => {
+                    const newUpdated = [...prevItems]
+                    if (newUpdated[index]?.product_id === value) {
+                      newUpdated[index] = { ...newUpdated[index], available_qty: availableQty || 0 }
+                    }
+                    return newUpdated
+                  })
+                }
               } catch (error) {
                 console.error("Error fetching available quantity:", error)
                 // Fallback: quantity_on_hand تم تعيينه مسبقاً
@@ -642,8 +669,8 @@ export default function WriteOffsPage() {
                   }
                 }
 
-                // استخدام RPC function للحصول على الرصيد المتاح
-                const { data: availableQty } = await supabase.rpc("get_available_inventory_quantity", {
+                // استخدام RPC function للحصول على الرصيد المتاح (مع fallback)
+                const { data: availableQty, error: rpcError } = await supabase.rpc("get_available_inventory_quantity", {
                   p_company_id: companyId,
                   p_branch_id: finalBranchId,
                   p_warehouse_id: selectedWriteOff.warehouse_id,
@@ -651,14 +678,41 @@ export default function WriteOffsPage() {
                   p_product_id: value,
                 })
 
-                // تحديث الرصيد بعد الحصول عليه (مع التحقق من أن المنتج لم يتغير)
-                setEditItems(prevItems => {
-                  const newUpdated = [...prevItems]
-                  if (newUpdated[index]?.product_id === value) {
-                    newUpdated[index] = { ...newUpdated[index], available_qty: availableQty || 0 }
-                  }
-                  return newUpdated
-                })
+                // إذا كانت الدالة غير موجودة، استخدم حساب fallback مباشرة
+                if (rpcError && (rpcError.code === "42883" || rpcError.code === "P0001" || rpcError.message?.includes("does not exist") || rpcError.message?.includes("404"))) {
+                  // حساب مباشر من inventory_transactions
+                  let fallbackQuery = supabase
+                    .from("inventory_transactions")
+                    .select("quantity_change")
+                    .eq("company_id", companyId)
+                    .eq("product_id", value)
+                    .or("is_deleted.is.null,is_deleted.eq.false")
+
+                  if (finalBranchId) fallbackQuery = fallbackQuery.eq("branch_id", finalBranchId)
+                  if (selectedWriteOff.warehouse_id) fallbackQuery = fallbackQuery.eq("warehouse_id", selectedWriteOff.warehouse_id)
+                  if (costCenterId) fallbackQuery = fallbackQuery.eq("cost_center_id", costCenterId)
+
+                  const { data: transactions } = await fallbackQuery
+                  const calculatedQty = Math.max(0, (transactions || []).reduce((sum: number, tx: any) => sum + Number(tx.quantity_change || 0), 0))
+
+                  // تحديث الرصيد المحسوب
+                  setEditItems(prevItems => {
+                    const newUpdated = [...prevItems]
+                    if (newUpdated[index]?.product_id === value) {
+                      newUpdated[index] = { ...newUpdated[index], available_qty: calculatedQty }
+                    }
+                    return newUpdated
+                  })
+                } else if (!rpcError && availableQty !== null && availableQty !== undefined) {
+                  // تحديث الرصيد بعد الحصول عليه (مع التحقق من أن المنتج لم يتغير)
+                  setEditItems(prevItems => {
+                    const newUpdated = [...prevItems]
+                    if (newUpdated[index]?.product_id === value) {
+                      newUpdated[index] = { ...newUpdated[index], available_qty: availableQty || 0 }
+                    }
+                    return newUpdated
+                  })
+                }
               } catch (error) {
                 console.error("Error fetching available quantity:", error)
                 // Fallback: quantity_on_hand تم تعيينه مسبقاً

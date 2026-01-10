@@ -46,7 +46,7 @@ export async function getAvailableInventoryQuantity(
   productId: string
 ): Promise<number> {
   try {
-    // استخدام RPC function من قاعدة البيانات
+    // استخدام RPC function من قاعدة البيانات (إذا كانت موجودة)
     const { data, error } = await supabase.rpc("get_available_inventory_quantity", {
       p_company_id: companyId,
       p_branch_id: branchId,
@@ -55,9 +55,23 @@ export async function getAvailableInventoryQuantity(
       p_product_id: productId,
     })
 
+    // إذا كانت الدالة غير موجودة (404) أو حدث خطأ، استخدم fallback
     if (error) {
+      // 404 أو 42883 يعني أن الدالة غير موجودة
+      if (error.code === "42883" || error.code === "P0001" || error.message?.includes("does not exist") || error.message?.includes("404")) {
+        console.warn("RPC function 'get_available_inventory_quantity' not found, using fallback calculation. Please run the SQL script: scripts/042_write_off_governance_validation.sql")
+        // Fallback: حساب مباشر من inventory_transactions
+        return await calculateAvailableQuantityFallback(
+          supabase,
+          companyId,
+          branchId,
+          warehouseId,
+          costCenterId,
+          productId
+        )
+      }
       console.error("Error getting available inventory quantity:", error)
-      // Fallback: حساب مباشر من inventory_transactions
+      // Fallback في حالة أخطاء أخرى
       return await calculateAvailableQuantityFallback(
         supabase,
         companyId,
@@ -69,8 +83,19 @@ export async function getAvailableInventoryQuantity(
     }
 
     return data || 0
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in getAvailableInventoryQuantity:", error)
+    // Fallback في حالة exceptions
+    if (error?.code === "42883" || error?.message?.includes("does not exist") || error?.message?.includes("404")) {
+      return await calculateAvailableQuantityFallback(
+        supabase,
+        companyId,
+        branchId,
+        warehouseId,
+        costCenterId,
+        productId
+      )
+    }
     return 0
   }
 }
