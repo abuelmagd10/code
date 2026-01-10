@@ -1,5 +1,5 @@
 /**
- * 🔒 API أوامر البيع مع الحوكمة الإلزامية
+ * 🔒 API أوامر البيع مع الحوكمة الإلزامية - إصدار مبسط
  * 
  * GET /api/sales-orders - جلب أوامر البيع مع تطبيق الحوكمة الإلزامية
  * POST /api/sales-orders - إنشاء أمر بيع جديد مع الحوكمة الإلزامية
@@ -9,8 +9,6 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 import { getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
-import ERPGovernanceLayer, { GovernanceContext } from "@/lib/erp-governance-layer"
-import { SecureQueryBuilder } from "@/lib/api-security-governance"
 
 /**
  * GET /api/sales-orders
@@ -32,21 +30,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No company found", error_ar: "لا توجد شركة" }, { status: 400 })
     }
 
-    // 3️⃣ 🔒 الحصول على سياق الحوكمة الإلزامي
-    let governance: GovernanceContext
-    try {
-      governance = await ERPGovernanceLayer.getUserGovernanceContext(supabase, user.id, companyId)
-    } catch (error: any) {
+    // 3️⃣ جلب سياق الحوكمة للمستخدم
+    const { data: governance } = await supabase
+      .from('user_branch_cost_center')
+      .select('branch_id, cost_center_id')
+      .eq('user_id', user.id)
+      .eq('company_id', companyId)
+      .single()
+
+    if (!governance) {
       return NextResponse.json({ 
-        error: error.message, 
-        error_ar: "خطأ في سياق الحوكمة" 
+        error: "User governance context not found", 
+        error_ar: "سياق الحوكمة للمستخدم غير موجود" 
       }, { status: 403 })
     }
 
-    // 4️⃣ 🔒 التحقق من الحوكمة الإلزامية
-    ERPGovernanceLayer.validateGovernance(governance, true) // نحتاج warehouse لأوامر البيع
-
-    // 5️⃣ جلب معلومات العضوية والدور
+    // 4️⃣ جلب معلومات العضوية والدور
     const { data: member } = await supabase
       .from("company_members")
       .select("role")
@@ -56,22 +55,23 @@ export async function GET(request: NextRequest) {
 
     const role = member?.role || ""
 
-    // 6️⃣ بناء فلتر الوصول
+    // 5️⃣ بناء فلتر الوصول
     const { searchParams } = new URL(request.url)
     const status = searchParams.get("status") || undefined
     const filterByEmployee = searchParams.get("employee_id") || undefined
     
-    const accessFilter = getAccessFilter(role, user.id, governance.branchId, governance.costCenterId, filterByEmployee)
+    const accessFilter = getAccessFilter(role, user.id, governance.branch_id, governance.cost_center_id, filterByEmployee)
 
-    // 7️⃣ 🔒 استخدام SecureQueryBuilder (بدون NULL escapes)
-    const queryBuilder = new SecureQueryBuilder(supabase, governance)
-    let query = queryBuilder.getSalesOrders()
-    
-    // إضافة بيانات العملاء
-    query = query.select(`
-      *,
-      customers:customer_id (id, name, phone, city)
-    `)
+    // 6️⃣ بناء الاستعلام مع تطبيق الحوكمة
+    let query = supabase
+      .from("sales_orders")
+      .select(`
+        *,
+        customers:customer_id (id, name, phone, city)
+      `)
+      .eq("company_id", companyId)
+      .eq("branch_id", governance.branch_id)
+      .eq("cost_center_id", governance.cost_center_id)
 
     // 🔒 تطبيق فلتر المنشئ (للموظفين)
     if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
@@ -104,15 +104,13 @@ export async function GET(request: NextRequest) {
         role,
         accessLevel: getRoleAccessLevel(role),
         governance: {
-          branchId: governance.branchId,
-          costCenterId: governance.costCenterId,
-          warehouseId: governance.warehouseId
+          branchId: governance.branch_id,
+          costCenterId: governance.cost_center_id
         },
         filterApplied: {
           byCreatedBy: accessFilter.filterByCreatedBy,
-          byBranch: true, // 🔒 دائماً مفعل
-          byCostCenter: true, // 🔒 دائماً مفعل
-          byWarehouse: true // 🔒 دائماً مفعل
+          byBranch: true,
+          byCostCenter: true
         }
       }
     })
@@ -146,29 +144,49 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No company found", error_ar: "لا توجد شركة" }, { status: 400 })
     }
 
-    // 3️⃣ 🔒 الحصول على سياق الحوكمة الإلزامي
-    let governance: GovernanceContext
-    try {
-      governance = await ERPGovernanceLayer.getUserGovernanceContext(supabase, user.id, companyId)
-    } catch (error: any) {
+    // 3️⃣ جلب سياق الحوكمة للمستخدم
+    const { data: governance } = await supabase
+      .from('user_branch_cost_center')
+      .select('branch_id, cost_center_id')
+      .eq('user_id', user.id)
+      .eq('company_id', companyId)
+      .single()
+
+    if (!governance) {
       return NextResponse.json({ 
-        error: error.message, 
-        error_ar: "خطأ في سياق الحوكمة" 
+        error: "User governance context not found", 
+        error_ar: "سياق الحوكمة للمستخدم غير موجود" 
       }, { status: 403 })
     }
 
-    // 4️⃣ 🔒 التحقق من الحوكمة الإلزامية
-    ERPGovernanceLayer.validateGovernance(governance, true) // نحتاج warehouse لأوامر البيع
+    // 4️⃣ الحصول على المخزن الرئيسي للفرع
+    const { data: warehouse } = await supabase
+      .from('warehouses')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('branch_id', governance.branch_id)
+      .eq('is_main', true)
+      .single()
+
+    if (!warehouse) {
+      return NextResponse.json({ 
+        error: "No main warehouse found for branch", 
+        error_ar: "لا يوجد مخزن رئيسي للفرع" 
+      }, { status: 400 })
+    }
 
     // 5️⃣ قراءة بيانات أمر البيع
     const body = await request.json()
     
-    // 6️⃣ 🔒 تطبيق الحوكمة الإلزامية على البيانات
-    const salesOrderData = ERPGovernanceLayer.enforceGovernanceOnInsert(
-      body,
-      governance,
-      true // نحتاج warehouse لأوامر البيع
-    )
+    // 6️⃣ تطبيق الحوكمة الإلزامية على البيانات
+    const salesOrderData = {
+      ...body,
+      company_id: companyId,
+      branch_id: governance.branch_id,
+      cost_center_id: governance.cost_center_id,
+      warehouse_id: warehouse.id,
+      created_by_user_id: user.id
+    }
 
     const { data: newSalesOrder, error: insertError } = await supabase
       .from("sales_orders")
@@ -189,9 +207,9 @@ export async function POST(request: NextRequest) {
       message: "Sales order created successfully",
       message_ar: "تم إنشاء أمر البيع بنجاح",
       governance: {
-        branchId: governance.branchId,
-        costCenterId: governance.costCenterId,
-        warehouseId: governance.warehouseId,
+        branchId: governance.branch_id,
+        costCenterId: governance.cost_center_id,
+        warehouseId: warehouse.id,
         enforced: true
       }
     }, { status: 201 })
