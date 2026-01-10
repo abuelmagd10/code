@@ -299,63 +299,75 @@ export default function WriteOffsPage() {
   }
 
   // تحديث عنصر مع جلب الرصيد المتاح بناءً على warehouse/branch/cost_center
-  const updateItem = async (index: number, field: string, value: any) => {
-    const updated = [...newItems]
+  const updateItem = useCallback((index: number, field: string, value: any) => {
+    setNewItems(prev => {
+      const updated = [...prev]
       ; (updated[index] as any)[field] = value
 
-    if (field === "product_id") {
-      const prod = products.find(p => p.id === value)
-      if (prod) {
-        updated[index].unit_cost = prod.cost_price || 0
-        updated[index].product_name = prod.name
-        updated[index].product_sku = prod.sku
-        updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
+      if (field === "product_id") {
+        const prod = products.find(p => p.id === value)
+        if (prod) {
+          updated[index].unit_cost = prod.cost_price || 0
+          updated[index].product_name = prod.name
+          updated[index].product_sku = prod.sku
+          updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
 
-        // 🧾 Governance Rule: جلب الرصيد المتاح بناءً على warehouse/branch/cost_center
-        if (companyId && warehouseId && value) {
-          try {
-            // جلب branch_id من warehouse إذا لم يكن محدداً
-            let finalBranchId = branchId
-            if (!finalBranchId && warehouseId) {
-              const { data: warehouse } = await supabase
-                .from("warehouses")
-                .select("branch_id")
-                .eq("id", warehouseId)
-                .single()
-              
-              if (warehouse?.branch_id) {
-                finalBranchId = warehouse.branch_id
-              }
-            }
-
-            // استخدام RPC function للحصول على الرصيد المتاح
-            const { data: availableQty } = await supabase.rpc("get_available_inventory_quantity", {
-              p_company_id: companyId,
-              p_branch_id: finalBranchId,
-              p_warehouse_id: warehouseId,
-              p_cost_center_id: costCenterId,
-              p_product_id: value,
-            })
-
-            updated[index].available_qty = availableQty || 0
-          } catch (error) {
-            console.error("Error fetching available quantity:", error)
-            // Fallback: استخدام quantity_on_hand من المنتج
-            updated[index].available_qty = prod.quantity_on_hand || 0
-          }
-        } else {
-          // Fallback: استخدام quantity_on_hand من المنتج
+          // 🧾 Governance Rule: جلب الرصيد المتاح بناءً على warehouse/branch/cost_center
+          // Fallback فوري: استخدام quantity_on_hand من المنتج
           updated[index].available_qty = prod.quantity_on_hand || 0
+
+          // جلب الرصيد الفعلي بشكل async (بعد update state)
+          if (companyId && warehouseId && value) {
+            // استخدام IIFE لتجنب مشاكل async في event handler
+            (async () => {
+              try {
+                // جلب branch_id من warehouse إذا لم يكن محدداً
+                let finalBranchId = branchId
+                if (!finalBranchId && warehouseId) {
+                  const { data: warehouse } = await supabase
+                    .from("warehouses")
+                    .select("branch_id")
+                    .eq("id", warehouseId)
+                    .single()
+                  
+                  if (warehouse?.branch_id) {
+                    finalBranchId = warehouse.branch_id
+                  }
+                }
+
+                // استخدام RPC function للحصول على الرصيد المتاح
+                const { data: availableQty } = await supabase.rpc("get_available_inventory_quantity", {
+                  p_company_id: companyId,
+                  p_branch_id: finalBranchId,
+                  p_warehouse_id: warehouseId,
+                  p_cost_center_id: costCenterId,
+                  p_product_id: value,
+                })
+
+                // تحديث الرصيد بعد الحصول عليه (مع التحقق من أن المنتج لم يتغير)
+                setNewItems(prevItems => {
+                  const newUpdated = [...prevItems]
+                  if (newUpdated[index]?.product_id === value) {
+                    newUpdated[index] = { ...newUpdated[index], available_qty: availableQty || 0 }
+                  }
+                  return newUpdated
+                })
+              } catch (error) {
+                console.error("Error fetching available quantity:", error)
+                // Fallback: quantity_on_hand تم تعيينه مسبقاً
+              }
+            })()
+          }
         }
       }
-    }
 
-    if (field === "quantity" || field === "unit_cost") {
-      updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
-    }
+      if (field === "quantity" || field === "unit_cost") {
+        updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
+      }
 
-    setNewItems(updated)
-  }
+      return updated
+    })
+  }, [products, companyId, warehouseId, branchId, costCenterId, supabase])
 
   // حذف عنصر
   const removeItem = (index: number) => {
@@ -594,63 +606,75 @@ export default function WriteOffsPage() {
   }
 
   // تحديث عنصر في وضع التعديل مع جلب الرصيد المتاح
-  const updateEditItem = async (index: number, field: string, value: any) => {
-    const updated = [...editItems]
+  const updateEditItem = useCallback((index: number, field: string, value: any) => {
+    setEditItems(prev => {
+      const updated = [...prev]
       ; (updated[index] as any)[field] = value
 
-    if (field === "product_id") {
-      const prod = products.find(p => p.id === value)
-      if (prod) {
-        updated[index].unit_cost = prod.cost_price || 0
-        updated[index].product_name = prod.name
-        updated[index].product_sku = prod.sku
-        updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
+      if (field === "product_id") {
+        const prod = products.find(p => p.id === value)
+        if (prod) {
+          updated[index].unit_cost = prod.cost_price || 0
+          updated[index].product_name = prod.name
+          updated[index].product_sku = prod.sku
+          updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
 
-        // 🧾 Governance Rule: جلب الرصيد المتاح بناءً على warehouse/branch/cost_center
-        if (companyId && selectedWriteOff?.warehouse_id && value) {
-          try {
-            // جلب branch_id من warehouse إذا لم يكن محدداً
-            let finalBranchId = branchId
-            if (!finalBranchId && selectedWriteOff.warehouse_id) {
-              const { data: warehouse } = await supabase
-                .from("warehouses")
-                .select("branch_id")
-                .eq("id", selectedWriteOff.warehouse_id)
-                .single()
-              
-              if (warehouse?.branch_id) {
-                finalBranchId = warehouse.branch_id
-              }
-            }
-
-            // استخدام RPC function للحصول على الرصيد المتاح
-            const { data: availableQty } = await supabase.rpc("get_available_inventory_quantity", {
-              p_company_id: companyId,
-              p_branch_id: finalBranchId,
-              p_warehouse_id: selectedWriteOff.warehouse_id,
-              p_cost_center_id: costCenterId,
-              p_product_id: value,
-            })
-
-            updated[index].available_qty = availableQty || 0
-          } catch (error) {
-            console.error("Error fetching available quantity:", error)
-            // Fallback: استخدام quantity_on_hand من المنتج
-            updated[index].available_qty = prod.quantity_on_hand || 0
-          }
-        } else {
-          // Fallback: استخدام quantity_on_hand من المنتج
+          // 🧾 Governance Rule: جلب الرصيد المتاح بناءً على warehouse/branch/cost_center
+          // Fallback فوري: استخدام quantity_on_hand من المنتج
           updated[index].available_qty = prod.quantity_on_hand || 0
+
+          // جلب الرصيد الفعلي بشكل async (بعد update state)
+          if (companyId && selectedWriteOff?.warehouse_id && value) {
+            // استخدام IIFE لتجنب مشاكل async في event handler
+            (async () => {
+              try {
+                // جلب branch_id من warehouse إذا لم يكن محدداً
+                let finalBranchId = branchId
+                if (!finalBranchId && selectedWriteOff.warehouse_id) {
+                  const { data: warehouse } = await supabase
+                    .from("warehouses")
+                    .select("branch_id")
+                    .eq("id", selectedWriteOff.warehouse_id)
+                    .single()
+                  
+                  if (warehouse?.branch_id) {
+                    finalBranchId = warehouse.branch_id
+                  }
+                }
+
+                // استخدام RPC function للحصول على الرصيد المتاح
+                const { data: availableQty } = await supabase.rpc("get_available_inventory_quantity", {
+                  p_company_id: companyId,
+                  p_branch_id: finalBranchId,
+                  p_warehouse_id: selectedWriteOff.warehouse_id,
+                  p_cost_center_id: costCenterId,
+                  p_product_id: value,
+                })
+
+                // تحديث الرصيد بعد الحصول عليه (مع التحقق من أن المنتج لم يتغير)
+                setEditItems(prevItems => {
+                  const newUpdated = [...prevItems]
+                  if (newUpdated[index]?.product_id === value) {
+                    newUpdated[index] = { ...newUpdated[index], available_qty: availableQty || 0 }
+                  }
+                  return newUpdated
+                })
+              } catch (error) {
+                console.error("Error fetching available quantity:", error)
+                // Fallback: quantity_on_hand تم تعيينه مسبقاً
+              }
+            })()
+          }
         }
       }
-    }
 
-    if (field === "quantity" || field === "unit_cost") {
-      updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
-    }
+      if (field === "quantity" || field === "unit_cost") {
+        updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
+      }
 
-    setEditItems(updated)
-  }
+      return updated
+    })
+  }, [products, companyId, selectedWriteOff, branchId, costCenterId, supabase])
 
   // إضافة منتج في وضع التعديل
   const addEditItem = () => {
