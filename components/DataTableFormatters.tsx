@@ -152,6 +152,26 @@ export const statusConfigs: Record<string, {
     className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
     label: { ar: 'قيد الانتظار', en: 'Pending' }
   },
+  pending_approval: {
+    variant: 'outline',
+    className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+    label: { ar: 'قيد الموافقة', en: 'Pending Approval' }
+  },
+  approved: {
+    variant: 'default',
+    className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+    label: { ar: 'موافق عليه', en: 'Approved' }
+  },
+  rejected: {
+    variant: 'destructive',
+    className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+    label: { ar: 'مرفوض', en: 'Rejected' }
+  },
+  applied: {
+    variant: 'default',
+    className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+    label: { ar: 'مطبق', en: 'Applied' }
+  },
   completed: {
     variant: 'default',
     className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',

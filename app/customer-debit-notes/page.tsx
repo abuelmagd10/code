@@ -9,7 +9,10 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Plus, Eye, FileText, DollarSign, CheckCircle, Clock } from "lucide-react"
+import { canAction } from "@/lib/authz"
+import { usePermissions } from "@/lib/permissions-context"
+import { useRouter } from "next/navigation"
+import { Plus, Eye, FileText, DollarSign, CheckCircle, Clock, Loader2 } from "lucide-react"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
@@ -41,6 +44,10 @@ type CustomerDebitNote = {
 
 export default function CustomerDebitNotesPage() {
   const supabase = useSupabase()
+  const router = useRouter()
+  const { isReady, canAccessPage: canAccess, isLoading: permsLoading } = usePermissions()
+
+  const [hydrated, setHydrated] = useState(false)
   const [debitNotes, setDebitNotes] = useState<CustomerDebitNote[]>([])
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -56,11 +63,54 @@ export default function CustomerDebitNotesPage() {
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>('all')
+  const [canAccessPageState, setCanAccessPageState] = useState<boolean>(true)
+  const [permWrite, setPermWrite] = useState(false)
 
-  // تهيئة اللغة بعد hydration
+  // ✅ إصلاح Hydration: تهيئة اللغة بعد hydration فقط
   useEffect(() => {
-    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+    setHydrated(true)
+    const handler = () => {
+      if (typeof window !== 'undefined') {
+        try {
+          const v = localStorage.getItem('app_language') || 'ar'
+          setAppLang(v === 'en' ? 'en' : 'ar')
+        } catch { }
+      }
+    }
+    // تهيئة اللغة بعد hydration
+    if (typeof window !== 'undefined') {
+      handler()
+      window.addEventListener('app_language_changed', handler)
+      return () => window.removeEventListener('app_language_changed', handler)
+    }
   }, [])
+
+  // ✅ التحقق من صلاحية الوصول للصفحة
+  useEffect(() => {
+    if (!isReady || permsLoading) return
+
+    const checkAccess = async () => {
+      try {
+        // التحقق من الصلاحيات باستخدام usePermissions hook
+        const hasAccess = canAccess('customer_debit_notes')
+        setCanAccessPageState(hasAccess)
+
+        // التحقق من صلاحية الكتابة
+        const write = await canAction(supabase, 'customer_debit_notes', 'write')
+        setPermWrite(write)
+
+        // إذا لم يكن لديه صلاحية، إعادة التوجيه
+        if (!hasAccess) {
+          router.replace('/no-permissions')
+        }
+      } catch (error) {
+        console.error('Error checking permissions:', error)
+        setCanAccessPageState(false)
+      }
+    }
+
+    checkAccess()
+  }, [isReady, permsLoading, canAccess, supabase, router])
 
   async function loadData() {
     setLoading(true)
@@ -244,18 +294,8 @@ export default function CustomerDebitNotesPage() {
 
   // Get status badge
   const getApprovalStatusBadge = (status: string) => {
-    switch (status) {
-      case 'draft':
-        return <StatusBadge status="draft" label={appLang === 'en' ? 'Draft' : 'مسودة'} variant="secondary" />
-      case 'pending_approval':
-        return <StatusBadge status="pending" label={appLang === 'en' ? 'Pending' : 'قيد الموافقة'} variant="warning" />
-      case 'approved':
-        return <StatusBadge status="approved" label={appLang === 'en' ? 'Approved' : 'موافق عليه'} variant="success" />
-      case 'rejected':
-        return <StatusBadge status="rejected" label={appLang === 'en' ? 'Rejected' : 'مرفوض'} variant="destructive" />
-      default:
-        return <StatusBadge status={status} label={status} variant="secondary" />
-    }
+    // استخدام status مباشرة (pending_approval موجود الآن في statusConfigs)
+    return <StatusBadge status={status} lang={appLang} />
   }
 
   // Table columns
@@ -338,6 +378,43 @@ export default function CustomerDebitNotesPage() {
     }
   ], [appLang, currencySymbol])
 
+  // ✅ حالة التحميل أو عدم hydration
+  if (!hydrated || !isReady || permsLoading) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="text-center">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+              <p className="text-gray-500 dark:text-gray-400">جاري التحميل...</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // ✅ التحقق من الصلاحية بعد التحميل
+  if (!canAccessPageState) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+          <Card className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <p className="text-red-800 dark:text-red-200 font-medium">
+                  {appLang === 'en' ? 'You do not have permission to access this page.' : 'ليس لديك صلاحية للوصول إلى هذه الصفحة.'}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
@@ -353,12 +430,14 @@ export default function CustomerDebitNotesPage() {
                 {appLang === 'en' ? 'Manage additional charges to customers' : 'إدارة الرسوم الإضافية للعملاء'}
               </p>
             </div>
-            <Link href="/customer-debit-notes/new">
-              <Button className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="h-4 w-4 mr-2" />
-                {appLang === 'en' ? 'New Debit Note' : 'إشعار جديد'}
-              </Button>
-            </Link>
+            {permWrite && (
+              <Link href="/customer-debit-notes/new">
+                <Button className="bg-blue-600 hover:bg-blue-700">
+                  <Plus className="h-4 w-4 mr-2" />
+                  {appLang === 'en' ? 'New Debit Note' : 'إشعار جديد'}
+                </Button>
+              </Link>
+            )}
           </div>
 
           {/* Statistics */}

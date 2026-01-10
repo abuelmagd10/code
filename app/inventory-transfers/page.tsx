@@ -6,11 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { TableSkeleton } from "@/components/ui/skeleton"
-import { createClient } from "@/lib/supabase/client"
+import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAccessPage, canAction } from "@/lib/authz"
+import { usePermissions } from "@/lib/permissions-context"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeftRight, Plus, Package, Warehouse, Calendar, User, CheckCircle2, Clock, XCircle, Truck, Eye } from "lucide-react"
+import { ArrowLeftRight, Plus, Package, Warehouse, Calendar, User, CheckCircle2, Clock, XCircle, Truck, Eye, Loader2 } from "lucide-react"
 
 interface Transfer {
   id: string
@@ -28,8 +31,10 @@ interface Transfer {
 }
 
 export default function InventoryTransfersPage() {
-  const supabase = createClient()
+  const supabase = useSupabase()
   const { toast } = useToast()
+  const router = useRouter()
+  const { isReady, canAccessPage: canAccess, isLoading: permsLoading } = usePermissions()
 
   const [hydrated, setHydrated] = useState(false)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
@@ -37,19 +42,54 @@ export default function InventoryTransfersPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [userRole, setUserRole] = useState<string>("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [hasAccess, setHasAccess] = useState<boolean>(true)
+  const [permWrite, setPermWrite] = useState(false)
 
+  // ✅ إصلاح Hydration: تهيئة اللغة بعد hydration فقط
   useEffect(() => {
     setHydrated(true)
     const handler = () => {
-      try {
-        const v = localStorage.getItem('app_language') || 'ar'
-        setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch { }
+      if (typeof window !== 'undefined') {
+        try {
+          const v = localStorage.getItem('app_language') || 'ar'
+          setAppLang(v === 'en' ? 'en' : 'ar')
+        } catch { }
+      }
     }
-    handler()
-    window.addEventListener('app_language_changed', handler)
-    return () => window.removeEventListener('app_language_changed', handler)
+    // تهيئة اللغة بعد hydration
+    if (typeof window !== 'undefined') {
+      handler()
+      window.addEventListener('app_language_changed', handler)
+      return () => window.removeEventListener('app_language_changed', handler)
+    }
   }, [])
+
+  // ✅ التحقق من صلاحية الوصول للصفحة
+  useEffect(() => {
+    if (!isReady || permsLoading) return
+
+    const checkAccess = async () => {
+      try {
+        // التحقق من الصلاحيات باستخدام usePermissions hook
+        const canAccessResource = canAccess('inventory_transfers')
+        setHasAccess(canAccessResource)
+
+        // التحقق من صلاحية الكتابة
+        const write = await canAction(supabase, 'inventory_transfers', 'write')
+        setPermWrite(write)
+
+        // إذا لم يكن لديه صلاحية، إعادة التوجيه
+        if (!canAccessResource) {
+          router.replace('/no-permissions')
+        }
+      } catch (error) {
+        console.error('Error checking permissions:', error)
+        setHasAccess(false)
+      }
+    }
+
+    checkAccess()
+  }, [isReady, permsLoading, canAccess, supabase, router])
 
   useEffect(() => {
     loadData()
@@ -147,9 +187,9 @@ export default function InventoryTransfersPage() {
     }
   }
 
-  // 🔒 صلاحية إنشاء طلبات النقل: Owner/Admin/Manager فقط
+  // 🔒 صلاحية إنشاء طلبات النقل: Owner/Admin/Manager فقط + التحقق من الصلاحيات
   // ❌ مسؤول المخزن لا يمكنه إنشاء طلبات نقل
-  const canCreate = ["owner", "admin", "manager"].includes(userRole)
+  const canCreate = permWrite && ["owner", "admin", "manager"].includes(userRole)
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -172,12 +212,38 @@ export default function InventoryTransfersPage() {
     ? transfers
     : transfers.filter(t => t.status === statusFilter)
 
-  if (!hydrated) {
+  // ✅ حالة التحميل أو عدم hydration
+  if (!hydrated || !isReady || permsLoading) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <Sidebar />
         <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
-          <TableSkeleton />
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="text-center">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+              <p className="text-gray-500 dark:text-gray-400">جاري التحميل...</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // ✅ التحقق من الصلاحية بعد التحميل
+  if (!hasAccess) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+          <Card className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <p className="text-red-800 dark:text-red-200 font-medium">
+                  {appLang === 'en' ? 'You do not have permission to access this page.' : 'ليس لديك صلاحية للوصول إلى هذه الصفحة.'}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </main>
       </div>
     )
