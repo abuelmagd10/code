@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { secureApiRequest } from "@/lib/api-security-enhanced"
+import { getActiveCompanyId } from "@/lib/company"
 import { validateWriteOffItems, type WriteOffItemValidation } from "@/lib/write-off-governance"
 
 /**
@@ -11,13 +11,19 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
     
-    // التحقق من الأمان
-    const { user, companyId, error } = await secureApiRequest(request, {
-      requireAuth: true,
-      requireCompany: true,
-    })
+    // التحقق من المصادقة
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json(
+        { isValid: false, errors: [{ message: "Unauthorized" }] },
+        { status: 401 }
+      )
+    }
 
-    if (error) return error
+    // الحصول على company ID
+    const companyId = await getActiveCompanyId(supabase)
+    
     if (!companyId) {
       return NextResponse.json(
         { isValid: false, errors: [{ message: "Company ID is required" }] },
