@@ -16,6 +16,7 @@ import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { canAction, canAdvancedAction } from "@/lib/authz"
+import { type UserContext } from "@/lib/validation"
 import {
   Plus, Search, Building2, Package, TrendingDown, DollarSign,
   Filter, RefreshCcw, Eye, Edit2, Calculator, FileText,
@@ -121,6 +122,9 @@ export default function FixedAssetsPage() {
   const [permDelete, setPermDelete] = useState(false)
   const [permPostDepreciation, setPermPostDepreciation] = useState(false)
 
+  // 🔐 ERP Access Control - سياق المستخدم
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
+
   // التحقق من الصلاحيات
   useEffect(() => {
     const checkPerms = async () => {
@@ -156,6 +160,34 @@ export default function FixedAssetsPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      // 🔐 ERP Access Control - جلب سياق المستخدم
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id, warehouse_id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .single()
+
+      const role = member?.role || "staff"
+      const context: UserContext = {
+        user_id: user.id,
+        company_id: companyId,
+        branch_id: member?.branch_id || null,
+        cost_center_id: member?.cost_center_id || null,
+        warehouse_id: member?.warehouse_id || null,
+        role: role
+      }
+      setUserContext(context)
+
+      const isCanOverride = ["owner", "admin"].includes(role)
+      const isAccountantOrManager = ["accountant", "manager"].includes(role)
+      const userBranchId = context.branch_id || null
+      const userCostCenterId = context.cost_center_id || null
+      const userWarehouseId = context.warehouse_id || null
+
       // Load categories
       const { data: categoriesData } = await supabase
         .from("asset_categories")
@@ -165,8 +197,21 @@ export default function FixedAssetsPage() {
         .order("name")
       setCategories(categoriesData || [])
 
-      // Load assets
-      const { data: assetsData, error: assetsError } = await supabase
+      // جلب المخازن في الفرع للمحاسب/المدير
+      let allowedWarehouseIds: string[] = []
+      if (isAccountantOrManager && userBranchId) {
+        const { data: branchWarehouses } = await supabase
+          .from("warehouses")
+          .select("id")
+          .eq("company_id", companyId)
+          .eq("branch_id", userBranchId)
+          .eq("is_active", true)
+        
+        allowedWarehouseIds = (branchWarehouses || []).map((w: any) => w.id)
+      }
+
+      // Load assets with filtering based on user context
+      let assetsQuery = supabase
         .from("fixed_assets")
         .select(`
           *,
@@ -175,6 +220,38 @@ export default function FixedAssetsPage() {
           cost_centers(cost_center_name)
         `)
         .eq("company_id", companyId)
+
+      // 🔐 فلترة حسب الفرع ومركز التكلفة والمخزن والدور
+      if (!isCanOverride) {
+        if (isAccountantOrManager && userBranchId) {
+          // للمحاسب والمدير: فلترة حسب الفرع أولاً
+          assetsQuery = assetsQuery.eq("branch_id", userBranchId)
+          
+          // فلترة حسب المخزن إذا كان محدداً أو حسب المخازن في الفرع
+          if (userWarehouseId && allowedWarehouseIds.length > 0 && allowedWarehouseIds.includes(userWarehouseId)) {
+            // إذا كان هناك warehouse_id محدد وينتمي لفرع المستخدم
+            assetsQuery = assetsQuery.eq("warehouse_id", userWarehouseId)
+          } else if (allowedWarehouseIds.length > 0) {
+            // إذا لم يكن هناك warehouse_id محدد، فلترة حسب جميع المخازن في الفرع
+            assetsQuery = assetsQuery.in("warehouse_id", allowedWarehouseIds)
+          }
+        } else if (userBranchId) {
+          // للموظف: فلترة حسب الفرع
+          assetsQuery = assetsQuery.eq("branch_id", userBranchId)
+          
+          // فلترة حسب المخزن إذا كان محدداً
+          if (userWarehouseId) {
+            assetsQuery = assetsQuery.eq("warehouse_id", userWarehouseId)
+          }
+        }
+
+        // فلترة حسب مركز التكلفة إذا كان محدداً
+        if (userCostCenterId) {
+          assetsQuery = assetsQuery.eq("cost_center_id", userCostCenterId)
+        }
+      }
+
+      const { data: assetsData, error: assetsError } = await assetsQuery
         .order("created_at", { ascending: false })
 
       if (assetsError) {
