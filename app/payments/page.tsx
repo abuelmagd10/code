@@ -2410,7 +2410,7 @@ export default function PaymentsPage() {
                             const hasPOViaBill = !!(p.bill_id && billToPoMap[p.bill_id])
                             const hasAnyPO = hasDirectPO || hasPOViaBill
                             return !hasAnyPO && permWrite && (
-                              <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang === 'en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
+                            <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang === 'en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
                             )
                           })()}
                           {permUpdate && (
@@ -2696,17 +2696,17 @@ export default function PaymentsPage() {
                       // ✅ 2. عكس القيد الأصلي بالكامل (إن وجد)
                       if (originalEntryId && originalEntryLines.length > 0) {
                         const { data: revEntry } = await supabase
-                          .from("journal_entries").insert({
-                            company_id: mapping.companyId,
+                        .from("journal_entries").insert({
+                          company_id: mapping.companyId,
                             reference_type: isCustomer ? "invoice_payment_reversal" : "bill_payment_reversal",
                             reference_id: editingPayment.invoice_id || editingPayment.bill_id || null,
-                            entry_date: editFields.payment_date || editingPayment.payment_date,
+                          entry_date: editFields.payment_date || editingPayment.payment_date,
                             description: isCustomer 
                               ? `عكس قيد سداد فاتورة (تغيير حساب الدفع)`
                               : `عكس قيد سداد فاتورة مورد (تغيير حساب الدفع)`,
-                            branch_id: mapping.branchId || null,
-                            cost_center_id: mapping.costCenterId || null,
-                          }).select().single()
+                          branch_id: mapping.branchId || null,
+                          cost_center_id: mapping.costCenterId || null,
+                        }).select().single()
                         
                         if (revEntry?.id) {
                           // عكس جميع بنود القيد الأصلي
@@ -2775,7 +2775,7 @@ export default function PaymentsPage() {
                         // إنشاء بنود القيد الجديد
                         if (isCustomer && mapping.ar) {
                           // قيد سداد فاتورة عميل: Dr. Cash/Bank / Cr. AR
-                          await supabase.from("journal_entry_lines").insert([
+                        await supabase.from("journal_entry_lines").insert([
                             {
                               journal_entry_id: newEntry.id,
                               account_id: newCashId,
