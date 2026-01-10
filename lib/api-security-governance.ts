@@ -104,6 +104,19 @@ export class SecureQueryBuilder {
   }
 
   /**
+   * Secure sales orders query - NO NULL escapes
+   */
+  getSalesOrders() {
+    return this.supabase
+      .from('sales_orders')
+      .select('*')
+      .eq('company_id', this.governance.companyId)
+      .eq('branch_id', this.governance.branchId)
+      .eq('cost_center_id', this.governance.costCenterId)
+      .eq('warehouse_id', this.governance.warehouseId);
+  }
+
+  /**
    * Secure purchase orders query - NO NULL escapes
    */
   getPurchaseOrders() {
