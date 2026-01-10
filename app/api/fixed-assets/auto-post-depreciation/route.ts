@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveCompanyId } from '@/lib/company'
-import { requireOwnerOrAdmin } from '@/lib/api-security'
+import { secureApiRequest } from '@/lib/api-security'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 /**
  * API Endpoint: Auto-post Monthly Depreciation
  * 
  * This endpoint automatically posts all approved depreciation schedules
- * for the current month. It is protected by requireOwnerOrAdmin.
+ * for the current month. It is protected by secureApiRequest with post_depreciation permission.
+ * Filters schedules by branch, cost center, warehouse, and user role.
  * 
  * Additive Only: Does not modify existing accounting logic.
  */
@@ -26,30 +27,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No active company' }, { status: 400 })
     }
 
-    // === Security: Require Owner or Admin ===
-    const { user, error: authError } = await requireOwnerOrAdmin(request)
+    // === Security: Require permission to post depreciation ===
+    const { user, companyId: verifiedCompanyId, member, error: authError } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "fixed_assets", action: "post_depreciation" },
+      allowRoles: ['owner', 'admin', 'accountant', 'manager']
+    })
+
     if (authError) {
-      return NextResponse.json({ error: authError }, { status: 403 })
+      return authError
     }
 
-    if (!user) {
+    if (!user || !verifiedCompanyId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // 🔐 ERP Access Control - جلب سياق المستخدم للفلترة
-    const { data: member } = await supabase
-      .from("company_members")
-      .select("role, branch_id, cost_center_id, warehouse_id")
-      .eq("company_id", companyId)
-      .eq("user_id", user.id)
-      .maybeSingle()
-
     const role = member?.role || "staff"
     const isCanOverride = ["owner", "admin"].includes(role)
     const isAccountantOrManager = ["accountant", "manager"].includes(role)
-    const userBranchId = member?.branch_id || null
-    const userCostCenterId = member?.cost_center_id || null
-    const userWarehouseId = member?.warehouse_id || null
+    
+    // Get full member data including branch, cost_center, warehouse
+    const { data: fullMemberData } = await supabase
+      .from("company_members")
+      .select("role, branch_id, cost_center_id, warehouse_id")
+      .eq("company_id", verifiedCompanyId)
+      .eq("user_id", user.id)
+      .maybeSingle()
+
+    const userBranchId = fullMemberData?.branch_id || null
+    const userCostCenterId = fullMemberData?.cost_center_id || null
+    const userWarehouseId = fullMemberData?.warehouse_id || null
 
     // جلب المخازن في الفرع للمحاسب/المدير
     let allowedWarehouseIds: string[] = []
@@ -57,7 +66,7 @@ export async function POST(request: NextRequest) {
       const { data: branchWarehouses } = await supabase
         .from("warehouses")
         .select("id")
-        .eq("company_id", companyId)
+        .eq("company_id", verifiedCompanyId)
         .eq("branch_id", userBranchId)
         .eq("is_active", true)
       
@@ -84,7 +93,7 @@ export async function POST(request: NextRequest) {
           status
         )
       `)
-      .eq('company_id', companyId)
+      .eq('company_id', verifiedCompanyId)
       .eq('status', 'approved')
       .eq('fixed_assets.status', 'active')
       .gte('period_date', monthStart.toISOString().split('T')[0])
@@ -164,12 +173,12 @@ export async function POST(request: NextRequest) {
     // Log successful operation
     try {
       await admin.from('audit_logs').insert({
-        company_id: companyId,
+        company_id: verifiedCompanyId,
         user_id: user.id,
         user_email: user.email,
         action: 'depreciation_auto_post',
         target_table: 'depreciation_schedules',
-        record_id: companyId,
+        record_id: verifiedCompanyId,
         record_identifier: 'auto_post_monthly_depreciation',
         new_data: {
           posted_count: result.posted_count,
@@ -209,30 +218,38 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No active company' }, { status: 400 })
     }
 
-    // === Security: Require Owner or Admin ===
-    const { user, error: authError } = await requireOwnerOrAdmin(request)
+    // === Security: Require permission to view depreciation ===
+    const { user, companyId: verifiedCompanyId, member, error: authError } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "fixed_assets", action: "read" },
+      allowRoles: ['owner', 'admin', 'accountant', 'manager', 'viewer']
+    })
+
     if (authError) {
-      return NextResponse.json({ error: authError }, { status: 403 })
+      return authError
     }
 
-    if (!user) {
+    if (!user || !verifiedCompanyId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // 🔐 ERP Access Control - جلب سياق المستخدم للفلترة
-    const { data: member } = await supabase
-      .from("company_members")
-      .select("role, branch_id, cost_center_id, warehouse_id")
-      .eq("company_id", companyId)
-      .eq("user_id", user.id)
-      .maybeSingle()
-
     const role = member?.role || "staff"
     const isCanOverride = ["owner", "admin"].includes(role)
     const isAccountantOrManager = ["accountant", "manager"].includes(role)
-    const userBranchId = member?.branch_id || null
-    const userCostCenterId = member?.cost_center_id || null
-    const userWarehouseId = member?.warehouse_id || null
+    
+    // Get full member data including branch, cost_center, warehouse
+    const { data: fullMemberData } = await supabase
+      .from("company_members")
+      .select("role, branch_id, cost_center_id, warehouse_id")
+      .eq("company_id", verifiedCompanyId)
+      .eq("user_id", user.id)
+      .maybeSingle()
+
+    const userBranchId = fullMemberData?.branch_id || null
+    const userCostCenterId = fullMemberData?.cost_center_id || null
+    const userWarehouseId = fullMemberData?.warehouse_id || null
 
     // جلب المخازن في الفرع للمحاسب/المدير
     let allowedWarehouseIds: string[] = []
@@ -240,7 +257,7 @@ export async function GET(request: NextRequest) {
       const { data: branchWarehouses } = await supabase
         .from("warehouses")
         .select("id")
-        .eq("company_id", companyId)
+        .eq("company_id", verifiedCompanyId)
         .eq("branch_id", userBranchId)
         .eq("is_active", true)
       
@@ -272,7 +289,7 @@ export async function GET(request: NextRequest) {
           warehouse_id
         )
       `)
-      .eq('company_id', companyId)
+      .eq('company_id', verifiedCompanyId)
       .eq('status', 'approved')
       .eq('fixed_assets.status', 'active')
       .gte('period_date', monthStart.toISOString().split('T')[0])
