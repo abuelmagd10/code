@@ -192,22 +192,20 @@ export function applyDataVisibilityFilter<T extends any>(
     query = (query as any).eq("company_id", rules.companyId) as T
   }
 
-  // ✅ 2. branch_id
+  // ✅ 2. branch_id - STRICT ENFORCEMENT
   if (rules.filterByBranch && rules.branchId) {
-    // دعم الفواتير القديمة التي قد يكون branch_id فيها NULL
-    query = (query as any).or(`branch_id.eq.${rules.branchId},branch_id.is.null`) as T
+    query = (query as any).eq("branch_id", rules.branchId) as T
   }
 
-  // ✅ 3. cost_center_id
+  // ✅ 3. cost_center_id - STRICT ENFORCEMENT
   if (rules.filterByCostCenter && rules.costCenterId) {
-    // دعم الفواتير القديمة التي قد يكون cost_center_id فيها NULL
-    query = (query as any).or(`cost_center_id.eq.${rules.costCenterId},cost_center_id.is.null`) as T
+    query = (query as any).eq("cost_center_id", rules.costCenterId) as T
   }
 
-  // ✅ 4. warehouse_id (إذا كان الجدول يحتوي على هذا العمود)
-  const tablesWithWarehouse = ["inventory_transactions", "inventory_write_offs", "sales_orders", "purchase_orders"]
+  // ✅ 4. warehouse_id - STRICT ENFORCEMENT
+  const tablesWithWarehouse = ["inventory_transactions", "inventory_write_offs", "sales_orders", "purchase_orders", "invoices", "bills"]
   if (rules.filterByWarehouse && rules.warehouseId && tablesWithWarehouse.includes(tableName)) {
-    query = (query as any).or(`warehouse_id.eq.${rules.warehouseId},warehouse_id.is.null`) as T
+    query = (query as any).eq("warehouse_id", rules.warehouseId) as T
   }
 
   // ✅ 5. created_by (للموظف فقط)
@@ -330,23 +328,23 @@ export function canAccessDocument<T extends {
     return false
   }
 
-  // ✅ 2. branch_id
+  // ✅ 2. branch_id - STRICT ENFORCEMENT
   if (rules.filterByBranch && rules.branchId) {
-    if (document.branch_id !== rules.branchId && document.branch_id !== null) {
+    if (document.branch_id !== rules.branchId) {
       return false
     }
   }
 
-  // ✅ 3. cost_center_id
+  // ✅ 3. cost_center_id - STRICT ENFORCEMENT
   if (rules.filterByCostCenter && rules.costCenterId) {
-    if (document.cost_center_id !== rules.costCenterId && document.cost_center_id !== null) {
+    if (document.cost_center_id !== rules.costCenterId) {
       return false
     }
   }
 
-  // ✅ 4. warehouse_id
+  // ✅ 4. warehouse_id - STRICT ENFORCEMENT
   if (rules.filterByWarehouse && rules.warehouseId) {
-    if (document.warehouse_id !== rules.warehouseId && document.warehouse_id !== null) {
+    if (document.warehouse_id !== rules.warehouseId) {
       return false
     }
   }

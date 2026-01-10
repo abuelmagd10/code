@@ -1,18 +1,20 @@
 /**
- * 🔒 API الموردين مع تطبيق الصلاحيات على مستوى Backend
+ * 🔒 API الموردين مع تطبيق الحوكمة الإلزامية
  * 
- * GET /api/suppliers - جلب الموردين مع تطبيق الصلاحيات
- * POST /api/suppliers - إنشاء مورد جديد
+ * GET /api/suppliers - جلب الموردين مع تطبيق الحوكمة الإلزامية
+ * POST /api/suppliers - إنشاء مورد جديد مع الحوكمة الإلزامية
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 import { getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
+import ERPGovernanceLayer, { GovernanceContext } from "@/lib/erp-governance-layer"
+import { SecureQueryBuilder } from "@/lib/api-security-governance"
 
 /**
  * GET /api/suppliers
- * جلب الموردين مع تطبيق الصلاحيات
+ * جلب الموردين مع تطبيق الحوكمة الإلزامية
  */
 export async function GET(request: NextRequest) {
   try {
@@ -30,29 +32,39 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No company found", error_ar: "لا توجد شركة" }, { status: 400 })
     }
 
-    // 3️⃣ جلب معلومات العضوية والدور
+    // 3️⃣ 🔒 الحصول على سياق الحوكمة الإلزامي
+    let governance: GovernanceContext
+    try {
+      governance = await ERPGovernanceLayer.getUserGovernanceContext(supabase, user.id, companyId)
+    } catch (error: any) {
+      return NextResponse.json({ 
+        error: error.message, 
+        error_ar: "خطأ في سياق الحوكمة" 
+      }, { status: 403 })
+    }
+
+    // 4️⃣ 🔒 التحقق من الحوكمة الإلزامية
+    ERPGovernanceLayer.validateGovernance(governance, false) // لا نحتاج warehouse للموردين
+
+    // 5️⃣ جلب معلومات العضوية والدور
     const { data: member } = await supabase
       .from("company_members")
-      .select("role, branch_id, cost_center_id, warehouse_id")
+      .select("role")
       .eq("company_id", companyId)
       .eq("user_id", user.id)
       .maybeSingle()
 
     const role = member?.role || ""
-    const branchId = member?.branch_id || null
-    const costCenterId = member?.cost_center_id || null
 
-    // 4️⃣ بناء فلتر الوصول
+    // 6️⃣ بناء فلتر الوصول
     const { searchParams } = new URL(request.url)
     const filterByEmployee = searchParams.get("employee_id") || undefined
     
-    const accessFilter = getAccessFilter(role, user.id, branchId, costCenterId, filterByEmployee)
+    const accessFilter = getAccessFilter(role, user.id, governance.branchId, governance.costCenterId, filterByEmployee)
 
-    // 5️⃣ بناء الاستعلام مع تطبيق الصلاحيات
-    let query = supabase
-      .from("suppliers")
-      .select("*")
-      .eq("company_id", companyId)
+    // 7️⃣ 🔒 استخدام SecureQueryBuilder (بدون NULL escapes)
+    const queryBuilder = new SecureQueryBuilder(supabase, governance)
+    let query = queryBuilder.getSuppliers()
 
     // 🔒 تطبيق فلتر المنشئ (للموظفين)
     if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
@@ -72,7 +84,7 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // 6️⃣ جلب الموردين المشتركين (للموظفين فقط)
+    // 8️⃣ جلب الموردين المشتركين (للموظفين فقط)
     let sharedSuppliers: any[] = []
     if (accessFilter.filterByCreatedBy) {
       const { data: sharedPerms } = await supabase
@@ -85,17 +97,22 @@ export async function GET(request: NextRequest) {
 
       if (sharedPerms && sharedPerms.length > 0) {
         const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id)
-        const { data: sharedData } = await supabase
+        
+        // 🔒 استخدام الحوكمة للموردين المشتركين أيضاً
+        let sharedQuery = supabase
           .from("suppliers")
           .select("*")
           .eq("company_id", companyId)
+          .eq("branch_id", governance.branchId)
+          .eq("cost_center_id", governance.costCenterId)
           .in("created_by_user_id", grantorIds)
 
+        const { data: sharedData } = await sharedQuery
         sharedSuppliers = sharedData || []
       }
     }
 
-    // 7️⃣ دمج النتائج (بدون تكرار)
+    // 9️⃣ دمج النتائج (بدون تكرار)
     const allSuppliers = [...(suppliers || [])]
     sharedSuppliers.forEach((ss: any) => {
       if (!allSuppliers.find((s: any) => s.id === ss.id)) {
@@ -110,8 +127,15 @@ export async function GET(request: NextRequest) {
         total: allSuppliers.length,
         role,
         accessLevel: getRoleAccessLevel(role),
+        governance: {
+          branchId: governance.branchId,
+          costCenterId: governance.costCenterId,
+          warehouseId: governance.warehouseId
+        },
         filterApplied: {
-          byCreatedBy: accessFilter.filterByCreatedBy
+          byCreatedBy: accessFilter.filterByCreatedBy,
+          byBranch: true, // 🔒 دائماً مفعل
+          byCostCenter: true // 🔒 دائماً مفعل
         }
       }
     })
@@ -127,7 +151,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/suppliers
- * إنشاء مورد جديد مع تسجيل المنشئ
+ * إنشاء مورد جديد مع تطبيق الحوكمة الإلزامية
  */
 export async function POST(request: NextRequest) {
   try {
@@ -145,15 +169,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No company found", error_ar: "لا توجد شركة" }, { status: 400 })
     }
 
-    // 3️⃣ قراءة بيانات المورد
+    // 3️⃣ 🔒 الحصول على سياق الحوكمة الإلزامي
+    let governance: GovernanceContext
+    try {
+      governance = await ERPGovernanceLayer.getUserGovernanceContext(supabase, user.id, companyId)
+    } catch (error: any) {
+      return NextResponse.json({ 
+        error: error.message, 
+        error_ar: "خطأ في سياق الحوكمة" 
+      }, { status: 403 })
+    }
+
+    // 4️⃣ 🔒 التحقق من الحوكمة الإلزامية
+    ERPGovernanceLayer.validateGovernance(governance, false) // لا نحتاج warehouse للموردين
+
+    // 5️⃣ قراءة بيانات المورد
     const body = await request.json()
     
-    // 4️⃣ إنشاء المورد مع تسجيل المنشئ
-    const supplierData = {
-      ...body,
-      company_id: companyId,
-      created_by_user_id: user.id, // 🔒 تسجيل المنشئ
-    }
+    // 6️⃣ 🔒 تطبيق الحوكمة الإلزامية على البيانات
+    const supplierData = ERPGovernanceLayer.enforceGovernanceOnInsert(
+      body,
+      governance,
+      false // لا نحتاج warehouse للموردين
+    )
 
     const { data: newSupplier, error: insertError } = await supabase
       .from("suppliers")
@@ -172,7 +210,12 @@ export async function POST(request: NextRequest) {
       success: true,
       data: newSupplier,
       message: "Supplier created successfully",
-      message_ar: "تم إنشاء المورد بنجاح"
+      message_ar: "تم إنشاء المورد بنجاح",
+      governance: {
+        branchId: governance.branchId,
+        costCenterId: governance.costCenterId,
+        enforced: true
+      }
     }, { status: 201 })
 
   } catch (error: any) {
