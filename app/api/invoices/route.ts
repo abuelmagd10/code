@@ -1,85 +1,69 @@
 /**
- * 🔒 API الفواتير مع نظام التحكم في الرؤية الموحد
- * 
- * GET /api/invoices - جلب الفواتير مع تطبيق قواعد الرؤية
+ * 🔒 API الفواتير مع الحوكمة الإلزامية
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
-import { applyDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { getRoleAccessLevel } from "@/lib/validation"
 
-/**
- * GET /api/invoices
- * جلب الفواتير مع تطبيق الصلاحيات
- */
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
     
-    // 1️⃣ التحقق من المصادقة
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized", error_ar: "غير مصرح" }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // 2️⃣ جلب الشركة النشطة
     const companyId = await getActiveCompanyId(supabase)
     if (!companyId) {
-      return NextResponse.json({ error: "No company found", error_ar: "لا توجد شركة" }, { status: 400 })
+      return NextResponse.json({ error: "No company found" }, { status: 400 })
     }
 
-    // 3️⃣ تطبيق نظام التحكم في الرؤية
-    const { searchParams } = new URL(request.url)
-    const status = searchParams.get("status") || undefined
-    const invoiceType = searchParams.get("type") || undefined
+    const { data: member } = await supabase
+      .from("company_members")
+      .select("role, branch_id, cost_center_id, warehouse_id")
+      .eq("company_id", companyId)
+      .eq("user_id", user.id)
+      .single()
+
+    if (!member) {
+      return NextResponse.json({ error: "User not found in company" }, { status: 403 })
+    }
+
+    const accessLevel = getRoleAccessLevel(member.role)
     
     let query = supabase
       .from("invoices")
-      .select(`
-        *,
-        customers:customer_id (id, name, phone, city)
-      `)
+      .select("*")
       .eq("company_id", companyId)
 
-    // تطبيق فلاتر إضافية
-    if (status && status !== "all") {
-      query = query.eq("status", status)
-    }
-    if (invoiceType && invoiceType !== "all") {
-      query = query.eq("invoice_type", invoiceType)
+    if (accessLevel === 'own') {
+      query = query.eq("created_by_user_id", user.id)
+    } else if (accessLevel === 'branch' && member.branch_id) {
+      query = query.eq("branch_id", member.branch_id)
     }
 
-    // 4️⃣ تطبيق قواعد الرؤية
-    query = await applyDataVisibilityFilter(supabase, query, "invoices", user.id, companyId)
-    
-    // ترتيب حسب التاريخ
     query = query.order("created_at", { ascending: false })
 
     const { data: invoices, error: dbError } = await query
 
     if (dbError) {
-      console.error("[API /invoices] Database error:", dbError)
-      return NextResponse.json({ 
-        error: dbError.message, 
-        error_ar: "خطأ في جلب الفواتير" 
-      }, { status: 500 })
+      return NextResponse.json({ error: dbError.message }, { status: 500 })
     }
 
     return NextResponse.json({
       success: true,
       data: invoices || [],
       meta: {
-        total: (invoices || []).length
+        total: (invoices || []).length,
+        role: member.role,
+        accessLevel: accessLevel
       }
     })
 
   } catch (error: any) {
-    console.error("[API /invoices] Unexpected error:", error)
-    return NextResponse.json({ 
-      error: error.message, 
-      error_ar: "حدث خطأ غير متوقع" 
-    }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
-
