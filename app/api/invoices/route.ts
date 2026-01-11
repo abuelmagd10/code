@@ -39,8 +39,15 @@ export async function GET(request: NextRequest) {
       .select("*")
       .eq("company_id", companyId)
 
+    // للموظفين: فلتر بـ created_by_user_id إذا موجود، وإلا فلتر بـ branch_id
     if (accessLevel === 'own') {
-      query = query.eq("created_by_user_id", user.id)
+      if (member.branch_id) {
+        query = query.eq("branch_id", member.branch_id)
+        // إضافة فلتر إضافي بـ created_by_user_id إذا موجود
+        query = query.or(`created_by_user_id.eq.${user.id},created_by_user_id.is.null`)
+      } else {
+        query = query.eq("created_by_user_id", user.id)
+      }
     } else if (accessLevel === 'branch' && member.branch_id) {
       query = query.eq("branch_id", member.branch_id)
     }
