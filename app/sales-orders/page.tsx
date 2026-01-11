@@ -620,69 +620,86 @@ function SalesOrdersContent() {
 
     // تحميل الأوامر - إصدار مبسط جداً
   const loadOrders = async () => {
-    try {
-      setLoading(true);
-      const activeCompanyId = await getActiveCompanyId(supabase);
-      if (!activeCompanyId) {
-        console.log('❌ No active company found');
-        setLoading(false);
-        return;
-      }
-
-      console.log('🔍 Loading sales orders for company:', activeCompanyId);
-      
-      // 🚨 إصلاح طارئ: جلب جميع أوامر البيع بدون أي فلاتر حوكمة
-      const { data: so, error: ordersError } = await supabase
-        .from("sales_orders")
-        .select("*")
-        .eq("company_id", activeCompanyId)
-        .order("created_at", { ascending: false });
-
-      if (ordersError) {
-        console.error('❌ Error loading orders:', ordersError);
-        toast({
-          title: 'خطأ في التحميل',
-          description: 'فشل تحميل أوامر البيع: ' + ordersError.message,
-          variant: 'destructive'
-        });
-        setLoading(false);
-        return;
-      }
-
-      console.log('✅ Loaded orders:', so?.length || 0);
-      setOrders(so || []);
-
-      // جلب العملاء
-      const { data: customers } = await supabase
-        .from("customers")
-        .select("id, name, phone")
-        .eq("company_id", activeCompanyId)
-        .order("name");
-      
-      console.log('✅ Loaded customers:', customers?.length || 0);
-      setCustomers(customers || []);
-
-      // جلب المنتجات
-      const { data: products } = await supabase
-        .from("products")
-        .select("id, name, unit_price, item_type")
-        .eq("company_id", activeCompanyId)
-        .order("name");
-      
-      console.log('✅ Loaded products:', products?.length || 0);
-      setProducts(products || []);
-
+  try {
+    setLoading(true);
+    const activeCompanyId = await getActiveCompanyId(supabase);
+    if (!activeCompanyId) {
       setLoading(false);
-    } catch (error) {
-      console.error('❌ Unexpected error:', error);
-      toast({
-        title: 'خطأ غير متوقع',
-        description: 'حدث خطأ أثناء تحميل البيانات',
-        variant: 'destructive'
-      });
-      setLoading(false);
+      return;
     }
-  };
+
+    // Load sales orders
+    const { data: so } = await supabase
+      .from("sales_orders")
+      .select("*")
+      .eq("company_id", activeCompanyId)
+      .order("created_at", { ascending: false });
+
+    setOrders(so || []);
+
+    // Load customers
+    const { data: customersData } = await supabase
+      .from("customers")
+      .select("id, name, phone")
+      .eq("company_id", activeCompanyId);
+    
+    setCustomers(customersData || []);
+
+    // Load products
+    const { data: productsData } = await supabase
+      .from("products")
+      .select("id, name, unit_price, item_type")
+      .eq("company_id", activeCompanyId);
+    
+    setProducts(productsData || []);
+
+    // Load order items
+    if (so && so.length > 0) {
+      const { data: items } = await supabase
+        .from("sales_order_items")
+        .select("sales_order_id, quantity, product_id, products(name)")
+        .in("sales_order_id", so.map(o => o.id));
+      
+      setOrderItems(items || []);
+    }
+
+    // Load shipping providers
+    const { data: shipping } = await supabase
+      .from("shipping_providers")
+      .select("id, provider_name")
+      .eq("company_id", activeCompanyId);
+    
+    setShippingProviders(shipping || []);
+
+    // Load linked invoices
+    const invoiceIds = (so || []).filter(o => o.invoice_id).map(o => o.invoice_id);
+    if (invoiceIds.length > 0) {
+      const { data: invoices } = await supabase
+        .from("invoices")
+        .select("id, status, total_amount, paid_amount, returned_amount, return_status")
+        .in("id", invoiceIds);
+
+      const invoiceMap: Record<string, LinkedInvoice> = {};
+      (invoices || []).forEach((inv: any) => {
+        invoiceMap[inv.id] = {
+          id: inv.id,
+          status: inv.status,
+          total_amount: inv.total_amount || 0,
+          paid_amount: inv.paid_amount || 0,
+          returned_amount: inv.returned_amount || 0,
+          return_status: inv.return_status
+        };
+      });
+      setLinkedInvoices(invoiceMap);
+    }
+
+    setLoading(false);
+  } catch (error) {
+    console.error('Error loading orders:', error);
+    setLoading(false);
+  }
+};
+
 
 
   };
