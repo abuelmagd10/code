@@ -1,9 +1,17 @@
 /**
- * 🔒 نظام الحوكمة الصحيح - تطبيق المستويات الأساسية
+ * 🔒 نظام الحوكمة الصحيح - إصدار محدث
+ * 
+ * تطبيق المستويات الأساسية:
  * Company → Branch → Cost Center → Warehouse → Created By User
+ * 
+ * صلاحيات الأدوار:
+ * - Staff: يرى فقط ما أنشأه
+ * - Accountant: يرى كل بيانات الفرع مع فلترة حسب الموظف
+ * - Manager: يرى كل بيانات الفرع
+ * - Owner/Admin: يرى كل بيانات الشركة
  */
 
-import { UserContext, getRoleAccessLevel } from "./validation"
+import { UserContext } from "./validation"
 
 export interface DataVisibilityRules {
   companyId: string
@@ -18,12 +26,14 @@ export interface DataVisibilityRules {
   canSeeAllInScope: boolean
 }
 
+/**
+ * 🔐 بناء قواعد رؤية البيانات حسب دور المستخدم
+ */
 export function buildDataVisibilityFilter(userContext: UserContext): DataVisibilityRules {
   const role = (userContext.role || 'staff').toLowerCase();
-  const accessLevel = getRoleAccessLevel(role);
   
-  // Owner/Admin - يرى كل بيانات الشركة
-  if (accessLevel === 'company') {
+  // 1️⃣ Owner/Admin - يرى كل بيانات الشركة
+  if (role === 'owner' || role === 'admin') {
     return {
       companyId: userContext.company_id,
       filterByBranch: false,
@@ -38,8 +48,8 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
     };
   }
   
-  // Manager/Accountant - يرى بيانات الفرع
-  if (accessLevel === 'branch') {
+  // 2️⃣ Manager - يرى كل بيانات الفرع
+  if (role === 'manager') {
     return {
       companyId: userContext.company_id,
       filterByBranch: true,
@@ -54,7 +64,39 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
     };
   }
   
-  // Staff - يرى فقط ما أنشأه
+  // 3️⃣ Accountant - يرى كل بيانات الفرع (مع إمكانية فلترة حسب الموظف)
+  if (role === 'accountant') {
+    return {
+      companyId: userContext.company_id,
+      filterByBranch: true,
+      branchId: userContext.branch_id,
+      filterByCostCenter: false,
+      costCenterId: null,
+      filterByWarehouse: false,
+      warehouseId: null,
+      filterByCreatedBy: false, // يرى الكل، لكن يمكن فلترة لاحقاً
+      createdByUserId: null,
+      canSeeAllInScope: false
+    };
+  }
+  
+  // 4️⃣ Supervisor - يرى بيانات مركز التكلفة
+  if (role === 'supervisor') {
+    return {
+      companyId: userContext.company_id,
+      filterByBranch: true,
+      branchId: userContext.branch_id,
+      filterByCostCenter: true,
+      costCenterId: userContext.cost_center_id,
+      filterByWarehouse: false,
+      warehouseId: null,
+      filterByCreatedBy: false,
+      createdByUserId: null,
+      canSeeAllInScope: false
+    };
+  }
+  
+  // 5️⃣ Staff/Sales/Employee - يرى فقط ما أنشأه
   return {
     companyId: userContext.company_id,
     filterByBranch: true,
@@ -69,32 +111,35 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
   };
 }
 
+/**
+ * 🔐 تطبيق فلاتر رؤية البيانات على الاستعلام
+ */
 export function applyDataVisibilityFilter<T extends any>(
   query: T,
   rules: DataVisibilityRules,
   tableName: string = "sales_orders"
 ): T {
-  // فلتر الشركة (إجباري دائماً)
+  // 1️⃣ فلتر الشركة (إجباري دائماً)
   if (rules.companyId) {
     query = (query as any).eq("company_id", rules.companyId) as T;
   }
   
-  // فلتر الفرع
+  // 2️⃣ فلتر الفرع
   if (rules.filterByBranch && rules.branchId) {
     query = (query as any).eq("branch_id", rules.branchId) as T;
   }
   
-  // فلتر مركز التكلفة
+  // 3️⃣ فلتر مركز التكلفة
   if (rules.filterByCostCenter && rules.costCenterId) {
     query = (query as any).eq("cost_center_id", rules.costCenterId) as T;
   }
   
-  // فلتر المخزن
+  // 4️⃣ فلتر المخزن
   if (rules.filterByWarehouse && rules.warehouseId) {
     query = (query as any).eq("warehouse_id", rules.warehouseId) as T;
   }
   
-  // فلتر منشئ السجل
+  // 5️⃣ فلتر منشئ السجل
   if (rules.filterByCreatedBy && rules.createdByUserId) {
     query = (query as any).eq("created_by_user_id", rules.createdByUserId) as T;
   }
@@ -102,6 +147,9 @@ export function applyDataVisibilityFilter<T extends any>(
   return query;
 }
 
+/**
+ * 🔐 فلترة البيانات المحملة حسب قواعد الرؤية
+ */
 export function filterDataByVisibilityRules<T extends { 
   company_id?: string
   branch_id?: string | null
@@ -112,31 +160,36 @@ export function filterDataByVisibilityRules<T extends {
 }>(
   data: T[],
   rules: DataVisibilityRules,
-  options?: { filterByEmployee?: string }
+  options?: {
+    filterByEmployee?: string // فلتر اختياري للمدراء
+  }
 ): T[] {
   return data.filter((item) => {
-    // فلتر الشركة
+    // 1️⃣ فلتر الشركة
     if (item.company_id !== rules.companyId) return false;
     
-    // فلتر الفرع
+    // 2️⃣ فلتر الفرع
     if (rules.filterByBranch && rules.branchId && item.branch_id !== rules.branchId) return false;
     
-    // فلتر مركز التكلفة
+    // 3️⃣ فلتر مركز التكلفة
     if (rules.filterByCostCenter && rules.costCenterId && item.cost_center_id !== rules.costCenterId) return false;
     
-    // فلتر المخزن
+    // 4️⃣ فلتر المخزن
     if (rules.filterByWarehouse && rules.warehouseId && item.warehouse_id !== rules.warehouseId) return false;
     
-    // فلتر منشئ السجل
+    // 5️⃣ فلتر منشئ السجل
     if (rules.filterByCreatedBy && rules.createdByUserId && item.created_by_user_id !== rules.createdByUserId) return false;
     
-    // فلتر اختياري حسب الموظف (للمدراء)
+    // 6️⃣ فلتر اختياري حسب الموظف (للمدراء)
     if (options?.filterByEmployee && item.created_by_user_id !== options.filterByEmployee) return false;
     
     return true;
   });
 }
 
+/**
+ * 🔐 التحقق من إمكانية الوصول لمستند
+ */
 export function canAccessDocument<T extends {
   company_id?: string
   branch_id?: string | null
@@ -171,6 +224,9 @@ export function canAccessDocument<T extends {
   return true;
 }
 
+/**
+ * 🔐 التحقق من إمكانية إنشاء مستند
+ */
 export function canCreateDocument(
   userContext: UserContext,
   targetBranchId: string | null,
@@ -187,8 +243,8 @@ export function canCreateDocument(
     return { allowed: true };
   }
   
-  // Manager/Accountant - يمكنهم إنشاء في فرعهم
-  if (role === 'manager' || role === 'accountant') {
+  // Manager - يمكنه إنشاء في فرعه
+  if (role === 'manager') {
     if (targetBranchId && userContext.branch_id && targetBranchId !== userContext.branch_id) {
       return {
         allowed: false,
@@ -196,6 +252,31 @@ export function canCreateDocument(
           title: 'فرع غير صالح',
           description: 'يجب إنشاء المستند في فرعك المحدد',
           code: 'BRANCH_MISMATCH'
+        }
+      };
+    }
+    return { allowed: true };
+  }
+  
+  // Accountant/Supervisor - يمكنهم إنشاء في فرعهم ومركز تكلفتهم
+  if (role === 'accountant' || role === 'supervisor') {
+    if (targetBranchId && userContext.branch_id && targetBranchId !== userContext.branch_id) {
+      return {
+        allowed: false,
+        error: {
+          title: 'فرع غير صالح',
+          description: 'يجب إنشاء المستند في فرعك المحدد',
+          code: 'BRANCH_MISMATCH'
+        }
+      };
+    }
+    if (role === 'supervisor' && targetCostCenterId && userContext.cost_center_id && targetCostCenterId !== userContext.cost_center_id) {
+      return {
+        allowed: false,
+        error: {
+          title: 'مركز تكلفة غير صالح',
+          description: 'يجب إنشاء المستند في مركز التكلفة المحدد لك',
+          code: 'COST_CENTER_MISMATCH'
         }
       };
     }
@@ -239,6 +320,9 @@ export function canCreateDocument(
   return { allowed: true };
 }
 
+/**
+ * 🔐 بناء فلتر RLS لقاعدة البيانات
+ */
 export function buildRLSVisibilityFilter(userContext: UserContext, tableName: string = "sales_orders"): string {
   const rules = buildDataVisibilityFilter(userContext);
   const conditions: string[] = [];
@@ -267,4 +351,63 @@ export function buildRLSVisibilityFilter(userContext: UserContext, tableName: st
   }
   
   return conditions.join(' AND ');
+}
+
+/**
+ * 🔐 إنشاء سياق المستند من سياق المستخدم
+ */
+export function createDocumentContext(userContext: UserContext): {
+  company_id: string
+  branch_id: string | null
+  cost_center_id: string | null
+  warehouse_id: string | null
+  created_by_user_id: string
+} {
+  return {
+    company_id: userContext.company_id,
+    branch_id: userContext.branch_id || null,
+    cost_center_id: userContext.cost_center_id || null,
+    warehouse_id: userContext.warehouse_id || null,
+    created_by_user_id: userContext.user_id
+  };
+}
+
+/**
+ * 🔐 الحصول على معلومات الحوكمة للعرض
+ */
+export function getGovernanceInfo(userContext: UserContext): {
+  role: string
+  accessLevel: 'own' | 'cost_center' | 'branch' | 'company'
+  canSeeAll: boolean
+  restrictions: {
+    branch: boolean
+    costCenter: boolean
+    warehouse: boolean
+    createdBy: boolean
+  }
+} {
+  const rules = buildDataVisibilityFilter(userContext);
+  const role = (userContext.role || 'staff').toLowerCase();
+  
+  let accessLevel: 'own' | 'cost_center' | 'branch' | 'company' = 'own';
+  
+  if (role === 'owner' || role === 'admin') {
+    accessLevel = 'company';
+  } else if (role === 'manager' || role === 'accountant') {
+    accessLevel = 'branch';
+  } else if (role === 'supervisor') {
+    accessLevel = 'cost_center';
+  }
+  
+  return {
+    role,
+    accessLevel,
+    canSeeAll: rules.canSeeAllInScope,
+    restrictions: {
+      branch: rules.filterByBranch,
+      costCenter: rules.filterByCostCenter,
+      warehouse: rules.filterByWarehouse,
+      createdBy: rules.filterByCreatedBy
+    }
+  };
 }

@@ -1296,33 +1296,30 @@ export type AccessLevel = 'own' | 'branch' | 'company' | 'all';
 export type RecordAction = 'view' | 'create' | 'update' | 'delete';
 
 /**
- * الحصول على مستوى وصول الدور للعملاء وأوامر البيع
+ * الحصول على مستوى وصول الدور للعملاء وأوامر البيع والفواتير
  *
- * 📌 الأدوار:
- * - owner/admin: صلاحيات كاملة (all/company)
- * - general_manager: رؤية جميع البيانات بدون قيود (company)
- * - manager: رؤية جميع البيانات مع قيود الفرع (branch)
- * - accountant: رؤية جميع البيانات مع قيود الفرع (branch)
- * - staff/sales/employee: فقط البيانات التي أنشأها (own)
+ * 📌 الأدوار (حسب المتطلبات الجديدة):
+ * - owner/admin: صلاحيات كاملة على مستوى الشركة (company)
+ * - manager: رؤية جميع البيانات على مستوى الفرع (branch)
+ * - accountant: رؤية جميع البيانات على مستوى الفرع (branch)
+ * - staff/sales: فقط البيانات التي أنشأها (own)
  */
 export function getRoleAccessLevel(role: string): AccessLevel {
   switch (role?.toLowerCase()) {
     case 'owner':
-      return 'all';
     case 'admin':
-    case 'general_manager': // 🔹 المدير العام: صلاحيات كاملة
-      return 'company';
+      return 'company'; // 🔹 المدير العام: جميع البيانات على مستوى الشركة
     case 'manager':
-    case 'accountant': // 🔹 المحاسب: مثل المدير (رؤية كاملة + قيود تنظيمية)
+    case 'accountant': // 🔹 المحاسب: جميع البيانات على مستوى الفرع
       return 'branch';
     case 'supervisor':
       return 'branch';
     case 'sales':
     case 'staff':
-    case 'employee': // 🔹 الموظف: فقط ما أنشأه
+    case 'employee':
     case 'viewer':
     default:
-      return 'own';
+      return 'own'; // 🔹 الموظف: فقط ما أنشأه
   }
 }
 
@@ -1489,7 +1486,7 @@ export function getAccessFilter(
   const accessLevel = getRoleAccessLevel(userRole);
 
   // Owner/Admin - لا فلترة (إلا إذا اختار موظف معين)
-  if (accessLevel === 'all' || accessLevel === 'company') {
+  if (accessLevel === 'company') {
     return {
       filterByCreatedBy: !!filterByEmployee,
       createdByUserId: filterByEmployee || null,
@@ -1500,7 +1497,7 @@ export function getAccessFilter(
     };
   }
 
-  // Manager/Accountant - فلترة حسب الفرع (رؤية جميع العملاء/الموردين)
+  // Manager/Accountant - فلترة حسب الفرع (رؤية جميع البيانات في الفرع)
   const roleLower = userRole?.toLowerCase() || '';
   if (accessLevel === 'branch' && ['manager', 'accountant'].includes(roleLower)) {
     return {
@@ -1525,14 +1522,14 @@ export function getAccessFilter(
     };
   }
 
-  // Staff/Sales/Employee - فقط ما أنشأه + قيود تنظيمية
+  // Staff/Sales/Employee - فقط ما أنشأه
   return {
     filterByCreatedBy: true,
     createdByUserId: userId,
-    filterByBranch: !!userBranchId, // 🔹 تطبيق قيود الفرع للموظف
-    branchId: userBranchId,
-    filterByCostCenter: !!userCostCenterId, // 🔹 تطبيق قيود مركز التكلفة
-    costCenterId: userCostCenterId
+    filterByBranch: false,
+    branchId: null,
+    filterByCostCenter: false,
+    costCenterId: null
   };
 }
 

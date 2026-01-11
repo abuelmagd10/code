@@ -30,7 +30,30 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No company found", error_ar: "لا توجد شركة" }, { status: 400 })
     }
 
-    // 3️⃣ جلب جميع أوامر البيع بدون فلاتر حوكمة (مؤقتاً للاختبار)
+    // 3️⃣ جلب دور المستخدم وسياق الحوكمة
+    const { data: member } = await supabase
+      .from("company_members")
+      .select("role, branch_id, cost_center_id, warehouse_id")
+      .eq("company_id", companyId)
+      .eq("user_id", user.id)
+      .single()
+
+    if (!member) {
+      return NextResponse.json({ error: "User not found in company", error_ar: "المستخدم غير موجود في الشركة" }, { status: 403 })
+    }
+
+    const userContext = {
+      user_id: user.id,
+      company_id: companyId,
+      branch_id: member.branch_id,
+      cost_center_id: member.cost_center_id,
+      warehouse_id: member.warehouse_id,
+      role: member.role
+    }
+
+    // 4️⃣ تطبيق فلاتر الحوكمة
+    const accessLevel = getRoleAccessLevel(member.role)
+    
     let query = supabase
       .from("sales_orders")
       .select(`
@@ -38,6 +61,13 @@ export async function GET(request: NextRequest) {
         customers:customer_id (id, name, phone, city)
       `)
       .eq("company_id", companyId)
+
+    // تطبيق الفلاتر حسب الدور
+    if (accessLevel === 'own') {
+      query = query.eq("created_by_user_id", user.id)
+    } else if (accessLevel === 'branch' && member.branch_id) {
+      query = query.eq("branch_id", member.branch_id)
+    }
 
     // ترتيب حسب التاريخ
     query = query.order("created_at", { ascending: false })
@@ -57,15 +87,15 @@ export async function GET(request: NextRequest) {
       data: orders || [],
       meta: {
         total: (orders || []).length,
-        role: "owner",
-        accessLevel: "all",
+        role: member.role,
+        accessLevel: accessLevel,
         governance: {
-          branchId: null,
-          costCenterId: null
+          branchId: member.branch_id,
+          costCenterId: member.cost_center_id
         },
         filterApplied: {
-          byCreatedBy: false,
-          byBranch: false,
+          byCreatedBy: accessLevel === 'own',
+          byBranch: accessLevel === 'branch',
           byCostCenter: false
         }
       }
