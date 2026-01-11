@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useMemo, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"

@@ -1,0 +1,10 @@
+-- استبدال تحميل الفواتير في app/invoices/page.tsx
+-- ابحث عن السطر 426-434 واستبدله بـ:
+
+// استخدام API بدلاً من Supabase المباشر
+const response = await fetch('/api/invoices');
+const result = await response.json();
+const rawData = result.success ? result.data : [];
+
+// بقية الكود كما هو...
+let filteredInvoices = rawData || []
