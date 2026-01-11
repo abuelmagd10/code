@@ -1,0 +1,74 @@
+// استبدل دالة loadOrders في app/sales-orders/page.tsx بهذا الكود:
+
+const loadOrders = async () => {
+  try {
+    setLoading(true);
+    
+    // استخدام API بدلاً من الاستعلام المباشر
+    const response = await fetch('/api/sales-orders');
+    const result = await response.json();
+    
+    if (result.success) {
+      setOrders(result.data || []);
+    }
+    
+    // تحميل باقي البيانات
+    const activeCompanyId = await getActiveCompanyId(supabase);
+    if (!activeCompanyId) {
+      setLoading(false);
+      return;
+    }
+
+    const { data: customersData } = await supabase
+      .from("customers")
+      .select("id, name, phone")
+      .eq("company_id", activeCompanyId);
+    setCustomers(customersData || []);
+
+    const { data: productsData } = await supabase
+      .from("products")
+      .select("id, name, unit_price, item_type")
+      .eq("company_id", activeCompanyId);
+    setProducts(productsData || []);
+
+    if (result.data && result.data.length > 0) {
+      const { data: items } = await supabase
+        .from("sales_order_items")
+        .select("sales_order_id, quantity, product_id, products(name)")
+        .in("sales_order_id", result.data.map(o => o.id));
+      setOrderItems(items || []);
+    }
+
+    const { data: shipping } = await supabase
+      .from("shipping_providers")
+      .select("id, provider_name")
+      .eq("company_id", activeCompanyId);
+    setShippingProviders(shipping || []);
+
+    const invoiceIds = (result.data || []).filter(o => o.invoice_id).map(o => o.invoice_id);
+    if (invoiceIds.length > 0) {
+      const { data: invoices } = await supabase
+        .from("invoices")
+        .select("id, status, total_amount, paid_amount, returned_amount, return_status")
+        .in("id", invoiceIds);
+
+      const invoiceMap: Record<string, LinkedInvoice> = {};
+      (invoices || []).forEach((inv: any) => {
+        invoiceMap[inv.id] = {
+          id: inv.id,
+          status: inv.status,
+          total_amount: inv.total_amount || 0,
+          paid_amount: inv.paid_amount || 0,
+          returned_amount: inv.returned_amount || 0,
+          return_status: inv.return_status
+        };
+      });
+      setLinkedInvoices(invoiceMap);
+    }
+
+    setLoading(false);
+  } catch (error) {
+    console.error('Error loading orders:', error);
+    setLoading(false);
+  }
+};

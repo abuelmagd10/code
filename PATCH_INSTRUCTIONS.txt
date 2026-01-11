@@ -1,0 +1,15 @@
+// استبدل السطر 632 في app/sales-orders/page.tsx
+// من:
+const { data: so } = await supabase.from("sales_orders").select("*").eq("company_id", activeCompanyId).order("created_at", { ascending: false });
+
+// إلى:
+const response = await fetch('/api/sales-orders');
+const result = await response.json();
+const so = result.success ? result.data : [];
+
+// ثم استبدل السطر 640:
+// من:
+setOrders(so || []);
+
+// إلى:
+setOrders(so);
