@@ -700,10 +700,6 @@ function SalesOrdersContent() {
   }
 };
 
-
-
-  };
-
   // دالة لتحديث حالة الفاتورة المرتبطة
   const refreshInvoiceStatus = async (invoiceId: string) => {
     const { data: invoice } = await supabase
@@ -1636,4 +1632,5 @@ export default function SalesOrdersPage() {
 
   return <SalesOrdersContent />
 }
+
 
