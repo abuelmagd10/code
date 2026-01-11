@@ -152,10 +152,10 @@ Write-Host "🔐 Step 4: Additional Security Validation..." -ForegroundColor Cya
 
 # Check for hardcoded credentials
 $credentialPatterns = @(
-    "password\s*=\s*['\"].*['\"]",
-    "api_key\s*=\s*['\"].*['\"]",
-    "secret\s*=\s*['\"].*['\"]",
-    "token\s*=\s*['\"].*['\"]" 
+    "password\s*=\s*['\`"].*['\`"]",
+    "api_key\s*=\s*['\`"].*['\`"]",
+    "secret\s*=\s*['\`"].*['\`"]",
+    "token\s*=\s*['\`"].*['\`"]"
 )
 
 $foundCredentials = $false
@@ -282,182 +282,10 @@ if ($continueGit -eq "y" -or $continueGit -eq "Y") {
     }
     
     Write-Host "📝 Creating .gitignore file..." -ForegroundColor Yellow
-    # This will be handled by the next tool call
 } else {
     Write-Host "ℹ️  You can run this script again later to set up GitHub" -ForegroundColor Gray
 }
 
 Write-Host ""
 Write-Host "🔒 MANDATORY ERP GOVERNANCE FIXES - COMPLETED" -ForegroundColor Green
-Write-Host "============================================" -ForegroundColor Greennce patterns found"
-}
-
-if ($foundCredentials) {
-    $report += "❌ CRITICAL: Hardcoded credentials detected"
-    $report += "   Action Required: Move all credentials to environment variables"
-} else {
-    $report += "✅ No hardcoded credentials found"
-}
-
-if ($foundSqlRisks) {
-    $report += "⚠️  WARNING: Potential SQL injection risks detected"
-    $report += "   Action Required: Review and use parameterized queries"
-} else {
-    $report += "✅ No obvious SQL injection risks found"
-}
-
-$report += ""
-$report += "NEXT STEPS:"
-$report += "1. Apply database governance fixes ✅"
-$report += "2. Update API routes with governance layer"
-$report += "3. Remove dangerous NULL escape patterns"
-$report += "4. Implement SecureQueryBuilder"
-$report += "5. Test all critical workflows"
-$report += ""
-$report += "COMPLIANCE STATUS:"
-if (-not $foundViolations -and -not $foundCredentials) {
-    $report += "✅ READY FOR PRODUCTION"
-} else {
-    $report += "❌ NOT READY - CRITICAL ISSUES MUST BE FIXED"
-}
-
-# Write report to file
-$report | Out-File -FilePath $reportPath -Encoding UTF8
-Write-Host "📄 Security report saved to: $reportPath" -ForegroundColor Green
-
-Write-Host ""
-Write-Host "🏁 GOVERNANCE FIXES COMPLETE!" -ForegroundColor Green
-Write-Host "============================" -ForegroundColor Green
-Write-Host ""
-
-if (-not $foundViolations -and -not $foundCredentials) {
-    Write-Host "🎉 SUCCESS: Your ERP system is now governance-compliant!" -ForegroundColor Green
-    Write-Host "✅ Database schema enforces proper hierarchy" -ForegroundColor Green
-    Write-Host "✅ No dangerous patterns detected" -ForegroundColor Green
-    Write-Host "✅ No hardcoded credentials found" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "🚀 You may now safely enable:" -ForegroundColor Cyan
-    Write-Host "   - Refund processing" -ForegroundColor White
-    Write-Host "   - Approval workflows" -ForegroundColor White
-    Write-Host "   - Credit/Debit notes" -ForegroundColor White
-} else {
-    Write-Host "⚠️  ATTENTION: Critical issues found!" -ForegroundColor Red
-    Write-Host "❌ DO NOT enable advanced features until all issues are resolved" -ForegroundColor Red
-    Write-Host "📋 Review the security report for detailed action items" -ForegroundColor Yellow
-}
-
-Write-Host ""
-Write-Host "📚 Documentation:" -ForegroundColor Cyan
-Write-Host "   - Implementation Guide: MANDATORY_ERP_GOVERNANCE_IMPLEMENTATION_GUIDE.md" -ForegroundColor Gray
-Write-Host "   - Security Report: $reportPath" -ForegroundColor Gray
-Write-Host ""
-Write-Host "💡 Need help? Check the implementation guide for code examples." -ForegroundColor Gray
-Write-Host ""
-
-# Final pause for user to read results
-Write-Host "Press any key to exit..." -ForegroundColor Yellow
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")rnance patterns found"
-}
-
-if ($foundCredentials) {
-    $report += "❌ CRITICAL: Hardcoded credentials detected"
-    $report += "   Action Required: Move all credentials to environment variables"
-} else {
-    $report += "✅ No hardcoded credentials found"
-}
-
-if ($foundSqlRisks) {
-    $report += "⚠️  WARNING: Potential SQL injection risks detected"
-    $report += "   Action Required: Review and use parameterized queries"
-} else {
-    $report += "✅ No obvious SQL injection risks found"
-}
-
-$report += ""
-$report += "NEXT STEPS:"
-$report += "1. Apply database governance fixes"
-$report += "2. Update API routes with governance layer"
-$report += "3. Remove dangerous NULL escape patterns"
-$report += "4. Implement SecureQueryBuilder"
-$report += "5. Test all governance constraints"
-
-$report | Out-File -FilePath $reportPath -Encoding UTF8
-Write-Host "📄 Security report saved to: $reportPath" -ForegroundColor Green
-
-Write-Host "" 
-Write-Host "🏁 Governance fixes application completed!" -ForegroundColor Green
-Write-Host "Follow the implementation guide for the remaining steps." -ForegroundColor Gray
-Write-Host "" 
-Write-Host "📋 Summary:" -ForegroundColor White
-Write-Host "- Database fixes: Applied" -ForegroundColor Green
-Write-Host "- Governance verification: Completed" -ForegroundColor Green
-Write-Host "- Security scan: Completed" -ForegroundColor Green
-Write-Host "- Report generated: $reportPath" -ForegroundColor Green
-rnance patterns found"
-}
-
-if ($foundCredentials) {
-    $report += "❌ CRITICAL: Hardcoded credentials detected"
-    $report += "   Action Required: Move all credentials to environment variables"
-} else {
-    $report += "✅ No hardcoded credentials found"
-}
-
-if ($foundSqlRisks) {
-    $report += "⚠️  WARNING: Potential SQL injection risks detected"
-    $report += "   Action Required: Review and use parameterized queries"
-} else {
-    $report += "✅ No obvious SQL injection risks found"
-}
-
-$report += ""
-$report += "NEXT STEPS:"
-$report += "1. Apply database governance fixes ✅"
-$report += "2. Update API routes with governance layer"
-$report += "3. Remove dangerous NULL escape patterns"
-$report += "4. Implement SecureQueryBuilder"
-$report += "5. Test all critical workflows"
-$report += ""
-$report += "COMPLIANCE STATUS:"
-if (-not $foundViolations -and -not $foundCredentials) {
-    $report += "✅ READY FOR PRODUCTION"
-} else {
-    $report += "❌ NOT READY - CRITICAL ISSUES MUST BE FIXED"
-}
-
-# Write report to file
-$report | Out-File -FilePath $reportPath -Encoding UTF8
-Write-Host "📄 Security report saved to: $reportPath" -ForegroundColor Green
-
-Write-Host ""
-Write-Host "🏁 GOVERNANCE FIXES COMPLETE!" -ForegroundColor Green
-Write-Host "============================" -ForegroundColor Green
-Write-Host ""
-
-if (-not $foundViolations -and -not $foundCredentials) {
-    Write-Host "🎉 SUCCESS: Your ERP system is now governance-compliant!" -ForegroundColor Green
-    Write-Host "✅ Database schema enforces proper hierarchy" -ForegroundColor Green
-    Write-Host "✅ No dangerous patterns detected" -ForegroundColor Green
-    Write-Host "✅ No hardcoded credentials found" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "🚀 You may now safely enable:" -ForegroundColor Cyan
-    Write-Host "   - Refund processing" -ForegroundColor White
-    Write-Host "   - Approval workflows" -ForegroundColor White
-    Write-Host "   - Credit/Debit notes" -ForegroundColor White
-} else {
-    Write-Host "⚠️  ATTENTION: Critical issues found!" -ForegroundColor Red
-    Write-Host "❌ DO NOT enable advanced features until all issues are resolved" -ForegroundColor Red
-    Write-Host "📋 Review the security report for detailed action items" -ForegroundColor Yellow
-}
-
-Write-Host ""
-Write-Host "📚 Documentation:" -ForegroundColor Cyan
-Write-Host "   - Implementation Guide: MANDATORY_ERP_GOVERNANCE_IMPLEMENTATION_GUIDE.md" -ForegroundColor Gray
-Write-Host "   - Security Report: $reportPath" -ForegroundColor Gray
-Write-Host ""
-Write-Host "💡 Need help? Check the implementation guide for code examples." -ForegroundColor Gray
-Write-Host ""
-
-# Final pause for user to read results
-Write-Host "Press any key to exit..." -ForegroundColor Yellow
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+Write-Host "============================================" -ForegroundColor Green
