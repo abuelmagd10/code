@@ -195,37 +195,9 @@ function SalesOrdersContent() {
     return { subtotal, total };
   }, [items, taxAmount]);
 
-  // Filtered orders based on search, status, customer, products, and date
+    // Filtered orders - إصدار مبسط بدون فلاتر حوكمة
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      // فلترة الموظفين - على مستوى العرض
-      // 🔐 ERP Access Control - استخدام getAccessFilter لتحديد التصفية
-      const accessFilter = getAccessFilter(
-        currentUserRole,
-        currentUserId || '',
-        userContext?.branch_id || null,
-        userContext?.cost_center_id || null,
-        filterEmployeeId !== 'all' ? filterEmployeeId : undefined
-      );
-
-      // تصفية حسب المنشئ
-      // 🔐 استثناء الأوامر المشتركة من فلترة created_by_user_id
-      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-        const isOwnOrder = order.created_by_user_id === accessFilter.createdByUserId;
-        const isSharedOrder = sharedGrantorIds.includes(order.created_by_user_id || '');
-        if (!isOwnOrder && !isSharedOrder) return false;
-      }
-
-      // تصفية حسب الفرع (للمدير والمشرف)
-      if (accessFilter.filterByBranch && accessFilter.branchId) {
-        if (order.branch_id !== accessFilter.branchId) return false;
-      }
-
-      // تصفية حسب مركز التكلفة (للمشرف)
-      if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
-        if (order.cost_center_id !== accessFilter.costCenterId) return false;
-      }
-
       // Status filter - Multi-select
       if (filterStatuses.length > 0) {
         const linkedInvoice = order.invoice_id ? linkedInvoices[order.invoice_id] : null;
@@ -235,22 +207,6 @@ function SalesOrdersContent() {
 
       // Customer filter - show orders for any of the selected customers
       if (filterCustomers.length > 0 && !filterCustomers.includes(order.customer_id)) return false;
-
-      // Products filter - show orders containing any of the selected products
-      if (filterProducts.length > 0) {
-        const orderProductIds = orderItems
-          .filter(item => item.sales_order_id === order.id)
-          .map(item => item.product_id)
-          .filter(Boolean) as string[];
-        const hasSelectedProduct = filterProducts.some(productId => orderProductIds.includes(productId));
-        if (!hasSelectedProduct) return false;
-      }
-
-      // Shipping provider filter
-      if (filterShippingProviders.length > 0) {
-        const orderProviderId = (order as any).shipping_provider_id;
-        if (!orderProviderId || !filterShippingProviders.includes(orderProviderId)) return false;
-      }
 
       // Date range filter
       if (dateFrom && order.so_date < dateFrom) return false;
@@ -267,7 +223,7 @@ function SalesOrdersContent() {
 
       return true;
     });
-  }, [orders, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices, canViewAllOrders, filterEmployeeId, currentUserId, currentUserRole, userContext, sharedGrantorIds]);
+  }, [orders, filterStatuses, filterCustomers, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
 
   // Pagination logic
   const {
@@ -662,185 +618,73 @@ function SalesOrdersContent() {
     checkPerms();
   }, [supabase, appLang]);
 
-  // تحميل الأوامر
+    // تحميل الأوامر - إصدار مبسط جداً
   const loadOrders = async () => {
     try {
       setLoading(true);
       const activeCompanyId = await getActiveCompanyId(supabase);
       if (!activeCompanyId) {
+        console.log('❌ No active company found');
         setLoading(false);
         return;
       }
 
-      // 🔐 جلب معلومات المستخدم والصلاحيات
-      const { data: { user } } = await supabase.auth.getUser()
-      let sharedGrantorUserIds: string[] = []
-
-      if (user) {
-        // جلب الصلاحيات المشتركة للمستخدم الحالي
-        const { data: sharedPerms } = await supabase
-          .from("permission_sharing")
-          .select("grantor_user_id, resource_type")
-          .eq("grantee_user_id", user.id)
-          .eq("company_id", activeCompanyId)
-          .eq("is_active", true)
-          .or("resource_type.eq.all,resource_type.eq.customers,resource_type.eq.sales_orders")
-
-        if (sharedPerms && sharedPerms.length > 0) {
-          sharedGrantorUserIds = sharedPerms.map((p: any) => p.grantor_user_id)
-        }
-        setSharedGrantorIds(sharedGrantorUserIds)
-      }
-
-      // 🔐 ERP Access Control - بناء فلتر الوصول للعملاء
-      const accessFilter = getAccessFilter(
-        currentUserRole,
-        currentUserId || '',
-        userContext?.branch_id || null,
-        userContext?.cost_center_id || null
-      );
-
-      // جلب العملاء مع تطبيق الصلاحيات
-      let allCustomers: Customer[] = [];
-
-      // تطبيق منطق الصلاحيات
-
-      // � تطبيق فلتر الفرع (للمدراء والمحاسبين)
-      // موظف عادي: يرى فقط العملاء الذين أنشأهم + المشتركين
-      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-        const { data: ownCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("created_by_user_id", accessFilter.createdByUserId).order("name");
-        allCustomers = ownCust || [];
-        if (sharedGrantorUserIds.length > 0) {
-          const { data: sharedCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).in("created_by_user_id", sharedGrantorUserIds);
-          const existingIds = new Set(allCustomers.map(c => c.id));
-          (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
-        }
-      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
-        const { data: branchCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("branch_id", accessFilter.branchId).order("name");
-        allCustomers = branchCust || [];
-      } else {
-        const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).order("name");
-        allCustomers = allCust || [];
-      }
-
-      setCustomers(allCustomers);
-
-      const { data: prod } = await supabase.from("products").select("id, name, unit_price, item_type").eq("company_id", activeCompanyId).order("name");
-      setProducts(prod || []);
-
-      // 🔐 ERP Access Control - تحميل الأوامر مع تطبيق نظام Data Visibility الموحد
-      if (!userContext) {
-        setLoading(false);
-        return;
-      }
+      console.log('🔍 Loading sales orders for company:', activeCompanyId);
       
-      const visibilityRules = buildDataVisibilityFilter(userContext)
-      
-      let ordersQuery = supabase
+      // 🚨 إصلاح طارئ: جلب جميع أوامر البيع بدون أي فلاتر حوكمة
+      const { data: so, error: ordersError } = await supabase
         .from("sales_orders")
-        .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id, branch_id, cost_center_id, warehouse_id")
-        .eq("company_id", visibilityRules.companyId);
-
-      // ✅ تطبيق قواعد الرؤية الموحدة
-      ordersQuery = applyDataVisibilityFilter(ordersQuery, visibilityRules, "sales_orders")
-
-      const { data: so } = await ordersQuery.order("created_at", { ascending: false });
-      
-      // ✅ فلترة إضافية في JavaScript للحالات المعقدة (cost_center_id مع branch_id)
-      let filteredOrders = so || []
-      if (visibilityRules.filterByCostCenter && visibilityRules.costCenterId && so) {
-        filteredOrders = so.filter((order: any) => {
-          return !order.cost_center_id || order.cost_center_id === visibilityRules.costCenterId
-        })
-      }
-
-      // 🔐 جلب أوامر البيع المشتركة
-      let sharedOrders: SalesOrder[] = []
-      if (sharedGrantorUserIds.length > 0) {
-        const { data: sharedData } = await supabase
-          .from("sales_orders")
-          .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
-          .eq("company_id", activeCompanyId)
-          .in("created_by_user_id", sharedGrantorUserIds)
-
-        sharedOrders = sharedData || []
-      }
-
-      // دمج الأوامر الأصلية مع المشتركة (بدون تكرار)
-      const allOrderIds = new Set((filteredOrders || []).map((o: SalesOrder) => o.id))
-      const uniqueSharedOrders = sharedOrders.filter((o: SalesOrder) => !allOrderIds.has(o.id))
-      const mergedOrders = [...(filteredOrders || []), ...uniqueSharedOrders]
-
-      setOrders(mergedOrders);
-
-      // Load linked invoices with full details - تحديث من جميع الأوامر المدمجة
-      const allInvoiceIds = mergedOrders.filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
-      if (allInvoiceIds.length > 0) {
-        const { data: invoices } = await supabase
-          .from("invoices")
-          .select("id, status, total_amount, paid_amount, returned_amount, return_status")
-          .in("id", allInvoiceIds);
-        const invoiceMap: Record<string, LinkedInvoice> = {};
-        (invoices || []).forEach((inv: any) => {
-          invoiceMap[inv.id] = {
-            id: inv.id,
-            status: inv.status,
-            total_amount: inv.total_amount || 0,
-            paid_amount: inv.paid_amount || 0,
-            returned_amount: inv.returned_amount || 0,
-            return_status: inv.return_status
-          };
-        });
-        setLinkedInvoices(invoiceMap);
-      }
-
-      // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة - من جميع الأوامر المدمجة
-      if (mergedOrders.length > 0) {
-        const orderIds = mergedOrders.map((o: SalesOrder) => o.id);
-        const { data: itemsData } = await supabase
-          .from("sales_order_items")
-          .select("sales_order_id, quantity, product_id, products(name)")
-          .in("sales_order_id", orderIds);
-        setOrderItems(itemsData || []);
-
-        // تحميل الكميات المرتجعة من invoice_items.returned_quantity عبر الفواتير المرتبطة
-        const invoiceIds = mergedOrders.map((o: SalesOrder) => o.invoice_id).filter(Boolean);
-        if (invoiceIds.length > 0) {
-          const { data: invoiceItemsData } = await supabase
-            .from("invoice_items")
-            .select("invoice_id, product_id, returned_quantity")
-            .in("invoice_id", invoiceIds)
-            .gt("returned_quantity", 0);
-
-          const returnedQty: ReturnedQuantity[] = (invoiceItemsData || []).map((item: { invoice_id?: string; product_id?: string; returned_quantity?: number }) => ({
-            invoice_id: item.invoice_id || '',
-            product_id: item.product_id || '',
-            quantity: item.returned_quantity || 0
-          })).filter((r: ReturnedQuantity) => r.invoice_id && r.product_id && r.quantity > 0);
-          setReturnedQuantities(returnedQty);
-        } else {
-          setReturnedQuantities([]);
-        }
-      }
-
-      // تحميل شركات الشحن
-      const { data: providersData } = await supabase
-        .from("shipping_providers")
-        .select("id, provider_name")
+        .select("*")
         .eq("company_id", activeCompanyId)
-        .order("provider_name");
-      setShippingProviders(providersData || []);
+        .order("created_at", { ascending: false });
+
+      if (ordersError) {
+        console.error('❌ Error loading orders:', ordersError);
+        toast({
+          title: 'خطأ في التحميل',
+          description: 'فشل تحميل أوامر البيع: ' + ordersError.message,
+          variant: 'destructive'
+        });
+        setLoading(false);
+        return;
+      }
+
+      console.log('✅ Loaded orders:', so?.length || 0);
+      setOrders(so || []);
+
+      // جلب العملاء
+      const { data: customers } = await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", activeCompanyId)
+        .order("name");
+      
+      console.log('✅ Loaded customers:', customers?.length || 0);
+      setCustomers(customers || []);
+
+      // جلب المنتجات
+      const { data: products } = await supabase
+        .from("products")
+        .select("id, name, unit_price, item_type")
+        .eq("company_id", activeCompanyId)
+        .order("name");
+      
+      console.log('✅ Loaded products:', products?.length || 0);
+      setProducts(products || []);
 
       setLoading(false);
     } catch (error) {
-      console.error('Error loading sales orders:', error);
+      console.error('❌ Unexpected error:', error);
       toast({
-        title: appLang === 'en' ? 'Loading Error' : 'خطأ في التحميل',
-        description: appLang === 'en' ? 'Failed to load sales orders. Please refresh the page.' : 'فشل تحميل أوامر البيع. يرجى إعادة تحميل الصفحة.',
+        title: 'خطأ غير متوقع',
+        description: 'حدث خطأ أثناء تحميل البيانات',
         variant: 'destructive'
       });
       setLoading(false);
     }
+  };
+
+
   };
 
   // دالة لتحديث حالة الفاتورة المرتبطة

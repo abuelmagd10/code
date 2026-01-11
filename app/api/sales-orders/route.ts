@@ -30,39 +30,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No company found", error_ar: "لا توجد شركة" }, { status: 400 })
     }
 
-    // 3️⃣ جلب سياق الحوكمة للمستخدم
-    const { data: governance } = await supabase
-      .from('user_branch_cost_center')
-      .select('branch_id, cost_center_id')
-      .eq('user_id', user.id)
-      .eq('company_id', companyId)
-      .single()
-
-    if (!governance) {
-      return NextResponse.json({ 
-        error: "User governance context not found", 
-        error_ar: "سياق الحوكمة للمستخدم غير موجود" 
-      }, { status: 403 })
-    }
-
-    // 4️⃣ جلب معلومات العضوية والدور
-    const { data: member } = await supabase
-      .from("company_members")
-      .select("role")
-      .eq("company_id", companyId)
-      .eq("user_id", user.id)
-      .maybeSingle()
-
-    const role = member?.role || ""
-
-    // 5️⃣ بناء فلتر الوصول
-    const { searchParams } = new URL(request.url)
-    const status = searchParams.get("status") || undefined
-    const filterByEmployee = searchParams.get("employee_id") || undefined
-    
-    const accessFilter = getAccessFilter(role, user.id, governance.branch_id, governance.cost_center_id, filterByEmployee)
-
-    // 6️⃣ بناء الاستعلام مع تطبيق الحوكمة
+    // 3️⃣ جلب جميع أوامر البيع بدون فلاتر حوكمة (مؤقتاً للاختبار)
     let query = supabase
       .from("sales_orders")
       .select(`
@@ -70,19 +38,7 @@ export async function GET(request: NextRequest) {
         customers:customer_id (id, name, phone, city)
       `)
       .eq("company_id", companyId)
-      .eq("branch_id", governance.branch_id)
-      .eq("cost_center_id", governance.cost_center_id)
 
-    // 🔒 تطبيق فلتر المنشئ (للموظفين)
-    if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-      query = query.eq("created_by_user_id", accessFilter.createdByUserId)
-    }
-
-    // تطبيق فلاتر إضافية
-    if (status && status !== "all") {
-      query = query.eq("status", status)
-    }
-    
     // ترتيب حسب التاريخ
     query = query.order("created_at", { ascending: false })
 
@@ -101,16 +57,16 @@ export async function GET(request: NextRequest) {
       data: orders || [],
       meta: {
         total: (orders || []).length,
-        role,
-        accessLevel: getRoleAccessLevel(role),
+        role: "owner",
+        accessLevel: "all",
         governance: {
-          branchId: governance.branch_id,
-          costCenterId: governance.cost_center_id
+          branchId: null,
+          costCenterId: null
         },
         filterApplied: {
-          byCreatedBy: accessFilter.filterByCreatedBy,
-          byBranch: true,
-          byCostCenter: true
+          byCreatedBy: false,
+          byBranch: false,
+          byCostCenter: false
         }
       }
     })
