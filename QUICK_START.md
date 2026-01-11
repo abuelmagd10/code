@@ -1,129 +1,47 @@
-# ⚡ Quick Start Guide - Vendor Credits System
+# تطبيق نظام الحوكمة - خطوات سريعة
 
-## 🎯 What You Need to Know in 60 Seconds
+## الخطوة 1: نفذ SQL في Supabase
 
-### ✅ Status: **LIVE & WORKING**
-- **4 Vendor Credits** created
-- **139,800 EGP** tracked
-- **0 errors**
-- **100% success rate**
+1. افتح Supabase Dashboard
+2. اذهب إلى SQL Editor
+3. انسخ محتوى ملف `update-governance-clean.sql`
+4. نفذ الاستعلام
 
----
+## الخطوة 2: تحقق من النتائج
 
-## 🚀 Quick Actions
+يجب أن ترى نتيجة مثل:
 
-### 1. Verify It's Working (30 seconds)
-```bash
-psql -f quick_verify.sql
 ```
-✅ All tests should show "PASS"
-
-### 2. View All Vendor Credits (10 seconds)
-```sql
-SELECT 
-  credit_number,
-  total_amount,
-  status
-FROM vendor_credits
-WHERE reference_type = 'bill_return';
-```
-Expected: 4 rows
-
-### 3. Check Total Amount (5 seconds)
-```sql
-SELECT SUM(total_amount) 
-FROM vendor_credits 
-WHERE reference_type = 'bill_return';
-```
-Expected: 139,800
-
----
-
-## 📊 What Was Created
-
-| Company | Credit # | Amount | Status |
-|---------|----------|--------|--------|
-| FOODCAN | FOO-VC-0001 | 5,000 | open |
-| VitaSlims | VIT-VC-0001 | 4,800 | open |
-| تست | VC-VC-0001 | 100,000 | open |
-| تست | VC-VC-0002 | 30,000 | open |
-
----
-
-## 🔒 What's Protected
-
-✅ **Can't create duplicates** - Unique index prevents it  
-✅ **Can't delete active credits** - Trigger blocks it  
-✅ **Can't use negative amounts** - Check constraint stops it  
-✅ **Can't delete bills with credits** - Trigger prevents it
-
----
-
-## 📚 Need More Info?
-
-### Quick Reference:
-- **Commands:** `USEFUL_COMMANDS.md`
-- **FAQ:** `FAQ.md`
-- **Arabic:** `ملخص_نهائي_Vendor_Credits.md`
-
-### Detailed Docs:
-- **Full Guide:** `VENDOR_CREDITS_DB_MIGRATION_GUIDE.md`
-- **Success Report:** `VENDOR_CREDITS_MIGRATION_SUCCESS_2026-01-06.md`
-- **All Files:** `VENDOR_CREDITS_INDEX.md`
-
----
-
-## 🛠️ Common Tasks
-
-### Create Vendor Credit for New Bill Return
-```sql
-SELECT create_vendor_credit_from_bill_return('bill-id-here'::UUID);
+table_name    | total | with_branch | with_warehouse | with_creator | branch_percentage
+--------------+-------+-------------+----------------+--------------+------------------
+sales_orders  |   60  |     60      |      60        |      60      |      100.00
+invoices      |   45  |     45      |      45        |      45      |      100.00
 ```
 
-### Find Unapplied Credits
-```sql
-SELECT 
-  credit_number,
-  total_amount - applied_amount as remaining
-FROM vendor_credits
-WHERE reference_type = 'bill_return'
-  AND applied_amount < total_amount;
-```
+إذا كانت النسبة 100% لجميع الحقول، فالتحديث نجح ✅
 
-### Get Summary by Company
-```sql
-SELECT 
-  c.name,
-  COUNT(vc.id) as credits,
-  SUM(vc.total_amount) as total
-FROM vendor_credits vc
-JOIN companies c ON c.id = vc.company_id
-WHERE vc.reference_type = 'bill_return'
-GROUP BY c.name;
-```
+## الخطوة 3: اختبر النظام
 
----
+### اختبار سريع:
+1. سجل دخول كموظف (staff)
+2. اذهب لصفحة أوامر البيع
+3. يجب أن ترى أوامرك فقط
 
-## ✅ Quick Checklist
+### اختبار المدير:
+1. سجل دخول كمدير (owner/admin)
+2. اذهب لصفحة أوامر البيع
+3. يجب أن ترى جميع الأوامر
 
-- [ ] Run `quick_verify.sql` - All pass?
-- [ ] Check count - Shows 4?
-- [ ] Check total - Shows 139,800?
-- [ ] Review credits - All look correct?
-- [ ] Read FAQ - Understand the system?
+## ملاحظات مهمة
 
----
+- ✅ API أوامر البيع: `/api/sales-orders`
+- ✅ API الفواتير: `/api/invoices`
+- ✅ نظام الحوكمة مطبق تلقائياً
+- ✅ الفلاتر تعمل حسب الدور
 
-## 🎉 You're Ready!
+## في حالة وجود مشاكل
 
-The system is working perfectly. Use `USEFUL_COMMANDS.md` for daily operations.
-
-**Questions?** → See `FAQ.md`  
-**Need details?** → See `VENDOR_CREDITS_INDEX.md`  
-**بالعربية؟** → See `ملخص_نهائي_Vendor_Credits.md`
-
----
-
-**Status:** ✅ Production Ready  
-**Last Updated:** 2026-01-06
-
+راجع الملفات:
+- `GOVERNANCE_IMPLEMENTATION.md` - دليل كامل
+- `TESTING_GUIDE.md` - اختبارات مفصلة
+- `GOVERNANCE_REVIEW.md` - مراجعة شاملة
