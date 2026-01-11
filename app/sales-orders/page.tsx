@@ -629,11 +629,9 @@ function SalesOrdersContent() {
     }
 
     // Load sales orders
-    const { data: so } = await supabase
-      .from("sales_orders")
-      .select("*")
-      .eq("company_id", activeCompanyId)
-      .order("created_at", { ascending: false });
+    const response = await fetch('/api/sales-orders');
+    const result = await response.json();
+    const so = result.success ? result.data : [];
 
     setOrders(so || []);
 
@@ -658,7 +656,7 @@ function SalesOrdersContent() {
       const { data: items } = await supabase
         .from("sales_order_items")
         .select("sales_order_id, quantity, product_id, products(name)")
-        .in("sales_order_id", so.map(o => o.id));
+        .in("sales_order_id", so.map((o: SalesOrder) => o.id));
       
       setOrderItems(items || []);
     }
@@ -672,7 +670,7 @@ function SalesOrdersContent() {
     setShippingProviders(shipping || []);
 
     // Load linked invoices
-    const invoiceIds = (so || []).filter(o => o.invoice_id).map(o => o.invoice_id);
+    const invoiceIds = (so || []).filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
     if (invoiceIds.length > 0) {
       const { data: invoices } = await supabase
         .from("invoices")
