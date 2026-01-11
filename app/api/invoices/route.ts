@@ -34,9 +34,17 @@ export async function GET(request: NextRequest) {
 
     const accessLevel = getRoleAccessLevel(member.role)
     
+    console.log('🔍 Invoices API - User Context:', {
+      userId: user.id,
+      role: member.role,
+      accessLevel,
+      branchId: member.branch_id,
+      companyId
+    })
+    
     let query = supabase
       .from("invoices")
-      .select("*")
+      .select("*, customers(name, phone)")
       .eq("company_id", companyId)
 
     // للموظفين: فلتر بـ created_by_user_id إذا موجود، وإلا فلتر بـ branch_id
@@ -52,9 +60,20 @@ export async function GET(request: NextRequest) {
       query = query.eq("branch_id", member.branch_id)
     }
 
-    query = query.order("created_at", { ascending: false })
+    query = query.order("invoice_date", { ascending: false })
 
     const { data: invoices, error: dbError } = await query
+
+    console.log('📊 Invoices API - Query Result:', {
+      count: (invoices || []).length,
+      accessLevel,
+      branchFilter: accessLevel === 'branch' ? member.branch_id : 'none',
+      sampleInvoice: invoices?.[0] ? {
+        id: invoices[0].id,
+        invoice_number: invoices[0].invoice_number,
+        branch_id: invoices[0].branch_id
+      } : null
+    })
 
     if (dbError) {
       return NextResponse.json({ error: dbError.message }, { status: 500 })
