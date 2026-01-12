@@ -1,27 +1,51 @@
-/**
- * 🔒 API الفواتير مع الحوكمة الإلزامية
- */
-
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
-import { 
-  enforceGovernance, 
-  applyGovernanceFilters,
-  validateGovernanceData,
-  addGovernanceData
-} from "@/lib/governance-middleware"
+import { getActiveCompanyId } from "@/lib/company"
+import { getRoleAccessLevel } from "@/lib/validation"
 
 export async function GET(request: NextRequest) {
   try {
-    const governance = await enforceGovernance()
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const companyId = await getActiveCompanyId(supabase)
+    if (!companyId) {
+      return NextResponse.json({ error: "No company found" }, { status: 400 })
+    }
+
+    const { data: member } = await supabase
+      .from("company_members")
+      .select("role, branch_id, cost_center_id, warehouse_id")
+      .eq("company_id", companyId)
+      .eq("user_id", user.id)
+      .single()
+
+    if (!member) {
+      return NextResponse.json({ error: "User not found in company" }, { status: 403 })
+    }
+
+    const accessLevel = getRoleAccessLevel(member.role)
     
     let query = supabase
       .from("invoices")
       .select("*, customers(name, phone)")
+      .eq("company_id", companyId)
 
-    query = applyGovernanceFilters(query, governance)
+    if (accessLevel === 'own') {
+      if (member.branch_id) {
+        query = query.eq("branch_id", member.branch_id)
+        query = query.or(`created_by_user_id.eq.${user.id},created_by_user_id.is.null`)
+      } else {
+        query = query.eq("created_by_user_id", user.id)
+      }
+    } else if (accessLevel === 'branch' && member.branch_id) {
+      query = query.eq("branch_id", member.branch_id)
+    }
+
     query = query.order("invoice_date", { ascending: false })
 
     const { data: invoices, error: dbError } = await query
@@ -35,60 +59,12 @@ export async function GET(request: NextRequest) {
       data: invoices || [],
       meta: {
         total: (invoices || []).length,
-        role: governance.role,
-        governance: {
-          companyId: governance.companyId,
-          branchIds: governance.branchIds,
-          warehouseIds: governance.warehouseIds,
-          costCenterIds: governance.costCenterIds
-        }
+        role: member.role,
+        accessLevel: accessLevel
       }
     })
 
   } catch (error: any) {
-    return NextResponse.json({ 
-      error: error.message 
-    }, { 
-      status: error.message.includes('Unauthorized') ? 401 : 403 
-    })
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const governance = await enforceGovernance()
-    const body = await request.json()
-    const dataWithGovernance = addGovernanceData(body, governance)
-    validateGovernanceData(dataWithGovernance, governance)
-    
-    const supabase = createClient(cookies())
-    const { data, error } = await supabase
-      .from("invoices")
-      .insert(dataWithGovernance)
-      .select()
-      .single()
-    
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    
-    return NextResponse.json({
-      success: true,
-      data,
-      governance: {
-        enforced: true,
-        companyId: governance.companyId,
-        branchId: dataWithGovernance.branch_id,
-        warehouseId: dataWithGovernance.warehouse_id,
-        costCenterId: dataWithGovernance.cost_center_id
-      }
-    }, { status: 201 })
-    
-  } catch (error: any) {
-    return NextResponse.json({ 
-      error: error.message 
-    }, { 
-      status: error.message.includes('Violation') ? 403 : 500 
-    })
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
