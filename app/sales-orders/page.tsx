@@ -888,41 +888,67 @@ function SalesOrdersContent() {
 
   useEffect(() => {
     const fetchGovernanceNames = async () => {
-      if (!userContext || !supabase) return;
+      if (!userContext || !supabase) {
+        console.log('Governance fetch skipped - missing userContext or supabase');
+        return;
+      }
       
       // Wait for authentication to be ready
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        console.error('Governance fetch - auth error or no user:', authError);
+        return;
+      }
       
+      console.log('Governance fetch - user authenticated:', user.id);
       const info: any = {};
       
       if (userContext.branch_id) {
         try {
-          const { data } = await supabase.from('branches').select('name').eq('id', userContext.branch_id).single();
-          if (data) info.branchName = data.name;
+          console.log('Fetching branch name for ID:', userContext.branch_id);
+          const { data, error } = await supabase.from('branches').select('name').eq('id', userContext.branch_id).single();
+          if (error) {
+            console.error('Error fetching branch name:', error);
+          } else if (data) {
+            info.branchName = data.name;
+            console.log('Branch name fetched:', data.name);
+          }
         } catch (error) {
-          console.error('Error fetching branch name:', error);
+          console.error('Exception fetching branch name:', error);
         }
       }
       
       if (userContext.warehouse_id) {
         try {
-          const { data } = await supabase.from('warehouses').select('name').eq('id', userContext.warehouse_id).single();
-          if (data) info.warehouseName = data.name;
+          console.log('Fetching warehouse name for ID:', userContext.warehouse_id);
+          const { data, error } = await supabase.from('warehouses').select('name').eq('id', userContext.warehouse_id).single();
+          if (error) {
+            console.error('Error fetching warehouse name:', error);
+          } else if (data) {
+            info.warehouseName = data.name;
+            console.log('Warehouse name fetched:', data.name);
+          }
         } catch (error) {
-          console.error('Error fetching warehouse name:', error);
+          console.error('Exception fetching warehouse name:', error);
         }
       }
       
       if (userContext.cost_center_id) {
         try {
-          const { data } = await supabase.from('cost_centers').select('name').eq('id', userContext.cost_center_id).single();
-          if (data) info.costCenterName = data.name;
+          console.log('Fetching cost center name for ID:', userContext.cost_center_id);
+          const { data, error } = await supabase.from('cost_centers').select('name').eq('id', userContext.cost_center_id).single();
+          if (error) {
+            console.error('Error fetching cost center name:', error);
+          } else if (data) {
+            info.costCenterName = data.name;
+            console.log('Cost center name fetched:', data.name);
+          }
         } catch (error) {
-          console.error('Error fetching cost center name:', error);
+          console.error('Exception fetching cost center name:', error);
         }
       }
       
+      console.log('Governance info fetched:', info);
       setGovernanceInfo(info);
     };
     

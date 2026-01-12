@@ -23,6 +23,13 @@ export function createClient() {
       supabaseClient = createBrowserClient(
         supabaseUrl,
         supabaseAnonKey,
+        {
+          global: {
+            headers: {
+              apikey: supabaseAnonKey,
+            },
+          },
+        }
       )
     } finally {
       isInitializing = false
