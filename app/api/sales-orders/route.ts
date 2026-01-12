@@ -22,11 +22,10 @@ import {
 export async function GET(request: NextRequest) {
   try {
     // 1️⃣ تطبيق الحوكمة (إلزامي)
-    const governance = await enforceGovernance()
-    
-    const supabase = createClient(cookies())
+    const governance = await enforceGovernance(request)
     
     // 2️⃣ بناء الاستعلام مع فلاتر الحوكمة
+    const supabase = await createClient()
     let query = supabase
       .from("sales_orders")
       .select(`
@@ -81,7 +80,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // 1️⃣ تطبيق الحوكمة (إلزامي)
-    const governance = await enforceGovernance()
+    const governance = await enforceGovernance(request)
     
     const body = await request.json()
     
@@ -91,7 +90,7 @@ export async function POST(request: NextRequest) {
     // 3️⃣ التحقق من صحة البيانات (إلزامي)
     validateGovernanceData(dataWithGovernance, governance)
     
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
     
     // 4️⃣ الإدخال في قاعدة البيانات
     const { data: newSalesOrder, error: insertError } = await supabase
