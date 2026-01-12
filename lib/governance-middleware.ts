@@ -6,7 +6,7 @@ export interface GovernanceContext {
   branchIds: string[]
   warehouseIds: string[]
   costCenterIds: string[]
-  role: 'staff' | 'accountant' | 'manager' | 'admin' | 'gm'
+  role: string
 }
 
 /**
@@ -48,8 +48,11 @@ export async function enforceGovernance(): Promise<GovernanceContext> {
   }
 
   // تحديد النطاق حسب الدور
-  switch (member.role) {
+  const role = member.role?.toLowerCase() || 'staff'
+  
+  switch (role) {
     case 'staff':
+    case 'employee':
       // الموظف يرى فقط بياناته
       context.branchIds = member.branch_id ? [member.branch_id] : []
       context.warehouseIds = member.warehouse_id ? [member.warehouse_id] : []
@@ -82,6 +85,8 @@ export async function enforceGovernance(): Promise<GovernanceContext> {
 
     case 'admin':
     case 'gm':
+    case 'owner':
+    case 'general_manager':
       // المدير العام يرى كل الشركة
       const { data: allBranches } = await supabase
         .from('branches')
@@ -106,7 +111,28 @@ export async function enforceGovernance(): Promise<GovernanceContext> {
       break
 
     default:
-      throw new Error('Governance Error: Invalid user role')
+      // افتراضياً: نفس صلاحيات المدير
+      const { data: allBranches2 } = await supabase
+        .from('branches')
+        .select('id')
+        .eq('company_id', context.companyId)
+      
+      context.branchIds = allBranches2?.map(b => b.id) || []
+      
+      const { data: allWarehouses2 } = await supabase
+        .from('warehouses')
+        .select('id')
+        .eq('company_id', context.companyId)
+      
+      context.warehouseIds = allWarehouses2?.map(w => w.id) || []
+      
+      const { data: allCostCenters2 } = await supabase
+        .from('cost_centers')
+        .select('id')
+        .eq('company_id', context.companyId)
+      
+      context.costCenterIds = allCostCenters2?.map(c => c.id) || []
+      break
   }
 
   // التحقق من وجود صلاحيات (إذا لم تكن موجودة، استخدم الافتراضية)
