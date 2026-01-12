@@ -936,12 +936,31 @@ function SalesOrdersContent() {
       if (userContext.cost_center_id) {
         try {
           console.log('Fetching cost center name for ID:', userContext.cost_center_id);
-          const { data, error } = await supabase.from('cost_centers').select('name').eq('id', userContext.cost_center_id).single();
-          if (error) {
-            console.error('Error fetching cost center name:', error);
-          } else if (data) {
-            info.costCenterName = data.name;
-            console.log('Cost center name fetched:', data.name);
+          console.log('User context:', userContext);
+          
+          // First, let's try to see what columns are available
+          const { data: costCenterData, error: costCenterError } = await supabase
+            .from('cost_centers')
+            .select('*')
+            .eq('id', userContext.cost_center_id)
+            .eq('company_id', userContext.company_id)
+            .single();
+            
+          if (costCenterError) {
+            console.error('Error fetching cost center:', costCenterError);
+            console.error('Error details:', JSON.stringify(costCenterError, null, 2));
+          } else if (costCenterData) {
+            console.log('Cost center data structure:', costCenterData);
+            // Try different possible name fields
+            const name = costCenterData.name || costCenterData.title || costCenterData.label || costCenterData.code;
+            if (name) {
+              info.costCenterName = name;
+              console.log('Cost center name fetched:', name);
+            } else {
+              console.log('No name field found in cost center data');
+            }
+          } else {
+            console.log('No cost center found with ID:', userContext.cost_center_id);
           }
         } catch (error) {
           console.error('Exception fetching cost center name:', error);
