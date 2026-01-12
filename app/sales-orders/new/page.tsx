@@ -309,7 +309,7 @@ export default function NewSalesOrderPage() {
       }
 
       // الحصول على فلتر الوصول
-      const accessFilter = getAccessFilter(userRole, user.id, userBranchId, userCostCenterId)
+      const accessFilter = getAccessFilter(userRole, user.id, userBranchId, null)
 
       // جلب العملاء حسب الصلاحيات
       let customersQuery = supabase
