@@ -302,12 +302,29 @@ export function validateGovernanceData(
 }
 
 /**
- * إضافة بيانات الحوكمة تلقائياً
+ * إضافة بيانات الحوكمة تلقائياً مع فرض القيود حسب الدور
  */
 export function addGovernanceData(
   data: any,
   context: GovernanceContext
 ): any {
+  // 🔐 Governance: Role-based enforcement
+  const role = context.role?.toLowerCase() || 'staff'
+  const isAdmin = role === 'admin' || role === 'general_manager' || role === 'owner'
+  
+  // For non-admin users, enforce their assigned governance values
+  if (!isAdmin) {
+    // Override any attempt to change governance fields
+    return {
+      ...data,
+      company_id: context.companyId,
+      branch_id: context.branchIds[0] || null, // Force user's assigned branch
+      warehouse_id: context.warehouseIds[0] || null, // Force user's assigned warehouse
+      cost_center_id: context.costCenterIds[0] || null // Force user's assigned cost center
+    }
+  }
+  
+  // For admin users, allow their choices but validate against available options
   return {
     ...data,
     company_id: context.companyId,

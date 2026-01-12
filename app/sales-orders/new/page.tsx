@@ -150,6 +150,7 @@ export default function NewSalesOrderPage() {
   const [branchId, setBranchId] = useState<string | null>(null)
   const [costCenterId, setCostCenterId] = useState<string | null>(null)
   const [warehouseId, setWarehouseId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState<boolean>(false) // 🔐 Governance: Admin role state
 
   // Tax codes from localStorage
   const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
@@ -269,6 +270,21 @@ export default function NewSalesOrderPage() {
       const userRole = memberData?.role || 'employee'
       const userBranchId = memberData?.branch_id || null
       const userCostCenterId = memberData?.cost_center_id || null
+
+      // 🔐 Governance: Check if user is Admin or GeneralManager
+      const adminCheck = userRole === "Admin" || userRole === "GeneralManager" || userRole === "Owner"
+      setIsAdmin(adminCheck)
+
+      // 🔐 Governance: Set default values based on user permissions
+      if (!adminCheck && userBranchId) {
+        setBranchId(userBranchId)
+      }
+      if (!adminCheck && userCostCenterId) {
+        setCostCenterId(userCostCenterId)
+      }
+      if (!adminCheck && memberData?.warehouse_id) {
+        setWarehouseId(memberData.warehouse_id)
+      }
 
       // الحصول على فلتر الوصول
       const accessFilter = getAccessFilter(userRole, user.id, userBranchId, userCostCenterId)
@@ -1127,6 +1143,7 @@ export default function NewSalesOrderPage() {
                     onBranchChange={setBranchId}
                     onCostCenterChange={setCostCenterId}
                     onWarehouseChange={setWarehouseId}
+                    disabled={!isAdmin} // 🔐 Governance: Only Admin/GeneralManager can change these fields
                     lang={appLang}
                     showLabels={true}
                     showWarehouse={true}
