@@ -14,7 +14,7 @@ export interface GovernanceContext {
  * يجب استخدامه في كل API endpoint
  */
 export async function enforceGovernance(): Promise<GovernanceContext> {
-  const supabase = createClient(cookies())
+  const supabase = await createClient()
   
   // الحصول على المستخدم الحالي
   const { data: { user }, error } = await supabase.auth.getUser()
