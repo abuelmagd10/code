@@ -17,6 +17,7 @@ import { Building2, Plus, Trash2, Edit2, Save, X, CheckCircle, XCircle, MapPin, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { BranchDefaultsManager } from "@/components/branch-defaults-manager"
 
 // قائمة العملات المتاحة
 const CURRENCIES = [
@@ -416,7 +417,7 @@ export default function BranchesPage() {
 
         {/* Add/Edit Dialog */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingBranch ? t("Edit Branch", "تعديل الفرع") : t("New Branch", "فرع جديد")}
@@ -500,6 +501,17 @@ export default function BranchesPage() {
                 <Label>{t("Active", "نشط")}</Label>
                 <Switch checked={formData.is_active} onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })} disabled={editingBranch?.is_main} />
               </div>
+
+              {/* Branch Defaults Manager (Only for existing branches) */}
+              {editingBranch && (
+                <div className="pt-4 border-t">
+                  <BranchDefaultsManager 
+                    branchId={editingBranch.id} 
+                    branchName={editingBranch.name}
+                    lang={appLang}
+                  />
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>{t("Cancel", "إلغاء")}</Button>

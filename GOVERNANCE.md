@@ -40,4 +40,9 @@ ADD COLUMN default_cost_center_id uuid REFERENCES cost_centers(id);
 
 ### Error: `Branch missing required defaults`
 - **Cause**: The branch record exists but `default_warehouse_id` or `default_cost_center_id` is NULL.
-- **Fix**: An Admin must go to **Branch Management** and assign defaults for that branch.
+- **Fix**: 
+  1. Go to **Settings > Branches**.
+  2. Click **Edit** on the branch.
+  3. Scroll down to **Branch Defaults** section.
+  4. Select a Default Warehouse and Cost Center.
+  5. Click **Save Defaults**.

@@ -297,7 +297,7 @@ export default function NewInvoicePage() {
       }
 
       // الحصول على فلتر الوصول للعملاء
-      const accessFilter = getAccessFilter(role, user.id, context.branch_id, context.cost_center_id)
+      const accessFilter = getAccessFilter(role, user.id, context.branch_id || null, context.cost_center_id || null)
 
       // جلب العملاء حسب الصلاحيات
       let customersQuery = supabase
@@ -314,8 +314,8 @@ export default function NewInvoicePage() {
           .eq("resource_type", "customers")
           .eq("is_active", true)
 
-        const sharedUserIds = sharedCustomerIds?.map(s => s.grantor_user_id) || []
-        const allUserIds = [accessFilter.createdByUserId, ...sharedUserIds]
+        const sharedUserIds = sharedCustomerIds?.map((s: any) => s.grantor_user_id) || []
+        const allUserIds = [accessFilter.createdByUserId, ...sharedUserIds].filter((id): id is string => !!id)
 
         customersQuery = customersQuery.in("created_by_user_id", allUserIds)
       } else if (accessFilter.filterByBranch && accessFilter.branchId) {
@@ -326,7 +326,7 @@ export default function NewInvoicePage() {
           .eq("company_id", companyId)
           .eq("branch_id", accessFilter.branchId)
 
-        const branchUserIds = branchUsers?.map(u => u.user_id) || []
+        const branchUserIds = branchUsers?.map((u: any) => u.user_id) || []
         if (branchUserIds.length > 0) {
           customersQuery = customersQuery.in("created_by_user_id", branchUserIds)
         }
@@ -412,7 +412,7 @@ export default function NewInvoicePage() {
         .eq("sales_order_id", soId)
 
       if (soItems && soItems.length > 0) {
-        setInvoiceItems(soItems.map(item => ({
+        setInvoiceItems(soItems.map((item: any) => ({
           product_id: item.product_id,
           quantity: item.quantity,
           unit_price: item.unit_price,
