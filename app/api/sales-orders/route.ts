@@ -95,8 +95,6 @@ export async function POST(request: NextRequest) {
     // 4️⃣ التحقق من صحة البيانات
     validateBranchDefaults(finalData, enhancedContext)
     
-    const supabase = await createClient()
-    
     // 5️⃣ الإدخال في قاعدة البيانات
     const { data: newSalesOrder, error: insertError } = await supabase
       .from("sales_orders")
