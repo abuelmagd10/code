@@ -179,7 +179,11 @@ function SalesOrdersContent() {
 
   const [customerId, setCustomerId] = useState<string>("");
   const [soNumber, setSONumber] = useState<string>("");
-  const [soDate, setSODate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [soDate, setSODate] = useState<string>("");
+  
+  useEffect(() => {
+    setSODate(new Date().toISOString().slice(0, 10));
+  }, []);
   const [dueDate, setDueDate] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   const [items, setItems] = useState<SOItem[]>([]);

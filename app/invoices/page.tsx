@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect, useMemo, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
@@ -170,10 +170,16 @@ export default function InvoicesPage() {
   ]
 
   // Currency support
-  const [appCurrency, setAppCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [appCurrency, setAppCurrency] = useState<string>('EGP')
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('app_currency')
+        if (saved) setAppCurrency(saved)
+      } catch { }
+    }
+  }, [])
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
