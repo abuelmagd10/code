@@ -888,23 +888,39 @@ function SalesOrdersContent() {
 
   useEffect(() => {
     const fetchGovernanceNames = async () => {
-      if (!userContext) return;
+      if (!userContext || !supabase) return;
+      
+      // Wait for authentication to be ready
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
       
       const info: any = {};
       
       if (userContext.branch_id) {
-        const { data } = await supabase.from('branches').select('name').eq('id', userContext.branch_id).single();
-        if (data) info.branchName = data.name;
+        try {
+          const { data } = await supabase.from('branches').select('name').eq('id', userContext.branch_id).single();
+          if (data) info.branchName = data.name;
+        } catch (error) {
+          console.error('Error fetching branch name:', error);
+        }
       }
       
       if (userContext.warehouse_id) {
-        const { data } = await supabase.from('warehouses').select('name').eq('id', userContext.warehouse_id).single();
-        if (data) info.warehouseName = data.name;
+        try {
+          const { data } = await supabase.from('warehouses').select('name').eq('id', userContext.warehouse_id).single();
+          if (data) info.warehouseName = data.name;
+        } catch (error) {
+          console.error('Error fetching warehouse name:', error);
+        }
       }
       
       if (userContext.cost_center_id) {
-        const { data } = await supabase.from('cost_centers').select('name').eq('id', userContext.cost_center_id).single();
-        if (data) info.costCenterName = data.name;
+        try {
+          const { data } = await supabase.from('cost_centers').select('name').eq('id', userContext.cost_center_id).single();
+          if (data) info.costCenterName = data.name;
+        } catch (error) {
+          console.error('Error fetching cost center name:', error);
+        }
       }
       
       setGovernanceInfo(info);
