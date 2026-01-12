@@ -111,16 +111,20 @@ export function BranchDefaultsManager({
       // Load available cost centers for this branch
       const { data: costCenterData, error: costCenterError } = await supabase
         .from('cost_centers')
-        .select('id, name, code')
+        .select('id, cost_center_name, code')
         .eq('company_id', companyId)
         .eq('branch_id', branchId)
         .eq('is_active', true)
-        .order('name')
+        .order('cost_center_name')
 
       if (costCenterError) throw costCenterError
-      setCostCenters(costCenterData || [])
+      setCostCenters(costCenterData?.map((cc: any) => ({
+        id: cc.id,
+        name: cc.cost_center_name,
+        code: cc.cost_center_code
+      })) || [])
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load branch defaults:', error)
       toastActionError(toast, t("Failed to load defaults", "فشل تحميل الإعدادات الافتراضية"), error.message)
     } finally {
@@ -160,7 +164,7 @@ export function BranchDefaultsManager({
         onDefaultsUpdated()
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save branch defaults:', error)
       toastActionError(toast, t("Failed to save defaults", "فشل حفظ الإعدادات الافتراضية"), error.message)
     } finally {
