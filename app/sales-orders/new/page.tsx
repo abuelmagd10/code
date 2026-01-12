@@ -269,21 +269,43 @@ export default function NewSalesOrderPage() {
 
       const userRole = memberData?.role || 'employee'
       const userBranchId = memberData?.branch_id || null
-      const userCostCenterId = memberData?.cost_center_id || null
 
-      // 🔐 Governance: Check if user is Admin or GeneralManager
+      // 🔐 Enterprise Governance: Check if user is Admin or GeneralManager
       const adminCheck = userRole === "Admin" || userRole === "GeneralManager" || userRole === "Owner"
       setIsAdmin(adminCheck)
 
-      // 🔐 Governance: Set default values based on user permissions
-      if (!adminCheck && userBranchId) {
-        setBranchId(userBranchId)
-      }
-      if (!adminCheck && userCostCenterId) {
-        setCostCenterId(userCostCenterId)
-      }
-      if (!adminCheck && memberData?.warehouse_id) {
-        setWarehouseId(memberData.warehouse_id)
+      // 🔐 Enterprise Pattern: User → Branch → (Default Warehouse, Default Cost Center)
+      if (userBranchId) {
+        // Fetch branch defaults instead of user assignments
+        const { getBranchDefaults } = await import('@/lib/governance-branch-defaults')
+        
+        try {
+          const branchDefaults = await getBranchDefaults(userBranchId)
+          
+          // Validate branch has required defaults
+          if (!branchDefaults.default_warehouse_id || !branchDefaults.default_cost_center_id) {
+            throw new Error(
+              `Branch missing required defaults. ` +
+              `Warehouse: ${branchDefaults.default_warehouse_id || 'NULL'}, ` +
+              `Cost Center: ${branchDefaults.default_cost_center_id || 'NULL'}`
+            )
+          }
+
+          // Set branch and its defaults
+          setBranchId(userBranchId)
+          setWarehouseId(branchDefaults.default_warehouse_id)
+          setCostCenterId(branchDefaults.default_cost_center_id)
+
+          console.log('Branch defaults applied:', {
+            branchId: userBranchId,
+            warehouseId: branchDefaults.default_warehouse_id,
+            costCenterId: branchDefaults.default_cost_center_id
+          })
+        } catch (error) {
+          console.error('Failed to apply branch defaults:', error)
+          // Fallback to current behavior if branch defaults fail
+          setBranchId(userBranchId)
+        }
       }
 
       // الحصول على فلتر الوصول

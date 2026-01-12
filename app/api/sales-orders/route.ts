@@ -75,27 +75,31 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/sales-orders
- * إنشاء أمر بيع جديد مع التحقق من الحوكمة
+ * إنشاء أمر بيع جديد مع التحقق من الحوكمة واستخدام افتراضيات الفرع
  */
 export async function POST(request: NextRequest) {
   try {
-    // 1️⃣ تطبيق الحوكمة (إلزامي)
+    // 1️⃣ تطبيق الحوكمة الأساسية (إلزامي)
     const governance = await enforceGovernance(request)
     
     const body = await request.json()
     
-    // 2️⃣ إضافة بيانات الحوكمة تلقائياً
-    const dataWithGovernance = addGovernanceData(body, governance)
+    // 2️⃣ تطبيق افتراضيات الفرع (Enterprise Pattern: User → Branch → Defaults)
+    const { enforceBranchDefaults, validateBranchDefaults, buildSalesOrderData } = await import('@/lib/governance-branch-defaults')
+    const enhancedContext = await enforceBranchDefaults(governance, body)
     
-    // 3️⃣ التحقق من صحة البيانات (إلزامي)
-    validateGovernanceData(dataWithGovernance, governance)
+    // 3️⃣ بناء البيانات النهائية مع الحوكمة المحسنة
+    const finalData = buildSalesOrderData(body, enhancedContext)
+    
+    // 4️⃣ التحقق من صحة البيانات
+    validateBranchDefaults(finalData, enhancedContext)
     
     const supabase = await createClient()
     
-    // 4️⃣ الإدخال في قاعدة البيانات
+    // 5️⃣ الإدخال في قاعدة البيانات
     const { data: newSalesOrder, error: insertError } = await supabase
       .from("sales_orders")
-      .insert(dataWithGovernance)
+      .insert(finalData)
       .select()
       .single()
 
@@ -113,10 +117,16 @@ export async function POST(request: NextRequest) {
       message_ar: "تم إنشاء أمر البيع بنجاح",
       governance: {
         enforced: true,
-        companyId: governance.companyId,
-        branchId: dataWithGovernance.branch_id,
-        warehouseId: dataWithGovernance.warehouse_id,
-        costCenterId: dataWithGovernance.cost_center_id
+        companyId: enhancedContext.companyId,
+        branchId: enhancedContext.branchId,
+        warehouseId: enhancedContext.warehouseId,
+        costCenterId: enhancedContext.costCenterId,
+        role: enhancedContext.role,
+        isAdmin: enhancedContext.isAdmin,
+        branchDefaults: {
+          warehouseId: enhancedContext.warehouseId,
+          costCenterId: enhancedContext.costCenterId
+        }
       }
     }, { status: 201 })
 
