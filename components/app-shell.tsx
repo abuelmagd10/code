@@ -47,7 +47,7 @@ export function AppShell({ children }: AppShellProps) {
   // قراءة الكاش مع useMemo لتحديثه عند كل تغيير مسار
   // ⚠️ NOTE: This causes hydration mismatch if reading localStorage during render
   // Refactored to read only on client
-  const [cachedData, setCachedData] = useState<{ isValid: boolean; permissions: any }>({ isValid: false, permissions: null })
+  const [cachedData, setCachedData] = useState<{ isValid: boolean; role: string; deniedResources: string[] }>({ isValid: false, role: '', deniedResources: [] })
   
   useEffect(() => {
      setCachedData(getCachedPermissions())

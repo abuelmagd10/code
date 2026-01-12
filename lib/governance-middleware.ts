@@ -1,5 +1,6 @@
-import { createClient } from '@/lib/supabase/server'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { NextRequest, NextResponse } from 'next/server'
 
 export interface GovernanceContext {
   companyId: string
@@ -7,6 +8,12 @@ export interface GovernanceContext {
   warehouseIds: string[]
   costCenterIds: string[]
   role: string
+}
+
+export interface GovernanceOptions {
+  requireBranch?: boolean
+  requireWarehouse?: boolean
+  requireCostCenter?: boolean
 }
 
 /**
@@ -17,7 +24,7 @@ export async function enforceGovernance(
   req: NextRequest,
   options: GovernanceOptions = {}
 ): Promise<GovernanceContext> {
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -25,6 +32,24 @@ export async function enforceGovernance(
       cookies: {
         get(name: string) {
           return cookieStore.get(name)?.value
+        },
+        set(name: string, value: string, options: CookieOptions) {
+            try {
+                cookieStore.set({ name, value, ...options })
+            } catch (error) {
+                // The `set` method was called from a Server Component.
+                // This can be ignored if you have middleware refreshing
+                // user sessions.
+            }
+        },
+        remove(name: string, options: CookieOptions) {
+            try {
+                cookieStore.set({ name, value: '', ...options })
+            } catch (error) {
+                // The `delete` method was called from a Server Component.
+                // This can be ignored if you have middleware refreshing
+                // user sessions.
+            }
         },
       },
     }
@@ -123,7 +148,7 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
           .select('id')
           .in('branch_id', context.branchIds)
         
-        context.warehouseIds = warehouses?.map(w => w.id) || []
+        context.warehouseIds = warehouses?.map((w: any) => w.id) || []
       }
       
       // الحصول على جميع مراكز التكلفة للشركة
@@ -132,7 +157,7 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
         .select('id')
         .eq('company_id', context.companyId)
       
-      context.costCenterIds = costCenters?.map(c => c.id) || []
+      context.costCenterIds = costCenters?.map((c: any) => c.id) || []
       break
 
     case 'admin':
@@ -145,21 +170,21 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
         .select('id')
         .eq('company_id', context.companyId)
       
-      context.branchIds = allBranches?.map(b => b.id) || []
+      context.branchIds = allBranches?.map((b: any) => b.id) || []
       
       const { data: allWarehouses } = await supabase
         .from('warehouses')
         .select('id')
         .eq('company_id', context.companyId)
       
-      context.warehouseIds = allWarehouses?.map(w => w.id) || []
+      context.warehouseIds = allWarehouses?.map((w: any) => w.id) || []
       
       const { data: allCostCenters } = await supabase
         .from('cost_centers')
         .select('id')
         .eq('company_id', context.companyId)
       
-      context.costCenterIds = allCostCenters?.map(c => c.id) || []
+      context.costCenterIds = allCostCenters?.map((c: any) => c.id) || []
       break
 
     default:
@@ -169,21 +194,21 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
         .select('id')
         .eq('company_id', context.companyId)
       
-      context.branchIds = allBranches2?.map(b => b.id) || []
+      context.branchIds = allBranches2?.map((b: any) => b.id) || []
       
       const { data: allWarehouses2 } = await supabase
         .from('warehouses')
         .select('id')
         .eq('company_id', context.companyId)
       
-      context.warehouseIds = allWarehouses2?.map(w => w.id) || []
+      context.warehouseIds = allWarehouses2?.map((w: any) => w.id) || []
       
       const { data: allCostCenters2 } = await supabase
         .from('cost_centers')
         .select('id')
         .eq('company_id', context.companyId)
       
-      context.costCenterIds = allCostCenters2?.map(c => c.id) || []
+      context.costCenterIds = allCostCenters2?.map((c: any) => c.id) || []
       break
   }
 
