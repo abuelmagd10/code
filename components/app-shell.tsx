@@ -45,22 +45,36 @@ export function AppShell({ children }: AppShellProps) {
   const resource = getResourceFromPath(pathname)
 
   // قراءة الكاش مع useMemo لتحديثه عند كل تغيير مسار
-  const cachedData = useMemo(() => getCachedPermissions(), [pathname])
+  // ⚠️ NOTE: This causes hydration mismatch if reading localStorage during render
+  // Refactored to read only on client
+  const [cachedData, setCachedData] = useState<{ isValid: boolean; permissions: any }>({ isValid: false, permissions: null })
+  
+  useEffect(() => {
+     setCachedData(getCachedPermissions())
+  }, [pathname])
 
-  // تحديد الحالة الأولية - تعتمد على الكاش والمسار
-  const getInitialAccessState = (): "loading" | "allowed" | "denied" => {
+  // تحديد الحالة الأولية - دائماً loading أو allowed للصفحات العامة لتجنب Hydration Mismatch
+  const [accessState, setAccessState] = useState<"loading" | "allowed" | "denied">(() => {
     if (isPublicPage) return "allowed"
-    if (!cachedData.isValid) return "loading" // ⚠️ لا نسمح بأي شيء حتى تجهز الصلاحيات
-    const hasAccess = canAccessPageSync(resource)
-    return hasAccess ? "allowed" : "denied"
-  }
-
-  const [accessState, setAccessState] = useState<"loading" | "allowed" | "denied">(getInitialAccessState)
+    return "loading"
+  })
 
   // تحديث الحالة عند تغيير المسار (مهم للتنقل)
   useEffect(() => {
-    setAccessState(getInitialAccessState())
-  }, [pathname])
+    // Reset state on path change
+    if (isPublicPage) {
+        setAccessState("allowed")
+    } else {
+        // Try to use cache immediately on client side navigation
+        const currentCache = getCachedPermissions()
+        if (currentCache.isValid) {
+            const hasAccess = canAccessPageSync(resource)
+            setAccessState(hasAccess ? "allowed" : "denied")
+        } else {
+            setAccessState("loading")
+        }
+    }
+  }, [pathname, isPublicPage, resource])
 
   // إذا كان الوصول مرفوضاً فوراً من الكاش
   useEffect(() => {
@@ -70,7 +84,7 @@ export function AppShell({ children }: AppShellProps) {
         router.replace("/dashboard")
       }
     }
-  }, [pathname])
+  }, [pathname, isPublicPage, cachedData, resource, router])
 
   // تحديث الحالة بناءً على الصلاحيات المحملة
   useEffect(() => {

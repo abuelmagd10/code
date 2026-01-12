@@ -13,21 +13,36 @@ export interface GovernanceContext {
  * Governance Middleware - يطبق قواعد الحوكمة على كل استعلام
  * يجب استخدامه في كل API endpoint
  */
-export async function enforceGovernance(): Promise<GovernanceContext> {
-  const supabase = await createClient()
-  
-  // الحصول على المستخدم الحالي
-  const { data: { user }, error } = await supabase.auth.getUser()
-  
-  if (error || !user) {
-    throw new Error('Unauthorized: User not authenticated')
+export async function enforceGovernance(
+  req: NextRequest,
+  options: GovernanceOptions = {}
+): Promise<GovernanceContext> {
+  const cookieStore = cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+      },
+    }
+  )
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+  if (authError || !user) {
+    console.error('Governance: Auth error or no user', authError)
+    throw new Error('Unauthorized: No active session')
   }
 
   // الحصول على الشركة النشطة من الكوكيز
   let activeCompanyId: string | null = null
   try {
-    const cookieStore = cookies()
-    activeCompanyId = cookieStore.get('active_company_id')?.value || null
+    const activeCompanyCookie = cookieStore.get('active_company_id')?.value
+    // console.log('Governance: Active company cookie:', activeCompanyCookie) 
+    activeCompanyId = activeCompanyCookie || null
   } catch {}
 
   // الحصول على بيانات المستخدم من company_members
@@ -55,14 +70,15 @@ export async function enforceGovernance(): Promise<GovernanceContext> {
       .single()
     
     if (fallbackError || !fallbackMember) {
+      console.error('Governance: No company membership found for user', user.id)
       throw new Error('Governance Error: User is not a company member')
     }
-    // استخدام العضوية البديلة (مؤقت)
-    // ملاحظة: لا يمكننا تعديل المتغير member لأنه const في الكود الأصلي، لذا سنعيد الهيكلة
+    // استخدام العضوية البديلة
     return buildGovernanceContext(supabase, fallbackMember)
   }
 
   if (memberError || !member) {
+    console.error('Governance: Database error or member not found', memberError)
     throw new Error('Governance Error: User is not a company member')
   }
 
