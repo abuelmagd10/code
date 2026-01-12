@@ -23,17 +23,53 @@ export async function enforceGovernance(): Promise<GovernanceContext> {
     throw new Error('Unauthorized: User not authenticated')
   }
 
+  // الحصول على الشركة النشطة من الكوكيز
+  let activeCompanyId: string | null = null
+  try {
+    const cookieStore = cookies()
+    activeCompanyId = cookieStore.get('active_company_id')?.value || null
+  } catch {}
+
   // الحصول على بيانات المستخدم من company_members
-  const { data: member, error: memberError } = await supabase
+  let memberQuery = supabase
     .from('company_members')
     .select('company_id, role, branch_id, warehouse_id, cost_center_id')
     .eq('user_id', user.id)
-    .single()
+
+  // إذا تم تحديد شركة، نفلتر بها
+  if (activeCompanyId) {
+    memberQuery = memberQuery.eq('company_id', activeCompanyId)
+  }
+
+  // نستخدم limit(1).single() لتجنب خطأ تعدد الصفوف
+  const { data: member, error: memberError } = await memberQuery.limit(1).single()
+
+  // إذا لم يتم العثور على عضوية بالشركة المحددة، نحاول البحث عن أي عضوية أخرى
+  if ((memberError || !member) && activeCompanyId) {
+    console.warn(`Governance: User ${user.id} not found in active company ${activeCompanyId}, falling back to first available company.`)
+    const { data: fallbackMember, error: fallbackError } = await supabase
+      .from('company_members')
+      .select('company_id, role, branch_id, warehouse_id, cost_center_id')
+      .eq('user_id', user.id)
+      .limit(1)
+      .single()
+    
+    if (fallbackError || !fallbackMember) {
+      throw new Error('Governance Error: User is not a company member')
+    }
+    // استخدام العضوية البديلة (مؤقت)
+    // ملاحظة: لا يمكننا تعديل المتغير member لأنه const في الكود الأصلي، لذا سنعيد الهيكلة
+    return buildGovernanceContext(supabase, fallbackMember)
+  }
 
   if (memberError || !member) {
     throw new Error('Governance Error: User is not a company member')
   }
 
+  return buildGovernanceContext(supabase, member)
+}
+
+async function buildGovernanceContext(supabase: any, member: any): Promise<GovernanceContext> {
   if (!member.company_id) {
     throw new Error('Governance Error: User has no company assigned')
   }

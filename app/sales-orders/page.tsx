@@ -879,6 +879,40 @@ function SalesOrdersContent() {
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // 🔐 سياق الحوكمة للقراءة فقط
+  const [governanceInfo, setGovernanceInfo] = useState<{
+    branchName?: string;
+    warehouseName?: string;
+    costCenterName?: string;
+  }>({});
+
+  useEffect(() => {
+    const fetchGovernanceNames = async () => {
+      if (!userContext) return;
+      
+      const info: any = {};
+      
+      if (userContext.branch_id) {
+        const { data } = await supabase.from('branches').select('name').eq('id', userContext.branch_id).single();
+        if (data) info.branchName = data.name;
+      }
+      
+      if (userContext.warehouse_id) {
+        const { data } = await supabase.from('warehouses').select('name').eq('id', userContext.warehouse_id).single();
+        if (data) info.warehouseName = data.name;
+      }
+      
+      if (userContext.cost_center_id) {
+        const { data } = await supabase.from('cost_centers').select('name').eq('id', userContext.cost_center_id).single();
+        if (data) info.costCenterName = data.name;
+      }
+      
+      setGovernanceInfo(info);
+    };
+    
+    fetchGovernanceNames();
+  }, [userContext, supabase]);
+
   const onEdit = async (so: SalesOrder) => {
     setEditing(so);
     setOpen(true);
@@ -1499,6 +1533,24 @@ function SalesOrdersContent() {
                 <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Notes' : 'ملاحظات'}</label>
                 <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
               </div>
+              
+              {/* 🔐 حقول الحوكمة للقراءة فقط */}
+              {!editing && (
+                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t mt-2">
+                  <div>
+                    <label className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Branch' : 'الفرع'}</label>
+                    <Input value={governanceInfo.branchName || '-'} disabled className="bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed h-8 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Warehouse' : 'المخزن'}</label>
+                    <Input value={governanceInfo.warehouseName || '-'} disabled className="bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed h-8 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Cost Center' : 'مركز التكلفة'}</label>
+                    <Input value={governanceInfo.costCenterName || '-'} disabled className="bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed h-8 text-sm" />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-4 space-y-2">
