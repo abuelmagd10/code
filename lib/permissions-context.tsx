@@ -347,6 +347,14 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
 
   // تحميل الصلاحيات عند البدء
   useEffect(() => {
+    // Hydration fix: قراءة الكاش فوراً عند التركيب
+    const cached = getCachedPermissions()
+    if (cached.isValid) {
+      setRole(cached.role)
+      setDeniedResources(cached.deniedResources)
+      setIsReady(true)
+      setIsLoading(false)
+    }
     loadPermissions()
   }, [loadPermissions])
 

@@ -105,15 +105,21 @@ export function Sidebar() {
   const router = useRouter()
   const supabaseHook = useSupabase()
 
-  // ========== قراءة الصلاحيات من الكاش فوراً (Pre-render) ==========
-  const cachedPermissions = useRef(getCachedPermissions())
+  // ========== قراءة الصلاحيات من الكاش (Client-side only) ==========
+  // نستخدم قيم افتراضية آمنة للريندر الأولي (SSR)
+  const [permissionsReady, setPermissionsReady] = useState<boolean>(false)
+  const [deniedResources, setDeniedResources] = useState<string[]>([])
+  const [myRole, setMyRole] = useState<string>("")
 
-  // حالة جاهزية الصلاحيات - مهمة جداً لمنع الوميض
-  const [permissionsReady, setPermissionsReady] = useState<boolean>(cachedPermissions.current.isValid)
-
-  // استخدام القيم المخزنة كقيم أولية - منع الوميض
-  const [deniedResources, setDeniedResources] = useState<string[]>(cachedPermissions.current.deniedResources)
-  const [myRole, setMyRole] = useState<string>(cachedPermissions.current.role)
+  // تحميل من الكاش عند التركيب (Hydration)
+  useEffect(() => {
+    const cached = getCachedPermissions()
+    if (cached.isValid) {
+      setDeniedResources(cached.deniedResources)
+      setMyRole(cached.role)
+      setPermissionsReady(true)
+    }
+  }, [])
   const [userProfile, setUserProfile] = useState<{ username?: string; display_name?: string } | null>(null)
   const [userBranch, setUserBranch] = useState<{ id: string; name: string } | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
