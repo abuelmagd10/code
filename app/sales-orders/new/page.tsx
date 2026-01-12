@@ -280,7 +280,7 @@ export default function NewSalesOrderPage() {
         const { getBranchDefaults } = await import('@/lib/governance-branch-defaults')
         
         try {
-          const branchDefaults = await getBranchDefaults(userBranchId)
+          const branchDefaults = await getBranchDefaults(supabase, userBranchId)
           
           // Validate branch has required defaults
           if (!branchDefaults.default_warehouse_id || !branchDefaults.default_cost_center_id) {
