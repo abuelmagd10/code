@@ -84,7 +84,7 @@ export function BranchCostCenterSelector({
           .order("is_main", { ascending: false })
           .order("name")
 
-        const mappedBranches = (branchData || []).map(b => ({
+        const mappedBranches = (branchData || []).map((b: any) => ({
           id: b.id,
           name: b.name || (b as any).branch_name || '',
           code: b.code || (b as any).branch_code || '',
@@ -94,7 +94,7 @@ export function BranchCostCenterSelector({
 
         // Auto-select main branch if no branch selected
         if (!branchId && mappedBranches.length > 0) {
-          const mainBranch = mappedBranches.find(b => b.is_main) || mappedBranches[0]
+          const mainBranch = mappedBranches.find((b: Branch) => b.is_main) || mappedBranches[0]
           onBranchChange(mainBranch.id)
         }
 
@@ -131,6 +131,7 @@ export function BranchCostCenterSelector({
 
   // Filter cost centers when branch changes
   useEffect(() => {
+    if (loading) return
     if (branchId) {
       const filtered = costCenters.filter(cc => cc.branch_id === branchId)
       setFilteredCostCenters(filtered)
@@ -146,6 +147,7 @@ export function BranchCostCenterSelector({
 
   // Filter warehouses when branch/cost center changes
   useEffect(() => {
+    if (loading) return
     if (showWarehouse && onWarehouseChange) {
       let filtered = warehouses
       if (branchId) {
