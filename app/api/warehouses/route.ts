@@ -1,78 +1,141 @@
-import { NextResponse } from "next/server"
+/**
+ * 🔒 API المستودعات مع الحوكمة الإلزامية
+ * 
+ * GET /api/warehouses - جلب المستودعات مع تطبيق الحوكمة
+ * POST /api/warehouses - إنشاء مستودع جديد مع الحوكمة
+ */
+
+import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { cookies } from "next/headers"
+import { 
+  enforceGovernance, 
+  applyGovernanceFilters,
+  validateGovernanceData,
+  addGovernanceData
+} from "@/lib/governance-middleware"
 
-export async function GET() {
+/**
+ * GET /api/warehouses
+ * جلب المستودعات مع تطبيق فلاتر الحوكمة
+ */
+export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-
-    // Get user's company
-    const { data: member } = await supabase
-      .from("company_members")
-      .select("company_id")
-      .eq("user_id", user.id)
-      .single()
-
-    if (!member) return NextResponse.json({ error: "No company found" }, { status: 404 })
-
-    const { data: warehouses, error } = await supabase
+    // 1️⃣ تطبيق الحوكمة (إلزامي)
+    const governance = await enforceGovernance()
+    
+    const supabase = createClient(cookies())
+    
+    // 2️⃣ بناء الاستعلام مع فلاتر الحوكمة
+    let query = supabase
       .from("warehouses")
       .select("*, branches(id, name, branch_name), cost_centers(id, cost_center_name)")
-      .eq("company_id", member.company_id)
-      .order("is_main", { ascending: false })
-      .order("name")
+    
+    // 3️⃣ تطبيق فلاتر الحوكمة (إلزامي)
+    query = applyGovernanceFilters(query, governance)
+    query = query.order("is_main", { ascending: false }).order("name")
 
-    if (error) throw error
-    return NextResponse.json(warehouses)
+    const { data: warehouses, error: dbError } = await query
+
+    if (dbError) {
+      console.error("[API /warehouses] Database error:", dbError)
+      return NextResponse.json({ 
+        error: dbError.message,
+        error_ar: "خطأ في جلب المستودعات"
+      }, { status: 500 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: warehouses || [],
+      meta: {
+        total: (warehouses || []).length,
+        role: governance.role,
+        governance: {
+          companyId: governance.companyId,
+          branchIds: governance.branchIds,
+          warehouseIds: governance.warehouseIds,
+          costCenterIds: governance.costCenterIds
+        }
+      }
+    })
+
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error("[API /warehouses] Unexpected error:", error)
+    return NextResponse.json({ 
+      error: error.message,
+      error_ar: "حدث خطأ غير متوقع"
+    }, { 
+      status: error.message.includes('Unauthorized') ? 401 : 403 
+    })
   }
 }
 
-export async function POST(request: Request) {
+/**
+ * POST /api/warehouses
+ * إنشاء مستودع جديد مع التحقق من الحوكمة
+ */
+export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-
-    const body = await request.json()
-
-    // Get user's company
-    const { data: member } = await supabase
-      .from("company_members")
-      .select("company_id, role")
-      .eq("user_id", user.id)
-      .single()
-
-    if (!member) return NextResponse.json({ error: "No company found" }, { status: 404 })
-    if (!["owner", "admin"].includes(member.role)) {
-      return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+    // 1️⃣ تطبيق الحوكمة (إلزامي)
+    const governance = await enforceGovernance()
+    
+    // التحقق من الصلاحيات
+    if (!['admin', 'gm'].includes(governance.role)) {
+      return NextResponse.json({ 
+        error: "Insufficient permissions",
+        error_ar: "صلاحيات غير كافية" 
+      }, { status: 403 })
     }
-
-    const { data: warehouse, error } = await supabase
+    
+    const body = await request.json()
+    
+    // 2️⃣ إضافة بيانات الحوكمة تلقائياً
+    const dataWithGovernance = addGovernanceData(body, governance)
+    
+    // 3️⃣ التحقق من صحة البيانات (إلزامي)
+    validateGovernanceData(dataWithGovernance, governance)
+    
+    const supabase = createClient(cookies())
+    
+    // 4️⃣ الإدخال في قاعدة البيانات
+    const { data: warehouse, error: insertError } = await supabase
       .from("warehouses")
       .insert({
-        company_id: member.company_id,
-        name: body.name,
-        code: body.code || null,
-        branch_id: body.branch_id || null,
-        cost_center_id: body.cost_center_id || null,
-        address: body.address || null,
-        city: body.city || null,
-        phone: body.phone || null,
-        manager_name: body.manager_name || null,
+        ...dataWithGovernance,
         is_main: false,
-        is_active: body.is_active !== false,
-        notes: body.notes || null
+        is_active: body.is_active !== false
       })
       .select()
       .single()
 
-    if (error) throw error
-    return NextResponse.json(warehouse)
+    if (insertError) {
+      return NextResponse.json({ 
+        error: insertError.message,
+        error_ar: "فشل في إنشاء المستودع"
+      }, { status: 500 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: warehouse,
+      message: "Warehouse created successfully",
+      message_ar: "تم إنشاء المستودع بنجاح",
+      governance: {
+        enforced: true,
+        companyId: governance.companyId,
+        branchId: dataWithGovernance.branch_id,
+        warehouseId: dataWithGovernance.warehouse_id,
+        costCenterId: dataWithGovernance.cost_center_id
+      }
+    }, { status: 201 })
+
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ 
+      error: error.message,
+      error_ar: "حدث خطأ غير متوقع"
+    }, { 
+      status: error.message.includes('Violation') ? 403 : 500 
+    })
   }
 }
-

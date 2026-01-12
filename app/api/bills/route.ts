@@ -1,55 +1,48 @@
 /**
- * 🔒 API فواتير الشراء مع نظام التحكم في الرؤية الموحد
+ * 🔒 API فواتير الشراء مع الحوكمة الإلزامية
  * 
- * GET /api/bills - جلب فواتير الشراء مع تطبيق قواعد الرؤية
+ * GET /api/bills - جلب فواتير الشراء مع تطبيق الحوكمة
+ * POST /api/bills - إنشاء فاتورة شراء جديدة مع الحوكمة
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { getActiveCompanyId } from "@/lib/company"
-import { applyDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { cookies } from "next/headers"
+import { 
+  enforceGovernance, 
+  applyGovernanceFilters,
+  validateGovernanceData,
+  addGovernanceData
+} from "@/lib/governance-middleware"
 
 /**
  * GET /api/bills
- * جلب فواتير الشراء مع تطبيق قواعد الرؤية
+ * جلب فواتير الشراء مع تطبيق فلاتر الحوكمة
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    // 1️⃣ تطبيق الحوكمة (إلزامي)
+    const governance = await enforceGovernance()
     
-    // 1️⃣ التحقق من المصادقة
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized", error_ar: "غير مصرح" }, { status: 401 })
-    }
-
-    // 2️⃣ جلب الشركة النشطة
-    const companyId = await getActiveCompanyId(supabase)
-    if (!companyId) {
-      return NextResponse.json({ error: "No company found", error_ar: "لا توجد شركة" }, { status: 400 })
-    }
-
-    // 3️⃣ تطبيق نظام التحكم في الرؤية
+    const supabase = createClient(cookies())
+    
     const { searchParams } = new URL(request.url)
     const status = searchParams.get("status") || undefined
     
+    // 2️⃣ بناء الاستعلام مع فلاتر الحوكمة
     let query = supabase
       .from("bills")
       .select(`
         *,
         suppliers:supplier_id (id, name, phone, city)
       `)
-      .eq("company_id", companyId)
 
-    // تطبيق فلاتر إضافية
     if (status && status !== "all") {
       query = query.eq("status", status)
     }
 
-    // 4️⃣ تطبيق قواعد الرؤية
-    query = await applyDataVisibilityFilter(supabase, query, "bills", user.id, companyId)
-    
-    // ترتيب حسب التاريخ
+    // 3️⃣ تطبيق فلاتر الحوكمة (إلزامي)
+    query = applyGovernanceFilters(query, governance)
     query = query.order("created_at", { ascending: false })
 
     const { data: bills, error: dbError } = await query
@@ -66,7 +59,14 @@ export async function GET(request: NextRequest) {
       success: true,
       data: bills || [],
       meta: {
-        total: (bills || []).length
+        total: (bills || []).length,
+        role: governance.role,
+        governance: {
+          companyId: governance.companyId,
+          branchIds: governance.branchIds,
+          warehouseIds: governance.warehouseIds,
+          costCenterIds: governance.costCenterIds
+        }
       }
     })
 
@@ -75,6 +75,65 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ 
       error: error.message, 
       error_ar: "حدث خطأ غير متوقع" 
-    }, { status: 500 })
+    }, { 
+      status: error.message.includes('Unauthorized') ? 401 : 403 
+    })
+  }
+}
+
+/**
+ * POST /api/bills
+ * إنشاء فاتورة شراء جديدة مع التحقق من الحوكمة
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // 1️⃣ تطبيق الحوكمة (إلزامي)
+    const governance = await enforceGovernance()
+    
+    const body = await request.json()
+    
+    // 2️⃣ إضافة بيانات الحوكمة تلقائياً
+    const dataWithGovernance = addGovernanceData(body, governance)
+    
+    // 3️⃣ التحقق من صحة البيانات (إلزامي)
+    validateGovernanceData(dataWithGovernance, governance)
+    
+    const supabase = createClient(cookies())
+    
+    // 4️⃣ الإدخال في قاعدة البيانات
+    const { data: newBill, error: insertError } = await supabase
+      .from("bills")
+      .insert(dataWithGovernance)
+      .select()
+      .single()
+
+    if (insertError) {
+      return NextResponse.json({ 
+        error: insertError.message, 
+        error_ar: "فشل في إنشاء فاتورة الشراء" 
+      }, { status: 500 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: newBill,
+      message: "Bill created successfully",
+      message_ar: "تم إنشاء فاتورة الشراء بنجاح",
+      governance: {
+        enforced: true,
+        companyId: governance.companyId,
+        branchId: dataWithGovernance.branch_id,
+        warehouseId: dataWithGovernance.warehouse_id,
+        costCenterId: dataWithGovernance.cost_center_id
+      }
+    }, { status: 201 })
+
+  } catch (error: any) {
+    return NextResponse.json({ 
+      error: error.message, 
+      error_ar: "حدث خطأ غير متوقع" 
+    }, { 
+      status: error.message.includes('Violation') ? 403 : 500 
+    })
   }
 }

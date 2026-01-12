@@ -1,75 +1,41 @@
 /**
- * 🔒 API أوامر البيع مع الحوكمة الإلزامية - إصدار مبسط
+ * 🔒 API أوامر البيع مع الحوكمة الإلزامية
  * 
- * GET /api/sales-orders - جلب أوامر البيع مع تطبيق الحوكمة الإلزامية
- * POST /api/sales-orders - إنشاء أمر بيع جديد مع الحوكمة الإلزامية
+ * GET /api/sales-orders - جلب أوامر البيع مع تطبيق الحوكمة
+ * POST /api/sales-orders - إنشاء أمر بيع جديد مع الحوكمة
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { getActiveCompanyId } from "@/lib/company"
-import { getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
+import { cookies } from "next/headers"
+import { 
+  enforceGovernance, 
+  applyGovernanceFilters,
+  validateGovernanceData,
+  addGovernanceData
+} from "@/lib/governance-middleware"
 
 /**
  * GET /api/sales-orders
- * جلب أوامر البيع مع تطبيق الحوكمة الإلزامية
+ * جلب أوامر البيع مع تطبيق فلاتر الحوكمة
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    // 1️⃣ تطبيق الحوكمة (إلزامي)
+    const governance = await enforceGovernance()
     
-    // 1️⃣ التحقق من المصادقة
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized", error_ar: "غير مصرح" }, { status: 401 })
-    }
-
-    // 2️⃣ جلب الشركة النشطة
-    const companyId = await getActiveCompanyId(supabase)
-    if (!companyId) {
-      return NextResponse.json({ error: "No company found", error_ar: "لا توجد شركة" }, { status: 400 })
-    }
-
-    // 3️⃣ جلب دور المستخدم وسياق الحوكمة
-    const { data: member } = await supabase
-      .from("company_members")
-      .select("role, branch_id, cost_center_id, warehouse_id")
-      .eq("company_id", companyId)
-      .eq("user_id", user.id)
-      .single()
-
-    if (!member) {
-      return NextResponse.json({ error: "User not found in company", error_ar: "المستخدم غير موجود في الشركة" }, { status: 403 })
-    }
-
-    const userContext = {
-      user_id: user.id,
-      company_id: companyId,
-      branch_id: member.branch_id,
-      cost_center_id: member.cost_center_id,
-      warehouse_id: member.warehouse_id,
-      role: member.role
-    }
-
-    // 4️⃣ تطبيق فلاتر الحوكمة
-    const accessLevel = getRoleAccessLevel(member.role)
+    const supabase = createClient(cookies())
     
+    // 2️⃣ بناء الاستعلام مع فلاتر الحوكمة
     let query = supabase
       .from("sales_orders")
       .select(`
         *,
         customers:customer_id (id, name, phone, city)
       `)
-      .eq("company_id", companyId)
-
-    // تطبيق الفلاتر حسب الدور
-    if (accessLevel === 'own') {
-      query = query.eq("created_by_user_id", user.id)
-    } else if (accessLevel === 'branch' && member.branch_id) {
-      query = query.eq("branch_id", member.branch_id)
-    }
-
-    // ترتيب حسب التاريخ
+    
+    // تطبيق الفلاتر
+    query = applyGovernanceFilters(query, governance)
     query = query.order("created_at", { ascending: false })
 
     const { data: orders, error: dbError } = await query
@@ -87,96 +53,50 @@ export async function GET(request: NextRequest) {
       data: orders || [],
       meta: {
         total: (orders || []).length,
-        role: member.role,
-        accessLevel: accessLevel,
+        role: governance.role,
         governance: {
-          branchId: member.branch_id,
-          costCenterId: member.cost_center_id
-        },
-        filterApplied: {
-          byCreatedBy: accessLevel === 'own',
-          byBranch: accessLevel === 'branch',
-          byCostCenter: false
+          companyId: governance.companyId,
+          branchIds: governance.branchIds,
+          warehouseIds: governance.warehouseIds,
+          costCenterIds: governance.costCenterIds
         }
       }
     })
 
   } catch (error: any) {
-    console.error("[API /sales-orders] Unexpected error:", error)
+    console.error("[API /sales-orders] Error:", error)
     return NextResponse.json({ 
       error: error.message, 
       error_ar: "حدث خطأ غير متوقع" 
-    }, { status: 500 })
+    }, { 
+      status: error.message.includes('Unauthorized') ? 401 : 403 
+    })
   }
 }
 
 /**
  * POST /api/sales-orders
- * إنشاء أمر بيع جديد مع تطبيق الحوكمة الإلزامية
+ * إنشاء أمر بيع جديد مع التحقق من الحوكمة
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    // 1️⃣ تطبيق الحوكمة (إلزامي)
+    const governance = await enforceGovernance()
     
-    // 1️⃣ التحقق من المصادقة
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized", error_ar: "غير مصرح" }, { status: 401 })
-    }
-
-    // 2️⃣ جلب الشركة النشطة
-    const companyId = await getActiveCompanyId(supabase)
-    if (!companyId) {
-      return NextResponse.json({ error: "No company found", error_ar: "لا توجد شركة" }, { status: 400 })
-    }
-
-    // 3️⃣ جلب سياق الحوكمة للمستخدم
-    const { data: governance } = await supabase
-      .from('user_branch_cost_center')
-      .select('branch_id, cost_center_id')
-      .eq('user_id', user.id)
-      .eq('company_id', companyId)
-      .single()
-
-    if (!governance) {
-      return NextResponse.json({ 
-        error: "User governance context not found", 
-        error_ar: "سياق الحوكمة للمستخدم غير موجود" 
-      }, { status: 403 })
-    }
-
-    // 4️⃣ الحصول على المخزن الرئيسي للفرع
-    const { data: warehouse } = await supabase
-      .from('warehouses')
-      .select('id')
-      .eq('company_id', companyId)
-      .eq('branch_id', governance.branch_id)
-      .eq('is_main', true)
-      .single()
-
-    if (!warehouse) {
-      return NextResponse.json({ 
-        error: "No main warehouse found for branch", 
-        error_ar: "لا يوجد مخزن رئيسي للفرع" 
-      }, { status: 400 })
-    }
-
-    // 5️⃣ قراءة بيانات أمر البيع
     const body = await request.json()
     
-    // 6️⃣ تطبيق الحوكمة الإلزامية على البيانات
-    const salesOrderData = {
-      ...body,
-      company_id: companyId,
-      branch_id: governance.branch_id,
-      cost_center_id: governance.cost_center_id,
-      warehouse_id: warehouse.id,
-      created_by_user_id: user.id
-    }
-
+    // 2️⃣ إضافة بيانات الحوكمة تلقائياً
+    const dataWithGovernance = addGovernanceData(body, governance)
+    
+    // 3️⃣ التحقق من صحة البيانات (إلزامي)
+    validateGovernanceData(dataWithGovernance, governance)
+    
+    const supabase = createClient(cookies())
+    
+    // 4️⃣ الإدخال في قاعدة البيانات
     const { data: newSalesOrder, error: insertError } = await supabase
       .from("sales_orders")
-      .insert(salesOrderData)
+      .insert(dataWithGovernance)
       .select()
       .single()
 
@@ -193,10 +113,11 @@ export async function POST(request: NextRequest) {
       message: "Sales order created successfully",
       message_ar: "تم إنشاء أمر البيع بنجاح",
       governance: {
-        branchId: governance.branch_id,
-        costCenterId: governance.cost_center_id,
-        warehouseId: warehouse.id,
-        enforced: true
+        enforced: true,
+        companyId: governance.companyId,
+        branchId: dataWithGovernance.branch_id,
+        warehouseId: dataWithGovernance.warehouse_id,
+        costCenterId: dataWithGovernance.cost_center_id
       }
     }, { status: 201 })
 
@@ -204,7 +125,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       error: error.message, 
       error_ar: "حدث خطأ غير متوقع" 
-    }, { status: 500 })
+    }, { 
+      status: error.message.includes('Violation') ? 403 : 500 
+    })
   }
 }
 

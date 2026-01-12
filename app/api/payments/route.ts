@@ -1,5 +1,5 @@
 /**
- * 🔒 API إشعارات مدين العملاء مع الحوكمة الإلزامية
+ * 🔒 API المدفوعات مع الحوكمة الإلزامية
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -17,22 +17,12 @@ export async function GET(request: NextRequest) {
     const governance = await enforceGovernance()
     const supabase = createClient(cookies())
     
-    const { searchParams } = new URL(request.url)
-    const status = searchParams.get("status") || undefined
-    
     let query = supabase
-      .from("customer_debit_notes")
-      .select(`
-        *,
-        customers:customer_id (id, name, phone, city)
-      `)
-
-    if (status && status !== "all") {
-      query = query.eq("status", status)
-    }
+      .from("payments")
+      .select("*, customers(name), invoices(invoice_number)")
 
     query = applyGovernanceFilters(query, governance)
-    query = query.order("created_at", { ascending: false })
+    query = query.order("payment_date", { ascending: false })
 
     const { data, error } = await query
 
@@ -73,7 +63,7 @@ export async function POST(request: NextRequest) {
     
     const supabase = createClient(cookies())
     const { data, error } = await supabase
-      .from("customer_debit_notes")
+      .from("payments")
       .insert(dataWithGovernance)
       .select()
       .single()

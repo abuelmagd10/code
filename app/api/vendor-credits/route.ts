@@ -1,35 +1,22 @@
 /**
- * 🔒 API إشعارات دائن الموردين مع نظام التحكم في الرؤية الموحد
- * 
- * GET /api/vendor-credits - جلب إشعارات دائن الموردين مع تطبيق قواعد الرؤية
+ * 🔒 API إشعارات دائن الموردين مع الحوكمة الإلزامية
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { getActiveCompanyId } from "@/lib/company"
-import { applyDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { cookies } from "next/headers"
+import { 
+  enforceGovernance, 
+  applyGovernanceFilters,
+  validateGovernanceData,
+  addGovernanceData
+} from "@/lib/governance-middleware"
 
-/**
- * GET /api/vendor-credits
- * جلب إشعارات دائن الموردين مع تطبيق قواعد الرؤية
- */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const governance = await enforceGovernance()
+    const supabase = createClient(cookies())
     
-    // 1️⃣ التحقق من المصادقة
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized", error_ar: "غير مصرح" }, { status: 401 })
-    }
-
-    // 2️⃣ جلب الشركة النشطة
-    const companyId = await getActiveCompanyId(supabase)
-    if (!companyId) {
-      return NextResponse.json({ error: "No company found", error_ar: "لا توجد شركة" }, { status: 400 })
-    }
-
-    // 3️⃣ تطبيق نظام التحكم في الرؤية
     const { searchParams } = new URL(request.url)
     const status = searchParams.get("status") || undefined
     
@@ -39,42 +26,79 @@ export async function GET(request: NextRequest) {
         *,
         suppliers:supplier_id (id, name, phone, city)
       `)
-      .eq("company_id", companyId)
 
-    // تطبيق فلاتر إضافية
     if (status && status !== "all") {
       query = query.eq("status", status)
     }
 
-    // 4️⃣ تطبيق قواعد الرؤية
-    query = await applyDataVisibilityFilter(supabase, query, "vendor_credits", user.id, companyId)
-    
-    // ترتيب حسب التاريخ
+    query = applyGovernanceFilters(query, governance)
     query = query.order("created_at", { ascending: false })
 
-    const { data: vendorCredits, error: dbError } = await query
+    const { data, error } = await query
 
-    if (dbError) {
-      console.error("[API /vendor-credits] Database error:", dbError)
-      return NextResponse.json({ 
-        error: dbError.message, 
-        error_ar: "خطأ في جلب إشعارات دائن الموردين" 
-      }, { status: 500 })
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     return NextResponse.json({
       success: true,
-      data: vendorCredits || [],
+      data: data || [],
       meta: {
-        total: (vendorCredits || []).length
+        total: (data || []).length,
+        role: governance.role,
+        governance: {
+          companyId: governance.companyId,
+          branchIds: governance.branchIds,
+          warehouseIds: governance.warehouseIds,
+          costCenterIds: governance.costCenterIds
+        }
       }
     })
 
   } catch (error: any) {
-    console.error("[API /vendor-credits] Unexpected error:", error)
     return NextResponse.json({ 
-      error: error.message, 
-      error_ar: "حدث خطأ غير متوقع" 
-    }, { status: 500 })
+      error: error.message 
+    }, { 
+      status: error.message.includes('Unauthorized') ? 401 : 403 
+    })
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const governance = await enforceGovernance()
+    const body = await request.json()
+    const dataWithGovernance = addGovernanceData(body, governance)
+    validateGovernanceData(dataWithGovernance, governance)
+    
+    const supabase = createClient(cookies())
+    const { data, error } = await supabase
+      .from("vendor_credits")
+      .insert(dataWithGovernance)
+      .select()
+      .single()
+    
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    
+    return NextResponse.json({
+      success: true,
+      data,
+      governance: {
+        enforced: true,
+        companyId: governance.companyId,
+        branchId: dataWithGovernance.branch_id,
+        warehouseId: dataWithGovernance.warehouse_id,
+        costCenterId: dataWithGovernance.cost_center_id
+      }
+    }, { status: 201 })
+    
+  } catch (error: any) {
+    return NextResponse.json({ 
+      error: error.message 
+    }, { 
+      status: error.message.includes('Violation') ? 403 : 500 
+    })
   }
 }
