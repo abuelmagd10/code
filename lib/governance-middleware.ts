@@ -179,11 +179,21 @@ export function applyGovernanceFilters(
   query: any,
   context: GovernanceContext
 ) {
+  query = query.eq('company_id', context.companyId)
+  
+  if (context.branchIds.length > 0) {
+    query = query.in('branch_id', context.branchIds)
+  }
+  
+  if (context.warehouseIds.length > 0) {
+    query = query.in('warehouse_id', context.warehouseIds)
+  }
+  
+  if (context.costCenterIds.length > 0) {
+    query = query.in('cost_center_id', context.costCenterIds)
+  }
+  
   return query
-    .eq('company_id', context.companyId)
-    .in('branch_id', context.branchIds)
-    .in('warehouse_id', context.warehouseIds)
-    .in('cost_center_id', context.costCenterIds)
 }
 
 /**
