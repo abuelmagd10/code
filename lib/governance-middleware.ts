@@ -23,59 +23,53 @@ export async function enforceGovernance(): Promise<GovernanceContext> {
     throw new Error('Unauthorized: User not authenticated')
   }
 
-  // الحصول على بيانات المستخدم والصلاحيات
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select(`
-      company_id,
-      role,
-      branch_id,
-      user_branches!inner(branch_id),
-      user_warehouses!inner(warehouse_id),
-      user_cost_centers!inner(cost_center_id)
-    `)
-    .eq('id', user.id)
+  // الحصول على بيانات المستخدم من company_members
+  const { data: member, error: memberError } = await supabase
+    .from('company_members')
+    .select('company_id, role, branch_id, warehouse_id, cost_center_id')
+    .eq('user_id', user.id)
     .single()
 
-  if (userError || !userData) {
-    throw new Error('Governance Error: User data not found')
+  if (memberError || !member) {
+    throw new Error('Governance Error: User is not a company member')
   }
 
-  // التحقق من وجود company_id
-  if (!userData.company_id) {
+  if (!member.company_id) {
     throw new Error('Governance Error: User has no company assigned')
   }
 
   // بناء سياق الحوكمة حسب الدور
   const context: GovernanceContext = {
-    companyId: userData.company_id,
+    companyId: member.company_id,
     branchIds: [],
     warehouseIds: [],
     costCenterIds: [],
-    role: userData.role
+    role: member.role
   }
 
   // تحديد النطاق حسب الدور
-  switch (userData.role) {
+  switch (member.role) {
     case 'staff':
       // الموظف يرى فقط بياناته
-      context.branchIds = [userData.branch_id]
-      context.warehouseIds = userData.user_warehouses?.map((w: any) => w.warehouse_id) || []
-      context.costCenterIds = userData.user_cost_centers?.map((c: any) => c.cost_center_id) || []
+      context.branchIds = member.branch_id ? [member.branch_id] : []
+      context.warehouseIds = member.warehouse_id ? [member.warehouse_id] : []
+      context.costCenterIds = member.cost_center_id ? [member.cost_center_id] : []
       break
 
     case 'accountant':
     case 'manager':
       // المحاسب والمدير يرون كل الفرع
-      context.branchIds = userData.user_branches?.map((b: any) => b.branch_id) || [userData.branch_id]
+      context.branchIds = member.branch_id ? [member.branch_id] : []
       
-      // الحصول على جميع المستودعات التابعة للفروع
-      const { data: warehouses } = await supabase
-        .from('warehouses')
-        .select('id')
-        .in('branch_id', context.branchIds)
-      
-      context.warehouseIds = warehouses?.map(w => w.id) || []
+      // الحصول على جميع المستودعات التابعة للفرع
+      if (context.branchIds.length > 0) {
+        const { data: warehouses } = await supabase
+          .from('warehouses')
+          .select('id')
+          .in('branch_id', context.branchIds)
+        
+        context.warehouseIds = warehouses?.map(w => w.id) || []
+      }
       
       // الحصول على جميع مراكز التكلفة للشركة
       const { data: costCenters } = await supabase
@@ -115,9 +109,38 @@ export async function enforceGovernance(): Promise<GovernanceContext> {
       throw new Error('Governance Error: Invalid user role')
   }
 
-  // التحقق من وجود صلاحيات
-  if (context.branchIds.length === 0 || context.warehouseIds.length === 0) {
-    throw new Error('Governance Error: User has no access scope defined')
+  // التحقق من وجود صلاحيات (إذا لم تكن موجودة، استخدم الافتراضية)
+  if (context.branchIds.length === 0) {
+    const { data: defaultBranch } = await supabase
+      .from('branches')
+      .select('id')
+      .eq('company_id', context.companyId)
+      .limit(1)
+      .single()
+    
+    if (defaultBranch) context.branchIds = [defaultBranch.id]
+  }
+  
+  if (context.warehouseIds.length === 0) {
+    const { data: defaultWarehouse } = await supabase
+      .from('warehouses')
+      .select('id')
+      .eq('company_id', context.companyId)
+      .limit(1)
+      .single()
+    
+    if (defaultWarehouse) context.warehouseIds = [defaultWarehouse.id]
+  }
+  
+  if (context.costCenterIds.length === 0) {
+    const { data: defaultCostCenter } = await supabase
+      .from('cost_centers')
+      .select('id')
+      .eq('company_id', context.companyId)
+      .limit(1)
+      .single()
+    
+    if (defaultCostCenter) context.costCenterIds = [defaultCostCenter.id]
   }
 
   return context
