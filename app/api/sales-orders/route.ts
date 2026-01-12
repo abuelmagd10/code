@@ -86,7 +86,8 @@ export async function POST(request: NextRequest) {
     
     // 2️⃣ تطبيق افتراضيات الفرع (Enterprise Pattern: User → Branch → Defaults)
     const { enforceBranchDefaults, validateBranchDefaults, buildSalesOrderData } = await import('@/lib/governance-branch-defaults')
-    const enhancedContext = await enforceBranchDefaults(governance, body)
+    const supabase = await createClient()
+    const enhancedContext = await enforceBranchDefaults(governance, body, supabase)
     
     // 3️⃣ بناء البيانات النهائية مع الحوكمة المحسنة
     const finalData = buildSalesOrderData(body, enhancedContext)

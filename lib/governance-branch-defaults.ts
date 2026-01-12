@@ -9,8 +9,6 @@
  * User → Cost Center (direct assignment)
  */
 
-import { createClient } from '@/lib/supabase/server'
-
 export interface BranchDefaults {
   default_warehouse_id: string | null
   default_cost_center_id: string | null
@@ -28,10 +26,12 @@ export interface EnhancedGovernanceContext {
 /**
  * Get branch defaults for a specific branch
  * This is the core function that implements the enterprise pattern
+ * This function should be called from server-side code only
  */
-export async function getBranchDefaults(branchId: string): Promise<BranchDefaults> {
-  const supabase = await createClient()
-  
+export async function getBranchDefaults(
+  supabase: any, 
+  branchId: string
+): Promise<BranchDefaults> {
   const { data: branch, error } = await supabase
     .from('branches')
     .select('default_warehouse_id, default_cost_center_id')
@@ -85,13 +85,14 @@ export async function getBranchDefaults(branchId: string): Promise<BranchDefault
  */
 export async function enforceBranchDefaults(
   governance: any,
-  payload: any
+  payload: any,
+  supabase: any
 ): Promise<EnhancedGovernanceContext> {
   const role = governance.role?.toLowerCase() || 'staff'
   const isAdmin = ['admin', 'general_manager', 'owner'].includes(role)
 
   // Get branch defaults for the user's assigned branch
-  const branchDefaults = await getBranchDefaults(governance.branchIds[0])
+  const branchDefaults = await getBranchDefaults(supabase, governance.branchIds[0])
 
   // Validate that branch has required defaults
   if (!branchDefaults.default_warehouse_id || !branchDefaults.default_cost_center_id) {

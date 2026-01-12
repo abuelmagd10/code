@@ -6,6 +6,8 @@
  * User → Branch → (Default Warehouse, Default Cost Center)
  */
 
+"use client"
+
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -13,7 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { useSupabase } from "@/lib/supabase/hooks"
+import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
@@ -44,7 +46,7 @@ export function BranchDefaultsManager({
   lang = 'ar',
   onDefaultsUpdated 
 }: BranchDefaultsManagerProps) {
-  const supabase = useSupabase()
+  const supabase = createClient()
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
