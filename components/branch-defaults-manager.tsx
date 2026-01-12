@@ -111,7 +111,7 @@ export function BranchDefaultsManager({
       // Load available cost centers for this branch
       const { data: costCenterData, error: costCenterError } = await supabase
         .from('cost_centers')
-        .select('id, cost_center_name, code')
+        .select('id, cost_center_name, cost_center_code')
         .eq('company_id', companyId)
         .eq('branch_id', branchId)
         .eq('is_active', true)
