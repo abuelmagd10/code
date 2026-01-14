@@ -127,10 +127,14 @@ export function BranchCostCenterSelector({
           setWarehouses(warehousesData || [])
         }
 
-        // Auto-select main branch if no branch selected
+        // Auto-select main branch if no branch selected - بعد التحميل الكامل مع تأخير إضافي
         if (!disabled && !branchId && mappedBranches.length > 0) {
           const mainBranch = mappedBranches.find((b: Branch) => b.is_main) || mappedBranches[0]
-          onBranchChange(mainBranch.id)
+          console.log('Auto-selecting main branch with delay:', mainBranch.id)
+          setTimeout(() => {
+            console.log('Executing branch auto-selection:', mainBranch.id)
+            onBranchChange(mainBranch.id)
+          }, 500) // تأخير إضافي لضمان تحميل كل البيانات
         }
 
       } catch (error) {
@@ -143,51 +147,94 @@ export function BranchCostCenterSelector({
     loadData()
   }, [supabase, showWarehouse, disabled, branchId, onBranchChange])
 
-  // Filter cost centers when branch changes
+  // Filter cost centers when branch changes - Enhanced with detailed logging and better timing
   useEffect(() => {
     if (loading) return
+    console.log('=== COST CENTER FILTER DEBUG ===')
+    console.log('Branch ID:', branchId)
+    console.log('All cost centers count:', costCenters.length)
+    console.log('Current cost center ID:', costCenterId)
+    console.log('Required:', required)
+    
     if (branchId) {
-      const filtered = costCenters.filter(cc => cc.branch_id === branchId)
+      const filtered = costCenters.filter(cc => {
+        const matches = cc.branch_id === branchId
+        console.log(`Cost center ${cc.id}: ${cc.cost_center_name} (${cc.cost_center_code}) - Branch: ${cc.branch_id} - Matches: ${matches}`)
+        return matches
+      })
+      
+      console.log('Filtered cost centers count:', filtered.length)
+      console.log('Filtered cost centers:', filtered.map(cc => ({id: cc.id, name: cc.cost_center_name, code: cc.cost_center_code})))
+      
       setFilteredCostCenters(filtered)
       const branch = branches.find((b) => b.id === branchId)
       const defaultCostCenterId = branch?.default_cost_center_id || null
       const defaultExists = defaultCostCenterId ? filtered.some((cc) => cc.id === defaultCostCenterId) : false
+      
+      console.log('Branch details:', {
+        id: branch?.id,
+        name: branch?.name,
+        default_cost_center_id: branch?.default_cost_center_id,
+        default_cost_center_exists: defaultExists
+      })
 
-      if (required) {
-        if (!costCenterId) {
-          // No current value - apply default with delay to ensure UI updates
-          if (defaultCostCenterId && defaultExists) {
-            console.log('Applying default cost center:', defaultCostCenterId)
-            setTimeout(() => onCostCenterChange(defaultCostCenterId), 100)
-          } else if (filtered.length > 0) {
-            console.log('Applying first cost center:', filtered[0].id)
-            setTimeout(() => onCostCenterChange(filtered[0].id), 100)
-          }
-        } else if (!filtered.find(cc => cc.id === costCenterId)) {
-          // Current value invalid - reset to default
-          if (defaultCostCenterId && defaultExists) {
-            console.log('Resetting to default cost center:', defaultCostCenterId)
-            setTimeout(() => onCostCenterChange(defaultCostCenterId), 100)
-          } else if (filtered.length > 0) {
-            console.log('Resetting to first cost center:', filtered[0].id)
-            setTimeout(() => onCostCenterChange(filtered[0].id), 100)
+      // Enhanced logic with better timing for cost center assignment
+      const assignCostCenter = () => {
+        if (required) {
+          console.log('Processing required cost center...')
+          if (!costCenterId) {
+            console.log('No current cost center value - applying default logic')
+            if (defaultCostCenterId && defaultExists) {
+              console.log('✅ Applying default cost center:', defaultCostCenterId)
+              onCostCenterChange(defaultCostCenterId)
+            } else if (filtered.length > 0) {
+              console.log('⚠️ No default found, applying first cost center:', filtered[0].id)
+              onCostCenterChange(filtered[0].id)
+            } else {
+              console.log('❌ No cost centers available for this branch')
+            }
+          } else if (!filtered.find(cc => cc.id === costCenterId)) {
+            console.log('Current cost center invalid, resetting to default...')
+            if (defaultCostCenterId && defaultExists) {
+              console.log('✅ Resetting to default cost center:', defaultCostCenterId)
+              onCostCenterChange(defaultCostCenterId)
+            } else if (filtered.length > 0) {
+              console.log('⚠️ Resetting to first cost center:', filtered[0].id)
+              onCostCenterChange(filtered[0].id)
+            } else {
+              console.log('❌ No valid cost centers available, clearing selection')
+              onCostCenterChange(null)
+            }
           } else {
-            console.log('No valid cost centers available')
-            onCostCenterChange(null)
+            console.log('✅ Current cost center is valid, keeping:', costCenterId)
           }
         } else {
-          console.log('Current cost center is valid, keeping:', costCenterId)
-        }
-      } else {
-        if (costCenterId && !filtered.find(cc => cc.id === costCenterId)) {
-          console.log('Clearing invalid cost center')
-          onCostCenterChange(null)
+          console.log('Processing optional cost center...')
+          if (costCenterId && !filtered.find(cc => cc.id === costCenterId)) {
+            console.log('Clearing invalid cost center selection')
+            onCostCenterChange(null)
+          } else {
+            console.log('Cost center selection is valid or empty')
+          }
         }
       }
+
+      // Apply assignment with proper timing
+      if (filtered.length > 0) {
+        console.log('Scheduling cost center assignment...')
+        setTimeout(() => {
+          console.log('Executing cost center assignment...')
+          assignCostCenter()
+        }, 300) // Increased delay to ensure UI is fully ready
+      } else {
+        console.log('No cost centers to assign')
+      }
     } else {
+      console.log('No branch selected, clearing cost centers')
       setFilteredCostCenters([])
       onCostCenterChange(null)
     }
+    console.log('=== END COST CENTER FILTER DEBUG ===')
   }, [branchId, costCenters, branches, required, costCenterId, onCostCenterChange])
 
   // Filter warehouses when branch/cost center changes
