@@ -137,7 +137,7 @@ export default function CostCentersPage() {
           setBaseCurrency(companyData.base_currency)
         }
         const [ccRes, brRes] = await Promise.all([
-          supabase.from("cost_centers").select("*, branches(id, name, code, currency)").eq("company_id", cid).order("cost_center_name"),
+          supabase.from("cost_centers").select("*, branches!cost_centers_branch_id_fkey(id, name, code, currency)").eq("company_id", cid).order("cost_center_name"),
           supabase.from("branches").select("id, name, code, currency").eq("company_id", cid).eq("is_active", true).order("name")
         ])
         if (ccRes.error) throw ccRes.error
