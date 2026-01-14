@@ -154,8 +154,6 @@ export function BranchCostCenterSelector({
     const filtered = costCenters.filter((cc) => cc.branch_id === branchId)
     setFilteredCostCenters(filtered)
 
-    if (disabled) return
-
     const branch = branches.find((b) => b.id === branchId)
     const defaultCostCenterId = branch?.default_cost_center_id ?? null
     const defaultExists =
