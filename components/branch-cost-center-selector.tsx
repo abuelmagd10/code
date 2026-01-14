@@ -12,6 +12,8 @@ interface Branch {
   name: string
   code: string
   is_main: boolean
+  default_cost_center_id?: string | null
+  default_warehouse_id?: string | null
 }
 
 interface CostCenter {
@@ -69,65 +71,77 @@ export function BranchCostCenterSelector({
 
   const t = (en: string, ar: string) => lang === 'en' ? en : ar
 
+  // Load initial data
   useEffect(() => {
     const loadData = async () => {
       try {
-        const companyId = await getActiveCompanyId(supabase)
-        if (!companyId) return
+        setLoading(true)
+        const activeCompanyId = await getActiveCompanyId(supabase)
+        if (!activeCompanyId) {
+          setLoading(false)
+          return
+        }
 
-        // Load branches
-        const { data: branchData } = await supabase
-          .from("branches")
-          .select("id, name, code, is_main, is_head_office")
-          .eq("company_id", companyId)
-          .eq("is_active", true)
-          .order("is_main", { ascending: false })
-          .order("name")
+        // جلب الفروع
+        const { data: branchesData, error: branchesError } = await supabase
+          .from('branches')
+          .select('*')
+          .eq('company_id', activeCompanyId)
+          .eq('is_active', true)
+          .order('is_main', { ascending: false })
+          .order('name', { ascending: true })
 
-        const mappedBranches = (branchData || []).map((b: any) => ({
+        if (branchesError) throw branchesError
+        const mappedBranches = (branchesData || []).map((b: any) => ({
           id: b.id,
-          name: b.name || (b as any).branch_name || '',
-          code: b.code || (b as any).branch_code || '',
-          is_main: b.is_main || (b as any).is_head_office || false
+          name: b.name || b.branch_name || '',
+          code: b.code || b.branch_code || '',
+          is_main: b.is_main || b.is_head_office || false,
+          default_cost_center_id: b.default_cost_center_id ?? null,
+          default_warehouse_id: b.default_warehouse_id ?? null
         }))
         setBranches(mappedBranches)
 
+        // جلب مراكز التكلفة
+        const { data: costCentersData, error: costCentersError } = await supabase
+          .from('cost_centers')
+          .select('*')
+          .eq('company_id', activeCompanyId)
+          .eq('is_active', true)
+          .order('cost_center_name', { ascending: true })
+
+        if (costCentersError) throw costCentersError
+        setCostCenters(costCentersData || [])
+
+        // جلب المخازن إذا كان مطلوباً
+        if (showWarehouse) {
+          const { data: warehousesData, error: warehousesError } = await supabase
+            .from('warehouses')
+            .select('*')
+            .eq('company_id', activeCompanyId)
+            .eq('is_active', true)
+            .order('is_main', { ascending: false })
+            .order('name', { ascending: true })
+
+          if (warehousesError) throw warehousesError
+          setWarehouses(warehousesData || [])
+        }
+
         // Auto-select main branch if no branch selected
-        if (!branchId && mappedBranches.length > 0) {
+        if (!disabled && !branchId && mappedBranches.length > 0) {
           const mainBranch = mappedBranches.find((b: Branch) => b.is_main) || mappedBranches[0]
           onBranchChange(mainBranch.id)
         }
 
-        // Load cost centers
-        const { data: ccData } = await supabase
-          .from("cost_centers")
-          .select("id, cost_center_name, cost_center_code, branch_id")
-          .eq("company_id", companyId)
-          .eq("is_active", true)
-          .order("cost_center_name")
-
-        setCostCenters(ccData || [])
-
-        // Load warehouses if needed
-        if (showWarehouse) {
-          const { data: whData } = await supabase
-            .from("warehouses")
-            .select("id, name, code, branch_id, cost_center_id, is_main")
-            .eq("company_id", companyId)
-            .eq("is_active", true)
-            .order("is_main", { ascending: false })
-            .order("name")
-
-          setWarehouses(whData || [])
-        }
-      } catch (err) {
-        console.error("Error loading branches/cost centers/warehouses:", err)
+      } catch (error) {
+        console.error('Error loading data:', error)
       } finally {
         setLoading(false)
       }
     }
+
     loadData()
-  }, [supabase, showWarehouse])
+  }, [supabase, showWarehouse, disabled, branchId, onBranchChange])
 
   // Filter cost centers when branch changes
   useEffect(() => {
@@ -135,15 +149,46 @@ export function BranchCostCenterSelector({
     if (branchId) {
       const filtered = costCenters.filter(cc => cc.branch_id === branchId)
       setFilteredCostCenters(filtered)
-      // Reset cost center if not in filtered list
-      if (costCenterId && !filtered.find(cc => cc.id === costCenterId)) {
-        onCostCenterChange(null)
+      const branch = branches.find((b) => b.id === branchId)
+      const defaultCostCenterId = branch?.default_cost_center_id || null
+      const defaultExists = defaultCostCenterId ? filtered.some((cc) => cc.id === defaultCostCenterId) : false
+
+      if (required) {
+        if (!costCenterId) {
+          // No current value - apply default with delay to ensure UI updates
+          if (defaultCostCenterId && defaultExists) {
+            console.log('Applying default cost center:', defaultCostCenterId)
+            setTimeout(() => onCostCenterChange(defaultCostCenterId), 100)
+          } else if (filtered.length > 0) {
+            console.log('Applying first cost center:', filtered[0].id)
+            setTimeout(() => onCostCenterChange(filtered[0].id), 100)
+          }
+        } else if (!filtered.find(cc => cc.id === costCenterId)) {
+          // Current value invalid - reset to default
+          if (defaultCostCenterId && defaultExists) {
+            console.log('Resetting to default cost center:', defaultCostCenterId)
+            setTimeout(() => onCostCenterChange(defaultCostCenterId), 100)
+          } else if (filtered.length > 0) {
+            console.log('Resetting to first cost center:', filtered[0].id)
+            setTimeout(() => onCostCenterChange(filtered[0].id), 100)
+          } else {
+            console.log('No valid cost centers available')
+            onCostCenterChange(null)
+          }
+        } else {
+          console.log('Current cost center is valid, keeping:', costCenterId)
+        }
+      } else {
+        if (costCenterId && !filtered.find(cc => cc.id === costCenterId)) {
+          console.log('Clearing invalid cost center')
+          onCostCenterChange(null)
+        }
       }
     } else {
       setFilteredCostCenters([])
       onCostCenterChange(null)
     }
-  }, [branchId, costCenters])
+  }, [branchId, costCenters, branches, required, costCenterId, onCostCenterChange])
 
   // Filter warehouses when branch/cost center changes
   useEffect(() => {
@@ -151,27 +196,72 @@ export function BranchCostCenterSelector({
     if (showWarehouse && onWarehouseChange) {
       let filtered = warehouses
       if (branchId) {
-        filtered = filtered.filter(w => !w.branch_id || w.branch_id === branchId)
+        filtered = filtered.filter(w => w.branch_id === branchId)
       }
       setFilteredWarehouses(filtered)
 
-      // Auto-select main warehouse if none selected
-      if (!warehouseId && filtered.length > 0) {
-        const mainWarehouse = filtered.find(w => w.is_main) || filtered[0]
-        onWarehouseChange(mainWarehouse.id)
-      } else if (warehouseId && !filtered.find(w => w.id === warehouseId)) {
-        // Reset warehouse if not in filtered list
-        const mainWarehouse = filtered.find(w => w.is_main) || filtered[0]
-        onWarehouseChange(mainWarehouse?.id || null)
+      const branch = branchId ? branches.find((b) => b.id === branchId) : undefined
+      const defaultWarehouseId = branch?.default_warehouse_id || null
+      const defaultExists = defaultWarehouseId ? filtered.some((w) => w.id === defaultWarehouseId) : false
+
+      if (required) {
+        if (!warehouseId) {
+          // No current value - apply default with delay to ensure UI updates
+          if (defaultWarehouseId && defaultExists) {
+            console.log('Applying default warehouse:', defaultWarehouseId)
+            setTimeout(() => onWarehouseChange(defaultWarehouseId), 100)
+          } else if (filtered.length > 0) {
+            const mainWarehouse = filtered.find(w => w.is_main) || filtered[0]
+            console.log('Applying main/first warehouse:', mainWarehouse.id)
+            setTimeout(() => onWarehouseChange(mainWarehouse.id), 100)
+          }
+        } else if (!filtered.find(w => w.id === warehouseId)) {
+          // Current value invalid - reset to default
+          if (defaultWarehouseId && defaultExists) {
+            console.log('Resetting to default warehouse:', defaultWarehouseId)
+            setTimeout(() => onWarehouseChange(defaultWarehouseId), 100)
+          } else if (filtered.length > 0) {
+            const mainWarehouse = filtered.find(w => w.is_main) || filtered[0]
+            console.log('Resetting to main/first warehouse:', mainWarehouse.id)
+            setTimeout(() => onWarehouseChange(mainWarehouse.id), 100)
+          } else {
+            console.log('No valid warehouses available')
+            onWarehouseChange(null)
+          }
+        } else {
+          console.log('Current warehouse is valid, keeping:', warehouseId)
+        }
+      } else {
+        if (!warehouseId && filtered.length > 0) {
+          const mainWarehouse = filtered.find(w => w.is_main) || filtered[0]
+          console.log('Applying main/first warehouse (optional):', mainWarehouse.id)
+          setTimeout(() => onWarehouseChange(mainWarehouse.id), 100)
+        } else if (warehouseId && !filtered.find(w => w.id === warehouseId)) {
+          const mainWarehouse = filtered.find(w => w.is_main) || filtered[0]
+          console.log('Resetting to main/first warehouse (optional):', mainWarehouse.id)
+          setTimeout(() => onWarehouseChange(mainWarehouse?.id || null), 100)
+        }
       }
     }
-  }, [branchId, warehouses, showWarehouse])
+  }, [branchId, warehouses, showWarehouse, branches, required, warehouseId, onWarehouseChange])
 
   if (loading) {
     return (
-      <div className={`grid grid-cols-2 gap-4 ${className}`}>
-        <div className="h-10 bg-gray-100 dark:bg-gray-800 rounded animate-pulse"></div>
-        <div className="h-10 bg-gray-100 dark:bg-gray-800 rounded animate-pulse"></div>
+      <div className={`grid grid-cols-1 ${showWarehouse ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-4 ${className}`}>
+        <div className="space-y-2">
+          {showLabels && <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>}
+          <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+        </div>
+        <div className="space-y-2">
+          {showLabels && <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>}
+          <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+        </div>
+        {showWarehouse && (
+          <div className="space-y-2">
+            {showLabels && <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>}
+            <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+          </div>
+        )}
       </div>
     )
   }
@@ -216,11 +306,12 @@ export function BranchCostCenterSelector({
           <Label className="flex items-center gap-2 text-sm font-medium">
             <Target className="w-4 h-4 text-teal-500" />
             {t("Cost Center", "مركز التكلفة")}
+            {required && <span className="text-red-500">*</span>}
           </Label>
         )}
         <Select
-          value={costCenterId || "none"}
-          onValueChange={(v) => onCostCenterChange(v === "none" ? null : v)}
+          value={required ? (costCenterId || "") : (costCenterId || "none")}
+          onValueChange={(v) => onCostCenterChange(required ? (v || null) : (v === "none" ? null : v))}
           disabled={disabled || !branchId || filteredCostCenters.length === 0}
         >
           <SelectTrigger className="w-full">
@@ -230,12 +321,18 @@ export function BranchCostCenterSelector({
             />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="none">{t("None", "بدون")}</SelectItem>
-            {filteredCostCenters.map((cc) => (
-              <SelectItem key={cc.id} value={cc.id}>
-                {cc.cost_center_name} ({cc.cost_center_code})
-              </SelectItem>
-            ))}
+            {!required && <SelectItem value="none">{t("None", "بدون")}</SelectItem>}
+            {filteredCostCenters.map((cc) => {
+              const isDefault = branchId && branches.find(b => b.id === branchId)?.default_cost_center_id === cc.id
+              return (
+                <SelectItem key={cc.id} value={cc.id}>
+                  <span className="flex items-center gap-2">
+                    {cc.cost_center_name} ({cc.cost_center_code})
+                    {isDefault && <span className="text-green-500 text-xs">(افتراضي)</span>}
+                  </span>
+                </SelectItem>
+              )
+            })}
           </SelectContent>
         </Select>
       </div>
@@ -262,14 +359,18 @@ export function BranchCostCenterSelector({
               />
             </SelectTrigger>
             <SelectContent>
-              {filteredWarehouses.map((wh) => (
-                <SelectItem key={wh.id} value={wh.id}>
-                  <span className="flex items-center gap-2">
-                    {wh.is_main && <span className="text-amber-500">★</span>}
-                    {wh.name} {wh.code ? `(${wh.code})` : ''}
-                  </span>
-                </SelectItem>
-              ))}
+              {filteredWarehouses.map((wh) => {
+                const isDefault = branchId && branches.find(b => b.id === branchId)?.default_warehouse_id === wh.id
+                return (
+                  <SelectItem key={wh.id} value={wh.id}>
+                    <span className="flex items-center gap-2">
+                      {wh.is_main && <span className="text-amber-500">★</span>}
+                      {wh.name} {wh.code ? `(${wh.code})` : ''}
+                      {isDefault && <span className="text-green-500 text-xs">(افتراضي)</span>}
+                    </span>
+                  </SelectItem>
+                )
+              })}
             </SelectContent>
           </Select>
         </div>
