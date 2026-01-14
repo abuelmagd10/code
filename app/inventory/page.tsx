@@ -396,8 +396,8 @@ export default function InventoryPage() {
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                {/* 🔐 Branch Selector - للمستخدمين العاديين: hidden، للـ Admin: visible */}
-                {isAdmin && branches.length > 0 && userContext && (
+                {/* 🔐 Branch Selector - للمستخدمين العاديين: disabled (يعرض فرعهم)، للـ Admin: enabled */}
+                {branches.length > 0 && userContext && (
                   <div className="flex items-center gap-2 sm:gap-3">
                     <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                       <Building2 className="w-4 h-4" />
@@ -406,11 +406,13 @@ export default function InventoryPage() {
                     <Select
                       value={selectedBranchId}
                       onValueChange={(value) => {
-                        applyBranchDefaults(userContext.company_id, value).catch((e) => {
-                          toastActionError(toast, "الحوكمة", "المخزون", e?.message || "تعذر تطبيق افتراضيات الفرع")
-                        })
+                        if (isAdmin) {
+                          applyBranchDefaults(userContext.company_id, value).catch((e) => {
+                            toastActionError(toast, "الحوكمة", "المخزون", e?.message || "تعذر تطبيق افتراضيات الفرع")
+                          })
+                        }
                       }}
-                      disabled={branches.length === 0}
+                      disabled={!isAdmin || branches.length === 0} // 🔐 disabled للمستخدمين العاديين
                     >
                       <SelectTrigger className="w-[180px] sm:w-[220px] bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
                         <SelectValue placeholder={appLang === 'en' ? 'Select branch' : 'اختر الفرع'} />
