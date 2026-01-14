@@ -237,20 +237,27 @@ export default function InventoryPage() {
       // 🔐 بناء قواعد الحوكمة
       const rules = buildDataVisibilityFilter(context)
       
-      // 🔐 قواعد الحوكمة بدون cost_center_id (لأننا سنتعامل معه في JavaScript لحركات transfer_in/transfer_out)
-      const rulesWithoutCostCenter = { ...rules, filterByCostCenter: false }
+      // 🔐 قواعد الحوكمة بدون cost_center_id و warehouse_id
+      // (لأننا نريد استخدام warehouseId المحدد من selector وليس من userContext)
+      const rulesWithoutCostCenter = { 
+        ...rules, 
+        filterByCostCenter: false,
+        filterByWarehouse: false, // نعطله لأننا نستخدم warehouseId من المعاملات
+        warehouseId: null
+      }
       
       // 🔐 تطبيق الفلاتر الإلزامية على استعلامات المخزون
       // 📌 ملاحظة: لحركات transfer_in و transfer_out، نأخذها بغض النظر عن cost_center_id
       let transactionsQuery = supabase
         .from("inventory_transactions")
         .select("*, products(name, sku)")
-        .eq("company_id", companyId)
-        .eq("branch_id", branchId)
-        .eq("warehouse_id", warehouseId)
       
-      // تطبيق قواعد الحوكمة الموحدة (لكن بدون cost_center_id لأننا سنتعامل معه في JavaScript)
+      // تطبيق قواعد الحوكمة الموحدة (تطبق company_id, branch_id تلقائياً)
+      // لكن بدون cost_center_id و warehouse_id لأننا سنتعامل معهما يدوياً
       transactionsQuery = applyDataVisibilityFilter(transactionsQuery, rulesWithoutCostCenter, "inventory_transactions")
+      
+      // 🔐 إضافة فلتر warehouse_id يدوياً باستخدام القيمة المحددة من selector
+      transactionsQuery = (transactionsQuery as any).eq("warehouse_id", warehouseId)
       
       const { data: transactionsData } = await transactionsQuery
         .order("created_at", { ascending: false })
@@ -283,12 +290,13 @@ export default function InventoryPage() {
       let allTransactionsQuery = supabase
         .from("inventory_transactions")
         .select("product_id, quantity_change, transaction_type, is_deleted, cost_center_id")
-        .eq("company_id", companyId)
-        .eq("branch_id", branchId)
-        .eq("warehouse_id", warehouseId)
       
-      // تطبيق قواعد الحوكمة الموحدة (استخدام نفس rulesWithoutCostCenter المعرفة أعلاه)
+      // تطبيق قواعد الحوكمة الموحدة (تطبق company_id, branch_id تلقائياً)
+      // لكن بدون cost_center_id و warehouse_id لأننا سنتعامل معهما يدوياً
       allTransactionsQuery = applyDataVisibilityFilter(allTransactionsQuery, rulesWithoutCostCenter, "inventory_transactions")
+      
+      // 🔐 إضافة فلتر warehouse_id يدوياً باستخدام القيمة المحددة من selector
+      allTransactionsQuery = (allTransactionsQuery as any).eq("warehouse_id", warehouseId)
       
       const { data: allTransactionsRaw } = await allTransactionsQuery
       
