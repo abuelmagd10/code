@@ -607,48 +607,46 @@ export default function NewSalesOrderPage() {
       const nextSeq = maxSeq + 1
       const soNumber = `SO-${String(nextSeq).padStart(4, "0")}`
 
-      // Create sales order
-      const { data: soData, error: soError } = await supabase
-        .from("sales_orders")
-        .insert([
-          {
-            company_id: saveCompanyId,
-            customer_id: formData.customer_id,
-            so_number: soNumber,
-            so_date: formData.so_date,
-            due_date: formData.due_date,
-            subtotal: totals.subtotal,
-            tax_amount: totals.tax,
-            total: totals.total,
-            discount_type: invoiceDiscountType,
-            discount_value: Math.max(0, invoiceDiscount || 0),
-            discount_position: invoiceDiscountPosition,
-            tax_inclusive: !!taxInclusive,
-            shipping: Math.max(0, shippingCharge || 0),
-            shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
-            shipping_provider_id: shippingProviderId || null,
-            adjustment: adjustment || 0,
-            status: "draft",
-            currency: soCurrency,
-            exchange_rate: exchangeRate,
-            // Branch, Cost Center, and Warehouse
-            branch_id: branchId,
-            cost_center_id: costCenterId,
-            warehouse_id: warehouseId,
-          },
-        ])
-        .select()
-        .single()
+      const createResponse = await fetch("/api/sales-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_id: formData.customer_id,
+          so_number: soNumber,
+          so_date: formData.so_date,
+          due_date: formData.due_date,
+          subtotal: totals.subtotal,
+          tax_amount: totals.tax,
+          total: totals.total,
+          discount_type: invoiceDiscountType,
+          discount_value: Math.max(0, invoiceDiscount || 0),
+          discount_position: invoiceDiscountPosition,
+          tax_inclusive: !!taxInclusive,
+          shipping: Math.max(0, shippingCharge || 0),
+          shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+          shipping_provider_id: shippingProviderId || null,
+          adjustment: adjustment || 0,
+          status: "draft",
+          currency: soCurrency,
+          exchange_rate: exchangeRate,
+          branch_id: branchId,
+          cost_center_id: costCenterId,
+          warehouse_id: warehouseId,
+        }),
+      })
 
-      if (soError) {
-        console.error("Sales order insert error:", soError)
+      const createJson = await createResponse.json().catch(() => ({} as any))
+
+      if (!createResponse.ok || !createJson?.data?.id) {
         toast({
-          title: appLang === 'en' ? "Save failed" : "فشل الحفظ",
-          description: soError.message,
+          title: appLang === "en" ? "Save failed" : "فشل الحفظ",
+          description: createJson?.error_ar || createJson?.error || (appLang === "en" ? "Error creating sales order" : "خطأ في إنشاء أمر البيع"),
           variant: "destructive",
         })
         return
       }
+
+      const soData = createJson.data
 
       // Create sales order items
       const itemsToInsert = soItems

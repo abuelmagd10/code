@@ -1030,22 +1030,32 @@ function SalesOrdersContent() {
 
     let soId = editing?.id;
     if (editing) {
-      const { error } = await supabase.from("sales_orders").update(payload).eq("id", editing.id);
-      if (error) {
-        toastActionError(toast, "التحديث", "أمر البيع", "تعذر تحديث أمر البيع");
+      const response = await fetch(`/api/sales-orders/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await response.json().catch(() => ({} as any));
+      if (!response.ok || !json?.success) {
+        toastActionError(toast, "التحديث", "أمر البيع", json?.error_ar || json?.error || "تعذر تحديث أمر البيع");
         setLoading(false);
         return;
       }
       await supabase.from("sales_order_items").delete().eq("sales_order_id", editing.id);
       soId = editing.id;
     } else {
-      const { data, error } = await supabase.from("sales_orders").insert(payload).select("id").single();
-      if (error) {
-        toastActionError(toast, "الإنشاء", "أمر البيع", "تعذر إنشاء أمر البيع");
+      const response = await fetch(`/api/sales-orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await response.json().catch(() => ({} as any));
+      if (!response.ok || !json?.data?.id) {
+        toastActionError(toast, "الإنشاء", "أمر البيع", json?.error_ar || json?.error || "تعذر إنشاء أمر البيع");
         setLoading(false);
         return;
       }
-      soId = data.id;
+      soId = json.data.id;
     }
 
     if (soId) {
@@ -1068,11 +1078,11 @@ function SalesOrdersContent() {
     toastActionSuccess(toast, editing ? "التحديث" : "الإنشاء", "أمر البيع");
     setOpen(false);
     resetForm();
-    const { data: so } = await supabase
-      .from("sales_orders")
-      .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, status, notes")
-      .order("created_at", { ascending: false });
-    setOrders(so || []);
+    const refreshRes = await fetch("/api/sales-orders");
+    const refreshJson = await refreshRes.json().catch(() => ({} as any));
+    if (refreshRes.ok && Array.isArray(refreshJson?.data)) {
+      setOrders(refreshJson.data);
+    }
     setLoading(false);
   };
 
@@ -1111,10 +1121,9 @@ function SalesOrdersContent() {
         notes: so.notes || null,
         sales_order_id: so.id, // ربط الفاتورة بأمر البيع
         shipping_provider_id: so.shipping_provider_id, // نقل شركة الشحن
-        // 🔐 ERP Access Control - ربط بالفرع ومركز التكلفة
-        branch_id: userContext?.branch_id,
-        cost_center_id: userContext?.cost_center_id,
-        warehouse_id: userContext?.warehouse_id,
+        branch_id: (so as any).branch_id || userContext?.branch_id,
+        cost_center_id: (so as any).cost_center_id || userContext?.cost_center_id,
+        warehouse_id: (so as any).warehouse_id || userContext?.warehouse_id,
       } as any;
       // Attempt insertion aligned with existing invoices schema
       const { data: inv, error } = await supabase.from("invoices").insert(invPayload).select("id").single();
@@ -1204,9 +1213,11 @@ function SalesOrdersContent() {
       }
       // Delete sales order items
       await supabase.from("sales_order_items").delete().eq("sales_order_id", orderToDelete.id);
-      // Delete sales order
-      const { error } = await supabase.from("sales_orders").delete().eq("id", orderToDelete.id);
-      if (error) throw error;
+      const deleteRes = await fetch(`/api/sales-orders/${orderToDelete.id}`, { method: "DELETE" });
+      const deleteJson = await deleteRes.json().catch(() => ({} as any));
+      if (!deleteRes.ok || !deleteJson?.success) {
+        throw new Error(deleteJson?.error_ar || deleteJson?.error || "فشل الحذف");
+      }
       toastActionSuccess(toast, appLang === 'en' ? "Deleted" : "الحذف", appLang === 'en' ? "Sales order" : "أمر البيع");
       setOrders(orders.filter(o => o.id !== orderToDelete.id));
     } catch (error) {
