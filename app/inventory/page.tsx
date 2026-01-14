@@ -237,6 +237,9 @@ export default function InventoryPage() {
       // 🔐 بناء قواعد الحوكمة
       const rules = buildDataVisibilityFilter(context)
       
+      // 🔐 قواعد الحوكمة بدون cost_center_id (لأننا سنتعامل معه في JavaScript لحركات transfer_in/transfer_out)
+      const rulesWithoutCostCenter = { ...rules, filterByCostCenter: false }
+      
       // 🔐 تطبيق الفلاتر الإلزامية على استعلامات المخزون
       // 📌 ملاحظة: لحركات transfer_in و transfer_out، نأخذها بغض النظر عن cost_center_id
       let transactionsQuery = supabase
@@ -247,7 +250,6 @@ export default function InventoryPage() {
         .eq("warehouse_id", warehouseId)
       
       // تطبيق قواعد الحوكمة الموحدة (لكن بدون cost_center_id لأننا سنتعامل معه في JavaScript)
-      const rulesWithoutCostCenter = { ...rules, filterByCostCenter: false }
       transactionsQuery = applyDataVisibilityFilter(transactionsQuery, rulesWithoutCostCenter, "inventory_transactions")
       
       const { data: transactionsData } = await transactionsQuery
@@ -285,8 +287,7 @@ export default function InventoryPage() {
         .eq("branch_id", branchId)
         .eq("warehouse_id", warehouseId)
       
-      // تطبيق قواعد الحوكمة الموحدة (لكن بدون cost_center_id لأننا سنتعامل معه في JavaScript)
-      const rulesWithoutCostCenter = { ...rules, filterByCostCenter: false }
+      // تطبيق قواعد الحوكمة الموحدة (استخدام نفس rulesWithoutCostCenter المعرفة أعلاه)
       allTransactionsQuery = applyDataVisibilityFilter(allTransactionsQuery, rulesWithoutCostCenter, "inventory_transactions")
       
       const { data: allTransactionsRaw } = await allTransactionsQuery
