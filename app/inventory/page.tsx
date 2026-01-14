@@ -303,10 +303,6 @@ export default function InventoryPage() {
         if (txType === 'transfer_in' || txType === 'transfer_out') return true
         return false
       })
-      
-      const { data: allTransactionsRaw } = await allTransactionsQuery
-      // فلترة الحركات المحذوفة في JavaScript
-      const allTransactions = (allTransactionsRaw || []).filter((t: any) => t.is_deleted !== true)
 
       const agg: Record<string, number> = {}
       const purchasesAgg: Record<string, number> = {}
