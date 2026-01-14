@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     // 2️⃣ جلب المخزن
     const { data: warehouse } = await supabase
       .from("warehouses")
-      .select("id, name")
+      .select("id, name, branch_id")
       .eq("company_id", company_id)
       .ilike("name", `%${warehouse_name}%`)
       .single()
@@ -51,11 +51,34 @@ export async function POST(req: NextRequest) {
       }, { status: 404 })
     }
 
+    if (!warehouse.branch_id) {
+      return NextResponse.json({
+        success: false,
+        error: "المخزن غير مربوط بفرع"
+      }, { status: 400 })
+    }
+
+    const { data: branchDefaults } = await supabase
+      .from("branches")
+      .select("default_cost_center_id")
+      .eq("company_id", company_id)
+      .eq("id", warehouse.branch_id)
+      .single()
+
+    if (!branchDefaults?.default_cost_center_id) {
+      return NextResponse.json({
+        success: false,
+        error: "الفرع غير مُكوَّن بمركز تكلفة افتراضي"
+      }, { status: 400 })
+    }
+
     // 3️⃣ جلب جميع حركات المخزون لهذا المنتج في هذا المخزن
     const { data: transactions } = await supabase
       .from("inventory_transactions")
       .select("*")
       .eq("company_id", company_id)
+      .eq("branch_id", warehouse.branch_id)
+      .eq("cost_center_id", branchDefaults.default_cost_center_id)
       .eq("product_id", product.id)
       .eq("warehouse_id", warehouse.id)
       .order("created_at", { ascending: true })
@@ -115,4 +138,3 @@ export async function POST(req: NextRequest) {
     }, { status: 500 })
   }
 }
-

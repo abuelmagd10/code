@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
 import { type UserContext } from "@/lib/validation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useUserContext } from "@/hooks/use-user-context"
 
 interface InventoryTransaction {
   id: string
@@ -75,15 +76,14 @@ export default function InventoryPage() {
   // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
   const [isPending, startTransition] = useTransition()
 
-  // 🔐 ERP Access Control - سياق المستخدم
-  const [userContext, setUserContext] = useState<UserContext | null>(null)
+  const { userContext, loading: userContextLoading, error: userContextError } = useUserContext()
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [selectedBranchId, setSelectedBranchId] = useState<string>("")
+  const [selectedCostCenterId, setSelectedCostCenterId] = useState<string>("")
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("")
 
-  // 🏭 المخازن والفروع
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([])
   const [branches, setBranches] = useState<BranchData[]>([])
-  const [allowedBranchIds, setAllowedBranchIds] = useState<string[]>([])
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('all')
-  const [canOverride, setCanOverride] = useState(false)
 
   useEffect(() => {
     setHydrated(true)
@@ -98,121 +98,94 @@ export default function InventoryPage() {
     return () => window.removeEventListener('app_language_changed', handler)
   }, [])
 
-  // فلترة المخازن حسب الفروع المصرح بها
-  const filteredWarehouses = warehouses.filter(w => {
-    if (canOverride) return true // المدراء يرون كل المخازن
-    if (!w.branch_id) return true // المخازن بدون فرع متاحة للجميع
-    return allowedBranchIds.includes(w.branch_id)
-  })
+  const filteredWarehouses = warehouses
 
   // 🆕 فلترة المنتجات حسب المخزن المحدد
   // إذا تم اختيار مخزن معين، نعرض فقط المنتجات التي لها حركات في هذا المخزن
-  const displayedProducts = selectedWarehouseId === 'all'
-    ? products
-    : products.filter(p => productsWithMovements.has(p.id))
+  const displayedProducts = selectedWarehouseId
+    ? products.filter(p => productsWithMovements.has(p.id))
+    : products
 
   useEffect(() => {
-    loadData()
-  }, [])
-
-  // إعادة تحميل البيانات عند تغيير المخزن
-  useEffect(() => {
-    if (userContext) {
-      loadInventoryData(userContext)
+    if (userContextLoading) return
+    if (userContextError) {
+      toastActionError(toast, "الحوكمة", "المخزون", userContextError)
+      return
     }
-  }, [selectedWarehouseId])
+    if (!userContext) return
+    loadData(userContext)
+  }, [userContextLoading, userContextError, userContext])
 
-  const loadData = async () => {
+  useEffect(() => {
+    if (!userContext) return
+    if (!selectedBranchId || !selectedWarehouseId || !selectedCostCenterId) return
+    loadInventoryData(userContext, selectedBranchId, selectedWarehouseId, selectedCostCenterId)
+  }, [userContext, selectedBranchId, selectedWarehouseId, selectedCostCenterId])
+
+  const applyBranchDefaults = useCallback(async (companyId: string, branchId: string) => {
+    const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+    const defaults = await getBranchDefaults(supabase, branchId)
+
+    setSelectedBranchId(branchId)
+    setSelectedWarehouseId(defaults.default_warehouse_id || "")
+    setSelectedCostCenterId(defaults.default_cost_center_id || "")
+
+    const { data: warehousesRes } = await supabase
+      .from("warehouses")
+      .select("id, name, code, branch_id, is_main, branches(name, branch_name)")
+      .eq("company_id", companyId)
+      .eq("is_active", true)
+      .eq("branch_id", branchId)
+      .order("is_main", { ascending: false })
+      .order("name")
+
+    setWarehouses(warehousesRes || [])
+    return defaults
+  }, [supabase])
+
+  const loadData = async (context: UserContext) => {
     try {
       setIsLoading(true)
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) {
-        toastActionError(toast, "الوصول", "المخزون", "لا توجد شركة فعّالة. يرجى إنشاء/اختيار شركة من الإعدادات.")
+      const companyId = context.company_id
+      if (!companyId) return
+
+      const role = String(context.role || "")
+      const normalizedRole = role.trim().toLowerCase().replace(/\s+/g, "_")
+      const adminCheck = ["super_admin", "admin", "general_manager", "gm", "owner", "generalmanager", "superadmin"].includes(normalizedRole)
+      setIsAdmin(adminCheck)
+
+      const branchId = String(context.branch_id || "")
+      if (!branchId) {
+        toastActionError(toast, "الحوكمة", "المخزون", "المستخدم بدون فرع")
         return
       }
 
-      // 🔐 ERP Access Control - جلب سياق المستخدم
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: member } = await supabase
-        .from("company_members")
-        .select("role, branch_id, cost_center_id, warehouse_id")
-        .eq("company_id", companyId)
-        .eq("user_id", user.id)
-        .single()
-
-      const role = member?.role || "staff"
-      const context: UserContext = {
-        user_id: user.id,
-        company_id: companyId,
-        branch_id: member?.branch_id || null,
-        cost_center_id: member?.cost_center_id || null,
-        warehouse_id: member?.warehouse_id || null,
-        role: role
-      }
-      setUserContext(context)
-
-      const isCanOverride = ["owner", "admin", "manager"].includes(role)
-      setCanOverride(isCanOverride)
-
-      // 🏭 تحميل المخازن والفروع
-      const [warehousesRes, branchesRes, branchAccessRes] = await Promise.all([
-        supabase.from("warehouses")
-          .select("id, name, code, branch_id, is_main, branches(name, branch_name)")
+      if (adminCheck) {
+        const { data: branchesRes, error: branchesError } = await supabase
+          .from("branches")
+          .select("id, name, branch_name, code, default_cost_center_id, default_warehouse_id")
           .eq("company_id", companyId)
           .eq("is_active", true)
-          .order("is_main", { ascending: false })
-          .order("name"),
-        supabase.from("branches")
-          .select("id, name, branch_name, code")
+          .order("name")
+        if (branchesError) throw branchesError
+        setBranches(branchesRes || [])
+      } else {
+        const { data: branchRow } = await supabase
+          .from("branches")
+          .select("id, name, branch_name, code, default_cost_center_id, default_warehouse_id")
           .eq("company_id", companyId)
-          .eq("is_active", true)
-          .order("name"),
-        // جلب الفروع المصرح بها للمستخدم
-        supabase.from("user_branch_access")
-          .select("branch_id")
-          .eq("company_id", companyId)
-          .eq("user_id", user.id)
-          .eq("is_active", true)
-      ])
-
-      setWarehouses(warehousesRes.data || [])
-      setBranches(branchesRes.data || [])
-
-      // تحديد الفروع المصرح بها
-      const accessedBranchIds = (branchAccessRes.data || []).map((a: { branch_id: string }) => a.branch_id)
-      // إذا كان للمستخدم فرع محدد في company_members، أضفه
-      if (member?.branch_id && !accessedBranchIds.includes(member.branch_id)) {
-        accessedBranchIds.push(member.branch_id)
-      }
-      setAllowedBranchIds(accessedBranchIds)
-
-      // تعيين المخزن الافتراضي
-      if (!isCanOverride) {
-        if (member?.warehouse_id) {
-          setSelectedWarehouseId(member.warehouse_id)
-        } else {
-          // إذا لم يكن للمستخدم مخزن محدد، اختر أول مخزن متاح له
-          const availableWarehouses = (warehousesRes.data || []).filter((w: WarehouseData) => {
-            if (!w.branch_id) return true // المخازن بدون فرع متاحة
-            return accessedBranchIds.includes(w.branch_id)
-          })
-          if (availableWarehouses.length > 0) {
-            setSelectedWarehouseId(availableWarehouses[0].id)
-          }
-        }
+          .eq("id", branchId)
+          .maybeSingle()
+        setBranches(branchRow ? [branchRow] : [])
       }
 
-      // Load products
+      await applyBranchDefaults(companyId, branchId)
+
       const { data: productsData } = await supabase
         .from("products")
         .select("id, sku, name, quantity_on_hand")
         .eq("company_id", companyId)
       setProducts(productsData || [])
-
-      // تحميل بيانات المخزون
-      await loadInventoryData(context)
     } catch (error) {
       console.error("Error loading data:", error)
     } finally {
@@ -221,78 +194,17 @@ export default function InventoryPage() {
   }
 
   // دالة تحميل بيانات المخزون حسب المخزن المختار
-  const loadInventoryData = async (context: UserContext) => {
+  const loadInventoryData = async (context: UserContext, branchId: string, warehouseId: string, costCenterId: string) => {
     try {
       setIsLoadingInventory(true) // 🆕 بدء التحميل
       const companyId = context.company_id
-      const role = context.role || ""
-      const isCanOverride = ["owner", "admin", "manager"].includes(role)
-      
-      // 🔐 فلترة حسب الفرع للمحاسب والمدير
-      const isAccountantOrManager = ["accountant", "manager"].includes(role)
-      const userBranchId = context.branch_id || null
-
-      // جلب المخازن في الفرع للمحاسب/المدير
-      let allowedWarehouseIds: string[] = []
-      if (isAccountantOrManager && userBranchId) {
-        const { data: branchWarehouses } = await supabase
-          .from("warehouses")
-          .select("id")
-          .eq("company_id", companyId)
-          .eq("branch_id", userBranchId)
-          .eq("is_active", true)
-        
-        allowedWarehouseIds = (branchWarehouses || []).map((w: any) => w.id)
-      }
-
-      // Load recent transactions with filtering by warehouse and branch
-      let transactionsQuery = supabase
+      const { data: transactionsData } = await supabase
         .from("inventory_transactions")
         .select("*, products(name, sku)")
         .eq("company_id", companyId)
-
-      // 🔐 فلترة حسب الفرع والمخزن - تطبيق نفس منطق الموظف على المحاسب والمدير
-      if (isAccountantOrManager && userBranchId) {
-        // للمحاسب والمدير: استخدام نفس منطق الموظف (فلترة حسب warehouse_id من context)
-        // ولكن أيضاً فلترة حسب branch_id لتغطية جميع المخازن في الفرع
-        
-        // أولاً: محاولة استخدام نفس منطق الموظف (warehouse_id من context)
-        if (selectedWarehouseId !== 'all') {
-          // إذا كان مخزن محدد، تأكد أنه ينتمي لفرع المستخدم
-          if (allowedWarehouseIds.length > 0 && allowedWarehouseIds.includes(selectedWarehouseId)) {
-            // فلترة حسب warehouse_id المحدد
-            transactionsQuery = transactionsQuery.eq("warehouse_id", selectedWarehouseId)
-          } else {
-            // المخزن المحدد لا ينتمي لفرع المستخدم، لا نعرض شيئاً
-            // أو يمكننا عرض جميع المخازن في الفرع بدلاً من ذلك
-            if (allowedWarehouseIds.length > 0) {
-              transactionsQuery = transactionsQuery.in("warehouse_id", allowedWarehouseIds)
-            } else {
-              // لا يوجد مخازن، فلترة حسب branch_id
-              transactionsQuery = transactionsQuery.eq("branch_id", userBranchId)
-            }
-          }
-        } else if (context.warehouse_id && allowedWarehouseIds.length > 0 && allowedWarehouseIds.includes(context.warehouse_id)) {
-          // إذا كان selectedWarehouseId === 'all' وكان هناك warehouse_id في context ينتمي لفرع المستخدم
-          // استخدام نفس منطق الموظف: فلترة حسب warehouse_id من context
-          transactionsQuery = transactionsQuery.eq("warehouse_id", context.warehouse_id)
-        } else if (allowedWarehouseIds.length > 0) {
-          // إذا لم يتم تحديد warehouse_id أو لا ينتمي للفرع، فلترة حسب جميع المخازن في الفرع
-          transactionsQuery = transactionsQuery.in("warehouse_id", allowedWarehouseIds)
-        } else {
-          // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
-          transactionsQuery = transactionsQuery.eq("branch_id", userBranchId)
-        }
-      } else {
-        // للموظفين الآخرين: تصفية حسب المخزن المختار (نفس المنطق الأصلي)
-        if (selectedWarehouseId !== 'all') {
-          transactionsQuery = transactionsQuery.eq("warehouse_id", selectedWarehouseId)
-        } else if (!isCanOverride && context.warehouse_id) {
-          transactionsQuery = transactionsQuery.eq("warehouse_id", context.warehouse_id)
-        }
-      }
-
-      const { data: transactionsData } = await transactionsQuery
+        .eq("branch_id", branchId)
+        .eq("warehouse_id", warehouseId)
+        .eq("cost_center_id", costCenterId)
         .order("created_at", { ascending: false })
         .limit(200)
 
@@ -307,53 +219,13 @@ export default function InventoryPage() {
       setTransactions(sorted)
 
       // حساب الكميات من inventory_transactions
-      let allTransactionsQuery = supabase
+      const { data: allTransactionsRaw } = await supabase
         .from("inventory_transactions")
-        .select("product_id, quantity_change, transaction_type, warehouse_id, branch_id, is_deleted")
+        .select("product_id, quantity_change, transaction_type, is_deleted")
         .eq("company_id", companyId)
-
-      // 🔐 فلترة حسب الفرع والمخزن - تطبيق نفس منطق الموظف على المحاسب والمدير
-      if (isAccountantOrManager && userBranchId) {
-        // للمحاسب والمدير: استخدام نفس منطق الموظف (فلترة حسب warehouse_id من context)
-        // ولكن أيضاً فلترة حسب branch_id لتغطية جميع المخازن في الفرع
-        
-        // أولاً: محاولة استخدام نفس منطق الموظف (warehouse_id من context)
-        if (selectedWarehouseId !== 'all') {
-          // إذا كان مخزن محدد، تأكد أنه ينتمي لفرع المستخدم
-          if (allowedWarehouseIds.length > 0 && allowedWarehouseIds.includes(selectedWarehouseId)) {
-            // فلترة حسب warehouse_id المحدد
-            allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", selectedWarehouseId)
-          } else {
-            // المخزن المحدد لا ينتمي لفرع المستخدم، لا نعرض شيئاً
-            // أو يمكننا عرض جميع المخازن في الفرع بدلاً من ذلك
-            if (allowedWarehouseIds.length > 0) {
-              allTransactionsQuery = allTransactionsQuery.in("warehouse_id", allowedWarehouseIds)
-            } else {
-              // لا يوجد مخازن، فلترة حسب branch_id
-              allTransactionsQuery = allTransactionsQuery.eq("branch_id", userBranchId)
-            }
-          }
-        } else if (context.warehouse_id && allowedWarehouseIds.length > 0 && allowedWarehouseIds.includes(context.warehouse_id)) {
-          // إذا كان selectedWarehouseId === 'all' وكان هناك warehouse_id في context ينتمي لفرع المستخدم
-          // استخدام نفس منطق الموظف: فلترة حسب warehouse_id من context
-          allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", context.warehouse_id)
-        } else if (allowedWarehouseIds.length > 0) {
-          // إذا لم يتم تحديد warehouse_id أو لا ينتمي للفرع، فلترة حسب جميع المخازن في الفرع
-          allTransactionsQuery = allTransactionsQuery.in("warehouse_id", allowedWarehouseIds)
-        } else {
-          // إذا لم يوجد مخازن، فلترة حسب branch_id فقط
-          allTransactionsQuery = allTransactionsQuery.eq("branch_id", userBranchId)
-        }
-      } else {
-        // للموظفين الآخرين: تصفية حسب المخزن المختار (نفس المنطق الأصلي)
-        if (selectedWarehouseId !== 'all') {
-          allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", selectedWarehouseId)
-        } else if (!isCanOverride && context.warehouse_id) {
-          allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", context.warehouse_id)
-        }
-      }
-
-      const { data: allTransactionsRaw } = await allTransactionsQuery
+        .eq("branch_id", branchId)
+        .eq("warehouse_id", warehouseId)
+        .eq("cost_center_id", costCenterId)
       // فلترة الحركات المحذوفة في JavaScript
       const allTransactions = (allTransactionsRaw || []).filter((t: any) => t.is_deleted !== true)
 
@@ -445,55 +317,68 @@ export default function InventoryPage() {
                 </div>
               </div>
 
-              {/* 🏭 فلتر المخازن */}
-              {filteredWarehouses.length > 0 && (
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                    <Warehouse className="w-4 h-4" />
-                    <span className="hidden sm:inline">{appLang === 'en' ? 'Warehouse:' : 'المخزن:'}</span>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                {isAdmin && branches.length > 0 && userContext && (
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                      <Building2 className="w-4 h-4" />
+                      <span className="hidden sm:inline">{appLang === 'en' ? 'Branch:' : 'الفرع:'}</span>
+                    </div>
+                    <Select
+                      value={selectedBranchId}
+                      onValueChange={(value) => {
+                        applyBranchDefaults(userContext.company_id, value).catch((e) => {
+                          toastActionError(toast, "الحوكمة", "المخزون", e?.message || "تعذر تطبيق افتراضيات الفرع")
+                        })
+                      }}
+                      disabled={branches.length === 0}
+                    >
+                      <SelectTrigger className="w-[180px] sm:w-[220px] bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
+                        <SelectValue placeholder={appLang === 'en' ? 'Select branch' : 'اختر الفرع'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branches.map((branch) => (
+                          <SelectItem key={branch.id} value={branch.id}>
+                            <span>{branch.name || branch.branch_name || ''}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <Select
-                    value={selectedWarehouseId}
-                    onValueChange={(value) => setSelectedWarehouseId(value)}
-                  >
-                    <SelectTrigger className="w-[180px] sm:w-[220px] bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
-                      <SelectValue placeholder={appLang === 'en' ? 'Select warehouse' : 'اختر المخزن'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {canOverride && (
-                        <SelectItem value="all">
-                          <div className="flex items-center gap-2">
-                            <Package className="w-4 h-4 text-blue-500" />
-                            <span>{appLang === 'en' ? 'All Warehouses' : 'كل المخازن'}</span>
-                          </div>
-                        </SelectItem>
-                      )}
-                      {filteredWarehouses.map((warehouse) => (
-                        <SelectItem key={warehouse.id} value={warehouse.id}>
-                          <div className="flex items-center gap-2">
-                            {warehouse.is_main ? (
-                              <Building2 className="w-4 h-4 text-amber-500" />
-                            ) : (
-                              <Warehouse className="w-4 h-4 text-gray-400" />
-                            )}
-                            <span>{warehouse.name}</span>
-                            {warehouse.branches?.name && (
-                              <span className="text-xs text-gray-400">
-                                ({warehouse.branches.name})
-                              </span>
-                            )}
-                            {warehouse.branches?.branch_name && !warehouse.branches?.name && (
-                              <span className="text-xs text-gray-400">
-                                ({warehouse.branches.branch_name})
-                              </span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+                )}
+
+                {filteredWarehouses.length > 0 && (
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                      <Warehouse className="w-4 h-4" />
+                      <span className="hidden sm:inline">{appLang === 'en' ? 'Warehouse:' : 'المخزن:'}</span>
+                    </div>
+                    <Select
+                      value={selectedWarehouseId}
+                      onValueChange={(value) => setSelectedWarehouseId(value)}
+                      disabled={!isAdmin}
+                    >
+                      <SelectTrigger className="w-[180px] sm:w-[220px] bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
+                        <SelectValue placeholder={appLang === 'en' ? 'Select warehouse' : 'اختر المخزن'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {filteredWarehouses.map((warehouse) => (
+                          <SelectItem key={warehouse.id} value={warehouse.id}>
+                            <div className="flex items-center gap-2">
+                              {warehouse.is_main ? (
+                                <Building2 className="w-4 h-4 text-amber-500" />
+                              ) : (
+                                <Warehouse className="w-4 h-4 text-gray-400" />
+                              )}
+                              <span>{warehouse.name}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -504,7 +389,7 @@ export default function InventoryPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {appLang === 'en' ? (selectedWarehouseId === 'all' ? 'Total Products' : 'Products in Warehouse') : (selectedWarehouseId === 'all' ? 'إجمالي المنتجات' : 'منتجات المخزن')}
+                      {appLang === 'en' ? 'Products in Warehouse' : 'منتجات المخزن'}
                     </p>
                     <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{displayedProducts.length}</p>
                   </div>
@@ -520,7 +405,7 @@ export default function InventoryPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {appLang === 'en' ? (selectedWarehouseId === 'all' ? 'Stock on Hand' : 'Warehouse Stock') : (selectedWarehouseId === 'all' ? 'المخزون المتاح' : 'مخزون المخزن')}
+                      {appLang === 'en' ? 'Warehouse Stock' : 'مخزون المخزن'}
                     </p>
                     <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
                       {displayedProducts.reduce((sum, p) => sum + (computedQty[p.id] ?? 0), 0)}
@@ -596,7 +481,7 @@ export default function InventoryPage() {
               ) : displayedProducts.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
                   <Package className="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600" />
-                  <p>{appLang === 'en' ? (selectedWarehouseId === 'all' ? 'No products yet' : 'No products in this warehouse') : (selectedWarehouseId === 'all' ? 'لا توجد منتجات حتى الآن' : 'لا توجد منتجات في هذا المخزن')}</p>
+                  <p>{appLang === 'en' ? 'No products in this warehouse' : 'لا توجد منتجات في هذا المخزن'}</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">

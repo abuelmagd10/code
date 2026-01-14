@@ -1013,10 +1013,31 @@ export default function BillsPage() {
       // Get bill info
       const { data: billRow } = await supabase
         .from("bills")
-        .select("supplier_id, bill_number, subtotal, tax_amount, total_amount, paid_amount, status, returned_amount")
+        .select("supplier_id, bill_number, subtotal, tax_amount, total_amount, paid_amount, status, returned_amount, branch_id, warehouse_id, cost_center_id")
         .eq("id", returnBillId)
         .single()
       if (!billRow) return
+
+      let effectiveBranchId = (billRow as any).branch_id as string | null
+      let effectiveWarehouseId = (billRow as any).warehouse_id as string | null
+      let effectiveCostCenterId = (billRow as any).cost_center_id as string | null
+
+      if (!effectiveBranchId && effectiveWarehouseId) {
+        const { data: wh } = await supabase
+          .from("warehouses")
+          .select("branch_id")
+          .eq("company_id", companyId)
+          .eq("id", effectiveWarehouseId)
+          .single()
+        effectiveBranchId = (wh as any)?.branch_id || null
+      }
+
+      if (effectiveBranchId && (!effectiveWarehouseId || !effectiveCostCenterId)) {
+        const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+        const defaults = await getBranchDefaults(supabase, effectiveBranchId)
+        if (!effectiveWarehouseId) effectiveWarehouseId = defaults.default_warehouse_id
+        if (!effectiveCostCenterId) effectiveCostCenterId = defaults.default_cost_center_id
+      }
 
       const oldPaid = Number(billRow.paid_amount || 0)
       const oldReturned = Number(billRow.returned_amount || 0)
@@ -1225,6 +1246,9 @@ export default function BillsPage() {
           if (validProductReturns.length > 0) {
             const invTx = validProductReturns.map((r) => ({
               company_id: companyId,
+              branch_id: effectiveBranchId,
+              warehouse_id: effectiveWarehouseId,
+              cost_center_id: effectiveCostCenterId,
               product_id: r.product_id,
               transaction_type: "purchase_return",
               quantity_change: -r.qtyToReturn,

@@ -627,6 +627,27 @@ export default function BillViewPage() {
       }
 
       // Create inventory transactions for returned items
+      let effectiveBranchId = (bill as any).branch_id as string | null
+      let effectiveWarehouseId = (bill as any).warehouse_id as string | null
+      let effectiveCostCenterId = (bill as any).cost_center_id as string | null
+
+      if (!effectiveBranchId && effectiveWarehouseId) {
+        const { data: wh } = await supabase
+          .from("warehouses")
+          .select("branch_id")
+          .eq("company_id", bill.company_id)
+          .eq("id", effectiveWarehouseId)
+          .single()
+        effectiveBranchId = (wh as any)?.branch_id || null
+      }
+
+      if (effectiveBranchId && (!effectiveWarehouseId || !effectiveCostCenterId)) {
+        const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+        const defaults = await getBranchDefaults(supabase, effectiveBranchId)
+        if (!effectiveWarehouseId) effectiveWarehouseId = defaults.default_warehouse_id
+        if (!effectiveCostCenterId) effectiveCostCenterId = defaults.default_cost_center_id
+      }
+
       const invTx = returnItems.filter(it => it.return_qty > 0 && it.product_id).map(it => ({
         company_id: bill.company_id,
         product_id: it.product_id,
@@ -635,9 +656,9 @@ export default function BillViewPage() {
         reference_id: bill.id,
         journal_entry_id: entry.id,
         notes: appLang === 'en' ? `Purchase return for bill ${bill.bill_number}` : `مرتجع مشتريات للفاتورة ${bill.bill_number}`,
-        branch_id: bill.branch_id || null,
-        cost_center_id: bill.cost_center_id || null,
-        warehouse_id: bill.warehouse_id || null
+        branch_id: effectiveBranchId,
+        cost_center_id: effectiveCostCenterId,
+        warehouse_id: effectiveWarehouseId
       }))
       if (invTx.length > 0) {
         await supabase.from("inventory_transactions").insert(invTx)

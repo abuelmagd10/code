@@ -49,10 +49,23 @@ export async function GET(req: NextRequest) {
 
     const client = admin
 
+    const { data: branchDefaults, error: branchErr } = await client
+      .from("branches")
+      .select("default_warehouse_id, default_cost_center_id")
+      .eq("company_id", companyId)
+      .eq("id", branchId)
+      .single()
+
+    if (branchErr) return serverError(`تعذر جلب افتراضيات الفرع: ${branchErr.message}`)
+    if (!branchDefaults?.default_warehouse_id || !branchDefaults?.default_cost_center_id) {
+      return badRequestError("Branch missing required defaults")
+    }
+
     const { data: invoices } = await client
       .from('invoices')
       .select('id, invoice_number, invoice_date')
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .gte('invoice_date', from)
       .lte('invoice_date', to)
     const invIds = (invoices || []).map((i: any) => i.id)
@@ -72,6 +85,9 @@ export async function GET(req: NextRequest) {
       .from('inventory_transactions')
       .select('reference_id, product_id, quantity_change, created_at')
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
+      .eq('warehouse_id', branchDefaults.default_warehouse_id)
+      .eq('cost_center_id', branchDefaults.default_cost_center_id)
       .eq('transaction_type', 'sale')
       .in('reference_id', invIds.length ? invIds : ['00000000-0000-0000-0000-000000000000'])
     const salesActual = new Map<string, Map<string, number>>()
@@ -87,6 +103,7 @@ export async function GET(req: NextRequest) {
       .from('bills')
       .select('id, bill_number, bill_date')
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .gte('bill_date', from)
       .lte('bill_date', to)
     const billIds = (bills || []).map((b: any) => b.id)
@@ -106,6 +123,9 @@ export async function GET(req: NextRequest) {
       .from('inventory_transactions')
       .select('reference_id, product_id, quantity_change, created_at')
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
+      .eq('warehouse_id', branchDefaults.default_warehouse_id)
+      .eq('cost_center_id', branchDefaults.default_cost_center_id)
       .eq('transaction_type', 'purchase')
       .in('reference_id', billIds.length ? billIds : ['00000000-0000-0000-0000-000000000000'])
     const purchaseActual = new Map<string, Map<string, number>>()

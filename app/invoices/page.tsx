@@ -989,7 +989,7 @@ export default function InvoicesPage() {
       // جلب بيانات الفاتورة مع أمر البيع المرتبط
       const { data: invoice } = await supabase
         .from("invoices")
-        .select("id, invoice_number, subtotal, tax_amount, total_amount, paid_amount, status, shipping, sales_order_id")
+        .select("id, invoice_number, subtotal, tax_amount, total_amount, paid_amount, status, shipping, sales_order_id, branch_id, warehouse_id, cost_center_id")
         .eq("id", id)
         .single()
 
@@ -1003,6 +1003,10 @@ export default function InvoicesPage() {
       const { data: inventoryTx } = await supabase
         .from("inventory_transactions")
         .select("id")
+        .eq("company_id", companyId)
+        .eq("branch_id", (invoice as any).branch_id)
+        .eq("warehouse_id", (invoice as any).warehouse_id)
+        .eq("cost_center_id", (invoice as any).cost_center_id)
         .eq("reference_id", id)
         .limit(1)
 
@@ -1204,9 +1208,19 @@ export default function InvoicesPage() {
         console.log("Error in first attempt:", e)
       }
       if (!items || items.length === 0) {
+        const { data: invMeta } = await supabase
+          .from("invoices")
+          .select("company_id, branch_id, warehouse_id, cost_center_id")
+          .eq("id", inv.id)
+          .single()
+
         const { data: tx } = await supabase
           .from("inventory_transactions")
           .select("product_id, quantity_change, products(name, cost_price)")
+          .eq("company_id", invMeta?.company_id)
+          .eq("branch_id", invMeta?.branch_id)
+          .eq("warehouse_id", invMeta?.warehouse_id)
+          .eq("cost_center_id", invMeta?.cost_center_id)
           .eq("reference_id", inv.id)
           .eq("transaction_type", "sale")
         const txItems = Array.isArray(tx) ? tx : []
@@ -1544,12 +1558,27 @@ export default function InvoicesPage() {
 
     // ===== حركات المخزون - إضافة الكميات المرتجعة للمخزون =====
     if (toReturn.length > 0) {
+      const { data: invGov } = await supabase
+        .from("invoices")
+        .select("branch_id, warehouse_id, cost_center_id")
+        .eq("company_id", returnCompanyId)
+        .eq("id", returnInvoiceId)
+        .single()
+
+      const invBranchId = (invGov as any)?.branch_id
+      const invWarehouseId = (invGov as any)?.warehouse_id
+      const invCostCenterId = (invGov as any)?.cost_center_id
+
       // ===== تحقق مهم: التأكد من وجود حركات بيع أصلية قبل إنشاء المرتجع =====
       const productIds = toReturn.filter(r => r.product_id).map(r => r.product_id)
       if (productIds.length > 0) {
         const { data: existingSales } = await supabase
           .from("inventory_transactions")
           .select("product_id, quantity_change")
+          .eq("company_id", returnCompanyId)
+          .eq("branch_id", invBranchId)
+          .eq("warehouse_id", invWarehouseId)
+          .eq("cost_center_id", invCostCenterId)
           .eq("reference_id", returnInvoiceId)
           .eq("transaction_type", "sale")
           .in("product_id", productIds)
@@ -1563,6 +1592,9 @@ export default function InvoicesPage() {
             .filter(r => r.product_id && missingProducts.includes(r.product_id))
             .map(r => ({
               company_id: returnCompanyId,
+              branch_id: invBranchId,
+              warehouse_id: invWarehouseId,
+              cost_center_id: invCostCenterId,
               product_id: r.product_id,
               transaction_type: "sale",
               quantity_change: -Number(r.quantity || r.qtyToReturn),
@@ -1585,9 +1617,9 @@ export default function InvoicesPage() {
         reference_id: returnInvoiceId,
         journal_entry_id: null, // 📌 لا ربط بقيد COGS
         notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة",
-        branch_id: null, // TODO: Get from invoice
-        cost_center_id: null, // TODO: Get from invoice
-        warehouse_id: null, // TODO: Get from invoice
+        branch_id: invBranchId,
+        cost_center_id: invCostCenterId,
+        warehouse_id: invWarehouseId,
       }))
       await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
       // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً

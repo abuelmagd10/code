@@ -697,6 +697,27 @@ function NewBillPageContent() {
           const mapping = await findAccountIds()
           if (!mapping) { return }
 
+          let effectiveBranchId = branchId
+          let effectiveWarehouseId = warehouseId
+          let effectiveCostCenterId = costCenterId
+
+          if (!effectiveBranchId && effectiveWarehouseId) {
+            const { data: wh } = await supabase
+              .from("warehouses")
+              .select("branch_id")
+              .eq("company_id", mapping.companyId)
+              .eq("id", effectiveWarehouseId)
+              .single()
+            effectiveBranchId = (wh as any)?.branch_id || null
+          }
+
+          if (effectiveBranchId && (!effectiveWarehouseId || !effectiveCostCenterId)) {
+            const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+            const defaults = await getBranchDefaults(supabase, effectiveBranchId)
+            if (!effectiveWarehouseId) effectiveWarehouseId = defaults.default_warehouse_id
+            if (!effectiveCostCenterId) effectiveCostCenterId = defaults.default_cost_center_id
+          }
+
           // Inventory transactions from current items (products only, not services)
           const poRef = linkedPO ? ` (من أمر شراء ${linkedPO.po_number})` : ''
           const invTx = items
@@ -708,9 +729,9 @@ function NewBillPageContent() {
               quantity_change: it.quantity,
               reference_id: bill.id,
               notes: `فاتورة شراء ${bill.bill_number}${poRef}`,
-              branch_id: branchId || null,
-              cost_center_id: costCenterId || null,
-              warehouse_id: warehouseId || null,
+              branch_id: effectiveBranchId,
+              cost_center_id: effectiveCostCenterId,
+              warehouse_id: effectiveWarehouseId,
             }))
           if (invTx.length > 0) {
             const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)

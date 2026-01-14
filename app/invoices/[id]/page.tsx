@@ -909,6 +909,10 @@ export default function InvoiceDetailPage() {
           const { data: existingSales } = await supabase
             .from("inventory_transactions")
             .select("product_id, quantity_change")
+            .eq("company_id", mapping.companyId)
+            .eq("branch_id", (invoice as any).branch_id)
+            .eq("warehouse_id", (invoice as any).warehouse_id)
+            .eq("cost_center_id", (invoice as any).cost_center_id)
             .eq("reference_id", invoiceId)
             .eq("transaction_type", "sale")
             .in("product_id", productIds)
@@ -922,6 +926,9 @@ export default function InvoiceDetailPage() {
               .filter((it: any) => it.product_id && missingProducts.includes(it.product_id))
               .map((it: any) => ({
                 company_id: mapping.companyId,
+                branch_id: (invoice as any).branch_id,
+                warehouse_id: (invoice as any).warehouse_id,
+                cost_center_id: (invoice as any).cost_center_id,
                 product_id: it.product_id,
                 transaction_type: "sale",
                 quantity_change: -Number(it.quantity || 0),
@@ -947,6 +954,9 @@ export default function InvoiceDetailPage() {
             // فقط إرجاع الكميات المتبقية (غير المرتجعة سابقاً)
             return {
               company_id: mapping.companyId,
+              branch_id: (invoice as any).branch_id,
+              warehouse_id: (invoice as any).warehouse_id,
+              cost_center_id: (invoice as any).cost_center_id,
               product_id: it.product_id,
               transaction_type: "sale_return",
               quantity_change: remainingToReturn, // الكمية المتبقية فقط

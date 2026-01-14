@@ -40,9 +40,9 @@ export interface WriteOffValidationResult {
 export async function getAvailableInventoryQuantity(
   supabase: SupabaseClient,
   companyId: string,
-  branchId: string | null,
-  warehouseId: string | null,
-  costCenterId: string | null,
+  branchId: string,
+  warehouseId: string,
+  costCenterId: string,
   productId: string
 ): Promise<number> {
   try {
@@ -106,33 +106,21 @@ export async function getAvailableInventoryQuantity(
 async function calculateAvailableQuantityFallback(
   supabase: SupabaseClient,
   companyId: string,
-  branchId: string | null,
-  warehouseId: string | null,
-  costCenterId: string | null,
+  branchId: string,
+  warehouseId: string,
+  costCenterId: string,
   productId: string
 ): Promise<number> {
   try {
-    let query = supabase
+    const query = supabase
       .from("inventory_transactions")
       .select("quantity_change")
       .eq("company_id", companyId)
+      .eq("branch_id", branchId)
+      .eq("warehouse_id", warehouseId)
+      .eq("cost_center_id", costCenterId)
       .eq("product_id", productId)
       .or("is_deleted.is.null,is_deleted.eq.false")
-
-    // فلترة حسب branch_id
-    if (branchId) {
-      query = query.eq("branch_id", branchId)
-    }
-
-    // فلترة حسب warehouse_id
-    if (warehouseId) {
-      query = query.eq("warehouse_id", warehouseId)
-    }
-
-    // فلترة حسب cost_center_id
-    if (costCenterId) {
-      query = query.eq("cost_center_id", costCenterId)
-    }
 
     const { data, error } = await query
 
@@ -167,25 +155,11 @@ export async function validateWriteOffItems(
   supabase: SupabaseClient,
   companyId: string,
   items: WriteOffItemValidation[],
-  warehouseId: string | null,
-  branchId: string | null = null,
-  costCenterId: string | null = null
+  warehouseId: string,
+  branchId: string,
+  costCenterId: string
 ): Promise<WriteOffValidationResult> {
   const errors: WriteOffValidationResult["errors"] = []
-
-  // إذا لم يكن branchId محدداً و warehouseId موجود، نجلب branch_id من warehouse
-  let finalBranchId = branchId
-  if (!finalBranchId && warehouseId) {
-    const { data: warehouse } = await supabase
-      .from("warehouses")
-      .select("branch_id")
-      .eq("id", warehouseId)
-      .single()
-    
-    if (warehouse?.branch_id) {
-      finalBranchId = warehouse.branch_id
-    }
-  }
 
   // التحقق من كل عنصر
   for (const item of items) {
@@ -195,9 +169,9 @@ export async function validateWriteOffItems(
     const availableQuantity = await getAvailableInventoryQuantity(
       supabase,
       companyId,
-      finalBranchId,
-      item.warehouse_id || warehouseId,
-      item.cost_center_id || costCenterId,
+      branchId,
+      warehouseId,
+      costCenterId,
       item.product_id
     )
 

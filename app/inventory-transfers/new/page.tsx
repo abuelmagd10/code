@@ -148,10 +148,28 @@ export default function NewTransferPage() {
 
   const loadWarehouseStock = async (warehouseId: string) => {
     try {
+      const { data: wh } = await supabase
+        .from("warehouses")
+        .select("branch_id")
+        .eq("company_id", companyId)
+        .eq("id", warehouseId)
+        .single()
+
+      const branchId = String((wh as any)?.branch_id || "")
+      if (!branchId) {
+        setProductStock({})
+        return
+      }
+
+      const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+      const defaults = await getBranchDefaults(supabase, branchId)
+
       const { data: transactions } = await supabase
         .from("inventory_transactions")
         .select("product_id, quantity_change, is_deleted")
         .eq("company_id", companyId)
+        .eq("branch_id", branchId)
+        .eq("cost_center_id", defaults.default_cost_center_id)
         .eq("warehouse_id", warehouseId)
 
       const stock: Record<string, number> = {}

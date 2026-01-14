@@ -610,17 +610,49 @@ export default function EditInvoicePage() {
         const mapping = await findAccountIds()
         if (!mapping) return
 
+        let effectiveBranchId = branchId
+        let effectiveWarehouseId = warehouseId
+        let effectiveCostCenterId = costCenterId
+
+        if (!effectiveBranchId && effectiveWarehouseId) {
+          const { data: wh } = await supabase
+            .from("warehouses")
+            .select("branch_id")
+            .eq("company_id", mapping.companyId)
+            .eq("id", effectiveWarehouseId)
+            .single()
+          effectiveBranchId = (wh as any)?.branch_id || null
+        }
+
+        if (effectiveBranchId && (!effectiveWarehouseId || !effectiveCostCenterId)) {
+          const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+          const defaults = await getBranchDefaults(supabase, effectiveBranchId)
+          if (!effectiveWarehouseId) effectiveWarehouseId = defaults.default_warehouse_id
+          if (!effectiveCostCenterId) effectiveCostCenterId = defaults.default_cost_center_id
+        }
+
         // 1. جلب حركات المخزون السابقة المرتبطة بالفاتورة مع تفاصيلها
         const { data: existingTx } = await supabase
           .from("inventory_transactions")
           .select("id, product_id, quantity_change")
+          .eq("company_id", mapping.companyId)
+          .eq("branch_id", effectiveBranchId)
+          .eq("warehouse_id", effectiveWarehouseId)
+          .eq("cost_center_id", effectiveCostCenterId)
           .eq("reference_id", invoiceId)
 
         // حذف حركات المخزون السابقة
         // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
         // لأن الـ Database Trigger (trg_apply_inventory_delete) يفعل ذلك تلقائياً
         if (existingTx && existingTx.length > 0) {
-          await supabase.from("inventory_transactions").delete().eq("reference_id", invoiceId)
+          await supabase
+            .from("inventory_transactions")
+            .delete()
+            .eq("company_id", mapping.companyId)
+            .eq("branch_id", effectiveBranchId)
+            .eq("warehouse_id", effectiveWarehouseId)
+            .eq("cost_center_id", effectiveCostCenterId)
+            .eq("reference_id", invoiceId)
         }
 
         // 2. حذف القيود المحاسبية السابقة (invoice, invoice_cogs فقط)
@@ -722,6 +754,27 @@ export default function EditInvoicePage() {
         }
 
         // 📌 النمط القديم: خصم مباشر من المخزون (للفواتير بدون شركة شحن)
+        let effectiveBranchId = branchId
+        let effectiveWarehouseId = warehouseId
+        let effectiveCostCenterId = costCenterId
+
+        if (!effectiveBranchId && effectiveWarehouseId) {
+          const { data: wh } = await supabase
+            .from("warehouses")
+            .select("branch_id")
+            .eq("company_id", mapping.companyId)
+            .eq("id", effectiveWarehouseId)
+            .single()
+          effectiveBranchId = (wh as any)?.branch_id || null
+        }
+
+        if (effectiveBranchId && (!effectiveWarehouseId || !effectiveCostCenterId)) {
+          const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+          const defaults = await getBranchDefaults(supabase, effectiveBranchId)
+          if (!effectiveWarehouseId) effectiveWarehouseId = defaults.default_warehouse_id
+          if (!effectiveCostCenterId) effectiveCostCenterId = defaults.default_cost_center_id
+        }
+
         const invTx = productItems.map((it) => ({
           company_id: mapping.companyId,
           product_id: it.product_id,
@@ -730,9 +783,9 @@ export default function EditInvoicePage() {
           reference_id: invoiceId,
           journal_entry_id: null,
           notes: `خصم مخزون للفاتورة ${prevInvoice?.invoice_number || ""} (بدون شحن)`,
-          branch_id: branchId || null,
-          cost_center_id: costCenterId || null,
-          warehouse_id: warehouseId || null,
+          branch_id: effectiveBranchId,
+          cost_center_id: effectiveCostCenterId,
+          warehouse_id: effectiveWarehouseId,
         }))
         if (invTx.length > 0) {
           await supabase.from("inventory_transactions").insert(invTx)

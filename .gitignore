@@ -31,6 +31,7 @@ SECURITY_GOVERNANCE_REPORT_*.txt
 # IDE
 .vscode/
 .idea/
+.trae/
 *.swp
 *.swo
 

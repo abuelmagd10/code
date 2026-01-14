@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Package, AlertTriangle, Receipt, Percent, PieChart, Send } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { currencySymbols } from "./DashboardAmounts"
+import { useUserContext } from "@/hooks/use-user-context"
 
 interface InventoryStatsProps {
   companyId: string
@@ -29,6 +30,7 @@ export default function DashboardInventoryStats({
   toDate
 }: InventoryStatsProps) {
   const supabase = useSupabase()
+  const { userContext } = useUserContext()
   const [appCurrency, setAppCurrency] = useState(defaultCurrency)
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({
@@ -61,24 +63,11 @@ export default function DashboardInventoryStats({
     if (!companyId) return
     setLoading(true)
     try {
-      // 🔐 جلب معلومات المستخدم للفلترة حسب الفرع والمخزن
-      const { data: { user } } = await supabase.auth.getUser()
-      let userBranchId: string | null = null
-      let userWarehouseId: string | null = null
-      let userRole: string | null = null
-
-      if (user) {
-        const { data: member } = await supabase
-          .from('company_members')
-          .select('role, branch_id, warehouse_id')
-          .eq('company_id', companyId)
-          .eq('user_id', user.id)
-          .maybeSingle()
-        
-        userBranchId = member?.branch_id || null
-        userWarehouseId = member?.warehouse_id || null
-        userRole = member?.role || null
-      }
+      if (!userContext || userContext.company_id !== companyId) return
+      const branchId = String(userContext.branch_id || "")
+      const warehouseId = String(userContext.warehouse_id || "")
+      const costCenterId = String(userContext.cost_center_id || "")
+      if (!branchId || !warehouseId || !costCenterId) return
 
       // 1. حساب قيمة المخزون من inventory_transactions
       const { data: products } = await supabase
@@ -91,32 +80,10 @@ export default function DashboardInventoryStats({
         .from('inventory_transactions')
         .select('product_id, quantity_change')
         .eq('company_id', companyId)
+        .eq('branch_id', branchId)
+        .eq('warehouse_id', warehouseId)
+        .eq('cost_center_id', costCenterId)
         .or('is_deleted.is.null,is_deleted.eq.false')
-
-      // 🔐 فلترة حسب الفرع والمخزن للمحاسب والمدير - تطبيق نفس منطق الموظف
-      const isAccountantOrManager = userRole && ["accountant", "manager"].includes(userRole)
-      if (isAccountantOrManager && userBranchId) {
-        // فلترة حسب branch_id أولاً
-        transactionsQuery = transactionsQuery.eq('branch_id', userBranchId)
-        
-        // جلب المخازن في الفرع
-        const { data: branchWarehouses } = await supabase
-          .from('warehouses')
-          .select('id')
-          .eq('company_id', companyId)
-          .eq('branch_id', userBranchId)
-          .eq('is_active', true)
-        
-        const allowedWarehouseIds = (branchWarehouses || []).map((w: any) => w.id)
-        
-        // تطبيق فلترة warehouse_id مثل الموظف
-        if (userWarehouseId) {
-          // تأكد أن warehouse_id ينتمي لفرع المستخدم
-          if (allowedWarehouseIds.length === 0 || allowedWarehouseIds.includes(userWarehouseId)) {
-            transactionsQuery = transactionsQuery.eq('warehouse_id', userWarehouseId)
-          }
-        }
-      }
 
       const { data: transactions } = await transactionsQuery
 

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
-import { buildWarehouseFilter } from "@/lib/branch-access-control"
 
 export async function GET(req: NextRequest) {
   try {
@@ -25,14 +24,29 @@ export async function GET(req: NextRequest) {
     const supabase = await createServerClient()
     const { searchParams } = new URL(req.url)
     const endDate = String(searchParams.get("endDate") || new Date().toISOString().slice(0,10))
-    const warehouseFilter = buildWarehouseFilter(warehouseId!, member.role)
+    const { data: branchDefaults, error: branchErr } = await supabase
+      .from("branches")
+      .select("default_warehouse_id, default_cost_center_id")
+      .eq("company_id", companyId)
+      .eq("id", branchId)
+      .single()
+
+    if (branchErr) return serverError(`تعذر جلب افتراضيات الفرع: ${branchErr.message}`)
+    if (!branchDefaults?.default_warehouse_id || !branchDefaults?.default_cost_center_id) {
+      return badRequestError("Branch missing required defaults")
+    }
+
+    const effectiveWarehouseId = String(warehouseId || branchDefaults.default_warehouse_id)
+    const effectiveCostCenterId = String(branchDefaults.default_cost_center_id)
 
     const { data: tx } = await supabase
       .from('inventory_transactions')
       .select('product_id, transaction_type, quantity_change, created_at, warehouse_id')
       .lte('created_at', endDate)
       .eq('company_id', companyId)
-      .match(warehouseFilter)
+      .eq('branch_id', branchId)
+      .eq('warehouse_id', effectiveWarehouseId)
+      .eq('cost_center_id', effectiveCostCenterId)
     // Only get products (exclude services from inventory valuation)
     const { data: products } = await supabase
       .from('products')

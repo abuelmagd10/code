@@ -54,7 +54,7 @@ export async function processSalesReturn(
     // 1️⃣ التحقق من حالة الفاتورة
     const { data: invoiceCheck } = await supabase
       .from('invoices')
-      .select('status, paid_amount, total_amount, customer_id, sales_order_id, subtotal, tax_amount, returned_amount')
+      .select('status, paid_amount, total_amount, customer_id, sales_order_id, subtotal, tax_amount, returned_amount, branch_id, warehouse_id, cost_center_id')
       .eq('id', invoiceId)
       .single()
 
@@ -91,6 +91,9 @@ export async function processSalesReturn(
     await processInventoryReturn(supabase, {
       companyId,
       invoiceId,
+      branchId: invoiceCheck.branch_id,
+      warehouseId: invoiceCheck.warehouse_id,
+      costCenterId: invoiceCheck.cost_center_id,
       returnItems: returnItems.filter(r => r.qtyToReturn > 0),
       lang
     })
@@ -140,6 +143,9 @@ export async function processSalesReturn(
         company_id: companyId,
         customer_id: invoiceCheck.customer_id,
         invoice_id: invoiceId,
+        branch_id: invoiceCheck.branch_id,
+        warehouse_id: invoiceCheck.warehouse_id,
+        cost_center_id: invoiceCheck.cost_center_id,
         return_number: `SR-${Date.now().toString().slice(-8)}`,
         return_date: new Date().toISOString().slice(0, 10),
         subtotal: returnedSubtotal,
@@ -180,11 +186,22 @@ async function processInventoryReturn(
   params: {
     companyId: string
     invoiceId: string
+    branchId: string | null
+    warehouseId: string | null
+    costCenterId: string | null
     returnItems: SalesReturnItem[]
     lang: 'ar' | 'en'
   }
 ) {
-  const { companyId, invoiceId, returnItems, lang } = params
+  const { companyId, invoiceId, branchId, warehouseId, costCenterId, returnItems, lang } = params
+
+  if (!branchId || !warehouseId || !costCenterId) {
+    throw new Error(
+      lang === 'en'
+        ? 'Inventory governance context missing (branch/warehouse/cost center)'
+        : 'بيانات الحوكمة غير مكتملة (الفرع/المخزن/مركز التكلفة)'
+    )
+  }
 
   // معالجة كل منتج على حدة
   for (const item of returnItems.filter(i => i.qtyToReturn > 0 && i.product_id)) {
@@ -192,6 +209,10 @@ async function processInventoryReturn(
     const { data: existingTx } = await supabase
       .from('inventory_transactions')
       .select('id, quantity_change')
+      .eq('company_id', companyId)
+      .eq('branch_id', branchId)
+      .eq('warehouse_id', warehouseId)
+      .eq('cost_center_id', costCenterId)
       .eq('reference_id', invoiceId)
       .eq('product_id', item.product_id)
       .eq('transaction_type', 'sale_return')
@@ -212,6 +233,7 @@ async function processInventoryReturn(
           notes: notes
         })
         .eq('id', existingTx.id)
+        .eq('company_id', companyId)
 
       if (updateError) {
         console.error('❌ Error updating inventory transaction:', updateError)
@@ -227,6 +249,9 @@ async function processInventoryReturn(
         .from('inventory_transactions')
         .insert({
           company_id: companyId,
+          branch_id: branchId,
+          warehouse_id: warehouseId,
+          cost_center_id: costCenterId,
           product_id: item.product_id,
           transaction_type: 'sale_return',
           quantity_change: item.qtyToReturn,

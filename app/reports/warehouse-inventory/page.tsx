@@ -9,6 +9,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Warehouse, Building2, Package, FileText, Download, ArrowLeft, ArrowRight, Box, TrendingUp, TrendingDown } from "lucide-react"
 import Link from "next/link"
+import { useUserContext } from "@/hooks/use-user-context"
 
 type Branch = { id: string; name: string; code: string }
 type WarehouseData = { id: string; name: string; code: string; branch_id: string }
@@ -28,12 +29,13 @@ type WarehouseInventory = {
 
 export default function WarehouseInventoryReportPage() {
   const supabase = useSupabase()
+  const { userContext, loading: userContextLoading, error: userContextError } = useUserContext()
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [branches, setBranches] = useState<Branch[]>([])
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([])
-  const [selectedBranch, setSelectedBranch] = useState<string>("all")
-  // 🔐 صلاحيات المستخدم
-  const [allowedBranchIds, setAllowedBranchIds] = useState<string[]>([])
+  const [selectedBranch, setSelectedBranch] = useState<string>("")
+  const [selectedCostCenterId, setSelectedCostCenterId] = useState<string>("")
+  const [userBranchId, setUserBranchId] = useState<string>("")
   const [canOverride, setCanOverride] = useState(false)
   const [inventoryData, setInventoryData] = useState<WarehouseInventory[]>([])
   const [dateFrom, setDateFrom] = useState<string>(() => {
@@ -62,38 +64,27 @@ export default function WarehouseInventoryReportPage() {
   // Load initial data
   useEffect(() => {
     ; (async () => {
+      if (userContextLoading) return
+      if (userContextError) return
+      if (!userContext) return
       const cid = await getActiveCompanyId(supabase)
       if (!cid) return
       setCompanyId(cid)
 
-      // 🔐 جلب معلومات صلاحيات المستخدم
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: member } = await supabase
-        .from("company_members")
-        .select("role, branch_id, warehouse_id")
-        .eq("company_id", cid)
-        .eq("user_id", user.id)
-        .single()
-
-      const role = member?.role || "viewer"
-      const isCanOverride = ["owner", "admin", "manager"].includes(role)
+      const role = String(userContext.role || "viewer")
+      const normalizedRole = role.trim().toLowerCase().replace(/\s+/g, "_")
+      const isCanOverride = ["super_admin", "admin", "general_manager", "gm", "owner", "generalmanager", "superadmin"].includes(normalizedRole)
       setCanOverride(isCanOverride)
 
-      // جلب الفروع المصرح بها
-      const { data: branchAccess } = await supabase
-        .from("user_branch_access")
-        .select("branch_id")
-        .eq("company_id", cid)
-        .eq("user_id", user.id)
-        .eq("is_active", true)
+      const ub = String(userContext.branch_id || "")
+      setUserBranchId(ub)
+      if (!selectedBranch && ub) setSelectedBranch(ub)
 
-      const accessedBranchIds = (branchAccess || []).map((a: any) => a.branch_id)
-      if (member?.branch_id && !accessedBranchIds.includes(member.branch_id)) {
-        accessedBranchIds.push(member.branch_id)
+      if (ub) {
+        const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+        const defaults = await getBranchDefaults(supabase, ub)
+        setSelectedCostCenterId(defaults.default_cost_center_id || "")
       }
-      setAllowedBranchIds(accessedBranchIds)
 
       const [branchRes, whRes] = await Promise.all([
         supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true),
@@ -104,37 +95,29 @@ export default function WarehouseInventoryReportPage() {
       setWarehouses((whRes.data || []) as WarehouseData[])
       setLoading(false)
     })()
-  }, [supabase])
+  }, [supabase, userContextLoading, userContextError, userContext])
 
   // Filter warehouses by selected branch and user permissions
   const filteredWarehouses = useMemo(() => {
     let filtered = warehouses
 
-    // 🔐 فلترة حسب صلاحيات المستخدم
-    if (!canOverride) {
-      filtered = filtered.filter(w => {
-        if (!w.branch_id) return true // المخازن بدون فرع متاحة للجميع
-        return allowedBranchIds.includes(w.branch_id)
-      })
-    }
-
-    // فلترة حسب الفرع المختار
-    if (selectedBranch !== "all") {
-      filtered = filtered.filter(w => w.branch_id === selectedBranch)
-    }
+    if (!selectedBranch) return []
+    filtered = filtered.filter(w => w.branch_id === selectedBranch)
 
     return filtered
-  }, [warehouses, selectedBranch, canOverride, allowedBranchIds])
+  }, [warehouses, selectedBranch])
 
   // فلترة الفروع المتاحة للمستخدم
   const filteredBranches = useMemo(() => {
     if (canOverride) return branches
-    return branches.filter(b => allowedBranchIds.includes(b.id))
-  }, [branches, canOverride, allowedBranchIds])
+    if (!userBranchId) return []
+    return branches.filter(b => b.id === userBranchId)
+  }, [branches, canOverride, userBranchId])
 
   // Load inventory data
   const loadInventoryReport = async () => {
     if (!companyId) return
+    if (!selectedBranch || !selectedCostCenterId) return
     setLoading(true)
 
     try {
@@ -149,7 +132,9 @@ export default function WarehouseInventoryReportPage() {
           .from("inventory_transactions")
           .select("quantity_change, transaction_type")
           .eq("company_id", companyId)
+          .eq("branch_id", selectedBranch)
           .eq("warehouse_id", wh.id)
+          .eq("cost_center_id", selectedCostCenterId)
           .gte("created_at", dateFrom)
           .lte("created_at", dateTo + "T23:59:59")
 
@@ -158,9 +143,11 @@ export default function WarehouseInventoryReportPage() {
           .from("inventory_transactions")
           .select("product_id")
           .eq("company_id", companyId)
+          .eq("branch_id", selectedBranch)
           .eq("warehouse_id", wh.id)
+          .eq("cost_center_id", selectedCostCenterId)
 
-        const uniqueProducts = new Set((productCount || []).map(p => p.product_id)).size
+        const uniqueProducts = new Set((productCount || []).map((p: any) => p.product_id)).size
 
         // Calculate inbound and outbound
         let inboundQty = 0
@@ -246,21 +233,36 @@ export default function WarehouseInventoryReportPage() {
               <CardTitle className="text-base">{t('Filters', 'الفلاتر')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">{t('Branch', 'الفرع')}</label>
-                  <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={t('All Branches', 'جميع الفروع')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {canOverride && <SelectItem value="all">{t('All Branches', 'جميع الفروع')}</SelectItem>}
-                      {filteredBranches.map(b => (
-                        <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className={`grid grid-cols-1 ${canOverride ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-4`}>
+                {canOverride && (
+                  <div>
+                    <label className="block text-sm font-medium mb-1">{t('Branch', 'الفرع')}</label>
+                    <Select
+                      value={selectedBranch}
+                      onValueChange={(value) => {
+                        setSelectedBranch(value)
+                        ;(async () => {
+                          try {
+                            const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+                            const defaults = await getBranchDefaults(supabase, value)
+                            setSelectedCostCenterId(defaults.default_cost_center_id || "")
+                          } catch (e: any) {
+                            setSelectedCostCenterId("")
+                          }
+                        })()
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={t('Select branch', 'اختر الفرع')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {filteredBranches.map(b => (
+                          <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium mb-1">{t('From Date', 'من تاريخ')}</label>
                   <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
@@ -399,4 +401,3 @@ export default function WarehouseInventoryReportPage() {
     </div>
   )
 }
-

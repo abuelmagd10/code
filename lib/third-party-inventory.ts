@@ -46,6 +46,33 @@ export async function transferToThirdParty(params: TransferToThirdPartyParams): 
   const { supabase, companyId, invoiceId, shippingProviderId, branchId, costCenterId, warehouseId } = params
 
   try {
+    const { data: invoiceRow } = await supabase
+      .from("invoices")
+      .select("id, branch_id, warehouse_id, cost_center_id")
+      .eq("company_id", companyId)
+      .eq("id", invoiceId)
+      .single()
+
+    const effectiveBranchId = String(invoiceRow?.branch_id || branchId || "")
+    if (!effectiveBranchId) return false
+
+    const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+    const defaults = await getBranchDefaults(supabase, effectiveBranchId)
+
+    const effectiveWarehouseId = String(invoiceRow?.warehouse_id || warehouseId || defaults.default_warehouse_id || "")
+    const effectiveCostCenterId = String(invoiceRow?.cost_center_id || costCenterId || defaults.default_cost_center_id || "")
+    if (!effectiveWarehouseId || !effectiveCostCenterId) return false
+
+    const { data: whCheck } = await supabase
+      .from("warehouses")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("id", effectiveWarehouseId)
+      .eq("branch_id", effectiveBranchId)
+      .single()
+
+    if (!whCheck) return false
+
     // التحقق من عدم وجود سجلات سابقة
     const { data: existing } = await supabase
       .from("third_party_inventory")
@@ -93,6 +120,9 @@ export async function transferToThirdParty(params: TransferToThirdPartyParams): 
       status: 'open',
       cleared_quantity: 0,
       returned_quantity: 0,
+      branch_id: effectiveBranchId,
+      cost_center_id: effectiveCostCenterId,
+      warehouse_id: effectiveWarehouseId,
       notes: `فاتورة مبيعات - ${item.products?.name || ''}`
     }))
 
@@ -112,11 +142,11 @@ export async function transferToThirdParty(params: TransferToThirdPartyParams): 
       total_cost: Number(item.quantity || 0) * Number(item.products?.cost_price || 0),
       reference_id: invoiceId,
       notes: `نقل إلى بضائع لدى الغير - شركة الشحن`,
-      branch_id: branchId || null,
-      cost_center_id: costCenterId || null,
-      warehouse_id: warehouseId || null,
+      branch_id: effectiveBranchId,
+      cost_center_id: effectiveCostCenterId,
+      warehouse_id: effectiveWarehouseId,
       from_location_type: 'warehouse',
-      from_location_id: warehouseId || null,
+      from_location_id: effectiveWarehouseId,
       to_location_type: 'third_party',
       to_location_id: shippingProviderId,
       shipping_provider_id: shippingProviderId
@@ -244,6 +274,33 @@ export async function returnFromThirdParty(params: ReturnFromThirdPartyParams): 
   const { supabase, companyId, invoiceId, productId, quantity, branchId, costCenterId, warehouseId } = params
 
   try {
+    const { data: invoiceRow } = await supabase
+      .from("invoices")
+      .select("id, branch_id, warehouse_id, cost_center_id")
+      .eq("company_id", companyId)
+      .eq("id", invoiceId)
+      .single()
+
+    const effectiveBranchId = String(invoiceRow?.branch_id || branchId || "")
+    if (!effectiveBranchId) return false
+
+    const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+    const defaults = await getBranchDefaults(supabase, effectiveBranchId)
+
+    const effectiveWarehouseId = String(invoiceRow?.warehouse_id || warehouseId || defaults.default_warehouse_id || "")
+    const effectiveCostCenterId = String(invoiceRow?.cost_center_id || costCenterId || defaults.default_cost_center_id || "")
+    if (!effectiveWarehouseId || !effectiveCostCenterId) return false
+
+    const { data: whCheck } = await supabase
+      .from("warehouses")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("id", effectiveWarehouseId)
+      .eq("branch_id", effectiveBranchId)
+      .single()
+
+    if (!whCheck) return false
+
     // جلب سجل بضائع لدى الغير
     const { data: thirdPartyItem, error: fetchError } = await supabase
       .from("third_party_inventory")
@@ -291,13 +348,13 @@ export async function returnFromThirdParty(params: ReturnFromThirdPartyParams): 
         total_cost: qtyToReturn * Number(thirdPartyItem.unit_cost),
         reference_id: invoiceId,
         notes: `إرجاع من بضائع لدى الغير إلى المستودع`,
-        branch_id: branchId || null,
-        cost_center_id: costCenterId || null,
-        warehouse_id: warehouseId || null,
+        branch_id: effectiveBranchId,
+        cost_center_id: effectiveCostCenterId,
+        warehouse_id: effectiveWarehouseId,
         from_location_type: 'third_party',
         from_location_id: thirdPartyItem.shipping_provider_id,
         to_location_type: 'warehouse',
-        to_location_id: warehouseId || null,
+        to_location_id: effectiveWarehouseId,
         shipping_provider_id: thirdPartyItem.shipping_provider_id
       })
 
@@ -433,4 +490,3 @@ export async function validateShippingProvider(
     return { valid: false, shippingProviderId: null, providerName: null }
   }
 }
-

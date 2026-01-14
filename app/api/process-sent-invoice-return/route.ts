@@ -105,6 +105,17 @@ export async function POST(request: NextRequest) {
 
       // إنشاء حركة مخزون للاسترجاع
       if (invoiceItem.product_id) {
+        let effectiveBranchId = (invoice as any).branch_id as string | null
+        let effectiveWarehouseId = (invoice as any).warehouse_id as string | null
+        let effectiveCostCenterId = (invoice as any).cost_center_id as string | null
+
+        if (effectiveBranchId && (!effectiveWarehouseId || !effectiveCostCenterId)) {
+          const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+          const defaults = await getBranchDefaults(supabase, effectiveBranchId)
+          if (!effectiveWarehouseId) effectiveWarehouseId = defaults.default_warehouse_id
+          if (!effectiveCostCenterId) effectiveCostCenterId = defaults.default_cost_center_id
+        }
+
         await supabase.from("inventory_transactions").insert({
           company_id: companyId,
           product_id: invoiceItem.product_id,
@@ -113,9 +124,9 @@ export async function POST(request: NextRequest) {
           reference_id: invoice_id,
           reference_type: "invoice_return",
           notes: `مرتجع فاتورة مرسلة ${return_number || 'غير محدد'}`,
-          branch_id: invoice.branch_id || null,
-          cost_center_id: invoice.cost_center_id || null,
-          warehouse_id: invoice.warehouse_id || null,
+          branch_id: effectiveBranchId,
+          cost_center_id: effectiveCostCenterId,
+          warehouse_id: effectiveWarehouseId,
         })
       }
     }
