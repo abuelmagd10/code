@@ -69,7 +69,7 @@ export function useUserContext(): UseUserContextReturn {
       // Get user's membership with branch, cost center, warehouse
       const { data: member, error: memberError } = await supabase
         .from("company_members")
-        .select("role, branch_id, cost_center_id, warehouse_id")
+        .select("role, branch_id")
         .eq("company_id", companyId)
         .eq("user_id", user.id)
         .maybeSingle()
@@ -88,12 +88,35 @@ export function useUserContext(): UseUserContextReturn {
 
       const isOwner = company?.user_id === user.id
 
+      const memberBranchId = member?.branch_id || null
+      if (!memberBranchId) {
+        setError("المستخدم بدون فرع")
+        setUserContext(null)
+        return
+      }
+
+      const { data: branchDefaults, error: branchErr } = await supabase
+        .from("branches")
+        .select("default_cost_center_id, default_warehouse_id")
+        .eq("company_id", companyId)
+        .eq("id", memberBranchId)
+        .single()
+
+      if (branchErr) {
+        setError(branchErr.message)
+        setUserContext(null)
+        return
+      }
+
+      const defaultCostCenterId = branchDefaults?.default_cost_center_id || null
+      const defaultWarehouseId = branchDefaults?.default_warehouse_id || null
+
       setUserContext({
         user_id: user.id,
         company_id: companyId,
-        branch_id: isOwner ? null : (member?.branch_id || null),
-        cost_center_id: isOwner ? null : (member?.cost_center_id || null),
-        warehouse_id: isOwner ? null : (member?.warehouse_id || null),
+        branch_id: memberBranchId,
+        cost_center_id: defaultCostCenterId,
+        warehouse_id: defaultWarehouseId,
         role: isOwner ? "owner" : (member?.role || "viewer"),
       })
     } catch (e: any) {
@@ -125,8 +148,8 @@ export function useUserContext(): UseUserContextReturn {
 
   const canAccessInventory = useCallback((warehouseId: string, warehouseBranchId: string, transactionType: 'stock_in' | 'stock_out' | 'transfer' | 'adjustment'): ValidationResult => {
     if (!userContext) return { isValid: false, error: { title: "خطأ", description: "لم يتم تحميل بيانات المستخدم", code: "NO_USER_CONTEXT" } }
-    return validateInventoryTransaction(userContext, warehouseId, warehouseBranchId, transactionType)
-  }, [userContext])
+    return validateInventoryTransaction(userContext, warehouseBranchId, warehouseId, canOverrideContext)
+  }, [userContext, canOverrideContext])
 
   const canAccessBankAccount = useCallback((accountBranchId: string | null, accountCostCenterId: string | null): ValidationResult => {
     if (!userContext) return { isValid: false, error: { title: "خطأ", description: "لم يتم تحميل بيانات المستخدم", code: "NO_USER_CONTEXT" } }
@@ -151,4 +174,3 @@ export function useUserContext(): UseUserContextReturn {
     refresh: loadUserContext,
   }
 }
-

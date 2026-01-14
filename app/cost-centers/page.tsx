@@ -226,7 +226,7 @@ export default function CostCentersPage() {
       }
       setIsDialogOpen(false)
       resetForm()
-      const { data } = await supabase.from("cost_centers").select("*, branches(id, name, code, currency)").eq("company_id", companyId).order("cost_center_name")
+      const { data } = await supabase.from("cost_centers").select("*, branches!cost_centers_branch_id_fkey(id, name, code, currency)").eq("company_id", companyId).order("cost_center_name")
       setCostCenters(data || [])
     } catch (err: any) {
       toastActionError(toast, t("Failed to save", "فشل الحفظ"), err.message)

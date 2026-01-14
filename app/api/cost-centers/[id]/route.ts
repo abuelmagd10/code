@@ -78,7 +78,7 @@ export async function PATCH(
       .update(updateData)
       .eq("id", params.id)
       .eq("company_id", companyId)
-      .select("*, branches(id, name, code)")
+      .select("*, branches!cost_centers_branch_id_fkey(id, name, code)")
       .single()
 
     if (error) throw error

@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -262,7 +262,7 @@ export default function NewSalesOrderPage() {
       // جلب معلومات صلاحيات المستخدم
       const { data: memberData } = await supabase
         .from("company_members")
-        .select("role, branch_id, cost_center_id")
+        .select("role, branch_id")
         .eq("company_id", companyId)
         .eq("user_id", user.id)
         .single()
@@ -271,7 +271,8 @@ export default function NewSalesOrderPage() {
       const userBranchId = memberData?.branch_id || null
 
       // 🔐 Enterprise Governance: Check if user is Admin or GeneralManager
-      const adminCheck = userRole === "Admin" || userRole === "GeneralManager" || userRole === "Owner"
+      const normalizedRole = String(userRole || '').trim().toLowerCase().replace(/\s+/g, '_')
+      const adminCheck = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
       setIsAdmin(adminCheck)
 
       // 🔐 Enterprise Pattern: User → Branch → (Default Warehouse, Default Cost Center)
@@ -377,6 +378,43 @@ export default function NewSalesOrderPage() {
       setIsLoading(false)
     }
   }
+
+  const handleBranchChange = useCallback(async (newBranchId: string | null) => {
+    if (!newBranchId) {
+      setBranchId(null)
+      setCostCenterId(null)
+      setWarehouseId(null)
+      return
+    }
+
+    try {
+      const { data: branch, error } = await supabase
+        .from('branches')
+        .select('default_cost_center_id, default_warehouse_id')
+        .eq('id', newBranchId)
+        .single()
+
+      if (error || !branch) {
+        throw new Error('فشل في جلب بيانات الفرع')
+      }
+
+      if (!branch.default_cost_center_id || !branch.default_warehouse_id) {
+        throw new Error('Branch missing required defaults')
+      }
+
+      setBranchId(newBranchId)
+      setCostCenterId(branch.default_cost_center_id)
+      setWarehouseId(branch.default_warehouse_id)
+    } catch (e: any) {
+      toast({
+        title: appLang === 'en' ? 'Branch Setup Required' : 'الفرع غير مُكوَّن',
+        description: appLang === 'en'
+          ? 'Selected branch is missing default cost center and/or warehouse.'
+          : 'الفرع المختار لا يحتوي على مركز تكلفة افتراضي و/أو مخزن افتراضي.',
+        variant: 'destructive'
+      })
+    }
+  }, [supabase, toast, appLang])
 
   const addItem = () => {
     setSoItems([
@@ -484,6 +522,17 @@ export default function NewSalesOrderPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (!branchId || !costCenterId || !warehouseId) {
+      toast({
+        title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة",
+        description: appLang === 'en'
+          ? "Branch, cost center, and warehouse are required."
+          : "الفرع ومركز التكلفة والمخزن حقول إلزامية.",
+        variant: "destructive"
+      })
+      return
+    }
+
     if (!formData.customer_id) {
       toast({ title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang === 'en' ? "Please select a customer" : "يرجى اختيار عميل", variant: "destructive" })
       return
@@ -583,9 +632,9 @@ export default function NewSalesOrderPage() {
             currency: soCurrency,
             exchange_rate: exchangeRate,
             // Branch, Cost Center, and Warehouse
-            branch_id: branchId || null,
-            cost_center_id: costCenterId || null,
-            warehouse_id: warehouseId || null,
+            branch_id: branchId,
+            cost_center_id: costCenterId,
+            warehouse_id: warehouseId,
           },
         ])
         .select()
@@ -667,9 +716,9 @@ export default function NewSalesOrderPage() {
             original_tax_amount: totals.tax,
             sales_order_id: soData.id, // Link to sales order
             // Branch, Cost Center, and Warehouse
-            branch_id: branchId || null,
-            cost_center_id: costCenterId || null,
-            warehouse_id: warehouseId || null,
+            branch_id: branchId,
+            cost_center_id: costCenterId,
+            warehouse_id: warehouseId,
           },
         ])
         .select()
@@ -1162,10 +1211,11 @@ export default function NewSalesOrderPage() {
                     branchId={branchId}
                     costCenterId={costCenterId}
                     warehouseId={warehouseId}
-                    onBranchChange={setBranchId}
+                    onBranchChange={handleBranchChange}
                     onCostCenterChange={setCostCenterId}
                     onWarehouseChange={setWarehouseId}
                     disabled={!isAdmin} // 🔐 Governance: Only Admin/GeneralManager can change these fields
+                    required={true}
                     lang={appLang}
                     showLabels={true}
                     showWarehouse={true}

@@ -89,10 +89,23 @@ export async function enforceBranchDefaults(
   supabase: any
 ): Promise<EnhancedGovernanceContext> {
   const role = governance.role?.toLowerCase() || 'staff'
-  const isAdmin = ['admin', 'general_manager', 'owner'].includes(role)
+  const normalizedRole = String(role).trim().toLowerCase().replace(/\s+/g, '_')
+  const isAdmin = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
 
-  // Get branch defaults for the user's assigned branch
-  const branchDefaults = await getBranchDefaults(supabase, governance.branchIds[0])
+  const requestedBranchId = (payload?.branch_id || payload?.branchId || null) as string | null
+  const branchId = isAdmin ? (requestedBranchId || governance.branchIds[0]) : governance.branchIds[0]
+
+  if (!branchId) {
+    throw new Error('Governance Error: User has no branch assigned')
+  }
+
+  if (isAdmin && Array.isArray(governance.branchIds) && governance.branchIds.length > 0) {
+    if (!governance.branchIds.includes(branchId)) {
+      throw new Error('Governance Violation: Invalid branch_id')
+    }
+  }
+
+  const branchDefaults = await getBranchDefaults(supabase, branchId)
 
   // Validate that branch has required defaults
   if (!branchDefaults.default_warehouse_id || !branchDefaults.default_cost_center_id) {
@@ -107,7 +120,7 @@ export async function enforceBranchDefaults(
   if (!isAdmin) {
     return {
       companyId: governance.companyId,
-      branchId: governance.branchIds[0],
+      branchId,
       warehouseId: branchDefaults.default_warehouse_id,
       costCenterId: branchDefaults.default_cost_center_id,
       role: governance.role,
@@ -115,12 +128,48 @@ export async function enforceBranchDefaults(
     }
   }
 
-  // For admin users: allow their choices but validate against branch defaults if not provided
+  const requestedWarehouseId = (payload?.warehouse_id || payload?.warehouseId || null) as string | null
+  const requestedCostCenterId = (payload?.cost_center_id || payload?.costCenterId || null) as string | null
+
+  let warehouseId = requestedWarehouseId || branchDefaults.default_warehouse_id
+  let costCenterId = requestedCostCenterId || branchDefaults.default_cost_center_id
+
+  if (!warehouseId || !costCenterId) {
+    throw new Error(
+      `Branch missing required defaults. ` +
+      `Warehouse: ${warehouseId || 'NULL'}, ` +
+      `Cost Center: ${costCenterId || 'NULL'}`
+    )
+  }
+
+  const { data: wh } = await supabase
+    .from('warehouses')
+    .select('id, branch_id, is_active')
+    .eq('id', warehouseId)
+    .eq('company_id', governance.companyId)
+    .single()
+
+  if (!wh?.id || wh.is_active !== true || wh.branch_id !== branchId) {
+    throw new Error('Governance Violation: Invalid warehouse_id for selected branch')
+  }
+
+  const { data: cc } = await supabase
+    .from('cost_centers')
+    .select('id, branch_id, is_active')
+    .eq('id', costCenterId)
+    .eq('company_id', governance.companyId)
+    .single()
+
+  if (!cc?.id || cc.is_active !== true || cc.branch_id !== branchId) {
+    throw new Error('Governance Violation: Invalid cost_center_id for selected branch')
+  }
+
+  // For admin users: allow their choices but constrain to selected branch
   return {
     companyId: governance.companyId,
-    branchId: governance.branchIds[0],
-    warehouseId: payload.warehouse_id || branchDefaults.default_warehouse_id,
-    costCenterId: payload.cost_center_id || branchDefaults.default_cost_center_id,
+    branchId,
+    warehouseId,
+    costCenterId,
     role: governance.role,
     isAdmin: true
   }

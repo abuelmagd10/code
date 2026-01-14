@@ -75,14 +75,29 @@ export async function POST(req: NextRequest) {
     }
 
     // إضافة العضوية
+    let branchId = inv.branch_id || null
+    if (!branchId) {
+      const { data: mainBranch } = await admin
+        .from('branches')
+        .select('id')
+        .eq('company_id', inv.company_id)
+        .eq('is_main', true)
+        .limit(1)
+        .single()
+      branchId = mainBranch?.id || null
+    }
+    if (!branchId) {
+      return internalError("لا يمكن قبول الدعوة بدون فرع", "missing_branch")
+    }
+
     const memberData: any = {
       company_id: inv.company_id,
       user_id: user.id,
       role: inv.role,
       email: inv.email,
-      branch_id: inv.branch_id || null,
-      cost_center_id: inv.cost_center_id || null,
-      warehouse_id: inv.warehouse_id || null
+      branch_id: branchId,
+      cost_center_id: null,
+      warehouse_id: null
     }
     
     const { error: memErr } = await admin
@@ -105,4 +120,3 @@ export async function POST(req: NextRequest) {
     return internalError("حدث خطأ أثناء قبول الدعوة", e?.message || String(e))
   }
 }
-

@@ -73,7 +73,7 @@ export async function enforceGovernance(
   // الحصول على بيانات المستخدم من company_members
   let memberQuery = supabase
     .from('company_members')
-    .select('company_id, role, branch_id, warehouse_id, cost_center_id')
+    .select('company_id, role, branch_id')
     .eq('user_id', user.id)
 
   // إذا تم تحديد شركة، نفلتر بها
@@ -89,7 +89,7 @@ export async function enforceGovernance(
     console.warn(`Governance: User ${user.id} not found in active company ${activeCompanyId}, falling back to first available company.`)
     const { data: fallbackMember, error: fallbackError } = await supabase
       .from('company_members')
-      .select('company_id, role, branch_id, warehouse_id, cost_center_id')
+      .select('company_id, role, branch_id')
       .eq('user_id', user.id)
       .limit(1)
       .single()
@@ -114,6 +114,9 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
   if (!member.company_id) {
     throw new Error('Governance Error: User has no company assigned')
   }
+  if (!member.branch_id) {
+    throw new Error('Governance Error: User has no branch assigned')
+  }
 
   // بناء سياق الحوكمة حسب الدور
   const context: GovernanceContext = {
@@ -125,52 +128,70 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
   }
 
   // تحديد النطاق حسب الدور
-  const role = member.role?.toLowerCase() || 'staff'
+  const role = String(member.role || 'staff').trim().toLowerCase().replace(/\s+/g, '_')
+
+  const getBranchDefaults = async (branchId: string) => {
+    const { data: branch, error } = await supabase
+      .from('branches')
+      .select('default_warehouse_id, default_cost_center_id')
+      .eq('id', branchId)
+      .eq('company_id', context.companyId)
+      .single()
+
+    if (error || !branch) {
+      throw new Error('Governance Error: Branch not found')
+    }
+    if (!branch.default_warehouse_id || !branch.default_cost_center_id) {
+      throw new Error('Branch missing required defaults')
+    }
+    return {
+      defaultWarehouseId: branch.default_warehouse_id as string,
+      defaultCostCenterId: branch.default_cost_center_id as string
+    }
+  }
   
   switch (role) {
     case 'staff':
     case 'employee':
       // الموظف يرى فقط بياناته
-      context.branchIds = member.branch_id ? [member.branch_id] : []
-      context.warehouseIds = member.warehouse_id ? [member.warehouse_id] : []
-      context.costCenterIds = member.cost_center_id ? [member.cost_center_id] : []
+      context.branchIds = [member.branch_id]
+      {
+        const defaults = await getBranchDefaults(member.branch_id)
+        context.warehouseIds = [defaults.defaultWarehouseId]
+        context.costCenterIds = [defaults.defaultCostCenterId]
+      }
       break
 
     case 'accountant':
     case 'manager':
+    case 'branch_manager':
       // المحاسب والمدير يرون كل الفرع
-      context.branchIds = member.branch_id ? [member.branch_id] : []
-      
-      // الحصول على جميع المستودعات التابعة للفرع
-      if (context.branchIds.length > 0) {
-        const { data: warehouses } = await supabase
-          .from('warehouses')
-          .select('id')
-          .in('branch_id', context.branchIds)
-        
-        context.warehouseIds = warehouses?.map((w: any) => w.id) || []
+      context.branchIds = [member.branch_id]
+      {
+        const defaults = await getBranchDefaults(member.branch_id)
+        context.warehouseIds = [defaults.defaultWarehouseId]
+        context.costCenterIds = [defaults.defaultCostCenterId]
       }
-      
-      // الحصول على جميع مراكز التكلفة للشركة
-      const { data: costCenters } = await supabase
-        .from('cost_centers')
-        .select('id')
-        .eq('company_id', context.companyId)
-      
-      context.costCenterIds = costCenters?.map((c: any) => c.id) || []
       break
 
     case 'admin':
+    case 'super_admin':
     case 'gm':
     case 'owner':
     case 'general_manager':
+    case 'generalmanager':
+    case 'superadmin':
       // المدير العام يرى كل الشركة
       const { data: allBranches } = await supabase
         .from('branches')
         .select('id')
         .eq('company_id', context.companyId)
       
-      context.branchIds = allBranches?.map((b: any) => b.id) || []
+      {
+        const branchIds = allBranches?.map((b: any) => b.id) || []
+        const primary = member.branch_id
+        context.branchIds = [primary, ...branchIds.filter((id: string) => id !== primary)]
+      }
       
       const { data: allWarehouses } = await supabase
         .from('warehouses')
@@ -189,61 +210,13 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
 
     default:
       // افتراضياً: نفس صلاحيات المدير
-      const { data: allBranches2 } = await supabase
-        .from('branches')
-        .select('id')
-        .eq('company_id', context.companyId)
-      
-      context.branchIds = allBranches2?.map((b: any) => b.id) || []
-      
-      const { data: allWarehouses2 } = await supabase
-        .from('warehouses')
-        .select('id')
-        .eq('company_id', context.companyId)
-      
-      context.warehouseIds = allWarehouses2?.map((w: any) => w.id) || []
-      
-      const { data: allCostCenters2 } = await supabase
-        .from('cost_centers')
-        .select('id')
-        .eq('company_id', context.companyId)
-      
-      context.costCenterIds = allCostCenters2?.map((c: any) => c.id) || []
+      context.branchIds = [member.branch_id]
+      {
+        const defaults = await getBranchDefaults(member.branch_id)
+        context.warehouseIds = [defaults.defaultWarehouseId]
+        context.costCenterIds = [defaults.defaultCostCenterId]
+      }
       break
-  }
-
-  // التحقق من وجود صلاحيات (إذا لم تكن موجودة، استخدم الافتراضية)
-  if (context.branchIds.length === 0) {
-    const { data: defaultBranch } = await supabase
-      .from('branches')
-      .select('id')
-      .eq('company_id', context.companyId)
-      .limit(1)
-      .single()
-    
-    if (defaultBranch) context.branchIds = [defaultBranch.id]
-  }
-  
-  if (context.warehouseIds.length === 0) {
-    const { data: defaultWarehouse } = await supabase
-      .from('warehouses')
-      .select('id')
-      .eq('company_id', context.companyId)
-      .limit(1)
-      .single()
-    
-    if (defaultWarehouse) context.warehouseIds = [defaultWarehouse.id]
-  }
-  
-  if (context.costCenterIds.length === 0) {
-    const { data: defaultCostCenter } = await supabase
-      .from('cost_centers')
-      .select('id')
-      .eq('company_id', context.companyId)
-      .limit(1)
-      .single()
-    
-    if (defaultCostCenter) context.costCenterIds = [defaultCostCenter.id]
   }
 
   return context
@@ -309,8 +282,8 @@ export function addGovernanceData(
   context: GovernanceContext
 ): any {
   // 🔐 Governance: Role-based enforcement
-  const role = context.role?.toLowerCase() || 'staff'
-  const isAdmin = role === 'admin' || role === 'general_manager' || role === 'owner'
+  const role = String(context.role || 'staff').trim().toLowerCase().replace(/\s+/g, '_')
+  const isAdmin = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(role)
   
   // For non-admin users, enforce their assigned governance values
   if (!isAdmin) {

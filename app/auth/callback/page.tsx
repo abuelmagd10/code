@@ -76,6 +76,7 @@ function CallbackInner() {
     const { data: company, error: companyError } = await supabase
       .from('companies')
       .insert({
+        user_id: userId,
         name: companyName,
         base_currency: currency,
         fiscal_year_start: 1,
@@ -90,13 +91,71 @@ function CallbackInner() {
 
     if (companyError) throw new Error('فشل في إنشاء الشركة: ' + companyError.message)
 
-    // Add user as owner in company_members
+    const { data: mainBranch, error: branchError } = await supabase
+      .from('branches')
+      .insert({
+        company_id: company.id,
+        name: language === 'en' ? 'Main Branch' : 'الفرع الرئيسي',
+        branch_name: language === 'en' ? 'Main Branch' : 'الفرع الرئيسي',
+        code: 'MAIN',
+        branch_code: 'MAIN',
+        is_active: true,
+        is_main: true,
+        is_head_office: true
+      })
+      .select('id')
+      .single()
+
+    if (branchError) throw new Error('فشل في إنشاء الفرع الرئيسي: ' + branchError.message)
+
+    const { data: defaultCostCenter, error: ccError } = await supabase
+      .from('cost_centers')
+      .insert({
+        company_id: company.id,
+        branch_id: mainBranch.id,
+        cost_center_name: language === 'en' ? 'Default Cost Center' : 'مركز التكلفة الافتراضي',
+        cost_center_code: 'CC-MAIN',
+        description: null,
+        is_active: true
+      })
+      .select('id')
+      .single()
+
+    if (ccError) throw new Error('فشل في إنشاء مركز التكلفة الافتراضي: ' + ccError.message)
+
+    const { data: defaultWarehouse, error: whError } = await supabase
+      .from('warehouses')
+      .insert({
+        company_id: company.id,
+        branch_id: mainBranch.id,
+        cost_center_id: defaultCostCenter.id,
+        name: language === 'en' ? 'Default Warehouse' : 'المخزن الافتراضي',
+        code: 'WH-MAIN',
+        is_main: true,
+        is_active: true
+      })
+      .select('id')
+      .single()
+
+    if (whError) throw new Error('فشل في إنشاء المخزن الافتراضي: ' + whError.message)
+
+    const { error: updateBranchError } = await supabase
+      .from('branches')
+      .update({
+        default_cost_center_id: defaultCostCenter.id,
+        default_warehouse_id: defaultWarehouse.id
+      })
+      .eq('id', mainBranch.id)
+
+    if (updateBranchError) throw new Error('فشل في ضبط افتراضيات الفرع: ' + updateBranchError.message)
+
     const { error: memberError } = await supabase
       .from('company_members')
       .insert({
         company_id: company.id,
         user_id: userId,
         role: 'owner',
+        branch_id: mainBranch.id,
         invited_by: null
       })
 
