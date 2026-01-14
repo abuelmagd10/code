@@ -154,12 +154,6 @@ export default function InventoryPage() {
       const adminCheck = ["super_admin", "admin", "general_manager", "gm", "owner", "generalmanager", "superadmin"].includes(normalizedRole)
       setIsAdmin(adminCheck)
 
-      const branchId = String(context.branch_id || "")
-      if (!branchId) {
-        toastActionError(toast, "الحوكمة", "المخزون", "المستخدم بدون فرع")
-        return
-      }
-
       if (adminCheck) {
         const { data: branchesRes, error: branchesError } = await supabase
           .from("branches")
@@ -169,7 +163,21 @@ export default function InventoryPage() {
           .order("name")
         if (branchesError) throw branchesError
         setBranches(branchesRes || [])
+        const branchIdFromContext = String(context.branch_id || "")
+        const firstBranchId = String((branchesRes || [])[0]?.id || "")
+        const branchIdToUse = branchIdFromContext || firstBranchId
+        if (!branchIdToUse) {
+          toastActionError(toast, "الحوكمة", "المخزون", "لا توجد فروع مفعلة للشركة")
+          return
+        }
+        await applyBranchDefaults(companyId, branchIdToUse)
       } else {
+        const branchId = String(context.branch_id || "")
+        if (!branchId) {
+          toastActionError(toast, "الحوكمة", "المخزون", "المستخدم بدون فرع")
+          return
+        }
+
         const { data: branchRow } = await supabase
           .from("branches")
           .select("id, name, branch_name, code, default_cost_center_id, default_warehouse_id")
@@ -177,9 +185,8 @@ export default function InventoryPage() {
           .eq("id", branchId)
           .maybeSingle()
         setBranches(branchRow ? [branchRow] : [])
+        await applyBranchDefaults(companyId, branchId)
       }
-
-      await applyBranchDefaults(companyId, branchId)
 
       const { data: productsData } = await supabase
         .from("products")

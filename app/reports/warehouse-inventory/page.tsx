@@ -11,7 +11,7 @@ import { Warehouse, Building2, Package, FileText, Download, ArrowLeft, ArrowRigh
 import Link from "next/link"
 import { useUserContext } from "@/hooks/use-user-context"
 
-type Branch = { id: string; name: string; code: string }
+type Branch = { id: string; name?: string | null; branch_name?: string | null; code?: string | null }
 type WarehouseData = { id: string; name: string; code: string; branch_id: string }
 
 type WarehouseInventory = {
@@ -87,7 +87,7 @@ export default function WarehouseInventoryReportPage() {
       }
 
       const [branchRes, whRes] = await Promise.all([
-        supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true),
+        supabase.from("branches").select("id, name, branch_name, code").eq("company_id", cid).eq("is_active", true),
         supabase.from("warehouses").select("id, name, code, branch_id").eq("company_id", cid).eq("is_active", true),
       ])
 
@@ -257,7 +257,7 @@ export default function WarehouseInventoryReportPage() {
                       </SelectTrigger>
                       <SelectContent>
                         {filteredBranches.map(b => (
-                          <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                          <SelectItem key={b.id} value={b.id}>{b.name || b.branch_name || ''}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
