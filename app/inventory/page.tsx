@@ -266,7 +266,6 @@ export default function InventoryPage() {
       // 🔐 فلترة في JavaScript: نأخذ جميع الحركات في نفس cost_center_id المحدد
       // + جميع حركات transfer_in و transfer_out (لأنها قد تكون في cost_center_id مختلف لكن في نفس الفرع)
       const txs = (transactionsData || []).filter((t: any) => {
-        if (t.is_deleted === true) return false
         const txCostCenterId = String(t.cost_center_id || '')
         const txType = String(t.transaction_type || '')
         // نأخذ الحركات في نفس cost_center_id
@@ -289,7 +288,7 @@ export default function InventoryPage() {
       // الحل: نأخذ جميع الحركات في نفس المخزن والفرع، ثم نفلتر في JavaScript
       let allTransactionsQuery = supabase
         .from("inventory_transactions")
-        .select("product_id, quantity_change, transaction_type, is_deleted, cost_center_id")
+        .select("product_id, quantity_change, transaction_type, cost_center_id")
       
       // تطبيق قواعد الحوكمة الموحدة (تطبق company_id, branch_id تلقائياً)
       // لكن بدون cost_center_id و warehouse_id لأننا سنتعامل معهما يدوياً
@@ -303,7 +302,6 @@ export default function InventoryPage() {
       // 🔐 فلترة في JavaScript: نأخذ جميع الحركات في نفس cost_center_id المحدد
       // + جميع حركات transfer_in و transfer_out (لأنها قد تكون في cost_center_id مختلف لكن في نفس الفرع)
       const allTransactions = (allTransactionsRaw || []).filter((t: any) => {
-        if (t.is_deleted === true) return false
         const txCostCenterId = String(t.cost_center_id || '')
         const txType = String(t.transaction_type || '')
         // نأخذ الحركات في نفس cost_center_id
