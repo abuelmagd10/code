@@ -238,6 +238,33 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
+      const srcBranchId =
+        transfer.source_branch_id ||
+        (transfer.source_warehouses as any)?.branch_id ||
+        null
+      if (!srcBranchId) {
+        toast({
+          title: appLang === 'en' ? 'Missing branch context' : 'بيانات الفرع غير مكتملة',
+          description: appLang === 'en' ? 'Source branch is missing' : 'لا يمكن تحديد فرع المخزن المصدر',
+          variant: 'destructive'
+        })
+        return
+      }
+
+      const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+      const srcDefaults = await getBranchDefaults(supabase, srcBranchId)
+      const srcCostCenterId = srcDefaults.default_cost_center_id || null
+      if (!srcCostCenterId) {
+        toast({
+          title: appLang === 'en' ? 'Branch defaults missing' : 'افتراضيات الفرع غير مكتملة',
+          description: appLang === 'en'
+            ? 'Default cost center is not configured for source branch'
+            : 'يجب ضبط مركز التكلفة الافتراضي للفرع أولاً',
+          variant: 'destructive'
+        })
+        return
+      }
+
       // تحديث حالة النقل
       const { error: updateError } = await supabase
         .from("inventory_transfers")
@@ -272,8 +299,8 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
           reference_type: 'transfer',
           reference_id: transfer.id,
           notes: `نقل إلى ${destWarehouseName} - ${transfer.transfer_number}`,
-          branch_id: transfer.source_branch_id || null,
-          cost_center_id: null
+          branch_id: srcBranchId,
+          cost_center_id: srcCostCenterId
         }
 
         console.log("📦 Inserting inventory transaction:", txData)
@@ -327,6 +354,44 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
+      const srcBranchId =
+        transfer.source_branch_id ||
+        (transfer.source_warehouses as any)?.branch_id ||
+        null
+      const destBranchId =
+        transfer.destination_branch_id ||
+        (transfer.destination_warehouses as any)?.branch_id ||
+        null
+
+      if (!srcBranchId || !destBranchId) {
+        toast({
+          title: appLang === 'en' ? 'Missing branch context' : 'بيانات الفرع غير مكتملة',
+          description: appLang === 'en' ? 'Transfer branches are missing' : 'لا يمكن تحديد فرع المخزن المصدر/الوجهة',
+          variant: 'destructive'
+        })
+        return
+      }
+
+      const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+      const [srcDefaults, destDefaults] = await Promise.all([
+        getBranchDefaults(supabase, srcBranchId),
+        getBranchDefaults(supabase, destBranchId),
+      ])
+
+      const srcCostCenterId = srcDefaults.default_cost_center_id || null
+      const destCostCenterId = destDefaults.default_cost_center_id || null
+
+      if (!srcCostCenterId || !destCostCenterId) {
+        toast({
+          title: appLang === 'en' ? 'Branch defaults missing' : 'افتراضيات الفرع غير مكتملة',
+          description: appLang === 'en'
+            ? 'Default cost center is not configured for branch'
+            : 'يجب ضبط مركز التكلفة الافتراضي للفرع أولاً',
+          variant: 'destructive'
+        })
+        return
+      }
+
       // 📌 التحقق من الحالة: إذا كانت pending أو sent، يجب بدء النقل أولاً
       if (transfer.status === 'pending' || transfer.status === 'sent') {
         console.log("⚠️ Transfer is still pending. Starting transfer first...")
@@ -356,8 +421,8 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
               reference_type: 'transfer',
               reference_id: transfer.id,
               notes: `نقل إلى ${destWarehouseName} - ${transfer.transfer_number}`,
-              branch_id: transfer.source_branch_id || null,
-              cost_center_id: null
+              branch_id: srcBranchId,
+              cost_center_id: srcCostCenterId
             }
 
             console.log("📦 Inserting transfer_out transaction:", transferOutData)
@@ -459,8 +524,8 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
           reference_type: 'transfer',
           reference_id: transfer.id,
           notes: `استلام من ${srcWarehouseName} - ${transfer.transfer_number}`,
-          branch_id: transfer.destination_branch_id || null,
-          cost_center_id: null
+          branch_id: destBranchId,
+          cost_center_id: destCostCenterId
         }
 
         console.log("📦 Inserting transfer_in transaction:", txData)
@@ -573,6 +638,34 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
     try {
       setIsProcessing(true)
 
+      const srcBranchId =
+        transfer.source_branch_id ||
+        (transfer.source_warehouses as any)?.branch_id ||
+        null
+
+      if (!srcBranchId) {
+        toast({
+          title: appLang === 'en' ? 'Missing branch context' : 'بيانات الفرع غير مكتملة',
+          description: appLang === 'en' ? 'Source branch is missing' : 'لا يمكن تحديد فرع المخزن المصدر',
+          variant: 'destructive'
+        })
+        return
+      }
+
+      const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+      const srcDefaults = await getBranchDefaults(supabase, srcBranchId)
+      const srcCostCenterId = srcDefaults.default_cost_center_id || null
+      if (!srcCostCenterId) {
+        toast({
+          title: appLang === 'en' ? 'Branch defaults missing' : 'افتراضيات الفرع غير مكتملة',
+          description: appLang === 'en'
+            ? 'Default cost center is not configured for source branch'
+            : 'يجب ضبط مركز التكلفة الافتراضي للفرع أولاً',
+          variant: 'destructive'
+        })
+        return
+      }
+
       // ✅ إرجاع الكميات للمخزن المصدر
       // جلب جميع البنود
       const { data: items } = await supabase
@@ -596,8 +689,8 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
               reference_type: 'inventory_transfer',
               reference_id: transfer.id,
               notes: `إلغاء نقل ${transfer.transfer_number} - إرجاع للمخزن المصدر`,
-              branch_id: transfer.source_branch_id || null,
-              cost_center_id: null
+              branch_id: srcBranchId,
+              cost_center_id: srcCostCenterId
             })
 
           if (txError) {

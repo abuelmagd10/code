@@ -12,9 +12,10 @@ import { ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, Trend
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
-import { type UserContext } from "@/lib/validation"
+import { type UserContext, getRoleAccessLevel } from "@/lib/validation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useUserContext } from "@/hooks/use-user-context"
+import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
 
 interface InventoryTransaction {
   id: string
@@ -81,6 +82,7 @@ export default function InventoryPage() {
   const [selectedBranchId, setSelectedBranchId] = useState<string>("")
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<string>("")
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("")
+  const [visibilityRules, setVisibilityRules] = useState<any>(null)
 
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([])
   const [branches, setBranches] = useState<BranchData[]>([])
@@ -130,12 +132,13 @@ export default function InventoryPage() {
     setSelectedWarehouseId(defaults.default_warehouse_id || "")
     setSelectedCostCenterId(defaults.default_cost_center_id || "")
 
+    // 🔐 جلب المخازن الخاصة بالفرع فقط (لا يُسمح بمزج فرع مع مخزن فرع آخر)
     const { data: warehousesRes } = await supabase
       .from("warehouses")
       .select("id, name, code, branch_id, is_main, branches(name, branch_name)")
       .eq("company_id", companyId)
       .eq("is_active", true)
-      .eq("branch_id", branchId)
+      .eq("branch_id", branchId) // 🔐 إلزامي: فقط مخازن هذا الفرع
       .order("is_main", { ascending: false })
       .order("name")
 
@@ -149,12 +152,18 @@ export default function InventoryPage() {
       const companyId = context.company_id
       if (!companyId) return
 
+      // 🔐 بناء قواعد الحوكمة الموحدة
+      const rules = buildDataVisibilityFilter(context)
+      setVisibilityRules(rules)
+
       const role = String(context.role || "")
       const normalizedRole = role.trim().toLowerCase().replace(/\s+/g, "_")
-      const adminCheck = ["super_admin", "admin", "general_manager", "gm", "owner", "generalmanager", "superadmin"].includes(normalizedRole)
+      const accessLevel = getRoleAccessLevel(normalizedRole)
+      const adminCheck = accessLevel === 'company' || accessLevel === 'all'
       setIsAdmin(adminCheck)
 
       if (adminCheck) {
+        // Admin/General Manager - يمكنهم اختيار أي فرع
         const { data: branchesRes, error: branchesError } = await supabase
           .from("branches")
           .select("id, name, branch_name, code, default_cost_center_id, default_warehouse_id")
@@ -172,6 +181,7 @@ export default function InventoryPage() {
         }
         await applyBranchDefaults(companyId, branchIdToUse)
       } else {
+        // Employee/Accountant/Branch Manager - فرعهم فقط
         const branchId = String(context.branch_id || "")
         if (!branchId) {
           toastActionError(toast, "الحوكمة", "المخزون", "المستخدم بدون فرع")
@@ -185,6 +195,8 @@ export default function InventoryPage() {
           .eq("id", branchId)
           .maybeSingle()
         setBranches(branchRow ? [branchRow] : [])
+        
+        // 🔐 تطبيق الافتراضيات من user.branch تلقائياً
         await applyBranchDefaults(companyId, branchId)
       }
 
@@ -195,6 +207,7 @@ export default function InventoryPage() {
       setProducts(productsData || [])
     } catch (error) {
       console.error("Error loading data:", error)
+      toastActionError(toast, "الحوكمة", "المخزون", error instanceof Error ? error.message : "خطأ في تحميل البيانات")
     } finally {
       setIsLoading(false)
     }
@@ -205,18 +218,54 @@ export default function InventoryPage() {
     try {
       setIsLoadingInventory(true) // 🆕 بدء التحميل
       const companyId = context.company_id
-      const { data: transactionsData } = await supabase
+      
+      // 🔐 التأكد من أن warehouse ينتمي للفرع المحدد
+      if (warehouseId) {
+        const { data: warehouse } = await supabase
+          .from("warehouses")
+          .select("id, branch_id")
+          .eq("id", warehouseId)
+          .single()
+        
+        if (warehouse && warehouse.branch_id !== branchId) {
+          toastActionError(toast, "الحوكمة", "المخزون", "المخزن المحدد لا ينتمي للفرع المحدد")
+          setIsLoadingInventory(false)
+          return
+        }
+      }
+
+      // 🔐 بناء قواعد الحوكمة
+      const rules = buildDataVisibilityFilter(context)
+      
+      // 🔐 تطبيق الفلاتر الإلزامية على استعلامات المخزون
+      // 📌 ملاحظة: لحركات transfer_in و transfer_out، نأخذها بغض النظر عن cost_center_id
+      let transactionsQuery = supabase
         .from("inventory_transactions")
         .select("*, products(name, sku)")
         .eq("company_id", companyId)
         .eq("branch_id", branchId)
         .eq("warehouse_id", warehouseId)
-        .eq("cost_center_id", costCenterId)
+      
+      // تطبيق قواعد الحوكمة الموحدة (لكن بدون cost_center_id لأننا سنتعامل معه في JavaScript)
+      const rulesWithoutCostCenter = { ...rules, filterByCostCenter: false }
+      transactionsQuery = applyDataVisibilityFilter(transactionsQuery, rulesWithoutCostCenter, "inventory_transactions")
+      
+      const { data: transactionsData } = await transactionsQuery
         .order("created_at", { ascending: false })
         .limit(200)
 
-      // فلترة الحركات المحذوفة في JavaScript
-      const txs = (transactionsData || []).filter((t: any) => t.is_deleted !== true)
+      // 🔐 فلترة في JavaScript: نأخذ جميع الحركات في نفس cost_center_id المحدد
+      // + جميع حركات transfer_in و transfer_out (لأنها قد تكون في cost_center_id مختلف لكن في نفس الفرع)
+      const txs = (transactionsData || []).filter((t: any) => {
+        if (t.is_deleted === true) return false
+        const txCostCenterId = String(t.cost_center_id || '')
+        const txType = String(t.transaction_type || '')
+        // نأخذ الحركات في نفس cost_center_id
+        if (txCostCenterId === costCenterId) return true
+        // نأخذ حركات transfer_in و transfer_out بغض النظر عن cost_center_id (لكن في نفس الفرع والمخزن)
+        if (txType === 'transfer_in' || txType === 'transfer_out') return true
+        return false
+      })
 
       const sorted = txs.slice().sort((a: any, b: any) => {
         const ad = String(a?.created_at || '')
@@ -225,14 +274,37 @@ export default function InventoryPage() {
       })
       setTransactions(sorted)
 
-      // حساب الكميات من inventory_transactions
-      const { data: allTransactionsRaw } = await supabase
+      // 🔐 حساب الكميات من inventory_transactions مع تطبيق الفلاتر الإلزامية
+      // 📌 ملاحظة مهمة: لحركات transfer_in و transfer_out، يجب أن نأخذها بغض النظر عن cost_center_id
+      // لأن المخزون المحول قد يكون في cost_center_id مختلف لكن في نفس الفرع والمخزن
+      // الحل: نأخذ جميع الحركات في نفس المخزن والفرع، ثم نفلتر في JavaScript
+      let allTransactionsQuery = supabase
         .from("inventory_transactions")
-        .select("product_id, quantity_change, transaction_type, is_deleted")
+        .select("product_id, quantity_change, transaction_type, is_deleted, cost_center_id")
         .eq("company_id", companyId)
         .eq("branch_id", branchId)
         .eq("warehouse_id", warehouseId)
-        .eq("cost_center_id", costCenterId)
+      
+      // تطبيق قواعد الحوكمة الموحدة (لكن بدون cost_center_id لأننا سنتعامل معه في JavaScript)
+      const rulesWithoutCostCenter = { ...rules, filterByCostCenter: false }
+      allTransactionsQuery = applyDataVisibilityFilter(allTransactionsQuery, rulesWithoutCostCenter, "inventory_transactions")
+      
+      const { data: allTransactionsRaw } = await allTransactionsQuery
+      
+      // 🔐 فلترة في JavaScript: نأخذ جميع الحركات في نفس cost_center_id المحدد
+      // + جميع حركات transfer_in و transfer_out (لأنها قد تكون في cost_center_id مختلف لكن في نفس الفرع)
+      const allTransactions = (allTransactionsRaw || []).filter((t: any) => {
+        if (t.is_deleted === true) return false
+        const txCostCenterId = String(t.cost_center_id || '')
+        const txType = String(t.transaction_type || '')
+        // نأخذ الحركات في نفس cost_center_id
+        if (txCostCenterId === costCenterId) return true
+        // نأخذ حركات transfer_in و transfer_out بغض النظر عن cost_center_id (لكن في نفس الفرع والمخزن)
+        if (txType === 'transfer_in' || txType === 'transfer_out') return true
+        return false
+      })
+      
+      const { data: allTransactionsRaw } = await allTransactionsQuery
       // فلترة الحركات المحذوفة في JavaScript
       const allTransactions = (allTransactionsRaw || []).filter((t: any) => t.is_deleted !== true)
 
@@ -248,6 +320,7 @@ export default function InventoryPage() {
         const q = Number(t.quantity_change || 0)
         const type = String(t.transaction_type || '')
 
+        // 🔐 حساب المخزون: نجمع جميع الحركات (transfer_in يزيد، transfer_out ينقص)
         agg[pid] = (agg[pid] || 0) + q
 
         if (type === 'purchase') {
@@ -261,6 +334,7 @@ export default function InventoryPage() {
         } else if (type === 'purchase_return' || type === 'purchase_reversal') {
           purchaseReturnsAgg[pid] = (purchaseReturnsAgg[pid] || 0) + Math.abs(q)
         }
+        // 🔐 transfer_in و transfer_out يتم حسابها تلقائياً في agg لأن quantity_change يحتوي على القيمة الصحيحة
       })
 
       setComputedQty(agg)
@@ -325,6 +399,7 @@ export default function InventoryPage() {
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                {/* 🔐 Branch Selector - للمستخدمين العاديين: hidden، للـ Admin: visible */}
                 {isAdmin && branches.length > 0 && userContext && (
                   <div className="flex items-center gap-2 sm:gap-3">
                     <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
@@ -354,6 +429,7 @@ export default function InventoryPage() {
                   </div>
                 )}
 
+                {/* 🔐 Warehouse Selector - للمستخدمين العاديين: disabled، للـ Admin: enabled */}
                 {filteredWarehouses.length > 0 && (
                   <div className="flex items-center gap-2 sm:gap-3">
                     <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
@@ -362,8 +438,16 @@ export default function InventoryPage() {
                     </div>
                     <Select
                       value={selectedWarehouseId}
-                      onValueChange={(value) => setSelectedWarehouseId(value)}
-                      disabled={!isAdmin}
+                      onValueChange={(value) => {
+                        // 🔐 التأكد من أن المخزن ينتمي للفرع المحدد
+                        const warehouse = filteredWarehouses.find(w => w.id === value)
+                        if (warehouse && warehouse.branch_id !== selectedBranchId) {
+                          toastActionError(toast, "الحوكمة", "المخزون", "المخزن المحدد لا ينتمي للفرع المحدد")
+                          return
+                        }
+                        setSelectedWarehouseId(value)
+                      }}
+                      disabled={!isAdmin || !selectedBranchId} // 🔐 disabled للمستخدمين العاديين
                     >
                       <SelectTrigger className="w-[180px] sm:w-[220px] bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
                         <SelectValue placeholder={appLang === 'en' ? 'Select warehouse' : 'اختر المخزن'} />
