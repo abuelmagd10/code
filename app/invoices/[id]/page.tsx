@@ -429,10 +429,30 @@ export default function InvoiceDetailPage() {
       try {
         console.log("⏰ Inside setTimeout - starting status change logic")
 
-        // التحقق من المخزون قبل الإرسال (استخدام الخدمة المشتركة)
+        // 📌 التحقق من المتطلبات قبل الإرسال
         if (newStatus === "sent") {
+          console.log("📦 Starting pre-send validation...")
+          
+          // 1️⃣ التحقق من وجود شركة شحن (إلزامي لنظام بضاعة لدى الغير)
+          const shippingValidation = await validateShippingProvider(supabase, invoiceId)
+          if (!shippingValidation.valid || !shippingValidation.shippingProviderId) {
+            startTransition(() => {
+              setChangingStatus(false)
+            })
+            toast({
+              variant: "destructive",
+              title: appLang === 'en' ? 'Shipping Provider Required' : 'شركة الشحن مطلوبة',
+              description: appLang === 'en' 
+                ? 'Please select a shipping provider before marking as sent. The invoice must have a shipping provider for goods tracking.'
+                : 'يرجى اختيار شركة شحن قبل التحديد كمرسلة. يجب أن تحتوي الفاتورة على شركة شحن لتتبع البضائع.',
+              duration: 8000,
+            })
+            return
+          }
+          console.log(`✅ Shipping provider validated: ${shippingValidation.providerName}`)
+          
+          // 2️⃣ التحقق من توفر المخزون
           console.log("📦 Checking inventory availability...")
-          // جلب عناصر الفاتورة للتحقق
           const { data: invoiceItems } = await supabase
             .from("invoice_items")
             .select("product_id, quantity")
@@ -458,6 +478,7 @@ export default function InvoiceDetailPage() {
             })
             return
           }
+          console.log("✅ Inventory availability confirmed")
         }
 
         console.log("💾 Updating invoice status in database...")
@@ -487,16 +508,51 @@ export default function InvoiceDetailPage() {
         })
 
         if (invoice) {
+          const { data: { user } } = await supabase.auth.getUser()
+          const auditUserId = user?.id || null
+          
           if (newStatus === "sent") {
             console.log("📌 Calling deductInventoryOnly()...")
-            // 1️⃣ خصم المخزون (كميات فقط)
+            // 1️⃣ خصم المخزون + نقل إلى بضاعة لدى الغير
             await deductInventoryOnly()
             // ❌ لا قيد محاسبي عند Sent - القيد يُنشأ عند الدفع فقط
-            console.log(`✅ INV Sent: تم خصم المخزون فقط (النمط المحاسبي الصارم - لا قيد)`)
+            console.log(`✅ INV Sent: تم خصم المخزون ونقله إلى بضاعة لدى الغير`)
+            
+            // 📝 Audit Log: تسجيل عملية الإرسال
+            await supabase.from("audit_logs").insert({
+              company_id: invoice.companies ? undefined : undefined, // سيتم تحديده من RLS
+              user_id: auditUserId,
+              action: "invoice_sent",
+              entity_type: "invoice",
+              entity_id: invoiceId,
+              old_value: JSON.stringify({ status: "draft" }),
+              new_value: JSON.stringify({ 
+                status: "sent",
+                shipping_provider_id: invoice.shipping_provider_id,
+                total_amount: invoice.total_amount
+              }),
+              description: `تحديد الفاتورة ${invoice.invoice_number} كمرسلة - خصم المخزون ونقله إلى بضاعة لدى الغير`,
+              ip_address: null,
+              user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null
+            }).catch((err: unknown) => console.warn("Audit log failed:", err))
+            
           } else if (newStatus === "draft" || newStatus === "cancelled") {
             await reverseInventoryForInvoice()
             // عكس القيود المحاسبية إن وجدت (للفواتير المدفوعة سابقاً)
             await reverseInvoiceJournals()
+            
+            // 📝 Audit Log: تسجيل عملية الإلغاء/الإرجاع لمسودة
+            await supabase.from("audit_logs").insert({
+              user_id: auditUserId,
+              action: newStatus === "cancelled" ? "invoice_cancelled" : "invoice_reverted_to_draft",
+              entity_type: "invoice",
+              entity_id: invoiceId,
+              old_value: JSON.stringify({ status: invoice.status }),
+              new_value: JSON.stringify({ status: newStatus }),
+              description: `${newStatus === "cancelled" ? "إلغاء" : "إعادة لمسودة"} الفاتورة ${invoice.invoice_number}`,
+              ip_address: null,
+              user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null
+            }).catch((err: unknown) => console.warn("Audit log failed:", err))
           }
         }
 
@@ -2049,6 +2105,28 @@ export default function InvoiceDetailPage() {
         }
       }
 
+      // 📝 Audit Log: تسجيل عملية الدفع
+      await supabase.from("audit_logs").insert({
+        user_id: user?.id || null,
+        action: newStatus === "paid" ? "invoice_paid_full" : "invoice_paid_partial",
+        entity_type: "invoice",
+        entity_id: invoice.id,
+        old_value: JSON.stringify({ 
+          status: invoice.status, 
+          paid_amount: invoice.paid_amount 
+        }),
+        new_value: JSON.stringify({ 
+          status: newStatus, 
+          paid_amount: newPaid,
+          payment_amount: amount,
+          third_party_cleared: clearResult.success,
+          third_party_status: newStatus === "paid" ? "تم الاستلام" : "جزئي"
+        }),
+        description: `${newStatus === "paid" ? "دفع كامل" : "دفع جزئي"} للفاتورة ${invoice.invoice_number} - المبلغ: ${amount}`,
+        ip_address: null,
+        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null
+      }).catch((err: unknown) => console.warn("Audit log failed:", err))
+
       // أعِد التحميل وأغلق النموذج
       await loadInvoice()
       setShowPayment(false)
@@ -3150,14 +3228,8 @@ export default function InvoiceDetailPage() {
                     {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
                   </Button>
                 ) : null}
-                {/* Create Shipment Button - only for draft invoices */}
-                {invoice.status === "draft" && permShipmentWrite && !existingShipment ? (
-                  <Button variant="outline" className="border-cyan-500 text-cyan-600 hover:bg-cyan-50" onClick={openShipmentDialog}>
-                    <Truck className="w-4 h-4 ml-2" />
-                    {appLang === 'en' ? 'Create Shipment' : 'إنشاء شحنة'}
-                  </Button>
-                ) : null}
-                {/* View Shipment Button - if shipment exists */}
+                {/* 📌 تم إلغاء زر "إنشاء شحنة" - الوظيفة مدمجة في "تحديد كمرسلة" */}
+                {/* View Shipment Button - if shipment/third party goods exists */}
                 {existingShipment ? (
                   <Button variant="outline" className="border-cyan-500 text-cyan-600 hover:bg-cyan-50" onClick={() => window.open(`/shipments/${existingShipment.id}`, '_blank')}>
                     <Truck className="w-4 h-4 ml-2" />
