@@ -50,9 +50,10 @@ export async function checkInventoryAvailability(
     }
 
     // جلب بيانات المنتجات مع الكمية المتاحة
+    // 📌 ملاحظة: نستخدم فقط الأعمدة الأساسية لتجنب أخطاء الأعمدة غير الموجودة
     const { data: products, error } = await supabase
       .from("products")
-      .select("id, name, sku, quantity_on_hand, track_inventory, item_type")
+      .select("id, name, sku, quantity_on_hand")
       .in("id", productIds)
 
     if (error) {
@@ -78,9 +79,8 @@ export async function checkInventoryAvailability(
     const shortages: InventoryShortage[] = []
 
     for (const product of products || []) {
-      // تخطي الخدمات والمنتجات التي لا تتبع المخزون
-      if (product.item_type === 'service' || product.track_inventory === false) continue
-
+      // 📌 ملاحظة: نفترض أن جميع المنتجات تتبع المخزون
+      // إذا كان هناك نظام لتتبع الخدمات، يتم التحقق منه في مكان آخر
       const required = requiredByProduct[product.id] || 0
       // الكمية المتاحة = الكمية الحالية + الكمية المخصومة مسبقاً (في حالة التعديل)
       const available = Number(product.quantity_on_hand || 0) + (previouslyDeducted[product.id] || 0)
