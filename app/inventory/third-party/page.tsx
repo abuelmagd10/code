@@ -788,6 +788,34 @@ export default function ThirdPartyInventoryPage() {
                         )
                       })
                     )}
+                    {/* صف الإجمالي */}
+                    {filteredItems.length > 0 && (
+                      <TableRow className="bg-gray-100 dark:bg-slate-800 font-bold border-t-2 border-gray-300 dark:border-slate-600">
+                        <TableCell colSpan={6} className="text-sm">
+                          <span className="text-gray-700 dark:text-gray-200">
+                            {isAr ? "الإجمالي" : "Total"} ({stats.uniqueInvoices} {isAr ? "فاتورة" : "invoices"})
+                          </span>
+                        </TableCell>
+                        {/* الكمية */}
+                        <TableCell className="text-center">
+                          <Badge variant="default" className="text-sm font-bold bg-blue-600 hover:bg-blue-600">
+                            {stats.totalQuantity.toLocaleString()}
+                          </Badge>
+                        </TableCell>
+                        {/* السعر - فارغ */}
+                        <TableCell className="hidden sm:table-cell"></TableCell>
+                        {/* القيمة */}
+                        <TableCell className="text-center">
+                          <span className="text-lg font-bold text-green-600 dark:text-green-400">
+                            {stats.totalValue.toLocaleString()}
+                          </span>
+                        </TableCell>
+                        {/* الحالة - فارغ */}
+                        <TableCell></TableCell>
+                        {/* عرض - فارغ */}
+                        <TableCell></TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
