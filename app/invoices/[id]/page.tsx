@@ -519,7 +519,7 @@ export default function InvoiceDetailPage() {
                 target_table: "invoices",
                 record_id: invoiceId,
                 record_identifier: invoice.invoice_number,
-                old_data: { status: "draft" },
+                old_data: { status: invoice.status },
                 new_data: { 
                   status: "sent",
                   shipping_provider_id: invoice.shipping_provider_id,
