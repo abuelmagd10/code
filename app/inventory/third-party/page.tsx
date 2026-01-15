@@ -674,14 +674,17 @@ export default function ThirdPartyInventoryPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-gray-50 dark:bg-slate-800">
-                      <TableHead className="text-xs sm:text-sm">{isAr ? "المنتج" : "Product"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm">{isAr ? "الفاتورة" : "Invoice"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm hidden sm:table-cell">{isAr ? "العميل" : "Customer"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm">{isAr ? "شركة الشحن" : "Provider"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm text-center">{isAr ? "الكمية" : "Qty"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm text-center hidden sm:table-cell">{isAr ? "التكلفة" : "Cost"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm text-center">{isAr ? "القيمة" : "Value"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm text-center">{isAr ? "عرض" : "View"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold">{isAr ? "المنتج" : "Product"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold">{isAr ? "الفاتورة" : "Invoice"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold hidden md:table-cell">{isAr ? "العميل" : "Customer"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold">{isAr ? "شركة الشحن" : "Shipping"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold hidden lg:table-cell">{isAr ? "الفرع" : "Branch"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold hidden lg:table-cell">{isAr ? "المخزن" : "Warehouse"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold text-center">{isAr ? "الكمية" : "Qty"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold text-center hidden sm:table-cell">{isAr ? "التكلفة" : "Cost"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold text-center">{isAr ? "القيمة" : "Value"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold text-center">{isAr ? "الحالة" : "Status"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold text-center w-16">{isAr ? "عرض" : "View"}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -699,57 +702,68 @@ export default function ThirdPartyInventoryPage() {
                         const invoiceStatus = item.invoices?.status || 'sent'
                         return (
                           <TableRow key={item.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                            {/* المنتج */}
                             <TableCell>
                               <div className="font-medium text-xs sm:text-sm">{item.products?.name}</div>
                               <div className="text-[10px] sm:text-xs text-gray-500">{item.products?.sku}</div>
                             </TableCell>
+                            {/* الفاتورة */}
                             <TableCell className="text-xs sm:text-sm">
-                              <Link href={`/invoices/${item.invoice_id}`} className="text-blue-600 hover:underline">
+                              <Link href={`/invoices/${item.invoice_id}`} className="text-blue-600 hover:underline font-medium">
                                 {item.invoices?.invoice_number}
                               </Link>
                             </TableCell>
-                            <TableCell className="text-xs sm:text-sm hidden sm:table-cell">
+                            {/* العميل */}
+                            <TableCell className="text-xs sm:text-sm hidden md:table-cell">
                               {item.invoices?.customers?.name || '-'}
                             </TableCell>
+                            {/* شركة الشحن */}
                             <TableCell>
-                              <Badge variant="outline" className="text-[10px] sm:text-xs bg-orange-50 text-orange-700 border-orange-200">
-                                <Truck className="h-3 w-3 mr-1" />
+                              <Badge variant="outline" className="text-[10px] sm:text-xs bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800">
+                                <Truck className="h-3 w-3 ml-1" />
                                 {item.shipping_providers?.provider_name}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-center">
-                              <Badge variant="secondary" className="text-xs font-bold">
-                                {availableQty}
-                              </Badge>
-                            </TableCell>
+                            {/* الفرع */}
                             <TableCell className="text-xs sm:text-sm hidden lg:table-cell">
                               {item.invoices?.branches?.name || '-'}
                             </TableCell>
+                            {/* المخزن */}
                             <TableCell className="text-xs sm:text-sm hidden lg:table-cell">
                               {item.invoices?.warehouses?.name || '-'}
                             </TableCell>
+                            {/* الكمية */}
                             <TableCell className="text-center">
-                              <StatusBadge status={invoiceStatus} lang={appLang} />
+                              <Badge variant="secondary" className="text-xs font-bold min-w-[40px]">
+                                {availableQty.toLocaleString()}
+                              </Badge>
                             </TableCell>
+                            {/* التكلفة */}
                             <TableCell className="text-xs sm:text-sm text-center hidden sm:table-cell">
                               {Number(item.unit_cost).toLocaleString()}
                             </TableCell>
+                            {/* القيمة */}
                             <TableCell className="text-center">
-                              <span className="font-bold text-xs sm:text-sm text-green-600">
+                              <span className="font-bold text-xs sm:text-sm text-green-600 dark:text-green-400">
                                 {value.toLocaleString()}
                               </span>
                             </TableCell>
+                            {/* الحالة */}
+                            <TableCell className="text-center">
+                              <StatusBadge status={invoiceStatus} lang={appLang} />
+                            </TableCell>
+                            {/* عرض */}
                             <TableCell className="text-center">
                               {canAccessInvoices ? (
                                 <Link href={`/invoices/${item.invoice_id}`}>
-                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title={isAr ? "عرض الفاتورة" : "View Invoice"}>
-                                    <ExternalLink className="h-4 w-4" />
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50 dark:hover:bg-blue-900/20" title={isAr ? "عرض الفاتورة" : "View Invoice"}>
+                                    <ExternalLink className="h-4 w-4 text-blue-600" />
                                   </Button>
                                 </Link>
                               ) : item.invoices?.sales_order_id ? (
                                 <Link href={`/sales-orders/${item.invoices.sales_order_id}`}>
-                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title={isAr ? "عرض أمر البيع" : "View Sales Order"}>
-                                    <ExternalLink className="h-4 w-4" />
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50 dark:hover:bg-blue-900/20" title={isAr ? "عرض أمر البيع" : "View Sales Order"}>
+                                    <ExternalLink className="h-4 w-4 text-blue-600" />
                                   </Button>
                                 </Link>
                               ) : (
