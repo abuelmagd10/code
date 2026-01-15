@@ -498,6 +498,29 @@ export default function NewSalesReturnPage() {
         }
       }
 
+      // ✅ تحديث third_party_inventory.returned_quantity (للفواتير المرسلة عبر شركات الشحن)
+      if (form.invoice_id) {
+        for (const item of validItems) {
+          if (item.product_id && item.quantity > 0) {
+            const { data: tpiRecord } = await supabase
+              .from("third_party_inventory")
+              .select("id, returned_quantity")
+              .eq("invoice_id", form.invoice_id)
+              .eq("product_id", item.product_id)
+              .maybeSingle()
+
+            if (tpiRecord) {
+              const newTpiReturned = (Number(tpiRecord.returned_quantity) || 0) + item.quantity
+              await supabase
+                .from("third_party_inventory")
+                .update({ returned_quantity: newTpiReturned })
+                .eq("id", tpiRecord.id)
+              console.log(`✅ Updated third_party_inventory returned_quantity for product ${item.product_id}: ${newTpiReturned}`)
+            }
+          }
+        }
+      }
+
       // Update invoice return_status and returned_amount
       let newReturnedAmount = 0
       if (form.invoice_id) {

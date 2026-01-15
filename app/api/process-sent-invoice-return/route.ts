@@ -103,6 +103,24 @@ export async function POST(request: NextRequest) {
         .update({ returned_quantity: newReturned })
         .eq("id", item_id)
 
+      // ✅ تحديث third_party_inventory.returned_quantity (للفواتير المرسلة عبر شركات الشحن)
+      if (invoiceItem.product_id) {
+        const { data: tpiRecord } = await supabase
+          .from("third_party_inventory")
+          .select("id, returned_quantity")
+          .eq("invoice_id", invoice_id)
+          .eq("product_id", invoiceItem.product_id)
+          .maybeSingle()
+
+        if (tpiRecord) {
+          const newTpiReturned = (Number(tpiRecord.returned_quantity) || 0) + returnQty
+          await supabase
+            .from("third_party_inventory")
+            .update({ returned_quantity: newTpiReturned })
+            .eq("id", tpiRecord.id)
+        }
+      }
+
       // إنشاء حركة مخزون للاسترجاع
       if (invoiceItem.product_id) {
         let effectiveBranchId = (invoice as any).branch_id as string | null

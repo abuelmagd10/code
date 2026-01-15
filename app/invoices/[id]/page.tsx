@@ -1636,6 +1636,28 @@ export default function InvoiceDetailPage() {
         }
       }
 
+      // ✅ تحديث third_party_inventory.returned_quantity (للفواتير المرسلة عبر شركات الشحن)
+      for (const it of returnItems) {
+        if (it.return_qty > 0 && it.product_id) {
+          // جلب السجل الحالي من third_party_inventory
+          const { data: tpiRecord } = await supabase
+            .from("third_party_inventory")
+            .select("id, returned_quantity")
+            .eq("invoice_id", invoice.id)
+            .eq("product_id", it.product_id)
+            .maybeSingle()
+
+          if (tpiRecord) {
+            const newTpiReturned = (Number(tpiRecord.returned_quantity) || 0) + it.return_qty
+            await supabase
+              .from("third_party_inventory")
+              .update({ returned_quantity: newTpiReturned })
+              .eq("id", tpiRecord.id)
+            console.log(`✅ Updated third_party_inventory returned_quantity for product ${it.product_id}: ${newTpiReturned}`)
+          }
+        }
+      }
+
       // ===== إنشاء حركات المخزون (لجميع الحالات: sent, paid, partially_paid) =====
       // 📌 للفواتير المرسلة: نربط حركات المخزون بالقيد الأصلي للفاتورة (إن وجد)
       // 📌 للفواتير المدفوعة: نربطها بقيد المرتجع الجديد
