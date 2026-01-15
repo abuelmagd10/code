@@ -36,6 +36,7 @@ interface ThirdPartyItem {
     status?: string
     branch_id?: string | null
     warehouse_id?: string | null
+    sales_order_id?: string | null
     customers?: { name: string; phone?: string }
     branches?: { name: string }
     warehouses?: { name: string }
@@ -236,6 +237,7 @@ export default function ThirdPartyInventoryPage() {
           shipping_provider_id,
           branch_id,
           warehouse_id,
+          sales_order_id,
           customers(name, phone),
           branches(name),
           warehouses(name)
@@ -286,6 +288,7 @@ export default function ThirdPartyInventoryPage() {
             status: invoice.status,
             branch_id: invoice.branch_id,
             warehouse_id: invoice.warehouse_id,
+            sales_order_id: invoice.sales_order_id,
             customers: invoice.customers,
             branches: invoice.branches,
             warehouses: invoice.warehouses
@@ -731,11 +734,19 @@ export default function ThirdPartyInventoryPage() {
                               </span>
                             </TableCell>
                             <TableCell className="text-center">
-                              <Link href={`/invoices/${item.invoice_id}`}>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                  <ExternalLink className="h-4 w-4" />
-                                </Button>
-                              </Link>
+                              {item.invoices?.sales_order_id ? (
+                                <Link href={`/sales-orders/${item.invoices.sales_order_id}`}>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title={isAr ? "عرض أمر البيع" : "View Sales Order"}>
+                                    <ExternalLink className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                              ) : (
+                                <Link href={`/invoices/${item.invoice_id}`}>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title={isAr ? "عرض الفاتورة" : "View Invoice"}>
+                                    <ExternalLink className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                              )}
                             </TableCell>
                           </TableRow>
                         )
