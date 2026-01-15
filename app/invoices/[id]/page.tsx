@@ -49,6 +49,7 @@ import {
 
 interface Invoice {
   id: string
+  company_id: string
   invoice_number: string
   invoice_date: string
   due_date: string
@@ -433,23 +434,14 @@ export default function InvoiceDetailPage() {
         if (newStatus === "sent") {
           console.log("📦 Starting pre-send validation...")
           
-          // 1️⃣ التحقق من وجود شركة شحن (إلزامي لنظام بضاعة لدى الغير)
+          // 1️⃣ التحقق من وجود شركة شحن (اختياري - إذا موجود يُستخدم نظام بضاعة لدى الغير)
           const shippingValidation = await validateShippingProvider(supabase, invoiceId)
-          if (!shippingValidation.valid || !shippingValidation.shippingProviderId) {
-            startTransition(() => {
-              setChangingStatus(false)
-            })
-            toast({
-              variant: "destructive",
-              title: appLang === 'en' ? 'Shipping Provider Required' : 'شركة الشحن مطلوبة',
-              description: appLang === 'en' 
-                ? 'Please select a shipping provider before marking as sent. The invoice must have a shipping provider for goods tracking.'
-                : 'يرجى اختيار شركة شحن قبل التحديد كمرسلة. يجب أن تحتوي الفاتورة على شركة شحن لتتبع البضائع.',
-              duration: 8000,
-            })
-            return
+          const hasShippingProvider = shippingValidation.valid && shippingValidation.shippingProviderId
+          if (hasShippingProvider) {
+            console.log(`✅ Shipping provider found: ${shippingValidation.providerName} - using third-party goods tracking`)
+          } else {
+            console.log("📦 No shipping provider - using direct inventory deduction model")
           }
-          console.log(`✅ Shipping provider validated: ${shippingValidation.providerName}`)
           
           // 2️⃣ التحقق من توفر المخزون
           console.log("📦 Checking inventory availability...")
@@ -519,19 +511,19 @@ export default function InvoiceDetailPage() {
             console.log(`✅ INV Sent: تم خصم المخزون ونقله إلى بضاعة لدى الغير`)
             
             // 📝 Audit Log: تسجيل عملية الإرسال
-            if (auditUserId) {
+            if (auditUserId && invoice.company_id) {
               await supabase.from("audit_logs").insert({
+                company_id: invoice.company_id,
                 user_id: auditUserId,
-                action: "invoice_sent",
-                details: {
-                  entity_type: "invoice",
-                  entity_id: invoiceId,
-                  invoice_number: invoice.invoice_number,
-                  old_status: "draft",
-                  new_status: "sent",
+                action: "UPDATE",
+                target_table: "invoices",
+                record_id: invoiceId,
+                record_identifier: invoice.invoice_number,
+                old_data: { status: "draft" },
+                new_data: { 
+                  status: "sent",
                   shipping_provider_id: invoice.shipping_provider_id,
-                  total_amount: invoice.total_amount,
-                  description: `تحديد الفاتورة ${invoice.invoice_number} كمرسلة - خصم المخزون ونقله إلى بضاعة لدى الغير`
+                  total_amount: invoice.total_amount
                 }
               }).catch((err: unknown) => console.warn("Audit log failed:", err))
             }
@@ -542,18 +534,16 @@ export default function InvoiceDetailPage() {
             await reverseInvoiceJournals()
             
             // 📝 Audit Log: تسجيل عملية الإلغاء/الإرجاع لمسودة
-            if (auditUserId) {
+            if (auditUserId && invoice.company_id) {
               await supabase.from("audit_logs").insert({
+                company_id: invoice.company_id,
                 user_id: auditUserId,
-                action: newStatus === "cancelled" ? "invoice_cancelled" : "invoice_reverted_to_draft",
-                details: {
-                  entity_type: "invoice",
-                  entity_id: invoiceId,
-                  invoice_number: invoice.invoice_number,
-                  old_status: invoice.status,
-                  new_status: newStatus,
-                  description: `${newStatus === "cancelled" ? "إلغاء" : "إعادة لمسودة"} الفاتورة ${invoice.invoice_number}`
-                }
+                action: "UPDATE",
+                target_table: "invoices",
+                record_id: invoiceId,
+                record_identifier: invoice.invoice_number,
+                old_data: { status: invoice.status },
+                new_data: { status: newStatus }
               }).catch((err: unknown) => console.warn("Audit log failed:", err))
             }
           }
@@ -2109,22 +2099,23 @@ export default function InvoiceDetailPage() {
       }
 
       // 📝 Audit Log: تسجيل عملية الدفع
-      if (user?.id) {
+      if (user?.id && invoice.company_id) {
         await supabase.from("audit_logs").insert({
+          company_id: invoice.company_id,
           user_id: user.id,
-          action: newStatus === "paid" ? "invoice_paid_full" : "invoice_paid_partial",
-          details: {
-            entity_type: "invoice",
-            entity_id: invoice.id,
-            invoice_number: invoice.invoice_number,
-            old_status: invoice.status,
-            new_status: newStatus,
-            old_paid_amount: invoice.paid_amount,
-            new_paid_amount: newPaid,
+          action: "UPDATE",
+          target_table: "invoices",
+          record_id: invoice.id,
+          record_identifier: invoice.invoice_number,
+          old_data: { 
+            status: invoice.status,
+            paid_amount: invoice.paid_amount
+          },
+          new_data: { 
+            status: newStatus,
+            paid_amount: newPaid,
             payment_amount: amount,
-            third_party_cleared: clearResult.success,
-            third_party_status: newStatus === "paid" ? "تم الاستلام" : "جزئي",
-            description: `${newStatus === "paid" ? "دفع كامل" : "دفع جزئي"} للفاتورة ${invoice.invoice_number} - المبلغ: ${amount}`
+            third_party_cleared: clearResult.success
           }
         }).catch((err: unknown) => console.warn("Audit log failed:", err))
       }
