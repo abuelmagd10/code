@@ -519,22 +519,22 @@ export default function InvoiceDetailPage() {
             console.log(`✅ INV Sent: تم خصم المخزون ونقله إلى بضاعة لدى الغير`)
             
             // 📝 Audit Log: تسجيل عملية الإرسال
-            await supabase.from("audit_logs").insert({
-              company_id: invoice.companies ? undefined : undefined, // سيتم تحديده من RLS
-              user_id: auditUserId,
-              action: "invoice_sent",
-              entity_type: "invoice",
-              entity_id: invoiceId,
-              old_value: JSON.stringify({ status: "draft" }),
-              new_value: JSON.stringify({ 
-                status: "sent",
-                shipping_provider_id: invoice.shipping_provider_id,
-                total_amount: invoice.total_amount
-              }),
-              description: `تحديد الفاتورة ${invoice.invoice_number} كمرسلة - خصم المخزون ونقله إلى بضاعة لدى الغير`,
-              ip_address: null,
-              user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null
-            }).catch((err: unknown) => console.warn("Audit log failed:", err))
+            if (auditUserId) {
+              await supabase.from("audit_logs").insert({
+                user_id: auditUserId,
+                action: "invoice_sent",
+                details: {
+                  entity_type: "invoice",
+                  entity_id: invoiceId,
+                  invoice_number: invoice.invoice_number,
+                  old_status: "draft",
+                  new_status: "sent",
+                  shipping_provider_id: invoice.shipping_provider_id,
+                  total_amount: invoice.total_amount,
+                  description: `تحديد الفاتورة ${invoice.invoice_number} كمرسلة - خصم المخزون ونقله إلى بضاعة لدى الغير`
+                }
+              }).catch((err: unknown) => console.warn("Audit log failed:", err))
+            }
             
           } else if (newStatus === "draft" || newStatus === "cancelled") {
             await reverseInventoryForInvoice()
@@ -542,17 +542,20 @@ export default function InvoiceDetailPage() {
             await reverseInvoiceJournals()
             
             // 📝 Audit Log: تسجيل عملية الإلغاء/الإرجاع لمسودة
-            await supabase.from("audit_logs").insert({
-              user_id: auditUserId,
-              action: newStatus === "cancelled" ? "invoice_cancelled" : "invoice_reverted_to_draft",
-              entity_type: "invoice",
-              entity_id: invoiceId,
-              old_value: JSON.stringify({ status: invoice.status }),
-              new_value: JSON.stringify({ status: newStatus }),
-              description: `${newStatus === "cancelled" ? "إلغاء" : "إعادة لمسودة"} الفاتورة ${invoice.invoice_number}`,
-              ip_address: null,
-              user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null
-            }).catch((err: unknown) => console.warn("Audit log failed:", err))
+            if (auditUserId) {
+              await supabase.from("audit_logs").insert({
+                user_id: auditUserId,
+                action: newStatus === "cancelled" ? "invoice_cancelled" : "invoice_reverted_to_draft",
+                details: {
+                  entity_type: "invoice",
+                  entity_id: invoiceId,
+                  invoice_number: invoice.invoice_number,
+                  old_status: invoice.status,
+                  new_status: newStatus,
+                  description: `${newStatus === "cancelled" ? "إلغاء" : "إعادة لمسودة"} الفاتورة ${invoice.invoice_number}`
+                }
+              }).catch((err: unknown) => console.warn("Audit log failed:", err))
+            }
           }
         }
 
@@ -2106,26 +2109,25 @@ export default function InvoiceDetailPage() {
       }
 
       // 📝 Audit Log: تسجيل عملية الدفع
-      await supabase.from("audit_logs").insert({
-        user_id: user?.id || null,
-        action: newStatus === "paid" ? "invoice_paid_full" : "invoice_paid_partial",
-        entity_type: "invoice",
-        entity_id: invoice.id,
-        old_value: JSON.stringify({ 
-          status: invoice.status, 
-          paid_amount: invoice.paid_amount 
-        }),
-        new_value: JSON.stringify({ 
-          status: newStatus, 
-          paid_amount: newPaid,
-          payment_amount: amount,
-          third_party_cleared: clearResult.success,
-          third_party_status: newStatus === "paid" ? "تم الاستلام" : "جزئي"
-        }),
-        description: `${newStatus === "paid" ? "دفع كامل" : "دفع جزئي"} للفاتورة ${invoice.invoice_number} - المبلغ: ${amount}`,
-        ip_address: null,
-        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null
-      }).catch((err: unknown) => console.warn("Audit log failed:", err))
+      if (user?.id) {
+        await supabase.from("audit_logs").insert({
+          user_id: user.id,
+          action: newStatus === "paid" ? "invoice_paid_full" : "invoice_paid_partial",
+          details: {
+            entity_type: "invoice",
+            entity_id: invoice.id,
+            invoice_number: invoice.invoice_number,
+            old_status: invoice.status,
+            new_status: newStatus,
+            old_paid_amount: invoice.paid_amount,
+            new_paid_amount: newPaid,
+            payment_amount: amount,
+            third_party_cleared: clearResult.success,
+            third_party_status: newStatus === "paid" ? "تم الاستلام" : "جزئي",
+            description: `${newStatus === "paid" ? "دفع كامل" : "دفع جزئي"} للفاتورة ${invoice.invoice_number} - المبلغ: ${amount}`
+          }
+        }).catch((err: unknown) => console.warn("Audit log failed:", err))
+      }
 
       // أعِد التحميل وأغلق النموذج
       await loadInvoice()
