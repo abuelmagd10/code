@@ -108,11 +108,20 @@ export default function ThirdPartyInventoryPage() {
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all")
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState("")
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([])
   const [filterCustomers, setFilterCustomers] = useState<string[]>([])
   const [filterProducts, setFilterProducts] = useState<string[]>([])
   const [filterShippingProviders, setFilterShippingProviders] = useState<string[]>([])
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
+
+  // خيارات الحالة
+  const statusOptions = [
+    { value: "sent", label: isAr ? "مرسلة" : "Sent" },
+    { value: "confirmed", label: isAr ? "مؤكدة" : "Confirmed" },
+    { value: "partially_returned", label: isAr ? "مرتجع جزئي" : "Partially Returned" },
+    { value: "partially_paid", label: isAr ? "مدفوعة جزئياً" : "Partially Paid" },
+  ]
 
   // Can view all (manager/admin/owner)
   const canViewAll = ["owner", "admin", "manager"].includes(currentUserRole)
@@ -326,6 +335,7 @@ export default function ThirdPartyInventoryPage() {
   const clearFilters = () => {
     setFilterEmployeeId("all")
     setSearchQuery("")
+    setFilterStatuses([])
     setFilterCustomers([])
     setFilterProducts([])
     setFilterShippingProviders([])
@@ -337,6 +347,7 @@ export default function ThirdPartyInventoryPage() {
   const activeFilterCount = [
     filterEmployeeId !== "all",
     !!searchQuery,
+    filterStatuses.length > 0,
     filterCustomers.length > 0,
     filterProducts.length > 0,
     filterShippingProviders.length > 0,
@@ -361,6 +372,12 @@ export default function ThirdPartyInventoryPage() {
         if (!invoiceNumber.includes(q) && !customerName.includes(q) && !customerPhone.includes(q)) return false
       }
 
+      // فلتر الحالة
+      if (filterStatuses.length > 0) {
+        const invoiceStatus = item.invoices?.status || 'sent'
+        if (!filterStatuses.includes(invoiceStatus)) return false
+      }
+
       // فلتر العملاء
       if (filterCustomers.length > 0) {
         if (!item.invoices?.customer_id || !filterCustomers.includes(item.invoices.customer_id)) return false
@@ -383,7 +400,7 @@ export default function ThirdPartyInventoryPage() {
 
       return true
     })
-  }, [items, filterEmployeeId, searchQuery, filterCustomers, filterProducts, filterShippingProviders, dateFrom, dateTo, canViewAll])
+  }, [items, filterEmployeeId, searchQuery, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, dateFrom, dateTo, canViewAll])
 
   // حساب الإحصائيات
   const stats = useMemo(() => {
@@ -593,6 +610,17 @@ export default function ThirdPartyInventoryPage() {
                     )}
                   </div>
                 </div>
+
+                {/* فلتر الحالة */}
+                <MultiSelect
+                  options={statusOptions}
+                  selected={filterStatuses}
+                  onChange={setFilterStatuses}
+                  placeholder={isAr ? 'جميع الحالات' : 'All Statuses'}
+                  searchPlaceholder={isAr ? 'بحث في الحالات...' : 'Search status...'}
+                  emptyMessage={isAr ? 'لا توجد حالات' : 'No status found'}
+                  className="h-10 text-sm"
+                />
 
                 {/* فلتر العميل */}
                 <MultiSelect
