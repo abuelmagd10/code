@@ -24,6 +24,7 @@ interface ThirdPartyItem {
   product_id: string
   quantity: number
   unit_cost: number
+  unit_price?: number // سعر البيع من الفاتورة
   cleared_quantity: number
   returned_quantity: number
   status: string
@@ -282,11 +283,22 @@ export default function ThirdPartyInventoryPage() {
         return
       }
 
-      // دمج البيانات: ربط third_party_inventory مع بيانات الفاتورة
+      // جلب بنود الفواتير للحصول على سعر البيع
+      const { data: invoiceItemsData } = await supabase
+        .from("invoice_items")
+        .select("invoice_id, product_id, unit_price")
+        .in("invoice_id", invoiceIds)
+
+      // دمج البيانات: ربط third_party_inventory مع بيانات الفاتورة وسعر البيع
       const mergedItems = (thirdPartyData || []).map((tpi: any) => {
         const invoice = (sentInvoices || []).find((inv: any) => inv.id === tpi.invoice_id)
+        // جلب سعر البيع من بنود الفاتورة
+        const invoiceItem = (invoiceItemsData || []).find(
+          (item: any) => item.invoice_id === tpi.invoice_id && item.product_id === tpi.product_id
+        )
         return {
           ...tpi,
+          unit_price: invoiceItem?.unit_price || tpi.unit_cost, // استخدام سعر البيع إن وجد، وإلا التكلفة
           invoices: invoice ? {
             invoice_number: invoice.invoice_number,
             customer_id: invoice.customer_id,
@@ -381,7 +393,8 @@ export default function ThirdPartyInventoryPage() {
     return {
       totalItems: filteredItems.length,
       totalQuantity: filteredItems.reduce((sum, item) => sum + getAvailable(item), 0),
-      totalValue: filteredItems.reduce((sum, item) => sum + (getAvailable(item) * Number(item.unit_cost)), 0),
+      // استخدام سعر البيع (unit_price) بدلاً من التكلفة (unit_cost)
+      totalValue: filteredItems.reduce((sum, item) => sum + (getAvailable(item) * Number(item.unit_price || item.unit_cost)), 0),
       uniqueInvoices: new Set(filteredItems.map(item => item.invoice_id)).size
     }
   }, [filteredItems])
@@ -681,7 +694,7 @@ export default function ThirdPartyInventoryPage() {
                       <TableHead className="text-xs sm:text-sm font-semibold hidden lg:table-cell">{isAr ? "الفرع" : "Branch"}</TableHead>
                       <TableHead className="text-xs sm:text-sm font-semibold hidden lg:table-cell">{isAr ? "المخزن" : "Warehouse"}</TableHead>
                       <TableHead className="text-xs sm:text-sm font-semibold text-center">{isAr ? "الكمية" : "Qty"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm font-semibold text-center hidden sm:table-cell">{isAr ? "التكلفة" : "Cost"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold text-center hidden sm:table-cell">{isAr ? "السعر" : "Price"}</TableHead>
                       <TableHead className="text-xs sm:text-sm font-semibold text-center">{isAr ? "القيمة" : "Value"}</TableHead>
                       <TableHead className="text-xs sm:text-sm font-semibold text-center">{isAr ? "الحالة" : "Status"}</TableHead>
                       <TableHead className="text-xs sm:text-sm font-semibold text-center w-16">{isAr ? "عرض" : "View"}</TableHead>
@@ -698,7 +711,8 @@ export default function ThirdPartyInventoryPage() {
                     ) : (
                       filteredItems.map(item => {
                         const availableQty = getAvailableQty(item)
-                        const value = availableQty * Number(item.unit_cost)
+                        // استخدام سعر البيع (unit_price) بدلاً من التكلفة (unit_cost)
+                        const value = availableQty * Number(item.unit_price || item.unit_cost)
                         const invoiceStatus = item.invoices?.status || 'sent'
                         return (
                           <TableRow key={item.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
@@ -738,9 +752,9 @@ export default function ThirdPartyInventoryPage() {
                                 {availableQty.toLocaleString()}
                               </Badge>
                             </TableCell>
-                            {/* التكلفة */}
+                            {/* السعر */}
                             <TableCell className="text-xs sm:text-sm text-center hidden sm:table-cell">
-                              {Number(item.unit_cost).toLocaleString()}
+                              {Number(item.unit_price || item.unit_cost).toLocaleString()}
                             </TableCell>
                             {/* القيمة */}
                             <TableCell className="text-center">
