@@ -16,6 +16,7 @@ import { MultiSelect } from "@/components/ui/multi-select"
 import { FilterContainer } from "@/components/ui/filter-container"
 import { type UserContext } from "@/lib/validation"
 import { StatusBadge } from "@/components/DataTableFormatters"
+import { usePermissions } from "@/lib/permissions-context"
 
 interface ThirdPartyItem {
   id: string
@@ -71,6 +72,7 @@ interface Employee {
 
 export default function ThirdPartyInventoryPage() {
   const supabase = useSupabase()
+  const { canAccessPage } = usePermissions()
   const [items, setItems] = useState<ThirdPartyItem[]>([])
   const [providers, setProviders] = useState<ShippingProvider[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -82,6 +84,9 @@ export default function ThirdPartyInventoryPage() {
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>("employee")
+  
+  // التحقق من صلاحية الوصول لصفحة الفواتير
+  const canAccessInvoices = canAccessPage("invoices")
 
   // Language
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
@@ -734,18 +739,20 @@ export default function ThirdPartyInventoryPage() {
                               </span>
                             </TableCell>
                             <TableCell className="text-center">
-                              {item.invoices?.sales_order_id ? (
+                              {canAccessInvoices ? (
+                                <Link href={`/invoices/${item.invoice_id}`}>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title={isAr ? "عرض الفاتورة" : "View Invoice"}>
+                                    <ExternalLink className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                              ) : item.invoices?.sales_order_id ? (
                                 <Link href={`/sales-orders/${item.invoices.sales_order_id}`}>
                                   <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title={isAr ? "عرض أمر البيع" : "View Sales Order"}>
                                     <ExternalLink className="h-4 w-4" />
                                   </Button>
                                 </Link>
                               ) : (
-                                <Link href={`/invoices/${item.invoice_id}`}>
-                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title={isAr ? "عرض الفاتورة" : "View Invoice"}>
-                                    <ExternalLink className="h-4 w-4" />
-                                  </Button>
-                                </Link>
+                                <span className="text-gray-400">-</span>
                               )}
                             </TableCell>
                           </TableRow>
