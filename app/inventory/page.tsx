@@ -402,35 +402,48 @@ export default function InventoryPage() {
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                {/* 🔐 Branch Selector - للمستخدمين العاديين: disabled (يعرض فرعهم)، للـ Admin: enabled */}
-                {branches.length > 0 && userContext && (
+                {/* 🔐 Branch Selector
+                    - Admin / General Manager: يمكنه اختيار أي فرع
+                    - Employee / Accountant / Store Manager: يظهر فرعه فقط (حقل قراءة فقط) */}
+                {userContext && (
                   <div className="flex items-center gap-2 sm:gap-3">
                     <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                       <Building2 className="w-4 h-4" />
                       <span className="hidden sm:inline">{appLang === 'en' ? 'Branch:' : 'الفرع:'}</span>
                     </div>
-                    <Select
-                      value={selectedBranchId}
-                      onValueChange={(value) => {
-                        if (isAdmin) {
+
+                    {isAdmin ? (
+                      <Select
+                        value={selectedBranchId}
+                        onValueChange={(value) => {
                           applyBranchDefaults(userContext.company_id, value).catch((e) => {
                             toastActionError(toast, "الحوكمة", "المخزون", e?.message || "تعذر تطبيق افتراضيات الفرع")
                           })
+                        }}
+                        disabled={branches.length === 0}
+                      >
+                        <SelectTrigger className="w-[180px] sm:w-[220px] bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
+                          <SelectValue placeholder={appLang === 'en' ? 'Select branch' : 'اختر الفرع'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {branches.map((branch) => (
+                            <SelectItem key={branch.id} value={branch.id}>
+                              <span>{branch.name || branch.branch_name || ''}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        value={
+                          (branches[0]?.name ||
+                            branches[0]?.branch_name ||
+                            (appLang === 'en' ? 'Your branch' : 'فرعك')) as string
                         }
-                      }}
-                      disabled={!isAdmin || branches.length === 0} // 🔐 disabled للمستخدمين العاديين
-                    >
-                      <SelectTrigger className="w-[180px] sm:w-[220px] bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
-                        <SelectValue placeholder={appLang === 'en' ? 'Select branch' : 'اختر الفرع'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {branches.map((branch) => (
-                          <SelectItem key={branch.id} value={branch.id}>
-                            <span>{branch.name || branch.branch_name || ''}</span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                        disabled
+                        className="w-[180px] sm:w-[220px] bg-gray-100 dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 h-9 text-sm cursor-not-allowed"
+                      />
+                    )}
                   </div>
                 )}
 
