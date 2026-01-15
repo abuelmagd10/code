@@ -216,15 +216,21 @@ export function buildSalesOrderData(
   payload: any,
   context: EnhancedGovernanceContext
 ): any {
+  // 🔐 إزالة أي حقول حوكمة قديمة قد تكون موجودة في payload
+  const { 
+    _governance_enforced, 
+    _governance_role, 
+    _governance_timestamp,
+    ...cleanPayload 
+  } = payload
+
   return {
-    ...payload,
+    ...cleanPayload,
     company_id: context.companyId,
     branch_id: context.branchId,
     warehouse_id: context.warehouseId,
-    cost_center_id: context.costCenterId,
-    // Add governance metadata for audit trail
-    _governance_enforced: true,
-    _governance_role: context.role,
-    _governance_timestamp: new Date().toISOString()
+    cost_center_id: context.costCenterId
+    // 📌 ملاحظة: لا نضيف أعمدة metadata لأنها غير موجودة في جدول sales_orders
+    // إذا كنت تريد إضافة audit trail، يجب إنشاء جدول منفصل أو إضافة الأعمدة للجدول
   }
 }
