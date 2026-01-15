@@ -3,5 +3,8 @@
     "npm.packageManager": "auto",
     "augment.disableFocusOnAugmentPanel": true,
     "augment.experimental.terminal.vscodeTerminalStrategy": "Augment",
-    "augment.nextEdit.enableGlobalBackgroundSuggestions": true
+    "augment.nextEdit.enableGlobalBackgroundSuggestions": true,
+    "Codegeex.SidebarUI.LanguagePreference": "English",
+    "Codegeex.CommitMessage.LanguagePreference": "English",
+    "Codegeex.RepoIndex": true
 }

@@ -237,13 +237,18 @@ export default function InventoryPage() {
       // 🔐 بناء قواعد الحوكمة
       const rules = buildDataVisibilityFilter(context)
       
-      // 🔐 قواعد الحوكمة بدون cost_center_id و warehouse_id
-      // (لأننا نريد استخدام warehouseId المحدد من selector وليس من userContext)
+      // 🔐 قواعد الحوكمة للمخزون:
+      // - نعطل filterByCostCenter لأننا نتعامل مع transfer_in/transfer_out في JavaScript
+      // - نعطل filterByWarehouse لأننا نستخدم warehouseId المحدد من selector
+      // - نعطل filterByCreatedBy لأن الموظف يجب أن يرى كل حركات المخزون في فرعه/مخزنه
+      //   (هذا مختلف عن Sales Orders حيث الموظف يرى فقط طلباته)
       const rulesWithoutCostCenter = { 
         ...rules, 
         filterByCostCenter: false,
-        filterByWarehouse: false, // نعطله لأننا نستخدم warehouseId من المعاملات
-        warehouseId: null
+        filterByWarehouse: false,
+        warehouseId: null,
+        filterByCreatedBy: false, // 🔐 المخزون: الموظف يرى كل حركات فرعه/مخزنه
+        createdByUserId: null
       }
       
       // 🔐 تطبيق الفلاتر الإلزامية على استعلامات المخزون
@@ -265,6 +270,7 @@ export default function InventoryPage() {
 
       // 🔐 فلترة في JavaScript: نأخذ جميع الحركات في نفس cost_center_id المحدد
       // + جميع حركات transfer_in و transfer_out (لأنها قد تكون في cost_center_id مختلف لكن في نفس الفرع)
+      // 📌 ملاحظة: لا نفلتر بـ created_by_user_id لأن الموظف يرى كل حركات فرعه/مخزنه
       const txs = (transactionsData || []).filter((t: any) => {
         const txCostCenterId = String(t.cost_center_id || '')
         const txType = String(t.transaction_type || '')
@@ -301,6 +307,7 @@ export default function InventoryPage() {
       
       // 🔐 فلترة في JavaScript: نأخذ جميع الحركات في نفس cost_center_id المحدد
       // + جميع حركات transfer_in و transfer_out (لأنها قد تكون في cost_center_id مختلف لكن في نفس الفرع)
+      // 📌 ملاحظة: لا نفلتر بـ created_by_user_id لأن الموظف يرى كل حركات فرعه/مخزنه
       const allTransactions = (allTransactionsRaw || []).filter((t: any) => {
         const txCostCenterId = String(t.cost_center_id || '')
         const txType = String(t.transaction_type || '')
