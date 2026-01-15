@@ -229,8 +229,9 @@ export default function ThirdPartyInventoryPage() {
         }
       }))
 
-      // ✅ جلب الفواتير المرسلة (Sent/Confirmed) مع شركات الشحن
-      // ثم ربطها مع third_party_inventory للحصول على الكميات
+      // ✅ جلب الفواتير المرسلة مع شركات الشحن
+      // تشمل: sent, confirmed, partially_returned, partially_paid
+      // (البضائع تبقى لدى الغير حتى يتم استلام كامل المبلغ أو إرجاع كامل البضاعة)
       const { data: sentInvoices, error: invoicesErr } = await supabase
         .from("invoices")
         .select(`
@@ -248,7 +249,7 @@ export default function ThirdPartyInventoryPage() {
           warehouses(name)
         `)
         .eq("company_id", companyId)
-        .in("status", ["sent", "confirmed"])
+        .in("status", ["sent", "confirmed", "partially_returned", "partially_paid"])
         .not("shipping_provider_id", "is", null)
         .order("invoice_date", { ascending: false })
 
