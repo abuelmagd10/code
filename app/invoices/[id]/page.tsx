@@ -512,7 +512,7 @@ export default function InvoiceDetailPage() {
             
             // 📝 Audit Log: تسجيل عملية الإرسال
             if (auditUserId && invoice.company_id) {
-              await supabase.from("audit_logs").insert({
+              const { error: auditErr } = await supabase.from("audit_logs").insert({
                 company_id: invoice.company_id,
                 user_id: auditUserId,
                 action: "UPDATE",
@@ -525,7 +525,8 @@ export default function InvoiceDetailPage() {
                   shipping_provider_id: invoice.shipping_provider_id,
                   total_amount: invoice.total_amount
                 }
-              }).catch((err: unknown) => console.warn("Audit log failed:", err))
+              })
+              if (auditErr) console.warn("Audit log failed:", auditErr)
             }
             
           } else if (newStatus === "draft" || newStatus === "cancelled") {
@@ -535,7 +536,7 @@ export default function InvoiceDetailPage() {
             
             // 📝 Audit Log: تسجيل عملية الإلغاء/الإرجاع لمسودة
             if (auditUserId && invoice.company_id) {
-              await supabase.from("audit_logs").insert({
+              const { error: auditErr2 } = await supabase.from("audit_logs").insert({
                 company_id: invoice.company_id,
                 user_id: auditUserId,
                 action: "UPDATE",
@@ -544,7 +545,8 @@ export default function InvoiceDetailPage() {
                 record_identifier: invoice.invoice_number,
                 old_data: { status: invoice.status },
                 new_data: { status: newStatus }
-              }).catch((err: unknown) => console.warn("Audit log failed:", err))
+              })
+              if (auditErr2) console.warn("Audit log failed:", auditErr2)
             }
           }
         }
@@ -2100,7 +2102,7 @@ export default function InvoiceDetailPage() {
 
       // 📝 Audit Log: تسجيل عملية الدفع
       if (user?.id && invoice.company_id) {
-        await supabase.from("audit_logs").insert({
+        const { error: auditErr3 } = await supabase.from("audit_logs").insert({
           company_id: invoice.company_id,
           user_id: user.id,
           action: "UPDATE",
@@ -2117,7 +2119,8 @@ export default function InvoiceDetailPage() {
             payment_amount: amount,
             third_party_cleared: clearResult.success
           }
-        }).catch((err: unknown) => console.warn("Audit log failed:", err))
+        })
+        if (auditErr3) console.warn("Audit log failed:", auditErr3)
       }
 
       // أعِد التحميل وأغلق النموذج

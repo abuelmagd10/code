@@ -85,6 +85,19 @@ export async function transferToThirdParty(params: TransferToThirdPartyParams): 
       return true
     }
 
+    // التحقق من عدم وجود حركات مخزون سابقة لهذه الفاتورة
+    const { data: existingMovements } = await supabase
+      .from("inventory_transactions")
+      .select("id")
+      .eq("reference_id", invoiceId)
+      .eq("transaction_type", "sale")
+      .limit(1)
+
+    if (existingMovements && existingMovements.length > 0) {
+      console.log(`⚠️ Inventory movements already exist for invoice ${invoiceId}`)
+      return true
+    }
+
     // جلب بنود الفاتورة مع معلومات المنتج
     const { data: invoiceItems, error: itemsError } = await supabase
       .from("invoice_items")
