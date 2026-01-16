@@ -373,10 +373,17 @@ export default function WriteOffsPage() {
                   })
                 } else if (!rpcError && availableQty !== null && availableQty !== undefined) {
                   // تحديث الرصيد بعد الحصول عليه (مع التحقق من أن المنتج لم يتغير)
+                  // ⚠️ Fix: لا نستبدل قيمة quantity_on_hand الإيجابية بـ 0 من RPC
+                  // RPC قد ترجع 0 إذا لم تكن هناك transactions في المخزن المحدد
+                  // في هذه الحالة، نحتفظ بـ quantity_on_hand كـ fallback
                   setNewItems(prevItems => {
                     const newUpdated = [...prevItems]
                     if (newUpdated[index]?.product_id === value) {
-                      newUpdated[index] = { ...newUpdated[index], available_qty: availableQty || 0 }
+                      const currentQty = newUpdated[index].available_qty || 0
+                      // فقط نحدث إذا كانت القيمة الجديدة أكبر من 0، أو إذا كانت القيمة الحالية 0
+                      if (availableQty > 0 || currentQty === 0) {
+                        newUpdated[index] = { ...newUpdated[index], available_qty: availableQty || 0 }
+                      }
                     }
                     return newUpdated
                   })
@@ -697,20 +704,25 @@ export default function WriteOffsPage() {
                   const { data: transactions } = await fallbackQuery
                   const calculatedQty = Math.max(0, (transactions || []).reduce((sum: number, tx: any) => sum + Number(tx.quantity_change || 0), 0))
 
-                  // تحديث الرصيد المحسوب
+                  // تحديث الرصيد المحسوب - فقط إذا كان أكبر من 0 أو يوجد transactions
+                  const shouldUpdateQty = calculatedQty > 0 || (transactions && transactions.length > 0)
                   setEditItems(prevItems => {
                     const newUpdated = [...prevItems]
-                    if (newUpdated[index]?.product_id === value) {
+                    if (newUpdated[index]?.product_id === value && shouldUpdateQty) {
                       newUpdated[index] = { ...newUpdated[index], available_qty: calculatedQty }
                     }
                     return newUpdated
                   })
                 } else if (!rpcError && availableQty !== null && availableQty !== undefined) {
                   // تحديث الرصيد بعد الحصول عليه (مع التحقق من أن المنتج لم يتغير)
+                  // ⚠️ Fix: لا نستبدل قيمة quantity_on_hand الإيجابية بـ 0 من RPC
                   setEditItems(prevItems => {
                     const newUpdated = [...prevItems]
                     if (newUpdated[index]?.product_id === value) {
-                      newUpdated[index] = { ...newUpdated[index], available_qty: availableQty || 0 }
+                      const currentQty = newUpdated[index].available_qty || 0
+                      if (availableQty > 0 || currentQty === 0) {
+                        newUpdated[index] = { ...newUpdated[index], available_qty: availableQty || 0 }
+                      }
                     }
                     return newUpdated
                   })
