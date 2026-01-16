@@ -84,8 +84,7 @@ export async function getAvailableInventoryQuantity(
       )
     }
 
-    // إذا كانت النتيجة null أو undefined فقط، استخدم fallback
-    // لا نستخدم fallback إذا كانت النتيجة 0 لأن الـ RPC function يجب أن تعيد القيمة الصحيحة (0 أو 1200)
+    // إذا كانت النتيجة null أو undefined، استخدم fallback
     if (data === null || data === undefined) {
       console.log(`[getAvailableInventoryQuantity] RPC returned ${data}, using fallback calculation for product ${productId}, warehouse ${warehouseId}, branch ${branchId}`)
       const fallbackResult = await calculateAvailableQuantityFallback(
@@ -98,6 +97,23 @@ export async function getAvailableInventoryQuantity(
       )
       console.log(`[getAvailableInventoryQuantity] Fallback calculation returned: ${fallbackResult}`)
       return fallbackResult
+    }
+
+    // إذا كانت النتيجة 0، استخدم fallback للتحقق من quantity_on_hand
+    // لأن الـ RPC function قد ترجع 0 إذا لم توجد transactions، حتى لو كان هناك quantity_on_hand
+    if (data === 0) {
+      console.log(`[getAvailableInventoryQuantity] RPC returned 0, checking fallback for product ${productId}, warehouse ${warehouseId}, branch ${branchId}`)
+      const fallbackResult = await calculateAvailableQuantityFallback(
+        supabase,
+        companyId,
+        branchId,
+        warehouseId,
+        costCenterId,
+        productId
+      )
+      console.log(`[getAvailableInventoryQuantity] Fallback calculation returned: ${fallbackResult}`)
+      // إذا كان fallback > 0، استخدمه. وإلا، استخدم 0 من RPC
+      return fallbackResult > 0 ? fallbackResult : 0
     }
 
     console.log(`[getAvailableInventoryQuantity] RPC returned: ${data}`)
