@@ -212,7 +212,10 @@ export default function InvoiceDetailPage() {
         setPermPayView(!!payView)
         const shipWrite = await canAction(supabase, "shipments", "write")
         setPermShipmentWrite(!!shipWrite)
-      } catch { }
+      } catch {
+        // في حالة فشل التحقق من الصلاحيات، نعتبر أن المستخدم غير مصرح له
+        setPermRead(false)
+      }
     })()
   }, [supabase])
 
@@ -2474,18 +2477,7 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  if (isLoading || permRead === null) {
-    return (
-      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <Sidebar />
-        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 print-area overflow-x-hidden">
-          <p className="text-center py-8">جاري التحميل...</p>
-        </main>
-      </div>
-    )
-  }
-
-  // التحقق من صلاحية القراءة
+  // التحقق من صلاحية القراءة أولاً (الأولوية للأمان)
   if (permRead === false) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -2507,6 +2499,18 @@ export default function InvoiceDetailPage() {
               {appLang === 'en' ? 'Go Back' : 'العودة'}
             </Button>
           </div>
+        </main>
+      </div>
+    )
+  }
+
+  // عرض شاشة التحميل فقط إذا كانت الصلاحيات لم تُحدد بعد أو البيانات لا تزال تُحمَّل
+  if (isLoading || permRead === null) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 print-area overflow-x-hidden">
+          <p className="text-center py-8">جاري التحميل...</p>
         </main>
       </div>
     )
