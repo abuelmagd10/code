@@ -58,11 +58,29 @@ export async function getAvailableInventoryQuantity(
     })
     console.log(`[getAvailableInventoryQuantity] RPC response: data=${data}, error=${error?.message || 'none'}`)
 
-    // ✅ إذا نجحت الـ RPC function، استخدم النتيجة مباشرة (حتى لو كانت 0)
-    // لأن الـ RPC function الآن تُرجع quantity_on_hand إذا لم توجد transactions
+    // ✅ إذا نجحت الـ RPC function، استخدم النتيجة مباشرة
     if (!error && data !== null && data !== undefined) {
-      console.log(`[getAvailableInventoryQuantity] RPC returned: ${data}`)
-      return Math.max(0, Number(data))
+      const rpcResult = Math.max(0, Number(data))
+      console.log(`[getAvailableInventoryQuantity] RPC returned: ${rpcResult}`)
+      
+      // ✅ الحل الجذري: إذا كانت النتيجة 0، استخدم fallback للتحقق من quantity_on_hand
+      // لأن الـ RPC function القديمة قد تُرجع 0 حتى لو كان هناك quantity_on_hand
+      if (rpcResult === 0) {
+        console.log(`[getAvailableInventoryQuantity] RPC returned 0, checking fallback for quantity_on_hand`)
+        const fallbackResult = await calculateAvailableQuantityFallback(
+          supabase,
+          companyId,
+          branchId,
+          warehouseId,
+          costCenterId,
+          productId
+        )
+        console.log(`[getAvailableInventoryQuantity] Fallback returned: ${fallbackResult}`)
+        // استخدم fallback إذا كان > 0، وإلا استخدم 0 من RPC
+        return fallbackResult > 0 ? fallbackResult : 0
+      }
+      
+      return rpcResult
     }
 
     // ✅ فقط في حالة فشل الـ RPC function (خطأ أو غير موجودة)، استخدم fallback
@@ -188,7 +206,8 @@ async function calculateAvailableQuantityFallback(
       return Math.max(0, totalQuantity)
     }
 
-    // لا توجد transactions - استخدم quantity_on_hand من المنتج كـ fallback
+    // ✅ الحل الجذري: لا توجد transactions - استخدم quantity_on_hand من المنتج مباشرة
+    // هذا يضمن أن المنتجات التي لم يتم تسجيل حركات مخزون لها يمكن إهلاكها بناءً على quantity_on_hand
     const { data: product, error: productError } = await supabase
       .from("products")
       .select("quantity_on_hand")
