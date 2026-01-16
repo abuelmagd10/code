@@ -71,7 +71,12 @@ export async function POST(request: NextRequest) {
     }))
 
     // 🧾 Governance Rule: التحقق من الرصيد المتاح
-    console.log(`[write-off/validate] Validating ${validationItems.length} items for warehouse ${warehouse_id}, branch ${branch_id}`)
+    console.log(`[write-off/validate] Validating ${validationItems.length} items`)
+    console.log(`[write-off/validate] Company ID: ${companyId}`)
+    console.log(`[write-off/validate] Warehouse ID: ${warehouse_id}`)
+    console.log(`[write-off/validate] Branch ID: ${branch_id}`)
+    console.log(`[write-off/validate] Cost Center ID: ${cost_center_id}`)
+    console.log(`[write-off/validate] Items:`, JSON.stringify(validationItems, null, 2))
     const result = await validateWriteOffItems(
       supabase,
       companyId,
@@ -81,6 +86,9 @@ export async function POST(request: NextRequest) {
       cost_center_id || null
     )
     console.log(`[write-off/validate] Validation result: isValid=${result.isValid}, errors=${result.errors.length}`)
+    if (result.errors.length > 0) {
+      console.log(`[write-off/validate] Validation errors:`, JSON.stringify(result.errors, null, 2))
+    }
 
     return NextResponse.json(result)
   } catch (err: any) {
