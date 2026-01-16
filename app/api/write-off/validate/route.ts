@@ -59,30 +59,48 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // ✅ الحل الجذري: جلب branch_id من warehouse إذا لم يكن محدداً
+    let finalBranchId = branch_id || null
+    const finalWarehouseId = warehouse_id || null
+    
+    if (!finalBranchId && finalWarehouseId) {
+      const { data: warehouse } = await supabase
+        .from("warehouses")
+        .select("branch_id")
+        .eq("id", finalWarehouseId)
+        .eq("company_id", companyId)
+        .single()
+      
+      if (warehouse?.branch_id) {
+        finalBranchId = warehouse.branch_id
+        console.log(`[write-off/validate] Retrieved branch_id ${finalBranchId} from warehouse ${finalWarehouseId}`)
+      }
+    }
+
     // تحويل items إلى WriteOffItemValidation format
     const validationItems: WriteOffItemValidation[] = items.map((item) => ({
       product_id: item.product_id,
       product_name: item.product_name,
       product_sku: item.product_sku,
       quantity: Number(item.quantity || 0),
-      warehouse_id: item.warehouse_id || warehouse_id || null,
-      branch_id: item.branch_id || branch_id || null,
+      warehouse_id: item.warehouse_id || finalWarehouseId || null,
+      branch_id: item.branch_id || finalBranchId || null,
       cost_center_id: item.cost_center_id || cost_center_id || null,
     }))
 
     // 🧾 Governance Rule: التحقق من الرصيد المتاح
     console.log(`[write-off/validate] Validating ${validationItems.length} items`)
     console.log(`[write-off/validate] Company ID: ${companyId}`)
-    console.log(`[write-off/validate] Warehouse ID: ${warehouse_id}`)
-    console.log(`[write-off/validate] Branch ID: ${branch_id}`)
+    console.log(`[write-off/validate] Warehouse ID: ${finalWarehouseId}`)
+    console.log(`[write-off/validate] Branch ID: ${finalBranchId}`)
     console.log(`[write-off/validate] Cost Center ID: ${cost_center_id}`)
     console.log(`[write-off/validate] Items:`, JSON.stringify(validationItems, null, 2))
     const result = await validateWriteOffItems(
       supabase,
       companyId,
       validationItems,
-      warehouse_id || null,
-      branch_id || null,
+      finalWarehouseId,
+      finalBranchId,
       cost_center_id || null
     )
     console.log(`[write-off/validate] Validation result: isValid=${result.isValid}, errors=${result.errors.length}`)
