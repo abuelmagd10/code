@@ -195,10 +195,12 @@ export default function InvoiceDetailPage() {
 
   useEffect(() => {
     (async () => {
+      let readCheckCompleted = false
       try {
         // التحقق من صلاحية القراءة أولاً
         const readOk = await canAction(supabase, "invoices", "read")
         setPermRead(!!readOk)
+        readCheckCompleted = true
         
         if (!readOk) return // إذا لم يكن للمستخدم صلاحية القراءة، لا داعي للتحقق من الباقي
         
@@ -213,8 +215,11 @@ export default function InvoiceDetailPage() {
         const shipWrite = await canAction(supabase, "shipments", "write")
         setPermShipmentWrite(!!shipWrite)
       } catch {
-        // في حالة فشل التحقق من الصلاحيات، نعتبر أن المستخدم غير مصرح له
-        setPermRead(false)
+        // فقط إذا فشل التحقق من صلاحية القراءة نفسها، نعتبر أن المستخدم غير مصرح له
+        // أما إذا نجحت القراءة وفشلت صلاحيات أخرى، فلا نغير صلاحية القراءة
+        if (!readCheckCompleted) {
+          setPermRead(false)
+        }
       }
     })()
   }, [supabase])
