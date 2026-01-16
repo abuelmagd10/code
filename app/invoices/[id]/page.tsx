@@ -3236,7 +3236,8 @@ export default function InvoiceDetailPage() {
           <div className="flex gap-3 print:hidden mt-4">
             {invoice.status !== "paid" && (
               <>
-                {invoice.status === "draft" && permUpdate ? (
+                {/* ✅ زر تحديد كمرسلة يظهر للفواتير draft أو invoiced (المحولة من أمر بيع) */}
+                {(invoice.status === "draft" || invoice.status === "invoiced") && permUpdate ? (
                   <Button onClick={() => handleChangeStatus("sent")} className="bg-blue-600 hover:bg-blue-700" disabled={changingStatus || isPending}>
                     {changingStatus || isPending ? (appLang === 'en' ? 'Updating...' : 'جاري التحديث...') : (appLang === 'en' ? 'Mark as Sent' : 'تحديد كمرسلة')}
                   </Button>
