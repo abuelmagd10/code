@@ -460,15 +460,23 @@ function SalesOrdersContent() {
           const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
           const hasPartialReturn = returnedAmount > 0 && returnedAmount < originalTotal
           
+          // ✅ تحديد حالة الدفع بناءً على حالة الفاتورة الفعلية أولاً ثم المبالغ
           let paymentStatus: string
-          if (isFullyReturned) {
+          const invoiceStatus = linkedInvoice?.status || ''
+          
+          // إذا كانت الفاتورة draft أو invoiced (قبل الإرسال) → لا نعرض حالة دفع
+          if (invoiceStatus === 'draft' || invoiceStatus === 'invoiced') {
+            paymentStatus = 'draft' // حالة مسودة/قيد الإنشاء
+          } else if (isFullyReturned) {
             paymentStatus = 'fully_returned'
           } else if (paidAmount >= originalTotal && originalTotal > 0) {
             paymentStatus = 'paid'
           } else if (paidAmount > 0) {
             paymentStatus = 'partially_paid'
-          } else {
+          } else if (invoiceStatus === 'sent') {
             paymentStatus = 'sent'
+          } else {
+            paymentStatus = invoiceStatus || 'draft' // استخدام حالة الفاتورة الفعلية
           }
 
           // تحديد نص حالة الدفع
@@ -477,6 +485,7 @@ function SalesOrdersContent() {
             if (paymentStatus === 'partially_paid') return appLang === 'en' ? 'Partial Pay' : 'مدفوعة جزئياً';
             if (paymentStatus === 'sent') return appLang === 'en' ? 'Sent' : 'مرسلة';
             if (paymentStatus === 'fully_returned') return appLang === 'en' ? 'Returned' : 'مرتجعة';
+            if (paymentStatus === 'draft' || paymentStatus === 'invoiced') return appLang === 'en' ? 'Draft' : 'مسودة';
             return '';
           };
 
