@@ -84,7 +84,8 @@ export async function getAvailableInventoryQuantity(
 
     // إذا كانت النتيجة 0 أو null، استخدم fallback للتحقق من quantity_on_hand
     if (data === null || data === undefined || data === 0) {
-      return await calculateAvailableQuantityFallback(
+      console.log(`[getAvailableInventoryQuantity] RPC returned ${data}, using fallback calculation for product ${productId}, warehouse ${warehouseId}, branch ${branchId}`)
+      const fallbackResult = await calculateAvailableQuantityFallback(
         supabase,
         companyId,
         branchId,
@@ -92,8 +93,11 @@ export async function getAvailableInventoryQuantity(
         costCenterId,
         productId
       )
+      console.log(`[getAvailableInventoryQuantity] Fallback calculation returned: ${fallbackResult}`)
+      return fallbackResult
     }
 
+    console.log(`[getAvailableInventoryQuantity] RPC returned: ${data}`)
     return data
   } catch (error: any) {
     console.error("Error in getAvailableInventoryQuantity:", error)
@@ -204,9 +208,12 @@ async function calculateAvailableQuantityFallback(
       .single()
 
     if (!productError && product) {
-      return Math.max(0, Number(product.quantity_on_hand || 0))
+      const qty = Math.max(0, Number(product.quantity_on_hand || 0))
+      console.log(`[calculateAvailableQuantityFallback] Using quantity_on_hand from product: ${qty}`)
+      return qty
     }
 
+    console.log(`[calculateAvailableQuantityFallback] No product found or error: ${productError?.message || 'unknown'}`)
     return 0
   } catch (error) {
     console.error("Error in calculateAvailableQuantityFallback:", error)
