@@ -40,9 +40,9 @@ export interface WriteOffValidationResult {
 export async function getAvailableInventoryQuantity(
   supabase: SupabaseClient,
   companyId: string,
-  branchId: string,
-  warehouseId: string,
-  costCenterId: string,
+  branchId: string | null,
+  warehouseId: string | null,
+  costCenterId: string | null,
   productId: string
 ): Promise<number> {
   try {
@@ -107,9 +107,9 @@ export async function getAvailableInventoryQuantity(
 async function calculateAvailableQuantityFallback(
   supabase: SupabaseClient,
   companyId: string,
-  branchId: string,
-  warehouseId: string,
-  costCenterId: string,
+  branchId: string | null,
+  warehouseId: string | null,
+  costCenterId: string | null,
   productId: string
 ): Promise<number> {
   try {
@@ -216,9 +216,9 @@ export async function validateWriteOffItems(
   supabase: SupabaseClient,
   companyId: string,
   items: WriteOffItemValidation[],
-  warehouseId: string,
-  branchId: string,
-  costCenterId: string
+  warehouseId: string | null,
+  branchId: string | null,
+  costCenterId: string | null
 ): Promise<WriteOffValidationResult> {
   const errors: WriteOffValidationResult["errors"] = []
 
