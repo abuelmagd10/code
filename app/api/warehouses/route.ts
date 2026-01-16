@@ -22,7 +22,7 @@ import {
 export async function GET(request: NextRequest) {
   try {
     // 1️⃣ تطبيق الحوكمة (إلزامي)
-    const governance = await enforceGovernance()
+    const governance = await enforceGovernance(request)
     
     const supabase = createClient(cookies())
     
@@ -31,8 +31,18 @@ export async function GET(request: NextRequest) {
       .from("warehouses")
       .select("*, branches(id, name, branch_name), cost_centers(id, cost_center_name)")
     
-    // 3️⃣ تطبيق فلاتر الحوكمة (إلزامي)
-    query = applyGovernanceFilters(query, governance)
+    // 3️⃣ تطبيق فلاتر الحوكمة (إلزامي) - فقط company_id و branch_id (لا warehouse_id لأننا نجلب المخازن نفسها)
+    query = query.eq('company_id', governance.companyId)
+    
+    // تطبيق فلتر branch_id فقط إذا كان موجوداً
+    if (governance.branchIds.length > 0) {
+      // ✅ استخدام .in() للسماح بالمخازن المرتبطة بأي من الفروع المسموح بها
+      query = query.in('branch_id', governance.branchIds)
+    }
+    
+    // ✅ لا نطبق فلتر warehouse_id لأننا نجلب المخازن نفسها
+    // ✅ لا نطبق فلتر cost_center_id لأننا نجلب المخازن نفسها
+    
     query = query.order("is_main", { ascending: false }).order("name")
 
     const { data: warehouses, error: dbError } = await query
@@ -78,7 +88,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // 1️⃣ تطبيق الحوكمة (إلزامي)
-    const governance = await enforceGovernance()
+    const governance = await enforceGovernance(request)
     
     // التحقق من الصلاحيات
     if (!['admin', 'gm'].includes(governance.role)) {
@@ -90,11 +100,21 @@ export async function POST(request: NextRequest) {
     
     const body = await request.json()
     
-    // 2️⃣ إضافة بيانات الحوكمة تلقائياً
-    const dataWithGovernance = addGovernanceData(body, governance)
+    // 2️⃣ إضافة بيانات الحوكمة تلقائياً (فقط company_id و branch_id - لا warehouse_id لأننا ننشئ مستودعاً جديداً)
+    const dataWithGovernance = {
+      ...body,
+      company_id: governance.companyId,
+      branch_id: body.branch_id || (governance.branchIds.length > 0 ? governance.branchIds[0] : null),
+      // ✅ لا نضيف warehouse_id و cost_center_id لأننا ننشئ مستودعاً جديداً
+    }
     
-    // 3️⃣ التحقق من صحة البيانات (إلزامي)
-    validateGovernanceData(dataWithGovernance, governance)
+    // 3️⃣ التحقق من صحة البيانات (إلزامي) - لكن نتحقق فقط من company_id و branch_id
+    if (dataWithGovernance.company_id !== governance.companyId) {
+      throw new Error('Governance Violation: Invalid company_id')
+    }
+    if (dataWithGovernance.branch_id && !governance.branchIds.includes(dataWithGovernance.branch_id)) {
+      throw new Error('Governance Violation: Invalid branch_id')
+    }
     
     const supabase = createClient(cookies())
     
@@ -125,8 +145,7 @@ export async function POST(request: NextRequest) {
         enforced: true,
         companyId: governance.companyId,
         branchId: dataWithGovernance.branch_id,
-        warehouseId: dataWithGovernance.warehouse_id,
-        costCenterId: dataWithGovernance.cost_center_id
+        // ✅ لا نرجع warehouse_id و cost_center_id لأننا ننشئ مستودعاً جديداً
       }
     }, { status: 201 })
 

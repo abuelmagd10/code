@@ -115,14 +115,24 @@ export default function WarehousesPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      // Load warehouses
-      const { data: warehousesData } = await supabase
-        .from("warehouses")
-        .select("*, branches(name, branch_name), cost_centers(cost_center_name)")
-        .eq("company_id", companyId)
-        .order("is_main", { ascending: false })
-        .order("name")
-      setWarehouses(warehousesData || [])
+      // ✅ استخدام API route مع تطبيق فلاتر الحوكمة
+      const warehousesResponse = await fetch('/api/warehouses', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      if (warehousesResponse.ok) {
+        const warehousesResult = await warehousesResponse.json()
+        if (warehousesResult.success && warehousesResult.data) {
+          setWarehouses(warehousesResult.data || [])
+        } else {
+          console.error("Error loading warehouses:", warehousesResult.error)
+          setWarehouses([])
+        }
+      } else {
+        console.error("Error loading warehouses:", warehousesResponse.statusText)
+        setWarehouses([])
+      }
 
       // Load branches
       const { data: branchesData } = await supabase
