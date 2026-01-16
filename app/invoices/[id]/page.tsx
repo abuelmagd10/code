@@ -1700,21 +1700,25 @@ export default function InvoiceDetailPage() {
       // 📌 للفواتير المرسلة: لا يوجد مدفوعات، لذلك excessPayment = 0
       const excessPayment = invoice.status === 'sent' ? 0 : Math.max(0, currentPaidAmount - newInvoiceTotal)
 
-      // ✅ تحديث الفاتورة: للفواتير المرسلة، نحدث subtotal و tax_amount و total_amount
+      // ✅ تحديث الفاتورة: للفواتير المرسلة، نحدث subtotal و tax_amount و total_amount و status
       if (invoice.status === 'sent') {
+        // ✅ تحديد الحالة الصحيحة بناءً على المرتجع
+        const newStatus = newInvoiceTotal === 0 ? 'fully_returned' : 'partially_returned'
+        
         const { error: updateInvoiceErr } = await supabase.from("invoices").update({
           subtotal: newSubtotal,
           tax_amount: newTax,
           total_amount: newInvoiceTotal,
           returned_amount: newReturnedAmount,
-          return_status: newReturnStatus
+          return_status: newReturnStatus,
+          status: newStatus // ✅ إضافة تحديث الحالة
         }).eq("id", invoice.id)
 
         if (updateInvoiceErr) {
           console.error("❌ Failed to update sent invoice after return:", updateInvoiceErr)
           throw new Error(`فشل تحديث الفاتورة المرسلة: ${updateInvoiceErr.message}`)
         }
-        console.log("✅ Sent invoice updated (amounts corrected):", { invoiceId: invoice.id, newSubtotal, newTax, newInvoiceTotal, newReturnedAmount })
+        console.log("✅ Sent invoice updated (amounts corrected):", { invoiceId: invoice.id, newSubtotal, newTax, newInvoiceTotal, newReturnedAmount, newStatus })
       }
 
       // ✅ عكس المدفوعات الزائدة إذا كان العميل قد دفع أكثر من المبلغ الجديد (للفواتير المدفوعة فقط)
@@ -1776,9 +1780,10 @@ export default function InvoiceDetailPage() {
           returned_amount: newReturnedAmount,
           return_status: newReturnStatus,
           paid_amount: newPaidAmount,
-          status: newInvoiceTotal === 0 ? 'cancelled' :
+          status: newInvoiceTotal === 0 ? 'fully_returned' : // ✅ إصلاح: fully_returned بدلاً من cancelled
             newPaidAmount >= newInvoiceTotal ? 'paid' :
-              newPaidAmount > 0 ? 'partially_paid' : 'sent'
+              newPaidAmount > 0 ? 'partially_paid' : 
+                newReturnedAmount > 0 ? 'partially_returned' : 'sent' // ✅ إصلاح: partially_returned
         }).eq("id", invoice.id)
 
         if (updateErr1) {
@@ -1789,10 +1794,11 @@ export default function InvoiceDetailPage() {
       } else if (invoice.status !== 'sent') {
         // لا يوجد مبلغ زائد، تحديث returned_amount و return_status و status
         // 📌 للفواتير المرسلة: تم التحديث مسبقاً في الكود أعلاه
-        // ✅ إصلاح: تحديث الحالة تلقائياً بناءً على paid_amount و total_amount
+        // ✅ إصلاح: تحديث الحالة تلقائياً بناءً على paid_amount و total_amount و المرتجع
         const newStatus = newInvoiceTotal === 0 ? 'fully_returned' :
           currentPaidAmount >= newInvoiceTotal ? 'paid' :
-            currentPaidAmount > 0 ? 'partially_paid' : 'sent'
+            currentPaidAmount > 0 ? 'partially_paid' : 
+              newReturnedAmount > 0 ? 'partially_returned' : 'sent' // ✅ إصلاح: partially_returned للفواتير المرتجعة جزئياً
 
         const { error: updateErr2 } = await supabase.from("invoices").update({
           returned_amount: newReturnedAmount,

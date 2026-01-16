@@ -521,18 +521,40 @@ export default function NewSalesReturnPage() {
         }
       }
 
-      // Update invoice return_status and returned_amount
+      // Update invoice return_status, returned_amount and status
       let newReturnedAmount = 0
       if (form.invoice_id) {
-        const { data: currentInv } = await supabase.from("invoices").select("returned_amount, total_amount").eq("id", form.invoice_id).single()
+        const { data: currentInv } = await supabase.from("invoices").select("returned_amount, total_amount, paid_amount, status").eq("id", form.invoice_id).single()
         newReturnedAmount = Number(currentInv?.returned_amount || 0) + total
-        const returnStatus = newReturnedAmount >= Number(currentInv?.total_amount || 0) ? "full" : "partial"
-        const { error: invoiceUpdateErr } = await supabase.from("invoices").update({ returned_amount: newReturnedAmount, return_status: returnStatus }).eq("id", form.invoice_id)
+        const invoiceTotal = Number(currentInv?.total_amount || 0)
+        const newInvoiceTotal = Math.max(0, invoiceTotal - newReturnedAmount)
+        const returnStatus = newReturnedAmount >= invoiceTotal ? "full" : "partial"
+        const currentPaidAmount = Number(currentInv?.paid_amount || 0)
+        
+        // ✅ تحديد الحالة الجديدة بناءً على المرتجع والمدفوعات
+        let newStatus: string
+        if (newInvoiceTotal === 0) {
+          newStatus = 'fully_returned'
+        } else if (currentPaidAmount >= newInvoiceTotal) {
+          newStatus = 'paid'
+        } else if (currentPaidAmount > 0) {
+          newStatus = 'partially_paid'
+        } else if (newReturnedAmount > 0) {
+          newStatus = 'partially_returned'
+        } else {
+          newStatus = currentInv?.status || 'sent'
+        }
+        
+        const { error: invoiceUpdateErr } = await supabase.from("invoices").update({ 
+          returned_amount: newReturnedAmount, 
+          return_status: returnStatus,
+          status: newStatus // ✅ إضافة تحديث الحالة
+        }).eq("id", form.invoice_id)
         if (invoiceUpdateErr) {
           console.error("❌ Failed to update invoice after return:", invoiceUpdateErr)
           throw new Error(`فشل تحديث الفاتورة: ${invoiceUpdateErr.message}`)
         }
-        console.log("✅ Invoice updated:", { invoiceId: form.invoice_id, newReturnedAmount, returnStatus })
+        console.log("✅ Invoice updated:", { invoiceId: form.invoice_id, newReturnedAmount, returnStatus, newStatus })
       }
 
       // ===== 🔒 منطق Customer Credit وفقاً للمواصفات =====

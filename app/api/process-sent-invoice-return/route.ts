@@ -163,6 +163,9 @@ export async function POST(request: NextRequest) {
     // تحديد حالة المرتجع
     const returnStatus = newReturnedAmount >= currentTotalAmount ? 'full' : 
                         (newReturnedAmount > 0 ? 'partial' : null)
+    
+    // ✅ تحديد حالة الفاتورة الجديدة بناءً على المرتجع
+    const newInvoiceStatus = newTotalAmount === 0 ? 'fully_returned' : 'partially_returned'
 
     const { error: updateInvoiceErr } = await supabase
       .from("invoices")
@@ -171,7 +174,8 @@ export async function POST(request: NextRequest) {
         tax_amount: newTaxAmount,
         total_amount: newTotalAmount,
         returned_amount: newReturnedAmount,
-        return_status: returnStatus
+        return_status: returnStatus,
+        status: newInvoiceStatus // ✅ إضافة تحديث الحالة
       })
       .eq("id", invoice_id)
 
