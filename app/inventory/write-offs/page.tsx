@@ -361,10 +361,12 @@ export default function WriteOffsPage() {
                   const { data: transactions } = await fallbackQuery
                   const calculatedQty = Math.max(0, (transactions || []).reduce((sum: number, tx: any) => sum + Number(tx.quantity_change || 0), 0))
 
-                  // تحديث الرصيد المحسوب
+                  // تحديث الرصيد المحسوب - فقط إذا كان أكبر من 0 أو لم يكن هناك transactions
+                  // إذا كان calculatedQty = 0 ولا توجد transactions في هذا المخزن، نستخدم quantity_on_hand كـ fallback
+                  const shouldUpdateQty = calculatedQty > 0 || (transactions && transactions.length > 0)
                   setNewItems(prevItems => {
                     const newUpdated = [...prevItems]
-                    if (newUpdated[index]?.product_id === value) {
+                    if (newUpdated[index]?.product_id === value && shouldUpdateQty) {
                       newUpdated[index] = { ...newUpdated[index], available_qty: calculatedQty }
                     }
                     return newUpdated
