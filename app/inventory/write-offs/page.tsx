@@ -1409,7 +1409,7 @@ export default function WriteOffsPage() {
                               <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الكمية" : "Qty"} *</Label>
                               <NumericInput
                                 min={1}
-                                max={item.available_qty}
+                                max={item.available_qty || 999999}
                                 value={item.quantity}
                                 onChange={val => updateItem(idx, "quantity", Math.round(val))}
                                 className="h-9 text-sm text-center"
