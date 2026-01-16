@@ -2655,20 +2655,22 @@ export default function InvoiceDetailPage() {
                             invoice.status === 'sent' ? 'bg-blue-100 text-blue-800 print:bg-blue-50' :
                               invoice.status === 'overdue' ? 'bg-red-100 text-red-800 print:bg-red-50' :
                                 invoice.status === 'cancelled' ? 'bg-red-100 text-red-800 print:bg-red-50' :
-                                  invoice.status === 'fully_returned' ? 'bg-purple-100 text-purple-800 print:bg-purple-50' :
-                                    invoice.status === 'partially_returned' ? 'bg-orange-100 text-orange-800 print:bg-orange-50' :
-                                      invoice.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-800 print:bg-yellow-50' :
-                                        'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 print:bg-gray-50'
+                                  invoice.status === 'invoiced' ? 'bg-gray-100 text-gray-800 print:bg-gray-50' :
+                                    invoice.status === 'fully_returned' ? 'bg-purple-100 text-purple-800 print:bg-purple-50' :
+                                      invoice.status === 'partially_returned' ? 'bg-orange-100 text-orange-800 print:bg-orange-50' :
+                                        invoice.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-800 print:bg-yellow-50' :
+                                          'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 print:bg-gray-50'
                             }`}>
                             {invoice.status === 'paid' ? (appLang === 'en' ? 'Paid' : 'مدفوعة') :
                               invoice.status === 'sent' ? (appLang === 'en' ? 'Sent' : 'مرسلة') :
                                 invoice.status === 'overdue' ? (appLang === 'en' ? 'Overdue' : 'متأخرة') :
                                   invoice.status === 'draft' ? (appLang === 'en' ? 'Draft' : 'مسودة') :
-                                    invoice.status === 'cancelled' ? (appLang === 'en' ? 'Cancelled' : 'ملغاة') :
-                                      invoice.status === 'fully_returned' ? (appLang === 'en' ? 'Fully Returned' : 'مرتجع بالكامل') :
-                                        invoice.status === 'partially_returned' ? (appLang === 'en' ? 'Partially Returned' : 'مرتجع جزئياً') :
-                                          invoice.status === 'partially_paid' ? (appLang === 'en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
-                                            invoice.status}
+                                    invoice.status === 'invoiced' ? (appLang === 'en' ? 'Invoiced' : 'تم إنشاء فاتورة') :
+                                      invoice.status === 'cancelled' ? (appLang === 'en' ? 'Cancelled' : 'ملغاة') :
+                                        invoice.status === 'fully_returned' ? (appLang === 'en' ? 'Fully Returned' : 'مرتجع بالكامل') :
+                                          invoice.status === 'partially_returned' ? (appLang === 'en' ? 'Partially Returned' : 'مرتجع جزئياً') :
+                                            invoice.status === 'partially_paid' ? (appLang === 'en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
+                                              invoice.status}
                           </span>
                         </td>
                       </tr>
