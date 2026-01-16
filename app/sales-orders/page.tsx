@@ -1558,12 +1558,16 @@ function SalesOrdersContent() {
                 footer={{
                   render: () => {
                     const totalOrders = filteredOrders.length
-                    // حساب إجمالي القيمة مع خصم المرتجعات من الفواتير المرتبطة
+                    // ✅ حساب إجمالي القيمة المتبقية مع استخدام original_total
                     const totalAmount = filteredOrders.reduce((sum, o) => {
                       const orderTotal = o.total || o.total_amount || 0;
                       const linked = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
+                      // ✅ استخدام original_total من الفاتورة للحساب الصحيح
+                      const originalTotal = linked?.original_total || linked?.total_amount || orderTotal;
                       const returnedAmount = linked?.returned_amount || 0;
-                      return sum + (orderTotal - returnedAmount);
+                      const paidAmount = linked?.paid_amount || 0;
+                      // ✅ المتبقي = الأصلي - المدفوع - المرتجع
+                      return sum + Math.max(0, originalTotal - paidAmount - returnedAmount);
                     }, 0)
 
                     return (
