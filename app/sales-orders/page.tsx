@@ -269,9 +269,12 @@ function SalesOrdersContent() {
     const totalValue = filteredOrders.reduce((sum, o) => {
       const orderTotal = o.total || o.total_amount || 0;
       const linked = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
-      // إذا كانت هناك فاتورة مرتبطة بمرتجعات، نخصم المرتجع
+      // ✅ استخدام original_total من الفاتورة للحساب الصحيح
+      const originalTotal = linked?.original_total || linked?.total_amount || orderTotal;
       const returnedAmount = linked?.returned_amount || 0;
-      return sum + (orderTotal - returnedAmount);
+      const paidAmount = linked?.paid_amount || 0;
+      // ✅ المتبقي للتحصيل = الأصلي - المدفوع - المرتجع
+      return sum + Math.max(0, originalTotal - paidAmount - returnedAmount);
     }, 0);
     return { total, draft, invoiced, paid, totalValue };
   }, [filteredOrders, linkedInvoices]);
@@ -373,13 +376,16 @@ function SalesOrdersContent() {
 
         // إذا كانت هناك فاتورة مرتبطة بها مرتجعات، نعرض التفاصيل
         if (linkedInvoice && (linkedInvoice.returned_amount || 0) > 0) {
+          // ✅ استخدام original_total من الفاتورة للحساب الصحيح
+          const originalTotal = linkedInvoice.original_total || linkedInvoice.total_amount || total;
           const returnedAmount = linkedInvoice.returned_amount || 0;
           const paidAmount = linkedInvoice.paid_amount || 0;
-          const netRemaining = total - paidAmount - returnedAmount;
+          // ✅ المتبقي = الأصلي - المدفوع - المرتجع
+          const netRemaining = Math.max(0, originalTotal - paidAmount - returnedAmount);
 
           return (
             <div className="flex flex-col items-end gap-0.5 text-xs">
-              <span className="font-medium">{symbol}{total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              <span className="font-medium">{symbol}{originalTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
               <span className="text-red-600 dark:text-red-400">
                 {appLang === 'en' ? 'Ret:' : 'مرتجع:'} -{symbol}{returnedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
@@ -397,12 +403,14 @@ function SalesOrdersContent() {
 
         // إذا كانت هناك فاتورة مرتبطة بمدفوعات فقط (بدون مرتجعات)
         if (linkedInvoice && (linkedInvoice.paid_amount || 0) > 0) {
+          // ✅ استخدام original_total للحساب الصحيح
+          const originalTotal = linkedInvoice.original_total || linkedInvoice.total_amount || total;
           const paidAmount = linkedInvoice.paid_amount || 0;
-          const remaining = total - paidAmount;
+          const remaining = Math.max(0, originalTotal - paidAmount);
 
           return (
             <div className="flex flex-col items-end gap-0.5 text-xs">
-              <span className="font-medium">{symbol}{total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              <span className="font-medium">{symbol}{originalTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
               <span className="text-green-600 dark:text-green-400">
                 {appLang === 'en' ? 'Paid:' : 'مدفوع:'} {symbol}{paidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
