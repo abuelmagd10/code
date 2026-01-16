@@ -47,6 +47,7 @@ export async function getAvailableInventoryQuantity(
 ): Promise<number> {
   try {
     // استخدام RPC function من قاعدة البيانات (إذا كانت موجودة)
+    console.log(`[getAvailableInventoryQuantity] Calling RPC with: companyId=${companyId}, branchId=${branchId}, warehouseId=${warehouseId}, productId=${productId}`)
     const { data, error } = await supabase.rpc("get_available_inventory_quantity", {
       p_company_id: companyId,
       p_branch_id: branchId,
@@ -54,6 +55,7 @@ export async function getAvailableInventoryQuantity(
       p_cost_center_id: costCenterId,
       p_product_id: productId,
     })
+    console.log(`[getAvailableInventoryQuantity] RPC response: data=${data}, error=${error?.message || 'none'}`)
 
     // إذا كانت الدالة غير موجودة (404) أو حدث خطأ، استخدم fallback
     if (error) {

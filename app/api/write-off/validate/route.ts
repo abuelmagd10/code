@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
     }))
 
     // 🧾 Governance Rule: التحقق من الرصيد المتاح
+    console.log(`[write-off/validate] Validating ${validationItems.length} items for warehouse ${warehouse_id}, branch ${branch_id}`)
     const result = await validateWriteOffItems(
       supabase,
       companyId,
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
       branch_id || null,
       cost_center_id || null
     )
+    console.log(`[write-off/validate] Validation result: isValid=${result.isValid}, errors=${result.errors.length}`)
 
     return NextResponse.json(result)
   } catch (err: any) {
