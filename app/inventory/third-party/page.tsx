@@ -326,6 +326,12 @@ export default function ThirdPartyInventoryPage() {
             branch_id: invoice.branch_id,
             warehouse_id: invoice.warehouse_id,
             sales_order_id: invoice.sales_order_id,
+            // ✅ إضافة الحقول المطلوبة لحساب الحالة الصحيحة
+            paid_amount: invoice.paid_amount,
+            total_amount: invoice.total_amount,
+            original_total: invoice.original_total,
+            return_status: invoice.return_status,
+            returned_amount: invoice.returned_amount,
             customers: invoice.customers,
             branches: invoice.branches,
             warehouses: invoice.warehouses

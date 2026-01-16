@@ -146,6 +146,7 @@ export default function InvoiceDetailPage() {
   const params = useParams()
   const router = useRouter()
   const invoiceId = params.id as string
+  const [permRead, setPermRead] = useState<boolean | null>(null) // null = loading, false = no access, true = has access
   const [permUpdate, setPermUpdate] = useState<boolean>(false)
   const [permDelete, setPermDelete] = useState<boolean>(false)
   const [permPayWrite, setPermPayWrite] = useState<boolean>(false)
@@ -195,6 +196,12 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     (async () => {
       try {
+        // التحقق من صلاحية القراءة أولاً
+        const readOk = await canAction(supabase, "invoices", "read")
+        setPermRead(!!readOk)
+        
+        if (!readOk) return // إذا لم يكن للمستخدم صلاحية القراءة، لا داعي للتحقق من الباقي
+        
         const ok = await canAction(supabase, "invoices", "update")
         setPermUpdate(!!ok)
         const delOk = await canAction(supabase, "invoices", "delete")
@@ -2467,12 +2474,39 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  if (isLoading) {
+  if (isLoading || permRead === null) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <Sidebar />
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 print-area overflow-x-hidden">
           <p className="text-center py-8">جاري التحميل...</p>
+        </main>
+      </div>
+    )
+  }
+
+  // التحقق من صلاحية القراءة
+  if (permRead === false) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="text-center py-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 dark:bg-red-900 mb-4">
+              <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
+            </div>
+            <p className="text-lg font-semibold text-red-600 dark:text-red-400">
+              {appLang === 'en' ? 'Access Denied' : 'غير مصرح بالوصول'}
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+              {appLang === 'en' 
+                ? 'You do not have permission to view this invoice.' 
+                : 'ليس لديك صلاحية لعرض هذه الفاتورة.'}
+            </p>
+            <Button onClick={() => router.back()} className="mt-4" variant="outline">
+              {appLang === 'en' ? 'Go Back' : 'العودة'}
+            </Button>
+          </div>
         </main>
       </div>
     )
