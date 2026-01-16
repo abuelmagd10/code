@@ -46,7 +46,8 @@ export async function getAvailableInventoryQuantity(
   productId: string
 ): Promise<number> {
   try {
-    // استخدام RPC function من قاعدة البيانات (إذا كانت موجودة)
+    // ✅ الحل الجذري: استخدام RPC function كالمصدر الأساسي للحقيقة
+    // الـ RPC function محدثة لتعيد quantity_on_hand إذا لم توجد transactions
     console.log(`[getAvailableInventoryQuantity] Calling RPC with: companyId=${companyId}, branchId=${branchId}, warehouseId=${warehouseId}, productId=${productId}`)
     const { data, error } = await supabase.rpc("get_available_inventory_quantity", {
       p_company_id: companyId,
@@ -57,71 +58,38 @@ export async function getAvailableInventoryQuantity(
     })
     console.log(`[getAvailableInventoryQuantity] RPC response: data=${data}, error=${error?.message || 'none'}`)
 
-    // إذا كانت الدالة غير موجودة (404) أو حدث خطأ، استخدم fallback
+    // ✅ إذا نجحت الـ RPC function، استخدم النتيجة مباشرة (حتى لو كانت 0)
+    // لأن الـ RPC function الآن تُرجع quantity_on_hand إذا لم توجد transactions
+    if (!error && data !== null && data !== undefined) {
+      console.log(`[getAvailableInventoryQuantity] RPC returned: ${data}`)
+      return Math.max(0, Number(data))
+    }
+
+    // ✅ فقط في حالة فشل الـ RPC function (خطأ أو غير موجودة)، استخدم fallback
     if (error) {
-      // 404 أو 42883 يعني أن الدالة غير موجودة
+      console.warn(`[getAvailableInventoryQuantity] RPC error: ${error.message}, using fallback`)
       if (error.code === "42883" || error.code === "P0001" || error.message?.includes("does not exist") || error.message?.includes("404")) {
         console.warn("RPC function 'get_available_inventory_quantity' not found, using fallback calculation. Please run the SQL script: scripts/042_write_off_governance_validation.sql")
-        // Fallback: حساب مباشر من inventory_transactions
-        return await calculateAvailableQuantityFallback(
-          supabase,
-          companyId,
-          branchId,
-          warehouseId,
-          costCenterId,
-          productId
-        )
       }
-      console.error("Error getting available inventory quantity:", error)
-      // Fallback في حالة أخطاء أخرى
-      return await calculateAvailableQuantityFallback(
-        supabase,
-        companyId,
-        branchId,
-        warehouseId,
-        costCenterId,
-        productId
-      )
+    } else {
+      console.warn(`[getAvailableInventoryQuantity] RPC returned null/undefined, using fallback`)
     }
 
-    // إذا كانت النتيجة null أو undefined، استخدم fallback
-    if (data === null || data === undefined) {
-      console.log(`[getAvailableInventoryQuantity] RPC returned ${data}, using fallback calculation for product ${productId}, warehouse ${warehouseId}, branch ${branchId}`)
-      const fallbackResult = await calculateAvailableQuantityFallback(
-        supabase,
-        companyId,
-        branchId,
-        warehouseId,
-        costCenterId,
-        productId
-      )
-      console.log(`[getAvailableInventoryQuantity] Fallback calculation returned: ${fallbackResult}`)
-      return fallbackResult
-    }
-
-    // إذا كانت النتيجة 0، استخدم fallback للتحقق من quantity_on_hand
-    // لأن الـ RPC function قد ترجع 0 إذا لم توجد transactions، حتى لو كان هناك quantity_on_hand
-    if (data === 0) {
-      console.log(`[getAvailableInventoryQuantity] RPC returned 0, checking fallback for product ${productId}, warehouse ${warehouseId}, branch ${branchId}`)
-      const fallbackResult = await calculateAvailableQuantityFallback(
-        supabase,
-        companyId,
-        branchId,
-        warehouseId,
-        costCenterId,
-        productId
-      )
-      console.log(`[getAvailableInventoryQuantity] Fallback calculation returned: ${fallbackResult}`)
-      // إذا كان fallback > 0، استخدمه. وإلا، استخدم 0 من RPC
-      return fallbackResult > 0 ? fallbackResult : 0
-    }
-
-    console.log(`[getAvailableInventoryQuantity] RPC returned: ${data}`)
-    return data
+    // Fallback: حساب مباشر من inventory_transactions و quantity_on_hand
+    const fallbackResult = await calculateAvailableQuantityFallback(
+      supabase,
+      companyId,
+      branchId,
+      warehouseId,
+      costCenterId,
+      productId
+    )
+    console.log(`[getAvailableInventoryQuantity] Fallback calculation returned: ${fallbackResult}`)
+    return fallbackResult
   } catch (error: any) {
     console.error("Error in getAvailableInventoryQuantity:", error)
     // Fallback في حالة exceptions
-    if (error?.code === "42883" || error?.message?.includes("does not exist") || error?.message?.includes("404")) {
+    try {
       return await calculateAvailableQuantityFallback(
         supabase,
         companyId,
@@ -130,8 +98,10 @@ export async function getAvailableInventoryQuantity(
         costCenterId,
         productId
       )
+    } catch (fallbackError) {
+      console.error("Error in fallback calculation:", fallbackError)
+      return 0
     }
-    return 0
   }
 }
 
