@@ -102,6 +102,7 @@ export async function getAvailableInventoryQuantity(
 
 /**
  * Fallback: حساب الرصيد مباشرة من inventory_transactions
+ * يحاول أولاً البحث بالمعايير الكاملة، وإذا لم يجد نتائج يحاول بمعايير أقل صرامة
  */
 async function calculateAvailableQuantityFallback(
   supabase: SupabaseClient,
@@ -112,15 +113,24 @@ async function calculateAvailableQuantityFallback(
   productId: string
 ): Promise<number> {
   try {
-    const query = supabase
+    // المحاولة 1: البحث بالمعايير الكاملة
+    let query = supabase
       .from("inventory_transactions")
       .select("quantity_change")
       .eq("company_id", companyId)
-      .eq("branch_id", branchId)
-      .eq("warehouse_id", warehouseId)
-      .eq("cost_center_id", costCenterId)
       .eq("product_id", productId)
       .or("is_deleted.is.null,is_deleted.eq.false")
+
+    // إضافة الفلاتر الاختيارية فقط إذا كانت موجودة
+    if (warehouseId) {
+      query = query.eq("warehouse_id", warehouseId)
+    }
+    if (branchId) {
+      query = query.eq("branch_id", branchId)
+    }
+    if (costCenterId) {
+      query = query.eq("cost_center_id", costCenterId)
+    }
 
     const { data, error } = await query
 
@@ -129,12 +139,63 @@ async function calculateAvailableQuantityFallback(
       return 0
     }
 
-    const totalQuantity = (data || []).reduce(
-      (sum: number, tx: any) => sum + Number(tx.quantity_change || 0),
-      0
-    )
+    // إذا وجدت transactions، احسب المجموع
+    if (data && data.length > 0) {
+      const totalQuantity = data.reduce(
+        (sum: number, tx: any) => sum + Number(tx.quantity_change || 0),
+        0
+      )
+      return Math.max(0, totalQuantity)
+    }
 
-    return Math.max(0, totalQuantity) // لا نرجع قيم سالبة
+    // المحاولة 2: البحث بـ warehouse_id فقط (بدون branch_id و cost_center_id)
+    if (warehouseId && (branchId || costCenterId)) {
+      const { data: data2, error: error2 } = await supabase
+        .from("inventory_transactions")
+        .select("quantity_change")
+        .eq("company_id", companyId)
+        .eq("product_id", productId)
+        .eq("warehouse_id", warehouseId)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+
+      if (!error2 && data2 && data2.length > 0) {
+        const totalQuantity = data2.reduce(
+          (sum: number, tx: any) => sum + Number(tx.quantity_change || 0),
+          0
+        )
+        return Math.max(0, totalQuantity)
+      }
+    }
+
+    // المحاولة 3: البحث بـ company_id و product_id فقط
+    const { data: data3, error: error3 } = await supabase
+      .from("inventory_transactions")
+      .select("quantity_change")
+      .eq("company_id", companyId)
+      .eq("product_id", productId)
+      .or("is_deleted.is.null,is_deleted.eq.false")
+
+    if (!error3 && data3 && data3.length > 0) {
+      const totalQuantity = data3.reduce(
+        (sum: number, tx: any) => sum + Number(tx.quantity_change || 0),
+        0
+      )
+      return Math.max(0, totalQuantity)
+    }
+
+    // لا توجد transactions - استخدم quantity_on_hand من المنتج كـ fallback
+    const { data: product, error: productError } = await supabase
+      .from("products")
+      .select("quantity_on_hand")
+      .eq("id", productId)
+      .eq("company_id", companyId)
+      .single()
+
+    if (!productError && product) {
+      return Math.max(0, Number(product.quantity_on_hand || 0))
+    }
+
+    return 0
   } catch (error) {
     console.error("Error in calculateAvailableQuantityFallback:", error)
     return 0
