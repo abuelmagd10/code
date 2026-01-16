@@ -975,7 +975,8 @@ export default function InvoicesPage() {
   // إحصائيات الفواتير - تعمل مع الفلترة - استخدام getDisplayAmount للتعامل مع تحويل العملات
   const stats = useMemo(() => {
     const total = filteredInvoices.length
-    const draft = filteredInvoices.filter(i => i.status === 'draft').length
+    // ✅ تشمل حالة 'invoiced' (قبل الإرسال) مع 'draft' لأنهما يُعرضان كمسودة
+    const draft = filteredInvoices.filter(i => i.status === 'draft' || i.status === 'invoiced').length
     const sent = filteredInvoices.filter(i => i.status === 'sent').length
     const partiallyPaid = filteredInvoices.filter(i => i.status === 'partially_paid').length
     const paid = filteredInvoices.filter(i => i.status === 'paid').length
