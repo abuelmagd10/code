@@ -82,7 +82,19 @@ export async function getAvailableInventoryQuantity(
       )
     }
 
-    return data || 0
+    // إذا كانت النتيجة 0 أو null، استخدم fallback للتحقق من quantity_on_hand
+    if (data === null || data === undefined || data === 0) {
+      return await calculateAvailableQuantityFallback(
+        supabase,
+        companyId,
+        branchId,
+        warehouseId,
+        costCenterId,
+        productId
+      )
+    }
+
+    return data
   } catch (error: any) {
     console.error("Error in getAvailableInventoryQuantity:", error)
     // Fallback في حالة exceptions
@@ -242,9 +254,9 @@ export async function validateWriteOffItems(
         product_id: item.product_id,
         product_name: item.product_name || "منتج غير معروف",
         product_sku: item.product_sku,
-        available_quantity: 0,
+        available_quantity: availableQuantity,
         required_quantity: item.quantity,
-        message: `الرصيد المتاح غير كافٍ: الرصيد المتاح = 0، المطلوب = ${item.quantity} (warehouse_id: ${item.warehouse_id || warehouseId || "غير محدد"})`
+        message: `الرصيد المتاح غير كافٍ: الرصيد المتاح = ${availableQuantity}، المطلوب = ${item.quantity} (warehouse_id: ${item.warehouse_id || warehouseId || "غير محدد"})`
       })
     } else if (availableQuantity < item.quantity) {
       errors.push({
