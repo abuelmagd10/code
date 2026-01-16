@@ -22,6 +22,7 @@ CREATE OR REPLACE FUNCTION get_available_inventory_quantity(
 RETURNS INTEGER AS $$
 DECLARE
   v_available_qty INTEGER := 0;
+  v_product_qty INTEGER := 0;
 BEGIN
   -- حساب الرصيد المتاح من inventory_transactions
   -- نأخذ في الاعتبار: company_id, branch_id, warehouse_id, cost_center_id, product_id
@@ -33,6 +34,18 @@ BEGIN
     AND (p_warehouse_id IS NULL OR warehouse_id = p_warehouse_id)
     AND (p_cost_center_id IS NULL OR cost_center_id = p_cost_center_id)
     AND (is_deleted IS NULL OR is_deleted = false);
+  
+  -- إذا لم توجد transactions (v_available_qty = 0)، استخدم quantity_on_hand من المنتج كـ fallback
+  IF v_available_qty = 0 THEN
+    SELECT COALESCE(quantity_on_hand, 0) INTO v_product_qty
+    FROM products
+    WHERE id = p_product_id AND company_id = p_company_id;
+    
+    -- إذا كان المنتج موجوداً وله quantity_on_hand، استخدمه
+    IF v_product_qty > 0 THEN
+      RETURN v_product_qty;
+    END IF;
+  END IF;
   
   RETURN GREATEST(0, v_available_qty); -- لا نرجع قيم سالبة
 END;
