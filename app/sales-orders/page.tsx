@@ -442,15 +442,18 @@ function SalesOrdersContent() {
         if (linkedInvoice || row.invoice_id) {
           // تصحيح للبيانات القديمة: إذا مرتبط بفاتورة، الحالة الصحيحة هي invoiced
           const orderStatus = row.invoice_id ? 'invoiced' : row.status;
-          const returnStatus = linkedInvoice?.return_status;
-          const hasReturn = returnStatus === 'partial' || returnStatus === 'full';
 
           // ✅ حساب حالة الدفع الأساسية (مستنتجة من المبالغ)
           const paidAmount = Number(linkedInvoice?.paid_amount || 0)
+          const returnedAmount = Number(linkedInvoice?.returned_amount || 0)
           const originalTotal = Number(linkedInvoice?.original_total || linkedInvoice?.total_amount || 0)
           
+          // ✅ تحديد ما إذا كان المرتجع كامل (بناءً على original_total)
+          const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
+          const hasPartialReturn = returnedAmount > 0 && returnedAmount < originalTotal
+          
           let paymentStatus: string
-          if (linkedInvoice?.status === 'fully_returned') {
+          if (isFullyReturned) {
             paymentStatus = 'fully_returned'
           } else if (paidAmount >= originalTotal && originalTotal > 0) {
             paymentStatus = 'paid'
@@ -486,15 +489,10 @@ function SalesOrdersContent() {
                   <span className={`text-[10px] px-1.5 py-0.5 rounded ${getPaymentStatusColor()} bg-opacity-10`}>
                     {getPaymentStatusText()}
                   </span>
-                  {/* حالة المرتجع (إن وجد) */}
-                  {hasReturn && paymentStatus !== 'fully_returned' && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${returnStatus === 'full'
-                      ? 'text-purple-600 dark:text-purple-400'
-                      : 'text-orange-600 dark:text-orange-400'
-                      }`}>
-                      {returnStatus === 'full'
-                        ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل')
-                        : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')}
+                  {/* حالة المرتجع الجزئي (إن وجد) */}
+                  {hasPartialReturn && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded text-orange-600 dark:text-orange-400">
+                      {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
                     </span>
                   )}
                 </>

@@ -524,11 +524,12 @@ export default function NewSalesReturnPage() {
       // Update invoice return_status, returned_amount and status
       let newReturnedAmount = 0
       if (form.invoice_id) {
-        const { data: currentInv } = await supabase.from("invoices").select("returned_amount, total_amount, paid_amount, status").eq("id", form.invoice_id).single()
+        const { data: currentInv } = await supabase.from("invoices").select("returned_amount, total_amount, paid_amount, status, original_total").eq("id", form.invoice_id).single()
         newReturnedAmount = Number(currentInv?.returned_amount || 0) + total
-        const invoiceTotal = Number(currentInv?.total_amount || 0)
-        const newInvoiceTotal = Math.max(0, invoiceTotal - newReturnedAmount)
-        const returnStatus = newReturnedAmount >= invoiceTotal ? "full" : "partial"
+        // ✅ استخدام original_total للمقارنة الصحيحة
+        const originalTotal = Number(currentInv?.original_total || currentInv?.total_amount || 0)
+        const newInvoiceTotal = Math.max(0, originalTotal - newReturnedAmount)
+        const returnStatus = newReturnedAmount >= originalTotal ? "full" : "partial"
         const currentPaidAmount = Number(currentInv?.paid_amount || 0)
         
         // ✅ تحديد الحالة الجديدة بناءً على المرتجع والمدفوعات

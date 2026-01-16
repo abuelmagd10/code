@@ -152,16 +152,17 @@ export async function POST(request: NextRequest) {
     // 4. تحديث بيانات الفاتورة نفسها (تخفيض القيم)
     const currentSubtotal = Number(invoice.subtotal || 0)
     const currentTaxAmount = Number(invoice.tax_amount || 0)
-    const currentTotalAmount = Number(invoice.total_amount || 0)
+    // ✅ استخدام original_total للمقارنة الصحيحة
+    const originalTotal = Number(invoice.original_total || invoice.total_amount || 0)
     const currentReturnedAmount = Number(invoice.returned_amount || 0)
 
     const newSubtotal = Math.max(0, currentSubtotal - totalReturnSubtotal)
     const newTaxAmount = Math.max(0, currentTaxAmount - totalReturnTax)
-    const newTotalAmount = Math.max(0, currentTotalAmount - totalReturnAmount)
+    const newTotalAmount = Math.max(0, originalTotal - (currentReturnedAmount + totalReturnAmount))
     const newReturnedAmount = currentReturnedAmount + totalReturnAmount
 
-    // تحديد حالة المرتجع
-    const returnStatus = newReturnedAmount >= currentTotalAmount ? 'full' : 
+    // تحديد حالة المرتجع - باستخدام original_total
+    const returnStatus = newReturnedAmount >= originalTotal ? 'full' : 
                         (newReturnedAmount > 0 ? 'partial' : null)
     
     // ✅ تحديد حالة الفاتورة الجديدة بناءً على المرتجع

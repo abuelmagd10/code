@@ -1683,12 +1683,13 @@ export default function InvoiceDetailPage() {
       // Update invoice returned_amount and return_status
       const currentReturnedAmount = Number((invoice as any).returned_amount || 0)
       const newReturnedAmount = currentReturnedAmount + returnTotal
-      const invoiceTotalAmount = Number(invoice.total_amount || 0)
+      // ✅ استخدام original_total للمقارنة الصحيحة (وليس total_amount المُعدَّل)
+      const originalTotal = Number((invoice as any).original_total || invoice.total_amount || 0)
       const currentPaidAmount = Number(invoice.paid_amount || 0)
-      const newReturnStatus = newReturnedAmount >= invoiceTotalAmount ? 'full' : 'partial'
+      const newReturnStatus = newReturnedAmount >= originalTotal ? 'full' : 'partial'
 
       // ✅ حساب المبلغ الجديد للفاتورة بعد المرتجع
-      const newInvoiceTotal = Math.max(0, invoiceTotalAmount - newReturnedAmount)
+      const newInvoiceTotal = Math.max(0, originalTotal - newReturnedAmount)
 
       // ✅ حساب الصافي والضريبة الجديدة للفاتورة
       const currentSubtotal = Number(invoice.subtotal || 0)

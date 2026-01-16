@@ -43,6 +43,7 @@ interface ThirdPartyItem {
     total_amount?: number | null
     original_total?: number | null
     return_status?: string | null
+    returned_amount?: number | null
     customers?: { name: string; phone?: string }
     branches?: { name: string }
     warehouses?: { name: string }
@@ -262,6 +263,7 @@ export default function ThirdPartyInventoryPage() {
           total_amount,
           original_total,
           return_status,
+          returned_amount,
           customers(name, phone),
           branches(name),
           warehouses(name)
@@ -752,13 +754,15 @@ export default function ThirdPartyInventoryPage() {
                         
                         // ✅ حساب حالة الدفع الأساسية (مستنتجة من المبالغ)
                         const paidAmount = Number(item.invoices?.paid_amount || 0)
-                        const totalAmount = Number(item.invoices?.total_amount || 0)
+                        const returnedAmount = Number(item.invoices?.returned_amount || 0)
                         const originalTotal = Number(item.invoices?.original_total || item.invoices?.total_amount || 0)
-                        const returnStatus = item.invoices?.return_status
+                        
+                        // ✅ تحديد ما إذا كان المرتجع كامل (بناءً على original_total)
+                        const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
                         
                         // تحديد حالة الدفع الأساسية
                         let paymentStatus: string
-                        if (item.invoices?.status === 'fully_returned') {
+                        if (isFullyReturned) {
                           paymentStatus = 'fully_returned'
                         } else if (paidAmount >= originalTotal && originalTotal > 0) {
                           paymentStatus = 'paid'
@@ -768,7 +772,8 @@ export default function ThirdPartyInventoryPage() {
                           paymentStatus = 'sent'
                         }
                         
-                        const hasReturn = returnStatus === 'partial' || returnStatus === 'full'
+                        // تحديد ما إذا كان هناك مرتجع جزئي
+                        const hasPartialReturn = returnedAmount > 0 && returnedAmount < originalTotal
                         return (
                           <TableRow key={item.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                             {/* المنتج */}
@@ -823,15 +828,10 @@ export default function ThirdPartyInventoryPage() {
                                 {/* حالة الدفع الأساسية */}
                                 <StatusBadge status={paymentStatus} lang={appLang} />
                                 
-                                {/* حالة المرتجع (إن وجد) */}
-                                {hasReturn && paymentStatus !== 'fully_returned' && (
-                                  <span className={`text-xs px-2 py-0.5 rounded-full ${returnStatus === 'full'
-                                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
-                                    : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
-                                    }`}>
-                                    {returnStatus === 'full'
-                                      ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل')
-                                      : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')}
+                                {/* حالة المرتجع الجزئي (إن وجد) */}
+                                {hasPartialReturn && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
+                                    {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
                                   </span>
                                 )}
                               </div>

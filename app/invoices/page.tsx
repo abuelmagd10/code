@@ -856,8 +856,11 @@ export default function InvoicesPage() {
       format: (_, row) => {
         // ✅ حساب حالة الدفع الأساسية (مستنتجة من المبالغ)
         const paidAmount = Number(row.paid_amount || 0)
-        const totalAmount = Number(row.total_amount || 0)
+        const returnedAmount = Number(row.returned_amount || 0)
         const originalTotal = Number(row.original_total || row.total_amount || 0)
+        
+        // ✅ تحديد ما إذا كان المرتجع كامل (بناءً على original_total)
+        const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
         
         // تحديد حالة الدفع الأساسية
         let paymentStatus: string
@@ -865,7 +868,8 @@ export default function InvoicesPage() {
           paymentStatus = 'draft'
         } else if (row.status === 'cancelled') {
           paymentStatus = 'cancelled'
-        } else if (row.status === 'fully_returned') {
+        } else if (isFullyReturned) {
+          // ✅ التحقق الصحيح من المرتجع الكامل
           paymentStatus = 'fully_returned'
         } else if (paidAmount >= originalTotal && originalTotal > 0) {
           paymentStatus = 'paid'
@@ -875,23 +879,18 @@ export default function InvoicesPage() {
           paymentStatus = 'sent'
         }
         
-        // تحديد ما إذا كان هناك مرتجع
-        const hasReturn = row.return_status === 'partial' || row.return_status === 'full'
+        // تحديد ما إذا كان هناك مرتجع جزئي
+        const hasPartialReturn = returnedAmount > 0 && returnedAmount < originalTotal
         
         return (
           <div className="flex flex-col items-center gap-1">
             {/* حالة الدفع الأساسية */}
             <StatusBadge status={paymentStatus} lang={appLang} />
             
-            {/* حالة المرتجع (إن وجد) - فقط إذا لم تكن fully_returned */}
-            {hasReturn && paymentStatus !== 'fully_returned' && (
-              <span className={`text-xs px-2 py-0.5 rounded-full ${row.return_status === 'full'
-                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
-                : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
-                }`}>
-                {row.return_status === 'full'
-                  ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل')
-                  : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')}
+            {/* حالة المرتجع الجزئي (إن وجد) */}
+            {hasPartialReturn && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
+                {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
               </span>
             )}
           </div>
