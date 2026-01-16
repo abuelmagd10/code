@@ -862,9 +862,12 @@ export default function InvoicesPage() {
         // ✅ تحديد ما إذا كان المرتجع كامل (بناءً على original_total)
         const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
         
-        // تحديد حالة الدفع الأساسية
+        // ✅ تحديد حالة الدفع بناءً على حالة الفاتورة الفعلية أولاً ثم المبالغ
         let paymentStatus: string
         if (row.status === 'draft') {
+          paymentStatus = 'draft'
+        } else if (row.status === 'invoiced') {
+          // ✅ الفاتورة في حالة "تم التحويل" (قبل الإرسال) - تُعرض كمسودة
           paymentStatus = 'draft'
         } else if (row.status === 'cancelled') {
           paymentStatus = 'cancelled'
@@ -875,8 +878,11 @@ export default function InvoicesPage() {
           paymentStatus = 'paid'
         } else if (paidAmount > 0) {
           paymentStatus = 'partially_paid'
-        } else {
+        } else if (row.status === 'sent') {
           paymentStatus = 'sent'
+        } else {
+          // ✅ استخدام حالة الفاتورة الفعلية كـ fallback
+          paymentStatus = row.status || 'draft'
         }
         
         // تحديد ما إذا كان هناك مرتجع جزئي
