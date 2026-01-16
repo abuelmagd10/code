@@ -853,21 +853,50 @@ export default function InvoicesPage() {
       header: appLang === 'en' ? 'Status' : 'الحالة',
       type: 'status',
       align: 'center',
-      format: (_, row) => (
-        <div className="flex flex-col items-center gap-1">
-          <StatusBadge status={row.status} lang={appLang} />
-          {row.return_status && row.status !== 'fully_returned' && (
-            <span className={`text-xs px-2 py-0.5 rounded-full ${row.return_status === 'full'
-              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
-              : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
-              }`}>
-              {row.return_status === 'full'
-                ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل')
-                : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')}
-            </span>
-          )}
-        </div>
-      )
+      format: (_, row) => {
+        // ✅ حساب حالة الدفع الأساسية (مستنتجة من المبالغ)
+        const paidAmount = Number(row.paid_amount || 0)
+        const totalAmount = Number(row.total_amount || 0)
+        const originalTotal = Number(row.original_total || row.total_amount || 0)
+        
+        // تحديد حالة الدفع الأساسية
+        let paymentStatus: string
+        if (row.status === 'draft') {
+          paymentStatus = 'draft'
+        } else if (row.status === 'cancelled') {
+          paymentStatus = 'cancelled'
+        } else if (row.status === 'fully_returned') {
+          paymentStatus = 'fully_returned'
+        } else if (paidAmount >= originalTotal && originalTotal > 0) {
+          paymentStatus = 'paid'
+        } else if (paidAmount > 0) {
+          paymentStatus = 'partially_paid'
+        } else {
+          paymentStatus = 'sent'
+        }
+        
+        // تحديد ما إذا كان هناك مرتجع
+        const hasReturn = row.return_status === 'partial' || row.return_status === 'full'
+        
+        return (
+          <div className="flex flex-col items-center gap-1">
+            {/* حالة الدفع الأساسية */}
+            <StatusBadge status={paymentStatus} lang={appLang} />
+            
+            {/* حالة المرتجع (إن وجد) - فقط إذا لم تكن fully_returned */}
+            {hasReturn && paymentStatus !== 'fully_returned' && (
+              <span className={`text-xs px-2 py-0.5 rounded-full ${row.return_status === 'full'
+                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
+                : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
+                }`}>
+                {row.return_status === 'full'
+                  ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل')
+                  : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')}
+              </span>
+            )}
+          </div>
+        )
+      }
     },
     {
       key: 'id',

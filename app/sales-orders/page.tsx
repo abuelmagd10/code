@@ -73,6 +73,7 @@ type LinkedInvoice = {
   paid_amount?: number;
   returned_amount?: number;
   return_status?: string;
+  original_total?: number;
 };
 
 type SOItem = {
@@ -441,39 +442,62 @@ function SalesOrdersContent() {
         if (linkedInvoice || row.invoice_id) {
           // تصحيح للبيانات القديمة: إذا مرتبط بفاتورة، الحالة الصحيحة هي invoiced
           const orderStatus = row.invoice_id ? 'invoiced' : row.status;
-          const hasReturns = linkedInvoice && (linkedInvoice.returned_amount || 0) > 0;
           const returnStatus = linkedInvoice?.return_status;
+          const hasReturn = returnStatus === 'partial' || returnStatus === 'full';
 
-          // تحديد نص حالة الفاتورة
-          const getInvoiceStatusText = () => {
-            if (returnStatus === 'full') return appLang === 'en' ? 'Fully Returned' : 'مرتجع كامل';
-            if (returnStatus === 'partial') return appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي';
-            if (linkedInvoice?.status === 'paid') return appLang === 'en' ? 'Paid' : 'مدفوعة';
-            if (linkedInvoice?.status === 'partially_paid') return appLang === 'en' ? 'Partial' : 'جزئي';
-            if (linkedInvoice?.status === 'draft') return appLang === 'en' ? 'Draft' : 'مسودة';
-            if (linkedInvoice?.status === 'sent') return appLang === 'en' ? 'Sent' : 'مرسلة';
-            return linkedInvoice?.status || '';
+          // ✅ حساب حالة الدفع الأساسية (مستنتجة من المبالغ)
+          const paidAmount = Number(linkedInvoice?.paid_amount || 0)
+          const originalTotal = Number(linkedInvoice?.original_total || linkedInvoice?.total_amount || 0)
+          
+          let paymentStatus: string
+          if (linkedInvoice?.status === 'fully_returned') {
+            paymentStatus = 'fully_returned'
+          } else if (paidAmount >= originalTotal && originalTotal > 0) {
+            paymentStatus = 'paid'
+          } else if (paidAmount > 0) {
+            paymentStatus = 'partially_paid'
+          } else {
+            paymentStatus = 'sent'
+          }
+
+          // تحديد نص حالة الدفع
+          const getPaymentStatusText = () => {
+            if (paymentStatus === 'paid') return appLang === 'en' ? 'Paid' : 'مدفوعة';
+            if (paymentStatus === 'partially_paid') return appLang === 'en' ? 'Partial Pay' : 'مدفوعة جزئياً';
+            if (paymentStatus === 'sent') return appLang === 'en' ? 'Sent' : 'مرسلة';
+            if (paymentStatus === 'fully_returned') return appLang === 'en' ? 'Returned' : 'مرتجعة';
+            return '';
           };
 
-          // تحديد لون حالة الفاتورة
-          const getInvoiceStatusColor = () => {
-            if (returnStatus === 'full') return 'text-red-600 dark:text-red-400';
-            if (returnStatus === 'partial') return 'text-orange-600 dark:text-orange-400';
-            if (linkedInvoice?.status === 'paid') return 'text-green-600 dark:text-green-400';
-            if (linkedInvoice?.status === 'partially_paid') return 'text-yellow-600 dark:text-yellow-400';
-            return 'text-gray-600 dark:text-gray-400';
+          // تحديد لون حالة الدفع
+          const getPaymentStatusColor = () => {
+            if (paymentStatus === 'paid') return 'text-green-600 dark:text-green-400';
+            if (paymentStatus === 'partially_paid') return 'text-yellow-600 dark:text-yellow-400';
+            if (paymentStatus === 'fully_returned') return 'text-purple-600 dark:text-purple-400';
+            return 'text-blue-600 dark:text-blue-400';
           };
 
           return (
             <div className="flex flex-col items-center gap-0.5">
               <StatusBadge status={orderStatus} lang={appLang} />
               {linkedInvoice && (
-                <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                  {appLang === 'en' ? 'Inv:' : 'الفاتورة:'}
-                  <span className={`mx-1 ${getInvoiceStatusColor()}`}>
-                    {getInvoiceStatusText()}
+                <>
+                  {/* حالة الدفع */}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${getPaymentStatusColor()} bg-opacity-10`}>
+                    {getPaymentStatusText()}
                   </span>
-                </span>
+                  {/* حالة المرتجع (إن وجد) */}
+                  {hasReturn && paymentStatus !== 'fully_returned' && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${returnStatus === 'full'
+                      ? 'text-purple-600 dark:text-purple-400'
+                      : 'text-orange-600 dark:text-orange-400'
+                      }`}>
+                      {returnStatus === 'full'
+                        ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل')
+                        : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')}
+                    </span>
+                  )}
+                </>
               )}
             </div>
           );
@@ -678,7 +702,7 @@ function SalesOrdersContent() {
     if (invoiceIds.length > 0) {
       const { data: invoices } = await supabase
         .from("invoices")
-        .select("id, status, total_amount, paid_amount, returned_amount, return_status")
+        .select("id, status, total_amount, paid_amount, returned_amount, return_status, original_total")
         .in("id", invoiceIds);
 
       const invoiceMap: Record<string, LinkedInvoice> = {};
@@ -689,7 +713,8 @@ function SalesOrdersContent() {
           total_amount: inv.total_amount || 0,
           paid_amount: inv.paid_amount || 0,
           returned_amount: inv.returned_amount || 0,
-          return_status: inv.return_status
+          return_status: inv.return_status,
+          original_total: inv.original_total
         };
       });
       setLinkedInvoices(invoiceMap);
@@ -776,7 +801,7 @@ function SalesOrdersContent() {
     if (invoiceIds.length > 0) {
       const { data: invoices } = await supabase
         .from("invoices")
-        .select("id, status, total_amount, paid_amount, returned_amount, return_status")
+        .select("id, status, total_amount, paid_amount, returned_amount, return_status, original_total")
         .in("id", invoiceIds);
 
       const invoiceMap: Record<string, LinkedInvoice> = {};
@@ -787,7 +812,8 @@ function SalesOrdersContent() {
           total_amount: inv.total_amount || 0,
           paid_amount: inv.paid_amount || 0,
           returned_amount: inv.returned_amount || 0,
-          return_status: inv.return_status
+          return_status: inv.return_status,
+          original_total: inv.original_total
         };
 
         // تحديث حالة أمر البيع المرتبط

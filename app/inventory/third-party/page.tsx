@@ -39,6 +39,10 @@ interface ThirdPartyItem {
     branch_id?: string | null
     warehouse_id?: string | null
     sales_order_id?: string | null
+    paid_amount?: number | null
+    total_amount?: number | null
+    original_total?: number | null
+    return_status?: string | null
     customers?: { name: string; phone?: string }
     branches?: { name: string }
     warehouses?: { name: string }
@@ -254,6 +258,10 @@ export default function ThirdPartyInventoryPage() {
           branch_id,
           warehouse_id,
           sales_order_id,
+          paid_amount,
+          total_amount,
+          original_total,
+          return_status,
           customers(name, phone),
           branches(name),
           warehouses(name)
@@ -741,7 +749,26 @@ export default function ThirdPartyInventoryPage() {
                         const availableQty = getAvailableQty(item)
                         // استخدام سعر البيع (unit_price) بدلاً من التكلفة (unit_cost)
                         const value = availableQty * Number(item.unit_price || item.unit_cost)
-                        const invoiceStatus = item.invoices?.status || 'sent'
+                        
+                        // ✅ حساب حالة الدفع الأساسية (مستنتجة من المبالغ)
+                        const paidAmount = Number(item.invoices?.paid_amount || 0)
+                        const totalAmount = Number(item.invoices?.total_amount || 0)
+                        const originalTotal = Number(item.invoices?.original_total || item.invoices?.total_amount || 0)
+                        const returnStatus = item.invoices?.return_status
+                        
+                        // تحديد حالة الدفع الأساسية
+                        let paymentStatus: string
+                        if (item.invoices?.status === 'fully_returned') {
+                          paymentStatus = 'fully_returned'
+                        } else if (paidAmount >= originalTotal && originalTotal > 0) {
+                          paymentStatus = 'paid'
+                        } else if (paidAmount > 0) {
+                          paymentStatus = 'partially_paid'
+                        } else {
+                          paymentStatus = 'sent'
+                        }
+                        
+                        const hasReturn = returnStatus === 'partial' || returnStatus === 'full'
                         return (
                           <TableRow key={item.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                             {/* المنتج */}
@@ -792,7 +819,22 @@ export default function ThirdPartyInventoryPage() {
                             </TableCell>
                             {/* الحالة */}
                             <TableCell className="text-center">
-                              <StatusBadge status={invoiceStatus} lang={appLang} />
+                              <div className="flex flex-col items-center gap-1">
+                                {/* حالة الدفع الأساسية */}
+                                <StatusBadge status={paymentStatus} lang={appLang} />
+                                
+                                {/* حالة المرتجع (إن وجد) */}
+                                {hasReturn && paymentStatus !== 'fully_returned' && (
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${returnStatus === 'full'
+                                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
+                                    : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
+                                    }`}>
+                                    {returnStatus === 'full'
+                                      ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل')
+                                      : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')}
+                                  </span>
+                                )}
+                              </div>
                             </TableCell>
                             {/* عرض */}
                             <TableCell className="text-center">
