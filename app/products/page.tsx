@@ -325,8 +325,10 @@ export default function ProductsPage() {
       setIsLoading(true)
       const res = await fetch('/api/products-list')
       if (res.ok) {
-        const data = await res.json()
-        setProducts(Array.isArray(data) ? data : [])
+        const result = await res.json()
+        // ✅ API يرجع { success: true, data: [...] }
+        const products = result.success && result.data ? result.data : (Array.isArray(result) ? result : [])
+        setProducts(products)
       } else {
         const companyId = await ensureCompanyId(supabase)
         if (!companyId) return
