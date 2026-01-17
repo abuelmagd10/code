@@ -231,6 +231,11 @@ export default function PaymentsPage() {
 
         // 🔐 ERP Access Control - جلب سياق المستخدم
         const { data: { user } } = await supabase.auth.getUser()
+        let currentRole = 'viewer'
+        let currentBranchId: string | null = null
+        let currentCostCenterId: string | null = null
+        let currentWarehouseId: string | null = null
+        
         if (user) {
           const { data: memberData } = await supabase
             .from("company_members")
@@ -246,18 +251,21 @@ export default function PaymentsPage() {
             .single()
 
           const isOwner = companyData?.user_id === user.id
-          const role = isOwner ? "owner" : (memberData?.role || "viewer")
+          currentRole = isOwner ? "owner" : (memberData?.role || "viewer")
+          currentBranchId = isOwner ? null : (memberData?.branch_id || null)
+          currentCostCenterId = isOwner ? null : (memberData?.cost_center_id || null)
+          currentWarehouseId = isOwner ? null : (memberData?.warehouse_id || null)
 
           const context: UserContext = {
             user_id: user.id,
             company_id: activeCompanyId,
-            branch_id: isOwner ? null : (memberData?.branch_id || null),
-            cost_center_id: isOwner ? null : (memberData?.cost_center_id || null),
-            warehouse_id: isOwner ? null : (memberData?.warehouse_id || null),
-            role: role,
+            branch_id: currentBranchId,
+            cost_center_id: currentCostCenterId,
+            warehouse_id: currentWarehouseId,
+            role: currentRole,
           }
           setUserContext(context)
-          setCanOverrideContext(["owner", "admin", "manager"].includes(role))
+          setCanOverrideContext(["owner", "admin", "manager"].includes(currentRole))
         }
 
         // Load currencies from database
@@ -269,17 +277,19 @@ export default function PaymentsPage() {
         }
 
         // 🔐 ERP Access Control - جلب العملاء مع تطبيق الصلاحيات
+        // استخدام القيم المحلية بدلاً من userContext لأن setState غير متزامن
         const accessFilter = getAccessFilter(
-          userContext?.role || 'viewer',
+          currentRole,
           user?.id || '',
-          userContext?.branch_id || null,
-          userContext?.cost_center_id || null
+          currentBranchId,
+          currentCostCenterId
         );
 
         let allCustomers: Customer[] = [];
         if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
           // موظف عادي: يرى فقط العملاء الذين أنشأهم
-          const { data: ownCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("created_by_user_id", accessFilter.createdByUserId);
+          let query = supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("created_by_user_id", accessFilter.createdByUserId);
+          const { data: ownCust } = await query;
           allCustomers = ownCust || [];
           // جلب العملاء المشتركين
           const { data: sharedPerms } = await supabase.from("permission_sharing").select("grantor_user_id").eq("grantee_user_id", user?.id || '').eq("company_id", activeCompanyId).eq("is_active", true).or("resource_type.eq.all,resource_type.eq.customers");
@@ -290,9 +300,16 @@ export default function PaymentsPage() {
             (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
           }
         } else if (accessFilter.filterByBranch && accessFilter.branchId) {
-          const { data: branchCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("branch_id", accessFilter.branchId);
+          // مدير/محاسب: يرى عملاء الفرع
+          let query = supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("branch_id", accessFilter.branchId);
+          // إضافة فلتر مركز التكلفة إذا كان مفعلاً
+          if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
+            query = query.eq("cost_center_id", accessFilter.costCenterId);
+          }
+          const { data: branchCust } = await query;
           allCustomers = branchCust || [];
         } else {
+          // owner/admin: جميع العملاء
           const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId);
           allCustomers = allCust || [];
         }

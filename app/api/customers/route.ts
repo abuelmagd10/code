@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/customers
- * إنشاء عميل جديد مع التحقق من الحوكمة
+ * إنشاء عميل جديد مع التحقق من الحوكمة ورقم التليفون المكرر
  */
 export async function POST(request: NextRequest) {
   try {
@@ -90,7 +90,48 @@ export async function POST(request: NextRequest) {
     
     const supabase = createClient(cookies())
     
-    // 4️⃣ الإدخال في قاعدة البيانات
+    // 4️⃣ التحقق من تكرار رقم التليفون (إلزامي)
+    if (dataWithGovernance.phone) {
+      const { normalizePhone } = await import('@/lib/phone-utils')
+      const normalizedPhone = normalizePhone(dataWithGovernance.phone)
+      
+      if (normalizedPhone) {
+        // جلب جميع العملاء في نفس الشركة
+        const { data: existingCustomers, error: fetchError } = await supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("company_id", governance.companyId)
+        
+        if (fetchError) {
+          console.error("[API /customers POST] Error fetching existing customers:", fetchError)
+          return NextResponse.json({
+            error: "Failed to check for duplicate phone number",
+            error_ar: "فشل في التحقق من تكرار رقم التليفون"
+          }, { status: 500 })
+        }
+        
+        // البحث عن عميل بنفس رقم التليفون (بعد التطبيع)
+        const duplicateCustomer = existingCustomers?.find((c: any) => {
+          if (!c.phone) return false
+          const existingNormalized = normalizePhone(c.phone)
+          return existingNormalized === normalizedPhone
+        })
+        
+        if (duplicateCustomer) {
+          console.error("[API /customers POST] Duplicate phone found:", duplicateCustomer)
+          return NextResponse.json({
+            error: "Phone number already exists",
+            error_ar: `رقم الهاتف مستخدم بالفعل لعميل آخر: ${duplicateCustomer.name}`,
+            duplicate_customer: {
+              id: duplicateCustomer.id,
+              name: duplicateCustomer.name
+            }
+          }, { status: 400 })
+        }
+      }
+    }
+    
+    // 5️⃣ الإدخال في قاعدة البيانات
     const { data: newCustomer, error: insertError } = await supabase
       .from("customers")
       .insert(dataWithGovernance)
@@ -99,6 +140,15 @@ export async function POST(request: NextRequest) {
 
     if (insertError) {
       console.error("[API /customers POST] Insert error:", insertError)
+      
+      // التحقق من خطأ تكرار رقم التليفون من قاعدة البيانات
+      if (insertError.message?.includes('DUPLICATE_PHONE') || insertError.message?.includes('duplicate')) {
+        return NextResponse.json({
+          error: "Phone number already exists",
+          error_ar: "رقم الهاتف مستخدم بالفعل لعميل آخر"
+        }, { status: 400 })
+      }
+      
       return NextResponse.json({
         error: insertError.message,
         error_ar: "فشل في إنشاء العميل"
