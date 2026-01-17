@@ -319,8 +319,11 @@ export default function InvoicesPage() {
 
       const role = member?.role || "staff"
       setCurrentUserRole(role)
-      // owner, admin, accountant, viewer يرون كل الفواتير - staff يرى فقط فواتيره
-      const canViewAll = ["owner", "admin", "accountant", "viewer"].includes(role)
+      
+      // استخدام getRoleAccessLevel لتحديد مستوى الوصول بشكل موحد
+      const accessLevel = getRoleAccessLevel(role)
+      // المديرين (owner, admin, manager, accountant, viewer) يرون جميع الفواتير أو فواتير الفرع
+      const canViewAll = accessLevel === 'all' || accessLevel === 'company' || accessLevel === 'branch'
       setCanViewAllInvoices(canViewAll)
 
       // 🔐 ERP Access Control - تعيين سياق المستخدم
@@ -336,8 +339,6 @@ export default function InvoicesPage() {
 
       // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها) مع مراعاة صلاحيات الفروع
       if (canViewAll) {
-        // استخدام getRoleAccessLevel لتحديد مستوى الوصول
-        const accessLevel = getRoleAccessLevel(role);
         
         let membersQuery = supabase
           .from("company_members")
