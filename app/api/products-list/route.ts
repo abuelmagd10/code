@@ -9,22 +9,29 @@ export async function GET(req: NextRequest) {
     const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      requireBranch: true,
+      requireBranch: false, // ✅ المنتجات قد لا تحتاج فرع
       requirePermission: { resource: "products", action: "read" }
     })
 
     if (error) return error
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
-    if (!branchId) return badRequestError("معرف الفرع مطلوب")
 
-    const supabase = createClient()
-    const branchFilter = buildBranchFilter(branchId!, member.role)
+    const supabase = await createClient()
     
-    const { data, error: dbError } = await supabase
+    // ✅ بناء الاستعلام - تطبيق فلتر الفرع فقط إذا كان موجوداً
+    let query = supabase
       .from("products")
       .select("*")
       .eq("company_id", companyId)
-      .match(branchFilter)
+    
+    // ✅ تطبيق فلتر الفرع فقط إذا كان موجوداً
+    // المنتجات قد تحتوي على branch_id (اختياري)، لذا نطبق الفلتر فقط إذا كان هناك branch
+    if (branchId) {
+      // جلب المنتجات المرتبطة بهذا الفرع أو المنتجات بدون فرع (null)
+      query = query.or(`branch_id.eq.${branchId},branch_id.is.null`)
+    }
+    
+    const { data, error: dbError } = await query.order("name")
     
     if (dbError) {
       return serverError(`خطأ في جلب المنتجات: ${dbError.message}`)
