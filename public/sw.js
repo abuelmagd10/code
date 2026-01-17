@@ -202,6 +202,14 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
   
+  // ✅ تجاهل الطلبات من schemes غير مدعومة (chrome-extension, etc.)
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    // ✅ تجاهل الطلبات من chrome-extension وغيرها من الـ schemes غير المدعومة
+    console.debug(`[SW v${VERSION}] Ignoring request from unsupported scheme: ${url.protocol}`);
+    event.respondWith(fetch(request).catch(() => new Response('', { status: 0 })));
+    return;
+  }
+  
   // ✅ تجاهل الطلبات غير GET
   if (request.method !== 'GET') {
     event.respondWith(fetch(request));
@@ -249,17 +257,37 @@ self.addEventListener('fetch', (event) => {
           // ✅ جلب من الشبكة وتخزين في cache
           return fetch(request)
             .then((response) => {
-              // ✅ التحقق من أن الاستجابة صالحة
+              // ✅ التحقق من أن الاستجابة صالحة وأن الـ scheme مدعوم
               if (response && response.status === 200) {
-                const responseClone = response.clone();
-                caches.open(STATIC_CACHE)
-                  .then((cache) => {
-                    cache.put(request, responseClone);
-                    console.log(`[SW v${VERSION}] Cached static asset: ${url.pathname}`);
-                  })
-                  .catch((err) => {
-                    console.warn(`[SW v${VERSION}] Failed to cache static asset:`, err);
-                  });
+                // ✅ التحقق من أن الطلب من scheme مدعوم (http/https فقط)
+                const requestUrl = new URL(request.url);
+                const isSupportedScheme = requestUrl.protocol === 'http:' || requestUrl.protocol === 'https:';
+                
+                if (isSupportedScheme) {
+                  const responseClone = response.clone();
+                  caches.open(STATIC_CACHE)
+                    .then((cache) => {
+                      // ✅ محاولة تخزين فقط إذا كان الـ scheme مدعوم
+                      cache.put(request, responseClone)
+                        .then(() => {
+                          console.log(`[SW v${VERSION}] Cached static asset: ${url.pathname}`);
+                        })
+                        .catch((err) => {
+                          // ✅ تجاهل الأخطاء الصامتة للـ schemes غير المدعومة
+                          if (err.message && err.message.includes('chrome-extension')) {
+                            console.debug(`[SW v${VERSION}] Skipping cache for unsupported scheme: ${requestUrl.protocol}`);
+                          } else {
+                            console.warn(`[SW v${VERSION}] Failed to cache static asset:`, err);
+                          }
+                        });
+                    })
+                    .catch((err) => {
+                      console.warn(`[SW v${VERSION}] Failed to open cache:`, err);
+                    });
+                } else {
+                  // ✅ تجاهل الطلبات من schemes غير مدعومة (chrome-extension, etc.)
+                  console.debug(`[SW v${VERSION}] Skipping cache for unsupported scheme: ${requestUrl.protocol}`);
+                }
               }
               return response;
             })
