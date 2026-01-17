@@ -545,6 +545,25 @@ export default function InvoiceDetailPage() {
               if (auditErr) console.warn("Audit log failed:", auditErr)
             }
             
+          } else if (newStatus === "paid" || newStatus === "partially_paid") {
+            // ✅ إذا كانت الفاتورة في حالة "paid" مباشرة (بدون المرور بـ "sent")
+            // يجب خصم المخزون وإنشاء COGS إذا لم يتم ذلك من قبل
+            const { data: existingCOGS } = await supabase
+              .from("cogs_transactions")
+              .select("id")
+              .eq("source_id", invoiceId)
+              .eq("source_type", "invoice")
+              .limit(1)
+            
+            if (!existingCOGS || existingCOGS.length === 0) {
+              console.log("📌 Invoice paid directly - calling deductInventoryOnly()...")
+              // إنشاء COGS إذا لم يكن موجوداً
+              await deductInventoryOnly()
+              console.log(`✅ INV Paid (direct): تم خصم المخزون وإنشاء COGS`)
+            } else {
+              console.log(`✅ INV Paid: COGS already exists, skipping inventory deduction`)
+            }
+            
           } else if (newStatus === "draft" || newStatus === "cancelled") {
             await reverseInventoryForInvoice()
             // عكس القيود المحاسبية إن وجدت (للفواتير المدفوعة سابقاً)
