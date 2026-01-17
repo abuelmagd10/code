@@ -504,8 +504,10 @@ export default function InvoicesPage() {
       
       // أولاً: ملء created_by_user_id مباشرة من الفواتير
       for (const inv of (result.data || [])) {
-        if (inv.created_by_user_id) {
-          invToEmpMap[inv.id] = inv.created_by_user_id
+        // استخدام created_by_user_id من الفاتورة مباشرة
+        const invoiceCreatedBy = (inv as any).created_by_user_id
+        if (invoiceCreatedBy) {
+          invToEmpMap[inv.id] = invoiceCreatedBy
         }
       }
       
@@ -517,7 +519,7 @@ export default function InvoicesPage() {
           .select("id, created_by_user_id")
           .in("id", salesOrderIds)
 
-        // تحديث الخريطة من sales_orders
+        // تحديث الخريطة من sales_orders (أولوية أعلى من created_by_user_id المباشر)
         for (const inv of (result.data || [])) {
           if (inv.sales_order_id) {
             const so = (salesOrders || []).find((s: any) => s.id === inv.sales_order_id)
@@ -527,6 +529,9 @@ export default function InvoicesPage() {
           }
         }
       }
+      
+      // Debug: طباعة عدد الفواتير في الخريطة
+      console.log(`[Invoices] Invoice to Employee Map: ${Object.keys(invToEmpMap).length} invoices mapped out of ${(result.data || []).length} total invoices`)
       
       setInvoiceToEmployeeMap(invToEmpMap)
 
@@ -605,15 +610,23 @@ export default function InvoicesPage() {
     return invoices.filter((inv) => {
       // فلتر الموظف (حسب الموظف المنشئ لأمر البيع المرتبط أو الفاتورة مباشرة)
       if (canViewAllInvoices && filterEmployeeId && filterEmployeeId !== "all") {
-        // أولوية: 1) من invoiceToEmployeeMap (من sales_order)، 2) من created_by_user_id مباشرة
-        const employeeId = invoiceToEmployeeMap[inv.id] || (inv as any).created_by_user_id
+        // أولوية: 1) من invoiceToEmployeeMap (من sales_order)، 2) من created_by_user_id مباشرة من inv
+        const employeeIdFromMap = invoiceToEmployeeMap[inv.id]
+        const employeeIdFromInvoice = (inv as any).created_by_user_id
+        const employeeId = employeeIdFromMap || employeeIdFromInvoice
         
-        // إذا لم يكن هناك employeeId محدد، استبعد الفاتورة (لأنه لا يمكن ربطها بموظف)
-        // إذا كان employeeId موجوداً لكنه مختلف عن المحدد، استبعد الفاتورة
+        // Debug: طباعة معلومات التشخيص
+        if (inv.id && !employeeId) {
+          console.warn(`[Invoices Filter] Invoice ${inv.id} has no employeeId. Map: ${employeeIdFromMap}, Invoice: ${employeeIdFromInvoice}`)
+        }
+        
+        // إذا كان employeeId موجوداً، يجب أن يكون مطابقاً للموظف المحدد
         if (employeeId) {
-          if (employeeId !== filterEmployeeId) return false
+          if (employeeId !== filterEmployeeId) {
+            return false // الفاتورة لموظف آخر، استبعدها
+          }
         } else {
-          // إذا لم يكن هناك employeeId، استبعد الفاتورة فقط إذا كان المطلوب فلترة موظف محدد
+          // إذا لم يكن هناك employeeId، استبعد الفاتورة (لأنه لا يمكن ربطها بموظف محدد)
           return false
         }
       } else if (!canViewAllInvoices && currentUserId) {
