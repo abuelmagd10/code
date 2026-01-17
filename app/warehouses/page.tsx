@@ -115,23 +115,53 @@ export default function WarehousesPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      // ✅ استخدام API route مع تطبيق فلاتر الحوكمة
-      const warehousesResponse = await fetch('/api/warehouses', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      
-      if (warehousesResponse.ok) {
-        const warehousesResult = await warehousesResponse.json()
-        if (warehousesResult.success && warehousesResult.data) {
-          setWarehouses(warehousesResult.data || [])
-        } else {
-          console.error("Error loading warehouses:", warehousesResult.error)
-          setWarehouses([])
-        }
-      } else {
-        console.error("Error loading warehouses:", warehousesResponse.statusText)
+      // Load warehouses directly from Supabase (avoiding relationship ambiguity)
+      const { data: warehousesData, error: warehousesError } = await supabase
+        .from("warehouses")
+        .select("*")
+        .eq("company_id", companyId)
+        .order("is_main", { ascending: false })
+        .order("name")
+
+      if (warehousesError) {
+        console.error("Error loading warehouses:", warehousesError)
+        toast({ variant: "destructive", title: "خطأ", description: warehousesError.message })
         setWarehouses([])
+      } else {
+        // Fetch branch and cost center data separately to avoid relationship ambiguity
+        const warehousesWithRelations = await Promise.all(
+          (warehousesData || []).map(async (wh: any) => {
+            const result: any = { ...wh }
+            
+            // Fetch branch data if branch_id exists
+            if (wh.branch_id) {
+              const { data: branchData } = await supabase
+                .from("branches")
+                .select("id, name, branch_name")
+                .eq("id", wh.branch_id)
+                .single()
+              if (branchData) {
+                result.branches = branchData
+              }
+            }
+            
+            // Fetch cost center data if cost_center_id exists
+            if (wh.cost_center_id) {
+              const { data: ccData } = await supabase
+                .from("cost_centers")
+                .select("id, cost_center_name")
+                .eq("id", wh.cost_center_id)
+                .single()
+              if (ccData) {
+                result.cost_centers = ccData
+              }
+            }
+            
+            return result
+          })
+        )
+        
+        setWarehouses(warehousesWithRelations)
       }
 
       // Load branches
