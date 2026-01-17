@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { FilterContainer } from "@/components/ui/filter-container"
-import { type UserContext } from "@/lib/validation"
+import { type UserContext, getRoleAccessLevel } from "@/lib/validation"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { usePermissions } from "@/lib/permissions-context"
 
@@ -173,6 +173,7 @@ export default function ThirdPartyInventoryPage() {
       if (!companyId) return
 
       // Get current user
+      let memberData: { role?: string; branch_id?: string | null; cost_center_id?: string | null; warehouse_id?: string | null } | null = null
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setCurrentUserId(user.id)
@@ -182,6 +183,7 @@ export default function ThirdPartyInventoryPage() {
           .eq("company_id", companyId)
           .eq("user_id", user.id)
           .single()
+        memberData = member
         if (member) {
           setCurrentUserRole(member.role || "employee")
           setUserContext({
@@ -217,11 +219,21 @@ export default function ThirdPartyInventoryPage() {
         .neq("item_type", "service")
       setProducts(productsData || [])
 
-      // جلب الموظفين (للمديرين فقط)
-      const { data: membersData } = await supabase
+      // جلب الموظفين (للمديرين فقط) مع مراعاة صلاحيات الفروع
+      const currentRole = userContext?.role || memberData?.role || "staff"
+      const accessLevel = getRoleAccessLevel(currentRole)
+      
+      let membersQuery = supabase
         .from("company_members")
-        .select("user_id, role, email")
+        .select("user_id, role, email, branch_id")
         .eq("company_id", companyId)
+
+      // إذا كان المستخدم مدير فرع، فلترة الموظفين حسب الفرع
+      if (accessLevel === 'branch' && memberData?.branch_id) {
+        membersQuery = membersQuery.eq("branch_id", memberData.branch_id)
+      }
+
+      const { data: membersData } = await membersQuery
 
       // جلب ملفات المستخدمين للحصول على display_name
       const userIds = (membersData || []).map((m: any) => m.user_id)

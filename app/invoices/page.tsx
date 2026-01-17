@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useMemo, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
@@ -16,7 +16,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCard, Clock, UserCheck, X, ShoppingCart } from "lucide-react"
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
-import { type UserContext, getAccessFilter } from "@/lib/validation"
+import { type UserContext, getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
 import { canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control"
 import { CompanyHeader } from "@/components/company-header"
 import { usePagination } from "@/lib/pagination"
@@ -334,12 +334,22 @@ export default function InvoicesPage() {
       }
       setUserContext(context)
 
-      // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها)
+      // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها) مع مراعاة صلاحيات الفروع
       if (canViewAll) {
-        const { data: members } = await supabase
+        // استخدام getRoleAccessLevel لتحديد مستوى الوصول
+        const accessLevel = getRoleAccessLevel(role);
+        
+        let membersQuery = supabase
           .from("company_members")
-          .select("user_id, role")
+          .select("user_id, role, branch_id")
           .eq("company_id", companyId)
+
+        // إذا كان المستخدم مدير فرع، فلترة الموظفين حسب الفرع
+        if (accessLevel === 'branch' && member?.branch_id) {
+          membersQuery = membersQuery.eq("branch_id", member.branch_id)
+        }
+
+        const { data: members } = await membersQuery
 
         if (members && members.length > 0) {
           const userIds = members.map((m: { user_id: string }) => m.user_id)
@@ -353,8 +363,10 @@ export default function InvoicesPage() {
           const roleLabels: Record<string, string> = {
             owner: appLang === 'en' ? 'Owner' : 'مالك',
             admin: appLang === 'en' ? 'Admin' : 'مدير',
+            manager: appLang === 'en' ? 'Manager' : 'مدير فرع',
             staff: appLang === 'en' ? 'Staff' : 'موظف',
             accountant: appLang === 'en' ? 'Accountant' : 'محاسب',
+            supervisor: appLang === 'en' ? 'Supervisor' : 'مشرف',
             viewer: appLang === 'en' ? 'Viewer' : 'مشاهد'
           }
 

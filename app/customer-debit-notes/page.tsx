@@ -18,7 +18,7 @@ import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
-import { type UserContext, getAccessFilter } from "@/lib/validation"
+import { type UserContext, getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
 import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
 
 // نوع بيانات الموظف للفلترة
@@ -157,12 +157,22 @@ export default function CustomerDebitNotesPage() {
     }
     setUserContext(userContextValue)
 
-    // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها)
+    // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها) مع مراعاة صلاحيات الفروع
     if (canViewAll) {
-      const { data: members } = await supabase
+      // استخدام getRoleAccessLevel لتحديد مستوى الوصول
+      const accessLevel = getRoleAccessLevel(role);
+      
+      let membersQuery = supabase
         .from('company_members')
-        .select('user_id, role')
+        .select('user_id, role, branch_id')
         .eq('company_id', companyId)
+
+      // إذا كان المستخدم مدير فرع، فلترة الموظفين حسب الفرع
+      if (accessLevel === 'branch' && member?.branch_id) {
+        membersQuery = membersQuery.eq("branch_id", member.branch_id)
+      }
+
+      const { data: members } = await membersQuery
 
       if (members && members.length > 0) {
         const userIds = members.map((m: { user_id: string }) => m.user_id)
@@ -176,9 +186,10 @@ export default function CustomerDebitNotesPage() {
         const roleLabels: Record<string, string> = {
           owner: appLang === 'en' ? 'Owner' : 'مالك',
           admin: appLang === 'en' ? 'Admin' : 'مدير',
+          manager: appLang === 'en' ? 'Manager' : 'مدير فرع',
           staff: appLang === 'en' ? 'Staff' : 'موظف',
           accountant: appLang === 'en' ? 'Accountant' : 'محاسب',
-          manager: appLang === 'en' ? 'Manager' : 'مدير'
+          supervisor: appLang === 'en' ? 'Supervisor' : 'مشرف'
         }
 
         const employeesList: Employee[] = members.map((m: { user_id: string; role: string }) => {
