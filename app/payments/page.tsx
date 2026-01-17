@@ -211,15 +211,26 @@ export default function PaymentsPage() {
 
   // Listen for currency changes
   useEffect(() => {
+    let isHandling = false // منع معالجة متعددة في نفس الوقت
     const handleCurrencyChange = () => {
+      if (isHandling) return // تجاهل إذا كانت المعالجة جارية
+      isHandling = true
+      
       const newCurrency = localStorage.getItem('app_currency') || 'EGP'
-      setPaymentCurrency(newCurrency)
-      // Trigger data reload by dispatching event
-      window.location.reload()
+      if (newCurrency !== paymentCurrency) {
+        setPaymentCurrency(newCurrency)
+        // ✅ تحديث العملة فقط بدون إعادة تحميل كامل للصفحة
+        // البيانات ستُحدث تلقائياً عند تغيير paymentCurrency
+      }
+      
+      // إعادة تعيين flag بعد تأخير قصير
+      setTimeout(() => {
+        isHandling = false
+      }, 1000)
     }
     window.addEventListener('app_currency_changed', handleCurrencyChange)
     return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
-  }, [])
+  }, [paymentCurrency])
 
   useEffect(() => {
     ; (async () => {
@@ -387,8 +398,14 @@ export default function PaymentsPage() {
 
   // 🔄 الاستماع لتغيير الشركة وإعادة تحميل الصفحة
   useEffect(() => {
+    let isReloading = false // منع reload متعدد
     const handleCompanyChange = () => {
-      window.location.reload();
+      if (isReloading) return // تجاهل إذا كان reload جارياً
+      isReloading = true
+      // تأخير قصير قبل reload لمنع reload متعدد
+      setTimeout(() => {
+        window.location.reload();
+      }, 100)
     };
     window.addEventListener('company_updated', handleCompanyChange);
     return () => window.removeEventListener('company_updated', handleCompanyChange);

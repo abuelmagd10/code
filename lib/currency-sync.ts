@@ -45,11 +45,16 @@ export async function syncUserCurrency(supabase: SupabaseClient): Promise<string
       // Update localStorage and cookie
       if (typeof window !== 'undefined') {
         try {
-          localStorage.setItem('app_currency', companyCurrency)
-          document.cookie = `app_currency=${companyCurrency}; path=/; max-age=31536000`
+          const currentCurrency = localStorage.getItem('app_currency') || 'EGP'
           
-          // Dispatch event to notify other components
-          window.dispatchEvent(new Event('app_currency_changed'))
+          // ✅ إطلاق event فقط إذا تغيرت العملة فعلياً
+          if (currentCurrency !== companyCurrency) {
+            localStorage.setItem('app_currency', companyCurrency)
+            document.cookie = `app_currency=${companyCurrency}; path=/; max-age=31536000`
+            
+            // Dispatch event to notify other components
+            window.dispatchEvent(new Event('app_currency_changed'))
+          }
         } catch (error) {
           console.error('Failed to sync currency:', error)
         }
