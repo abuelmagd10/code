@@ -173,7 +173,6 @@ WITH test_data AS (
     WHERE company_id = c.id AND account_type = 'inventory' AND is_active = true 
     LIMIT 1
   ) ia
-  WHERE c.is_active = true
   LIMIT 1
 )
 SELECT 
@@ -252,7 +251,7 @@ FROM companies c
 LEFT JOIN branches b ON b.company_id = c.id AND b.is_active = true
 LEFT JOIN warehouses w ON w.company_id = c.id AND w.is_active = true
 LEFT JOIN products p ON p.company_id = c.id AND p.is_active = true AND p.item_type = 'product'
-WHERE c.is_active = true
+WHERE true
 GROUP BY c.id
 HAVING COUNT(DISTINCT b.id) > 1 AND COUNT(DISTINCT w.id) > 1
 LIMIT 5;
