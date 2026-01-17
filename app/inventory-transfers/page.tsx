@@ -28,6 +28,8 @@ interface Transfer {
   created_by_user?: { email: string }
   received_by_user?: { email: string }
   items_count?: number
+  total_quantity?: number  // إجمالي الكمية المنقولة
+  product_names?: string   // أسماء الأصناف المنقولة
 }
 
 export default function InventoryTransfersPage() {
@@ -158,24 +160,49 @@ export default function InventoryTransfersPage() {
 
       if (error) throw error
 
-      // جلب عدد البنود لكل طلب
+      // جلب بيانات الأصناف لكل طلب (عدد الأصناف، الكمية الإجمالية، أسماء المنتجات)
       const transferIds = (transfersData || []).map((t: any) => t.id)
       if (transferIds.length > 0) {
-        const { data: itemsCounts } = await supabase
+        const { data: transferItems } = await supabase
           .from("inventory_transfer_items")
-          .select("transfer_id")
+          .select(`
+            transfer_id,
+            quantity_requested,
+            quantity_sent,
+            products:product_id(id, name, sku)
+          `)
           .in("transfer_id", transferIds)
 
         const countsMap: Record<string, number> = {}
-          ; (itemsCounts || []).forEach((item: any) => {
-            countsMap[item.transfer_id] = (countsMap[item.transfer_id] || 0) + 1
-          })
+        const quantitiesMap: Record<string, number> = {}
+        const productsMap: Record<string, string[]> = {}
 
-        const transfersWithCounts = (transfersData || []).map((t: any) => ({
+        ;(transferItems || []).forEach((item: any) => {
+          const transferId = item.transfer_id
+          
+          // عدد الأصناف
+          countsMap[transferId] = (countsMap[transferId] || 0) + 1
+          
+          // إجمالي الكمية (نستخدم quantity_sent إذا كان موجوداً، وإلا quantity_requested)
+          const qty = item.quantity_sent || item.quantity_requested || 0
+          quantitiesMap[transferId] = (quantitiesMap[transferId] || 0) + qty
+          
+          // أسماء المنتجات
+          if (item.products?.name) {
+            if (!productsMap[transferId]) {
+              productsMap[transferId] = []
+            }
+            productsMap[transferId].push(item.products.name)
+          }
+        })
+
+        const transfersWithData = (transfersData || []).map((t: any) => ({
           ...t,
-          items_count: countsMap[t.id] || 0
+          items_count: countsMap[t.id] || 0,
+          total_quantity: quantitiesMap[t.id] || 0,
+          product_names: (productsMap[t.id] || []).join(', ')
         }))
-        setTransfers(transfersWithCounts)
+        setTransfers(transfersWithData)
       } else {
         setTransfers(transfersData || [])
       }
@@ -346,7 +373,7 @@ export default function InventoryTransfersPage() {
             </CardHeader>
             <CardContent className="p-0">
               {isLoading ? (
-                <TableSkeleton cols={6} rows={5} className="m-4" />
+                <TableSkeleton cols={8} rows={5} className="m-4" />
               ) : filteredTransfers.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-500">
                   <Package className="w-12 h-12 mb-3 text-gray-300" />
@@ -369,6 +396,8 @@ export default function InventoryTransfersPage() {
                         <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'From' : 'من'}</th>
                         <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'To' : 'إلى'}</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Items' : 'الأصناف'}</th>
+                        <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Quantity' : 'الكمية المنقولة'}</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Products' : 'أسماء الأصناف'}</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
@@ -394,6 +423,18 @@ export default function InventoryTransfersPage() {
                           </td>
                           <td className="px-4 py-3 text-center">
                             <Badge variant="secondary">{transfer.items_count || 0}</Badge>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="font-semibold text-gray-900 dark:text-white">
+                              {transfer.total_quantity?.toLocaleString() || 0}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="max-w-xs truncate" title={transfer.product_names || ''}>
+                              <span className="text-sm text-gray-700 dark:text-gray-300">
+                                {transfer.product_names || '-'}
+                              </span>
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-center">
                             {getStatusBadge(transfer.status)}
