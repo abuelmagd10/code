@@ -112,9 +112,10 @@ export default function WarehousesPage() {
       const userBranchId = userContext.branch_id
 
       // Build warehouses query based on permissions
+      // ✅ إزالة العلاقات من الـ select لتجنب غموض العلاقات في Supabase
       let warehousesQuery = supabase
         .from("warehouses")
-        .select("*, branches(name, branch_name), cost_centers(cost_center_name)")
+        .select("*")
         .eq("company_id", companyId)
 
       // If user cannot override, filter by their branch
@@ -129,8 +130,7 @@ export default function WarehousesPage() {
       if (warehousesError) {
         console.error("Error loading warehouses:", warehousesError)
         toast({ variant: "destructive", title: "خطأ", description: warehousesError.message })
-      } else {
-        setWarehouses(warehousesData || [])
+        setWarehouses([])
       }
 
       // Load branches (filtered by permissions)
@@ -169,6 +169,20 @@ export default function WarehousesPage() {
         console.error("Error loading cost centers:", ccError)
       } else {
         setCostCenters(ccData || [])
+      }
+
+      // ✅ دمج بيانات branches و cost_centers مع warehouses بعد جلب جميع البيانات
+      if (warehousesData && !warehousesError) {
+        const warehousesWithRelations = (warehousesData || []).map((wh: any) => {
+          const branch = branchesData?.find((b: any) => b.id === wh.branch_id)
+          const costCenter = ccData?.find((cc: any) => cc.id === wh.cost_center_id)
+          return {
+            ...wh,
+            branches: branch ? { name: branch.name, branch_name: branch.branch_name } : undefined,
+            cost_centers: costCenter ? { cost_center_name: costCenter.cost_center_name } : undefined,
+          }
+        })
+        setWarehouses(warehousesWithRelations)
       }
     } catch (err: any) {
       console.error("Error loading data:", err)
