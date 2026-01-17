@@ -2142,7 +2142,29 @@ export default function InvoiceDetailPage() {
         }
       }
 
-      // ===== 5) حساب البونص إذا أصبحت الفاتورة مدفوعة بالكامل =====
+      // ===== 5) ✅ إنشاء COGS Transactions إذا لم تكن موجودة (للـ Direct Sales - بدون شركة شحن) =====
+      // التحقق من وجود COGS transactions (إذا لم تكن موجودة، يتم إنشاؤها الآن)
+      const { data: existingCOGS } = await supabase
+        .from("cogs_transactions")
+        .select("id")
+        .eq("source_id", invoice.id)
+        .eq("source_type", "invoice")
+        .limit(1)
+      
+      if (!existingCOGS || existingCOGS.length === 0) {
+        // التحقق من وجود شركة شحن (إذا كان هناك شركة شحن، COGS يتم في clearThirdPartyInventory)
+        const shippingValidation = await validateShippingProvider(supabase, invoice.id)
+        const hasShippingProvider = shippingValidation.valid && shippingValidation.shippingProviderId
+        
+        if (!hasShippingProvider) {
+          // ✅ Direct Sales: إنشاء COGS الآن (FIFO + COGS Transactions)
+          console.log("📌 Invoice paid - calling deductInventoryOnly() to create COGS...")
+          await deductInventoryOnly()
+          console.log(`✅ INV Paid: تم خصم المخزون وإنشاء COGS Transactions`)
+        }
+      }
+
+      // ===== 6) حساب البونص إذا أصبحت الفاتورة مدفوعة بالكامل =====
       if (newStatus === "paid" && mapping?.companyId) {
         try {
           const bonusRes = await fetch("/api/bonuses", {
