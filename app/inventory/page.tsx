@@ -170,7 +170,7 @@ export default function InventoryPage() {
         }
         for (const [pid, qty] of Object.entries(qtyByProduct)) {
           const cost = productCostMap.get(pid) || 0
-          totalValue += Math.max(0, qty) * cost
+          totalValue += Math.max(0, Number(qty)) * Number(cost)
         }
 
         data.push({
