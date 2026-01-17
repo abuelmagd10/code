@@ -731,6 +731,7 @@ export default function NewInvoicePage() {
               branch_id: branchId || null,
               cost_center_id: costCenterId || null,
               warehouse_id: warehouseId || null,
+              created_by_user_id: user.id, // 🔹 تعيين منشئ أمر البيع للفلترة والصلاحيات
             })
             .select()
             .single()
@@ -790,6 +791,8 @@ export default function NewInvoicePage() {
               branch_id: branchId || null,
               cost_center_id: costCenterId || null,
               warehouse_id: warehouseId || null,
+              // 🔹 تعيين منشئ الفاتورة للفلترة والصلاحيات
+              created_by_user_id: user.id,
               // Multi-currency support - store original and converted values
               currency_code: invoiceCurrency,
               exchange_rate: exchangeRate,
