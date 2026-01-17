@@ -27,9 +27,10 @@ export async function GET(request: NextRequest) {
     const supabase = createClient(cookies())
     
     // 2️⃣ بناء الاستعلام مع فلاتر الحوكمة
+    // Note: Fetching warehouses without relationships to avoid ambiguity
     let query = supabase
       .from("warehouses")
-      .select("*, branches(id, name, branch_name), cost_centers(id, cost_center_name)")
+      .select("*")
     
     // 3️⃣ تطبيق فلاتر الحوكمة (إلزامي) - فقط company_id و branch_id (لا warehouse_id لأننا نجلب المخازن نفسها)
     query = query.eq('company_id', governance.companyId)
@@ -55,9 +56,42 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
+    // Fetch branch and cost center data separately to avoid relationship ambiguity
+    const warehousesWithRelations = await Promise.all(
+      (warehouses || []).map(async (wh: any) => {
+        const result: any = { ...wh }
+        
+        // Fetch branch data if branch_id exists
+        if (wh.branch_id) {
+          const { data: branchData } = await supabase
+            .from("branches")
+            .select("id, name, branch_name")
+            .eq("id", wh.branch_id)
+            .single()
+          if (branchData) {
+            result.branches = branchData
+          }
+        }
+        
+        // Fetch cost center data if cost_center_id exists
+        if (wh.cost_center_id) {
+          const { data: ccData } = await supabase
+            .from("cost_centers")
+            .select("id, cost_center_name")
+            .eq("id", wh.cost_center_id)
+            .single()
+          if (ccData) {
+            result.cost_centers = ccData
+          }
+        }
+        
+        return result
+      })
+    )
+
     return NextResponse.json({
       success: true,
-      data: warehouses || [],
+      data: warehousesWithRelations,
       meta: {
         total: (warehouses || []).length,
         role: governance.role,
@@ -126,7 +160,7 @@ export async function POST(request: NextRequest) {
         is_main: false,
         is_active: body.is_active !== false
       })
-      .select()
+      .select("*")
       .single()
 
     if (insertError) {
