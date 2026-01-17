@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getActiveCompanyId } from '@/lib/company'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface SecurityConfig {
@@ -49,8 +50,8 @@ export async function secureApiRequest(
 
     // 2. التحقق من العضوية في الشركة
     if (config.requireCompany !== false) {
-      const url = new URL(request.url)
-      const companyId = url.searchParams.get('companyId')
+      // ✅ استخدام getActiveCompanyId بدلاً من query params (أكثر أماناً)
+      const companyId = await getActiveCompanyId(supabase)
       
       if (!companyId) {
         return {
@@ -58,8 +59,8 @@ export async function secureApiRequest(
           companyId: '',
           member: null,
           error: NextResponse.json(
-            { error: 'معرف الشركة مطلوب', message: 'Company ID required' },
-            { status: 400 }
+            { error: 'لم يتم العثور على الشركة', message: 'Company not found' },
+            { status: 404 }
           )
         }
       }
