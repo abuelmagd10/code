@@ -498,6 +498,18 @@ export default function InvoicesPage() {
       }
 
       // تحميل أوامر البيع المرتبطة بالفواتير لمعرفة الموظف المنشئ
+      // بناء خريطة: invoice_id -> created_by_user_id
+      // أولوية: 1) من sales_order، 2) من created_by_user_id مباشرة
+      const invToEmpMap: Record<string, string> = {}
+      
+      // أولاً: ملء created_by_user_id مباشرة من الفواتير
+      for (const inv of (result.data || [])) {
+        if (inv.created_by_user_id) {
+          invToEmpMap[inv.id] = inv.created_by_user_id
+        }
+      }
+      
+      // ثانياً: تحديث من sales_orders إذا كان متوفراً (أولوية أعلى)
       const salesOrderIds = (result.data || []).filter((inv: any) => inv.sales_order_id).map((inv: any) => inv.sales_order_id)
       if (salesOrderIds.length > 0) {
         const { data: salesOrders } = await supabase
@@ -505,24 +517,18 @@ export default function InvoicesPage() {
           .select("id, created_by_user_id")
           .in("id", salesOrderIds)
 
-        // بناء خريطة: invoice_id -> created_by_user_id
-        // أولوية: 1) من sales_order، 2) من created_by_user_id مباشرة
-        const invToEmpMap: Record<string, string> = {}
+        // تحديث الخريطة من sales_orders
         for (const inv of (result.data || [])) {
-          // محاولة الحصول من sales_order أولاً
           if (inv.sales_order_id) {
             const so = (salesOrders || []).find((s: any) => s.id === inv.sales_order_id)
             if (so?.created_by_user_id) {
               invToEmpMap[inv.id] = so.created_by_user_id
             }
           }
-          // إذا لم يكن من sales_order، استخدم created_by_user_id مباشرة
-          if (!invToEmpMap[inv.id] && inv.created_by_user_id) {
-            invToEmpMap[inv.id] = inv.created_by_user_id
-          }
         }
-        setInvoiceToEmployeeMap(invToEmpMap)
       }
+      
+      setInvoiceToEmployeeMap(invToEmpMap)
 
       // تحميل شركات الشحن
       const { data: providersData } = await supabase
