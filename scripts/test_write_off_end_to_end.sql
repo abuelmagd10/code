@@ -24,6 +24,7 @@ DECLARE
   v_test_user_id UUID;
   v_test_expense_account_id UUID;
   v_test_inventory_account_id UUID;
+  v_lot RECORD;
 BEGIN
   -- الحصول على أول شركة نشطة
   SELECT id INTO v_test_company_id FROM companies WHERE is_active = true LIMIT 1;
