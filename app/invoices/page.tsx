@@ -499,32 +499,39 @@ export default function InvoicesPage() {
 
       // تحميل أوامر البيع المرتبطة بالفواتير لمعرفة الموظف المنشئ
       // بناء خريطة: invoice_id -> created_by_user_id
-      // أولوية: 1) من sales_order، 2) من created_by_user_id مباشرة
+      // أولوية: 1) من sales_order، 2) من created_by_user_id مباشرة من قاعدة البيانات
       const invToEmpMap: Record<string, string> = {}
       
-      // أولاً: ملء created_by_user_id مباشرة من الفواتير
-      for (const inv of (result.data || [])) {
-        // استخدام created_by_user_id من الفاتورة مباشرة
-        const invoiceCreatedBy = (inv as any).created_by_user_id
-        if (invoiceCreatedBy) {
-          invToEmpMap[inv.id] = invoiceCreatedBy
-        }
-      }
-      
-      // ثانياً: تحديث من sales_orders إذا كان متوفراً (أولوية أعلى)
-      const salesOrderIds = (result.data || []).filter((inv: any) => inv.sales_order_id).map((inv: any) => inv.sales_order_id)
-      if (salesOrderIds.length > 0) {
-        const { data: salesOrders } = await supabase
-          .from("sales_orders")
-          .select("id, created_by_user_id")
-          .in("id", salesOrderIds)
+      // إذا كان هناك فواتير، جلب created_by_user_id و sales_order_id مباشرة من قاعدة البيانات
+      // استخدام invoiceIds الموجود من الأعلى (السطر 453)
+      if (invoiceIds.length > 0) {
+        const { data: invoicesFromDb } = await supabase
+          .from("invoices")
+          .select("id, created_by_user_id, sales_order_id")
+          .in("id", invoiceIds)
 
-        // تحديث الخريطة من sales_orders (أولوية أعلى من created_by_user_id المباشر)
-        for (const inv of (result.data || [])) {
-          if (inv.sales_order_id) {
-            const so = (salesOrders || []).find((s: any) => s.id === inv.sales_order_id)
-            if (so?.created_by_user_id) {
-              invToEmpMap[inv.id] = so.created_by_user_id
+        // أولاً: ملء created_by_user_id مباشرة من قاعدة البيانات
+        for (const inv of (invoicesFromDb || [])) {
+          if (inv.created_by_user_id) {
+            invToEmpMap[inv.id] = inv.created_by_user_id
+          }
+        }
+        
+        // ثانياً: تحديث من sales_orders إذا كان متوفراً (أولوية أعلى)
+        const salesOrderIds = (invoicesFromDb || []).filter((inv: any) => inv.sales_order_id).map((inv: any) => inv.sales_order_id)
+        if (salesOrderIds.length > 0) {
+          const { data: salesOrders } = await supabase
+            .from("sales_orders")
+            .select("id, created_by_user_id")
+            .in("id", salesOrderIds)
+
+          // تحديث الخريطة من sales_orders (أولوية أعلى من created_by_user_id المباشر)
+          for (const inv of (invoicesFromDb || [])) {
+            if (inv.sales_order_id) {
+              const so = (salesOrders || []).find((s: any) => s.id === inv.sales_order_id)
+              if (so?.created_by_user_id) {
+                invToEmpMap[inv.id] = so.created_by_user_id
+              }
             }
           }
         }
