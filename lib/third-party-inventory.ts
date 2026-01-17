@@ -23,6 +23,22 @@ export interface ShippingProviderValidation {
   error?: string
 }
 
+export interface ClearThirdPartyInventoryParams {
+  supabase: SupabaseClient
+  companyId: string
+  invoiceId: string
+  paidRatio: number
+  branchId: string | null
+  costCenterId: string | null
+}
+
+export interface ClearThirdPartyInventoryResult {
+  success: boolean
+  totalCOGS: number
+  clearedQuantity?: number
+  error?: string
+}
+
 /**
  * Validate that an invoice has a shipping provider
  */
@@ -173,5 +189,96 @@ export async function transferToThirdParty(
   } catch (error: any) {
     console.error("Error in transferToThirdParty:", error)
     return false
+  }
+}
+
+/**
+ * Clear third-party inventory when invoice is paid
+ * Calculates COGS based on paid ratio
+ */
+export async function clearThirdPartyInventory(
+  params: ClearThirdPartyInventoryParams
+): Promise<ClearThirdPartyInventoryResult> {
+  const {
+    supabase,
+    companyId,
+    invoiceId,
+    paidRatio,
+    branchId,
+    costCenterId,
+  } = params
+
+  try {
+    // Get third-party inventory for this invoice
+    const { data: thirdPartyInventory, error: fetchError } = await supabase
+      .from("third_party_inventory")
+      .select("id, product_id, quantity, unit_cost, cleared_quantity, status")
+      .eq("company_id", companyId)
+      .eq("invoice_id", invoiceId)
+      .eq("status", "open")
+
+    if (fetchError) {
+      console.error("Error fetching third-party inventory:", fetchError)
+      return {
+        success: false,
+        totalCOGS: 0,
+        error: fetchError.message,
+      }
+    }
+
+    if (!thirdPartyInventory || thirdPartyInventory.length === 0) {
+      // No third-party inventory to clear
+      return {
+        success: true,
+        totalCOGS: 0,
+        clearedQuantity: 0,
+      }
+    }
+
+    // Calculate total COGS based on paid ratio
+    let totalCOGS = 0
+    let totalClearedQuantity = 0
+
+    for (const item of thirdPartyInventory) {
+      const quantityToClear = parseFloat(String(item.quantity || 0)) * paidRatio
+      const itemCOGS = quantityToClear * parseFloat(String(item.unit_cost || 0))
+      totalCOGS += itemCOGS
+      totalClearedQuantity += quantityToClear
+
+      // Update third-party inventory record
+      const currentClearedQuantity = parseFloat(String(item.cleared_quantity || 0))
+      const newClearedQuantity = currentClearedQuantity + quantityToClear
+      const remainingQuantity = parseFloat(String(item.quantity || 0)) - newClearedQuantity
+
+      let newStatus = item.status
+      if (remainingQuantity <= 0) {
+        newStatus = "cleared"
+      } else if (newClearedQuantity > 0) {
+        newStatus = "partial"
+      }
+
+      await supabase
+        .from("third_party_inventory")
+        .update({
+          cleared_quantity: newClearedQuantity,
+          status: newStatus,
+          cleared_at: newStatus === "cleared" ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", item.id)
+    }
+
+    return {
+      success: true,
+      totalCOGS,
+      clearedQuantity: totalClearedQuantity,
+    }
+  } catch (error: any) {
+    console.error("Error in clearThirdPartyInventory:", error)
+    return {
+      success: false,
+      totalCOGS: 0,
+      error: error.message || "Unknown error",
+    }
   }
 }
