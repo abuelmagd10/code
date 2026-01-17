@@ -82,7 +82,7 @@ GROUP BY li.id, li.invoice_number, li.status, li.invoice_date,
 -- التحقق من FIFO Lots للمنتجات في الفاتورة
 -- =====================================================
 WITH latest_invoice_items AS (
-  SELECT DISTINCT ii.product_id, p.name as product_name
+  SELECT DISTINCT ii.product_id, p.name as product_name, i.created_at
   FROM invoices i
   JOIN invoice_items ii ON ii.invoice_id = i.id
   JOIN products p ON ii.product_id = p.id
