@@ -605,9 +605,17 @@ export default function InvoicesPage() {
     return invoices.filter((inv) => {
       // فلتر الموظف (حسب الموظف المنشئ لأمر البيع المرتبط أو الفاتورة مباشرة)
       if (canViewAllInvoices && filterEmployeeId && filterEmployeeId !== "all") {
+        // أولوية: 1) من invoiceToEmployeeMap (من sales_order)، 2) من created_by_user_id مباشرة
         const employeeId = invoiceToEmployeeMap[inv.id] || (inv as any).created_by_user_id
-        // إذا لم يكن هناك employeeId محدد، أو كان مختلفاً عن المحدد، استبعد الفاتورة
-        if (!employeeId || employeeId !== filterEmployeeId) return false
+        
+        // إذا لم يكن هناك employeeId محدد، استبعد الفاتورة (لأنه لا يمكن ربطها بموظف)
+        // إذا كان employeeId موجوداً لكنه مختلف عن المحدد، استبعد الفاتورة
+        if (employeeId) {
+          if (employeeId !== filterEmployeeId) return false
+        } else {
+          // إذا لم يكن هناك employeeId، استبعد الفاتورة فقط إذا كان المطلوب فلترة موظف محدد
+          return false
+        }
       } else if (!canViewAllInvoices && currentUserId) {
         // الموظف العادي يرى فقط فواتير أوامره
         const employeeId = invoiceToEmployeeMap[inv.id] || (inv as any).created_by_user_id
