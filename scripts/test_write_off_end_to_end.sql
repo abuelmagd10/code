@@ -26,11 +26,11 @@ DECLARE
   v_test_inventory_account_id UUID;
   v_lot RECORD;
 BEGIN
-  -- الحصول على أول شركة نشطة
-  SELECT id INTO v_test_company_id FROM companies WHERE is_active = true LIMIT 1;
+  -- الحصول على أول شركة
+  SELECT id INTO v_test_company_id FROM companies LIMIT 1;
   
   IF v_test_company_id IS NULL THEN
-    RAISE NOTICE '❌ لا توجد شركة نشطة للاختبار';
+    RAISE NOTICE '❌ لا توجد شركة للاختبار';
     RETURN;
   END IF;
 
