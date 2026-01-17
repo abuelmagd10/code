@@ -310,15 +310,23 @@ export default function PaymentsPage() {
             const existingIds = new Set(allCustomers.map(c => c.id));
             (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
           }
-        } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        } else if (accessFilter.filterByBranch) {
           // مدير/محاسب: يرى عملاء الفرع
-          let query = supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("branch_id", accessFilter.branchId);
-          // إضافة فلتر مركز التكلفة إذا كان مفعلاً
-          if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
-            query = query.eq("cost_center_id", accessFilter.costCenterId);
+          if (accessFilter.branchId) {
+            // إذا كان هناك branch_id محدد، جلب عملاء الفرع
+            let query = supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("branch_id", accessFilter.branchId);
+            // إضافة فلتر مركز التكلفة إذا كان مفعلاً
+            if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
+              query = query.eq("cost_center_id", accessFilter.costCenterId);
+            }
+            const { data: branchCust } = await query;
+            allCustomers = branchCust || [];
+          } else {
+            // إذا لم يكن هناك branch_id محدد، جلب جميع العملاء (fallback)
+            // هذا يحدث عندما يكون المستخدم مدير/محاسب لكن بدون فرع محدد
+            const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId);
+            allCustomers = allCust || [];
           }
-          const { data: branchCust } = await query;
-          allCustomers = branchCust || [];
         } else {
           // owner/admin: جميع العملاء
           const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId);

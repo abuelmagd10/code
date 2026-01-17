@@ -1500,6 +1500,17 @@ export function getAccessFilter(
   // Manager/Accountant - فلترة حسب الفرع (رؤية جميع البيانات في الفرع)
   const roleLower = userRole?.toLowerCase() || '';
   if (accessLevel === 'branch' && ['manager', 'accountant'].includes(roleLower)) {
+    // ✅ إذا لم يكن هناك branch_id محدد، لا نطبق فلتر الفرع (يرى جميع العملاء)
+    if (!userBranchId) {
+      return {
+        filterByCreatedBy: !!filterByEmployee,
+        createdByUserId: filterByEmployee || null,
+        filterByBranch: false,
+        branchId: null,
+        filterByCostCenter: false,
+        costCenterId: null
+      };
+    }
     return {
       filterByCreatedBy: !!filterByEmployee,
       createdByUserId: filterByEmployee || null,
@@ -1512,6 +1523,17 @@ export function getAccessFilter(
 
   // Supervisor - فلترة حسب الفرع + مركز التكلفة
   if (accessLevel === 'branch' && roleLower === 'supervisor') {
+    // ✅ إذا لم يكن هناك branch_id محدد، لا نطبق فلتر الفرع (يرى جميع العملاء)
+    if (!userBranchId) {
+      return {
+        filterByCreatedBy: !!filterByEmployee,
+        createdByUserId: filterByEmployee || null,
+        filterByBranch: false,
+        branchId: null,
+        filterByCostCenter: false,
+        costCenterId: null
+      };
+    }
     return {
       filterByCreatedBy: !!filterByEmployee,
       createdByUserId: filterByEmployee || null,
