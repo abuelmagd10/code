@@ -222,7 +222,7 @@ export default function InventoryPage() {
             is_low_stock: qty < reorderLevel && reorderLevel > 0
           }
         })
-        .filter(item => item.quantity > 0 || searchQuery) // Show all if searching, otherwise only items with stock
+        .filter((item: InventoryItem) => item.quantity > 0 || searchQuery) // Show all if searching, otherwise only items with stock
 
       // Apply branch filter if selected
       const filteredItems = selectedBranch && warehouse?.branch_id !== selectedBranch
