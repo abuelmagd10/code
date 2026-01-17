@@ -41,7 +41,13 @@ import { computeLeafAccountBalancesAsOf } from "@/lib/ledger"
 import { canAction } from "@/lib/authz"
 import { validateBankAccountAccess, type UserContext, getAccessFilter } from "@/lib/validation"
 
-interface Customer { id: string; name: string; phone?: string | null }
+interface Customer { 
+  id: string; 
+  name: string; 
+  phone?: string | null;
+  branch_id?: string | null;
+  cost_center_id?: string | null;
+}
 interface Supplier { id: string; name: string }
 interface Payment {
   id: string;
@@ -313,14 +319,48 @@ export default function PaymentsPage() {
         } else if (accessFilter.filterByBranch) {
           // مدير/محاسب: يرى عملاء الفرع
           if (accessFilter.branchId) {
-            // إذا كان هناك branch_id محدد، جلب عملاء الفرع
-            let query = supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("branch_id", accessFilter.branchId);
-            // إضافة فلتر مركز التكلفة إذا كان مفعلاً
-            if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
-              query = query.eq("cost_center_id", accessFilter.costCenterId);
+            // ✅ جلب عملاء الفرع
+            const { data: branchCust, error: branchCustError } = await supabase
+              .from("customers")
+              .select("id, name, phone, branch_id, cost_center_id")
+              .eq("company_id", activeCompanyId)
+              .eq("branch_id", accessFilter.branchId);
+            
+            if (branchCustError) {
+              console.error("[Payments] Error fetching branch customers:", branchCustError);
+              allCustomers = [];
+            } else {
+              allCustomers = branchCust || [];
+              
+              // ✅ إضافة فلتر مركز التكلفة إذا كان مفعلاً
+              if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
+                allCustomers = allCustomers.filter((c: any) => 
+                  !c.cost_center_id || c.cost_center_id === accessFilter.costCenterId
+                );
+              }
+              
+              // ✅ إضافة العملاء بدون branch_id (NULL) - قد يكونون عملاء عامين
+              // جلبهم بشكل منفصل ودمجهم مع عملاء الفرع
+              const { data: nullBranchCust } = await supabase
+                .from("customers")
+                .select("id, name, phone, branch_id, cost_center_id")
+                .eq("company_id", activeCompanyId)
+                .is("branch_id", null);
+              
+              if (nullBranchCust && nullBranchCust.length > 0) {
+                // دمج العملاء بدون branch_id مع عملاء الفرع
+                const existingIds = new Set(allCustomers.map((c: Customer) => c.id));
+                (nullBranchCust as Customer[]).forEach((c: Customer) => {
+                  if (!existingIds.has(c.id)) {
+                    // ✅ إضافة فقط إذا لم يكن هناك فلتر مركز التكلفة أو إذا كان cost_center_id null أو متطابق
+                    if (!accessFilter.filterByCostCenter || !accessFilter.costCenterId || 
+                        !c.cost_center_id || c.cost_center_id === accessFilter.costCenterId) {
+                      allCustomers.push(c);
+                    }
+                  }
+                });
+              }
             }
-            const { data: branchCust } = await query;
-            allCustomers = branchCust || [];
           } else {
             // إذا لم يكن هناك branch_id محدد، جلب جميع العملاء (fallback)
             // هذا يحدث عندما يكون المستخدم مدير/محاسب لكن بدون فرع محدد
