@@ -51,25 +51,51 @@ export async function getBranchDefaults(
  * Enforce branch defaults in a transaction body
  */
 export async function enforceBranchDefaults(
-  governance: GovernanceContext,
+  governance: any, // Can be GovernanceContext from middleware or our local GovernanceContext
   body: any,
   supabase: SupabaseClient
 ): Promise<GovernanceContext> {
-  const branchId = governance.branch_id || body.branch_id
+  // Handle both governance context structures:
+  // 1. From middleware: { companyId, branchIds[], warehouseIds[], costCenterIds[], role }
+  // 2. Local: { branch_id, warehouse_id, cost_center_id, ... }
+  const branchId = 
+    governance.branch_id || 
+    (governance.branchIds && governance.branchIds.length > 0 ? governance.branchIds[0] : null) ||
+    body.branch_id
 
   if (!branchId) {
-    return governance
+    // Return a context with what we have, but mark as incomplete
+    return {
+      branch_id: null,
+      warehouse_id: governance.warehouse_id || 
+        (governance.warehouseIds && governance.warehouseIds.length > 0 ? governance.warehouseIds[0] : null) ||
+        body.warehouse_id || null,
+      cost_center_id: governance.cost_center_id || 
+        (governance.costCenterIds && governance.costCenterIds.length > 0 ? governance.costCenterIds[0] : null) ||
+        body.cost_center_id || null,
+      companyId: governance.companyId || governance.company_id || body.company_id || null,
+      ...governance
+    }
   }
 
   // Get branch defaults
   const defaults = await getBranchDefaults(supabase, branchId)
 
-  // Apply defaults if not already set
+  // Apply defaults if not already set, prioritizing: body > governance > defaults
   const enhancedContext: GovernanceContext = {
     ...governance,
     branch_id: branchId,
-    warehouse_id: governance.warehouse_id || body.warehouse_id || defaults.default_warehouse_id,
-    cost_center_id: governance.cost_center_id || body.cost_center_id || defaults.default_cost_center_id,
+    warehouse_id: 
+      body.warehouse_id || 
+      governance.warehouse_id || 
+      (governance.warehouseIds && governance.warehouseIds.length > 0 ? governance.warehouseIds[0] : null) ||
+      defaults.default_warehouse_id,
+    cost_center_id: 
+      body.cost_center_id || 
+      governance.cost_center_id || 
+      (governance.costCenterIds && governance.costCenterIds.length > 0 ? governance.costCenterIds[0] : null) ||
+      defaults.default_cost_center_id,
+    companyId: governance.companyId || governance.company_id || body.company_id || null,
   }
 
   return enhancedContext
@@ -97,15 +123,22 @@ export function validateBranchDefaults(
 
 /**
  * Build sales order data with governance context
+ * Ensures all required governance fields are set from context first
  */
 export function buildSalesOrderData(
   body: any,
   context: GovernanceContext
 ): any {
-  return {
+  // Prioritize context values over body values for governance fields
+  const finalData = {
     ...body,
-    branch_id: context.branch_id || body.branch_id,
-    warehouse_id: context.warehouse_id || body.warehouse_id,
-    cost_center_id: context.cost_center_id || body.cost_center_id,
+    // Always use context values if available, otherwise fall back to body
+    branch_id: context.branch_id ?? body.branch_id ?? null,
+    warehouse_id: context.warehouse_id ?? body.warehouse_id ?? null,
+    cost_center_id: context.cost_center_id ?? body.cost_center_id ?? null,
+    // Ensure company_id is set from context if available
+    company_id: context.companyId ?? context.company_id ?? body.company_id ?? null,
   }
+  
+  return finalData
 }
