@@ -46,6 +46,7 @@ import {
   clearThirdPartyInventory,
   validateShippingProvider
 } from "@/lib/third-party-inventory"
+import { consumeFIFOLotsWithCOGS } from "@/lib/fifo-engine"
 
 interface Invoice {
   id: string
@@ -2274,7 +2275,7 @@ export default function InvoiceDetailPage() {
         return
       }
 
-      // 📌 النمط القديم: خصم مباشر من المخزون (للفواتير بدون شركة شحن)
+      // ✅ ERP Professional: خصم المخزون باستخدام FIFO + COGS Transactions
       const { data: invItems } = await supabase
         .from("invoice_items")
         .select("product_id, quantity, products(item_type)")
@@ -2282,32 +2283,73 @@ export default function InvoiceDetailPage() {
 
       const productItems = (invItems || []).filter((it: any) => !!it.product_id && it.products?.item_type !== 'service')
 
+      // التحقق من الحوكمة (إلزامي لـ COGS)
+      if (!invoice.branch_id || !invoice.cost_center_id || !invoice.warehouse_id) {
+        console.error("❌ COGS requires governance: branch_id, cost_center_id, warehouse_id must be set")
+        // Fallback: استخدام الطريقة القديمة بدون COGS
+        const invTx = productItems.map((it: any) => ({
+          company_id: mapping.companyId,
+          product_id: it.product_id,
+          transaction_type: "sale",
+          quantity_change: -Number(it.quantity || 0),
+          reference_id: invoiceId,
+          notes: `بيع ${invoice.invoice_number} (مرسلة - بدون COGS - missing governance)`,
+          branch_id: invoice.branch_id || null,
+          cost_center_id: invoice.cost_center_id || null,
+          warehouse_id: invoice.warehouse_id || null,
+        }))
+        if (invTx.length > 0) {
+          const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
+          if (invErr) console.error("❌ Failed inserting inventory transactions:", invErr)
+        }
+        return
+      }
+
+      // ✅ استخدام FIFO + COGS Transactions لكل منتج
+      const { data: { user } } = await supabase.auth.getUser()
+      let totalCOGSCreated = 0
+
+      for (const item of productItems) {
+        const fifoResult = await consumeFIFOLotsWithCOGS(supabase, {
+          companyId: mapping.companyId,
+          branchId: invoice.branch_id!,
+          costCenterId: invoice.cost_center_id!,
+          warehouseId: invoice.warehouse_id!,
+          productId: item.product_id,
+          quantity: Number(item.quantity || 0),
+          sourceType: 'invoice',
+          sourceId: invoiceId,
+          transactionDate: invoice.invoice_date || new Date().toISOString().split('T')[0],
+          createdByUserId: user?.id
+        })
+
+        if (fifoResult.success) {
+          totalCOGSCreated += fifoResult.cogsTransactionIds.length
+          console.log(`✅ COGS created for product ${item.product_id}: ${fifoResult.cogsTransactionIds.length} transactions, total COGS: ${fifoResult.totalCOGS}`)
+        } else {
+          console.error(`❌ Failed to create COGS for product ${item.product_id}:`, fifoResult.error)
+        }
+      }
+
+      // إنشاء inventory_transactions للأرشيف (للتوافق مع النظام القديم)
       const invTx = productItems.map((it: any) => ({
         company_id: mapping.companyId,
         product_id: it.product_id,
         transaction_type: "sale",
         quantity_change: -Number(it.quantity || 0),
         reference_id: invoiceId,
-        notes: `بيع ${invoice.invoice_number} (مرسلة - بدون شحن)`,
+        notes: `بيع ${invoice.invoice_number} (FIFO + COGS)`,
         branch_id: invoice.branch_id || null,
         cost_center_id: invoice.cost_center_id || null,
         warehouse_id: invoice.warehouse_id || null,
       }))
 
       if (invTx.length > 0) {
-        console.log("📦 Deducting inventory for invoice:", {
-          invoiceId,
-          companyId: mapping.companyId,
-          itemsCount: invTx.length,
-          sampleItem: invTx[0]
-        })
-
-        const { error: invErr } = await supabase
-          .from("inventory_transactions")
-          .insert(invTx)
+        const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
         if (invErr) {
-          console.error("❌ Failed inserting sale inventory transactions:", invErr)
-          console.error("📋 Data that failed:", invTx)
+          console.error("❌ Failed inserting inventory transactions:", invErr)
+        } else {
+          console.log(`✅ Created ${totalCOGSCreated} COGS transactions for invoice ${invoice.invoice_number}`)
         }
       }
     } catch (err) {

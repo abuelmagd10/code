@@ -6,6 +6,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { canReturnInvoice, getInvoiceOperationError, requiresJournalEntries } from './validation'
 import { reverseFIFOConsumption } from './fifo-engine'
+import { reverseCOGSTransaction, getCOGSByInvoice } from './cogs-transactions'
 
 export interface SalesReturnItem {
   id: string
@@ -86,6 +87,57 @@ export async function processSalesReturn(
 
     // 3️⃣ عكس استهلاك FIFO (إرجاع الدفعات)
     await reverseFIFOConsumption(supabase, 'invoice', invoiceId)
+
+    // 3️⃣ ب) ✅ ERP Professional: عكس COGS Transactions (للمنتجات المرتجعة)
+    // الحصول على سجلات COGS الأصلية للفاتورة
+    const originalCOGSTransactions = await getCOGSByInvoice(supabase, invoiceId)
+    
+    // إنشاء Sales Return ID مؤقت للربط
+    let salesReturnId: string | null = null
+    
+    // عكس COGS لكل منتج مرتجع
+    for (const returnItem of returnItems.filter(r => r.qtyToReturn > 0)) {
+      // البحث عن سجلات COGS الأصلية لهذا المنتج
+      const productCOGS = originalCOGSTransactions.filter(
+        tx => tx.product_id === returnItem.product_id
+      )
+      
+      // عكس COGS بنفس نسبة المرتجع (quantity ratio)
+      for (const cogsTx of productCOGS) {
+        const returnRatio = returnItem.qtyToReturn / returnItem.quantity
+        const returnQuantity = cogsTx.quantity * returnRatio
+        
+        if (returnQuantity > 0) {
+          // إنشاء sales_return مؤقت إذا لم يكن موجوداً
+          if (!salesReturnId) {
+            const { data: tempReturn, error: tempErr } = await supabase
+              .from('sales_returns')
+              .select('id')
+              .eq('invoice_id', invoiceId)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .single()
+            
+            if (!tempErr && tempReturn) {
+              salesReturnId = tempReturn.id
+            }
+          }
+          
+          // عكس COGS بنفس التكلفة الأصلية (FIFO)
+          const reverseResult = await reverseCOGSTransaction(
+            supabase,
+            cogsTx.id,
+            salesReturnId || invoiceId // استخدام invoiceId كـ fallback
+          )
+          
+          if (reverseResult.success) {
+            console.log(`✅ COGS reversed for product ${returnItem.product_id}: ${reverseResult.transactionId}`)
+          } else {
+            console.error(`❌ Failed to reverse COGS for product ${returnItem.product_id}:`, reverseResult.error)
+          }
+        }
+      }
+    }
 
     // 4️⃣ معالجة المخزون (لجميع الحالات)
     await processInventoryReturn(supabase, {
