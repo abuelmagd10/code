@@ -1,48 +1,94 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useCallback, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
+import { toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
-import { Warehouse, Building2, Package, Box, TrendingUp, TrendingDown } from "lucide-react"
+import { ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, TrendingDown, Calendar, Filter, BarChart3, Box, ShoppingCart, Truck, CheckCircle2, FileText, Warehouse, Building2 } from "lucide-react"
+import { TableSkeleton } from "@/components/ui/skeleton"
+import { Badge } from "@/components/ui/badge"
+import Link from "next/link"
+import { type UserContext, getRoleAccessLevel } from "@/lib/validation"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useUserContext } from "@/hooks/use-user-context"
+import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
 
-type Branch = { id: string; name?: string | null; branch_name?: string | null; code?: string | null }
-type WarehouseData = { id: string; name: string; code: string; branch_id: string }
+interface InventoryTransaction {
+  id: string
+  product_id: string
+  transaction_type: string
+  quantity_change: number
+  notes: string
+  created_at: string
+  reference_id?: string
+  warehouse_id?: string
+  products?: { name: string; sku: string }
+  journal_entries?: { id: string; reference_type: string; entry_date?: string; description?: string }
+}
 
-type WarehouseInventory = {
-  warehouseId: string
-  warehouseName: string
-  warehouseCode: string
-  branchName: string
-  totalProducts: number
-  totalQuantity: number
-  totalValue: number
-  inboundQty: number
-  outboundQty: number
-  netMovement: number
+interface Product {
+  id: string
+  sku: string
+  name: string
+  quantity_on_hand: number
+}
+
+interface WarehouseData {
+  id: string
+  name: string
+  code?: string
+  branch_id?: string
+  is_main?: boolean
+  branches?: { name?: string; branch_name?: string }
+}
+
+interface BranchData {
+  id: string
+  name?: string
+  branch_name?: string
+  code?: string
 }
 
 export default function InventoryPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
-  const { userContext, loading: userContextLoading, error: userContextError } = useUserContext()
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [branches, setBranches] = useState<Branch[]>([])
-  const [warehouses, setWarehouses] = useState<WarehouseData[]>([])
-  const [selectedBranch, setSelectedBranch] = useState<string>("")
-  const [selectedCostCenterId, setSelectedCostCenterId] = useState<string>("")
-  const [userBranchId, setUserBranchId] = useState<string>("")
-  const [canOverride, setCanOverride] = useState(false)
-  const [inventoryData, setInventoryData] = useState<WarehouseInventory[]>([])
-  const [loading, setLoading] = useState(true)
+  const [hydrated, setHydrated] = useState(false)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [transactions, setTransactions] = useState<InventoryTransaction[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [computedQty, setComputedQty] = useState<Record<string, number>>({})
+  const [purchaseTotals, setPurchaseTotals] = useState<Record<string, number>>({})
+  const [soldTotals, setSoldTotals] = useState<Record<string, number>>({})
+  const [writeOffTotals, setWriteOffTotals] = useState<Record<string, number>>({})
+  const [saleReturnTotals, setSaleReturnTotals] = useState<Record<string, number>>({})
+  const [purchaseReturnTotals, setPurchaseReturnTotals] = useState<Record<string, number>>({})
+  const [productsWithMovements, setProductsWithMovements] = useState<Set<string>>(new Set()) // 🆕 المنتجات التي لها حركات في المخزن
+  const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingInventory, setIsLoadingInventory] = useState(false) // 🆕 تحميل عند تغيير المخزن
+  const [movementFilter, setMovementFilter] = useState<'all' | 'purchase' | 'sale'>('all')
+  const [movementProductId, setMovementProductId] = useState<string>('')
+  const [fromDate, setFromDate] = useState<string>('')
+  const [toDate, setToDate] = useState<string>('')
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition()
+
+  const { userContext, loading: userContextLoading, error: userContextError } = useUserContext()
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [selectedBranchId, setSelectedBranchId] = useState<string>("")
+  const [selectedCostCenterId, setSelectedCostCenterId] = useState<string>("")
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("")
+  const [visibilityRules, setVisibilityRules] = useState<any>(null)
+
+  const [warehouses, setWarehouses] = useState<WarehouseData[]>([])
+  const [branches, setBranches] = useState<BranchData[]>([])
 
   useEffect(() => {
+    setHydrated(true)
     const handler = () => {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
@@ -54,334 +100,1009 @@ export default function InventoryPage() {
     return () => window.removeEventListener('app_language_changed', handler)
   }, [])
 
-  const t = (en: string, ar: string) => (appLang === 'en' ? en : ar)
+  const filteredWarehouses = warehouses
 
-  // Load initial data
+  // 🆕 فلترة المنتجات حسب المخزن المحدد
+  // إذا تم اختيار مخزن معين، نعرض فقط المنتجات التي لها حركات في هذا المخزن
+  const displayedProducts = selectedWarehouseId
+    ? products.filter(p => productsWithMovements.has(p.id))
+    : products
+
   useEffect(() => {
-    ; (async () => {
-      if (userContextLoading) return
-      if (userContextError) return
-      if (!userContext) return
-      const cid = await getActiveCompanyId(supabase)
-      if (!cid) return
-      setCompanyId(cid)
-
-      const role = String(userContext.role || "viewer")
-      const normalizedRole = role.trim().toLowerCase().replace(/\s+/g, "_")
-      const isCanOverride = ["super_admin", "admin", "general_manager", "gm", "owner", "generalmanager", "superadmin"].includes(normalizedRole)
-      setCanOverride(isCanOverride)
-
-      const ub = String(userContext.branch_id || "")
-      setUserBranchId(ub)
-      if (!selectedBranch && ub) setSelectedBranch(ub)
-
-      if (ub) {
-        const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
-        const defaults = await getBranchDefaults(supabase, ub)
-        setSelectedCostCenterId(defaults.default_cost_center_id || "")
-      }
-
-      const [branchRes, whRes] = await Promise.all([
-        supabase.from("branches").select("id, name, branch_name, code").eq("company_id", cid).eq("is_active", true),
-        supabase.from("warehouses").select("id, name, code, branch_id").eq("company_id", cid).eq("is_active", true),
-      ])
-
-      setBranches((branchRes.data || []) as Branch[])
-      setWarehouses((whRes.data || []) as WarehouseData[])
-      setLoading(false)
-    })()
-  }, [supabase, userContextLoading, userContextError, userContext])
-
-  // Filter warehouses by selected branch and user permissions
-  const filteredWarehouses = useMemo(() => {
-    if (!canOverride && userBranchId) {
-      return warehouses.filter(wh => wh.branch_id === userBranchId)
-    }
-    if (selectedBranch) {
-      return warehouses.filter(wh => wh.branch_id === selectedBranch)
-    }
-    return warehouses
-  }, [warehouses, canOverride, userBranchId, selectedBranch])
-
-  const filteredBranches = useMemo(() => {
-    if (!canOverride && userBranchId) {
-      return branches.filter(b => b.id === userBranchId)
-    }
-    return branches
-  }, [branches, canOverride, userBranchId])
-
-  // Load inventory data
-  const loadInventoryReport = async () => {
-    if (!companyId) return
-    if (!selectedBranch || !selectedCostCenterId) {
-      toast({ variant: "destructive", title: t("Error", "خطأ"), description: t("Please select branch and cost center", "يرجى اختيار الفرع ومركز التكلفة") })
+    if (userContextLoading) return
+    if (userContextError) {
+      toastActionError(toast, "الحوكمة", "المخزون", userContextError)
       return
     }
-    setLoading(true)
+    if (!userContext) return
+    loadData(userContext)
+  }, [userContextLoading, userContextError, userContext])
 
+  useEffect(() => {
+    if (!userContext) return
+    if (!selectedBranchId || !selectedWarehouseId || !selectedCostCenterId) return
+    loadInventoryData(userContext, selectedBranchId, selectedWarehouseId, selectedCostCenterId)
+  }, [userContext, selectedBranchId, selectedWarehouseId, selectedCostCenterId])
+
+  const applyBranchDefaults = useCallback(async (companyId: string, branchId: string) => {
+    const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+    const defaults = await getBranchDefaults(supabase, branchId)
+
+    setSelectedBranchId(branchId)
+    setSelectedWarehouseId(defaults.default_warehouse_id || "")
+    setSelectedCostCenterId(defaults.default_cost_center_id || "")
+
+    // 🔐 جلب المخازن الخاصة بالفرع فقط (لا يُسمح بمزج فرع مع مخزن فرع آخر)
+    const { data: warehousesRes } = await supabase
+      .from("warehouses")
+      .select("id, name, code, branch_id, is_main, branches(name, branch_name)")
+      .eq("company_id", companyId)
+      .eq("is_active", true)
+      .eq("branch_id", branchId) // 🔐 إلزامي: فقط مخازن هذا الفرع
+      .order("is_main", { ascending: false })
+      .order("name")
+
+    setWarehouses(warehousesRes || [])
+    return defaults
+  }, [supabase])
+
+  const loadData = async (context: UserContext) => {
     try {
-      const data: WarehouseInventory[] = []
-      const whsToAnalyze = filteredWarehouses
+      setIsLoading(true)
+      const companyId = context.company_id
+      if (!companyId) return
 
-      for (const wh of whsToAnalyze) {
-        const branch = branches.find(b => b.id === wh.branch_id)
+      // 🔐 بناء قواعد الحوكمة الموحدة
+      const rules = buildDataVisibilityFilter(context)
+      setVisibilityRules(rules)
 
-        // Get all inventory transactions for this warehouse (current stock)
-        const { data: transactions } = await supabase
-          .from("inventory_transactions")
-          .select("product_id, quantity_change, transaction_type, is_deleted")
+      const role = String(context.role || "")
+      const normalizedRole = role.trim().toLowerCase().replace(/\s+/g, "_")
+      const accessLevel = getRoleAccessLevel(normalizedRole)
+      const adminCheck = accessLevel === 'company' || accessLevel === 'all'
+      setIsAdmin(adminCheck)
+
+      if (adminCheck) {
+        // Admin/General Manager - يمكنهم اختيار أي فرع
+        const { data: branchesRes, error: branchesError } = await supabase
+          .from("branches")
+          .select("id, name, branch_name, code, default_cost_center_id, default_warehouse_id")
           .eq("company_id", companyId)
-          .eq("branch_id", selectedBranch)
-          .eq("warehouse_id", wh.id)
-          .eq("cost_center_id", selectedCostCenterId)
-          .or("is_deleted.is.null,is_deleted.eq.false")
-
-        // Get unique products in this warehouse
-        const uniqueProducts = new Set((transactions || []).map((p: any) => p.product_id)).size
-
-        // Calculate inbound and outbound
-        let inboundQty = 0
-        let outboundQty = 0
-        let totalQuantity = 0
-
-        for (const tx of transactions || []) {
-          const qty = Number(tx.quantity_change) || 0
-          if (qty > 0) {
-            inboundQty += qty
-          } else {
-            outboundQty += Math.abs(qty)
-          }
-          totalQuantity += qty
+          .eq("is_active", true)
+          .order("name")
+        if (branchesError) throw branchesError
+        setBranches(branchesRes || [])
+        const branchIdFromContext = String(context.branch_id || "")
+        const firstBranchId = String((branchesRes || [])[0]?.id || "")
+        const branchIdToUse = branchIdFromContext || firstBranchId
+        if (!branchIdToUse) {
+          toastActionError(toast, "الحوكمة", "المخزون", "لا توجد فروع مفعلة للشركة")
+          return
+        }
+        await applyBranchDefaults(companyId, branchIdToUse)
+      } else {
+        // Employee/Accountant/Branch Manager - فرعهم فقط
+        const branchId = String(context.branch_id || "")
+        if (!branchId) {
+          toastActionError(toast, "الحوكمة", "المخزون", "المستخدم بدون فرع")
+          return
         }
 
-        // Calculate total value
-        const { data: products } = await supabase
-          .from("products")
-          .select("id, cost_price")
+        const { data: branchRow } = await supabase
+          .from("branches")
+          .select("id, name, branch_name, code, default_cost_center_id, default_warehouse_id")
           .eq("company_id", companyId)
-          .in("id", Array.from(new Set((transactions || []).map((t: any) => t.product_id))))
-
-        const productCostMap = new Map((products || []).map((p: any) => [p.id, Number(p.cost_price || 0)]))
-        let totalValue = 0
-        const qtyByProduct: Record<string, number> = {}
-        for (const tx of transactions || []) {
-          const pid = String(tx.product_id)
-          qtyByProduct[pid] = (qtyByProduct[pid] || 0) + Number(tx.quantity_change || 0)
-        }
-        for (const [pid, qty] of Object.entries(qtyByProduct)) {
-          const cost = productCostMap.get(pid) || 0
-          totalValue += Math.max(0, Number(qty)) * Number(cost)
-        }
-
-        data.push({
-          warehouseId: wh.id,
-          warehouseName: wh.name,
-          warehouseCode: wh.code || "",
-          branchName: branch?.name || branch?.branch_name || "",
-          totalProducts: uniqueProducts,
-          totalQuantity: Math.max(0, totalQuantity),
-          totalValue: totalValue,
-          inboundQty: inboundQty,
-          outboundQty: outboundQty,
-          netMovement: totalQuantity
-        })
+          .eq("id", branchId)
+          .maybeSingle()
+        setBranches(branchRow ? [branchRow] : [])
+        
+        // 🔐 تطبيق الافتراضيات من user.branch تلقائياً
+        await applyBranchDefaults(companyId, branchId)
       }
 
-      setInventoryData(data)
-    } catch (err: any) {
-      console.error("Error loading inventory:", err)
-      toast({ variant: "destructive", title: t("Error", "خطأ"), description: err.message })
+      const { data: productsData } = await supabase
+        .from("products")
+        .select("id, sku, name, quantity_on_hand")
+        .eq("company_id", companyId)
+      setProducts(productsData || [])
+    } catch (error) {
+      console.error("Error loading data:", error)
+      toastActionError(toast, "الحوكمة", "المخزون", error instanceof Error ? error.message : "خطأ في تحميل البيانات")
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
-  useEffect(() => {
-    if (companyId && selectedBranch && selectedCostCenterId) {
-      loadInventoryReport()
+  // دالة تحميل بيانات المخزون حسب المخزن المختار
+  const loadInventoryData = async (context: UserContext, branchId: string, warehouseId: string, costCenterId: string) => {
+    try {
+      setIsLoadingInventory(true) // 🆕 بدء التحميل
+      const companyId = context.company_id
+      
+      // 🔐 التأكد من أن warehouse ينتمي للفرع المحدد
+      if (warehouseId) {
+        const { data: warehouse } = await supabase
+          .from("warehouses")
+          .select("id, branch_id")
+          .eq("id", warehouseId)
+          .single()
+        
+        if (warehouse && warehouse.branch_id !== branchId) {
+          toastActionError(toast, "الحوكمة", "المخزون", "المخزن المحدد لا ينتمي للفرع المحدد")
+          setIsLoadingInventory(false)
+          return
+        }
+      }
+
+      // 🔐 بناء قواعد الحوكمة
+      const rules = buildDataVisibilityFilter(context)
+      
+      // 🔐 قواعد الحوكمة للمخزون:
+      // - نعطل filterByCostCenter لأننا نتعامل مع transfer_in/transfer_out في JavaScript
+      // - نعطل filterByWarehouse لأننا نستخدم warehouseId المحدد من selector
+      // - نعطل filterByCreatedBy لأن الموظف يجب أن يرى كل حركات المخزون في فرعه/مخزنه
+      //   (هذا مختلف عن Sales Orders حيث الموظف يرى فقط طلباته)
+      const rulesWithoutCostCenter = { 
+        ...rules, 
+        filterByCostCenter: false,
+        filterByWarehouse: false,
+        warehouseId: null,
+        filterByCreatedBy: false, // 🔐 المخزون: الموظف يرى كل حركات فرعه/مخزنه
+        createdByUserId: null
+      }
+      
+      // 🔐 تطبيق الفلاتر الإلزامية على استعلامات المخزون
+      // 📌 ملاحظة: لحركات transfer_in و transfer_out، نأخذها بغض النظر عن cost_center_id
+      let transactionsQuery = supabase
+        .from("inventory_transactions")
+        .select("*, products(name, sku)")
+      
+      // تطبيق قواعد الحوكمة الموحدة (تطبق company_id, branch_id تلقائياً)
+      // لكن بدون cost_center_id و warehouse_id لأننا سنتعامل معهما يدوياً
+      transactionsQuery = applyDataVisibilityFilter(transactionsQuery, rulesWithoutCostCenter, "inventory_transactions")
+      
+      // 🔐 إضافة فلتر warehouse_id يدوياً باستخدام القيمة المحددة من selector
+      transactionsQuery = (transactionsQuery as any).eq("warehouse_id", warehouseId)
+      
+      const { data: transactionsData } = await transactionsQuery
+        .order("created_at", { ascending: false })
+        .limit(200)
+
+      // 🔐 فلترة في JavaScript: نأخذ جميع الحركات في نفس cost_center_id المحدد
+      // + جميع حركات transfer_in و transfer_out (لأنها قد تكون في cost_center_id مختلف لكن في نفس الفرع)
+      // 📌 ملاحظة: لا نفلتر بـ created_by_user_id لأن الموظف يرى كل حركات فرعه/مخزنه
+      const txs = (transactionsData || []).filter((t: any) => {
+        const txCostCenterId = String(t.cost_center_id || '')
+        const txType = String(t.transaction_type || '')
+        // نأخذ الحركات في نفس cost_center_id
+        if (txCostCenterId === costCenterId) return true
+        // نأخذ حركات transfer_in و transfer_out بغض النظر عن cost_center_id (لكن في نفس الفرع والمخزن)
+        if (txType === 'transfer_in' || txType === 'transfer_out') return true
+        return false
+      })
+
+      const sorted = txs.slice().sort((a: any, b: any) => {
+        const ad = String(a?.created_at || '')
+        const bd = String(b?.created_at || '')
+        return bd.localeCompare(ad)
+      })
+      setTransactions(sorted)
+
+      // 🔐 حساب الكميات من inventory_transactions مع تطبيق الفلاتر الإلزامية
+      // 📌 ملاحظة مهمة: لحركات transfer_in و transfer_out، يجب أن نأخذها بغض النظر عن cost_center_id
+      // لأن المخزون المحول قد يكون في cost_center_id مختلف لكن في نفس الفرع والمخزن
+      // الحل: نأخذ جميع الحركات في نفس المخزن والفرع، ثم نفلتر في JavaScript
+      let allTransactionsQuery = supabase
+        .from("inventory_transactions")
+        .select("product_id, quantity_change, transaction_type, cost_center_id")
+      
+      // تطبيق قواعد الحوكمة الموحدة (تطبق company_id, branch_id تلقائياً)
+      // لكن بدون cost_center_id و warehouse_id لأننا سنتعامل معهما يدوياً
+      allTransactionsQuery = applyDataVisibilityFilter(allTransactionsQuery, rulesWithoutCostCenter, "inventory_transactions")
+      
+      // 🔐 إضافة فلتر warehouse_id يدوياً باستخدام القيمة المحددة من selector
+      allTransactionsQuery = (allTransactionsQuery as any).eq("warehouse_id", warehouseId)
+      
+      const { data: allTransactionsRaw } = await allTransactionsQuery
+      
+      // 🔐 فلترة في JavaScript: نأخذ جميع الحركات في نفس cost_center_id المحدد
+      // + جميع حركات transfer_in و transfer_out (لأنها قد تكون في cost_center_id مختلف لكن في نفس الفرع)
+      // 📌 ملاحظة: لا نفلتر بـ created_by_user_id لأن الموظف يرى كل حركات فرعه/مخزنه
+      const allTransactions = (allTransactionsRaw || []).filter((t: any) => {
+        const txCostCenterId = String(t.cost_center_id || '')
+        const txType = String(t.transaction_type || '')
+        // نأخذ الحركات في نفس cost_center_id
+        if (txCostCenterId === costCenterId) return true
+        // نأخذ حركات transfer_in و transfer_out بغض النظر عن cost_center_id (لكن في نفس الفرع والمخزن)
+        if (txType === 'transfer_in' || txType === 'transfer_out') return true
+        return false
+      })
+
+      const agg: Record<string, number> = {}
+      const purchasesAgg: Record<string, number> = {}
+      const soldAgg: Record<string, number> = {}
+      const writeOffsAgg: Record<string, number> = {}
+      const saleReturnsAgg: Record<string, number> = {}
+      const purchaseReturnsAgg: Record<string, number> = {}
+
+      allTransactions.forEach((t: any) => {
+        const pid = String(t.product_id || '')
+        const q = Number(t.quantity_change || 0)
+        const type = String(t.transaction_type || '')
+
+        // 🔐 حساب المخزون: نجمع جميع الحركات (transfer_in يزيد، transfer_out ينقص)
+        agg[pid] = (agg[pid] || 0) + q
+
+        if (type === 'purchase') {
+          purchasesAgg[pid] = (purchasesAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'sale') {
+          soldAgg[pid] = (soldAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'write_off' || type === 'adjustment') {
+          writeOffsAgg[pid] = (writeOffsAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'sale_return' || type === 'return') {
+          saleReturnsAgg[pid] = (saleReturnsAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'purchase_return' || type === 'purchase_reversal') {
+          purchaseReturnsAgg[pid] = (purchaseReturnsAgg[pid] || 0) + Math.abs(q)
+        }
+        // 🔐 transfer_in و transfer_out يتم حسابها تلقائياً في agg لأن quantity_change يحتوي على القيمة الصحيحة
+      })
+
+      setComputedQty(agg)
+      setPurchaseTotals(purchasesAgg)
+      setSoldTotals(soldAgg)
+      setWriteOffTotals(writeOffsAgg)
+      setSaleReturnTotals(saleReturnsAgg)
+      setPurchaseReturnTotals(purchaseReturnsAgg)
+
+      // 🆕 تحديد المنتجات التي لها حركات في المخزن المحدد
+      const productsSet = new Set<string>(Object.keys(agg))
+      setProductsWithMovements(productsSet)
+    } catch (error) {
+      console.error("Error loading inventory data:", error)
+    } finally {
+      setIsLoadingInventory(false) // 🆕 إنهاء التحميل
     }
-  }, [companyId, selectedBranch, selectedCostCenterId, filteredWarehouses])
+  }
 
-  const totals = useMemo(() => {
-    return inventoryData.reduce((acc, inv) => ({
-      inboundQty: acc.inboundQty + inv.inboundQty,
-      outboundQty: acc.outboundQty + inv.outboundQty,
-      netMovement: acc.netMovement + inv.netMovement,
-      totalValue: acc.totalValue + inv.totalValue
-    }), { inboundQty: 0, outboundQty: 0, netMovement: 0, totalValue: 0 })
-  }, [inventoryData])
+  // حساب إجمالي المشتريات والمبيعات - حسب المخزن المحدد
+  const totalPurchased = Object.values(purchaseTotals).reduce((a, b) => a + b, 0)
+  const totalSold = Object.values(soldTotals).reduce((a, b) => a + b, 0)
+  // عد المنتجات منخفضة المخزون فقط من المنتجات المعروضة (حسب المخزن المحدد)
+  const lowStockCount = displayedProducts.filter(p => (computedQty[p.id] ?? 0) < 5 && (computedQty[p.id] ?? 0) > 0).length
 
-  const formatNumber = (num: number) => {
-    return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(num)
+  // منع hydration mismatch - عرض محتوى افتراضي حتى يتم hydration
+  if (!hydrated) {
+    return (
+      <div className="flex h-screen">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="flex items-center justify-center h-full">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+          </div>
+        </main>
+      </div>
+    )
   }
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
+
+      {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 max-w-full">
-          {/* Header */}
+          {/* رأس الصفحة - تحسين للهاتف */}
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="p-2 sm:p-3 bg-amber-100 dark:bg-amber-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-                <Warehouse className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600 dark:text-amber-400" />
+            <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-3 sm:gap-4">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="p-2 sm:p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg sm:rounded-xl shadow-lg shadow-blue-500/20 flex-shrink-0">
+                  <Package className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-white truncate">
+                    {appLang === 'en' ? 'Inventory' : 'المخزون'}
+                  </h1>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
+                    {appLang === 'en' ? 'Track inventory movements' : 'تتبع حركات المخزون'}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
-                  {t('Inventory', 'المخزون')}
-                </h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                  {t('Current inventory levels by warehouse', 'مستويات المخزون الحالية حسب المخزن')}
-                </p>
-              </div>
-            </div>
-          </div>
 
-          {/* Filters */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{t('Filters', 'الفلاتر')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className={`grid grid-cols-1 ${canOverride ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-4`}>
-                {canOverride && (
-                  <div>
-                    <label className="block text-sm font-medium mb-1">{t('Branch', 'الفرع')}</label>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                {/* 🔐 Branch Selector
+                    - Admin / General Manager: يمكنه اختيار أي فرع
+                    - Employee / Accountant / Store Manager: يظهر فرعه فقط (حقل قراءة فقط) */}
+                {userContext && (
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                      <Building2 className="w-4 h-4" />
+                      <span className="hidden sm:inline">{appLang === 'en' ? 'Branch:' : 'الفرع:'}</span>
+                    </div>
+
+                    {isAdmin ? (
+                      <Select
+                        value={selectedBranchId}
+                        onValueChange={(value) => {
+                          applyBranchDefaults(userContext.company_id, value).catch((e) => {
+                            toastActionError(toast, "الحوكمة", "المخزون", e?.message || "تعذر تطبيق افتراضيات الفرع")
+                          })
+                        }}
+                        disabled={branches.length === 0}
+                      >
+                        <SelectTrigger className="w-[180px] sm:w-[220px] bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
+                          <SelectValue placeholder={appLang === 'en' ? 'Select branch' : 'اختر الفرع'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {branches.map((branch) => (
+                            <SelectItem key={branch.id} value={branch.id}>
+                              <span>{branch.name || branch.branch_name || ''}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        value={
+                          (branches[0]?.name ||
+                            branches[0]?.branch_name ||
+                            (appLang === 'en' ? 'Your branch' : 'فرعك')) as string
+                        }
+                        disabled
+                        className="w-[180px] sm:w-[220px] bg-gray-100 dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 h-9 text-sm cursor-not-allowed"
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* 🔐 Warehouse Selector - للمستخدمين العاديين: disabled، للـ Admin: enabled */}
+                {filteredWarehouses.length > 0 && (
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                      <Warehouse className="w-4 h-4" />
+                      <span className="hidden sm:inline">{appLang === 'en' ? 'Warehouse:' : 'المخزن:'}</span>
+                    </div>
                     <Select
-                      value={selectedBranch}
+                      value={selectedWarehouseId}
                       onValueChange={(value) => {
-                        setSelectedBranch(value)
-                        ;(async () => {
-                          try {
-                            const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
-                            const defaults = await getBranchDefaults(supabase, value)
-                            setSelectedCostCenterId(defaults.default_cost_center_id || "")
-                          } catch (e: any) {
-                            setSelectedCostCenterId("")
-                          }
-                        })()
+                        // 🔐 التأكد من أن المخزن ينتمي للفرع المحدد
+                        const warehouse = filteredWarehouses.find(w => w.id === value)
+                        if (warehouse && warehouse.branch_id !== selectedBranchId) {
+                          toastActionError(toast, "الحوكمة", "المخزون", "المخزن المحدد لا ينتمي للفرع المحدد")
+                          return
+                        }
+                        setSelectedWarehouseId(value)
                       }}
+                      disabled={!isAdmin || !selectedBranchId} // 🔐 disabled للمستخدمين العاديين
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('Select branch', 'اختر الفرع')} />
+                      <SelectTrigger className="w-[180px] sm:w-[220px] bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
+                        <SelectValue placeholder={appLang === 'en' ? 'Select warehouse' : 'اختر المخزن'} />
                       </SelectTrigger>
                       <SelectContent>
-                        {filteredBranches.map(b => (
-                          <SelectItem key={b.id} value={b.id}>{b.name || b.branch_name || ''}</SelectItem>
+                        {filteredWarehouses.map((warehouse) => (
+                          <SelectItem key={warehouse.id} value={warehouse.id}>
+                            <div className="flex items-center gap-2">
+                              {warehouse.is_main ? (
+                                <Building2 className="w-4 h-4 text-amber-500" />
+                              ) : (
+                                <Warehouse className="w-4 h-4 text-gray-400" />
+                              )}
+                              <span>{warehouse.name}</span>
+                            </div>
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                 )}
-                <div className="flex items-end gap-2">
-                  <Button onClick={loadInventoryReport} disabled={loading || !selectedBranch || !selectedCostCenterId} className="flex-1">
-                    <Package className="w-4 h-4 mr-2" />
-                    {loading ? t('Loading...', 'جاري التحميل...') : t('Refresh', 'تحديث')}
-                  </Button>
-                </div>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Summary Cards */}
-          {inventoryData.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <Card className="bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/20 dark:to-amber-800/20">
-                <CardContent className="pt-4">
-                  <p className="text-xs text-amber-600 dark:text-amber-400">{t('Total Warehouses', 'إجمالي المخازن')}</p>
-                  <p className="text-xl font-bold text-amber-700 dark:text-amber-300">{inventoryData.length}</p>
-                </CardContent>
-              </Card>
-              <Card className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20">
-                <CardContent className="pt-4">
-                  <p className="text-xs text-green-600 dark:text-green-400">{t('Inbound', 'الوارد')}</p>
-                  <p className="text-xl font-bold text-green-700 dark:text-green-300">+{formatNumber(totals.inboundQty)}</p>
-                </CardContent>
-              </Card>
-              <Card className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20">
-                <CardContent className="pt-4">
-                  <p className="text-xs text-red-600 dark:text-red-400">{t('Outbound', 'الصادر')}</p>
-                  <p className="text-xl font-bold text-red-700 dark:text-red-300">-{formatNumber(totals.outboundQty)}</p>
-                </CardContent>
-              </Card>
-              <Card className={`bg-gradient-to-br ${totals.netMovement >= 0 ? 'from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20' : 'from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20'}`}>
-                <CardContent className="pt-4">
-                  <p className={`text-xs ${totals.netMovement >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-orange-600 dark:text-orange-400'}`}>{t('Total Stock', 'إجمالي المخزون')}</p>
-                  <p className={`text-xl font-bold ${totals.netMovement >= 0 ? 'text-blue-700 dark:text-blue-300' : 'text-orange-700 dark:text-orange-300'}`}>{formatNumber(totals.netMovement)}</p>
-                </CardContent>
-              </Card>
             </div>
-          )}
+          </div>
 
-          {/* Results Table */}
-          {loading ? (
-            <Card>
-              <CardContent className="py-8 text-center text-gray-500">{t('Loading...', 'جاري التحميل...')}</CardContent>
-            </Card>
-          ) : inventoryData.length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-center text-gray-500">{t('No inventory data found', 'لا توجد بيانات مخزون')}</CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('Warehouse Inventory Summary', 'ملخص مخزون المخازن')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-gray-50 dark:bg-slate-800">
-                        <th className="text-right p-3 font-medium">#</th>
-                        <th className="text-right p-3 font-medium">{t('Warehouse', 'المخزن')}</th>
-                        <th className="text-right p-3 font-medium">{t('Branch', 'الفرع')}</th>
-                        <th className="text-right p-3 font-medium">{t('Products', 'المنتجات')}</th>
-                        <th className="text-right p-3 font-medium">{t('Inbound', 'الوارد')}</th>
-                        <th className="text-right p-3 font-medium">{t('Outbound', 'الصادر')}</th>
-                        <th className="text-right p-3 font-medium">{t('Current Stock', 'المخزون الحالي')}</th>
-                        <th className="text-right p-3 font-medium">{t('Total Value', 'القيمة الإجمالية')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {inventoryData.map((inv, index) => (
-                        <tr key={inv.warehouseId} className="border-b hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                          <td className="p-3">{index + 1}</td>
-                          <td className="p-3 font-medium">
-                            <div className="flex items-center gap-2">
-                              <Box className="w-4 h-4 text-amber-500" />
-                              {inv.warehouseName}
-                              {inv.warehouseCode && <span className="text-xs text-gray-400">({inv.warehouseCode})</span>}
-                            </div>
-                          </td>
-                          <td className="p-3 text-gray-600">
-                            <div className="flex items-center gap-1">
-                              <Building2 className="w-3 h-3" />
-                              {inv.branchName}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-1">
-                              <Package className="w-3 h-3 text-gray-400" />
-                              {formatNumber(inv.totalProducts)}
-                            </div>
-                          </td>
-                          <td className="p-3 text-green-600 font-medium">+{formatNumber(inv.inboundQty)}</td>
-                          <td className="p-3 text-red-600 font-medium">-{formatNumber(inv.outboundQty)}</td>
-                          <td className={`p-3 font-bold ${inv.netMovement >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
-                            <div className="flex items-center gap-1">
-                              {inv.netMovement >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                              {formatNumber(inv.totalQuantity)}
-                            </div>
-                          </td>
-                          <td className="p-3 text-right font-semibold">{formatNumber(inv.totalValue)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+          {/* بطاقات الإحصائيات */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {appLang === 'en' ? 'Products in Warehouse' : 'منتجات المخزن'}
+                    </p>
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{displayedProducts.length}</p>
+                  </div>
+                  <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
+                    <Package className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  </div>
                 </div>
               </CardContent>
             </Card>
-          )}
+
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {appLang === 'en' ? 'Warehouse Stock' : 'مخزون المخزن'}
+                    </p>
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
+                      {displayedProducts.reduce((sum, p) => sum + (computedQty[p.id] ?? 0), 0)}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl">
+                    <BarChart3 className="w-6 h-6 text-green-600 dark:text-green-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {appLang === 'en' ? 'Total Purchased' : 'إجمالي المشتريات'}
+                    </p>
+                    <p className="text-3xl font-bold text-emerald-600 mt-2">+{totalPurchased}</p>
+                  </div>
+                  <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl">
+                    <Truck className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {appLang === 'en' ? 'Total Sold' : 'إجمالي المبيعات'}
+                    </p>
+                    <p className="text-3xl font-bold text-orange-600 mt-2">-{totalSold}</p>
+                  </div>
+                  <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-xl">
+                    <ShoppingCart className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* جدول حالة المخزون */}
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+                    <BarChart3 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                  <CardTitle className="text-lg">{appLang === 'en' ? 'Inventory Status' : 'حالة المخزون'}</CardTitle>
+                </div>
+                <div className="flex items-center gap-2">
+                  {lowStockCount > 0 && (
+                    <Badge variant="destructive" className="gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      {lowStockCount} {appLang === 'en' ? 'Low Stock' : 'مخزون منخفض'}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {isLoading || isLoadingInventory ? (
+                <TableSkeleton
+                  cols={7}
+                  rows={8}
+                  className="mt-4"
+                />
+              ) : displayedProducts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+                  <Package className="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600" />
+                  <p>{appLang === 'en' ? 'No products in this warehouse' : 'لا توجد منتجات في هذا المخزن'}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-[800px] w-full text-sm">
+                    <thead>
+                      <tr className="bg-gradient-to-r from-slate-50 to-gray-100 dark:from-slate-800 dark:to-slate-800/80">
+                        <th className="px-4 py-4 text-right font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-end">
+                            <Box className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                            <span>{appLang === 'en' ? 'Code' : 'الرمز'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-right font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-end">
+                            <Package className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                            <span>{appLang === 'en' ? 'Product Name' : 'اسم المنتج'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <Truck className="w-4 h-4 text-emerald-600" />
+                            <span>{appLang === 'en' ? 'Total Purchased' : 'إجمالي المشتريات'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <ShoppingCart className="w-4 h-4 text-orange-600" />
+                            <span>{appLang === 'en' ? 'Total Sold' : 'إجمالي المبيعات'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <RefreshCcw className="w-4 h-4 text-purple-600" />
+                            <span>{appLang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <RefreshCcw className="w-4 h-4 text-cyan-600" />
+                            <span>{appLang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <AlertCircle className="w-4 h-4 text-red-600" />
+                            <span>{appLang === 'en' ? 'Write-offs' : 'الهالك'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <BarChart3 className="w-4 h-4 text-blue-600" />
+                            <span>{appLang === 'en' ? 'Available Stock' : 'المخزون المتاح'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <span>{appLang === 'en' ? 'Status' : 'الحالة'}</span>
+                          </div>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                      {displayedProducts.map((product, index) => {
+                        const purchased = purchaseTotals[product.id] ?? 0
+                        const sold = soldTotals[product.id] ?? 0
+                        const saleReturn = saleReturnTotals[product.id] ?? 0
+                        const purchaseReturn = purchaseReturnTotals[product.id] ?? 0
+                        const writeOff = writeOffTotals[product.id] ?? 0
+                        // استخدام الكمية المحسوبة بدلاً من quantity_on_hand مباشرة
+                        const shown = computedQty[product.id] ?? 0 // عند فلترة مخزن معين، لا نستخدم quantity_on_hand الإجمالي
+                        const isLowStock = shown > 0 && shown < 5
+                        const isOutOfStock = shown <= 0
+                        const stockPercentage = purchased > 0 ? Math.round((shown / purchased) * 100) : 0
+
+                        return (
+                          <tr
+                            key={product.id}
+                            className={`hover:bg-blue-50/50 dark:hover:bg-slate-800/70 transition-all duration-200 ${index % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-gray-50/50 dark:bg-slate-900/50'
+                              }`}
+                          >
+                            {/* الرمز */}
+                            <td className="px-4 py-4">
+                              <Badge variant="outline" className="font-mono text-xs bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600">
+                                {product.sku || '-'}
+                              </Badge>
+                            </td>
+
+                            {/* اسم المنتج */}
+                            <td className="px-4 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                                  <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-gray-900 dark:text-white">{product.name}</p>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    {appLang === 'en' ? 'Stock Rate' : 'نسبة المخزون'}: {stockPercentage}%
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* إجمالي المشتريات */}
+                            <td className="px-4 py-4 text-center">
+                              <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+                                <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                <span className="font-bold text-emerald-700 dark:text-emerald-300 text-base">
+                                  {purchased.toLocaleString()}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* إجمالي المبيعات */}
+                            <td className="px-4 py-4 text-center">
+                              <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
+                                <TrendingDown className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                                <span className="font-bold text-orange-700 dark:text-orange-300 text-base">
+                                  {sold.toLocaleString()}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* مرتجعات المبيعات */}
+                            <td className="px-4 py-4 text-center">
+                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${saleReturn > 0
+                                ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800'
+                                : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+                                }`}>
+                                <RefreshCcw className={`w-4 h-4 ${saleReturn > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 dark:text-gray-500'}`} />
+                                <span className={`font-bold text-base ${saleReturn > 0 ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                                  {saleReturn.toLocaleString()}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* مرتجعات المشتريات */}
+                            <td className="px-4 py-4 text-center">
+                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${purchaseReturn > 0
+                                ? 'bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800'
+                                : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+                                }`}>
+                                <RefreshCcw className={`w-4 h-4 ${purchaseReturn > 0 ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-400 dark:text-gray-500'}`} />
+                                <span className={`font-bold text-base ${purchaseReturn > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                                  {purchaseReturn.toLocaleString()}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* الهالك */}
+                            <td className="px-4 py-4 text-center">
+                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${writeOff > 0
+                                ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                                : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+                                }`}>
+                                <AlertCircle className={`w-4 h-4 ${writeOff > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`} />
+                                <span className={`font-bold text-base ${writeOff > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                                  {writeOff.toLocaleString()}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* المخزون المتاح */}
+                            <td className="px-4 py-4 text-center">
+                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-lg ${isOutOfStock
+                                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-700'
+                                : isLowStock
+                                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+                                  : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700'
+                                }`}>
+                                {shown.toLocaleString()}
+                              </div>
+                            </td>
+
+                            {/* الحالة */}
+                            <td className="px-4 py-4 text-center">
+                              {isOutOfStock ? (
+                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+                                  <AlertCircle className="w-4 h-4" />
+                                  <span className="text-sm font-medium">{appLang === 'en' ? 'Out of Stock' : 'نفذ المخزون'}</span>
+                                </div>
+                              ) : isLowStock ? (
+                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
+                                  <AlertCircle className="w-4 h-4" />
+                                  <span className="text-sm font-medium">{appLang === 'en' ? 'Low Stock' : 'مخزون منخفض'}</span>
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  <span className="text-sm font-medium">{appLang === 'en' ? 'In Stock' : 'متوفر'}</span>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    {/* Footer Summary */}
+                    <tfoot>
+                      <tr className="bg-gradient-to-r from-slate-100 to-gray-100 dark:from-slate-800 dark:to-slate-700 border-t-2 border-gray-300 dark:border-slate-600">
+                        <td colSpan={2} className="px-4 py-4 text-right">
+                          <span className="font-bold text-gray-700 dark:text-gray-200 text-base">
+                            {appLang === 'en' ? 'Total' : 'الإجمالي'} ({displayedProducts.length} {appLang === 'en' ? 'products' : 'منتج'})
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-200 dark:bg-emerald-800 border border-emerald-400 dark:border-emerald-600">
+                            <TrendingUp className="w-5 h-5 text-emerald-700 dark:text-emerald-300" />
+                            <span className="font-bold text-emerald-800 dark:text-emerald-200 text-lg">
+                              {totalPurchased.toLocaleString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-200 dark:bg-orange-800 border border-orange-400 dark:border-orange-600">
+                            <TrendingDown className="w-5 h-5 text-orange-700 dark:text-orange-300" />
+                            <span className="font-bold text-orange-800 dark:text-orange-200 text-lg">
+                              {totalSold.toLocaleString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${Object.values(saleReturnTotals).reduce((a, b) => a + b, 0) > 0
+                            ? 'bg-purple-200 dark:bg-purple-800 border border-purple-400 dark:border-purple-600'
+                            : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                            }`}>
+                            <RefreshCcw className={`w-5 h-5 ${Object.values(saleReturnTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500 dark:text-gray-400'}`} />
+                            <span className={`font-bold text-lg ${Object.values(saleReturnTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-purple-800 dark:text-purple-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                              {Object.values(saleReturnTotals).reduce((a, b) => a + b, 0).toLocaleString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${Object.values(purchaseReturnTotals).reduce((a, b) => a + b, 0) > 0
+                            ? 'bg-cyan-200 dark:bg-cyan-800 border border-cyan-400 dark:border-cyan-600'
+                            : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                            }`}>
+                            <RefreshCcw className={`w-5 h-5 ${Object.values(purchaseReturnTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-gray-500 dark:text-gray-400'}`} />
+                            <span className={`font-bold text-lg ${Object.values(purchaseReturnTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-cyan-800 dark:text-cyan-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                              {Object.values(purchaseReturnTotals).reduce((a, b) => a + b, 0).toLocaleString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${Object.values(writeOffTotals).reduce((a, b) => a + b, 0) > 0
+                            ? 'bg-red-200 dark:bg-red-800 border border-red-400 dark:border-red-600'
+                            : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                            }`}>
+                            <AlertCircle className={`w-5 h-5 ${Object.values(writeOffTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`} />
+                            <span className={`font-bold text-lg ${Object.values(writeOffTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-red-800 dark:text-red-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                              {Object.values(writeOffTotals).reduce((a, b) => a + b, 0).toLocaleString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-200 dark:bg-blue-800 border border-blue-400 dark:border-blue-600">
+                            <BarChart3 className="w-5 h-5 text-blue-700 dark:text-blue-300" />
+                            <span className="font-bold text-blue-800 dark:text-blue-200 text-lg">
+                              {displayedProducts.reduce((sum, p) => sum + (computedQty[p.id] ?? 0), 0).toLocaleString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="flex items-center justify-center gap-3">
+                            {lowStockCount > 0 && (
+                              <Badge variant="destructive" className="gap-1 px-2 py-1">
+                                <AlertCircle className="w-3 h-3" />
+                                {lowStockCount}
+                              </Badge>
+                            )}
+                            <Badge className="gap-1 px-2 py-1 bg-green-600">
+                              <CheckCircle2 className="w-3 h-3" />
+                              {displayedProducts.length - lowStockCount - displayedProducts.filter(p => (computedQty[p.id] ?? 0) <= 0).length}
+                            </Badge>
+                          </div>
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* قسم حركات المخزون */}
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                    <FileText className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <CardTitle className="text-lg">{appLang === 'en' ? 'Inventory Movements' : 'حركات المخزون'}</CardTitle>
+                </div>
+
+                {/* شريط الفلاتر */}
+                <div className="flex flex-wrap items-center gap-3 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl">
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Filters:' : 'الفلاتر:'}</span>
+                  </div>
+
+                  {/* فلتر النوع */}
+                  <select
+                    value={movementFilter}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      startTransition(() => {
+                        setMovementFilter(val === 'purchase' ? 'purchase' : (val === 'sale' ? 'sale' : 'all'))
+                      })
+                    }}
+                    className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="all">{appLang === 'en' ? 'All Types' : 'كل الأنواع'}</option>
+                    <option value="purchase">{appLang === 'en' ? 'Purchases' : 'المشتريات'}</option>
+                    <option value="sale">{appLang === 'en' ? 'Sales' : 'المبيعات'}</option>
+                  </select>
+
+                  {/* فلتر المنتج */}
+                  <select
+                    value={movementProductId}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      startTransition(() => {
+                        setMovementProductId(val)
+                      })
+                    }}
+                    className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 max-w-[200px]"
+                  >
+                    <option value="">{appLang === 'en' ? 'All Products' : 'كل المنتجات'}</option>
+                    {displayedProducts.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+
+                  {/* فلتر التاريخ */}
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                    <Input
+                      type="date"
+                      value={fromDate}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        startTransition(() => setFromDate(val))
+                      }}
+                      className="text-sm w-36 bg-white dark:bg-slate-900"
+                    />
+                    <span className="text-gray-400 dark:text-gray-500">-</span>
+                    <Input
+                      type="date"
+                      value={toDate}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        startTransition(() => setToDate(val))
+                      }}
+                      className="text-sm w-36 bg-white dark:bg-slate-900"
+                    />
+                  </div>
+
+                  {/* إجماليات الحركات */}
+                  {(() => {
+                    const filtered = transactions.filter((t) => {
+                      const type = String(t.transaction_type || '')
+                      if (movementFilter === 'purchase') {
+                        if (!type.startsWith('purchase')) return false
+                      } else if (movementFilter === 'sale') {
+                        if (!type.startsWith('sale') && type !== 'return' && type !== 'write_off' && type !== 'adjustment') return false
+                      }
+                      if (movementProductId && String(t.product_id || '') !== movementProductId) return false
+                      const dStr = String(t.created_at || '').slice(0, 10)
+                      if (fromDate && dStr < fromDate) return false
+                      if (toDate && dStr > toDate) return false
+                      return true
+                    })
+                    const totalIn = filtered.reduce((acc, t) => acc + (Number(t.quantity_change || 0) > 0 ? Number(t.quantity_change) : 0), 0)
+                    const totalOut = filtered.reduce((acc, t) => acc + (Number(t.quantity_change || 0) < 0 ? Math.abs(Number(t.quantity_change)) : 0), 0)
+                    const netChange = totalIn - totalOut
+                    return (
+                      <div className={`flex flex-wrap items-center gap-2 ${isPending ? 'opacity-50' : ''}`}>
+                        {isPending && <RefreshCcw className="w-4 h-4 animate-spin text-blue-500" />}
+                        <Badge variant="outline" className="gap-1 px-3 py-1.5">
+                          <Package className="w-3 h-3" />
+                          {appLang === 'en' ? 'Count:' : 'العدد:'} {filtered.length}
+                        </Badge>
+                        <Badge className="gap-1 px-3 py-1.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100">
+                          <ArrowUp className="w-3 h-3" />
+                          {appLang === 'en' ? 'In:' : 'وارد:'} {totalIn}
+                        </Badge>
+                        <Badge className="gap-1 px-3 py-1.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-100">
+                          <ArrowDown className="w-3 h-3" />
+                          {appLang === 'en' ? 'Out:' : 'صادر:'} {totalOut}
+                        </Badge>
+                        <Badge variant="secondary" className={`gap-1 px-3 py-1.5 ${netChange >= 0 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
+                          <BarChart3 className="w-3 h-3" />
+                          {appLang === 'en' ? 'Net:' : 'الصافي:'} {netChange >= 0 ? '+' : ''}{netChange}
+                        </Badge>
+                      </div>
+                    )
+                  })()}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {isLoading ? (
+                <TableSkeleton
+                  cols={6}
+                  rows={8}
+                  className="mt-4"
+                />
+              ) : (() => {
+                const filtered = transactions.filter((t) => {
+                  const type = String(t.transaction_type || '')
+                  // فلترة حسب النوع
+                  if (movementFilter === 'purchase') {
+                    if (!type.startsWith('purchase')) return false
+                  } else if (movementFilter === 'sale') {
+                    if (!type.startsWith('sale') && type !== 'return' && type !== 'write_off' && type !== 'adjustment') return false
+                  }
+                  // فلترة حسب المنتج
+                  if (movementProductId && String(t.product_id || '') !== movementProductId) return false
+                  // فلترة حسب التاريخ
+                  const dStr = String((t as any)?.journal_entries?.entry_date || t.created_at || '').slice(0, 10)
+                  if (fromDate && dStr < fromDate) return false
+                  if (toDate && dStr > toDate) return false
+                  return true
+                })
+                if (filtered.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+                      <FileText className="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600" />
+                      <p>{appLang === 'en' ? 'No movements found' : 'لا توجد حركات'}</p>
+                    </div>
+                  )
+                }
+                return (
+                  <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                    {filtered.slice(0, 20).map((transaction) => {
+                      const isPositive = transaction.quantity_change > 0
+                      const transType = String(transaction.transaction_type || '')
+                      return (
+                        <div
+                          key={transaction.id}
+                          className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className={`p-2.5 rounded-xl ${isPositive ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
+                              {isPositive ? (
+                                <ArrowUp className="w-5 h-5 text-green-600 dark:text-green-400" />
+                              ) : (
+                                <ArrowDown className="w-5 h-5 text-red-600 dark:text-red-400" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-white">{transaction.products?.name}</p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Badge variant="outline" className="text-xs font-mono">{transaction.products?.sku}</Badge>
+                                <Badge
+                                  variant="secondary"
+                                  className={`text-xs ${transType.startsWith('purchase') ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                    transType.startsWith('sale') ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                                      'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+                                    }`}
+                                >
+                                  {transType === 'sale' ? (appLang === 'en' ? 'Sale' : 'بيع') :
+                                    transType === 'sale_reversal' ? (appLang === 'en' ? 'Sale Return' : 'مرتجع بيع') :
+                                      transType === 'purchase' ? (appLang === 'en' ? 'Purchase' : 'شراء') :
+                                        transType === 'purchase_reversal' ? (appLang === 'en' ? 'Purchase Return' : 'مرتجع شراء') :
+                                          transType === 'adjustment' ? (appLang === 'en' ? 'Adjustment' : 'تعديل') : transType}
+                                </Badge>
+                              </div>
+                              {transaction.reference_id && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                  {transType.startsWith('purchase') ? (
+                                    <Link href={`/bills/${transaction.reference_id}`} className="text-blue-600 hover:underline flex items-center gap-1">
+                                      <FileText className="w-3 h-3" />
+                                      {appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}
+                                    </Link>
+                                  ) : transType.startsWith('sale') ? (
+                                    <Link href={`/invoices/${transaction.reference_id}`} className="text-blue-600 hover:underline flex items-center gap-1">
+                                      <FileText className="w-3 h-3" />
+                                      {appLang === 'en' ? 'View Invoice' : 'عرض الفاتورة'}
+                                    </Link>
+                                  ) : null}
+                                </p>
+                              )}
+                              {transaction.notes && (
+                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-md truncate">{transaction.notes}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-left">
+                            <p className={`text-lg font-bold ${isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                              {isPositive ? '+' : ''}{transaction.quantity_change}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              {new Date(transaction.created_at).toLocaleDateString(appLang === 'en' ? 'en' : 'ar', { year: 'numeric', month: 'short', day: 'numeric' })}
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+            </CardContent>
+          </Card>
         </div>
       </main>
     </div>
