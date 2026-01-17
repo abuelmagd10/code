@@ -518,7 +518,11 @@ export default function InvoicesPage() {
         }
         
         // ثانياً: تحديث من sales_orders إذا كان متوفراً (أولوية أعلى)
-        const salesOrderIds = (invoicesFromDb || []).filter((inv: any) => inv.sales_order_id).map((inv: any) => inv.sales_order_id)
+        const salesOrderIds = (invoicesFromDb || [])
+          .filter((inv: any) => inv.sales_order_id)
+          .map((inv: any) => inv.sales_order_id)
+          .filter((id: any) => id) // إزالة القيم null/undefined
+        
         if (salesOrderIds.length > 0) {
           const { data: salesOrders } = await supabase
             .from("sales_orders")
@@ -535,6 +539,12 @@ export default function InvoicesPage() {
             }
           }
         }
+        
+        // Debug: طباعة معلومات إضافية
+        const invoicesWithEmployee = Object.keys(invToEmpMap).length
+        const invoicesWithSalesOrder = (invoicesFromDb || []).filter((inv: any) => inv.sales_order_id).length
+        const invoicesWithCreatedBy = (invoicesFromDb || []).filter((inv: any) => inv.created_by_user_id).length
+        console.log(`[Invoices Debug] Total: ${(invoicesFromDb || []).length}, With created_by_user_id: ${invoicesWithCreatedBy}, With sales_order_id: ${invoicesWithSalesOrder}, Mapped: ${invoicesWithEmployee}`)
       }
       
       // Debug: طباعة عدد الفواتير في الخريطة
