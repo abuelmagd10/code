@@ -506,13 +506,19 @@ export default function InvoicesPage() {
           .in("id", salesOrderIds)
 
         // بناء خريطة: invoice_id -> created_by_user_id
+        // أولوية: 1) من sales_order، 2) من created_by_user_id مباشرة
         const invToEmpMap: Record<string, string> = {}
         for (const inv of (result.data || [])) {
+          // محاولة الحصول من sales_order أولاً
           if (inv.sales_order_id) {
             const so = (salesOrders || []).find((s: any) => s.id === inv.sales_order_id)
             if (so?.created_by_user_id) {
               invToEmpMap[inv.id] = so.created_by_user_id
             }
+          }
+          // إذا لم يكن من sales_order، استخدم created_by_user_id مباشرة
+          if (!invToEmpMap[inv.id] && inv.created_by_user_id) {
+            invToEmpMap[inv.id] = inv.created_by_user_id
           }
         }
         setInvoiceToEmployeeMap(invToEmpMap)
@@ -591,13 +597,14 @@ export default function InvoicesPage() {
   // الفلترة الديناميكية على الفواتير
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
-      // فلتر الموظف (حسب الموظف المنشئ لأمر البيع المرتبط)
+      // فلتر الموظف (حسب الموظف المنشئ لأمر البيع المرتبط أو الفاتورة مباشرة)
       if (canViewAllInvoices && filterEmployeeId && filterEmployeeId !== "all") {
-        const employeeId = invoiceToEmployeeMap[inv.id]
-        if (employeeId !== filterEmployeeId) return false
+        const employeeId = invoiceToEmployeeMap[inv.id] || (inv as any).created_by_user_id
+        // إذا لم يكن هناك employeeId محدد، أو كان مختلفاً عن المحدد، استبعد الفاتورة
+        if (!employeeId || employeeId !== filterEmployeeId) return false
       } else if (!canViewAllInvoices && currentUserId) {
         // الموظف العادي يرى فقط فواتير أوامره
-        const employeeId = invoiceToEmployeeMap[inv.id]
+        const employeeId = invoiceToEmployeeMap[inv.id] || (inv as any).created_by_user_id
         if (employeeId && employeeId !== currentUserId) return false
       }
 
