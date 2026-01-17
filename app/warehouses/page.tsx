@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
+import { useUserContext } from "@/hooks/use-user-context"
 import { Plus, Pencil, Trash2, Warehouse, Building2, MapPin, Phone, User } from "lucide-react"
 import {
   Dialog,
@@ -60,6 +61,7 @@ interface CostCenter {
 export default function WarehousesPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
+  const { userContext, loading: userContextLoading, error: userContextError } = useUserContext()
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
@@ -95,9 +97,97 @@ export default function WarehousesPage() {
     return () => window.removeEventListener('app_language_changed', handler)
   }, [])
 
+  const loadData = useCallback(async () => {
+    if (!userContext) return
+    try {
+      setLoading(true)
+      const companyId = userContext.company_id
+      if (!companyId) {
+        toast({ variant: "destructive", title: "خطأ", description: "لم يتم تحديد شركة نشطة" })
+        return
+      }
+
+      // Check if user can override (owner/admin can see all warehouses)
+      const canOverride = ["owner", "admin", "manager"].includes(userContext.role || "")
+      const userBranchId = userContext.branch_id
+
+      // Build warehouses query based on permissions
+      let warehousesQuery = supabase
+        .from("warehouses")
+        .select("*, branches(name, branch_name), cost_centers(cost_center_name)")
+        .eq("company_id", companyId)
+
+      // If user cannot override, filter by their branch
+      if (!canOverride && userBranchId) {
+        warehousesQuery = warehousesQuery.eq("branch_id", userBranchId)
+      }
+
+      const { data: warehousesData, error: warehousesError } = await warehousesQuery
+        .order("is_main", { ascending: false })
+        .order("name")
+
+      if (warehousesError) {
+        console.error("Error loading warehouses:", warehousesError)
+        toast({ variant: "destructive", title: "خطأ", description: warehousesError.message })
+      } else {
+        setWarehouses(warehousesData || [])
+      }
+
+      // Load branches (filtered by permissions)
+      let branchesQuery = supabase
+        .from("branches")
+        .select("id, name, branch_name")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+
+      if (!canOverride && userBranchId) {
+        branchesQuery = branchesQuery.eq("id", userBranchId)
+      }
+
+      const { data: branchesData, error: branchesError } = await branchesQuery.order("name")
+
+      if (branchesError) {
+        console.error("Error loading branches:", branchesError)
+      } else {
+        setBranches(branchesData || [])
+      }
+
+      // Load cost centers (filtered by permissions)
+      let costCentersQuery = supabase
+        .from("cost_centers")
+        .select("id, cost_center_name, branch_id")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+
+      if (!canOverride && userBranchId) {
+        costCentersQuery = costCentersQuery.eq("branch_id", userBranchId)
+      }
+
+      const { data: ccData, error: ccError } = await costCentersQuery.order("cost_center_name")
+
+      if (ccError) {
+        console.error("Error loading cost centers:", ccError)
+      } else {
+        setCostCenters(ccData || [])
+      }
+    } catch (err: any) {
+      console.error("Error loading data:", err)
+      toast({ variant: "destructive", title: "خطأ", description: err.message || "حدث خطأ أثناء تحميل البيانات" })
+    } finally {
+      setLoading(false)
+    }
+  }, [userContext, supabase, toast])
+
   useEffect(() => {
+    if (userContextLoading) return
+    if (userContextError) {
+      toast({ variant: "destructive", title: "خطأ", description: userContextError })
+      setLoading(false)
+      return
+    }
+    if (!userContext) return
     loadData()
-  }, [])
+  }, [userContextLoading, userContextError, userContext, loadData, toast])
 
   useEffect(() => {
     // Filter cost centers based on selected branch
@@ -107,86 +197,6 @@ export default function WarehousesPage() {
       setFilteredCostCenters(costCenters)
     }
   }, [formData.branch_id, costCenters])
-
-  const loadData = async () => {
-    try {
-      setLoading(true)
-      const { getActiveCompanyId } = await import("@/lib/company")
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-
-      // Load warehouses directly from Supabase (avoiding relationship ambiguity)
-      const { data: warehousesData, error: warehousesError } = await supabase
-        .from("warehouses")
-        .select("*")
-        .eq("company_id", companyId)
-        .order("is_main", { ascending: false })
-        .order("name")
-
-      if (warehousesError) {
-        console.error("Error loading warehouses:", warehousesError)
-        toast({ variant: "destructive", title: "خطأ", description: warehousesError.message })
-        setWarehouses([])
-      } else {
-        // Fetch branch and cost center data separately to avoid relationship ambiguity
-        const warehousesWithRelations = await Promise.all(
-          (warehousesData || []).map(async (wh: any) => {
-            const result: any = { ...wh }
-            
-            // Fetch branch data if branch_id exists
-            if (wh.branch_id) {
-              const { data: branchData } = await supabase
-                .from("branches")
-                .select("id, name, branch_name")
-                .eq("id", wh.branch_id)
-                .single()
-              if (branchData) {
-                result.branches = branchData
-              }
-            }
-            
-            // Fetch cost center data if cost_center_id exists
-            if (wh.cost_center_id) {
-              const { data: ccData } = await supabase
-                .from("cost_centers")
-                .select("id, cost_center_name")
-                .eq("id", wh.cost_center_id)
-                .single()
-              if (ccData) {
-                result.cost_centers = ccData
-              }
-            }
-            
-            return result
-          })
-        )
-        
-        setWarehouses(warehousesWithRelations)
-      }
-
-      // Load branches
-      const { data: branchesData } = await supabase
-        .from("branches")
-        .select("id, name, branch_name")
-        .eq("company_id", companyId)
-        .eq("is_active", true)
-        .order("name")
-      setBranches(branchesData || [])
-
-      // Load cost centers
-      const { data: ccData } = await supabase
-        .from("cost_centers")
-        .select("id, cost_center_name, branch_id")
-        .eq("company_id", companyId)
-        .eq("is_active", true)
-        .order("cost_center_name")
-      setCostCenters(ccData || [])
-    } catch (err) {
-      console.error("Error loading data:", err)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const openCreateDialog = () => {
     setSelectedWarehouse(null)
@@ -220,10 +230,13 @@ export default function WarehousesPage() {
       toast({ variant: "destructive", title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'Name is required' : 'الاسم مطلوب' })
       return
     }
+    if (!userContext) {
+      toast({ variant: "destructive", title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'User context not loaded' : 'لم يتم تحميل بيانات المستخدم' })
+      return
+    }
     try {
       setSaving(true)
-      const { getActiveCompanyId } = await import("@/lib/company")
-      const companyId = await getActiveCompanyId(supabase)
+      const companyId = userContext.company_id
       if (!companyId) throw new Error("No company")
 
       const payload = {
@@ -292,8 +305,12 @@ export default function WarehousesPage() {
             </Button>
           </CardHeader>
           <CardContent>
-            {loading ? (
+            {userContextLoading || loading ? (
               <div className="text-center py-8 text-gray-500">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</div>
+            ) : userContextError ? (
+              <div className="text-center py-8 text-red-500">{userContextError}</div>
+            ) : !userContext ? (
+              <div className="text-center py-8 text-gray-500">{appLang === 'en' ? 'Please log in' : 'يرجى تسجيل الدخول'}</div>
             ) : warehouses.length === 0 ? (
               <div className="text-center py-8 text-gray-500">{appLang === 'en' ? 'No warehouses found' : 'لا توجد مخازن'}</div>
             ) : (
