@@ -291,12 +291,12 @@ export default function InventoryPage() {
               </div>
               <div>
                 <label className="text-sm font-medium mb-2 block">{t("Branch", "الفرع")}</label>
-                <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                <Select value={selectedBranch || "all"} onValueChange={(value) => setSelectedBranch(value === "all" ? "" : value)}>
                   <SelectTrigger>
                     <SelectValue placeholder={t("All branches", "كل الفروع")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">{t("All branches", "كل الفروع")}</SelectItem>
+                    <SelectItem value="all">{t("All branches", "كل الفروع")}</SelectItem>
                     {branches.map((b) => (
                       <SelectItem key={b.id} value={b.id}>
                         {b.name || b.branch_name}
