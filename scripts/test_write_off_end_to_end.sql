@@ -137,7 +137,7 @@ WITH test_data AS (
     ea.id as expense_account_id,
     ia.id as inventory_account_id
   FROM companies c
-  CROSS JOIN branches b ON b.company_id = c.id AND b.is_active = true
+  INNER JOIN branches b ON b.company_id = c.id AND b.is_active = true
   CROSS JOIN LATERAL (
     SELECT id FROM cost_centers 
     WHERE company_id = c.id AND branch_id = b.id AND is_active = true 
