@@ -29,7 +29,7 @@ export async function secureApiRequest(
   config: SecurityConfig
 ): Promise<SecurityResult> {
   // ✅ استخدام supabase client المُمرر أو إنشاء واحد جديد
-  const supabase = config.supabase || createClient()
+  const supabase = config.supabase || await createClient()
 
   // 1. التحقق من المصادقة
   if (config.requireAuth !== false) {
