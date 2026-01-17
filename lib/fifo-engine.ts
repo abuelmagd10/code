@@ -3,9 +3,14 @@
  * ========================================
  * محرك حساب COGS باستخدام FIFO (First In First Out)
  * مطابق لنظام Zoho Books في تتبع دفعات الشراء
+ * 
+ * ✅ ترقية ERP: يدمج مع cogs_transactions
+ * - FIFO Engine هو الجهة الوحيدة المخولة بتحديد unit_cost
+ * - عند كل استهلاك، يتم إنشاء سجل في cogs_transactions تلقائياً
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
+import { createCOGSTransaction, COGSTransactionParams } from './cogs-transactions'
 
 export interface FIFOLot {
   id: string
@@ -131,6 +136,129 @@ export async function consumeFIFOLots(
   }
 
   return Number(data || 0)
+}
+
+/**
+ * استهلاك دفعات FIFO وإنشاء سجلات COGS تلقائياً (ERP Professional)
+ * ✅ هذه الدالة تدمج FIFO Engine مع cogs_transactions
+ * 
+ * @param supabase - Supabase client
+ * @param params - معلومات الاستهلاك مع الحوكمة
+ * @returns نتيجة العملية مع تفاصيل COGS transactions
+ */
+export async function consumeFIFOLotsWithCOGS(
+  supabase: SupabaseClient,
+  params: {
+    companyId: string
+    branchId: string
+    costCenterId: string
+    warehouseId: string
+    productId: string
+    quantity: number
+    sourceType: 'invoice' | 'return' | 'adjustment' | 'depreciation' | 'write_off'
+    sourceId: string
+    transactionDate?: string
+    createdByUserId?: string
+  }
+): Promise<{
+  success: boolean
+  totalCOGS: number
+  cogsTransactionIds: string[]
+  fifoConsumptions: FIFOConsumption[]
+  error?: string
+}> {
+  try {
+    // التحقق من الحوكمة (إلزامي)
+    if (!params.branchId || !params.costCenterId || !params.warehouseId) {
+      return {
+        success: false,
+        totalCOGS: 0,
+        cogsTransactionIds: [],
+        fifoConsumptions: [],
+        error: 'الحوكمة مطلوبة: branchId, costCenterId, warehouseId'
+      }
+    }
+
+    // حساب COGS باستخدام FIFO
+    const fifoResult = await calculateFIFOCOGS(supabase, params.productId, params.quantity)
+
+    if (fifoResult.insufficient_stock) {
+      return {
+        success: false,
+        totalCOGS: 0,
+        cogsTransactionIds: [],
+        fifoConsumptions: [],
+        error: `مخزون غير كافي: ${fifoResult.missing_quantity} وحدة ناقصة`
+      }
+    }
+
+    // استهلاك دفعات FIFO
+    const consumedCOGS = await consumeFIFOLots(supabase, {
+      companyId: params.companyId,
+      productId: params.productId,
+      quantity: params.quantity,
+      consumptionType: params.sourceType === 'invoice' ? 'sale' : 
+                      params.sourceType === 'write_off' ? 'write_off' : 'adjustment_out',
+      referenceType: params.sourceType,
+      referenceId: params.sourceId,
+      consumptionDate: params.transactionDate
+    })
+
+    // إنشاء سجلات COGS لكل دفعة مستهلكة
+    const cogsTransactionIds: string[] = []
+    
+    for (const consumption of fifoResult.lots_used) {
+      // الحصول على fifo_consumption_id من fifo_lot_consumptions
+      const { data: fifoConsumption } = await supabase
+        .from('fifo_lot_consumptions')
+        .select('id')
+        .eq('reference_type', params.sourceType)
+        .eq('reference_id', params.sourceId)
+        .eq('lot_id', consumption.lot_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      // إنشاء سجل COGS
+      const cogsResult = await createCOGSTransaction(supabase, {
+        companyId: params.companyId,
+        branchId: params.branchId,
+        costCenterId: params.costCenterId,
+        warehouseId: params.warehouseId,
+        productId: params.productId,
+        sourceType: params.sourceType,
+        sourceId: params.sourceId,
+        quantity: consumption.quantity_consumed,
+        unitCost: consumption.unit_cost, // من FIFO فقط
+        totalCost: consumption.total_cost,
+        transactionDate: params.transactionDate,
+        fifoConsumptionId: fifoConsumption?.id,
+        createdByUserId: params.createdByUserId
+      })
+
+      if (cogsResult.success && cogsResult.transactionId) {
+        cogsTransactionIds.push(cogsResult.transactionId)
+      } else {
+        console.error('Failed to create COGS transaction:', cogsResult.error)
+      }
+    }
+
+    return {
+      success: true,
+      totalCOGS: consumedCOGS,
+      cogsTransactionIds,
+      fifoConsumptions: fifoResult.lots_used
+    }
+  } catch (error: any) {
+    console.error('Error in consumeFIFOLotsWithCOGS:', error)
+    return {
+      success: false,
+      totalCOGS: 0,
+      cogsTransactionIds: [],
+      fifoConsumptions: [],
+      error: error.message || 'خطأ غير متوقع'
+    }
+  }
 }
 
 /**
