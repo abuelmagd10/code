@@ -24,18 +24,10 @@ DECLARE
   v_total_skipped INTEGER := 0;
   v_total_errors INTEGER := 0;
 BEGIN
-  -- الحصول على company_id (أول شركة نشطة)
-  SELECT id INTO v_company_id FROM companies LIMIT 1;
-  IF v_company_id IS NULL THEN
-    RAISE NOTICE '❌ لا توجد شركات في قاعدة البيانات';
-    RETURN;
-  END IF;
-
-  RAISE NOTICE '🏢 Company ID: %', v_company_id;
-  RAISE NOTICE '📋 بدء معالجة الفواتير القديمة...';
+  RAISE NOTICE '📋 بدء معالجة الفواتير القديمة (جميع الشركات)...';
   RAISE NOTICE '';
 
-  -- الحصول على جميع الفواتير المدفوعة بدون COGS transactions
+  -- الحصول على جميع الفواتير المدفوعة بدون COGS transactions (جميع الشركات)
   FOR v_invoice IN
     SELECT DISTINCT
       i.id,
@@ -50,7 +42,6 @@ BEGIN
       i.created_at
     FROM invoices i
     WHERE i.status IN ('paid', 'partially_paid')
-      AND i.company_id = v_company_id
       -- التحقق من عدم وجود COGS transactions
       AND NOT EXISTS (
         SELECT 1 FROM cogs_transactions ct
