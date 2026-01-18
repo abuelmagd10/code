@@ -148,24 +148,28 @@ BEGIN
             BEGIN
               -- إنشاء fifo_lot_consumption
               INSERT INTO fifo_lot_consumptions (
+                company_id,
                 lot_id,
                 product_id,
+                consumption_type,
+                reference_type,
+                reference_id,
                 quantity_consumed,
                 unit_cost,
                 total_cost,
                 consumption_date,
-                reference_type,
-                reference_id,
                 created_at
               ) VALUES (
+                v_company_id,
                 v_lot.lot_id,
                 v_third_party_item.product_id,
+                'sale',
+                'invoice',
+                v_invoice.id,
                 v_qty_from_lot,
                 v_lot.unit_cost,
                 v_cost_from_lot,
                 v_invoice.invoice_date,
-                'invoice',
-                v_invoice.id,
                 NOW()
               ) RETURNING id INTO v_consumption_id;
 
