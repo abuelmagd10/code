@@ -7,7 +7,6 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
 import { 
   enforceGovernance, 
   applyGovernanceFilters,
@@ -24,7 +23,7 @@ export async function GET(request: NextRequest) {
     // 1️⃣ تطبيق الحوكمة (إلزامي)
     const governance = await enforceGovernance(request)
     
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
     
     // 2️⃣ بناء الاستعلام مع فلاتر الحوكمة
     // Note: Fetching warehouses without relationships to avoid ambiguity
@@ -150,7 +149,7 @@ export async function POST(request: NextRequest) {
       throw new Error('Governance Violation: Invalid branch_id')
     }
     
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
     
     // 4️⃣ الإدخال في قاعدة البيانات
     const { data: warehouse, error: insertError } = await supabase
