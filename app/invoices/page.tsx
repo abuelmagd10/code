@@ -157,8 +157,8 @@ export default function InvoicesPage() {
   // خريطة لربط الفواتير بالموظف المنشئ لأمر البيع
   const [invoiceToEmployeeMap, setInvoiceToEmployeeMap] = useState<Record<string, string>>({})
 
-  // Status options for multi-select
-  const statusOptions = [
+  // Status options for multi-select - قائمة ثابتة بجميع الحالات الممكنة
+  const allStatusOptions = useMemo(() => [
     { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
     { value: "sent", label: appLang === 'en' ? "Sent" : "مُرسل" },
     { value: "paid", label: appLang === 'en' ? "Paid" : "مدفوع" },
@@ -167,7 +167,7 @@ export default function InvoicesPage() {
     { value: "fully_returned", label: appLang === 'en' ? "Fully Returned" : "مرتجع بالكامل" },
     { value: "cancelled", label: appLang === 'en' ? "Cancelled" : "ملغي" },
     { value: "has_credit", label: appLang === 'en' ? "Has Credit" : "رصيد دائن" },
-  ]
+  ], [appLang])
 
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>('EGP')
@@ -200,6 +200,53 @@ export default function InvoicesPage() {
     })
     return agg
   }, [payments])
+
+  // ✅ قائمة الحالات المتاحة بناءً على البيانات الفعلية للشركة
+  const statusOptions = useMemo(() => {
+    // جمع جميع الحالات الفعلية من الفواتير
+    const availableStatuses = new Set<string>()
+    
+    invoices.forEach((inv) => {
+      // حساب الحالة الفعلية (مثل منطق الفلترة)
+      const actualPaid = paidByInvoice[inv.id] || 0
+      const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
+      const returnedAmount = Number(inv.returned_amount || 0)
+      const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : Number(inv.total_amount || 0))
+      const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
+      
+      let actualStatus: string
+      if (inv.status === 'draft' || inv.status === 'invoiced') {
+        actualStatus = 'draft'
+      } else if (inv.status === 'cancelled') {
+        actualStatus = 'cancelled'
+      } else if (isFullyReturned) {
+        actualStatus = 'fully_returned'
+      } else if (returnedAmount > 0 && returnedAmount < originalTotal && originalTotal > 0) {
+        actualStatus = 'partially_returned'
+      } else if (originalTotal > 0 && paidAmount >= originalTotal) {
+        actualStatus = 'paid'
+      } else if (originalTotal > 0 && paidAmount > 0 && paidAmount < originalTotal) {
+        actualStatus = 'partially_paid'
+      } else if (originalTotal > 0 && paidAmount === 0 && returnedAmount === 0) {
+        actualStatus = 'sent'
+      } else {
+        actualStatus = inv.status || 'draft'
+      }
+      
+      availableStatuses.add(actualStatus)
+      
+      // إضافة "has_credit" إذا كانت الفاتورة لديها رصيد دائن
+      if (inv.status !== 'cancelled' && inv.status !== 'fully_returned') {
+        const netInvoiceAmount = originalTotal - returnedAmount
+        if (netInvoiceAmount > 0 && paidAmount > netInvoiceAmount) {
+          availableStatuses.add('has_credit')
+        }
+      }
+    })
+    
+    // إرجاع فقط الحالات المتاحة من القائمة الكاملة
+    return allStatusOptions.filter(opt => availableStatuses.has(opt.value))
+  }, [invoices, paidByInvoice, appCurrency, allStatusOptions])
 
   // Helper: Get display amount (use converted if available)
   // يستخدم المدفوعات الفعلية من جدول payments كأولوية
