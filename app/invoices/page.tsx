@@ -702,12 +702,15 @@ export default function InvoicesPage() {
           // ✅ مرتجع جزئي: يوجد returned_amount ولكن ليس كامل (يجب أن يكون originalTotal > 0)
           actualStatus = 'partially_returned'
         } else if (paidAmount >= originalTotal && originalTotal > 0) {
+          // ✅ مدفوع بالكامل: paidAmount >= originalTotal
           actualStatus = 'paid'
-        } else if (paidAmount > 0) {
+        } else if (paidAmount > 0 && paidAmount < originalTotal && originalTotal > 0) {
+          // ✅ مدفوع جزئياً: يوجد paidAmount ولكن ليس كامل (يجب أن يكون originalTotal > 0)
           actualStatus = 'partially_paid'
         } else if (inv.status === 'sent') {
           actualStatus = 'sent'
         } else {
+          // ✅ استخدام حالة الفاتورة الفعلية كـ fallback (مثل partially_paid المخزنة في قاعدة البيانات)
           actualStatus = inv.status || 'draft'
         }
 
