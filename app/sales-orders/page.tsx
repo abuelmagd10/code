@@ -207,7 +207,16 @@ function SalesOrdersContent() {
       if (filterStatuses.length > 0) {
         const linkedInvoice = order.invoice_id ? linkedInvoices[order.invoice_id] : null;
         const displayStatus = linkedInvoice ? linkedInvoice.status : order.status;
-        if (!filterStatuses.includes(displayStatus)) return false;
+        
+        // ✅ معالجة حالة "draft" لتشمل أيضاً "invoiced" (حالة مسودة قبل الإرسال)
+        const normalizedStatuses = filterStatuses.map(s => {
+          if (s === "draft") {
+            return ["draft", "invoiced"]; // ✅ تضمين "invoiced" مع "draft"
+          }
+          return [s];
+        }).flat();
+        
+        if (!normalizedStatuses.includes(displayStatus)) return false;
       }
 
       // Customer filter - show orders for any of the selected customers

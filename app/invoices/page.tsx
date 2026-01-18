@@ -682,6 +682,14 @@ export default function InvoicesPage() {
         const hasHasCreditFilter = filterStatuses.includes("has_credit")
         const otherStatuses = filterStatuses.filter(s => s !== "has_credit")
 
+        // ✅ معالجة حالة "draft" لتشمل أيضاً "invoiced" (حالة مسودة قبل الإرسال)
+        const normalizedStatuses = otherStatuses.map(s => {
+          if (s === "draft") {
+            return ["draft", "invoiced"] // ✅ تضمين "invoiced" مع "draft"
+          }
+          return [s]
+        }).flat()
+
         // إذا كان فلتر "رصيد دائن" موجود
         if (hasHasCreditFilter) {
           // إذا لا يوجد فلاتر أخرى، أظهر فقط الفواتير التي لها رصيد دائن
@@ -689,11 +697,11 @@ export default function InvoicesPage() {
             if (!hasCredit) return false
           } else {
             // إذا يوجد فلاتر أخرى، أظهر الفواتير التي تطابق إحدى الحالات أو لها رصيد دائن
-            if (!otherStatuses.includes(inv.status) && !hasCredit) return false
+            if (!normalizedStatuses.includes(inv.status) && !hasCredit) return false
           }
         } else {
-          // فلتر عادي بدون رصيد دائن
-          if (!filterStatuses.includes(inv.status)) return false
+          // فلتر عادي بدون رصيد دائن - استخدام normalizedStatuses
+          if (!normalizedStatuses.includes(inv.status)) return false
         }
       }
 
