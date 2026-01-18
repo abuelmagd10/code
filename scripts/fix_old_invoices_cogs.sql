@@ -125,70 +125,67 @@ BEGIN
               v_qty_from_lot NUMERIC(15,2) := LEAST(v_remaining_qty, v_lot.remaining_quantity);
               v_cost_from_lot NUMERIC(15,2) := v_qty_from_lot * v_lot.unit_cost;
             BEGIN
-              -- إنشاء fifo_lot_consumption
-              INSERT INTO fifo_lot_consumptions (
-                lot_id,
-                product_id,
-                quantity_consumed,
-                unit_cost,
-                total_cost,
-                consumption_date,
-                reference_type,
-                reference_id,
-                created_at,
-                updated_at
-              ) VALUES (
-                v_lot.lot_id,
-                v_invoice_item.product_id,
-                v_qty_from_lot,
-                v_lot.unit_cost,
-                v_cost_from_lot,
-                v_invoice.invoice_date,
-                'invoice',
-                v_invoice.id,
-                NOW(),
-                NOW()
-              );
+              DECLARE
+                v_consumption_id UUID;
+              BEGIN
+                -- إنشاء fifo_lot_consumption والحصول على ID
+                INSERT INTO fifo_lot_consumptions (
+                  lot_id,
+                  product_id,
+                  quantity_consumed,
+                  unit_cost,
+                  total_cost,
+                  consumption_date,
+                  reference_type,
+                  reference_id,
+                  created_at,
+                  updated_at
+                ) VALUES (
+                  v_lot.lot_id,
+                  v_invoice_item.product_id,
+                  v_qty_from_lot,
+                  v_lot.unit_cost,
+                  v_cost_from_lot,
+                  v_invoice.invoice_date,
+                  'invoice',
+                  v_invoice.id,
+                  NOW(),
+                  NOW()
+                ) RETURNING id INTO v_consumption_id;
 
-              -- إنشاء cogs_transaction
-              INSERT INTO cogs_transactions (
-                company_id,
-                branch_id,
-                cost_center_id,
-                warehouse_id,
-                product_id,
-                source_type,
-                source_id,
-                quantity,
-                unit_cost,
-                total_cost,
-                fifo_consumption_id,
-                transaction_date,
-                created_at,
-                updated_at
-              )
-              SELECT 
-                v_invoice.company_id,
-                v_invoice.branch_id,
-                v_invoice.cost_center_id,
-                v_invoice.warehouse_id,
-                v_invoice_item.product_id,
-                'invoice',
-                v_invoice.id,
-                v_qty_from_lot,
-                v_lot.unit_cost,
-                v_cost_from_lot,
-                flc.id,
-                v_invoice.invoice_date,
-                NOW(),
-                NOW()
-              FROM fifo_lot_consumptions flc
-              WHERE flc.lot_id = v_lot.lot_id
-                AND flc.reference_type = 'invoice'
-                AND flc.reference_id = v_invoice.id
-                AND flc.product_id = v_invoice_item.product_id
-              ORDER BY flc.created_at DESC
-              LIMIT 1;
+                -- إنشاء cogs_transaction مع ربط fifo_consumption_id
+                INSERT INTO cogs_transactions (
+                  company_id,
+                  branch_id,
+                  cost_center_id,
+                  warehouse_id,
+                  product_id,
+                  source_type,
+                  source_id,
+                  quantity,
+                  unit_cost,
+                  total_cost,
+                  fifo_consumption_id,
+                  transaction_date,
+                  created_at,
+                  updated_at
+                ) VALUES (
+                  v_invoice.company_id,
+                  v_invoice.branch_id,
+                  v_invoice.cost_center_id,
+                  v_invoice.warehouse_id,
+                  v_invoice_item.product_id,
+                  'invoice',
+                  v_invoice.id,
+                  v_qty_from_lot,
+                  v_lot.unit_cost,
+                  v_cost_from_lot,
+                  v_consumption_id,
+                  v_invoice.invoice_date,
+                  NOW(),
+                  NOW()
+                );
+              END;
 
               v_total_cost := v_total_cost + v_cost_from_lot;
               v_quantity_consumed := v_quantity_consumed + v_qty_from_lot;
