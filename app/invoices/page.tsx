@@ -399,7 +399,7 @@ export default function InvoicesPage() {
       }
 
       // 🔐 ERP Access Control - بناء فلتر الوصول للعملاء
-      const accessLevel = getRoleAccessLevel(role);
+      // accessLevel تم تعريفه مسبقاً في السطر 324
       const accessFilter = getAccessFilter(
         role,
         user.id,
