@@ -157,20 +157,51 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       // حساب مصاريف الشحن من الفواتير
       totalShipping = invoices.reduce((sum: number, inv: any) => sum + Number(inv.shipping || 0), 0)
 
-      // حساب COGS (تكلفة البضاعة المباعة) من بنود الفواتير
-      const invoiceIds = invoices.map((i: any) => i.id)
-      if (invoiceIds.length > 0) {
-        const { data: invoiceItems } = await supabase
-          .from("invoice_items")
-          .select("quantity, product_id, products(cost_price, item_type)")
-          .in("invoice_id", invoiceIds)
+      // ✅ ERP Professional: حساب COGS من cogs_transactions (المصدر الوحيد للحقيقة)
+      // 📌 يمنع استخدام products.cost_price في التقارير الرسمية
+      // 📌 FIFO Engine هو الجهة الوحيدة المخولة بتحديد unit_cost
+      // 📌 COGS = SUM(total_cost) FROM cogs_transactions WHERE source_type = 'invoice'
+      try {
+        const { calculateCOGSTotal } = await import("@/lib/cogs-transactions")
+        totalCOGS = await calculateCOGSTotal(supabase, {
+          companyId: company.id,
+          fromDate: fromDate || undefined,
+          toDate: toDate || undefined,
+          sourceType: 'invoice'
+        })
+        
+        // Fallback: إذا لم توجد سجلات COGS (للتوافق مع البيانات القديمة)
+        if (totalCOGS === 0 && invoices.length > 0) {
+          console.warn("⚠️ No COGS transactions found in dashboard, falling back to cost_price calculation (deprecated)")
+          const invoiceIds = invoices.map((i: any) => i.id)
+          const { data: invoiceItems } = await supabase
+            .from("invoice_items")
+            .select("quantity, product_id, products(cost_price, item_type)")
+            .in("invoice_id", invoiceIds)
 
-        totalCOGS = (invoiceItems || []).reduce((sum: number, it: any) => {
-          // تجاهل الخدمات
-          if (it.products?.item_type === 'service') return sum
-          const cost = Number(it.products?.cost_price || 0)
-          return sum + Number(it.quantity || 0) * cost
-        }, 0)
+          totalCOGS = (invoiceItems || []).reduce((sum: number, it: any) => {
+            // تجاهل الخدمات
+            if (it.products?.item_type === 'service') return sum
+            const cost = Number(it.products?.cost_price || 0)
+            return sum + Number(it.quantity || 0) * cost
+          }, 0)
+        }
+      } catch (error: any) {
+        console.error("Error calculating COGS in dashboard:", error)
+        // Fallback to cost_price in case of error
+        const invoiceIds = invoices.map((i: any) => i.id)
+        if (invoiceIds.length > 0) {
+          const { data: invoiceItems } = await supabase
+            .from("invoice_items")
+            .select("quantity, product_id, products(cost_price, item_type)")
+            .in("invoice_id", invoiceIds)
+
+          totalCOGS = (invoiceItems || []).reduce((sum: number, it: any) => {
+            if (it.products?.item_type === 'service') return sum
+            const cost = Number(it.products?.cost_price || 0)
+            return sum + Number(it.quantity || 0) * cost
+          }, 0)
+        }
       }
     }
 
