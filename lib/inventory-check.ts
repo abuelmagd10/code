@@ -54,9 +54,12 @@ export async function checkInventoryAvailability(
 
   for (const item of items) {
     // Build query to get inventory transactions for this product
+    // 📌 ملاحظة مهمة: لحركات transfer_in و transfer_out، يجب أن نأخذها بغض النظر عن cost_center_id
+    // لأن المخزون المحول قد يكون في cost_center_id مختلف لكن في نفس الفرع والمخزن
+    // الحل: نأخذ جميع الحركات في نفس المخزن والفرع، ثم نفلتر في JavaScript
     let query = supabase
       .from("inventory_transactions")
-      .select("product_id, quantity_change")
+      .select("product_id, quantity_change, transaction_type, cost_center_id")
       .eq("product_id", item.product_id)
       .or("is_deleted.is.null,is_deleted.eq.false")
 
@@ -65,8 +68,7 @@ export async function checkInventoryAvailability(
     if (context) {
       query = query.eq("company_id", context.company_id)
       
-      // تطبيق فلاتر الفرع والمخزن ومركز التكلفة إذا كانت موجودة
-      // هذه الفلاتر ضرورية لضمان الفحص على المستوى الصحيح
+      // تطبيق فلاتر الفرع والمخزن (إجبارية)
       if (context.branch_id) {
         query = query.eq("branch_id", context.branch_id)
       }
@@ -75,9 +77,8 @@ export async function checkInventoryAvailability(
         query = query.eq("warehouse_id", context.warehouse_id)
       }
       
-      if (context.cost_center_id) {
-        query = query.eq("cost_center_id", context.cost_center_id)
-      }
+      // ⚠️ لا نطبق فلتر cost_center_id هنا - سنفلتر في JavaScript
+      // لأن حركات transfer_in و transfer_out قد تكون من cost_center_id مختلف
     }
 
     // Exclude inventory from a specific invoice if provided
@@ -86,19 +87,55 @@ export async function checkInventoryAvailability(
       query = query.or(`reference_id.neq.${excludeInvoiceId},reference_id.is.null`)
     }
 
-    const { data: transactions, error } = await query
+    const { data: allTransactions, error } = await query
 
     if (error) {
       console.error(`Error checking inventory for product ${item.product_id}:`, error)
       continue
     }
 
+    // 🔐 فلترة في JavaScript: نأخذ جميع الحركات في نفس cost_center_id المحدد
+    // + جميع حركات transfer_in و transfer_out (لأنها قد تكون في cost_center_id مختلف لكن في نفس الفرع والمخزن)
+    const filteredTransactions = (allTransactions || []).filter((t: any) => {
+      if (!context || !context.cost_center_id) {
+        // إذا لم يكن هناك cost_center_id في السياق، نأخذ جميع الحركات
+        return true
+      }
+      
+      const txCostCenterId = String(t.cost_center_id || '')
+      const txType = String(t.transaction_type || '')
+      const targetCostCenterId = String(context.cost_center_id)
+      
+      // نأخذ الحركات في نفس cost_center_id
+      if (txCostCenterId === targetCostCenterId) return true
+      
+      // نأخذ حركات transfer_in و transfer_out بغض النظر عن cost_center_id (لكن في نفس الفرع والمخزن)
+      if (txType === 'transfer_in' || txType === 'transfer_out') return true
+      
+      return false
+    })
+
     // Calculate total available quantity by summing quantity_change
     // quantity_change is positive for additions (purchase, transfer_in, etc.)
     // and negative for subtractions (sale, transfer_out, etc.)
-    const totalAvailable = (transactions || []).reduce((sum, tx) => {
+    const totalAvailable = filteredTransactions.reduce((sum, tx) => {
       return sum + (parseFloat(String(tx.quantity_change)) || 0)
     }, 0)
+
+    // Debug logging (يمكن إزالته لاحقاً)
+    if (totalAvailable < 0 || totalAvailable !== totalAvailable) {
+      console.log(`[Inventory Check] Product ${item.product_id}:`, {
+        totalTransactions: allTransactions?.length || 0,
+        filteredTransactions: filteredTransactions.length,
+        totalAvailable,
+        context: context ? {
+          company_id: context.company_id,
+          branch_id: context.branch_id,
+          warehouse_id: context.warehouse_id,
+          cost_center_id: context.cost_center_id
+        } : null
+      })
+    }
 
     const requested = parseFloat(String(item.quantity)) || 0
 
