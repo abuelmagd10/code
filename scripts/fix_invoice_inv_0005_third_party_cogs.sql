@@ -101,7 +101,22 @@ BEGIN
         DECLARE
           v_qty_remaining NUMERIC(15,2) := v_quantity_to_clear;
           v_item_total_cogs NUMERIC(15,2) := 0;
+          v_lots_found INTEGER := 0;
         BEGIN
+          -- التحقق من وجود FIFO Lots
+          SELECT COUNT(*) INTO v_lots_found
+          FROM fifo_cost_lots fl
+          WHERE fl.product_id = v_third_party_item.product_id
+            AND fl.company_id = v_company_id
+            AND fl.remaining_quantity > 0;
+          
+          IF v_lots_found = 0 THEN
+            RAISE NOTICE '      ❌ لا توجد FIFO Lots متاحة للمنتج %', v_third_party_item.product_name;
+            CONTINUE;
+          END IF;
+          
+          RAISE NOTICE '      📦 تم العثور على % FIFO Lots', v_lots_found;
+          
           FOR v_lot IN
             SELECT 
               fl.id as lot_id,
@@ -227,10 +242,18 @@ BEGIN
           RAISE NOTICE '      ❌ خطأ في معالجة Lot: %', SQLERRM;
         END;
 
+        IF v_qty_remaining > 0 THEN
+          RAISE NOTICE '      ⚠️ تحذير: لم يتم استهلاك الكمية بالكامل. المتبقي: %', v_qty_remaining;
+        END IF;
+
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE '      ❌ خطأ في حساب الكمية: %', SQLERRM;
+        RAISE;
       END;
 
     EXCEPTION WHEN OTHERS THEN
-      RAISE NOTICE '   ❌ خطأ في معالجة Third-Party Item: %', SQLERRM;
+      RAISE NOTICE '   ❌ خطأ في معالجة Third-Party Item %: %', v_third_party_item.id, SQLERRM;
+      RAISE;
     END;
   END LOOP;
 
