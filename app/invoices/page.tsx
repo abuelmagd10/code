@@ -399,6 +399,7 @@ export default function InvoicesPage() {
       }
 
       // 🔐 ERP Access Control - بناء فلتر الوصول للعملاء
+      const accessLevel = getRoleAccessLevel(role);
       const accessFilter = getAccessFilter(
         role,
         user.id,
@@ -420,9 +421,13 @@ export default function InvoicesPage() {
           (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
         }
       } else if (accessFilter.filterByBranch && accessFilter.branchId) {
-        // مدير: يرى عملاء الفرع
+        // مدير/محاسب مع فرع محدد: يرى عملاء الفرع
         const { data: branchCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).eq("branch_id", accessFilter.branchId).order("name");
         allCustomers = branchCust || [];
+      } else if (accessLevel === 'branch' && (role === 'accountant' || role === 'manager')) {
+        // محاسب/مدير بدون فرع محدد: يرى جميع العملاء
+        const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).order("name");
+        allCustomers = allCust || [];
       } else {
         // owner/admin: جميع العملاء
         const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).order("name");

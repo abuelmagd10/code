@@ -693,6 +693,7 @@ function SalesOrdersContent() {
       .single();
 
     const role = member?.role || "staff";
+    const accessLevel = getRoleAccessLevel(role);
     
     // 🔐 ERP Access Control - بناء فلتر الوصول للعملاء
     const accessFilter = getAccessFilter(
@@ -741,7 +742,7 @@ function SalesOrdersContent() {
         });
       }
     } else if (accessFilter.filterByBranch && accessFilter.branchId) {
-      // مدير: يرى عملاء الفرع
+      // مدير/محاسب مع فرع محدد: يرى عملاء الفرع
       const { data: branchCust } = await supabase
         .from("customers")
         .select("id, name, phone")
@@ -749,6 +750,14 @@ function SalesOrdersContent() {
         .eq("branch_id", accessFilter.branchId)
         .order("name");
       allCustomers = branchCust || [];
+    } else if (accessLevel === 'branch' && (role === 'accountant' || role === 'manager')) {
+      // محاسب/مدير بدون فرع محدد: يرى جميع العملاء
+      const { data: allCust } = await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", activeCompanyId)
+        .order("name");
+      allCustomers = allCust || [];
     } else {
       // owner/admin: جميع العملاء
       const { data: allCust } = await supabase
