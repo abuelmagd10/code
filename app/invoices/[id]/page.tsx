@@ -2173,7 +2173,7 @@ export default function InvoiceDetailPage() {
         }
       }
 
-      // ===== 5) ✅ إنشاء COGS Transactions إذا لم تكن موجودة (للـ Direct Sales - بدون شركة شحن) =====
+      // ===== 5) ✅ إنشاء COGS Transactions إذا لم تكن موجودة =====
       // التحقق من وجود COGS transactions (إذا لم تكن موجودة، يتم إنشاؤها الآن)
       const { data: existingCOGS } = await supabase
         .from("cogs_transactions")
@@ -2183,15 +2183,24 @@ export default function InvoiceDetailPage() {
         .limit(1)
       
       if (!existingCOGS || existingCOGS.length === 0) {
-        // التحقق من وجود شركة شحن (إذا كان هناك شركة شحن، COGS يتم في clearThirdPartyInventory)
-        const shippingValidation = await validateShippingProvider(supabase, invoice.id)
-        const hasShippingProvider = shippingValidation.valid && shippingValidation.shippingProviderId
+        // ✅ التحقق من وجود third-party inventory items فعلياً (وليس فقط shipping_provider_id)
+        // إذا لم تكن هناك third-party items، يتم استخدام deductInventoryOnly() حتى لو كان هناك shipping_provider_id
+        const { data: thirdPartyItems } = await supabase
+          .from("third_party_inventory")
+          .select("id")
+          .eq("invoice_id", invoice.id)
+          .eq("company_id", mapping.companyId)
+          .limit(1)
         
-        if (!hasShippingProvider) {
-          // ✅ Direct Sales: إنشاء COGS الآن (FIFO + COGS Transactions)
-          console.log("📌 Invoice paid - calling deductInventoryOnly() to create COGS...")
+        const hasThirdPartyItems = thirdPartyItems && thirdPartyItems.length > 0
+        
+        if (!hasThirdPartyItems) {
+          // ✅ Direct Sales أو Third-Party بدون items: إنشاء COGS الآن (FIFO + COGS Transactions)
+          console.log("📌 Invoice paid - no third-party items found, calling deductInventoryOnly() to create COGS...")
           await deductInventoryOnly()
           console.log(`✅ INV Paid: تم خصم المخزون وإنشاء COGS Transactions`)
+        } else {
+          console.log(`ℹ️ Third-party items found (${thirdPartyItems.length}) - COGS should be created by clearThirdPartyInventory()`)
         }
       }
 
