@@ -69,13 +69,11 @@ export default function DashboardInventoryStats({
       const costCenterId = String(userContext.cost_center_id || "")
       if (!branchId || !warehouseId || !costCenterId) return
 
-      // 1. حساب قيمة المخزون من inventory_transactions
-      const { data: products } = await supabase
-        .from('products')
-        .select('id, cost_price, reorder_level, item_type')
-        .eq('company_id', companyId)
-        .or('item_type.is.null,item_type.eq.product')
-
+      // ✅ ERP Professional: حساب قيمة المخزون من FIFO Lots (المصدر الوحيد للحقيقة)
+      // 📌 يمنع استخدام products.cost_price في التقارير الرسمية
+      // 📌 FIFO Engine هو الجهة الوحيدة المخولة بتحديد unit_cost
+      
+      // 1. حساب الكميات من inventory_transactions
       let transactionsQuery = supabase
         .from('inventory_transactions')
         .select('product_id, quantity_change')
@@ -87,7 +85,6 @@ export default function DashboardInventoryStats({
 
       const { data: transactions } = await transactionsQuery
 
-      const productMap = new Map((products || []).map((p: Product) => [p.id, p]))
       const qtyByProduct: Record<string, number> = {}
       
       for (const t of (transactions || [])) {
@@ -95,16 +92,57 @@ export default function DashboardInventoryStats({
         qtyByProduct[pid] = (qtyByProduct[pid] || 0) + Number(t.quantity_change || 0)
       }
 
+      // 2. ✅ حساب قيمة المخزون من FIFO Lots (بقايا المخزون الحالية)
+      // جلب جميع FIFO lots للمنتجات الموجودة في inventory_transactions
+      const productIds = Object.keys(qtyByProduct)
       let inventoryValue = 0
       let lowStockCount = 0
-      
+
+      // جلب بيانات reorder_level للمنتجات
+      const { data: products } = await supabase
+        .from('products')
+        .select('id, reorder_level, item_type')
+        .eq('company_id', companyId)
+        .in('id', productIds)
+        .or('item_type.is.null,item_type.eq.product')
+
+      const productMap = new Map((products || []).map((p: any) => [p.id, p]))
+
+      // حساب قيمة المخزون من FIFO Lots لكل منتج
       for (const [pid, qty] of Object.entries(qtyByProduct)) {
-        const product = productMap.get(pid) as Product | undefined
-        if (product) {
-          inventoryValue += Math.max(0, qty) * Number(product.cost_price || 0)
-          if (qty < (product.reorder_level || 5)) {
-            lowStockCount++
-          }
+        const actualQty = Math.max(0, qty)
+        
+        // ✅ حساب FIFO value للمنتج
+        const { data: productFifoLots } = await supabase
+          .from('fifo_cost_lots')
+          .select('remaining_quantity, unit_cost')
+          .eq('company_id', companyId)
+          .eq('product_id', pid)
+          .gt('remaining_quantity', 0)
+
+        let productFifoValue = 0
+        let productFifoQty = 0
+        
+        for (const lot of (productFifoLots || [])) {
+          const lotQty = Number(lot.remaining_quantity || 0)
+          const lotCost = Number(lot.unit_cost || 0)
+          productFifoQty += lotQty
+          productFifoValue += lotQty * lotCost
+        }
+
+        // ✅ حساب قيمة المخزون بناءً على FIFO weighted average
+        if (productFifoQty > 0 && actualQty > 0) {
+          const avgFifoCost = productFifoValue / productFifoQty
+          // استخدام الحد الأدنى بين الكمية الفعلية وكمية FIFO المتاحة
+          const qtyToValue = Math.min(actualQty, productFifoQty)
+          inventoryValue += qtyToValue * avgFifoCost
+        }
+        // إذا لم توجد FIFO lots، لا نضيف قيمة (ممنوع استخدام cost_price)
+
+        // حساب low stock count
+        const product = productMap.get(pid)
+        if (product && qty < (product.reorder_level || 5)) {
+          lowStockCount++
         }
       }
 
