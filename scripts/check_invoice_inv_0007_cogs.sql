@@ -173,7 +173,7 @@ SELECT
   i.status,
   i.total_amount,
   (SELECT COALESCE(SUM(p.amount), 0) FROM payments p 
-   WHERE p.reference_type = 'invoice' AND p.reference_id = i.id) as total_paid,
+   WHERE p.invoice_id = i.id) as total_paid,
   CASE 
     WHEN i.shipping_provider_id IS NOT NULL THEN 'Third-Party Sales'
     ELSE 'Direct Sales'
