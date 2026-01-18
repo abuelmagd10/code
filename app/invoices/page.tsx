@@ -686,7 +686,8 @@ export default function InvoicesPage() {
         const actualPaid = paidByInvoice[inv.id] || 0
         const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
         const returnedAmount = Number(inv.returned_amount || 0)
-        const originalTotal = Number(inv.original_total || inv.total_amount || 0)
+        // ✅ استخدام original_total إذا كان موجوداً، وإلا استخدام display_total أو total_amount (مثل منطق hasCredit)
+        const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : Number(inv.total_amount || 0))
         const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
         
         // ✅ تحديد الحالة الفعلية بناءً على المنطق نفسه في العرض
@@ -701,16 +702,18 @@ export default function InvoicesPage() {
         } else if (returnedAmount > 0 && returnedAmount < originalTotal && originalTotal > 0) {
           // ✅ مرتجع جزئي: يوجد returned_amount ولكن ليس كامل (يجب أن يكون originalTotal > 0)
           actualStatus = 'partially_returned'
-        } else if (paidAmount >= originalTotal && originalTotal > 0) {
-          // ✅ مدفوع بالكامل: paidAmount >= originalTotal
+        } else if (originalTotal > 0 && paidAmount >= originalTotal) {
+          // ✅ مدفوع بالكامل: paidAmount >= originalTotal (يجب أن يكون originalTotal > 0)
           actualStatus = 'paid'
-        } else if (paidAmount > 0 && paidAmount < originalTotal && originalTotal > 0) {
+        } else if (originalTotal > 0 && paidAmount > 0 && paidAmount < originalTotal) {
           // ✅ مدفوع جزئياً: يوجد paidAmount ولكن ليس كامل (يجب أن يكون originalTotal > 0)
           actualStatus = 'partially_paid'
-        } else if (inv.status === 'sent') {
+        } else if (originalTotal > 0 && paidAmount === 0 && returnedAmount === 0) {
+          // ✅ مرسلة: لا يوجد مدفوعات ولا مرتجعات (يجب أن يكون originalTotal > 0)
           actualStatus = 'sent'
         } else {
-          // ✅ استخدام حالة الفاتورة الفعلية كـ fallback (مثل partially_paid المخزنة في قاعدة البيانات)
+          // ✅ استخدام حالة الفاتورة الفعلية كـ fallback (مثل partially_paid أو sent المخزنة في قاعدة البيانات)
+          // هذا مهم للفواتير التي لديها status = 'partially_paid' أو 'sent' في قاعدة البيانات
           actualStatus = inv.status || 'draft'
         }
 
