@@ -208,8 +208,11 @@ BEGIN
               v_total_cogs := v_total_cogs + v_cost_from_lot;
               v_qty_remaining := v_qty_remaining - v_qty_from_lot;
 
-              RAISE NOTICE '      ✅ Lot %: Quantity: %, Unit Cost: %, Total: %', 
-                           v_lot.lot_id, v_qty_from_lot, v_lot.unit_cost, v_cost_from_lot;
+              RAISE NOTICE '      ✅ Lot %: Quantity: %, Unit Cost: %, Total: %, Consumption ID: %', 
+                           v_lot.lot_id, v_qty_from_lot, v_lot.unit_cost, v_cost_from_lot, v_consumption_id;
+            EXCEPTION WHEN OTHERS THEN
+              RAISE NOTICE '      ❌ خطأ في معالجة Lot %: %', v_lot.lot_id, SQLERRM;
+              RAISE;
             END;
           END LOOP;
 
