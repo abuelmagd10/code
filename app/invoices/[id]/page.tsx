@@ -2343,8 +2343,17 @@ export default function InvoiceDetailPage() {
 
         if (success) {
           console.log(`✅ INV ${invoice.invoice_number}: تم نقل البضائع إلى "${shippingValidation.providerName}" (بضائع لدى الغير)`)
+        } else {
+          console.warn(`⚠️ Failed to transfer to third-party for invoice ${invoice.invoice_number} - falling back to direct COGS`)
+          // Fallback: إذا فشل transferToThirdParty, استخدم FIFO + COGS مباشرة
+          // (لا return - استمر في الكود أدناه)
         }
-        return
+        
+        // ✅ COGS يتم إنشاؤه عند الدفع عبر clearThirdPartyInventory() (لـ third-party)
+        // فقط return إذا نجح transferToThirdParty
+        if (success) {
+          return
+        }
       }
 
       // ✅ ERP Professional: خصم المخزون باستخدام FIFO + COGS Transactions
