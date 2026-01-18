@@ -17,7 +17,7 @@ SELECT
   i.branch_id,
   i.cost_center_id,
   i.warehouse_id,
-  sp.name as shipping_provider_name,
+  sp.provider_name as shipping_provider_name,
   CASE 
     WHEN i.branch_id IS NULL OR i.cost_center_id IS NULL OR i.warehouse_id IS NULL 
     THEN '❌ تفتقد الحوكمة'
