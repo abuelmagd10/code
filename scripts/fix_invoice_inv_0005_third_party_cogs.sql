@@ -110,8 +110,18 @@ BEGIN
               fl.lot_date
             FROM fifo_cost_lots fl
             WHERE fl.product_id = v_third_party_item.product_id
+              AND fl.company_id = v_company_id  -- ✅ فلترة حسب Company ID
               AND fl.remaining_quantity > 0
-            ORDER BY fl.lot_date ASC, fl.created_at ASC
+            ORDER BY 
+              -- ✅ أولوية للـ Lots المتطابقة في Branch/Warehouse
+              CASE 
+                WHEN fl.branch_id = v_branch_id AND (fl.warehouse_id = v_warehouse_id OR fl.warehouse_id IS NULL) THEN 1
+                WHEN fl.branch_id = v_branch_id THEN 2
+                WHEN fl.warehouse_id = v_warehouse_id OR fl.warehouse_id IS NULL THEN 3
+                ELSE 4
+              END,
+              fl.lot_date ASC, 
+              fl.created_at ASC
           LOOP
             IF v_qty_remaining <= 0 THEN
               EXIT;
