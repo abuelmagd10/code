@@ -124,27 +124,65 @@ export async function GET(request: NextRequest) {
 
     const totalSales = (salesData || []).reduce((sum, item) => sum + (item.total_amount || 0), 0)
 
-    // ✅ حساب COGS من القيود المحاسبية (account_code = 5000 أو sub_type = cogs)
-    // بعد تطبيق الـ Trigger الجديد، سيتم تسجيل COGS تلقائيًا عند البيع
-    const { data: cogsData } = await supabase
-      .from("journal_entry_lines")
-      .select(`
-        debit_amount,
-        credit_amount,
-        journal_entries!inner(company_id, entry_date),
-        chart_of_accounts!inner(account_code, sub_type)
-      `)
-      .eq("journal_entries.company_id", companyId)
-      .gte("journal_entries.entry_date", fromDate)
-      .lte("journal_entries.entry_date", toDate)
+    // ✅ ERP Professional: حساب COGS من cogs_transactions (المصدر الوحيد للحقيقة)
+    // 📌 يمنع استخدام products.cost_price أو journal_entry_lines في التقارير الرسمية
+    // 📌 FIFO Engine هو الجهة الوحيدة المخولة بتحديد unit_cost
+    // 📌 COGS = SUM(total_cost) FROM cogs_transactions WHERE source_type = 'invoice'
+    let totalCOGS = 0
 
-    // تصفية COGS فقط (account_code = 5000 أو sub_type = cogs)
-    const totalCOGS = (cogsData || [])
-      .filter((item: any) => {
-        const coa = item.chart_of_accounts
-        return coa?.account_code === "5000" || coa?.sub_type === "cost_of_goods_sold" || coa?.sub_type === "cogs"
+    try {
+      const { calculateCOGSTotal } = await import("@/lib/cogs-transactions")
+      totalCOGS = await calculateCOGSTotal(supabase, {
+        companyId,
+        fromDate,
+        toDate,
+        sourceType: 'invoice'
       })
-      .reduce((sum, item) => sum + (item.debit_amount || 0) - (item.credit_amount || 0), 0)
+      
+      // Fallback: إذا لم توجد سجلات COGS (للتوافق مع البيانات القديمة)
+      if (totalCOGS === 0) {
+        console.warn("⚠️ No COGS transactions found in simple-report, falling back to journal_entry_lines (deprecated)")
+        const { data: cogsData } = await supabase
+          .from("journal_entry_lines")
+          .select(`
+            debit_amount,
+            credit_amount,
+            journal_entries!inner(company_id, entry_date),
+            chart_of_accounts!inner(account_code, sub_type)
+          `)
+          .eq("journal_entries.company_id", companyId)
+          .gte("journal_entries.entry_date", fromDate)
+          .lte("journal_entries.entry_date", toDate)
+
+        totalCOGS = (cogsData || [])
+          .filter((item: any) => {
+            const coa = item.chart_of_accounts
+            return coa?.account_code === "5000" || coa?.sub_type === "cost_of_goods_sold" || coa?.sub_type === "cogs"
+          })
+          .reduce((sum, item) => sum + (item.debit_amount || 0) - (item.credit_amount || 0), 0)
+      }
+    } catch (error: any) {
+      console.error("Error calculating COGS in simple-report:", error)
+      // Fallback to journal_entry_lines in case of error
+      const { data: cogsData } = await supabase
+        .from("journal_entry_lines")
+        .select(`
+          debit_amount,
+          credit_amount,
+          journal_entries!inner(company_id, entry_date),
+          chart_of_accounts!inner(account_code, sub_type)
+        `)
+        .eq("journal_entries.company_id", companyId)
+        .gte("journal_entries.entry_date", fromDate)
+        .lte("journal_entries.entry_date", toDate)
+
+      totalCOGS = (cogsData || [])
+        .filter((item: any) => {
+          const coa = item.chart_of_accounts
+          return coa?.account_code === "5000" || coa?.sub_type === "cost_of_goods_sold" || coa?.sub_type === "cogs"
+        })
+        .reduce((sum, item) => sum + (item.debit_amount || 0) - (item.credit_amount || 0), 0)
+    }
 
     const grossProfit = totalSales - totalCOGS
     const netProfit = grossProfit - totalExpenses
