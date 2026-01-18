@@ -46,7 +46,8 @@ BEGIN
       i.warehouse_id,
       i.invoice_date,
       i.status,
-      i.total_amount
+      i.total_amount,
+      i.created_at
     FROM invoices i
     WHERE i.status IN ('paid', 'partially_paid')
       AND i.company_id = v_company_id
@@ -130,26 +131,28 @@ BEGIN
               BEGIN
                 -- إنشاء fifo_lot_consumption والحصول على ID
                 INSERT INTO fifo_lot_consumptions (
+                  company_id,
                   lot_id,
                   product_id,
+                  consumption_type,
+                  reference_type,
+                  reference_id,
                   quantity_consumed,
                   unit_cost,
                   total_cost,
                   consumption_date,
-                  reference_type,
-                  reference_id,
-                  created_at,
-                  updated_at
+                  created_at
                 ) VALUES (
+                  v_invoice.company_id,
                   v_lot.lot_id,
                   v_invoice_item.product_id,
+                  'sale',
+                  'invoice',
+                  v_invoice.id,
                   v_qty_from_lot,
                   v_lot.unit_cost,
                   v_cost_from_lot,
                   v_invoice.invoice_date,
-                  'invoice',
-                  v_invoice.id,
-                  NOW(),
                   NOW()
                 ) RETURNING id INTO v_consumption_id;
 
