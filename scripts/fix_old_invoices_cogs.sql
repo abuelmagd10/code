@@ -106,8 +106,18 @@ BEGIN
               fl.lot_date
             FROM fifo_cost_lots fl
             WHERE fl.product_id = v_invoice_item.product_id
+              AND fl.company_id = v_invoice.company_id  -- ✅ فلترة حسب Company ID
               AND fl.remaining_quantity > 0
-            ORDER BY fl.lot_date ASC, fl.created_at ASC
+            ORDER BY 
+              -- ✅ أولوية للـ Lots المتطابقة في Branch/Warehouse
+              CASE 
+                WHEN fl.branch_id = v_invoice.branch_id AND (fl.warehouse_id = v_invoice.warehouse_id OR fl.warehouse_id IS NULL) THEN 1
+                WHEN fl.branch_id = v_invoice.branch_id THEN 2
+                WHEN fl.warehouse_id = v_invoice.warehouse_id OR fl.warehouse_id IS NULL THEN 3
+                ELSE 4
+              END,
+              fl.lot_date ASC, 
+              fl.created_at ASC
           LOOP
             IF v_remaining_qty <= 0 THEN
               EXIT;
@@ -184,6 +194,12 @@ BEGIN
               v_total_cost := v_total_cost + v_cost_from_lot;
               v_quantity_consumed := v_quantity_consumed + v_qty_from_lot;
               v_remaining_qty := v_remaining_qty - v_qty_from_lot;
+              
+              -- ✅ تحديث remaining_quantity في fifo_cost_lots
+              UPDATE fifo_cost_lots
+              SET remaining_quantity = remaining_quantity - v_qty_from_lot,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE id = v_lot.lot_id;
             END;
           END LOOP;
 
