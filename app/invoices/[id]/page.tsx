@@ -2136,7 +2136,7 @@ export default function InvoiceDetailPage() {
 
       if (clearResult.success && clearResult.totalCOGS > 0) {
         // إنشاء قيد COGS
-        const { data: cogsEntry } = await supabase
+        const { data: cogsEntry, error: cogsEntryError } = await supabase
           .from("journal_entries")
           .insert({
             company_id: mapping.companyId,
@@ -2150,7 +2150,10 @@ export default function InvoiceDetailPage() {
           .select()
           .single()
 
-        if (cogsEntry && mapping.cogs && mapping.inventory) {
+        if (cogsEntryError) {
+          console.error("❌ Error creating COGS journal entry:", cogsEntryError)
+          // لا نوقف العملية - COGS transactions تم إنشاؤها بنجاح
+        } else if (cogsEntry && mapping.cogs && mapping.inventory) {
           await supabase.from("journal_entry_lines").insert([
             {
               journal_entry_id: cogsEntry.id,
