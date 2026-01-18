@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { isSupabaseConfigured } from "@/lib/supabase/hooks";
@@ -678,13 +678,88 @@ function SalesOrdersContent() {
 
     setOrders(so || []);
 
-    // Load customers
-    const { data: customersData } = await supabase
-      .from("customers")
-      .select("id, name, phone")
-      .eq("company_id", activeCompanyId);
+    // 🔐 تحميل العملاء مع تطبيق الصلاحيات
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    const { data: member } = await supabase
+      .from("company_members")
+      .select("role, branch_id, cost_center_id")
+      .eq("company_id", activeCompanyId)
+      .eq("user_id", user.id)
+      .single();
+
+    const role = member?.role || "staff";
     
-    setCustomers(customersData || []);
+    // 🔐 ERP Access Control - بناء فلتر الوصول للعملاء
+    const accessFilter = getAccessFilter(
+      role,
+      user.id,
+      member?.branch_id || null,
+      member?.cost_center_id || null
+    );
+
+    // جلب الصلاحيات المشتركة
+    let sharedGrantorUserIds: string[] = [];
+    const { data: sharedPerms } = await supabase
+      .from("permission_sharing")
+      .select("grantor_user_id, resource_type")
+      .eq("grantee_user_id", user.id)
+      .eq("company_id", activeCompanyId)
+      .eq("is_active", true)
+      .or("resource_type.eq.all,resource_type.eq.customers");
+
+    if (sharedPerms && sharedPerms.length > 0) {
+      sharedGrantorUserIds = sharedPerms.map((p: any) => p.grantor_user_id);
+    }
+
+    // تحميل العملاء مع تطبيق الصلاحيات
+    let allCustomers: Customer[] = [];
+
+    if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+      // موظف عادي: يرى فقط العملاء الذين أنشأهم
+      const { data: ownCust } = await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", activeCompanyId)
+        .eq("created_by_user_id", accessFilter.createdByUserId)
+        .order("name");
+      allCustomers = ownCust || [];
+      // جلب العملاء المشتركين
+      if (sharedGrantorUserIds.length > 0) {
+        const { data: sharedCust } = await supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("company_id", activeCompanyId)
+          .in("created_by_user_id", sharedGrantorUserIds);
+        const existingIds = new Set(allCustomers.map(c => c.id));
+        (sharedCust || []).forEach((c: Customer) => {
+          if (!existingIds.has(c.id)) allCustomers.push(c);
+        });
+      }
+    } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+      // مدير: يرى عملاء الفرع
+      const { data: branchCust } = await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", activeCompanyId)
+        .eq("branch_id", accessFilter.branchId)
+        .order("name");
+      allCustomers = branchCust || [];
+    } else {
+      // owner/admin: جميع العملاء
+      const { data: allCust } = await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", activeCompanyId)
+        .order("name");
+      allCustomers = allCust || [];
+    }
+
+    setCustomers(allCustomers);
 
     // Load products
     const { data: productsData } = await supabase
