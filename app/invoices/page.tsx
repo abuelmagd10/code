@@ -420,16 +420,29 @@ export default function InvoicesPage() {
           const existingIds = new Set(allCustomers.map(c => c.id));
           (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
         }
-      } else if (role === 'accountant') {
-        // المحاسب: يرى جميع العملاء في الشركة (بغض النظر عن الفرع)
-        const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).order("name");
-        allCustomers = allCust || [];
       } else if (accessFilter.filterByBranch && accessFilter.branchId) {
-        // مدير مع فرع محدد: يرى عملاء الفرع
-        const { data: branchCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).eq("branch_id", accessFilter.branchId).order("name");
-        allCustomers = branchCust || [];
-      } else if (accessLevel === 'branch' && role === 'manager') {
-        // مدير بدون فرع محدد: يرى جميع العملاء
+        // مدير/محاسب مع فرع محدد: يرى عملاء الفرع (بما في ذلك العملاء بدون branch_id إذا كان المحاسب)
+        if (role === 'accountant') {
+          // المحاسب: يرى عملاء الفرع + العملاء بدون فرع محدد
+          const { data: branchCust } = await supabase
+            .from("customers")
+            .select("id, name, phone")
+            .eq("company_id", companyId)
+            .or(`branch_id.eq.${accessFilter.branchId},branch_id.is.null`)
+            .order("name");
+          allCustomers = branchCust || [];
+        } else {
+          // المدير: يرى فقط عملاء الفرع
+          const { data: branchCust } = await supabase
+            .from("customers")
+            .select("id, name, phone")
+            .eq("company_id", companyId)
+            .eq("branch_id", accessFilter.branchId)
+            .order("name");
+          allCustomers = branchCust || [];
+        }
+      } else if (accessLevel === 'branch' && (role === 'accountant' || role === 'manager')) {
+        // محاسب/مدير بدون فرع محدد: يرى جميع العملاء
         const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).order("name");
         allCustomers = allCust || [];
       } else {
