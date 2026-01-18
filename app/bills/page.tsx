@@ -127,8 +127,8 @@ export default function BillsPage() {
   // Pagination state
   const [pageSize, setPageSize] = useState<number>(10)
 
-  // Status options for multi-select
-  const statusOptions = [
+  // Status options for multi-select - قائمة ثابتة بجميع الحالات الممكنة
+  const allStatusOptions = useMemo(() => [
     { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
     { value: "sent", label: appLang === 'en' ? "Sent" : "مُرسل" },
     { value: "paid", label: appLang === 'en' ? "Paid" : "مدفوع" },
@@ -136,7 +136,21 @@ export default function BillsPage() {
     { value: "returned", label: appLang === 'en' ? "Returned" : "مرتجع" },
     { value: "fully_returned", label: appLang === 'en' ? "Fully Returned" : "مرتجع بالكامل" },
     { value: "cancelled", label: appLang === 'en' ? "Cancelled" : "ملغي" },
-  ]
+  ], [appLang])
+
+  // ✅ قائمة الحالات المتاحة بناءً على البيانات الفعلية للشركة
+  const statusOptions = useMemo(() => {
+    // جمع جميع الحالات الفعلية من الفواتير
+    const availableStatuses = new Set<string>();
+    
+    bills.forEach((bill) => {
+      // إضافة حالة الفاتورة
+      availableStatuses.add(bill.status);
+    });
+    
+    // إرجاع فقط الحالات المتاحة من القائمة الكاملة
+    return allStatusOptions.filter(opt => availableStatuses.has(opt.value));
+  }, [bills, allStatusOptions])
 
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>(() => {

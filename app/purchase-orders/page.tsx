@@ -123,8 +123,8 @@ export default function PurchaseOrdersPage() {
   // Pagination state
   const [pageSize, setPageSize] = useState<number>(10);
 
-  // Status options for multi-select
-  const statusOptions = [
+  // Status options for multi-select - قائمة ثابتة بجميع الحالات الممكنة
+  const allStatusOptions = useMemo(() => [
     { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
     { value: "sent", label: appLang === 'en' ? "Sent" : "مُرسل" },
     { value: "received", label: appLang === 'en' ? "Received" : "مُستلم" },
@@ -134,7 +134,27 @@ export default function PurchaseOrdersPage() {
     { value: "returned", label: appLang === 'en' ? "Returned" : "مرتجع" },
     { value: "fully_returned", label: appLang === 'en' ? "Fully Returned" : "مرتجع بالكامل" },
     { value: "cancelled", label: appLang === 'en' ? "Cancelled" : "ملغي" },
-  ];
+  ], [appLang]);
+
+  // ✅ قائمة الحالات المتاحة بناءً على البيانات الفعلية للشركة
+  const statusOptions = useMemo(() => {
+    // جمع جميع الحالات الفعلية من الأوامر
+    const availableStatuses = new Set<string>();
+    
+    orders.forEach((order) => {
+      // استخدام حالة الفاتورة المرتبطة إذا كانت موجودة، وإلا استخدام حالة الأمر
+      const linkedBill = order.bill_id ? linkedBills[order.bill_id] : null;
+      const displayStatus = linkedBill ? linkedBill.status : order.status;
+      
+      availableStatuses.add(displayStatus);
+      
+      // إضافة حالة الأمر نفسه أيضاً
+      availableStatuses.add(order.status);
+    });
+    
+    // إرجاع فقط الحالات المتاحة من القائمة الكاملة
+    return allStatusOptions.filter(opt => availableStatuses.has(opt.value));
+  }, [orders, linkedBills, allStatusOptions]);
 
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
