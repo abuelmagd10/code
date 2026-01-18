@@ -243,12 +243,15 @@ export async function clearThirdPartyInventory(
 
     if (!thirdPartyInventory || thirdPartyInventory.length === 0) {
       // No third-party inventory to clear
+      console.log(`ℹ️ clearThirdPartyInventory: No third-party inventory items found for invoice ${invoiceId}`)
       return {
         success: true,
         totalCOGS: 0,
         clearedQuantity: 0,
       }
     }
+
+    console.log(`📦 clearThirdPartyInventory: Found ${thirdPartyInventory.length} third-party items for invoice ${invoiceId}`)
 
     // ✅ ERP Professional: استخدام FIFO Engine + COGS Transactions
     const { consumeFIFOLotsWithCOGS } = await import("./fifo-engine")

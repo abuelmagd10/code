@@ -2123,6 +2123,7 @@ export default function InvoiceDetailPage() {
       // ===== 📌 4) تصفية بضائع لدى الغير وتسجيل COGS =====
       // عند الدفع: إزالة من بضائع لدى الغير + تسجيل تكلفة البضاعة المباعة
       const paidRatio = Number(amount) / Number(invoice.total_amount || 1)
+      console.log(`📌 Calling clearThirdPartyInventory() for invoice ${invoice.invoice_number}, paidRatio: ${paidRatio}`)
       const clearResult = await clearThirdPartyInventory({
         supabase,
         companyId: mapping.companyId,
@@ -2131,6 +2132,7 @@ export default function InvoiceDetailPage() {
         branchId: invoice.branch_id || null,
         costCenterId: invoice.cost_center_id || null
       })
+      console.log(`📊 clearThirdPartyInventory result:`, { success: clearResult.success, totalCOGS: clearResult.totalCOGS, error: clearResult.error })
 
       if (clearResult.success && clearResult.totalCOGS > 0) {
         // إنشاء قيد COGS
@@ -2181,6 +2183,8 @@ export default function InvoiceDetailPage() {
         .eq("source_id", invoice.id)
         .eq("source_type", "invoice")
         .limit(1)
+      
+      console.log(`🔍 Checking existing COGS transactions: ${existingCOGS?.length || 0} found`)
       
       if (!existingCOGS || existingCOGS.length === 0) {
         // ✅ التحقق من وجود third-party inventory items فعلياً (وليس فقط shipping_provider_id)
