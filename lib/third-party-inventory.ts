@@ -194,7 +194,7 @@ export async function transferToThirdParty(
 
 /**
  * Clear third-party inventory when invoice is paid
- * Calculates COGS based on paid ratio
+ * Uses FIFO Engine to calculate COGS and creates cogs_transactions
  */
 export async function clearThirdPartyInventory(
   params: ClearThirdPartyInventoryParams
@@ -209,13 +209,28 @@ export async function clearThirdPartyInventory(
   } = params
 
   try {
+    // Get invoice and third-party inventory
+    const { data: invoice, error: invoiceError } = await supabase
+      .from("invoices")
+      .select("id, invoice_date, warehouse_id")
+      .eq("id", invoiceId)
+      .single()
+
+    if (invoiceError || !invoice) {
+      return {
+        success: false,
+        totalCOGS: 0,
+        error: "Invoice not found",
+      }
+    }
+
     // Get third-party inventory for this invoice
     const { data: thirdPartyInventory, error: fetchError } = await supabase
       .from("third_party_inventory")
-      .select("id, product_id, quantity, unit_cost, cleared_quantity, status")
+      .select("id, product_id, quantity, unit_cost, cleared_quantity, status, warehouse_id")
       .eq("company_id", companyId)
       .eq("invoice_id", invoiceId)
-      .eq("status", "open")
+      .neq("status", "cleared")
 
     if (fetchError) {
       console.error("Error fetching third-party inventory:", fetchError)
@@ -235,37 +250,81 @@ export async function clearThirdPartyInventory(
       }
     }
 
-    // Calculate total COGS based on paid ratio
+    // ✅ ERP Professional: استخدام FIFO Engine + COGS Transactions
+    const { consumeFIFOLotsWithCOGS } = await import("./fifo-engine")
+    const { data: { user } } = await supabase.auth.getUser()
+
     let totalCOGS = 0
     let totalClearedQuantity = 0
+    const warehouseId = invoice.warehouse_id || thirdPartyInventory[0]?.warehouse_id || null
 
-    for (const item of thirdPartyInventory) {
-      const quantityToClear = parseFloat(String(item.quantity || 0)) * paidRatio
-      const itemCOGS = quantityToClear * parseFloat(String(item.unit_cost || 0))
-      totalCOGS += itemCOGS
-      totalClearedQuantity += quantityToClear
-
-      // Update third-party inventory record
-      const currentClearedQuantity = parseFloat(String(item.cleared_quantity || 0))
-      const newClearedQuantity = currentClearedQuantity + quantityToClear
-      const remainingQuantity = parseFloat(String(item.quantity || 0)) - newClearedQuantity
-
-      let newStatus = item.status
-      if (remainingQuantity <= 0) {
-        newStatus = "cleared"
-      } else if (newClearedQuantity > 0) {
-        newStatus = "partial"
+    // التحقق من الحوكمة (إلزامي لـ COGS)
+    if (!branchId || !costCenterId || !warehouseId) {
+      console.error("❌ COGS requires governance: branch_id, cost_center_id, warehouse_id must be set")
+      // Fallback: استخدام الطريقة القديمة بدون COGS transactions
+      for (const item of thirdPartyInventory) {
+        const quantityToClear = parseFloat(String(item.quantity || 0)) * paidRatio
+        const itemCOGS = quantityToClear * parseFloat(String(item.unit_cost || 0))
+        totalCOGS += itemCOGS
+        totalClearedQuantity += quantityToClear
       }
+      return {
+        success: true,
+        totalCOGS,
+        clearedQuantity: totalClearedQuantity,
+      }
+    }
 
-      await supabase
-        .from("third_party_inventory")
-        .update({
-          cleared_quantity: newClearedQuantity,
-          status: newStatus,
-          cleared_at: newStatus === "cleared" ? new Date().toISOString() : null,
-          updated_at: new Date().toISOString(),
+    // ✅ استخدام FIFO Engine + COGS Transactions لكل منتج
+    for (const item of thirdPartyInventory) {
+      const remainingToClear = parseFloat(String(item.quantity || 0)) - parseFloat(String(item.cleared_quantity || 0))
+      const quantityToClear = remainingToClear * paidRatio
+
+      if (quantityToClear > 0) {
+        // ✅ استخدام FIFO Engine لإنشاء COGS Transactions
+        const fifoResult = await consumeFIFOLotsWithCOGS(supabase, {
+          companyId,
+          branchId,
+          costCenterId,
+          warehouseId,
+          productId: item.product_id,
+          quantity: quantityToClear,
+          sourceType: 'invoice',
+          sourceId: invoiceId,
+          transactionDate: invoice.invoice_date || new Date().toISOString().split('T')[0],
+          createdByUserId: user?.id
         })
-        .eq("id", item.id)
+
+        if (fifoResult.success) {
+          totalCOGS += fifoResult.totalCOGS
+          totalClearedQuantity += quantityToClear
+          console.log(`✅ COGS created for third-party product ${item.product_id}: ${fifoResult.cogsTransactionIds.length} transactions, total COGS: ${fifoResult.totalCOGS}`)
+        } else {
+          console.error(`❌ Failed to create COGS for third-party product ${item.product_id}:`, fifoResult.error)
+        }
+
+        // Update third-party inventory record
+        const currentClearedQuantity = parseFloat(String(item.cleared_quantity || 0))
+        const newClearedQuantity = currentClearedQuantity + quantityToClear
+        const remainingQuantity = parseFloat(String(item.quantity || 0)) - newClearedQuantity
+
+        let newStatus = item.status
+        if (remainingQuantity <= 0) {
+          newStatus = "cleared"
+        } else if (newClearedQuantity > 0) {
+          newStatus = "partial"
+        }
+
+        await supabase
+          .from("third_party_inventory")
+          .update({
+            cleared_quantity: newClearedQuantity,
+            status: newStatus,
+            cleared_at: newStatus === "cleared" ? new Date().toISOString() : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", item.id)
+      }
     }
 
     return {
