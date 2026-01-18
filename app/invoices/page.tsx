@@ -682,6 +682,34 @@ export default function InvoicesPage() {
         const hasHasCreditFilter = filterStatuses.includes("has_credit")
         const otherStatuses = filterStatuses.filter(s => s !== "has_credit")
 
+        // ✅ حساب الحالة الفعلية للفاتورة (مثل ما يحدث في العرض)
+        const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
+        const returnedAmount = Number(inv.returned_amount || 0)
+        const originalTotal = Number(inv.original_total || inv.total_amount || 0)
+        const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
+        
+        // ✅ تحديد الحالة الفعلية بناءً على المنطق نفسه في العرض
+        // ملاحظة: يجب حساب المرتجع قبل حساب الدفع لأن المرتجع له أولوية أعلى
+        let actualStatus: string
+        if (inv.status === 'draft' || inv.status === 'invoiced') {
+          actualStatus = 'draft'
+        } else if (inv.status === 'cancelled') {
+          actualStatus = 'cancelled'
+        } else if (isFullyReturned) {
+          actualStatus = 'fully_returned'
+        } else if (returnedAmount > 0 && returnedAmount < originalTotal && originalTotal > 0) {
+          // ✅ مرتجع جزئي: يوجد returned_amount ولكن ليس كامل (يجب أن يكون originalTotal > 0)
+          actualStatus = 'partially_returned'
+        } else if (paidAmount >= originalTotal && originalTotal > 0) {
+          actualStatus = 'paid'
+        } else if (paidAmount > 0) {
+          actualStatus = 'partially_paid'
+        } else if (inv.status === 'sent') {
+          actualStatus = 'sent'
+        } else {
+          actualStatus = inv.status || 'draft'
+        }
+
         // ✅ معالجة حالة "draft" لتشمل أيضاً "invoiced" (حالة مسودة قبل الإرسال)
         const normalizedStatuses = otherStatuses.map(s => {
           if (s === "draft") {
@@ -697,11 +725,11 @@ export default function InvoicesPage() {
             if (!hasCredit) return false
           } else {
             // إذا يوجد فلاتر أخرى، أظهر الفواتير التي تطابق إحدى الحالات أو لها رصيد دائن
-            if (!normalizedStatuses.includes(inv.status) && !hasCredit) return false
+            if (!normalizedStatuses.includes(actualStatus) && !hasCredit) return false
           }
         } else {
-          // فلتر عادي بدون رصيد دائن - استخدام normalizedStatuses
-          if (!normalizedStatuses.includes(inv.status)) return false
+          // فلتر عادي بدون رصيد دائن - استخدام normalizedStatuses مع actualStatus
+          if (!normalizedStatuses.includes(actualStatus)) return false
         }
       }
 
