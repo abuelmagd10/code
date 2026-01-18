@@ -264,46 +264,29 @@ export async function createCOGSJournalOnDelivery(
       return existingCOGS[0].id
     }
 
-    // حساب إجمالي COGS من بنود الفاتورة باستخدام FIFO
-    const { data: invoiceItems, error: itemsError } = await supabase
-      .from("invoice_items")
-      .select(`
-        product_id,
-        quantity,
-        products!inner(cost_price, item_type)
-      `)
-      .eq("invoice_id", invoiceId)
-
-    if (itemsError) {
-      throw new Error(`Error fetching invoice items: ${itemsError.message}`)
-    }
-
+    // ✅ ERP Professional: حساب COGS من cogs_transactions (المصدر الوحيد للحقيقة)
+    // 📌 يمنع استخدام products.cost_price في التقارير الرسمية
+    // 📌 FIFO Engine هو الجهة الوحيدة المخولة بتحديد unit_cost
+    // 📌 COGS = SUM(total_cost) FROM cogs_transactions WHERE source_type = 'invoice'
     let totalCOGS = 0
 
-    // استخدام FIFO لحساب COGS
-    for (const item of invoiceItems || []) {
-      // تجاهل الخدمات - فقط المنتجات لها COGS
-      if (item.products.item_type === 'service') continue
-
-      const quantity = Number(item.quantity || 0)
-
-      // محاولة الحصول على COGS من FIFO
-      const { data: fifoConsumptions } = await supabase
-        .from('fifo_lot_consumptions')
-        .select('total_cost')
-        .eq('reference_type', 'invoice')
-        .eq('reference_id', invoiceId)
-        .eq('product_id', item.product_id)
-
-      if (fifoConsumptions && fifoConsumptions.length > 0) {
-        // استخدام COGS من FIFO
-        const fifoCOGS = fifoConsumptions.reduce((sum, c) => sum + Number(c.total_cost || 0), 0)
-        totalCOGS += fifoCOGS
+    try {
+      const { getCOGSByInvoice } = await import("@/lib/cogs-transactions")
+      const cogsTransactions = await getCOGSByInvoice(supabase, invoiceId)
+      
+      if (cogsTransactions && cogsTransactions.length > 0) {
+        totalCOGS = cogsTransactions.reduce((sum, ct) => sum + Number(ct.total_cost || 0), 0)
       } else {
-        // Fallback: استخدام cost_price (للتوافق مع البيانات القديمة)
-        const costPrice = Number(item.products.cost_price || 0)
-        totalCOGS += quantity * costPrice
+        // ⚠️ إذا لم توجد cogs_transactions، لا نُنشئ journal entry
+        // لأن هذا يعني أن COGS لم يتم تسجيله بعد أو الفاتورة draft
+        console.warn(`⚠️ No cogs_transactions found for invoice ${invoiceId} - skipping COGS journal entry creation`)
+        return null
       }
+    } catch (error: any) {
+      console.error("Error fetching COGS transactions:", error)
+      // ❌ في حالة الخطأ، لا نستخدم fallback على cost_price
+      // لأن هذا سينتهك القاعدة الذهبية: cogs_transactions هو Source of Truth الوحيد
+      return null
     }
 
     // إذا لم توجد تكلفة، لا نسجل قيد
