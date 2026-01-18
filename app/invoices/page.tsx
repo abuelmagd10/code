@@ -540,21 +540,6 @@ export default function InvoicesPage() {
           }
         }
         
-        // Debug: طباعة معلومات إضافية
-        const invoicesWithEmployee = Object.keys(invToEmpMap).length
-        const invoicesWithSalesOrder = (invoicesFromDb || []).filter((inv: any) => inv.sales_order_id).length
-        const invoicesWithCreatedBy = (invoicesFromDb || []).filter((inv: any) => inv.created_by_user_id).length
-        console.log(`[Invoices Debug] Total: ${(invoicesFromDb || []).length}, With created_by_user_id: ${invoicesWithCreatedBy}, With sales_order_id: ${invoicesWithSalesOrder}, Mapped: ${invoicesWithEmployee}`)
-      }
-      
-      // Debug: طباعة عدد الفواتير في الخريطة
-      console.log(`[Invoices] Invoice to Employee Map: ${Object.keys(invToEmpMap).length} invoices mapped out of ${(result.data || []).length} total invoices`)
-      
-      // Debug: طباعة تفاصيل الخريطة
-      if (Object.keys(invToEmpMap).length > 0) {
-        console.log(`[Invoices] Sample mappings:`, Object.entries(invToEmpMap).slice(0, 5))
-      } else {
-        console.warn(`[Invoices] ⚠️ WARNING: invoiceToEmployeeMap is EMPTY! No invoices have employee mapping.`)
       }
       
       setInvoiceToEmployeeMap(invToEmpMap)
@@ -639,18 +624,13 @@ export default function InvoicesPage() {
         const employeeIdFromInvoice = (inv as any).created_by_user_id
         const employeeId = employeeIdFromMap || employeeIdFromInvoice
         
-        // Debug: طباعة معلومات التشخيص عند الفلترة
-        console.log(`[Invoices Filter] Invoice ${inv.id} (${(inv as any).invoice_number || 'N/A'}): filterEmployeeId=${filterEmployeeId}, employeeIdFromMap=${employeeIdFromMap}, employeeIdFromInvoice=${employeeIdFromInvoice}, finalEmployeeId=${employeeId}`)
-        
         // إذا كان employeeId موجوداً، يجب أن يكون مطابقاً للموظف المحدد
         if (employeeId) {
           if (employeeId !== filterEmployeeId) {
-            console.log(`[Invoices Filter] Excluding invoice ${inv.id}: employeeId ${employeeId} !== filterEmployeeId ${filterEmployeeId}`)
             return false // الفاتورة لموظف آخر، استبعدها
           }
         } else {
           // إذا لم يكن هناك employeeId، استبعد الفاتورة (لأنه لا يمكن ربطها بموظف محدد)
-          console.warn(`[Invoices Filter] Excluding invoice ${inv.id}: no employeeId found. Map: ${employeeIdFromMap}, Invoice: ${employeeIdFromInvoice}`)
           return false
         }
       } else if (!canViewAllInvoices && currentUserId) {
