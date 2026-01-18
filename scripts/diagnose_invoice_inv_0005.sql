@@ -22,8 +22,9 @@ SELECT
   '2. Third-Party Inventory' as step,
   COUNT(*) as third_party_items_count,
   STRING_AGG(DISTINCT status, ', ') as statuses
-FROM third_party_inventory
-WHERE invoice_id = (SELECT id FROM invoices WHERE invoice_number = 'INV-0005');
+FROM third_party_inventory tpi
+JOIN invoices i ON i.id = tpi.invoice_id
+WHERE i.invoice_number = 'INV-0005';
 
 -- 3. التحقق من منتجات الفاتورة
 SELECT 
@@ -34,7 +35,8 @@ SELECT
   ii.quantity
 FROM invoice_items ii
 JOIN products p ON p.id = ii.product_id
-WHERE ii.invoice_id = (SELECT id FROM invoices WHERE invoice_number = 'INV-0005')
+JOIN invoices i ON i.id = ii.invoice_id
+WHERE i.invoice_number = 'INV-0005'
 ORDER BY ii.created_at;
 
 -- 4. التحقق من FIFO Lots للمنتجات
@@ -47,8 +49,9 @@ SELECT
   COALESCE(AVG(fl.unit_cost), 0) as avg_unit_cost
 FROM invoice_items ii
 JOIN products p ON p.id = ii.product_id
+JOIN invoices i ON i.id = ii.invoice_id
 LEFT JOIN fifo_cost_lots fl ON fl.product_id = p.id AND fl.remaining_quantity > 0
-WHERE ii.invoice_id = (SELECT id FROM invoices WHERE invoice_number = 'INV-0005')
+WHERE i.invoice_number = 'INV-0005'
   AND p.item_type != 'service'
 GROUP BY p.id, p.name;
 
@@ -56,17 +59,19 @@ GROUP BY p.id, p.name;
 SELECT 
   '5. Existing COGS Transactions' as step,
   COUNT(*) as count
-FROM cogs_transactions
-WHERE source_id = (SELECT id FROM invoices WHERE invoice_number = 'INV-0005')
-  AND source_type = 'invoice';
+FROM cogs_transactions ct
+JOIN invoices i ON i.id = ct.source_id
+WHERE i.invoice_number = 'INV-0005'
+  AND ct.source_type = 'invoice';
 
 -- 6. التحقق من FIFO Consumptions الموجودة
 SELECT 
   '6. Existing FIFO Consumptions' as step,
   COUNT(*) as count
-FROM fifo_lot_consumptions
-WHERE reference_id = (SELECT id FROM invoices WHERE invoice_number = 'INV-0005')
-  AND reference_type = 'invoice';
+FROM fifo_lot_consumptions flc
+JOIN invoices i ON i.id = flc.reference_id
+WHERE i.invoice_number = 'INV-0005'
+  AND flc.reference_type = 'invoice';
 
 -- 7. ملخص التشخيص
 SELECT 
