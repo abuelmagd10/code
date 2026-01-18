@@ -53,8 +53,7 @@ INSERT INTO fifo_lot_consumptions (
   consumption_date,
   reference_type,
   reference_id,
-  created_at,
-  updated_at
+  created_at
 )
 SELECT 
   ltu.lot_id,
@@ -65,7 +64,6 @@ SELECT
   id.invoice_date,
   'invoice',
   id.invoice_id,
-  NOW(),
   NOW()
 FROM lot_to_use ltu
 CROSS JOIN invoice_data id

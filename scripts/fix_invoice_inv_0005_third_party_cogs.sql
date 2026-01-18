@@ -156,8 +156,7 @@ BEGIN
                 consumption_date,
                 reference_type,
                 reference_id,
-                created_at,
-                updated_at
+                created_at
               ) VALUES (
                 v_lot.lot_id,
                 v_third_party_item.product_id,
@@ -167,7 +166,6 @@ BEGIN
                 v_invoice.invoice_date,
                 'invoice',
                 v_invoice.id,
-                NOW(),
                 NOW()
               ) RETURNING id INTO v_consumption_id;
 
