@@ -121,6 +121,7 @@ export async function checkInventoryAvailability(
 
 /**
  * Get toast content for inventory shortages
+ * Returns detailed information about what products are short and by how much
  */
 export function getShortageToastContent(
   shortages: Shortage[],
@@ -133,18 +134,25 @@ export function getShortageToastContent(
     }
   }
 
-  const productNames = shortages
-    .map((s) => s.product_name || s.product_id)
-    .slice(0, 3)
-    .join(", ")
+  // إنشاء رسالة مفصلة توضح الكميات المطلوبة والمتاحة والناقصة
+  const shortageDetails = shortages
+    .slice(0, 3) // عرض أول 3 منتجات فقط لتجنب رسالة طويلة جداً
+    .map((s) => {
+      const productName = s.product_name || s.product_id
+      if (lang === "en") {
+        return `${productName}: Need ${s.requested}, Available ${s.available}, Short ${s.shortage}`
+      } else {
+        return `${productName}: مطلوب ${s.requested}، متوفر ${s.available}، ناقص ${s.shortage}`
+      }
+    })
+    .join("\n")
 
-  const moreCount = shortages.length > 3 ? ` +${shortages.length - 3}` : ""
+  const moreCount = shortages.length > 3 
+    ? (lang === "en" ? `\n+${shortages.length - 3} more products` : `\n+${shortages.length - 3} منتجات أخرى`)
+    : ""
 
   return {
     title: lang === "en" ? "Insufficient Inventory" : "المخزون غير كافٍ",
-    description:
-      lang === "en"
-        ? `Shortage in: ${productNames}${moreCount}`
-        : `نقص في: ${productNames}${moreCount}`,
+    description: shortageDetails + moreCount,
   }
 }
