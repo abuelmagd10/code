@@ -45,25 +45,29 @@ lot_to_use AS (
   LIMIT 1
 )
 INSERT INTO fifo_lot_consumptions (
+  company_id,
   lot_id,
   product_id,
+  consumption_type,
+  reference_type,
+  reference_id,
   quantity_consumed,
   unit_cost,
   total_cost,
   consumption_date,
-  reference_type,
-  reference_id,
   created_at
 )
 SELECT 
+  id.company_id,
   ltu.lot_id,
   ltu.product_id,
+  'sale' as consumption_type,
+  'invoice' as reference_type,
+  id.invoice_id,
   ltu.quantity_consumed,
   ltu.unit_cost,
   ltu.quantity_consumed * ltu.unit_cost as total_cost,
   id.invoice_date,
-  'invoice',
-  id.invoice_id,
   NOW()
 FROM lot_to_use ltu
 CROSS JOIN invoice_data id
