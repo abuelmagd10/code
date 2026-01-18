@@ -21,7 +21,7 @@ WHERE i.invoice_number = 'INV-0005';
 SELECT 
   '2. Third-Party Inventory' as step,
   COUNT(*) as third_party_items_count,
-  STRING_AGG(DISTINCT status, ', ') as statuses
+  STRING_AGG(DISTINCT tpi.status, ', ') as statuses
 FROM third_party_inventory tpi
 JOIN invoices i ON i.id = tpi.invoice_id
 WHERE i.invoice_number = 'INV-0005';
