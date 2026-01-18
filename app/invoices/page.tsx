@@ -683,6 +683,7 @@ export default function InvoicesPage() {
         const otherStatuses = filterStatuses.filter(s => s !== "has_credit")
 
         // ✅ حساب الحالة الفعلية للفاتورة (مثل ما يحدث في العرض)
+        const actualPaid = paidByInvoice[inv.id] || 0
         const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
         const returnedAmount = Number(inv.returned_amount || 0)
         const originalTotal = Number(inv.original_total || inv.total_amount || 0)
