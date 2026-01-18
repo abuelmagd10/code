@@ -461,7 +461,15 @@ export default function BillViewPage() {
         }))
 
       if (itemsToCheck.length > 0) {
-        const inventoryCheck = await checkInventoryAvailability(supabase, itemsToCheck)
+        // Pass bill context for proper inventory filtering
+        const inventoryContext = bill ? {
+          company_id: bill.company_id,
+          branch_id: bill.branch_id || null,
+          warehouse_id: bill.warehouse_id || null,
+          cost_center_id: bill.cost_center_id || null,
+        } : undefined
+
+        const inventoryCheck = await checkInventoryAvailability(supabase, itemsToCheck, undefined, inventoryContext)
         if (!inventoryCheck.success) {
           const shortageContent = getShortageToastContent(inventoryCheck.shortages, appLang)
           toast({
@@ -1135,7 +1143,15 @@ export default function BillViewPage() {
           quantity: Number(item.quantity || 0)
         }))
 
-        const { success, shortages } = await checkInventoryAvailability(supabase, itemsToCheck)
+        // Pass bill context for proper inventory filtering
+        const inventoryContext = bill ? {
+          company_id: bill.company_id,
+          branch_id: bill.branch_id || null,
+          warehouse_id: bill.warehouse_id || null,
+          cost_center_id: bill.cost_center_id || null,
+        } : undefined
+
+        const { success, shortages } = await checkInventoryAvailability(supabase, itemsToCheck, undefined, inventoryContext)
 
         if (!success) {
           const { title, description } = getShortageToastContent(shortages, appLang as 'en' | 'ar')

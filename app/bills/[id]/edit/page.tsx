@@ -360,7 +360,15 @@ export default function EditBillPage() {
         }
 
         if (decreasedItems.length > 0) {
-          const { success, shortages } = await checkInventoryAvailability(supabase, decreasedItems)
+          // Build inventory context from form state and user context
+          const inventoryContext = userContext ? {
+            company_id: userContext.company_id,
+            branch_id: branchId || userContext.branch_id || null,
+            warehouse_id: warehouseId || userContext.warehouse_id || null,
+            cost_center_id: costCenterId || userContext.cost_center_id || null,
+          } : undefined
+
+          const { success, shortages } = await checkInventoryAvailability(supabase, decreasedItems, undefined, inventoryContext)
 
           if (!success) {
             const { title, description } = getShortageToastContent(shortages, appLang as 'en' | 'ar')

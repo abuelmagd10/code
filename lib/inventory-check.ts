@@ -24,47 +24,85 @@ export interface InventoryCheckResult {
   shortages: Shortage[]
 }
 
+export interface InventoryCheckContext {
+  company_id: string
+  branch_id?: string | null
+  warehouse_id?: string | null
+  cost_center_id?: string | null
+}
+
 /**
  * Check inventory availability for items
+ * Calculates inventory from inventory_transactions by summing quantity_change
  */
 export async function checkInventoryAvailability(
   supabase: SupabaseClient,
   items: InventoryItem[],
-  excludeInvoiceId?: string
+  excludeInvoiceId?: string,
+  context?: InventoryCheckContext
 ): Promise<InventoryCheckResult> {
   const shortages: Shortage[] = []
 
+  // Get product names for better error messages
+  const productIds = items.map(item => item.product_id)
+  const { data: products } = await supabase
+    .from("products")
+    .select("id, name")
+    .in("id", productIds)
+
+  const productMap = new Map((products || []).map((p: any) => [p.id, p.name]))
+
   for (const item of items) {
-    // Get current inventory for this product
+    // Build query to get inventory transactions for this product
     let query = supabase
-      .from("inventory")
-      .select("product_id, quantity, products(name)")
+      .from("inventory_transactions")
+      .select("product_id, quantity_change")
       .eq("product_id", item.product_id)
+      .or("is_deleted.is.null,is_deleted.eq.false")
+
+    // Apply context filters if provided
+    if (context) {
+      query = query.eq("company_id", context.company_id)
+      
+      if (context.branch_id) {
+        query = query.eq("branch_id", context.branch_id)
+      }
+      
+      if (context.warehouse_id) {
+        query = query.eq("warehouse_id", context.warehouse_id)
+      }
+      
+      if (context.cost_center_id) {
+        query = query.eq("cost_center_id", context.cost_center_id)
+      }
+    }
 
     // Exclude inventory from a specific invoice if provided
     if (excludeInvoiceId) {
-      // This would need to be adjusted based on your inventory structure
-      // For now, we'll just check total inventory
+      // Exclude transactions related to this invoice (include null or different reference_id)
+      query = query.or(`reference_id.neq.${excludeInvoiceId},reference_id.is.null`)
     }
 
-    const { data: inventoryData, error } = await query
+    const { data: transactions, error } = await query
 
     if (error) {
       console.error(`Error checking inventory for product ${item.product_id}:`, error)
       continue
     }
 
-    // Calculate total available quantity
-    const totalAvailable = inventoryData?.reduce((sum, inv) => {
-      return sum + (parseFloat(String(inv.quantity)) || 0)
-    }, 0) || 0
+    // Calculate total available quantity by summing quantity_change
+    // quantity_change is positive for additions (purchase, transfer_in, etc.)
+    // and negative for subtractions (sale, transfer_out, etc.)
+    const totalAvailable = (transactions || []).reduce((sum, tx) => {
+      return sum + (parseFloat(String(tx.quantity_change)) || 0)
+    }, 0)
 
     const requested = parseFloat(String(item.quantity)) || 0
 
     if (totalAvailable < requested) {
       shortages.push({
         product_id: item.product_id,
-        product_name: inventoryData?.[0]?.products?.[0]?.name || "Unknown",
+        product_name: productMap.get(item.product_id) || "Unknown",
         requested,
         available: totalAvailable,
         shortage: requested - totalAvailable,

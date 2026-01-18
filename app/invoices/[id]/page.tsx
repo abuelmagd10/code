@@ -471,7 +471,15 @@ export default function InvoiceDetailPage() {
             quantity: Number(item.quantity || 0)
           }))
 
-          const { success, shortages } = await checkInventoryAvailability(supabase, itemsToCheck)
+          // Pass invoice context for proper inventory filtering
+          const inventoryContext = invoice ? {
+            company_id: invoice.company_id,
+            branch_id: invoice.branch_id || null,
+            warehouse_id: invoice.warehouse_id || null,
+            cost_center_id: invoice.cost_center_id || null,
+          } : undefined
+
+          const { success, shortages } = await checkInventoryAvailability(supabase, itemsToCheck, undefined, inventoryContext)
 
           if (!success) {
             const { title, description } = getShortageToastContent(shortages, appLang as 'en' | 'ar')
