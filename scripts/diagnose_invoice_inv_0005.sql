@@ -1,5 +1,6 @@
 -- =====================================================
 -- تشخيص الفاتورة INV-0005 قبل إصلاح COGS
+-- شركة Test Company - فرع مصر الجديدة
 -- =====================================================
 
 -- 1. معلومات الفاتورة الأساسية
@@ -9,13 +10,19 @@ SELECT
   i.invoice_number,
   i.status,
   i.company_id,
+  c.name as company_name,
   i.branch_id,
+  b.name as branch_name,
   i.cost_center_id,
   i.warehouse_id,
   i.invoice_date,
   i.total_amount
 FROM invoices i
-WHERE i.invoice_number = 'INV-0005';
+LEFT JOIN companies c ON c.id = i.company_id
+LEFT JOIN branches b ON b.id = i.branch_id
+WHERE i.invoice_number = 'INV-0005'
+  AND (c.name ILIKE '%test%' OR c.name ILIKE '%تست%')
+  AND (b.name ILIKE '%مصر الجديدة%' OR b.branch_name ILIKE '%مصر الجديدة%' OR b.name ILIKE '%new egypt%');
 
 -- 2. التحقق من Third-Party Inventory
 SELECT 
@@ -24,7 +31,11 @@ SELECT
   STRING_AGG(DISTINCT tpi.status, ', ') as statuses
 FROM third_party_inventory tpi
 JOIN invoices i ON i.id = tpi.invoice_id
-WHERE i.invoice_number = 'INV-0005';
+LEFT JOIN companies c ON c.id = i.company_id
+LEFT JOIN branches b ON b.id = i.branch_id
+WHERE i.invoice_number = 'INV-0005'
+  AND (c.name ILIKE '%test%' OR c.name ILIKE '%تست%')
+  AND (b.name ILIKE '%مصر الجديدة%' OR b.branch_name ILIKE '%مصر الجديدة%' OR b.name ILIKE '%new egypt%');
 
 -- 3. التحقق من منتجات الفاتورة
 SELECT 
@@ -36,7 +47,11 @@ SELECT
 FROM invoice_items ii
 JOIN products p ON p.id = ii.product_id
 JOIN invoices i ON i.id = ii.invoice_id
+LEFT JOIN companies c ON c.id = i.company_id
+LEFT JOIN branches b ON b.id = i.branch_id
 WHERE i.invoice_number = 'INV-0005'
+  AND (c.name ILIKE '%test%' OR c.name ILIKE '%تست%')
+  AND (b.name ILIKE '%مصر الجديدة%' OR b.branch_name ILIKE '%مصر الجديدة%' OR b.name ILIKE '%new egypt%')
 ORDER BY ii.created_at;
 
 -- 4. التحقق من FIFO Lots للمنتجات
@@ -50,8 +65,12 @@ SELECT
 FROM invoice_items ii
 JOIN products p ON p.id = ii.product_id
 JOIN invoices i ON i.id = ii.invoice_id
+LEFT JOIN companies c ON c.id = i.company_id
+LEFT JOIN branches b ON b.id = i.branch_id
 LEFT JOIN fifo_cost_lots fl ON fl.product_id = p.id AND fl.remaining_quantity > 0
 WHERE i.invoice_number = 'INV-0005'
+  AND (c.name ILIKE '%test%' OR c.name ILIKE '%تست%')
+  AND (b.name ILIKE '%مصر الجديدة%' OR b.branch_name ILIKE '%مصر الجديدة%' OR b.name ILIKE '%new egypt%')
   AND p.item_type != 'service'
 GROUP BY p.id, p.name;
 
@@ -61,7 +80,11 @@ SELECT
   COUNT(*) as count
 FROM cogs_transactions ct
 JOIN invoices i ON i.id = ct.source_id
+LEFT JOIN companies c ON c.id = i.company_id
+LEFT JOIN branches b ON b.id = i.branch_id
 WHERE i.invoice_number = 'INV-0005'
+  AND (c.name ILIKE '%test%' OR c.name ILIKE '%تست%')
+  AND (b.name ILIKE '%مصر الجديدة%' OR b.branch_name ILIKE '%مصر الجديدة%' OR b.name ILIKE '%new egypt%')
   AND ct.source_type = 'invoice';
 
 -- 6. التحقق من FIFO Consumptions الموجودة
@@ -70,13 +93,19 @@ SELECT
   COUNT(*) as count
 FROM fifo_lot_consumptions flc
 JOIN invoices i ON i.id = flc.reference_id
+LEFT JOIN companies c ON c.id = i.company_id
+LEFT JOIN branches b ON b.id = i.branch_id
 WHERE i.invoice_number = 'INV-0005'
+  AND (c.name ILIKE '%test%' OR c.name ILIKE '%تست%')
+  AND (b.name ILIKE '%مصر الجديدة%' OR b.branch_name ILIKE '%مصر الجديدة%' OR b.name ILIKE '%new egypt%')
   AND flc.reference_type = 'invoice';
 
 -- 7. ملخص التشخيص
 SELECT 
   '7. Diagnosis Summary' as step,
   i.invoice_number,
+  c.name as company_name,
+  b.name as branch_name,
   i.status,
   CASE 
     WHEN i.status NOT IN ('paid', 'partially_paid') THEN '❌ الفاتورة ليست مدفوعة'
@@ -105,4 +134,8 @@ SELECT
     ELSE '✅ جاهزة للإصلاح'
   END as diagnosis
 FROM invoices i
-WHERE i.invoice_number = 'INV-0005';
+LEFT JOIN companies c ON c.id = i.company_id
+LEFT JOIN branches b ON b.id = i.branch_id
+WHERE i.invoice_number = 'INV-0005'
+  AND (c.name ILIKE '%test%' OR c.name ILIKE '%تست%')
+  AND (b.name ILIKE '%مصر الجديدة%' OR b.branch_name ILIKE '%مصر الجديدة%' OR b.name ILIKE '%new egypt%');
