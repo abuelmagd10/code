@@ -61,9 +61,12 @@ export async function checkInventoryAvailability(
       .or("is_deleted.is.null,is_deleted.eq.false")
 
     // Apply context filters if provided
+    // 📌 جميع الفلاتر إجبارية عند وجود السياق لضمان الفحص على المستوى الصحيح
     if (context) {
       query = query.eq("company_id", context.company_id)
       
+      // تطبيق فلاتر الفرع والمخزن ومركز التكلفة إذا كانت موجودة
+      // هذه الفلاتر ضرورية لضمان الفحص على المستوى الصحيح
       if (context.branch_id) {
         query = query.eq("branch_id", context.branch_id)
       }

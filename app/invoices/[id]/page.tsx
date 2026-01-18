@@ -461,6 +461,29 @@ export default function InvoiceDetailPage() {
           
           // 2️⃣ التحقق من توفر المخزون
           console.log("📦 Checking inventory availability...")
+          
+          // ✅ التحقق من وجود جميع البيانات المطلوبة للفحص
+          if (!invoice?.company_id || !invoice?.branch_id || !invoice?.warehouse_id || !invoice?.cost_center_id) {
+            const missingFields = []
+            if (!invoice?.company_id) missingFields.push("الشركة")
+            if (!invoice?.branch_id) missingFields.push("الفرع")
+            if (!invoice?.warehouse_id) missingFields.push("المخزن")
+            if (!invoice?.cost_center_id) missingFields.push("مركز التكلفة")
+            
+            startTransition(() => {
+              setChangingStatus(false)
+            })
+            toast({
+              variant: "destructive",
+              title: appLang === 'en' ? "Missing Required Information" : "بيانات ناقصة",
+              description: appLang === 'en'
+                ? `Cannot check inventory. Missing: ${missingFields.join(", ")}. Please complete the invoice data first.`
+                : `لا يمكن فحص المخزون. البيانات الناقصة: ${missingFields.join("، ")}. يرجى إكمال بيانات الفاتورة أولاً.`,
+              duration: 8000,
+            })
+            return
+          }
+          
           const { data: invoiceItems } = await supabase
             .from("invoice_items")
             .select("product_id, quantity")
@@ -471,13 +494,13 @@ export default function InvoiceDetailPage() {
             quantity: Number(item.quantity || 0)
           }))
 
-          // Pass invoice context for proper inventory filtering
-          const inventoryContext = invoice ? {
+          // Pass invoice context for proper inventory filtering (all fields are required)
+          const inventoryContext = {
             company_id: invoice.company_id,
-            branch_id: invoice.branch_id || null,
-            warehouse_id: invoice.warehouse_id || null,
-            cost_center_id: invoice.cost_center_id || null,
-          } : undefined
+            branch_id: invoice.branch_id!,
+            warehouse_id: invoice.warehouse_id!,
+            cost_center_id: invoice.cost_center_id!,
+          }
 
           const { success, shortages } = await checkInventoryAvailability(supabase, itemsToCheck, undefined, inventoryContext)
 
