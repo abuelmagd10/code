@@ -106,7 +106,7 @@ export default function DashboardInventoryStats({
         .in('id', productIds)
         .or('item_type.is.null,item_type.eq.product')
 
-      const productMap = new Map((products || []).map((p: any) => [p.id, p]))
+      const productMap = new Map((products || []).map((p: any) => [p.id, { reorder_level: p.reorder_level }]))
 
       // حساب قيمة المخزون من FIFO Lots لكل منتج
       for (const [pid, qty] of Object.entries(qtyByProduct)) {
@@ -140,7 +140,7 @@ export default function DashboardInventoryStats({
         // إذا لم توجد FIFO lots، لا نضيف قيمة (ممنوع استخدام cost_price)
 
         // حساب low stock count
-        const product = productMap.get(pid)
+        const product = productMap.get(pid) as { reorder_level?: number } | undefined
         if (product && qty < (product.reorder_level || 5)) {
           lowStockCount++
         }
