@@ -741,8 +741,16 @@ function SalesOrdersContent() {
           if (!existingIds.has(c.id)) allCustomers.push(c);
         });
       }
+    } else if (role === 'accountant') {
+      // المحاسب: يرى جميع العملاء في الشركة (بغض النظر عن الفرع)
+      const { data: allCust } = await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", activeCompanyId)
+        .order("name");
+      allCustomers = allCust || [];
     } else if (accessFilter.filterByBranch && accessFilter.branchId) {
-      // مدير/محاسب مع فرع محدد: يرى عملاء الفرع
+      // مدير مع فرع محدد: يرى عملاء الفرع
       const { data: branchCust } = await supabase
         .from("customers")
         .select("id, name, phone")
@@ -750,8 +758,8 @@ function SalesOrdersContent() {
         .eq("branch_id", accessFilter.branchId)
         .order("name");
       allCustomers = branchCust || [];
-    } else if (accessLevel === 'branch' && (role === 'accountant' || role === 'manager')) {
-      // محاسب/مدير بدون فرع محدد: يرى جميع العملاء
+    } else if (accessLevel === 'branch' && role === 'manager') {
+      // مدير بدون فرع محدد: يرى جميع العملاء
       const { data: allCust } = await supabase
         .from("customers")
         .select("id, name, phone")
