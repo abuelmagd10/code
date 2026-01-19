@@ -2,12 +2,15 @@
  * 📌 Purchase Returns Vendor Credits Helper Functions
  * دوال مساعدة لإنشاء إشعارات دائن الموردين (Vendor Credits) تلقائياً عند مرتجعات المشتريات
  * 
- * القواعد الإلزامية:
+ * ⚠️ القواعد الإلزامية ERP-grade:
  * ✅ يتم إنشاء Vendor Credit تلقائياً عند مرتجع فاتورة Paid أو Partially Paid
+ * ✅ يتم إنشاء Vendor Credit فقط للـ Credit Return (settlement_method = 'credit')
  * ❌ لا يتم إنشاء Vendor Credit عند مرتجع فاتورة Received أو Draft
- * ✅ يجب ربط الإشعار بـ: company_id, branch_id, cost_center_id, vendor_id, source_purchase_invoice_id, source_purchase_return_id
+ * ❌ لا يتم إنشاء Vendor Credit للـ Cash Refund أو Bank Refund
+ * ✅ يجب ربط الإشعار بـ: company_id, branch_id, cost_center_id, warehouse_id, supplier_id, source_purchase_invoice_id, source_purchase_return_id
  * ✅ يتم إنشاء قيد محاسبي عكسي صحيح
  * ✅ الحالة الأولية: open
+ * ✅ لا يتم تعديل الفاتورة الأصلية (audit-locked)
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -51,6 +54,9 @@ export interface VendorCreditResult {
 /**
  * 📌 إنشاء Vendor Credit تلقائياً عند مرتجع مشتريات
  * 
+ * ⚠️ مهم: هذه الدالة يجب أن تُستدعى فقط للـ Credit Return (settlement_method = 'credit')
+ * لا تُستدعى للـ Cash Refund أو Bank Refund
+ * 
  * @param supabase - Supabase client
  * @param params - معلومات المرتجع
  * @returns نتيجة الإنشاء
@@ -79,6 +85,14 @@ export async function createVendorCreditForReturn(
       exchangeRate = 1,
       exchangeRateId = null
     } = params
+
+    // ✅ التحقق من الحوكمة (إلزامي)
+    if (!branchId || !costCenterId || !warehouseId) {
+      return {
+        success: false,
+        error: 'الحوكمة مطلوبة: branchId, costCenterId, warehouseId'
+      }
+    }
 
     // 1️⃣ التحقق من عدم وجود vendor_credit مسبق لنفس المرتجع
     const { data: existingCredit } = await supabase
@@ -118,6 +132,7 @@ export async function createVendorCreditForReturn(
         journal_entry_id: journalEntryId,
         branch_id: branchId,
         cost_center_id: costCenterId,
+        warehouse_id: warehouseId,
         notes: `إشعار دائن تلقائي من مرتجع المشتريات ${returnNumber}`,
         // Multi-currency support
         original_currency: currency,
