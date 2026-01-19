@@ -265,6 +265,46 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
         return
       }
 
+      // ✅ التحقق من الكمية المتاحة في المخزن المصدر قبل بدء النقل
+      const { checkInventoryAvailability } = await import("@/lib/inventory-check")
+      const itemsToCheck = (transfer.items || []).map((item: TransferItem) => ({
+        product_id: item.product_id,
+        quantity: item.quantity_requested
+      }))
+
+      const inventoryContext = {
+        company_id: companyId,
+        branch_id: srcBranchId,
+        warehouse_id: transfer.source_warehouse_id,
+        cost_center_id: srcCostCenterId
+      }
+
+      const { success, shortages } = await checkInventoryAvailability(
+        supabase,
+        itemsToCheck,
+        undefined,
+        inventoryContext
+      )
+
+      if (!success && shortages && shortages.length > 0) {
+        const shortageMessages = shortages.map(s => {
+          const productName = (transfer.items || []).find((i: TransferItem) => i.product_id === s.product_id)?.products?.name || 'منتج'
+          return appLang === 'en'
+            ? `• ${productName}: Required ${s.requested}, Available ${s.available}`
+            : `• ${productName}: مطلوب ${s.requested}، متوفر ${s.available}`
+        }).join('\n')
+
+        toast({
+          title: appLang === 'en' ? 'Insufficient Stock' : 'المخزون غير كافٍ',
+          description: appLang === 'en'
+            ? `Cannot start transfer. Insufficient stock in source warehouse:\n${shortageMessages}`
+            : `لا يمكن بدء النقل. المخزون غير كافٍ في المخزن المصدر:\n${shortageMessages}`,
+          variant: 'destructive',
+          duration: 8000
+        })
+        return
+      }
+
       // تحديث حالة النقل
       const { error: updateError } = await supabase
         .from("inventory_transfers")
