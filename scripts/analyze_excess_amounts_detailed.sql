@@ -105,18 +105,30 @@ WITH Overpayments AS (
   JOIN bills b ON b.id = p.bill_id
   WHERE p.amount > b.total_amount
 ),
+SupplierCredits AS (
+  SELECT
+    vc.supplier_id,
+    vc.company_id,
+    SUM(vc.total_amount) AS total_vendor_credits
+  FROM vendor_credits vc
+  WHERE vc.status IN ('approved', 'applied', 'open', 'partially_applied')
+  GROUP BY vc.supplier_id, vc.company_id
+),
+SupplierBills AS (
+  SELECT
+    b.supplier_id,
+    b.company_id,
+    SUM(b.total_amount) AS total_bills
+  FROM bills b
+  WHERE b.status IN ('sent', 'received', 'paid', 'partially_paid')
+  GROUP BY b.supplier_id, b.company_id
+),
 VendorCreditsExcess AS (
   SELECT
-    SUM(vc.total_amount - COALESCE(b.total_amount, 0)) AS total_excess
-  FROM vendor_credits vc
-  LEFT JOIN (
-    SELECT supplier_id, company_id, SUM(total_amount) AS total_amount
-    FROM bills
-    WHERE status IN ('sent', 'received', 'paid', 'partially_paid')
-    GROUP BY supplier_id, company_id
-  ) b ON b.supplier_id = vc.supplier_id AND b.company_id = vc.company_id
-  WHERE vc.status IN ('approved', 'applied', 'open', 'partially_applied')
-    AND vc.total_amount > COALESCE(b.total_amount, 0)
+    SUM(sc.total_vendor_credits - COALESCE(sb.total_bills, 0)) AS total_excess
+  FROM SupplierCredits sc
+  LEFT JOIN SupplierBills sb ON sb.supplier_id = sc.supplier_id AND sb.company_id = sc.company_id
+  WHERE sc.total_vendor_credits > COALESCE(sb.total_bills, 0)
 )
 SELECT
   '4. Total Excess Summary' AS check_type,
