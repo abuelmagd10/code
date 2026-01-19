@@ -28,36 +28,6 @@ export interface FIFOReversalResult {
 }
 
 /**
- * الحصول على COGS transactions لفاتورة شراء
- * @param supabase - Supabase client
- * @param billId - معرف فاتورة الشراء
- * @returns قائمة COGS transactions
- */
-export async function getCOGSByBill(
-  supabase: SupabaseClient,
-  billId: string
-): Promise<any[]> {
-  try {
-    const { data, error } = await supabase
-      .from('cogs_transactions')
-      .select('*')
-      .eq('source_type', 'bill')
-      .eq('source_id', billId)
-      .order('transaction_date', { ascending: true })
-
-    if (error) {
-      console.error('Error fetching COGS by bill:', error)
-      return []
-    }
-
-    return data || []
-  } catch (error: any) {
-    console.error('Error in getCOGSByBill:', error)
-    return []
-  }
-}
-
-/**
  * عكس استهلاك FIFO lots عند مرتجع مشتريات
  * @param supabase - Supabase client
  * @param billId - معرف فاتورة الشراء
