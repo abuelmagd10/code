@@ -88,10 +88,12 @@ JournalTotals AS (
     AND coa.sub_type = 'accounts_payable'
     AND je.deleted_at IS NULL
 ),
-MismatchedAmounts AS (
+BillJournalDifferences AS (
   SELECT
-    COUNT(*) AS mismatched_count,
-    SUM(ABS(b.total_amount - SUM(CASE WHEN coa.sub_type = 'accounts_payable' THEN jel.credit_amount ELSE 0 END))) AS total_difference
+    b.id AS bill_id,
+    b.total_amount,
+    SUM(CASE WHEN coa.sub_type = 'accounts_payable' THEN jel.credit_amount ELSE 0 END) AS ap_credit,
+    ABS(b.total_amount - SUM(CASE WHEN coa.sub_type = 'accounts_payable' THEN jel.credit_amount ELSE 0 END)) AS difference
   FROM bills b
   JOIN journal_entries je ON je.reference_type = 'bill' AND je.reference_id = b.id
   LEFT JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
@@ -99,7 +101,13 @@ MismatchedAmounts AS (
   WHERE b.status IN ('sent', 'received', 'paid', 'partially_paid')
     AND je.deleted_at IS NULL
   GROUP BY b.id, b.total_amount
-  HAVING ABS(b.total_amount - SUM(CASE WHEN coa.sub_type = 'accounts_payable' THEN jel.credit_amount ELSE 0 END)) > 0.01
+),
+MismatchedAmounts AS (
+  SELECT
+    COUNT(*) AS mismatched_count,
+    SUM(difference) AS total_difference
+  FROM BillJournalDifferences
+  WHERE difference > 0.01
 )
 SELECT
   '4. Complete Summary' AS check_type,
