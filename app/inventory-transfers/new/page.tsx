@@ -99,12 +99,13 @@ export default function NewTransferPage() {
 
       const { data: member } = await supabase
         .from("company_members")
-        .select("role")
+        .select("role, branch_id, warehouse_id")
         .eq("company_id", cId)
         .eq("user_id", user.id)
         .single()
 
       const role = member?.role || "staff"
+      const userBranchId = member?.branch_id || null
       setUserRole(role)
 
       // 🔒 صلاحية إنشاء طلبات النقل: Owner/Admin/Manager فقط
@@ -119,14 +120,22 @@ export default function NewTransferPage() {
         return
       }
 
-      // جلب المخازن
-      const { data: warehousesData } = await supabase
+      // ✅ جلب المخازن مع مراعاة الصلاحيات والأدوار
+      let warehousesQuery = supabase
         .from("warehouses")
         .select("id, name, branch_id, branches(name, branch_name)")
         .eq("company_id", cId)
         .eq("is_active", true)
-        .order("name")
 
+      // 🔒 فلترة المخازن حسب الصلاحيات:
+      // - Owner/Admin: يرون جميع المخازن (لا فلترة)
+      // - Manager: يرى فقط مخازن فرعه
+      if (role === "manager" && userBranchId) {
+        warehousesQuery = warehousesQuery.eq("branch_id", userBranchId)
+      }
+      // Owner/Admin: لا فلترة - يرون جميع المخازن
+
+      const { data: warehousesData } = await warehousesQuery.order("name")
       setWarehouses(warehousesData || [])
 
       // جلب المنتجات
