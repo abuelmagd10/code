@@ -77,6 +77,7 @@ export default function NewPurchaseOrderPage() {
   const [branchId, setBranchId] = useState<string | null>(null)
   const [costCenterId, setCostCenterId] = useState<string | null>(null)
   const [warehouseId, setWarehouseId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   // Currency
   const [currencies, setCurrencies] = useState<Currency[]>([])
