@@ -82,10 +82,9 @@ CROSS JOIN APDebitFromJournals apj;
 WITH VendorCreditTotals AS (
   SELECT
     COUNT(*) AS vendor_credit_count,
-    SUM(vc.amount) AS expected_ap_debit
+    SUM(vc.total_amount) AS expected_ap_debit
   FROM vendor_credits vc
-  WHERE vc.status IN ('approved', 'applied')
-    AND vc.deleted_at IS NULL
+  WHERE vc.status IN ('approved', 'applied', 'open', 'partially_applied')
 ),
 APDebitFromVendorCredits AS (
   SELECT
