@@ -89,13 +89,14 @@ WITH MismatchedBills AS (
   GROUP BY b.id, b.bill_number, b.total_amount, je.id
   HAVING ABS(b.total_amount - SUM(CASE WHEN coa.sub_type = 'accounts_payable' THEN jel.credit_amount ELSE 0 END)) > 0.01
 )
-UPDATE journal_entry_lines jel
+UPDATE journal_entry_lines
 SET credit_amount = mb.bill_total
 FROM MismatchedBills mb
-JOIN chart_of_accounts coa ON coa.id = jel.account_id
-WHERE jel.journal_entry_id = mb.journal_entry_id
-  AND coa.sub_type = 'accounts_payable'
-  AND jel.credit_amount != mb.bill_total;
+WHERE journal_entry_lines.journal_entry_id = mb.journal_entry_id
+  AND journal_entry_lines.account_id IN (
+    SELECT id FROM chart_of_accounts WHERE sub_type = 'accounts_payable'
+  )
+  AND journal_entry_lines.credit_amount != mb.bill_total;
 
 SET session_replication_role = DEFAULT;
 
