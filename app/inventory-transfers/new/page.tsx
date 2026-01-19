@@ -121,9 +121,10 @@ export default function NewTransferPage() {
       }
 
       // ✅ جلب المخازن مع مراعاة الصلاحيات والأدوار
+      // ملاحظة: جلب المخازن بدون العلاقة مع branches لتجنب مشاكل العلاقات
       let warehousesQuery = supabase
         .from("warehouses")
-        .select("id, name, branch_id, branches(name, branch_name)")
+        .select("id, name, branch_id")
         .eq("company_id", cId)
         .eq("is_active", true)
 
@@ -147,7 +148,28 @@ export default function NewTransferPage() {
         setWarehouses([])
       } else {
         console.log("✅ Loaded warehouses:", warehousesData?.length || 0)
-        setWarehouses(warehousesData || [])
+        
+        // جلب بيانات الفروع بشكل منفصل لتجنب مشاكل العلاقات
+        if (warehousesData && warehousesData.length > 0) {
+          const branchIds = [...new Set(warehousesData.map(w => w.branch_id).filter(Boolean))]
+          if (branchIds.length > 0) {
+            const { data: branchesData } = await supabase
+              .from("branches")
+              .select("id, name, branch_name")
+              .in("id", branchIds)
+            
+        // دمج بيانات الفروع مع المخازن
+        const warehousesWithBranches = warehousesData.map((wh: any) => ({
+          ...wh,
+          branches: branchesData?.find((b: any) => b.id === wh.branch_id) || null
+        }))
+            setWarehouses(warehousesWithBranches as any)
+          } else {
+            setWarehouses(warehousesData || [])
+          }
+        } else {
+          setWarehouses([])
+        }
       }
 
       // جلب المنتجات
