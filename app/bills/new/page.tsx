@@ -752,6 +752,66 @@ function NewBillPageContent() {
             if (!effectiveCostCenterId) effectiveCostCenterId = defaults.default_cost_center_id
           }
 
+          // ✅ التحقق من الحوكمة قبل إنشاء inventory_transactions
+          if (!effectiveBranchId || !effectiveWarehouseId || !effectiveCostCenterId) {
+            throw new Error(
+              appLang === 'en' 
+                ? 'Branch, Warehouse, and Cost Center are required for inventory transactions'
+                : 'الفرع والمخزن ومركز التكلفة مطلوبة لحركات المخزون'
+            )
+          }
+
+          // ✅ التحقق من أن branch_id ينتمي للشركة (مطلوب للـ trigger)
+          const { data: branchCheck } = await supabase
+            .from("branches")
+            .select("id, company_id")
+            .eq("id", effectiveBranchId)
+            .eq("company_id", mapping.companyId)
+            .single()
+          
+          if (!branchCheck) {
+            console.error(`Branch ${effectiveBranchId} does not belong to company ${mapping.companyId}`)
+            throw new Error(
+              appLang === 'en'
+                ? `Branch does not belong to company`
+                : `الفرع المحدد لا ينتمي للشركة`
+            )
+          }
+
+          // ✅ التحقق من أن warehouse_id ينتمي للشركة
+          const { data: warehouseCheck } = await supabase
+            .from("warehouses")
+            .select("id, company_id")
+            .eq("id", effectiveWarehouseId)
+            .eq("company_id", mapping.companyId)
+            .single()
+          
+          if (!warehouseCheck) {
+            console.error(`Warehouse ${effectiveWarehouseId} does not belong to company ${mapping.companyId}`)
+            throw new Error(
+              appLang === 'en'
+                ? `Warehouse does not belong to company`
+                : `المخزن المحدد لا ينتمي للشركة`
+            )
+          }
+
+          // ✅ التحقق من أن cost_center_id ينتمي للشركة
+          const { data: costCenterCheck } = await supabase
+            .from("cost_centers")
+            .select("id, company_id")
+            .eq("id", effectiveCostCenterId)
+            .eq("company_id", mapping.companyId)
+            .single()
+          
+          if (!costCenterCheck) {
+            console.error(`Cost Center ${effectiveCostCenterId} does not belong to company ${mapping.companyId}`)
+            throw new Error(
+              appLang === 'en'
+                ? `Cost Center does not belong to company`
+                : `مركز التكلفة المحدد لا ينتمي للشركة`
+            )
+          }
+
           // Inventory transactions from current items (products only, not services)
           const poRef = linkedPO ? ` (من أمر شراء ${linkedPO.po_number})` : ''
           const invTx = items
@@ -769,7 +829,10 @@ function NewBillPageContent() {
             }))
           if (invTx.length > 0) {
             const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
-            if (invErr) throw invErr
+            if (invErr) {
+              console.error("Failed inserting inventory transactions from bill:", invErr)
+              throw new Error(`فشل إنشاء حركات المخزون: ${invErr.message}`)
+            }
           }
 
           // Update product quantities (increase on purchase) - products only
