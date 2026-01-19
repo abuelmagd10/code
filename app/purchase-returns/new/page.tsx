@@ -78,6 +78,35 @@ export default function NewPurchaseReturnPage() {
       if (!loadedCompanyId) return
       setCompanyId(loadedCompanyId)
 
+      // 🔐 ERP Access Control - جلب سياق المستخدم وتعيين القيم التلقائية
+      const { data: { user } } = await supabase.auth.getUser()
+      let userBranchId: string | null = null
+      let userCostCenterId: string | null = null
+      let userWarehouseId: string | null = null
+
+      if (user) {
+        const { data: memberData } = await supabase
+          .from("company_members")
+          .select("role, branch_id, cost_center_id, warehouse_id")
+          .eq("company_id", loadedCompanyId)
+          .eq("user_id", user.id)
+          .maybeSingle()
+
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("user_id")
+          .eq("id", loadedCompanyId)
+          .single()
+
+        const isOwner = companyData?.user_id === user.id
+
+        if (!isOwner && memberData) {
+          userBranchId = memberData.branch_id || null
+          userCostCenterId = memberData.cost_center_id || null
+          userWarehouseId = memberData.warehouse_id || null
+        }
+      }
+
       const [suppRes, billRes, prodRes] = await Promise.all([
         supabase.from("suppliers").select("id, name, phone").eq("company_id", loadedCompanyId),
         supabase.from("bills").select("id, bill_number, supplier_id, total_amount, status, branch_id, cost_center_id, warehouse_id").eq("company_id", loadedCompanyId).in("status", ["paid", "partially_paid", "sent", "received"]),
@@ -87,6 +116,9 @@ export default function NewPurchaseReturnPage() {
       setSuppliers((suppRes.data || []) as Supplier[])
       setBills((billRes.data || []) as Bill[])
       setProducts((prodRes.data || []) as Product[])
+
+      // تعيين القيم التلقائية من company_members (سيتم استخدامها عند اختيار فاتورة بدون branch/warehouse/cost_center)
+      // ملاحظة: هذه القيم ستُستخدم كـ fallback إذا كانت الفاتورة المختارة لا تحتوي على هذه القيم
 
       // Load currencies
       const curr = await getActiveCurrencies(supabase, loadedCompanyId)
@@ -233,6 +265,33 @@ export default function NewPurchaseReturnPage() {
       let billBranchId = selectedBill?.branch_id || null
       let billCostCenterId = selectedBill?.cost_center_id || null
       let billWarehouseId = selectedBill?.warehouse_id || null
+
+      // ✅ استخدام قيم company_members كـ fallback إذا لم تكن موجودة في الفاتورة
+      if (!billBranchId || !billCostCenterId || !billWarehouseId) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const { data: memberData } = await supabase
+            .from("company_members")
+            .select("role, branch_id, cost_center_id, warehouse_id")
+            .eq("company_id", companyId)
+            .eq("user_id", user.id)
+            .maybeSingle()
+
+          const { data: companyData } = await supabase
+            .from("companies")
+            .select("user_id")
+            .eq("id", companyId)
+            .single()
+
+          const isOwner = companyData?.user_id === user.id
+
+          if (!isOwner && memberData) {
+            if (!billBranchId) billBranchId = memberData.branch_id || null
+            if (!billCostCenterId) billCostCenterId = memberData.cost_center_id || null
+            if (!billWarehouseId) billWarehouseId = memberData.warehouse_id || null
+          }
+        }
+      }
 
       // ✅ ERP-grade: التحقق من الحوكمة (إلزامي للفواتير المدفوعة)
       const needsJournalEntry = billStatus === 'paid' || billStatus === 'partially_paid'

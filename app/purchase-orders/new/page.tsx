@@ -151,6 +151,32 @@ export default function NewPurchaseOrderPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      // 🔐 ERP Access Control - جلب سياق المستخدم وتعيين القيم التلقائية
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: memberData } = await supabase
+          .from("company_members")
+          .select("role, branch_id, cost_center_id, warehouse_id")
+          .eq("company_id", companyId)
+          .eq("user_id", user.id)
+          .maybeSingle()
+
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("user_id")
+          .eq("id", companyId)
+          .single()
+
+        const isOwner = companyData?.user_id === user.id
+
+        // تعيين القيم التلقائية من company_members (إذا لم تكن موجودة بالفعل)
+        if (!isOwner && memberData) {
+          if (memberData.branch_id && !branchId) setBranchId(memberData.branch_id)
+          if (memberData.cost_center_id && !costCenterId) setCostCenterId(memberData.cost_center_id)
+          if (memberData.warehouse_id && !warehouseId) setWarehouseId(memberData.warehouse_id)
+        }
+      }
+
       const { data: suppData } = await supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId).order("name")
       setSuppliers(suppData || [])
 
