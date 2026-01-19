@@ -151,12 +151,12 @@ export default function NewPurchaseOrderPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      // 🔐 ERP Access Control - جلب سياق المستخدم وتعيين القيم التلقائية
+      // 🔐 Enterprise Pattern: User → Branch → (Default Warehouse, Default Cost Center)
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data: memberData } = await supabase
           .from("company_members")
-          .select("role, branch_id, cost_center_id, warehouse_id")
+          .select("role, branch_id")
           .eq("company_id", companyId)
           .eq("user_id", user.id)
           .maybeSingle()
@@ -168,12 +168,46 @@ export default function NewPurchaseOrderPage() {
           .single()
 
         const isOwner = companyData?.user_id === user.id
+        const userRole = isOwner ? "owner" : (memberData?.role || "viewer")
+        const userBranchId = isOwner ? null : (memberData?.branch_id || null)
 
-        // تعيين القيم التلقائية من company_members (إذا لم تكن موجودة بالفعل)
-        if (!isOwner && memberData) {
-          if (memberData.branch_id && !branchId) setBranchId(memberData.branch_id)
-          if (memberData.cost_center_id && !costCenterId) setCostCenterId(memberData.cost_center_id)
-          if (memberData.warehouse_id && !warehouseId) setWarehouseId(memberData.warehouse_id)
+        // 🔐 Enterprise Governance: Check if user is Admin or GeneralManager
+        const normalizedRole = String(userRole || '').trim().toLowerCase().replace(/\s+/g, '_')
+        const adminCheck = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
+        setIsAdmin(adminCheck)
+
+        // 🔐 Enterprise Pattern: User → Branch → (Default Warehouse, Default Cost Center)
+        if (userBranchId) {
+          // Fetch branch defaults instead of user assignments
+          const { getBranchDefaults } = await import('@/lib/governance-branch-defaults')
+          
+          try {
+            const branchDefaults = await getBranchDefaults(supabase, userBranchId)
+            
+            // Validate branch has required defaults
+            if (!branchDefaults.default_warehouse_id || !branchDefaults.default_cost_center_id) {
+              throw new Error(
+                `Branch missing required defaults. ` +
+                `Warehouse: ${branchDefaults.default_warehouse_id || 'NULL'}, ` +
+                `Cost Center: ${branchDefaults.default_cost_center_id || 'NULL'}`
+              )
+            }
+
+            // Set branch and its defaults
+            setBranchId(userBranchId)
+            setWarehouseId(branchDefaults.default_warehouse_id)
+            setCostCenterId(branchDefaults.default_cost_center_id)
+
+            console.log('Branch defaults applied:', {
+              branchId: userBranchId,
+              warehouseId: branchDefaults.default_warehouse_id,
+              costCenterId: branchDefaults.default_cost_center_id
+            })
+          } catch (error) {
+            console.error('Failed to apply branch defaults:', error)
+            // Fallback to current behavior if branch defaults fail
+            setBranchId(userBranchId)
+          }
         }
       }
 
@@ -619,6 +653,7 @@ export default function NewPurchaseOrderPage() {
                   lang={appLang}
                   showLabels={true}
                   showWarehouse={true}
+                  disabled={!isAdmin} // تعطيل التعديل للمستخدمين العاديين
                 />
               </div>
 

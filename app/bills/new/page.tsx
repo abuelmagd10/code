@@ -157,7 +157,7 @@ function NewBillPageContent() {
       // 🔐 ERP Access Control - جلب سياق المستخدم
       const { data: memberData } = await supabase
         .from("company_members")
-        .select("role, branch_id, cost_center_id, warehouse_id")
+        .select("role, branch_id")
         .eq("company_id", companyId)
         .eq("user_id", user.id)
         .maybeSingle()
@@ -170,22 +170,56 @@ function NewBillPageContent() {
 
       const isOwner = companyData?.user_id === user.id
       const role = isOwner ? "owner" : (memberData?.role || "viewer")
+      const userBranchId = isOwner ? null : (memberData?.branch_id || null)
 
       const context: UserContext = {
         user_id: user.id,
         company_id: companyId,
-        branch_id: isOwner ? null : (memberData?.branch_id || null),
-        cost_center_id: isOwner ? null : (memberData?.cost_center_id || null),
-        warehouse_id: isOwner ? null : (memberData?.warehouse_id || null),
+        branch_id: userBranchId,
+        cost_center_id: null, // سيتم تعيينه من branch defaults
+        warehouse_id: null, // سيتم تعيينه من branch defaults
         role: role,
       }
       setUserContext(context)
       setCanOverrideContext(["owner", "admin", "manager"].includes(role))
 
-      // تعيين القيم الافتراضية من سياق المستخدم
-      if (context.branch_id && !branchId) setBranchId(context.branch_id)
-      if (context.cost_center_id && !costCenterId) setCostCenterId(context.cost_center_id)
-      if (context.warehouse_id && !warehouseId) setWarehouseId(context.warehouse_id)
+      // 🔐 Enterprise Pattern: User → Branch → (Default Warehouse, Default Cost Center)
+      if (userBranchId) {
+        // Fetch branch defaults instead of user assignments
+        const { getBranchDefaults } = await import('@/lib/governance-branch-defaults')
+        
+        try {
+          const branchDefaults = await getBranchDefaults(supabase, userBranchId)
+          
+          // Validate branch has required defaults
+          if (!branchDefaults.default_warehouse_id || !branchDefaults.default_cost_center_id) {
+            throw new Error(
+              `Branch missing required defaults. ` +
+              `Warehouse: ${branchDefaults.default_warehouse_id || 'NULL'}, ` +
+              `Cost Center: ${branchDefaults.default_cost_center_id || 'NULL'}`
+            )
+          }
+
+          // Set branch and its defaults
+          setBranchId(userBranchId)
+          setWarehouseId(branchDefaults.default_warehouse_id)
+          setCostCenterId(branchDefaults.default_cost_center_id)
+
+          // Update context with defaults
+          context.cost_center_id = branchDefaults.default_cost_center_id
+          context.warehouse_id = branchDefaults.default_warehouse_id
+
+          console.log('Branch defaults applied:', {
+            branchId: userBranchId,
+            warehouseId: branchDefaults.default_warehouse_id,
+            costCenterId: branchDefaults.default_cost_center_id
+          })
+        } catch (error) {
+          console.error('Failed to apply branch defaults:', error)
+          // Fallback to current behavior if branch defaults fail
+          setBranchId(userBranchId)
+        }
+      }
 
       const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId)
       const { data: prods } = await supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", companyId)
@@ -918,6 +952,7 @@ function NewBillPageContent() {
                   lang={appLang}
                   showLabels={true}
                   showWarehouse={true}
+                  disabled={!canOverrideContext} // تعطيل التعديل للمستخدمين العاديين
                 />
               </div>
 
