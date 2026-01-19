@@ -3,31 +3,32 @@
 -- =====================================================
 
 -- 1. تفاصيل المدفوعة الزائدة (بعد حساب المرتجعات)
+-- ملاحظة: bills.total_amount هو المبلغ الصافي بعد المرتجعات
+-- bills.returned_amount هو مجموع المرتجعات
+-- الإجمالي الأصلي = total_amount + returned_amount
 SELECT
   '1. Overpayment Details' AS check_type,
   p.id AS payment_id,
   p.payment_date,
   p.amount AS payment_amount,
   b.bill_number,
-  b.total_amount AS bill_total,
-  COALESCE(SUM(vc.total_amount), 0) AS total_returns,
-  b.total_amount - COALESCE(SUM(vc.total_amount), 0) AS net_bill_amount,
-  p.amount - (b.total_amount - COALESCE(SUM(vc.total_amount), 0)) AS overpayment_amount,
+  COALESCE(b.total_amount, 0) + COALESCE(b.returned_amount, 0) AS original_bill_total,
+  COALESCE(b.returned_amount, 0) AS total_returns,
+  b.total_amount AS net_bill_amount,
+  p.amount - b.total_amount AS overpayment_amount,
   s.name AS supplier_name,
   c.name AS company_name,
   CASE
-    WHEN p.amount > (b.total_amount - COALESCE(SUM(vc.total_amount), 0)) THEN '⚠️ مدفوعة زائدة - يجب إنشاء حساب مدفوعات مسبقة أو تصحيح المبلغ'
-    WHEN p.amount = (b.total_amount - COALESCE(SUM(vc.total_amount), 0)) THEN '✅ المدفوعة صحيحة (تطابق المبلغ الصافي بعد المرتجعات)'
+    WHEN p.amount > b.total_amount THEN '⚠️ مدفوعة زائدة - يجب إنشاء حساب مدفوعات مسبقة أو تصحيح المبلغ'
+    WHEN p.amount = b.total_amount THEN '✅ المدفوعة صحيحة (تطابق المبلغ الصافي بعد المرتجعات)'
     ELSE 'ℹ️ المدفوعة أقل من المبلغ الصافي'
   END AS recommendation
 FROM payments p
 JOIN bills b ON b.id = p.bill_id
 LEFT JOIN suppliers s ON s.id = p.supplier_id
 LEFT JOIN companies c ON c.id = p.company_id
-LEFT JOIN vendor_credits vc ON vc.bill_id = b.id AND vc.status IN ('approved', 'applied', 'open', 'partially_applied')
-WHERE p.amount > (b.total_amount - COALESCE((SELECT SUM(total_amount) FROM vendor_credits WHERE bill_id = b.id AND status IN ('approved', 'applied', 'open', 'partially_applied')), 0))
-GROUP BY p.id, p.payment_date, p.amount, b.bill_number, b.total_amount, s.name, c.name
-ORDER BY (p.amount - (b.total_amount - COALESCE(SUM(vc.total_amount), 0))) DESC;
+WHERE p.amount > b.total_amount
+ORDER BY (p.amount - b.total_amount) DESC;
 
 -- 2. تفاصيل إشعارات الدائن الزائدة
 WITH SupplierCredits AS (
@@ -104,17 +105,12 @@ GROUP BY vc.id, vc.credit_number, vc.credit_date, vc.total_amount, vc.status, s.
 ORDER BY c.name, s.name, vc.credit_date DESC;
 
 -- 4. ملخص شامل
+-- ملاحظة: bills.total_amount هو المبلغ الصافي بعد المرتجعات
 WITH Overpayments AS (
-  SELECT SUM(p.amount - (b.total_amount - COALESCE(vc_agg.total_returns, 0))) AS total_overpayment
+  SELECT SUM(p.amount - b.total_amount) AS total_overpayment
   FROM payments p
   JOIN bills b ON b.id = p.bill_id
-  LEFT JOIN (
-    SELECT bill_id, SUM(total_amount) AS total_returns
-    FROM vendor_credits
-    WHERE status IN ('approved', 'applied', 'open', 'partially_applied')
-    GROUP BY bill_id
-  ) vc_agg ON vc_agg.bill_id = b.id
-  WHERE p.amount > (b.total_amount - COALESCE(vc_agg.total_returns, 0))
+  WHERE p.amount > b.total_amount
 ),
 SupplierCredits AS (
   SELECT

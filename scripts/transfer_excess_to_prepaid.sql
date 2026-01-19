@@ -46,17 +46,12 @@ BEGIN
       END IF;
       
       -- حساب المدفوعات الزائدة (بعد حساب المرتجعات)
-      SELECT COALESCE(SUM(p.amount - (b.total_amount - COALESCE(vc_agg.total_returns, 0))), 0) INTO v_overpayment
+      -- ملاحظة: bills.total_amount هو المبلغ الصافي بعد المرتجعات
+      SELECT COALESCE(SUM(p.amount - b.total_amount), 0) INTO v_overpayment
       FROM payments p
       JOIN bills b ON b.id = p.bill_id
-      LEFT JOIN (
-        SELECT bill_id, SUM(total_amount) AS total_returns
-        FROM vendor_credits
-        WHERE status IN ('approved', 'applied', 'open', 'partially_applied')
-        GROUP BY bill_id
-      ) vc_agg ON vc_agg.bill_id = b.id
       WHERE p.company_id = v_company_id
-        AND p.amount > (b.total_amount - COALESCE(vc_agg.total_returns, 0));
+        AND p.amount > b.total_amount;
       
       -- حساب إشعارات الدائن الزائدة
       WITH SupplierCredits AS (
