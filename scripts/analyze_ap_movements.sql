@@ -55,8 +55,8 @@ WITH BillPaymentTotals AS (
     COUNT(*) AS payment_count,
     SUM(p.amount) AS expected_ap_debit
   FROM payments p
-  WHERE p.reference_type = 'bill_payment'
-    AND p.deleted_at IS NULL
+  WHERE p.bill_id IS NOT NULL
+    AND (p.deleted_at IS NULL OR p.deleted_at IS NULL)
 ),
 APDebitFromJournals AS (
   SELECT
