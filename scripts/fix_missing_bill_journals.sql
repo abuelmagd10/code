@@ -71,7 +71,7 @@ BEGIN
       b.subtotal,
       b.tax_amount,
       b.total_amount,
-      COALESCE(b.shipping_cost, 0) AS shipping_charge,
+      COALESCE(b.shipping, 0) AS shipping_charge,
       b.branch_id,
       b.cost_center_id,
       b.warehouse_id
