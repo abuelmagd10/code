@@ -53,9 +53,10 @@ CROSS JOIN APCreditFromJournals apj;
 WITH BillPaymentTotals AS (
   SELECT
     COUNT(*) AS payment_count,
-    SUM(bp.amount) AS expected_ap_debit
-  FROM bill_payments bp
-  WHERE bp.deleted_at IS NULL
+    SUM(p.amount) AS expected_ap_debit
+  FROM payments p
+  WHERE p.reference_type = 'bill_payment'
+    AND p.deleted_at IS NULL
 ),
 APDebitFromJournals AS (
   SELECT
