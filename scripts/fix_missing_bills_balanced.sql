@@ -190,11 +190,12 @@ WITH JournalBalances AS (
     je.id AS journal_entry_id,
     je.description,
     b.bill_number,
-    SUM(jel.debit_amount) AS total_debit,
-    SUM(jel.credit_amount) AS total_credit,
-    ABS(SUM(jel.debit_amount) - SUM(jel.credit_amount)) AS imbalance
+    SUM(COALESCE(jel.debit_amount, 0)) AS total_debit,
+    SUM(COALESCE(jel.credit_amount, 0)) AS total_credit,
+    ABS(SUM(COALESCE(jel.debit_amount, 0)) - SUM(COALESCE(jel.credit_amount, 0))) AS imbalance
   FROM journal_entries je
   JOIN bills b ON b.id = je.reference_id
+  LEFT JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
   WHERE je.reference_type = 'bill'
     AND je.deleted_at IS NULL
     AND je.description LIKE '%مفقود%'
