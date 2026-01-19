@@ -220,18 +220,19 @@ ORDER BY imbalance DESC;
 WITH UnbalancedJournals AS (
   SELECT
     je.id AS journal_entry_id,
+    je.company_id,
     b.bill_number,
-    SUM(jel.debit_amount) AS total_debit,
-    SUM(jel.credit_amount) AS total_credit,
-    (SUM(jel.credit_amount) - SUM(jel.debit_amount)) AS difference
+    SUM(COALESCE(jel.debit_amount, 0)) AS total_debit,
+    SUM(COALESCE(jel.credit_amount, 0)) AS total_credit,
+    (SUM(COALESCE(jel.credit_amount, 0)) - SUM(COALESCE(jel.debit_amount, 0))) AS difference
   FROM journal_entries je
   JOIN bills b ON b.id = je.reference_id
   LEFT JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
   WHERE je.reference_type = 'bill'
     AND je.deleted_at IS NULL
     AND je.description LIKE '%مفقود%'
-  GROUP BY je.id, b.bill_number
-  HAVING ABS(SUM(jel.debit_amount) - SUM(jel.credit_amount)) > 0.01
+  GROUP BY je.id, je.company_id, b.bill_number
+  HAVING ABS(SUM(COALESCE(jel.debit_amount, 0)) - SUM(COALESCE(jel.credit_amount, 0))) > 0.01
 )
 INSERT INTO journal_entry_lines (
   journal_entry_id,
@@ -243,15 +244,13 @@ INSERT INTO journal_entry_lines (
 SELECT
   uj.journal_entry_id,
   COALESCE(
-    (SELECT id FROM chart_of_accounts coa
-     JOIN journal_entries je ON je.company_id = coa.company_id
-     WHERE je.id = uj.journal_entry_id
+    (SELECT coa.id FROM chart_of_accounts coa
+     WHERE coa.company_id = uj.company_id
        AND coa.account_type = 'expense'
        AND coa.is_active = true
      LIMIT 1),
-    (SELECT id FROM chart_of_accounts coa
-     JOIN journal_entries je ON je.company_id = coa.company_id
-     WHERE je.id = uj.journal_entry_id
+    (SELECT coa.id FROM chart_of_accounts coa
+     WHERE coa.company_id = uj.company_id
        AND coa.sub_type = 'inventory'
        AND coa.is_active = true
      LIMIT 1)
