@@ -1215,6 +1215,63 @@ export default function BillViewPage() {
         .select("product_id, quantity, products(item_type)")
         .eq("bill_id", bill.id)
 
+      // ✅ التحقق من الحوكمة قبل إنشاء inventory_transactions
+      if (!bill.branch_id || !bill.warehouse_id || !bill.cost_center_id) {
+        const errorMsg = appLang === 'en'
+          ? 'Branch, Warehouse, and Cost Center are required for inventory transactions'
+          : 'الفرع والمخزن ومركز التكلفة مطلوبة لحركات المخزون'
+        toastActionError(toast, "الإرسال", "فاتورة المورد", errorMsg)
+        return
+      }
+
+      // ✅ التحقق من أن branch_id ينتمي للشركة
+      const { data: branchCheck } = await supabase
+        .from("branches")
+        .select("id, company_id")
+        .eq("id", bill.branch_id)
+        .eq("company_id", bill.company_id)
+        .single()
+      
+      if (!branchCheck) {
+        const errorMsg = appLang === 'en'
+          ? 'Branch does not belong to company'
+          : 'الفرع المحدد لا ينتمي للشركة'
+        toastActionError(toast, "الإرسال", "فاتورة المورد", errorMsg)
+        return
+      }
+
+      // ✅ التحقق من أن warehouse_id ينتمي للشركة
+      const { data: warehouseCheck } = await supabase
+        .from("warehouses")
+        .select("id, company_id")
+        .eq("id", bill.warehouse_id)
+        .eq("company_id", bill.company_id)
+        .single()
+      
+      if (!warehouseCheck) {
+        const errorMsg = appLang === 'en'
+          ? 'Warehouse does not belong to company'
+          : 'المخزن المحدد لا ينتمي للشركة'
+        toastActionError(toast, "الإرسال", "فاتورة المورد", errorMsg)
+        return
+      }
+
+      // ✅ التحقق من أن cost_center_id ينتمي للشركة
+      const { data: costCenterCheck } = await supabase
+        .from("cost_centers")
+        .select("id, company_id")
+        .eq("id", bill.cost_center_id)
+        .eq("company_id", bill.company_id)
+        .single()
+      
+      if (!costCenterCheck) {
+        const errorMsg = appLang === 'en'
+          ? 'Cost Center does not belong to company'
+          : 'مركز التكلفة المحدد لا ينتمي للشركة'
+        toastActionError(toast, "الإرسال", "فاتورة المورد", errorMsg)
+        return
+      }
+
       const invTx = (billItems || [])
         .filter((it: any) => it.product_id && it.products?.item_type !== 'service')
         .map((it: any) => ({
@@ -1224,13 +1281,23 @@ export default function BillViewPage() {
           quantity_change: it.quantity,
           reference_id: bill.id,
           notes: `فاتورة شراء ${bill.bill_number}`,
+          branch_id: bill.branch_id,
+          warehouse_id: bill.warehouse_id,
+          cost_center_id: bill.cost_center_id,
         }))
 
       if (invTx.length > 0) {
         const { error: invErr } = await supabase
           .from("inventory_transactions")
           .insert(invTx)
-        if (invErr) console.warn("Failed inserting inventory transactions from bill:", invErr)
+        if (invErr) {
+          console.error("Failed inserting inventory transactions from bill:", invErr)
+          const errorMsg = appLang === 'en'
+            ? `Failed to create inventory transactions: ${invErr.message}`
+            : `فشل إنشاء حركات المخزون: ${invErr.message}`
+          toastActionError(toast, "الإرسال", "فاتورة المورد", errorMsg)
+          return
+        }
         // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
         // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
       }
