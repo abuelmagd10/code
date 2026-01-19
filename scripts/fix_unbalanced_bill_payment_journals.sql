@@ -153,14 +153,24 @@ BEGIN
 END $$;
 
 -- 4. التحقق من النتيجة
+WITH EntryBalances AS (
+  SELECT 
+    je.id AS entry_id,
+    je.reference_type,
+    SUM(jel.debit_amount) AS total_debit,
+    SUM(jel.credit_amount) AS total_credit,
+    ABS(SUM(jel.debit_amount) - SUM(jel.credit_amount)) AS imbalance
+  FROM journal_entries je
+  JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
+  WHERE je.reference_type IN ('bill_payment', 'vendor_credit')
+    AND je.deleted_at IS NULL
+  GROUP BY je.id, je.reference_type
+)
 SELECT 
   'Verification' AS check_type,
-  je.reference_type,
+  reference_type,
   COUNT(*) AS total_entries,
-  SUM(CASE WHEN ABS(SUM(jel.debit_amount) - SUM(jel.credit_amount)) > 0.01 THEN 1 ELSE 0 END) AS unbalanced_count
-FROM journal_entries je
-JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
-WHERE je.reference_type IN ('bill_payment', 'vendor_credit')
-  AND je.deleted_at IS NULL
-GROUP BY je.id, je.reference_type
-HAVING ABS(SUM(jel.debit_amount) - SUM(jel.credit_amount)) > 0.01;
+  SUM(CASE WHEN imbalance > 0.01 THEN 1 ELSE 0 END) AS unbalanced_count,
+  SUM(imbalance) AS total_imbalance
+FROM EntryBalances
+GROUP BY reference_type;
