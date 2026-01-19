@@ -151,7 +151,7 @@ export default function NewTransferPage() {
         
         // جلب بيانات الفروع بشكل منفصل لتجنب مشاكل العلاقات
         if (warehousesData && warehousesData.length > 0) {
-          const branchIds = [...new Set(warehousesData.map(w => w.branch_id).filter(Boolean))]
+          const branchIds = [...new Set(warehousesData.map((w: any) => w.branch_id).filter(Boolean))]
           if (branchIds.length > 0) {
             const { data: branchesData } = await supabase
               .from("branches")
