@@ -102,3 +102,23 @@
 - ⚠️ عدم توازن الميزانية (192,000.00) - مرتبط بالرصيد السالب في AP
 
 **الخطوة التالية**: مراجعة يدوية للمدفوعات وإشعارات الدائن مقابل فواتير الشراء.
+
+## 🔍 أدوات المراجعة اليدوية
+
+### سكريبتات المراجعة:
+- `scripts/review_payments_and_vendor_credits.sql` - مراجعة شاملة لجميع المدفوعات وإشعارات الدائن
+- `scripts/review_specific_payments.sql` - مراجعة المدفوعات الكبيرة والمشبوهة
+- `scripts/review_payments_and_vendor_credits.ps1` - سكريبت PowerShell لتسهيل التشغيل
+
+### دليل المراجعة:
+- `docs/MANUAL_REVIEW_GUIDE.md` - دليل شامل للمراجعة اليدوية
+
+### كيفية الاستخدام:
+```powershell
+# تشغيل سكريبت PowerShell
+.\scripts\review_payments_and_vendor_credits.ps1
+
+# أو تشغيل SQL مباشرة
+psql -h localhost -U postgres -d your_database -f scripts/review_payments_and_vendor_credits.sql
+psql -h localhost -U postgres -d your_database -f scripts/review_specific_payments.sql
+```
