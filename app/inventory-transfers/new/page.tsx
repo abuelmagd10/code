@@ -135,8 +135,20 @@ export default function NewTransferPage() {
       }
       // Owner/Admin: لا فلترة - يرون جميع المخازن
 
-      const { data: warehousesData } = await warehousesQuery.order("name")
-      setWarehouses(warehousesData || [])
+      const { data: warehousesData, error: warehousesError } = await warehousesQuery.order("name")
+      
+      if (warehousesError) {
+        console.error("Error loading warehouses:", warehousesError)
+        toast({
+          title: appLang === 'en' ? 'Error loading warehouses' : 'خطأ في تحميل المخازن',
+          description: warehousesError.message,
+          variant: 'destructive'
+        })
+        setWarehouses([])
+      } else {
+        console.log("✅ Loaded warehouses:", warehousesData?.length || 0)
+        setWarehouses(warehousesData || [])
+      }
 
       // جلب المنتجات
       const { data: productsData } = await supabase
@@ -362,11 +374,17 @@ export default function NewTransferPage() {
                       <SelectValue placeholder={appLang === 'en' ? 'Select source...' : 'اختر المخزن المصدر...'} />
                     </SelectTrigger>
                     <SelectContent>
-                      {warehouses.map(w => (
-                        <SelectItem key={w.id} value={w.id}>
-                          {w.name} {w.branches?.branch_name || w.branches?.name ? `(${w.branches.branch_name || w.branches.name})` : ''}
-                        </SelectItem>
-                      ))}
+                      {warehouses.length === 0 ? (
+                        <div className="px-2 py-1.5 text-sm text-gray-500 dark:text-gray-400">
+                          {appLang === 'en' ? 'No warehouses available' : 'لا توجد مخازن متاحة'}
+                        </div>
+                      ) : (
+                        warehouses.map(w => (
+                          <SelectItem key={w.id} value={w.id}>
+                            {w.name} {w.branches?.branch_name || w.branches?.name ? `(${w.branches.branch_name || w.branches.name})` : ''}
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
