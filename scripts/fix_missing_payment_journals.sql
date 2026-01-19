@@ -169,8 +169,9 @@ END $$;
 -- التحقق من النتيجة
 SELECT
   'Verification' AS check_type,
-  COUNT(*) AS payments_without_journals,
-  COUNT(CASE WHEN je.id IS NOT NULL THEN 1 END) AS payments_with_journals
+  COUNT(CASE WHEN je.id IS NULL THEN 1 END) AS payments_without_journals,
+  COUNT(CASE WHEN je.id IS NOT NULL THEN 1 END) AS payments_with_journals,
+  COUNT(*) AS total_payments
 FROM payments p
 LEFT JOIN journal_entries je ON je.reference_type = 'bill_payment' AND je.reference_id = p.id AND je.deleted_at IS NULL
 WHERE p.bill_id IS NOT NULL;
