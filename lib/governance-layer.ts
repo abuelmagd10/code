@@ -584,7 +584,10 @@ export async function getUnreadNotificationCount(
     p_company_id: companyId,
     p_branch_id: branchId || null,
     p_warehouse_id: null,
-    p_status: 'unread'
+    p_status: 'unread',
+    // ✅ إرسال المعاملات الجديدة (null للفلترة الكاملة)
+    p_severity: null,
+    p_category: null
   })
 
   if (error) throw error
