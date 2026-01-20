@@ -232,8 +232,8 @@ BEGIN
     n.created_at,
     b.name AS branch_name,
     w.name AS warehouse_name,
-    COALESCE(n.severity, 'info')::VARCHAR(20) AS severity,
-    COALESCE(n.category, 'system')::VARCHAR(20) AS category,
+    COALESCE(n.severity, 'info')::TEXT AS severity,
+    COALESCE(n.category, 'system')::TEXT AS category,
     n.event_key
   FROM notifications n
   LEFT JOIN branches b ON (n.branch_id = b.id AND b.company_id = p_company_id)
