@@ -17,6 +17,12 @@ ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'system'
   CHECK (category IN ('finance', 'inventory', 'sales', 'approvals', 'system'));
 
 -- 2️⃣ تحديث دالة get_user_notifications (الأهم!)
+-- ⚠️ يجب حذف الدالة أولاً لأننا نغير نوع البيانات في RETURNS TABLE
+DROP FUNCTION IF EXISTS get_user_notifications(UUID, UUID, UUID, UUID, VARCHAR, TEXT, TEXT);
+DROP FUNCTION IF EXISTS get_user_notifications(UUID, UUID, UUID, UUID, VARCHAR);
+DROP FUNCTION IF EXISTS get_user_notifications(UUID, UUID, UUID, UUID);
+DROP FUNCTION IF EXISTS get_user_notifications(UUID, UUID);
+
 CREATE OR REPLACE FUNCTION get_user_notifications(
   p_user_id UUID,
   p_company_id UUID,
