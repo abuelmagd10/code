@@ -567,6 +567,7 @@ export async function canCreateRefundPayment(params: {
 /**
  * الحصول على عدد الإشعارات غير المقروءة
  * مع Security Rules: يعرض فقط الإشعارات المخصصة للمستخدم أو لدوره
+ * ✅ محدث: يطابق منطق getUserNotifications() بالضبط
  */
 export async function getUnreadNotificationCount(
   userId: string, 
@@ -576,32 +577,33 @@ export async function getUnreadNotificationCount(
 ): Promise<number> {
   const supabase = createClient()
 
-  // بناء الاستعلام مع Security Rules
-  let query = supabase
-    .from('notifications')
-    .select('*', { count: 'exact', head: true })
-    .eq('company_id', companyId)
-    .eq('status', 'unread')
-
-  // Security: فقط الإشعارات المخصصة للمستخدم أو لدوره
-  const userCondition = `assigned_to_user.eq.${userId}`
-  const roleCondition = userRole ? `assigned_to_role.eq.${userRole}` : null
-  const nullUserCondition = 'assigned_to_user.is.null'
-  const nullRoleCondition = userRole ? `assigned_to_role.is.null` : null
-
-  const conditions = [userCondition, nullUserCondition]
-  if (roleCondition) conditions.push(roleCondition)
-  if (nullRoleCondition) conditions.push(nullRoleCondition)
-
-  query = query.or(conditions.join(','))
-
-  // Security: فلترة حسب الفرع إذا كان محدداً
-  if (branchId) {
-    query = query.or(`branch_id.eq.${branchId},branch_id.is.null`)
-  }
-
-  const { count, error } = await query
+  // ✅ استخدام نفس دالة SQL المستخدمة في getUserNotifications
+  // لضمان التطابق الكامل في المنطق
+  const { data, error } = await supabase.rpc('get_user_notifications', {
+    p_user_id: userId,
+    p_company_id: companyId,
+    p_branch_id: branchId || null,
+    p_warehouse_id: null,
+    p_status: 'unread'
+  })
 
   if (error) throw error
-  return count || 0
+  
+  // ✅ فلترة حسب expires_at و archived (مثل getUserNotifications)
+  const validNotifications = (data || []).filter((n: any) => {
+    // التحقق من انتهاء الصلاحية
+    if (n.expires_at) {
+      const expiresAt = new Date(n.expires_at)
+      if (expiresAt <= new Date()) {
+        return false
+      }
+    }
+    // التحقق من الأرشيف
+    if (n.status === 'archived') {
+      return false
+    }
+    return true
+  })
+
+  return validNotifications.length
 }
