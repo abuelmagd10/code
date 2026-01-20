@@ -274,6 +274,28 @@ export default function NewJournalEntryPage() {
       const saveCompanyId = await getActiveCompanyId(supabase)
       if (!saveCompanyId) return
 
+      // ✅ ERP-Grade: Period Lock Check - منع إنشاء قيود في فترات مغلقة
+      try {
+        const { assertPeriodNotLocked } = await import("@/lib/accounting-period-lock")
+        const { createClient } = await import("@supabase/supabase-js")
+        const serviceSupabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        await assertPeriodNotLocked(serviceSupabase, {
+          companyId: saveCompanyId,
+          date: formData.entry_date,
+        })
+      } catch (lockError: any) {
+        toast({
+          title: "❌ الفترة المحاسبية مقفلة",
+          description: lockError.message || "لا يمكن إنشاء قيد في فترة محاسبية مغلقة",
+          variant: "destructive",
+        })
+        setIsSaving(false)
+        return
+      }
+
       // Create journal entry
       const { data: entryData, error: entryError } = await supabase
         .from("journal_entries")

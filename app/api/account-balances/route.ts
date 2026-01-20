@@ -112,12 +112,27 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // تحويل إلى مصفوفة
+    // ✅ جلب sub_type للحسابات (مطلوب لتحديد الأرباح المحتجزة)
+    const { data: accountsWithSubType } = await supabase
+      .from("chart_of_accounts")
+      .select("id, sub_type")
+      .eq("company_id", companyId)
+      .in("id", Object.keys(accountsMap))
+
+    const subTypeMap = new Map<string, string>()
+    accountsWithSubType?.forEach((acc: any) => {
+      if (acc.sub_type) {
+        subTypeMap.set(acc.id, acc.sub_type)
+      }
+    })
+
+    // تحويل إلى مصفوفة مع إضافة sub_type
     const result = Object.entries(accountsMap).map(([account_id, v]) => ({
       account_id,
       account_code: v.code,
       account_name: v.name,
       account_type: v.type,
+      sub_type: subTypeMap.get(account_id) || undefined,
       opening_balance: v.opening,
       balance: v.balance
     }))

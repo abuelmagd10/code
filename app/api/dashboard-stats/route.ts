@@ -253,6 +253,34 @@ export async function GET(request: NextRequest) {
       qtyByProduct[pid] = (qtyByProduct[pid] || 0) + Number(t.quantity_change || 0)
     }
 
+    // ✅ حساب FIFO weighted average cost لكل منتج
+    const { data: fifoLots } = await supabase
+      .from('fifo_cost_lots')
+      .select('product_id, remaining_quantity, unit_cost')
+      .eq('company_id', companyId)
+      .gt('remaining_quantity', 0)
+
+    const fifoAvgCostByProduct: Record<string, number> = {}
+    const fifoValueByProduct: Record<string, number> = {}
+    
+    for (const lot of fifoLots || []) {
+      const pid = String(lot.product_id)
+      if (!fifoValueByProduct[pid]) {
+        fifoValueByProduct[pid] = 0
+        fifoValueByProduct[pid + '_qty'] = 0
+      }
+      fifoValueByProduct[pid] += Number(lot.remaining_quantity) * Number(lot.unit_cost)
+      fifoValueByProduct[pid + '_qty'] += Number(lot.remaining_quantity)
+    }
+
+    for (const pid of Object.keys(fifoValueByProduct)) {
+      if (pid.endsWith('_qty')) continue
+      const qty = fifoValueByProduct[pid + '_qty'] || 0
+      if (qty > 0) {
+        fifoAvgCostByProduct[pid] = fifoValueByProduct[pid] / qty
+      }
+    }
+
     let inventoryValue = 0
     let inventoryRetailValue = 0
     let lowStockCount = 0
@@ -262,7 +290,10 @@ export async function GET(request: NextRequest) {
     for (const p of products || []) {
       const qty = qtyByProduct[p.id] || 0
       totalQuantity += Math.max(0, qty)
-      inventoryValue += Math.max(0, qty) * Number(p.cost_price || 0)
+      
+      // ✅ استخدام FIFO weighted average cost بدلاً من cost_price
+      const fifoCost = fifoAvgCostByProduct[p.id] || Number(p.cost_price || 0)
+      inventoryValue += Math.max(0, qty) * fifoCost
       inventoryRetailValue += Math.max(0, qty) * Number(p.unit_price || 0)
       if (qty <= 0) outOfStockCount++
       else if (qty < (p.reorder_level || 5)) lowStockCount++

@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
 import { createClient as createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
-import { apiSuccess } from "@/lib/api-error-handler"
 
 /**
- * ميزان المراجعة (Trial Balance)
- * يعرض جميع الحسابات مع المدين والدائن والرصيد
+ * Trial Balance API
+ * 
+ * يعرض ميزان المراجعة من journal_entry_lines فقط
+ * 
+ * المعادلة الأساسية:
+ * - مجموع الأرصدة المدينة = مجموع الأرصدة الدائنة
+ * - إذا لم يتساويا → BUG محاسبي حرج
  */
 export async function GET(req: NextRequest) {
   try {
-    // ✅ إنشاء supabase client للمصادقة
     const authSupabase = await createServerClient()
 
     // ✅ التحقق من الأمان
@@ -19,56 +22,54 @@ export async function GET(req: NextRequest) {
       requireCompany: true,
       requireBranch: false,
       requirePermission: { resource: "reports", action: "read" },
-      supabase: authSupabase // ✅ تمرير supabase client
+      supabase: authSupabase,
     })
 
     if (error) return error
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
 
-    // ✅ بعد التحقق من الأمان، نستخدم service role key
+    // ✅ استخدام service role key
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       {
         auth: {
           autoRefreshToken: false,
-          persistSession: false
-        }
+          persistSession: false,
+        },
       }
     )
-    if (!companyId) return badRequestError("معرف الشركة مطلوب")
 
     const { searchParams } = new URL(req.url)
-    const asOf = searchParams.get("asOf") || "9999-12-31"
+    const asOf = searchParams.get("asOf") || new Date().toISOString().split("T")[0]
 
-    // ✅ جلب جميع الحسابات أولاً (بدون joins معقدة)
+    // ✅ جلب جميع الحسابات النشطة
     const { data: accountsData, error: accountsError } = await supabase
       .from("chart_of_accounts")
-      .select("id, account_code, account_name, account_type, opening_balance")
+      .select("id, account_code, account_name, account_type, normal_balance, opening_balance")
       .eq("company_id", companyId)
+      .eq("is_active", true)
       .order("account_code")
 
     if (accountsError) {
-      console.error("Accounts query error:", accountsError)
-      return serverError(`خطأ في جلب بيانات الحسابات: ${accountsError.message}`)
+      return serverError(`خطأ في جلب الحسابات: ${accountsError.message}`)
     }
 
-    // ✅ جلب القيود المرحّلة أولاً
+    // ✅ جلب جميع القيود حتى التاريخ المحدد
     const { data: journalEntriesData, error: entriesError } = await supabase
       .from("journal_entries")
       .select("id")
       .eq("company_id", companyId)
-      .eq("status", "posted")
+      .is("deleted_at", null)
       .lte("entry_date", asOf)
 
     if (entriesError) {
-      console.error("Journal entries query error:", entriesError)
       return serverError(`خطأ في جلب القيود: ${entriesError.message}`)
     }
 
     const journalEntryIds = (journalEntriesData || []).map((je: any) => je.id)
 
-    // ✅ جلب سطور القيود (بدون joins معقدة)
+    // ✅ جلب سطور القيود
     let journalLinesData: any[] = []
     if (journalEntryIds.length > 0) {
       const { data: linesData, error: linesError } = await supabase
@@ -77,82 +78,148 @@ export async function GET(req: NextRequest) {
         .in("journal_entry_id", journalEntryIds)
 
       if (linesError) {
-        console.error("Journal lines query error:", linesError)
-        return serverError(`خطأ في جلب بيانات القيود: ${linesError.message}`)
+        return serverError(`خطأ في جلب سطور القيود: ${linesError.message}`)
       }
+
       journalLinesData = linesData || []
     }
 
-    // إنشاء خريطة للحسابات
-    const accountsMap: Record<string, {
-      code: string
-      name: string
-      type: string
-      opening: number
-      debit: number
-      credit: number
-    }> = {}
+    // ✅ تجميع الحركات حسب الحساب
+    const accountMovements: Record<
+      string,
+      { debit: number; credit: number }
+    > = {}
 
-    for (const acc of accountsData || []) {
-      const opening = Number(acc.opening_balance || 0)
-      accountsMap[acc.id] = {
-        code: acc.account_code || '',
-        name: acc.account_name || '',
-        type: acc.account_type || '',
-        opening,
-        debit: opening > 0 ? opening : 0,
-        credit: opening < 0 ? -opening : 0
+    for (const row of journalLinesData) {
+      const accountId = String(row.account_id || "")
+      if (!accountMovements[accountId]) {
+        accountMovements[accountId] = { debit: 0, credit: 0 }
       }
+
+      accountMovements[accountId].debit += Number(row.debit_amount || 0)
+      accountMovements[accountId].credit += Number(row.credit_amount || 0)
     }
 
-    // حساب الحركات من القيود
-    for (const row of journalLinesData || []) {
-      const aid = String((row as any).account_id || "")
-      const debit = Number((row as any).debit_amount || 0)
-      const credit = Number((row as any).credit_amount || 0)
-      
-      if (accountsMap[aid]) {
-        accountsMap[aid].debit += debit
-        accountsMap[aid].credit += credit
+    // ✅ حساب الأرصدة
+    const trialBalanceRows: Array<{
+      account_id: string
+      account_code: string
+      account_name: string
+      account_type: string
+      opening_debit: number
+      opening_credit: number
+      period_debit: number
+      period_credit: number
+      closing_debit: number
+      closing_credit: number
+      closing_balance: number
+    }> = []
+
+    let totalOpeningDebit = 0
+    let totalOpeningCredit = 0
+    let totalPeriodDebit = 0
+    let totalPeriodCredit = 0
+    let totalClosingDebit = 0
+    let totalClosingCredit = 0
+
+    for (const account of accountsData || []) {
+      const movements = accountMovements[account.id] || { debit: 0, credit: 0 }
+      const openingBalance = Number(account.opening_balance || 0)
+
+      // حساب الرصيد حسب الطبيعة المحاسبية
+      const isDebitNature =
+        account.account_type === "asset" || account.account_type === "expense"
+      const closingBalance = isDebitNature
+        ? openingBalance + movements.debit - movements.credit
+        : openingBalance + movements.credit - movements.debit
+
+      // عرض الرصيد الافتتاحي والحركات
+      let openingDebit = 0
+      let openingCredit = 0
+
+      if (isDebitNature) {
+        openingDebit = openingBalance > 0 ? openingBalance : 0
+        openingCredit = openingBalance < 0 ? Math.abs(openingBalance) : 0
+      } else {
+        openingDebit = openingBalance < 0 ? Math.abs(openingBalance) : 0
+        openingCredit = openingBalance > 0 ? openingBalance : 0
       }
+
+      const closingDebit = closingBalance > 0 ? closingBalance : 0
+      const closingCredit = closingBalance < 0 ? Math.abs(closingBalance) : 0
+
+      trialBalanceRows.push({
+        account_id: account.id,
+        account_code: account.account_code || "",
+        account_name: account.account_name || "",
+        account_type: account.account_type || "",
+        opening_debit: openingDebit,
+        opening_credit: openingCredit,
+        period_debit: movements.debit,
+        period_credit: movements.credit,
+        closing_debit: closingDebit,
+        closing_credit: closingCredit,
+        closing_balance: closingBalance,
+      })
+
+      totalOpeningDebit += openingDebit
+      totalOpeningCredit += openingCredit
+      totalPeriodDebit += movements.debit
+      totalPeriodCredit += movements.credit
+      totalClosingDebit += closingDebit
+      totalClosingCredit += closingCredit
     }
 
-    // تحويل إلى مصفوفة وحساب الأرصدة
-    const accounts = Object.entries(accountsMap).map(([account_id, v]) => {
-      const type = v.type
-      const isDebitNature = type === 'asset' || type === 'expense'
-      const balance = isDebitNature ? (v.debit - v.credit) : (v.credit - v.debit)
-      
-      return {
-        account_id,
-        account_code: v.code,
-        account_name: v.name,
-        account_type: v.type,
-        debit: v.debit,
-        credit: v.credit,
-        balance
-      }
-    })
+    // ✅ التحقق من التوازن (Critical Check)
+    const openingBalance = Math.abs(totalOpeningDebit - totalOpeningCredit)
+    const periodBalance = Math.abs(totalPeriodDebit - totalPeriodCredit)
+    const closingBalance = Math.abs(totalClosingDebit - totalClosingCredit)
 
-    // حساب الإجماليات
-    const totalDebit = accounts.reduce((sum, acc) => sum + acc.debit, 0)
-    const totalCredit = accounts.reduce((sum, acc) => sum + acc.credit, 0)
-    const difference = Math.abs(totalDebit - totalCredit)
-    const isBalanced = difference < 0.01
+    const isBalanced =
+      openingBalance < 0.01 && periodBalance < 0.01 && closingBalance < 0.01
 
-    return apiSuccess({
-      accounts,
-      totals: {
-        totalDebit,
-        totalCredit,
-        difference,
-        isBalanced
+    if (!isBalanced) {
+      console.error("🚨 BUG محاسبي حرج: Trial Balance غير متوازن!")
+      console.error(`Opening: Debit=${totalOpeningDebit}, Credit=${totalOpeningCredit}, Diff=${openingBalance}`)
+      console.error(`Period: Debit=${totalPeriodDebit}, Credit=${totalPeriodCredit}, Diff=${periodBalance}`)
+      console.error(`Closing: Debit=${totalClosingDebit}, Credit=${totalClosingCredit}, Diff=${closingBalance}`)
+    }
+
+    return NextResponse.json({
+      asOf,
+      isBalanced,
+      balances: {
+        opening: {
+          total_debit: totalOpeningDebit,
+          total_credit: totalOpeningCredit,
+          difference: openingBalance,
+        },
+        period: {
+          total_debit: totalPeriodDebit,
+          total_credit: totalPeriodCredit,
+          difference: periodBalance,
+        },
+        closing: {
+          total_debit: totalClosingDebit,
+          total_credit: totalClosingCredit,
+          difference: closingBalance,
+        },
       },
-      period: { asOf }
+      accounts: trialBalanceRows
+        .filter(
+          (row) =>
+            Math.abs(row.closing_balance) >= 0.01 ||
+            Math.abs(row.period_debit) >= 0.01 ||
+            Math.abs(row.period_credit) >= 0.01 ||
+            Math.abs(row.opening_debit) >= 0.01 ||
+            Math.abs(row.opening_credit) >= 0.01
+        )
+        .sort((a, b) => (a.account_code || '').localeCompare(b.account_code || '')),
+      warning: !isBalanced
+        ? "⚠️ Trial Balance غير متوازن - يرجى مراجعة القيود المحاسبية"
+        : null,
     })
   } catch (e: any) {
-    console.error("Trial balance error:", e)
-    return serverError(`حدث خطأ أثناء إنشاء ميزان المراجعة: ${e?.message || "unknown_error"}`)
+    return serverError(`حدث خطأ أثناء إنشاء Trial Balance: ${e?.message}`)
   }
 }
-

@@ -299,6 +299,28 @@ export default function NewPurchaseReturnPage() {
       const finalBaseTax = form.currency === baseCurrency ? taxAmount : Math.round(taxAmount * exchangeRate.rate * 10000) / 10000
       const finalBaseTotal = form.currency === baseCurrency ? total : Math.round(total * exchangeRate.rate * 10000) / 10000
 
+      // ✅ ERP-Grade: Period Lock Check - منع تسجيل مرتجع في فترة مغلقة
+      try {
+        const { assertPeriodNotLocked } = await import("@/lib/accounting-period-lock")
+        const { createClient } = await import("@supabase/supabase-js")
+        const serviceSupabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        await assertPeriodNotLocked(serviceSupabase, {
+          companyId,
+          date: form.return_date,
+        })
+      } catch (lockError: any) {
+          toast({
+            title: "❌ الفترة المحاسبية مقفلة",
+            description: lockError.message || "لا يمكن تسجيل مرتجع في فترة محاسبية مغلقة",
+            variant: "destructive",
+          })
+          setSaving(false)
+          return
+        }
+
       // ✅ 1. إنشاء purchase_return record أولاً (مطلوب دائماً)
       const { data: purchaseReturn, error: prError } = await supabase.from("purchase_returns").insert({
         company_id: companyId,

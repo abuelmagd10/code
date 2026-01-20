@@ -520,6 +520,36 @@ export default function InvoiceDetailPage() {
           console.log("✅ Inventory availability confirmed")
         }
 
+        // ✅ ERP-Grade: Period Lock Check - منع تسجيل فاتورة في فترة مغلقة
+        if (newStatus === "sent" || newStatus === "paid" || newStatus === "partially_paid") {
+          try {
+            const { assertPeriodNotLocked } = await import("@/lib/accounting-period-lock")
+            const { createClient } = await import("@supabase/supabase-js")
+            const serviceSupabase = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+            )
+            const invoiceDate = invoice?.invoice_date || new Date().toISOString().split("T")[0]
+            await assertPeriodNotLocked(serviceSupabase, {
+              companyId: invoice?.company_id || "",
+              date: invoiceDate,
+            })
+          } catch (lockError: any) {
+            startTransition(() => {
+              setChangingStatus(false)
+            })
+            toast({
+              variant: "destructive",
+              title: appLang === 'en' ? "Accounting Period Locked" : "❌ الفترة المحاسبية مقفلة",
+              description: lockError.message || (appLang === 'en' 
+                ? "Cannot change invoice status in a locked accounting period"
+                : "لا يمكن تغيير حالة الفاتورة في فترة محاسبية مقفلة"),
+              duration: 8000,
+            })
+            return
+          }
+        }
+
         console.log("💾 Updating invoice status in database...")
         const { error } = await supabase.from("invoices").update({ status: newStatus }).eq("id", invoiceId)
 

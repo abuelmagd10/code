@@ -158,7 +158,7 @@ export async function computeLeafAccountBalancesAsOf(
 
 /** Compute signed totals for BS categories from balances. */
 export function computeBalanceSheetTotalsFromBalances(
-  balances: Array<{ account_type: string; balance: number }>,
+  balances: Array<{ account_id?: string; account_code?: string; account_type: string; balance: number; sub_type?: string }>,
 ): {
   assets: number
   liabilities: number
@@ -168,17 +168,61 @@ export function computeBalanceSheetTotalsFromBalances(
   netIncomeSigned: number
   equityTotalSigned: number
   totalLiabilitiesAndEquitySigned: number
+  retainedEarningsBalance?: number
+  incomeSummaryBalance?: number
 } {
   const assets = balances.filter((b) => b.account_type === "asset").reduce((s, b) => s + b.balance, 0)
   const liabilities = balances.filter((b) => b.account_type === "liability").reduce((s, b) => s + b.balance, 0)
-  const equity = balances.filter((b) => b.account_type === "equity").reduce((s, b) => s + b.balance, 0)
+  
+  // ✅ استخدام رصيد حساب الأرباح المحتجزة الرسمي (3200) من journal_entry_lines
+  const retainedEarningsAccount = balances.find(
+    (b) => b.account_type === "equity" && (b.account_code === "3200" || b.sub_type === "retained_earnings")
+  )
+  const retainedEarningsBalance = retainedEarningsAccount?.balance || 0
+
+  // ✅ استخدام رصيد حساب Income Summary (3300) للفترة الحالية
+  const incomeSummaryAccount = balances.find(
+    (b) => b.account_type === "equity" && (b.account_code === "3300" || b.sub_type === "income_summary")
+  )
+  const incomeSummaryBalance = incomeSummaryAccount?.balance || 0
+
+  // ✅ حقوق الملكية (بدون الأرباح المحتجزة و Income Summary لأننا نحسبها منفصلة)
+  const equity = balances
+    .filter((b) => {
+      if (b.account_type !== "equity") return false
+      // استثناء الأرباح المحتجزة و Income Summary
+      if (b.account_code === "3200" || b.sub_type === "retained_earnings") return false
+      if (b.account_code === "3300" || b.sub_type === "income_summary") return false
+      return true
+    })
+    .reduce((s, b) => s + b.balance, 0)
+
   const income = balances.filter((b) => b.account_type === "income").reduce((s, b) => s + b.balance, 0)
   const expense = balances.filter((b) => b.account_type === "expense").reduce((s, b) => s + b.balance, 0)
-  // ✅ صافي الربح = الإيرادات - المصروفات (المصروفات موجبة من الـ API)
+  
+  // ✅ صافي الربح = الإيرادات - المصروفات (للعرض فقط)
   const netIncomeSigned = income - expense
-  const equityTotalSigned = equity + netIncomeSigned
+  
+  // ✅ إجمالي حقوق الملكية = رأس المال + الأرباح المحتجزة + صافي ربح/خسارة الفترة الحالية
+  // إذا كان هناك رصيد في Income Summary (من قيد إقفال سابق)، نستخدمه
+  // وإلا نستخدم صافي الربح الحالي
+  const currentPeriodNetIncome = incomeSummaryBalance !== 0 ? incomeSummaryBalance : netIncomeSigned
+  const equityTotalSigned = equity + retainedEarningsBalance + currentPeriodNetIncome
+  
   const totalLiabilitiesAndEquitySigned = liabilities + equityTotalSigned
-  return { assets, liabilities, equity, income, expense, netIncomeSigned, equityTotalSigned, totalLiabilitiesAndEquitySigned }
+  
+  return { 
+    assets, 
+    liabilities, 
+    equity, 
+    income, 
+    expense, 
+    netIncomeSigned, 
+    equityTotalSigned, 
+    totalLiabilitiesAndEquitySigned,
+    retainedEarningsBalance,
+    incomeSummaryBalance
+  }
 }
 
 /**

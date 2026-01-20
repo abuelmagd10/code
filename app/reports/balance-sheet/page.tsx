@@ -118,6 +118,7 @@ export default function BalanceSheetPage() {
   const netIncomeDisplay = Math.abs(netIncomeSigned)
   const equityTotalDisplay = Math.abs(equityTotalSigned)
   const totalLiabilitiesAndEquityAbs = Math.abs(totalLiabilitiesAndEquitySigned)
+  const liabilitiesDisplay = Math.abs(liabilities)
 
   const handlePrint = () => {
     window.print()
@@ -287,7 +288,12 @@ export default function BalanceSheetPage() {
                     </div>
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Liabilities:' : 'إجمالي الالتزامات:'}</span>
-                      <span>{numberFmt.format(liabilities)} {currencySymbol}</span>
+                      <span>{numberFmt.format(liabilitiesDisplay)} {currencySymbol}</span>
+                      {liabilities < 0 && (
+                        <span className="text-xs text-gray-500 ml-2" suppressHydrationWarning>
+                          {(hydrated && appLang==='en') ? '(Supplier Advances)' : '(سلف موردين)'}
+                        </span>
+                      )}
                     </div>
                   </div>
 

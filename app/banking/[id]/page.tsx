@@ -339,6 +339,28 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       }
       if (!cid) return
 
+      // ✅ ERP-Grade: Period Lock Check - منع تسجيل سندات في فترات مغلقة
+      try {
+        const { assertPeriodNotLocked } = await import("@/lib/accounting-period-lock")
+        const { createClient } = await import("@supabase/supabase-js")
+        const serviceSupabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        await assertPeriodNotLocked(serviceSupabase, {
+          companyId: cid,
+          date: cfg.date,
+        })
+      } catch (lockError: any) {
+        toast({
+          title: "❌ الفترة المحاسبية مقفلة",
+          description: lockError.message || "لا يمكن تسجيل سند في فترة محاسبية مغلقة",
+          variant: "destructive",
+        })
+        setSaving(false)
+        return
+      }
+
       // Include branch_id and cost_center_id from the account
       const { data: entry, error: entryErr } = await supabase
         .from("journal_entries")

@@ -17,20 +17,37 @@ interface Account {
   account_code?: string
   account_name: string
   account_type: string
-  debit: number
-  credit: number
-  balance: number
+  opening_debit: number
+  opening_credit: number
+  period_debit: number
+  period_credit: number
+  closing_debit: number
+  closing_credit: number
+  closing_balance: number
 }
 
 interface TrialBalanceData {
-  accounts: Account[]
-  totals: {
-    totalDebit: number
-    totalCredit: number
-    difference: number
-    isBalanced: boolean
+  asOf: string
+  isBalanced: boolean
+  balances: {
+    opening: {
+      total_debit: number
+      total_credit: number
+      difference: number
+    }
+    period: {
+      total_debit: number
+      total_credit: number
+      difference: number
+    }
+    closing: {
+      total_debit: number
+      total_credit: number
+      difference: number
+    }
   }
-  period: { asOf: string }
+  accounts: Account[]
+  warning: string | null
 }
 
 export default function TrialBalancePage() {
@@ -94,16 +111,16 @@ export default function TrialBalancePage() {
         return
       }
 
-      const res = await fetch(`/api/trial-balance?companyId=${encodeURIComponent(companyId)}&asOf=${encodeURIComponent(asOfDate)}`)
+      const res = await fetch(`/api/trial-balance?asOf=${encodeURIComponent(asOfDate)}`)
 
       if (!res.ok) {
         const errorData = await res.json()
         throw new Error(errorData.message || errorData.error || 'فشل في تحميل ميزان المراجعة')
       }
 
-      const result = await res.json()
+      const result: TrialBalanceData = await res.json()
 
-      if (result && result.accounts && result.totals) {
+      if (result && result.accounts && result.balances) {
         setData(result)
         setError(null)
       } else {
@@ -119,22 +136,26 @@ export default function TrialBalancePage() {
   }
 
   const accounts = data?.accounts || []
-  const totalDebit = data?.totals.totalDebit || 0
-  const totalCredit = data?.totals.totalCredit || 0
-  const isBalanced = data?.totals.isBalanced ?? true
+  const totalDebit = data?.balances.closing.total_debit || 0
+  const totalCredit = data?.balances.closing.total_credit || 0
+  const isBalanced = data?.isBalanced ?? true
 
   const handlePrint = () => {
     window.print()
   }
 
   const handleExportCsv = () => {
-    const headers = ["account_code", "account_name", "debit", "credit", "balance"]
+    const headers = ["account_code", "account_name", "opening_debit", "opening_credit", "period_debit", "period_credit", "closing_debit", "closing_credit", "closing_balance"]
     const rows = accounts.map((a) => [
-      a.account_code,
+      a.account_code || "",
       a.account_name,
-      a.debit.toFixed(2),
-      a.credit.toFixed(2),
-      a.balance.toFixed(2)
+      a.opening_debit.toFixed(2),
+      a.opening_credit.toFixed(2),
+      a.period_debit.toFixed(2),
+      a.period_credit.toFixed(2),
+      a.closing_debit.toFixed(2),
+      a.closing_credit.toFixed(2),
+      a.closing_balance.toFixed(2)
     ])
     const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
@@ -227,9 +248,12 @@ export default function TrialBalancePage() {
                         </h3>
                         <p className="text-sm text-red-700 dark:text-red-300">
                           {(hydrated && appLang==='en')
-                            ? `Difference: ${numberFmt.format(data?.totals.difference || 0)} ${currencySymbol}`
-                            : `الفرق: ${numberFmt.format(data?.totals.difference || 0)} ${currencySymbol}`}
+                            ? `Difference: ${numberFmt.format(data?.balances.closing.difference || 0)} ${currencySymbol}`
+                            : `الفرق: ${numberFmt.format(data?.balances.closing.difference || 0)} ${currencySymbol}`}
                         </p>
+                        {data?.warning && (
+                          <p className="text-xs text-red-600 dark:text-red-400 mt-1">{data.warning}</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -256,7 +280,7 @@ export default function TrialBalancePage() {
                   <Card>
                     <CardContent>
                       <ResponsiveContainer width="100%" height={260}>
-                        <BarChart data={accounts.map(a => ({ name: a.account_name, debit: a.balance > 0 ? a.balance : 0, credit: a.balance < 0 ? -a.balance : 0 }))}>
+                        <BarChart data={accounts.map(a => ({ name: a.account_name, debit: a.closing_debit, credit: a.closing_credit }))}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="name" hide />
                           <YAxis />
@@ -275,9 +299,11 @@ export default function TrialBalancePage() {
                       <tr>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Code' : 'الرمز'}</th>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Account Name' : 'اسم الحساب'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? `Debit (${currencySymbol})` : `مدين (${currencySymbol})`}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? `Credit (${currencySymbol})` : `دائن (${currencySymbol})`}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? `Balance (${currencySymbol})` : `الرصيد (${currencySymbol})`}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? `Opening Debit (${currencySymbol})` : `مدين افتتاحي (${currencySymbol})`}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? `Opening Credit (${currencySymbol})` : `دائن افتتاحي (${currencySymbol})`}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? `Period Debit (${currencySymbol})` : `مدين الفترة (${currencySymbol})`}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? `Period Credit (${currencySymbol})` : `دائن الفترة (${currencySymbol})`}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? `Closing Balance (${currencySymbol})` : `الرصيد الختامي (${currencySymbol})`}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -289,10 +315,12 @@ export default function TrialBalancePage() {
                               {account.account_name}
                             </Link>
                           </td>
-                          <td className="px-4 py-3 text-blue-600 dark:text-blue-400">{numberFmt.format(account.debit)}</td>
-                          <td className="px-4 py-3 text-red-600 dark:text-red-400">{numberFmt.format(account.credit)}</td>
-                          <td className={`px-4 py-3 font-semibold ${account.balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                            {numberFmt.format(Math.abs(account.balance))} {account.balance < 0 ? '(Cr)' : '(Dr)'}
+                          <td className="px-4 py-3 text-blue-600 dark:text-blue-400">{numberFmt.format(account.opening_debit)}</td>
+                          <td className="px-4 py-3 text-red-600 dark:text-red-400">{numberFmt.format(account.opening_credit)}</td>
+                          <td className="px-4 py-3 text-blue-600 dark:text-blue-400">{numberFmt.format(account.period_debit)}</td>
+                          <td className="px-4 py-3 text-red-600 dark:text-red-400">{numberFmt.format(account.period_credit)}</td>
+                          <td className={`px-4 py-3 font-semibold ${account.closing_balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {numberFmt.format(Math.abs(account.closing_balance))} {account.closing_balance < 0 ? '(Cr)' : '(Dr)'}
                           </td>
                         </tr>
                       ))}
@@ -300,8 +328,10 @@ export default function TrialBalancePage() {
                     <tfoot>
                       <tr className="font-bold bg-gray-100 dark:bg-slate-800 text-lg">
                         <td className="px-4 py-4" colSpan={2} suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total' : 'الإجمالي'}</td>
-                        <td className="px-4 py-4 text-blue-700 dark:text-blue-300">{numberFmt.format(totalDebit)}</td>
-                        <td className="px-4 py-4 text-red-700 dark:text-red-300">{numberFmt.format(totalCredit)}</td>
+                        <td className="px-4 py-4 text-blue-700 dark:text-blue-300">{numberFmt.format(data?.balances.opening.total_debit || 0)}</td>
+                        <td className="px-4 py-4 text-red-700 dark:text-red-300">{numberFmt.format(data?.balances.opening.total_credit || 0)}</td>
+                        <td className="px-4 py-4 text-blue-700 dark:text-blue-300">{numberFmt.format(data?.balances.period.total_debit || 0)}</td>
+                        <td className="px-4 py-4 text-red-700 dark:text-red-300">{numberFmt.format(data?.balances.period.total_credit || 0)}</td>
                         <td className={`px-4 py-4 ${isBalanced ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
                           {isBalanced ? '✓ ' : '✗ '}
                           {(hydrated && appLang==='en') ? 'Balanced' : 'متوازن'}

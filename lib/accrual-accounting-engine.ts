@@ -129,6 +129,19 @@ export async function createInvoiceRevenueJournal(
       return null
     }
 
+    // ✅ ERP-Grade: Period Lock Check - منع تسجيل فاتورة في فترة مغلقة
+    try {
+      const { assertPeriodNotLocked } = await import("./accounting-period-lock")
+      await assertPeriodNotLocked(supabase, {
+        companyId,
+        date: invoice.invoice_date || new Date().toISOString().split("T")[0],
+      })
+    } catch (lockError: any) {
+      throw new Error(
+        `الفترة المحاسبية مقفلة: ${lockError.message || "لا يمكن تسجيل فاتورة في فترة محاسبية مغلقة"}`
+      )
+    }
+
     // التحقق من عدم وجود قيد سابق
     const { data: existingEntry } = await supabase
       .from("journal_entries")
@@ -572,6 +585,18 @@ async function saveJournalEntry(
   supabase: any,
   journalEntry: AccrualJournalEntry
 ): Promise<string> {
+  // ✅ ERP-Grade: Period Lock Check - منع إنشاء قيود في فترات مغلقة
+  try {
+    const { assertPeriodNotLocked } = await import("./accounting-period-lock")
+    await assertPeriodNotLocked(supabase, {
+      companyId: journalEntry.company_id,
+      date: journalEntry.entry_date,
+    })
+  } catch (lockError: any) {
+    throw new Error(
+      `الفترة المحاسبية مقفلة: ${lockError.message || "لا يمكن إنشاء قيد في فترة محاسبية مغلقة"}`
+    )
+  }
   // التحقق من توازن القيد
   const totalDebits = journalEntry.lines.reduce((sum, line) => sum + line.debit_amount, 0)
   const totalCredits = journalEntry.lines.reduce((sum, line) => sum + line.credit_amount, 0)
@@ -666,8 +691,8 @@ export async function fixExistingDataWithOpeningBalances(
         await createInvoiceRevenueJournal(supabase, invoice.id, invoice.company_id)
         await createCOGSJournalOnDelivery(supabase, invoice.id, invoice.company_id)
         invoicesFixed++
-      } catch (error) {
-        console.error('Error fixing invoice:', { invoiceId: invoice.id, error: error?.message })
+      } catch (error: any) {
+        console.error('Error fixing invoice:', { invoiceId: invoice.id, error: error?.message || String(error) })
       }
     }
 
@@ -688,8 +713,8 @@ export async function fixExistingDataWithOpeningBalances(
       try {
         await createPurchaseInventoryJournal(supabase, bill.id, bill.company_id)
         billsFixed++
-      } catch (error) {
-        console.error('Error fixing bill:', { billId: bill.id, error: error?.message })
+      } catch (error: any) {
+        console.error('Error fixing bill:', { billId: bill.id, error: error?.message || String(error) })
       }
     }
 
@@ -709,8 +734,8 @@ export async function fixExistingDataWithOpeningBalances(
       try {
         await createPaymentJournal(supabase, payment.id, payment.company_id)
         paymentsFixed++
-      } catch (error) {
-        console.error('Error fixing payment:', { paymentId: payment.id, error: error?.message })
+      } catch (error: any) {
+        console.error('Error fixing payment:', { paymentId: payment.id, error: error?.message || String(error) })
       }
     }
 

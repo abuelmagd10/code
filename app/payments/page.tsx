@@ -224,7 +224,7 @@ export default function PaymentsPage() {
       
       const newCurrency = localStorage.getItem('app_currency') || 'EGP'
       if (newCurrency !== paymentCurrency) {
-        setPaymentCurrency(newCurrency)
+      setPaymentCurrency(newCurrency)
         // ✅ تحديث العملة فقط بدون إعادة تحميل كامل للصفحة
         // البيانات ستُحدث تلقائياً عند تغيير paymentCurrency
       }
@@ -330,7 +330,7 @@ export default function PaymentsPage() {
               console.error("[Payments] Error fetching branch customers:", branchCustError);
               allCustomers = [];
             } else {
-              allCustomers = branchCust || [];
+          allCustomers = branchCust || [];
               
               // ✅ إضافة فلتر مركز التكلفة إذا كان مفعلاً
               if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
@@ -361,7 +361,7 @@ export default function PaymentsPage() {
                 });
               }
             }
-          } else {
+        } else {
             // إذا لم يكن هناك branch_id محدد، جلب جميع العملاء (fallback)
             // هذا يحدث عندما يكون المستخدم مدير/محاسب لكن بدون فرع محدد
             const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId);
@@ -452,7 +452,7 @@ export default function PaymentsPage() {
       isReloading = true
       // تأخير قصير قبل reload لمنع reload متعدد
       setTimeout(() => {
-        window.location.reload();
+      window.location.reload();
       }, 100)
     };
     window.addEventListener('company_updated', handleCompanyChange);
@@ -717,6 +717,27 @@ export default function PaymentsPage() {
       if (mapping) {
         const cashAccountId = newCustPayment.account_id || mapping.cash || mapping.bank
         const advanceId = mapping.customerAdvance
+        // ✅ ERP-Grade: Period Lock Check
+        try {
+          const { assertPeriodNotLocked } = await import("@/lib/accounting-period-lock")
+          const { createClient } = await import("@supabase/supabase-js")
+          const serviceSupabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+          )
+          await assertPeriodNotLocked(serviceSupabase, {
+            companyId: mapping.companyId,
+            date: newCustPayment.date,
+          })
+        } catch (lockError: any) {
+          toast({
+            title: "❌ الفترة المحاسبية مقفلة",
+            description: lockError.message || "لا يمكن تسجيل دفعة في فترة محاسبية مغلقة",
+            variant: "destructive",
+          })
+          return
+        }
+
         if (cashAccountId && advanceId) {
           const { data: entry } = await supabase
             .from("journal_entries").insert({
