@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import { ArrowLeftRight, Plus, Trash2, Warehouse, Package, Save, ArrowRight, AlertCircle } from "lucide-react"
+import { notifyStockTransferRequest } from "@/lib/notification-helpers"
 
 interface Product {
   id: string
@@ -330,6 +331,22 @@ export default function NewTransferPage() {
         .insert(transferItems)
 
       if (itemsError) throw itemsError
+
+      // ✅ إرسال إشعار لمسؤول المخزن الوجهة
+      try {
+        await notifyStockTransferRequest({
+          companyId: companyId,
+          transferId: transfer.id,
+          sourceBranchId: srcWarehouse?.branch_id || undefined,
+          destinationBranchId: destWarehouse?.branch_id || undefined,
+          destinationWarehouseId: destinationWarehouseId || undefined,
+          createdBy: user.id,
+          appLang: appLang
+        })
+      } catch (notifError) {
+        // لا نوقف العملية إذا فشل إرسال الإشعار
+        console.error("Error sending notification:", notifError)
+      }
 
       toast({ title: appLang === 'en' ? 'Transfer created successfully' : 'تم إنشاء طلب النقل بنجاح' })
       router.push(`/inventory-transfers/${transfer.id}`)

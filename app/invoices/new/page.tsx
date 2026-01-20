@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { createNotification } from "@/lib/governance-layer"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { CustomerSearchSelect, type CustomerOption } from "@/components/CustomerSearchSelect"
 import { ProductSearchSelect, type ProductOption } from "@/components/ProductSearchSelect"
@@ -894,6 +895,30 @@ export default function NewInvoicePage() {
               invoice_id: invoiceData.id
             })
             .eq("id", finalSalesOrderId)
+        }
+
+        // ✅ إرسال إشعار للمحاسب
+        try {
+          await createNotification({
+            companyId: companyId,
+            referenceType: 'invoice',
+            referenceId: invoiceData.id,
+            title: appLang === 'en' ? 'New Sales Invoice' : 'فاتورة مبيعات جديدة',
+            message: appLang === 'en' 
+              ? `Invoice ${invoiceNumber} has been created` 
+              : `تم إنشاء فاتورة ${invoiceNumber}`,
+            createdBy: user.id,
+            branchId: branchId || undefined,
+            costCenterId: costCenterId || undefined,
+            assignedToRole: 'accountant',
+            priority: 'normal',
+            eventKey: `invoice:${invoiceData.id}:created`,
+            severity: 'info',
+            category: 'sales'
+          })
+        } catch (notifError) {
+          // لا نوقف العملية إذا فشل إرسال الإشعار
+          console.error("Error sending notification:", notifError)
         }
 
         toastActionSuccess(toast, appLang === 'en' ? "Create" : "الإنشاء", appLang === 'en' ? "Invoice" : "الفاتورة")

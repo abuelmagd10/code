@@ -17,6 +17,7 @@ export const dynamic = 'force-dynamic'
 import { Trash2, Plus, ShoppingCart, AlertCircle, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
+import { createNotification } from "@/lib/governance-layer"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { canAction } from "@/lib/authz"
@@ -866,6 +867,49 @@ function NewBillPageContent() {
       // ⚠️ ملاحظة: الفاتورة تُنشأ كمسودة (draft) - لا يتم إضافة المخزون هنا
       // المخزون يُضاف فقط عند تحويل الحالة إلى "sent" في صفحة التفاصيل
       // هذا يتوافق مع نمط ERP القياسي: draft = لا قيود، sent = مخزون فقط، paid = قيود مالية
+
+      // ✅ إرسال إشعارات للمدير والمحاسب
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          // إشعار للمدير (للموافقة)
+          await createNotification({
+            companyId: companyId,
+            referenceType: 'bill',
+            referenceId: bill.id,
+            title: 'فاتورة مشتريات جديدة',
+            message: `تم إنشاء فاتورة ${bill.bill_number} وتحتاج إلى موافقة`,
+            createdBy: user.id,
+            branchId: branchId || undefined,
+            costCenterId: costCenterId || undefined,
+            assignedToRole: 'manager',
+            priority: 'high',
+            eventKey: `bill:${bill.id}:created:manager`,
+            severity: 'warning',
+            category: 'approvals'
+          })
+
+          // إشعار للمحاسب
+          await createNotification({
+            companyId: companyId,
+            referenceType: 'bill',
+            referenceId: bill.id,
+            title: 'فاتورة مشتريات جديدة',
+            message: `تم إنشاء فاتورة ${bill.bill_number}`,
+            createdBy: user.id,
+            branchId: branchId || undefined,
+            costCenterId: costCenterId || undefined,
+            assignedToRole: 'accountant',
+            priority: 'normal',
+            eventKey: `bill:${bill.id}:created:accountant`,
+            severity: 'info',
+            category: 'finance'
+          })
+        }
+      } catch (notifError) {
+        // لا نوقف العملية إذا فشل إرسال الإشعار
+        console.error("Error sending notification:", notifError)
+      }
 
       router.push(`/bills/${bill.id}`)
     } catch (err: any) {
