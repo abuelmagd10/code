@@ -196,14 +196,19 @@ export default function WriteOffsPage() {
         canAdvancedAction(supabase, "write_offs", "cancel"),
         canAdvancedAction(supabase, "write_offs", "access"),
       ])
+
+      // 🔐 التحقق الإضافي: الاعتماد فقط لـ Owner و Admin
+      // هذا يضمن أن Store Manager أو أي دور آخر لا يمكنه الاعتماد حتى لو كانت لديه صلاحية في company_role_permissions
+      const userRole = context.role || "viewer"
+      const canApproveWriteOff = approve && (userRole === "owner" || userRole === "admin")
+
       setCanCreate(create)
       setCanEdit(edit)
-      setCanApprove(approve)
+      setCanApprove(canApproveWriteOff) // استخدام التحقق المحسّن
       setCanCancel(cancel)
       setCanExport(exportPerm)
 
       // 🔐 فلترة حسب الفرع والمخزن ومركز التكلفة والدور - استخدام context المحلي
-      const userRole = context.role || "viewer"
       const isCanOverride = ["owner", "admin", "manager"].includes(userRole)
       const isAccountantOrManager = ["accountant", "manager"].includes(userRole)
       const userBranchId = context.branch_id || null
