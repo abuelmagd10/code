@@ -1,28 +1,17 @@
 -- =====================================================
--- ⚡ إصلاح سريع لنظام الإشعارات
+-- 🔧 إصلاح خطأ Type Mismatch في get_user_notifications
 -- =====================================================
--- شغّل هذا الـ script في Supabase SQL Editor لحل مشكلة 400
+-- الخطأ: Returned type text does not match expected type character varying in column 9
+-- الحل: تغيير نوع severity و category من VARCHAR(20) إلى TEXT في RETURNS TABLE
 -- =====================================================
 
--- 1️⃣ إضافة الأعمدة إذا لم تكن موجودة
-ALTER TABLE notifications 
-ADD COLUMN IF NOT EXISTS event_key TEXT NULL;
-
-ALTER TABLE notifications 
-ADD COLUMN IF NOT EXISTS severity TEXT NOT NULL DEFAULT 'info' 
-  CHECK (severity IN ('info', 'warning', 'error', 'critical'));
-
-ALTER TABLE notifications 
-ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'system' 
-  CHECK (category IN ('finance', 'inventory', 'sales', 'approvals', 'system'));
-
--- 2️⃣ تحديث دالة get_user_notifications (الأهم!)
--- ⚠️ يجب حذف الدالة أولاً لأننا نغير نوع البيانات في RETURNS TABLE
+-- حذف الدالة القديمة بجميع التوقيعات الممكنة
 DROP FUNCTION IF EXISTS get_user_notifications(UUID, UUID, UUID, UUID, VARCHAR, TEXT, TEXT);
 DROP FUNCTION IF EXISTS get_user_notifications(UUID, UUID, UUID, UUID, VARCHAR);
 DROP FUNCTION IF EXISTS get_user_notifications(UUID, UUID, UUID, UUID);
 DROP FUNCTION IF EXISTS get_user_notifications(UUID, UUID);
 
+-- إعادة إنشاء الدالة مع إصلاح نوع البيانات
 CREATE OR REPLACE FUNCTION get_user_notifications(
   p_user_id UUID,
   p_company_id UUID,
@@ -43,8 +32,8 @@ RETURNS TABLE (
   created_at TIMESTAMPTZ,
   branch_name TEXT,        -- ✅ تم التغيير من VARCHAR(255) إلى TEXT (لأن branches.name هو TEXT)
   warehouse_name VARCHAR(255),
-  severity TEXT,
-  category TEXT,
+  severity TEXT,           -- ✅ تم التغيير من VARCHAR(20) إلى TEXT
+  category TEXT,           -- ✅ تم التغيير من VARCHAR(20) إلى TEXT
   event_key TEXT
 )
 LANGUAGE plpgsql
@@ -53,6 +42,7 @@ AS $$
 DECLARE
   v_user_role VARCHAR(50);
 BEGIN
+  -- جلب دور المستخدم في الشركة
   SELECT cm.role INTO v_user_role
   FROM company_members cm
   WHERE cm.user_id = p_user_id
@@ -102,83 +92,5 @@ BEGIN
 END;
 $$;
 
--- 3️⃣ تحديث دالة create_notification لدعم المعاملات الجديدة
-CREATE OR REPLACE FUNCTION create_notification(
-  p_company_id UUID,
-  p_reference_type VARCHAR(50),
-  p_reference_id UUID,
-  p_title VARCHAR(255),
-  p_message TEXT,
-  p_created_by UUID,
-  p_branch_id UUID DEFAULT NULL,
-  p_cost_center_id UUID DEFAULT NULL,
-  p_warehouse_id UUID DEFAULT NULL,
-  p_assigned_to_role VARCHAR(50) DEFAULT NULL,
-  p_assigned_to_user UUID DEFAULT NULL,
-  p_priority VARCHAR(20) DEFAULT 'normal',
-  p_event_key TEXT DEFAULT NULL,
-  p_severity TEXT DEFAULT 'info',
-  p_category TEXT DEFAULT 'system'
-)
-RETURNS UUID
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-  v_notification_id UUID;
-  v_existing_id UUID;
-BEGIN
-  IF p_event_key IS NOT NULL THEN
-    SELECT id INTO v_existing_id
-    FROM notifications
-    WHERE company_id = p_company_id
-      AND event_key = p_event_key
-    LIMIT 1;
-    
-    IF v_existing_id IS NOT NULL THEN
-      RETURN v_existing_id;
-    END IF;
-  END IF;
-
-  INSERT INTO notifications (
-    company_id,
-    branch_id,
-    cost_center_id,
-    warehouse_id,
-    reference_type,
-    reference_id,
-    created_by,
-    assigned_to_role,
-    assigned_to_user,
-    title,
-    message,
-    priority,
-    status,
-    event_key,
-    severity,
-    category
-  ) VALUES (
-    p_company_id,
-    p_branch_id,
-    p_cost_center_id,
-    p_warehouse_id,
-    p_reference_type,
-    p_reference_id,
-    p_created_by,
-    p_assigned_to_role,
-    p_assigned_to_user,
-    p_title,
-    p_message,
-    p_priority,
-    'unread',
-    p_event_key,
-    p_severity,
-    p_category
-  )
-  RETURNING id INTO v_notification_id;
-
-  RETURN v_notification_id;
-END;
-$$;
-
-SELECT '✅ تم إصلاح نظام الإشعارات!' AS status;
+-- ✅ تم الإصلاح
+SELECT '✅ تم إصلاح خطأ Type Mismatch في get_user_notifications!' AS status;

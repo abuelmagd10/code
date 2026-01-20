@@ -274,15 +274,15 @@ export function NotificationCenter({
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent 
-          className="max-w-2xl max-h-[80vh] flex flex-col p-0"
+          className="max-w-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden"
           aria-describedby="notifications-loading-description"
         >
-          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
             <DialogTitle className="text-xl font-bold">
               {appLang === 'en' ? 'Notifications' : 'الإشعارات'}
             </DialogTitle>
           </DialogHeader>
-          <div className="flex items-center justify-center min-h-[200px]">
+          <div className="flex items-center justify-center min-h-[200px] flex-1">
             <p className="text-gray-500 dark:text-gray-400">
               {appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}
             </p>
@@ -298,13 +298,13 @@ export function NotificationCenter({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
-        className="max-w-2xl max-h-[80vh] flex flex-col p-0"
+        className="max-w-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden"
         aria-describedby="notifications-description"
       >
         <span id="notifications-description" className="sr-only">
           {appLang === 'en' ? 'Notifications center with filters and search functionality' : 'مركز الإشعارات مع إمكانية الفلترة والبحث'}
         </span>
-        <DialogHeader className="px-6 pt-6 pb-4 border-b">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-xl font-bold">
               {appLang === 'en' ? 'Notifications' : 'الإشعارات'}
@@ -320,7 +320,7 @@ export function NotificationCenter({
         </DialogHeader>
 
         {/* Filters */}
-        <div className="px-6 py-4 border-b space-y-3 bg-gray-50 dark:bg-slate-900">
+        <div className="px-6 py-4 border-b space-y-3 bg-gray-50 dark:bg-slate-900 flex-shrink-0">
           <div className="flex items-center gap-2">
             <Search className="w-4 h-4 text-gray-500" />
             <Input
@@ -387,7 +387,7 @@ export function NotificationCenter({
         </div>
 
         {/* Notifications List */}
-        <ScrollArea className="flex-1 px-6">
+        <ScrollArea className="flex-1 min-h-0 px-6">
           {loading ? (
             <div className="py-8 text-center text-gray-500">
               {appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}
