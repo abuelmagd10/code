@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 
 /**
  * إنشاء إشعار عند إنشاء طلب استرداد نقدي
+ * ✅ محدث: يدعم event_key و severity و category
  */
 export async function notifyRefundRequestCreated(params: {
   companyId: string
@@ -29,6 +30,8 @@ export async function notifyRefundRequestCreated(params: {
     ? `A new refund request of ${amount} ${currency} requires your approval`
     : `طلب استرداد نقدي جديد بقيمة ${amount} ${currency} يحتاج إلى موافقتك`
 
+  const eventKey = `refund_request:${refundRequestId}:created`
+
   // إشعار لمدير الفرع والمالك/المدير
   await createNotification({
     companyId,
@@ -40,7 +43,10 @@ export async function notifyRefundRequestCreated(params: {
     branchId,
     costCenterId,
     assignedToRole: 'manager',
-    priority: 'high' as NotificationPriority
+    priority: 'high' as NotificationPriority,
+    eventKey: `${eventKey}:manager`,
+    severity: 'high',
+    category: 'finance'
   })
 
   await createNotification({
@@ -53,12 +59,16 @@ export async function notifyRefundRequestCreated(params: {
     branchId,
     costCenterId,
     assignedToRole: 'owner',
-    priority: 'high' as NotificationPriority
+    priority: 'high' as NotificationPriority,
+    eventKey: `${eventKey}:owner`,
+    severity: 'high',
+    category: 'finance'
   })
 }
 
 /**
  * إنشاء إشعار عند الموافقة على طلب استرداد (الموافقة الأولى)
+ * ✅ محدث: يدعم event_key و severity و category
  */
 export async function notifyRefundApproved(params: {
   companyId: string
@@ -89,12 +99,16 @@ export async function notifyRefundApproved(params: {
     branchId,
     costCenterId,
     assignedToRole: 'owner',
-    priority: 'urgent' as NotificationPriority
+    priority: 'urgent' as NotificationPriority,
+    eventKey: `refund_request:${refundRequestId}:approved`,
+    severity: 'warning',
+    category: 'finance'
   })
 }
 
 /**
  * إنشاء إشعار عند طلب نقل مخزون
+ * ✅ محدث: يدعم event_key و severity و category
  */
 export async function notifyStockTransferRequest(params: {
   companyId: string
@@ -126,12 +140,16 @@ export async function notifyStockTransferRequest(params: {
     branchId: destinationBranchId,
     warehouseId: destinationWarehouseId,
     assignedToRole: 'store_manager',
-    priority: 'high' as NotificationPriority
+    priority: 'high' as NotificationPriority,
+    eventKey: `stock_transfer_request:${transferId}:created`,
+    severity: 'info',
+    category: 'inventory'
   })
 }
 
 /**
  * إنشاء إشعار عند إنشاء إشعار دائن المورد
+ * ✅ محدث: يدعم event_key و severity و category
  */
 export async function notifyVendorCreditCreated(params: {
   companyId: string
@@ -151,6 +169,8 @@ export async function notifyVendorCreditCreated(params: {
     ? 'A new vendor credit has been created and requires review'
     : 'تم إنشاء إشعار دائن مورد جديد ويحتاج إلى مراجعة'
 
+  const eventKey = `vendor_credit:${vendorCreditId}:created`
+
   // إشعار للمحاسب والمدير
   await createNotification({
     companyId,
@@ -162,7 +182,10 @@ export async function notifyVendorCreditCreated(params: {
     branchId,
     costCenterId,
     assignedToRole: 'accountant',
-    priority: 'normal' as NotificationPriority
+    priority: 'normal' as NotificationPriority,
+    eventKey: `${eventKey}:accountant`,
+    severity: 'info',
+    category: 'finance'
   })
 
   await createNotification({
@@ -175,12 +198,16 @@ export async function notifyVendorCreditCreated(params: {
     branchId,
     costCenterId,
     assignedToRole: 'manager',
-    priority: 'normal' as NotificationPriority
+    priority: 'normal' as NotificationPriority,
+    eventKey: `${eventKey}:manager`,
+    severity: 'info',
+    category: 'finance'
   })
 }
 
 /**
  * إنشاء إشعار عند إنشاء إشعار مدين العميل
+ * ✅ محدث: يدعم event_key و severity و category
  */
 export async function notifyCustomerDebitNoteCreated(params: {
   companyId: string
@@ -200,6 +227,8 @@ export async function notifyCustomerDebitNoteCreated(params: {
     ? 'A new customer debit note has been created and requires review'
     : 'تم إنشاء إشعار مدين عميل جديد ويحتاج إلى مراجعة'
 
+  const eventKey = `customer_debit_note:${debitNoteId}:created`
+
   // إشعار للمحاسب والمدير
   await createNotification({
     companyId,
@@ -211,7 +240,10 @@ export async function notifyCustomerDebitNoteCreated(params: {
     branchId,
     costCenterId,
     assignedToRole: 'accountant',
-    priority: 'normal' as NotificationPriority
+    priority: 'normal' as NotificationPriority,
+    eventKey: `${eventKey}:accountant`,
+    severity: 'info',
+    category: 'finance'
   })
 
   await createNotification({
@@ -224,12 +256,16 @@ export async function notifyCustomerDebitNoteCreated(params: {
     branchId,
     costCenterId,
     assignedToRole: 'manager',
-    priority: 'normal' as NotificationPriority
+    priority: 'normal' as NotificationPriority,
+    eventKey: `${eventKey}:manager`,
+    severity: 'info',
+    category: 'finance'
   })
 }
 
 /**
  * إنشاء إشعار عند تغيير دور المستخدم
+ * ✅ محدث: يدعم event_key و severity و category
  */
 export async function notifyUserRoleChanged(params: {
   companyId: string
@@ -258,12 +294,16 @@ export async function notifyUserRoleChanged(params: {
     message,
     createdBy: changedBy,
     assignedToUser: userId,
-    priority: 'normal' as NotificationPriority
+    priority: 'normal' as NotificationPriority,
+    eventKey: `user_role_change:${userId}:${newRole}`,
+    severity: 'info',
+    category: 'system'
   })
 }
 
 /**
  * إنشاء إشعار عند تغيير فرع المستخدم
+ * ✅ محدث: يدعم event_key و severity و category
  */
 export async function notifyUserBranchChanged(params: {
   companyId: string
@@ -292,12 +332,16 @@ export async function notifyUserBranchChanged(params: {
     createdBy: changedBy,
     branchId,
     assignedToUser: userId,
-    priority: 'normal' as NotificationPriority
+    priority: 'normal' as NotificationPriority,
+    eventKey: `user_branch_change:${userId}:${branchId || 'none'}`,
+    severity: 'info',
+    category: 'system'
   })
 }
 
 /**
  * إنشاء إشعار عند طلب موافقة على فاتورة مشتريات
+ * ✅ محدث: يدعم event_key و severity و category
  */
 export async function notifyPurchaseApprovalRequest(params: {
   companyId: string
@@ -330,6 +374,9 @@ export async function notifyPurchaseApprovalRequest(params: {
     branchId,
     costCenterId,
     assignedToRole: 'manager',
-    priority: 'high' as NotificationPriority
+    priority: 'high' as NotificationPriority,
+    eventKey: `purchase_approval:${billId}:created`,
+    severity: 'warning',
+    category: 'approvals'
   })
 }

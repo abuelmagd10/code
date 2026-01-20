@@ -13,6 +13,8 @@ import { createClient } from '@/lib/supabase/client'
 
 export type NotificationPriority = 'low' | 'normal' | 'high' | 'urgent'
 export type NotificationStatus = 'unread' | 'read' | 'archived' | 'actioned'
+export type NotificationSeverity = 'info' | 'warning' | 'error' | 'critical'
+export type NotificationCategory = 'finance' | 'inventory' | 'sales' | 'approvals' | 'system'
 
 export type ApprovalStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'executed' | 'cancelled'
 export type WorkflowType = 'financial' | 'inventory' | 'refund' | 'transfer' | 'adjustment'
@@ -45,6 +47,12 @@ export interface Notification {
   actioned_at?: string
   created_at: string
   expires_at?: string
+  // ✅ الحقول الجديدة (Enterprise-grade)
+  event_key?: string
+  severity?: NotificationSeverity
+  category?: NotificationCategory
+  branch_name?: string
+  warehouse_name?: string
 }
 
 export interface ApprovalWorkflow {
@@ -114,6 +122,7 @@ export interface RefundRequest {
 
 /**
  * إنشاء إشعار جديد
+ * ✅ يدعم الآن: event_key (idempotency), severity, category
  */
 export async function createNotification(params: {
   companyId: string
@@ -128,6 +137,10 @@ export async function createNotification(params: {
   assignedToRole?: string
   assignedToUser?: string
   priority?: NotificationPriority
+  // ✅ المعاملات الجديدة (اختيارية للحفاظ على التوافق)
+  eventKey?: string
+  severity?: NotificationSeverity
+  category?: NotificationCategory
 }) {
   const supabase = createClient()
 
@@ -143,7 +156,11 @@ export async function createNotification(params: {
     p_warehouse_id: params.warehouseId,
     p_assigned_to_role: params.assignedToRole,
     p_assigned_to_user: params.assignedToUser,
-    p_priority: params.priority || 'normal'
+    p_priority: params.priority || 'normal',
+    // ✅ المعاملات الجديدة
+    p_event_key: params.eventKey || null,
+    p_severity: params.severity || 'info',
+    p_category: params.category || 'system'
   })
 
   if (error) throw error
@@ -152,6 +169,7 @@ export async function createNotification(params: {
 
 /**
  * الحصول على إشعارات المستخدم
+ * ✅ يدعم الآن: فلترة حسب severity و category
  */
 export async function getUserNotifications(params: {
   userId: string
@@ -159,6 +177,9 @@ export async function getUserNotifications(params: {
   branchId?: string
   warehouseId?: string
   status?: NotificationStatus
+  // ✅ المعاملات الجديدة (اختيارية)
+  severity?: NotificationSeverity
+  category?: NotificationCategory
 }) {
   const supabase = createClient()
 
@@ -167,7 +188,10 @@ export async function getUserNotifications(params: {
     p_company_id: params.companyId,
     p_branch_id: params.branchId,
     p_warehouse_id: params.warehouseId,
-    p_status: params.status
+    p_status: params.status,
+    // ✅ المعاملات الجديدة
+    p_severity: params.severity || null,
+    p_category: params.category || null
   })
 
   if (error) throw error

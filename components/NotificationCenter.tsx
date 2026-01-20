@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { getUserNotifications, markNotificationAsRead, type Notification, type NotificationStatus, type NotificationPriority } from "@/lib/governance-layer"
+import { getUserNotifications, markNotificationAsRead, type Notification, type NotificationStatus, type NotificationPriority, type NotificationSeverity, type NotificationCategory } from "@/lib/governance-layer"
 import { getActiveCompanyId } from "@/lib/company"
 import { formatDistanceToNow } from "date-fns"
 import { ar } from "date-fns/locale/ar"
@@ -38,6 +38,8 @@ export function NotificationCenter({
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<NotificationStatus | "all">("all")
   const [filterPriority, setFilterPriority] = useState<NotificationPriority | "all">("all")
+  const [filterSeverity, setFilterSeverity] = useState<NotificationSeverity | "all">("all")
+  const [filterCategory, setFilterCategory] = useState<NotificationCategory | "all">("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [mounted, setMounted] = useState(false)
@@ -63,7 +65,9 @@ export function NotificationCenter({
         companyId,
         branchId,
         warehouseId,
-        status
+        status,
+        severity: filterSeverity !== "all" ? filterSeverity : undefined,
+        category: filterCategory !== "all" ? filterCategory : undefined
       })
 
       // Filter by priority and search
@@ -95,7 +99,7 @@ export function NotificationCenter({
     } finally {
       setLoading(false)
     }
-  }, [userId, companyId, branchId, warehouseId, filterStatus, filterPriority, searchQuery])
+  }, [userId, companyId, branchId, warehouseId, filterStatus, filterPriority, filterSeverity, filterCategory, searchQuery])
 
   useEffect(() => {
     if (open) {
@@ -352,6 +356,33 @@ export function NotificationCenter({
                 <SelectItem value="low">{appLang === 'en' ? 'Low' : 'منخفض'}</SelectItem>
               </SelectContent>
             </Select>
+
+            <Select value={filterSeverity} onValueChange={(v) => setFilterSeverity(v as any)}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder={appLang === 'en' ? 'Severity' : 'الأهمية'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{appLang === 'en' ? 'All' : 'الكل'}</SelectItem>
+                <SelectItem value="critical">{appLang === 'en' ? 'Critical' : 'حرج'}</SelectItem>
+                <SelectItem value="error">{appLang === 'en' ? 'Error' : 'خطأ'}</SelectItem>
+                <SelectItem value="warning">{appLang === 'en' ? 'Warning' : 'تحذير'}</SelectItem>
+                <SelectItem value="info">{appLang === 'en' ? 'Info' : 'معلومات'}</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={filterCategory} onValueChange={(v) => setFilterCategory(v as any)}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder={appLang === 'en' ? 'Category' : 'الفئة'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{appLang === 'en' ? 'All' : 'الكل'}</SelectItem>
+                <SelectItem value="finance">{appLang === 'en' ? 'Finance' : 'مالية'}</SelectItem>
+                <SelectItem value="inventory">{appLang === 'en' ? 'Inventory' : 'مخزون'}</SelectItem>
+                <SelectItem value="sales">{appLang === 'en' ? 'Sales' : 'مبيعات'}</SelectItem>
+                <SelectItem value="approvals">{appLang === 'en' ? 'Approvals' : 'موافقات'}</SelectItem>
+                <SelectItem value="system">{appLang === 'en' ? 'System' : 'نظام'}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -391,6 +422,34 @@ export function NotificationCenter({
                           >
                             {getPriorityLabel(notification.priority)}
                           </Badge>
+                          {notification.severity && (
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${
+                                notification.severity === 'critical' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                                notification.severity === 'error' ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' :
+                                notification.severity === 'warning' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
+                                'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                              }`}
+                            >
+                              {notification.severity === 'critical' ? (appLang === 'en' ? 'Critical' : 'حرج') :
+                               notification.severity === 'error' ? (appLang === 'en' ? 'Error' : 'خطأ') :
+                               notification.severity === 'warning' ? (appLang === 'en' ? 'Warning' : 'تحذير') :
+                               (appLang === 'en' ? 'Info' : 'معلومات')}
+                            </Badge>
+                          )}
+                          {notification.category && (
+                            <Badge
+                              variant="outline"
+                              className="text-xs bg-gray-500/10 text-gray-500 border-gray-500/20"
+                            >
+                              {notification.category === 'finance' ? (appLang === 'en' ? 'Finance' : 'مالية') :
+                               notification.category === 'inventory' ? (appLang === 'en' ? 'Inventory' : 'مخزون') :
+                               notification.category === 'sales' ? (appLang === 'en' ? 'Sales' : 'مبيعات') :
+                               notification.category === 'approvals' ? (appLang === 'en' ? 'Approvals' : 'موافقات') :
+                               (appLang === 'en' ? 'System' : 'نظام')}
+                            </Badge>
+                          )}
                           {notification.status === 'unread' && (
                             <div className="w-2 h-2 bg-blue-500 rounded-full" />
                           )}
