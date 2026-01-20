@@ -387,17 +387,19 @@ export function NotificationCenter({
         </div>
 
         {/* Notifications List */}
-        <ScrollArea className="flex-1 min-h-0 px-6">
-          {loading ? (
-            <div className="py-8 text-center text-gray-500">
-              {appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}
-            </div>
-          ) : notifications.length === 0 ? (
-            <div className="py-8 text-center text-gray-500">
-              {appLang === 'en' ? 'No notifications' : 'لا توجد إشعارات'}
-            </div>
-          ) : (
-            <div className="space-y-2 py-4">
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <ScrollArea className="h-full">
+            <div className="px-6">
+              {loading ? (
+                <div className="py-8 text-center text-gray-500">
+                  {appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}
+                </div>
+              ) : notifications.length === 0 ? (
+                <div className="py-8 text-center text-gray-500">
+                  {appLang === 'en' ? 'No notifications' : 'لا توجد إشعارات'}
+                </div>
+              ) : (
+                <div className="space-y-2 py-4">
               {notifications.map((notification) => (
                 <div
                   key={notification.id}
@@ -500,9 +502,11 @@ export function NotificationCenter({
                   </div>
                 </div>
               ))}
+                </div>
+              )}
             </div>
-          )}
-        </ScrollArea>
+          </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   )
