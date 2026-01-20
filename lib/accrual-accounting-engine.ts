@@ -16,12 +16,13 @@ import { getLeafAccountIds } from "./accounts"
 export interface AccrualJournalEntry {
   id?: string
   company_id: string
-  reference_type: 'invoice' | 'invoice_cogs' | 'payment' | 'bill' | 'bill_payment'
+  reference_type: 'invoice' | 'invoice_cogs' | 'payment' | 'bill' | 'bill_payment' | 'write_off'
   reference_id: string
   entry_date: string
   description: string
   branch_id?: string | null
   cost_center_id?: string | null
+  warehouse_id?: string | null
   lines: AccrualJournalLine[]
 }
 
@@ -47,6 +48,7 @@ export interface AccrualAccountMapping {
   vat_input: string
   customer_advance?: string
   supplier_advance?: string
+  write_off_expense?: string // حساب مصروف الإهلاك
 }
 
 /**
@@ -72,20 +74,21 @@ export async function getAccrualAccountMapping(
     return account?.id
   }
 
-  const mapping: AccrualAccountMapping = {
-    company_id: companyId,
-    accounts_receivable: findAccount('accounts_receivable', 'asset') || '',
-    accounts_payable: findAccount('accounts_payable', 'liability') || '',
-    sales_revenue: findAccount('sales_revenue', 'income') || '',
-    inventory: findAccount('inventory', 'asset') || '',
-    cogs: findAccount('cogs') || findAccount('cost_of_goods_sold', 'expense') || '',
-    cash: findAccount('cash', 'asset') || '',
-    bank: findAccount('bank', 'asset') || '',
-    vat_output: findAccount('vat_output', 'liability') || '',
-    vat_input: findAccount('vat_input', 'asset') || '',
-    customer_advance: findAccount('customer_advance', 'liability'),
-    supplier_advance: findAccount('supplier_advance', 'asset')
-  }
+    const mapping: AccrualAccountMapping = {
+      company_id: companyId,
+      accounts_receivable: findAccount('accounts_receivable', 'asset') || '',
+      accounts_payable: findAccount('accounts_payable', 'liability') || '',
+      sales_revenue: findAccount('sales_revenue', 'income') || '',
+      inventory: findAccount('inventory', 'asset') || '',
+      cogs: findAccount('cogs') || findAccount('cost_of_goods_sold', 'expense') || '',
+      cash: findAccount('cash', 'asset') || '',
+      bank: findAccount('bank', 'asset') || '',
+      vat_output: findAccount('vat_output', 'liability') || '',
+      vat_input: findAccount('vat_input', 'asset') || '',
+      customer_advance: findAccount('customer_advance', 'liability'),
+      supplier_advance: findAccount('supplier_advance', 'asset'),
+      write_off_expense: findAccount('write_off_expense', 'expense')
+    }
 
   // التحقق من وجود الحسابات الأساسية
   const requiredAccounts = ['accounts_receivable', 'accounts_payable', 'sales_revenue', 'inventory', 'cogs']
@@ -579,6 +582,137 @@ export async function createPurchaseInventoryJournal(
 }
 
 /**
+ * تسجيل إهلاك المخزون (Write-off Event)
+ * يتم تسجيله على أساس الاستحقاق عند اعتماد الإهلاك
+ */
+export async function createWriteOffJournal(
+  supabase: any,
+  writeOffId: string,
+  companyId: string
+): Promise<string | null> {
+  try {
+    // الحصول على بيانات الإهلاك
+    const { data: writeOff, error: writeOffError } = await supabase
+      .from("inventory_write_offs")
+      .select(`
+        id, write_off_number, write_off_date, status,
+        total_cost, branch_id, cost_center_id, warehouse_id
+      `)
+      .eq("id", writeOffId)
+      .eq("company_id", companyId)
+      .single()
+
+    if (writeOffError || !writeOff) {
+      throw new Error(`Write-off not found: ${writeOffError?.message}`)
+    }
+
+    // فقط للإهلاكات المعتمدة
+    if (writeOff.status !== 'approved') {
+      return null
+    }
+
+    // ✅ ERP-Grade: Period Lock Check - منع تسجيل إهلاك في فترة مغلقة
+    try {
+      const { assertPeriodNotLocked } = await import("./accounting-period-lock")
+      await assertPeriodNotLocked(supabase, {
+        companyId,
+        date: writeOff.write_off_date || new Date().toISOString().split("T")[0],
+      })
+    } catch (lockError: any) {
+      throw new Error(
+        `الفترة المحاسبية مقفلة: ${lockError.message || "لا يمكن تسجيل إهلاك في فترة محاسبية مغلقة"}`
+      )
+    }
+
+    // التحقق من عدم وجود قيد سابق
+    const { data: existingEntry } = await supabase
+      .from("journal_entries")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("reference_type", "write_off")
+      .eq("reference_id", writeOffId)
+      .limit(1)
+
+    if (existingEntry && existingEntry.length > 0) {
+      console.log(`Write-off journal already exists for ${writeOff.write_off_number}`)
+      return existingEntry[0].id
+    }
+
+    // الحصول على خريطة الحسابات
+    const mapping = await getAccrualAccountMapping(supabase, companyId)
+
+    // حساب المبلغ
+    const totalCost = Number(writeOff.total_cost || 0)
+
+    // إذا لم توجد تكلفة، لا نسجل قيد
+    if (totalCost <= 0) {
+      return null
+    }
+
+    // الحصول على حساب مصروف الإهلاك من mapping
+    let expenseAccountId: string = mapping.write_off_expense || ''
+    if (!expenseAccountId) {
+      // Fallback: البحث عن أي حساب مصروف
+      const { data: expenseAccount } = await supabase
+        .from("chart_of_accounts")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("account_type", "expense")
+        .limit(1)
+        .single()
+
+      if (!expenseAccount?.id) {
+        throw new Error('Write-off expense account not found. Please configure a write-off expense account in chart of accounts.')
+      }
+      expenseAccountId = expenseAccount.id
+    }
+
+    // التأكد من وجود حساب الإهلاك
+    if (!expenseAccountId) {
+      throw new Error('Write-off expense account is required')
+    }
+
+    // إنشاء قيد الإهلاك
+    const journalEntry: AccrualJournalEntry = {
+      company_id: companyId,
+      reference_type: 'write_off',
+      reference_id: writeOffId,
+      entry_date: writeOff.write_off_date,
+      description: `إهلاك مخزون - ${writeOff.write_off_number}`,
+      branch_id: writeOff.branch_id,
+      cost_center_id: writeOff.cost_center_id,
+      lines: [
+        {
+          // مدين: مصروف الإهلاك (Expense) - مصروف
+          account_id: expenseAccountId,
+          debit_amount: totalCost,
+          credit_amount: 0,
+          description: 'مصروف إهلاك مخزون',
+          branch_id: writeOff.branch_id,
+          cost_center_id: writeOff.cost_center_id
+        },
+        {
+          // دائن: المخزون (Inventory) - أصل
+          account_id: mapping.inventory,
+          debit_amount: 0,
+          credit_amount: totalCost,
+          description: 'تخفيض المخزون',
+          branch_id: writeOff.branch_id,
+          cost_center_id: writeOff.cost_center_id
+        }
+      ]
+    }
+
+    // حفظ القيد في قاعدة البيانات
+    return await saveJournalEntry(supabase, journalEntry)
+
+  } catch (error) {
+    console.error('Error creating write-off journal:', error)
+    throw error
+  }
+}
+
+/**
  * حفظ القيد المحاسبي في قاعدة البيانات
  */
 async function saveJournalEntry(
@@ -615,7 +749,8 @@ async function saveJournalEntry(
       entry_date: journalEntry.entry_date,
       description: journalEntry.description,
       branch_id: journalEntry.branch_id,
-      cost_center_id: journalEntry.cost_center_id
+      cost_center_id: journalEntry.cost_center_id,
+      warehouse_id: journalEntry.warehouse_id
     })
     .select()
     .single()

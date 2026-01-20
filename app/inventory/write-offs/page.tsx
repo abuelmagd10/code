@@ -963,30 +963,41 @@ export default function WriteOffsPage() {
 
     setSaving(true)
     try {
-      const { data: user } = await supabase.auth.getUser()
-      const { data: result, error } = await supabase.rpc("approve_write_off", {
-        p_write_off_id: selectedWriteOff.id,
-        p_approved_by: user?.user?.id,
-        p_expense_account_id: expenseAccountId,
-        p_inventory_account_id: inventoryAccountId,
+      // ✅ استخدام API endpoint الجديد مع محرك الاعتماد
+      const response = await fetch('/api/write-offs/approve', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          writeOffId: selectedWriteOff.id,
+          expenseAccountId: expenseAccountId,
+          inventoryAccountId: inventoryAccountId,
+        }),
       })
 
-      if (error) throw error
-      if (!result?.success) {
-        // 🧾 Governance Rule: رسالة خطأ مفصلة عند فشل التحقق من الرصيد
-        const errorMessage = result?.error || "Unknown error"
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        // 🧾 Governance Rule: رسالة خطأ مفصلة
+        const errorMessage = result.error || result.error_en || (isAr ? "خطأ غير معروف" : "Unknown error")
         toast({
           title: isAr ? "🧾 فشل اعتماد الإهلاك" : "🧾 Write-off Approval Failed",
           description: isAr 
-            ? `لا يمكن اعتماد الإهلاك بدون رصيد فعلي:\n${errorMessage}`
-            : `Cannot approve write-off without real stock:\n${errorMessage}`,
+            ? `لا يمكن اعتماد الإهلاك:\n${errorMessage}`
+            : `Cannot approve write-off:\n${errorMessage}`,
           variant: "destructive",
           duration: 10000,
         })
         return
       }
 
-      toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم اعتماد الإهلاك" : "Write-off approved" })
+      toast({ 
+        title: isAr ? "تم" : "Success", 
+        description: isAr 
+          ? `تم اعتماد الإهلاك بنجاح\nالتكلفة الإجمالية: ${result.data?.totalCOGS || 0}`
+          : `Write-off approved successfully\nTotal COGS: ${result.data?.totalCOGS || 0}`
+      })
       setShowApproveDialog(false)
       setShowViewDialog(false)
       loadData()
@@ -995,7 +1006,7 @@ export default function WriteOffsPage() {
       const errorMessage = err.message || (isAr ? "فشل اعتماد الإهلاك" : "Failed to approve write-off")
       toast({
         title: isAr ? "🧾 خطأ" : "🧾 Error",
-        description: errorMessage.includes("الرصيد") || errorMessage.includes("stock")
+        description: errorMessage.includes("الرصيد") || errorMessage.includes("stock") || errorMessage.includes("غير مخول")
           ? errorMessage
           : isAr
           ? `فشل اعتماد الإهلاك: ${errorMessage}`
