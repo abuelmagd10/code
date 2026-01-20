@@ -32,7 +32,23 @@ export async function ensureCompanyId(supabase: any, toast?: any): Promise<strin
 // 4) First company in table (single-company deployments)
 export async function getActiveCompanyId(supabase: any): Promise<string | null> {
   try {
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    // معالجة AbortError بشكل صريح
+    if (authError) {
+      if (authError.name === 'AbortError' || authError.message?.includes('aborted')) {
+        console.warn('⚠️ Auth request was aborted, using cached company ID')
+        // محاولة استخدام الشركة المحفوظة من localStorage
+        if (typeof window !== 'undefined') {
+          const cachedId = localStorage.getItem('active_company_id')
+          if (cachedId) {
+            return cachedId
+          }
+        }
+        return null
+      }
+    }
+    
     if (user) {
       // 1️⃣ أولاً: نتحقق من الشركة المحفوظة في localStorage أو Cookie
       let savedCompanyId: string | null = null
@@ -55,10 +71,34 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
       } catch { }
 
       // 2️⃣ جلب جميع الشركات التي المستخدم عضو فيها
-      const { data: userCompanies } = await supabase
-        .from("company_members")
-        .select("company_id")
-        .eq("user_id", user.id)
+      let userCompanies = null
+      try {
+        const { data, error } = await supabase
+          .from("company_members")
+          .select("company_id")
+          .eq("user_id", user.id)
+        
+        if (error) {
+          if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+            console.warn('⚠️ Company members request was aborted, using saved company ID')
+            if (savedCompanyId) {
+              return savedCompanyId
+            }
+            return null
+          }
+          throw error
+        }
+        userCompanies = data
+      } catch (error: any) {
+        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+          console.warn('⚠️ Request aborted, using saved company ID')
+          if (savedCompanyId) {
+            return savedCompanyId
+          }
+          return null
+        }
+        throw error
+      }
 
       const memberCompanyIds = (userCompanies || []).map((c: any) => c.company_id)
 
@@ -70,14 +110,29 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
 
       // 4️⃣ نتحقق إذا كان المستخدم مالكاً للشركة المحفوظة
       if (savedCompanyId) {
-        const { data: ownedCompany } = await supabase
-          .from("companies")
-          .select("id")
-          .eq("id", savedCompanyId)
-          .eq("user_id", user.id)
-          .limit(1)
-        if (Array.isArray(ownedCompany) && ownedCompany[0]?.id) {
-          return savedCompanyId
+        try {
+          const { data: ownedCompany, error } = await supabase
+            .from("companies")
+            .select("id")
+            .eq("id", savedCompanyId)
+            .eq("user_id", user.id)
+            .limit(1)
+          
+          if (error) {
+            if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+              console.warn('⚠️ Ownership check aborted, using saved company ID')
+              return savedCompanyId
+            }
+          }
+          
+          if (Array.isArray(ownedCompany) && ownedCompany[0]?.id) {
+            return savedCompanyId
+          }
+        } catch (error: any) {
+          if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+            console.warn('⚠️ Ownership check aborted, using saved company ID')
+            return savedCompanyId
+          }
         }
       }
 
@@ -95,37 +150,93 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
       }
 
       // 6️⃣ نتحقق من الشركات المملوكة
-      const { data: ownedCompany } = await supabase
-        .from("companies")
-        .select("id")
-        .eq("user_id", user.id)
-        .limit(1)
-      if (Array.isArray(ownedCompany) && ownedCompany[0]?.id) {
-        const cid = ownedCompany[0].id
-        console.log("✅ Using owned company ID:", cid)
-        try {
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('active_company_id', cid)
-            document.cookie = `active_company_id=${cid}; path=/; max-age=31536000`
+      try {
+        const { data: ownedCompany, error } = await supabase
+          .from("companies")
+          .select("id")
+          .eq("user_id", user.id)
+          .limit(1)
+        
+        if (error) {
+          if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+            console.warn('⚠️ Owned companies request aborted')
+            return null
           }
-        } catch { }
-        return cid
+        }
+        
+        if (Array.isArray(ownedCompany) && ownedCompany[0]?.id) {
+          const cid = ownedCompany[0].id
+          console.log("✅ Using owned company ID:", cid)
+          try {
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('active_company_id', cid)
+              document.cookie = `active_company_id=${cid}; path=/; max-age=31536000`
+            }
+          } catch { }
+          return cid
+        }
+      } catch (error: any) {
+        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+          console.warn('⚠️ Owned companies request aborted')
+          return null
+        }
+        throw error
       }
     }
 
     // Fallback للحالات بدون مستخدم
-    const { data: anyCompanies } = await supabase
-      .from("companies")
-      .select("id")
-      .limit(1)
-    if (Array.isArray(anyCompanies) && anyCompanies[0]?.id) {
-      console.log("⚠️ Using fallback company ID:", anyCompanies[0].id)
-      return anyCompanies[0].id
+    try {
+      const { data: anyCompanies, error } = await supabase
+        .from("companies")
+        .select("id")
+        .limit(1)
+      
+      if (error) {
+        if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+          console.warn('⚠️ Fallback companies request aborted')
+          // محاولة استخدام الشركة المحفوظة من localStorage
+          if (typeof window !== 'undefined') {
+            const cachedId = localStorage.getItem('active_company_id')
+            if (cachedId) {
+              return cachedId
+            }
+          }
+          return null
+        }
+      }
+      
+      if (Array.isArray(anyCompanies) && anyCompanies[0]?.id) {
+        console.log("⚠️ Using fallback company ID:", anyCompanies[0].id)
+        return anyCompanies[0].id
+      }
+    } catch (error: any) {
+      if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+        console.warn('⚠️ Fallback request aborted, using cached company ID')
+        if (typeof window !== 'undefined') {
+          const cachedId = localStorage.getItem('active_company_id')
+          if (cachedId) {
+            return cachedId
+          }
+        }
+        return null
+      }
+      throw error
     }
 
     console.error("❌ No company ID found!")
     return null
-  } catch (error) {
+  } catch (error: any) {
+    // معالجة AbortError بشكل صريح
+    if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+      console.warn('⚠️ Request aborted in getActiveCompanyId, using cached company ID')
+      if (typeof window !== 'undefined') {
+        const cachedId = localStorage.getItem('active_company_id')
+        if (cachedId) {
+          return cachedId
+        }
+      }
+      return null
+    }
     console.error("❌ Error in getActiveCompanyId:", error)
     return null
   }
