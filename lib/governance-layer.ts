@@ -555,7 +555,7 @@ export async function canCreateRefundPayment(params: {
     return { allowed: false, reason: 'No approved refund request found' }
   }
 
-  const refund = data.find(r => r.approved_amount >= params.amount)
+  const refund = data.find((r: { approved_amount?: number; id: string }) => r.approved_amount && r.approved_amount >= params.amount)
 
   if (!refund) {
     return { allowed: false, reason: 'No refund request with sufficient approved amount' }
@@ -590,7 +590,7 @@ export async function getUnreadNotificationCount(
   if (error) throw error
   
   // ✅ فلترة حسب expires_at و archived (مثل getUserNotifications)
-  const validNotifications = (data || []).filter((n: any) => {
+  const validNotifications = (data || []).filter((n: Notification) => {
     // التحقق من انتهاء الصلاحية
     if (n.expires_at) {
       const expiresAt = new Date(n.expires_at)
