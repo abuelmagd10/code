@@ -387,8 +387,8 @@ export function NotificationCenter({
         </div>
 
         {/* Notifications List */}
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <ScrollArea className="h-full">
+        <div className="flex-1 min-h-0 overflow-hidden relative">
+          <ScrollArea className="h-full w-full">
             <div className="px-6">
               {loading ? (
                 <div className="py-8 text-center text-gray-500">
