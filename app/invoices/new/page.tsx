@@ -899,8 +899,9 @@ export default function NewInvoicePage() {
 
         // ✅ إرسال إشعار للمحاسب
         try {
-          await createNotification({
-            companyId: companyId,
+          if (saveCompanyId) {
+            await createNotification({
+              companyId: saveCompanyId,
             referenceType: 'invoice',
             referenceId: invoiceData.id,
             title: appLang === 'en' ? 'New Sales Invoice' : 'فاتورة مبيعات جديدة',
@@ -915,7 +916,8 @@ export default function NewInvoicePage() {
             eventKey: `invoice:${invoiceData.id}:created`,
             severity: 'info',
             category: 'sales'
-          })
+            })
+          }
         } catch (notifError) {
           // لا نوقف العملية إذا فشل إرسال الإشعار
           console.error("Error sending notification:", notifError)
