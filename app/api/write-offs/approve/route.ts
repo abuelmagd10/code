@@ -240,6 +240,30 @@ export async function POST(request: NextRequest) {
       .update({ total_cost: totalCOGS })
       .eq('id', writeOffId)
 
+    // ✅ تحديث status إلى 'approved' قبل استدعاء createWriteOffJournal
+    // لأن الدالة تتحقق من أن status === 'approved'
+    const { error: statusUpdateError } = await supabase
+      .from('inventory_write_offs')
+      .update({
+        status: 'approved',
+        approved_by: user.id,
+        approved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', writeOffId)
+
+    if (statusUpdateError) {
+      console.error('Error updating write-off status:', statusUpdateError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `فشل في تحديث حالة الإهلاك: ${statusUpdateError.message}`,
+          error_en: `Failed to update write-off status: ${statusUpdateError.message}`
+        },
+        { status: 500 }
+      )
+    }
+
     // ✅ استخدام محرك الاعتماد لتسجيل القيد المحاسبي
     const journalEntryId = await createWriteOffJournal(
       supabase,
@@ -277,25 +301,22 @@ export async function POST(request: NextRequest) {
         })
     }
 
-    // تحديث حالة الإهلاك إلى "approved"
+    // ✅ تحديث journal_entry_id فقط (status تم تحديثه مسبقاً في السطر 245)
     const { error: updateError } = await supabase
       .from('inventory_write_offs')
       .update({
-        status: 'approved',
-        approved_by: user.id,
-        approved_at: new Date().toISOString(),
         journal_entry_id: journalEntryId,
         updated_at: new Date().toISOString()
       })
       .eq('id', writeOffId)
 
     if (updateError) {
-      console.error('Error updating write-off status:', updateError)
+      console.error('Error updating write-off journal_entry_id:', updateError)
       return NextResponse.json(
         { 
           success: false, 
-          error: `فشل في تحديث حالة الإهلاك: ${updateError.message}`,
-          error_en: `Failed to update write-off status: ${updateError.message}`
+          error: `فشل في تحديث journal_entry_id: ${updateError.message}`,
+          error_en: `Failed to update journal_entry_id: ${updateError.message}`
         },
         { status: 500 }
       )

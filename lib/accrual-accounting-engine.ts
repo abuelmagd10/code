@@ -606,8 +606,9 @@ export async function createWriteOffJournal(
       throw new Error(`Write-off not found: ${writeOffError?.message}`)
     }
 
-    // فقط للإهلاكات المعتمدة
-    if (writeOff.status !== 'approved') {
+    // ✅ قبول الإهلاكات المعتمدة أو في حالة انتظار (خلال عملية الاعتماد)
+    // في API endpoint، يتم استدعاء هذه الدالة قبل تحديث status إلى 'approved'
+    if (writeOff.status !== 'approved' && writeOff.status !== 'pending') {
       return null
     }
 
@@ -681,6 +682,7 @@ export async function createWriteOffJournal(
       description: `إهلاك مخزون - ${writeOff.write_off_number}`,
       branch_id: writeOff.branch_id,
       cost_center_id: writeOff.cost_center_id,
+      warehouse_id: writeOff.warehouse_id,
       lines: [
         {
           // مدين: مصروف الإهلاك (Expense) - مصروف
@@ -749,8 +751,7 @@ async function saveJournalEntry(
       entry_date: journalEntry.entry_date,
       description: journalEntry.description,
       branch_id: journalEntry.branch_id,
-      cost_center_id: journalEntry.cost_center_id,
-      warehouse_id: journalEntry.warehouse_id
+      cost_center_id: journalEntry.cost_center_id
     })
     .select()
     .single()
