@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -110,6 +110,10 @@ export default function WriteOffsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
+
+  // Refs for debouncing and abort control
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   // Dialogs
   const [showNewDialog, setShowNewDialog] = useState(false)
@@ -290,6 +294,15 @@ export default function WriteOffsPage() {
   }, [supabase, statusFilter, dateFrom, dateTo])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Cleanup: إلغاء timeout عند إلغاء المكون
+  useEffect(() => {
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // إضافة منتج جديد للإهلاك
   const addItem = () => {
@@ -524,6 +537,41 @@ export default function WriteOffsPage() {
       return items.map(item => ({ ...item, available_qty: 0 }))
     }
   }, [companyId, supabase])
+
+  // دالة debounced لتحديث الرصيد مع إلغاء الطلبات السابقة
+  const debouncedRefreshQuantities = useCallback(async (
+    targetBranchId: string | null,
+    targetWarehouseId: string | null,
+    targetCostCenterId: string | null,
+    items: WriteOffItem[],
+    setItems: (items: WriteOffItem[]) => void
+  ) => {
+    // إلغاء الطلب السابق إذا كان موجوداً
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    // إلغاء timeout السابق
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current)
+    }
+
+    // إنشاء timeout جديد مع debounce (300ms)
+    refreshTimeoutRef.current = setTimeout(async () => {
+      try {
+        const updated = await refreshAvailableQuantities(targetBranchId, targetWarehouseId, targetCostCenterId, items)
+        if (updated && updated.length > 0) {
+          setItems(updated)
+        }
+      } catch (error) {
+        // تجاهل AbortError
+        const isAbortError = (error as any)?.message?.includes("AbortError") || (error as any)?.message?.includes("aborted")
+        if (!isAbortError) {
+          console.error("Error in debounced refresh:", error)
+        }
+      }
+    }, 300)
+  }, [refreshAvailableQuantities])
 
   // حذف عنصر
   const removeItem = (index: number) => {
@@ -1624,10 +1672,9 @@ export default function WriteOffsPage() {
                         return
                       }
                       setCostCenterId(value)
-                      // تحديث الرصيد المتاح لجميع المنتجات
+                      // تحديث الرصيد المتاح لجميع المنتجات (حتى لو تم اختيارها قبل تغيير مركز التكلفة) مع debounce
                       if (newItems.length > 0) {
-                        const updated = await refreshAvailableQuantities(branchId, warehouseId, value, newItems)
-                        if (updated) setNewItems(updated)
+                        debouncedRefreshQuantities(branchId, warehouseId, value, newItems, setNewItems)
                       }
                     }}
                     onWarehouseChange={async (value) => {
@@ -1643,12 +1690,9 @@ export default function WriteOffsPage() {
                         return
                       }
                       setWarehouseId(value)
-                      // تحديث الرصيد المتاح لجميع المنتجات (حتى لو تم اختيارها قبل تغيير المخزن)
+                      // تحديث الرصيد المتاح لجميع المنتجات (حتى لو تم اختيارها قبل تغيير المخزن) مع debounce
                       if (newItems.length > 0) {
-                        const updated = await refreshAvailableQuantities(branchId, value, costCenterId, newItems)
-                        if (updated && updated.length > 0) {
-                          setNewItems(updated)
-                        }
+                        debouncedRefreshQuantities(branchId, value, costCenterId, newItems, setNewItems)
                       }
                     }}
                     lang={isAr ? "ar" : "en"}
@@ -2002,14 +2046,11 @@ export default function WriteOffsPage() {
                             if (selectedWriteOff) {
                               setSelectedWriteOff({ ...selectedWriteOff, branch_id: value })
                             }
-                            // تحديث الرصيد المتاح لجميع المنتجات (حتى لو تم اختيارها قبل تغيير الفرع)
+                            // تحديث الرصيد المتاح لجميع المنتجات (حتى لو تم اختيارها قبل تغيير الفرع) مع debounce
                             const currentWarehouseId = selectedWriteOff?.warehouse_id || userContext?.warehouse_id || warehouseId
                             const currentCostCenterId = selectedWriteOff?.cost_center_id || userContext?.cost_center_id || costCenterId
                             if (editItems.length > 0 && currentWarehouseId && currentCostCenterId) {
-                              const updated = await refreshAvailableQuantities(value, currentWarehouseId, currentCostCenterId, editItems)
-                              if (updated && updated.length > 0) {
-                                setEditItems(updated)
-                              }
+                              debouncedRefreshQuantities(value, currentWarehouseId, currentCostCenterId, editItems, setEditItems)
                             }
                           }}
                           onCostCenterChange={async (value) => {
