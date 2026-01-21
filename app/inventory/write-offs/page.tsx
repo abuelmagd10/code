@@ -801,12 +801,17 @@ export default function WriteOffsPage() {
       return
     }
 
+    // 🧾 Governance Rule: تحديد القيم بالترتيب: selectedWriteOff -> userContext -> state الحالي
+    const writeOffWarehouseId = selectedWriteOff.warehouse_id || userContext?.warehouse_id || warehouseId
+    const writeOffBranchId = selectedWriteOff.branch_id || userContext?.branch_id || branchId
+    const writeOffCostCenterId = selectedWriteOff.cost_center_id || userContext?.cost_center_id || costCenterId
+
     // 🔐 ERP Access Control - التحقق من صلاحية تعديل عملية مخزنية
     if (userContext) {
       const accessResult = validateInventoryTransaction(
         userContext,
-        branchId,
-        warehouseId,
+        writeOffBranchId,
+        writeOffWarehouseId,
         canOverrideContext,
         isAr ? 'ar' : 'en'
       )
@@ -820,19 +825,13 @@ export default function WriteOffsPage() {
       }
     }
 
-    // 🧾 Governance Rule: التحقق من الرصيد المتاح قبل التعديل
-    // استخدام القيم من selectedWriteOff إذا كانت موجودة، وإلا استخدام القيم الحالية
-    const writeOffWarehouseId = selectedWriteOff.warehouse_id || warehouseId
-    const writeOffBranchId = selectedWriteOff.branch_id || branchId
-    const writeOffCostCenterId = selectedWriteOff.cost_center_id || costCenterId
-
     // التحقق من وجود جميع القيم المطلوبة للحوكمة
     if (!writeOffWarehouseId || !writeOffBranchId || !writeOffCostCenterId) {
       toast({
         title: isAr ? "خطأ" : "Error",
         description: isAr 
-          ? "يجب تحديد الفرع والمخزن ومركز التكلفة قبل التعديل"
-          : "Branch, warehouse, and cost center must be specified before editing",
+          ? "يجب تحديد الفرع والمخزن ومركز التكلفة قبل التعديل. يرجى التحقق من صلاحياتك أو تحديد القيم يدوياً."
+          : "Branch, warehouse, and cost center must be specified before editing. Please check your permissions or specify values manually.",
         variant: "destructive"
       })
       return
