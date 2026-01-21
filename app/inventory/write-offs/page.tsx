@@ -479,6 +479,40 @@ export default function WriteOffsPage() {
       return
     }
 
+    // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً ولم يُسمح بالتجاوز
+    if (!canOverrideContext && userContext) {
+      if (userContext.branch_id && branchId !== userContext.branch_id) {
+        toast({
+          title: isAr ? "فرع غير صالح" : "Invalid Branch",
+          description: isAr 
+            ? "يجب إجراء عملية المخزون في فرعك المحدد"
+            : "Inventory operation must be in your assigned branch",
+          variant: "destructive"
+        })
+        return
+      }
+      if (userContext.warehouse_id && warehouseId !== userContext.warehouse_id) {
+        toast({
+          title: isAr ? "لا صلاحية للمخزن" : "Warehouse Access Denied",
+          description: isAr 
+            ? "يمكنك إجراء عمليات المخزون فقط في المخزن المحدد لك"
+            : "You can only perform inventory operations in your assigned warehouse",
+          variant: "destructive"
+        })
+        return
+      }
+      if (userContext.cost_center_id && costCenterId !== userContext.cost_center_id) {
+        toast({
+          title: isAr ? "مركز تكلفة غير صالح" : "Invalid Cost Center",
+          description: isAr 
+            ? "يجب إجراء عملية المخزون في مركز التكلفة المحدد لك"
+            : "Inventory operation must be in your assigned cost center",
+          variant: "destructive"
+        })
+        return
+      }
+    }
+
     // استخدام API للتحقق (طبقة 2)
     try {
       const validationItems: WriteOffItemValidation[] = newItems.map((item) => ({
@@ -558,8 +592,9 @@ export default function WriteOffsPage() {
           total_cost: totalCost,
           notes: newNotes || null,
           created_by: user?.user?.id,
-          // Warehouse only (branch_id and cost_center_id not in table schema)
           warehouse_id: warehouseId || null,
+          branch_id: branchId || null,
+          cost_center_id: costCenterId || null,
         })
         .select()
         .single()
@@ -1399,9 +1434,48 @@ export default function WriteOffsPage() {
                     branchId={branchId}
                     costCenterId={costCenterId}
                     warehouseId={warehouseId}
-                    onBranchChange={setBranchId}
-                    onCostCenterChange={setCostCenterId}
-                    onWarehouseChange={setWarehouseId}
+                    onBranchChange={(value) => {
+                      // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً بفرع ولم يُسمح بالتجاوز
+                      if (!canOverrideContext && userContext?.branch_id && value && value !== userContext.branch_id) {
+                        toast({
+                          title: isAr ? "فرع غير صالح" : "Invalid Branch",
+                          description: isAr 
+                            ? "يجب إجراء عملية المخزون في فرعك المحدد"
+                            : "Inventory operation must be in your assigned branch",
+                          variant: "destructive"
+                        })
+                        return
+                      }
+                      setBranchId(value)
+                    }}
+                    onCostCenterChange={(value) => {
+                      // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً بمركز تكلفة ولم يُسمح بالتجاوز
+                      if (!canOverrideContext && userContext?.cost_center_id && value && value !== userContext.cost_center_id) {
+                        toast({
+                          title: isAr ? "مركز تكلفة غير صالح" : "Invalid Cost Center",
+                          description: isAr 
+                            ? "يجب إجراء عملية المخزون في مركز التكلفة المحدد لك"
+                            : "Inventory operation must be in your assigned cost center",
+                          variant: "destructive"
+                        })
+                        return
+                      }
+                      setCostCenterId(value)
+                    }}
+                    onWarehouseChange={(value) => {
+                      // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً بمخزن ولم يُسمح بالتجاوز
+                      if (!canOverrideContext && userContext?.warehouse_id && value && value !== userContext.warehouse_id) {
+                        toast({
+                          title: isAr ? "لا صلاحية للمخزن" : "Warehouse Access Denied",
+                          description: isAr 
+                            ? "يمكنك إجراء عمليات المخزون فقط في المخزن المحدد لك"
+                            : "You can only perform inventory operations in your assigned warehouse",
+                          variant: "destructive"
+                        })
+                        return
+                      }
+                      setWarehouseId(value)
+                    }}
                     lang={isAr ? "ar" : "en"}
                     showLabels={true}
                     showWarehouse={true}
