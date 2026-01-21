@@ -467,6 +467,18 @@ export default function WriteOffsPage() {
       return
     }
 
+    // 🧾 Governance: التحقق من الحوكمة قبل التحقق من الرصيد
+    if (!warehouseId || !branchId || !costCenterId) {
+      toast({
+        title: isAr ? "خطأ" : "Error",
+        description: isAr 
+          ? "يجب تحديد الفرع والمخزن ومركز التكلفة قبل الحفظ"
+          : "Branch, warehouse, and cost center must be specified before saving",
+        variant: "destructive"
+      })
+      return
+    }
+
     // استخدام API للتحقق (طبقة 2)
     try {
       const validationItems: WriteOffItemValidation[] = newItems.map((item) => ({
@@ -809,7 +821,23 @@ export default function WriteOffsPage() {
     }
 
     // 🧾 Governance Rule: التحقق من الرصيد المتاح قبل التعديل
+    // استخدام القيم من selectedWriteOff إذا كانت موجودة، وإلا استخدام القيم الحالية
     const writeOffWarehouseId = selectedWriteOff.warehouse_id || warehouseId
+    const writeOffBranchId = selectedWriteOff.branch_id || branchId
+    const writeOffCostCenterId = selectedWriteOff.cost_center_id || costCenterId
+
+    // التحقق من وجود جميع القيم المطلوبة للحوكمة
+    if (!writeOffWarehouseId || !writeOffBranchId || !writeOffCostCenterId) {
+      toast({
+        title: isAr ? "خطأ" : "Error",
+        description: isAr 
+          ? "يجب تحديد الفرع والمخزن ومركز التكلفة قبل التعديل"
+          : "Branch, warehouse, and cost center must be specified before editing",
+        variant: "destructive"
+      })
+      return
+    }
+
     if (writeOffWarehouseId && companyId) {
       try {
         const validationItems: WriteOffItemValidation[] = editItems.map((item) => ({
@@ -818,8 +846,8 @@ export default function WriteOffsPage() {
           product_sku: item.product_sku,
           quantity: item.quantity,
           warehouse_id: writeOffWarehouseId,
-          branch_id: branchId,
-          cost_center_id: costCenterId,
+          branch_id: writeOffBranchId,
+          cost_center_id: writeOffCostCenterId,
         }))
 
         const validationResponse = await fetch("/api/write-off/validate", {
@@ -828,14 +856,10 @@ export default function WriteOffsPage() {
           body: JSON.stringify({
             items: validationItems,
             warehouse_id: writeOffWarehouseId,
-            branch_id: branchId,
-            cost_center_id: costCenterId,
+            branch_id: writeOffBranchId,
+            cost_center_id: writeOffCostCenterId,
           }),
         })
-
-        if (!validationResponse.ok) {
-          throw new Error(`Validation failed: ${validationResponse.status} ${validationResponse.statusText}`)
-        }
 
         const validationResult = await validationResponse.json()
 
@@ -1542,11 +1566,18 @@ export default function WriteOffsPage() {
             {/* Header - Fixed */}
             <DialogHeader className="px-4 sm:px-6 py-4 border-b bg-background shrink-0">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <DialogTitle className="text-base sm:text-lg font-semibold">
-                  {isEditMode
-                    ? (isAr ? "تعديل الإهلاك" : "Edit Write-off")
-                    : (isAr ? "تفاصيل الإهلاك" : "Write-off Details")} - {selectedWriteOff?.write_off_number}
-                </DialogTitle>
+                <div>
+                  <DialogTitle className="text-base sm:text-lg font-semibold">
+                    {isEditMode
+                      ? (isAr ? "تعديل الإهلاك" : "Edit Write-off")
+                      : (isAr ? "تفاصيل الإهلاك" : "Write-off Details")} - {selectedWriteOff?.write_off_number}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs sm:text-sm text-muted-foreground mt-1">
+                    {isEditMode
+                      ? (isAr ? "قم بتعديل بيانات الإهلاك" : "Edit write-off information")
+                      : (isAr ? "عرض تفاصيل الإهلاك" : "View write-off details")}
+                  </DialogDescription>
+                </div>
                 {/* زر التعديل - يظهر فقط في حالة pending ولديه صلاحية */}
                 {selectedWriteOff?.status === "pending" && canEdit && !isEditMode && (
                   <Button variant="outline" size="sm" onClick={enableEditMode} className="w-fit h-8 text-xs gap-1.5">
