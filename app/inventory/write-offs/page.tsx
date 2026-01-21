@@ -439,7 +439,9 @@ export default function WriteOffsPage() {
 
   // تحديث الرصيد المتاح لجميع المنتجات عند تغيير الفرع/المخزن/مركز التكلفة
   const refreshAvailableQuantities = useCallback(async (targetBranchId: string | null, targetWarehouseId: string | null, targetCostCenterId: string | null, items: WriteOffItem[]) => {
-    if (!companyId || !targetWarehouseId || items.length === 0) return
+    if (!companyId || !targetWarehouseId || items.length === 0) {
+      return items // إرجاع القائمة كما هي إذا لم تكن هناك معايير كافية
+    }
 
     try {
       // جلب branch_id من warehouse إذا لم يكن محدداً
@@ -456,7 +458,10 @@ export default function WriteOffsPage() {
         }
       }
 
-      if (!finalBranchId || !targetCostCenterId) return
+      if (!finalBranchId || !targetCostCenterId) {
+        // إذا لم يكن هناك branch أو cost_center، نعيد القائمة مع تحديث الرصيد إلى 0
+        return items.map(item => ({ ...item, available_qty: 0 }))
+      }
 
       // تحديث الرصيد لكل منتج
       const updatedItems = await Promise.all(
@@ -515,9 +520,10 @@ export default function WriteOffsPage() {
       return updatedItems
     } catch (error) {
       console.error("Error refreshing available quantities:", error)
-      return items
+      // في حالة الخطأ، نعيد القائمة مع تحديث الرصيد إلى 0 لجميع المنتجات
+      return items.map(item => ({ ...item, available_qty: 0 }))
     }
-  }, [companyId, supabase, branchId, costCenterId, warehouseId])
+  }, [companyId, supabase])
 
   // حذف عنصر
   const removeItem = (index: number) => {
@@ -1597,10 +1603,12 @@ export default function WriteOffsPage() {
                         return
                       }
                       setBranchId(value)
-                      // تحديث الرصيد المتاح لجميع المنتجات
+                      // تحديث الرصيد المتاح لجميع المنتجات (حتى لو تم اختيارها قبل تغيير الفرع)
                       if (newItems.length > 0) {
                         const updated = await refreshAvailableQuantities(value, warehouseId, costCenterId, newItems)
-                        if (updated) setNewItems(updated)
+                        if (updated && updated.length > 0) {
+                          setNewItems(updated)
+                        }
                       }
                     }}
                     onCostCenterChange={async (value) => {
@@ -1635,10 +1643,12 @@ export default function WriteOffsPage() {
                         return
                       }
                       setWarehouseId(value)
-                      // تحديث الرصيد المتاح لجميع المنتجات
+                      // تحديث الرصيد المتاح لجميع المنتجات (حتى لو تم اختيارها قبل تغيير المخزن)
                       if (newItems.length > 0) {
                         const updated = await refreshAvailableQuantities(branchId, value, costCenterId, newItems)
-                        if (updated) setNewItems(updated)
+                        if (updated && updated.length > 0) {
+                          setNewItems(updated)
+                        }
                       }
                     }}
                     lang={isAr ? "ar" : "en"}
@@ -1992,12 +2002,14 @@ export default function WriteOffsPage() {
                             if (selectedWriteOff) {
                               setSelectedWriteOff({ ...selectedWriteOff, branch_id: value })
                             }
-                            // تحديث الرصيد المتاح لجميع المنتجات
+                            // تحديث الرصيد المتاح لجميع المنتجات (حتى لو تم اختيارها قبل تغيير الفرع)
                             const currentWarehouseId = selectedWriteOff?.warehouse_id || userContext?.warehouse_id || warehouseId
                             const currentCostCenterId = selectedWriteOff?.cost_center_id || userContext?.cost_center_id || costCenterId
                             if (editItems.length > 0 && currentWarehouseId && currentCostCenterId) {
                               const updated = await refreshAvailableQuantities(value, currentWarehouseId, currentCostCenterId, editItems)
-                              if (updated) setEditItems(updated)
+                              if (updated && updated.length > 0) {
+                                setEditItems(updated)
+                              }
                             }
                           }}
                           onCostCenterChange={async (value) => {
@@ -2042,12 +2054,14 @@ export default function WriteOffsPage() {
                             if (selectedWriteOff) {
                               setSelectedWriteOff({ ...selectedWriteOff, warehouse_id: value })
                             }
-                            // تحديث الرصيد المتاح لجميع المنتجات
+                            // تحديث الرصيد المتاح لجميع المنتجات (حتى لو تم اختيارها قبل تغيير المخزن)
                             const currentBranchId = selectedWriteOff?.branch_id || userContext?.branch_id || branchId
                             const currentCostCenterId = selectedWriteOff?.cost_center_id || userContext?.cost_center_id || costCenterId
                             if (editItems.length > 0 && currentBranchId && currentCostCenterId) {
                               const updated = await refreshAvailableQuantities(currentBranchId, value, currentCostCenterId, editItems)
-                              if (updated) setEditItems(updated)
+                              if (updated && updated.length > 0) {
+                                setEditItems(updated)
+                              }
                             }
                           }}
                           lang={isAr ? "ar" : "en"}
