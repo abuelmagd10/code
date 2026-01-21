@@ -410,6 +410,75 @@ export default function WriteOffsPage() {
     })
   }, [products, companyId, warehouseId, branchId, costCenterId, supabase])
 
+  // تحديث الرصيد المتاح لجميع المنتجات عند تغيير الفرع/المخزن/مركز التكلفة
+  const refreshAvailableQuantities = useCallback(async (targetBranchId: string | null, targetWarehouseId: string | null, targetCostCenterId: string | null, items: WriteOffItem[]) => {
+    if (!companyId || !targetWarehouseId || items.length === 0) return
+
+    try {
+      // جلب branch_id من warehouse إذا لم يكن محدداً
+      let finalBranchId = targetBranchId
+      if (!finalBranchId && targetWarehouseId) {
+        const { data: warehouse } = await supabase
+          .from("warehouses")
+          .select("branch_id")
+          .eq("id", targetWarehouseId)
+          .single()
+        
+        if (warehouse?.branch_id) {
+          finalBranchId = warehouse.branch_id
+        }
+      }
+
+      if (!finalBranchId || !targetCostCenterId) return
+
+      // تحديث الرصيد لكل منتج
+      const updatedItems = await Promise.all(
+        items.map(async (item) => {
+          if (!item.product_id) return item
+
+          try {
+            const { data: availableQty, error: rpcError } = await supabase.rpc("get_available_inventory_quantity", {
+              p_company_id: companyId,
+              p_branch_id: finalBranchId,
+              p_warehouse_id: targetWarehouseId,
+              p_cost_center_id: targetCostCenterId,
+              p_product_id: item.product_id,
+            })
+
+            if (!rpcError && availableQty !== null && availableQty !== undefined) {
+              return { ...item, available_qty: availableQty || 0 }
+            } else if (rpcError && (rpcError.code === "42883" || rpcError.code === "P0001")) {
+              // حساب مباشر من inventory_transactions
+              let fallbackQuery = supabase
+                .from("inventory_transactions")
+                .select("quantity_change")
+                .eq("company_id", companyId)
+                .eq("product_id", item.product_id)
+                .or("is_deleted.is.null,is_deleted.eq.false")
+
+              if (finalBranchId) fallbackQuery = fallbackQuery.eq("branch_id", finalBranchId)
+              if (targetWarehouseId) fallbackQuery = fallbackQuery.eq("warehouse_id", targetWarehouseId)
+              if (targetCostCenterId) fallbackQuery = fallbackQuery.eq("cost_center_id", targetCostCenterId)
+
+              const { data: transactions } = await fallbackQuery
+              const calculatedQty = Math.max(0, (transactions || []).reduce((sum: number, tx: any) => sum + Number(tx.quantity_change || 0), 0))
+              return { ...item, available_qty: calculatedQty }
+            }
+          } catch (error) {
+            console.error(`Error fetching available quantity for product ${item.product_id}:`, error)
+          }
+
+          return item
+        })
+      )
+
+      return updatedItems
+    } catch (error) {
+      console.error("Error refreshing available quantities:", error)
+      return items
+    }
+  }, [companyId, supabase, branchId, costCenterId, warehouseId])
+
   // حذف عنصر
   const removeItem = (index: number) => {
     setNewItems(newItems.filter((_, i) => i !== index))
@@ -1434,7 +1503,7 @@ export default function WriteOffsPage() {
                     branchId={branchId}
                     costCenterId={costCenterId}
                     warehouseId={warehouseId}
-                    onBranchChange={(value) => {
+                    onBranchChange={async (value) => {
                       // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً بفرع ولم يُسمح بالتجاوز
                       if (!canOverrideContext && userContext?.branch_id && value && value !== userContext.branch_id) {
                         toast({
@@ -1447,8 +1516,13 @@ export default function WriteOffsPage() {
                         return
                       }
                       setBranchId(value)
+                      // تحديث الرصيد المتاح لجميع المنتجات
+                      if (newItems.length > 0) {
+                        const updated = await refreshAvailableQuantities(value, warehouseId, costCenterId, newItems)
+                        if (updated) setNewItems(updated)
+                      }
                     }}
-                    onCostCenterChange={(value) => {
+                    onCostCenterChange={async (value) => {
                       // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً بمركز تكلفة ولم يُسمح بالتجاوز
                       if (!canOverrideContext && userContext?.cost_center_id && value && value !== userContext.cost_center_id) {
                         toast({
@@ -1461,8 +1535,13 @@ export default function WriteOffsPage() {
                         return
                       }
                       setCostCenterId(value)
+                      // تحديث الرصيد المتاح لجميع المنتجات
+                      if (newItems.length > 0) {
+                        const updated = await refreshAvailableQuantities(branchId, warehouseId, value, newItems)
+                        if (updated) setNewItems(updated)
+                      }
                     }}
-                    onWarehouseChange={(value) => {
+                    onWarehouseChange={async (value) => {
                       // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً بمخزن ولم يُسمح بالتجاوز
                       if (!canOverrideContext && userContext?.warehouse_id && value && value !== userContext.warehouse_id) {
                         toast({
@@ -1475,6 +1554,11 @@ export default function WriteOffsPage() {
                         return
                       }
                       setWarehouseId(value)
+                      // تحديث الرصيد المتاح لجميع المنتجات
+                      if (newItems.length > 0) {
+                        const updated = await refreshAvailableQuantities(branchId, value, costCenterId, newItems)
+                        if (updated) setNewItems(updated)
+                      }
                     }}
                     lang={isAr ? "ar" : "en"}
                     showLabels={true}
@@ -1810,7 +1894,7 @@ export default function WriteOffsPage() {
                           branchId={selectedWriteOff.branch_id || userContext?.branch_id || branchId}
                           costCenterId={selectedWriteOff.cost_center_id || userContext?.cost_center_id || costCenterId}
                           warehouseId={selectedWriteOff.warehouse_id || userContext?.warehouse_id || warehouseId}
-                          onBranchChange={(value) => {
+                          onBranchChange={async (value) => {
                             // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً بفرع ولم يُسمح بالتجاوز
                             if (!canOverrideContext && userContext?.branch_id && value && value !== userContext.branch_id) {
                               toast({
@@ -1827,8 +1911,15 @@ export default function WriteOffsPage() {
                             if (selectedWriteOff) {
                               setSelectedWriteOff({ ...selectedWriteOff, branch_id: value })
                             }
+                            // تحديث الرصيد المتاح لجميع المنتجات
+                            const currentWarehouseId = selectedWriteOff?.warehouse_id || userContext?.warehouse_id || warehouseId
+                            const currentCostCenterId = selectedWriteOff?.cost_center_id || userContext?.cost_center_id || costCenterId
+                            if (editItems.length > 0 && currentWarehouseId && currentCostCenterId) {
+                              const updated = await refreshAvailableQuantities(value, currentWarehouseId, currentCostCenterId, editItems)
+                              if (updated) setEditItems(updated)
+                            }
                           }}
-                          onCostCenterChange={(value) => {
+                          onCostCenterChange={async (value) => {
                             // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً بمركز تكلفة ولم يُسمح بالتجاوز
                             if (!canOverrideContext && userContext?.cost_center_id && value && value !== userContext.cost_center_id) {
                               toast({
@@ -1845,8 +1936,15 @@ export default function WriteOffsPage() {
                             if (selectedWriteOff) {
                               setSelectedWriteOff({ ...selectedWriteOff, cost_center_id: value })
                             }
+                            // تحديث الرصيد المتاح لجميع المنتجات
+                            const currentBranchId = selectedWriteOff?.branch_id || userContext?.branch_id || branchId
+                            const currentWarehouseId = selectedWriteOff?.warehouse_id || userContext?.warehouse_id || warehouseId
+                            if (editItems.length > 0 && currentBranchId && currentWarehouseId) {
+                              const updated = await refreshAvailableQuantities(currentBranchId, currentWarehouseId, value, editItems)
+                              if (updated) setEditItems(updated)
+                            }
                           }}
-                          onWarehouseChange={(value) => {
+                          onWarehouseChange={async (value) => {
                             // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً بمخزن ولم يُسمح بالتجاوز
                             if (!canOverrideContext && userContext?.warehouse_id && value && value !== userContext.warehouse_id) {
                               toast({
@@ -1862,6 +1960,13 @@ export default function WriteOffsPage() {
                             // تحديث selectedWriteOff إذا كان موجوداً
                             if (selectedWriteOff) {
                               setSelectedWriteOff({ ...selectedWriteOff, warehouse_id: value })
+                            }
+                            // تحديث الرصيد المتاح لجميع المنتجات
+                            const currentBranchId = selectedWriteOff?.branch_id || userContext?.branch_id || branchId
+                            const currentCostCenterId = selectedWriteOff?.cost_center_id || userContext?.cost_center_id || costCenterId
+                            if (editItems.length > 0 && currentBranchId && currentCostCenterId) {
+                              const updated = await refreshAvailableQuantities(currentBranchId, value, currentCostCenterId, editItems)
+                              if (updated) setEditItems(updated)
                             }
                           }}
                           lang={isAr ? "ar" : "en"}
