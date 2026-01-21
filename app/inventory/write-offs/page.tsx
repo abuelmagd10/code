@@ -57,6 +57,7 @@ interface WriteOffItem {
   item_reason?: string
   notes?: string
   available_qty?: number
+  validation_error?: string // رسالة خطأ التحقق من الكمية
 }
 
 interface WriteOff {
@@ -304,6 +305,111 @@ export default function WriteOffsPage() {
     }
   }, [])
 
+  // دالة موحدة لجلب الرصيد المتاح بناءً على السياق الكامل
+  const getAvailableQuantity = useCallback(async (
+    productId: string,
+    targetBranchId: string | null,
+    targetWarehouseId: string | null,
+    targetCostCenterId: string | null
+  ): Promise<number> => {
+    if (!companyId || !targetWarehouseId || !productId) {
+      return 0
+    }
+
+    try {
+      // جلب branch_id من warehouse إذا لم يكن محدداً
+      let finalBranchId = targetBranchId
+      if (!finalBranchId && targetWarehouseId) {
+        const { data: warehouse } = await supabase
+          .from("warehouses")
+          .select("branch_id")
+          .eq("id", targetWarehouseId)
+          .single()
+        
+        if (warehouse?.branch_id) {
+          finalBranchId = warehouse.branch_id
+        }
+      }
+
+      if (!finalBranchId || !targetCostCenterId) {
+        return 0
+      }
+
+      // استخدام RPC function للحصول على الرصيد المتاح
+      const { data: availableQty, error: rpcError } = await supabase.rpc("get_available_inventory_quantity", {
+        p_company_id: companyId,
+        p_branch_id: finalBranchId,
+        p_warehouse_id: targetWarehouseId,
+        p_cost_center_id: targetCostCenterId,
+        p_product_id: productId,
+      })
+
+      if (!rpcError && availableQty !== null && availableQty !== undefined) {
+        return Number(availableQty) || 0
+      } else if (rpcError && (rpcError.code === "42883" || rpcError.code === "P0001")) {
+        // حساب مباشر من inventory_transactions
+        let fallbackQuery = supabase
+          .from("inventory_transactions")
+          .select("quantity_change")
+          .eq("company_id", companyId)
+          .eq("product_id", productId)
+          .or("is_deleted.is.null,is_deleted.eq.false")
+
+        if (finalBranchId) fallbackQuery = fallbackQuery.eq("branch_id", finalBranchId)
+        if (targetWarehouseId) fallbackQuery = fallbackQuery.eq("warehouse_id", targetWarehouseId)
+        if (targetCostCenterId) fallbackQuery = fallbackQuery.eq("cost_center_id", targetCostCenterId)
+
+        const { data: transactions, error: txError } = await fallbackQuery
+        
+        if (txError) {
+          console.error(`Error fetching transactions for product ${productId}:`, txError)
+          return 0
+        }
+
+        return Math.max(0, (transactions || []).reduce((sum: number, tx: any) => sum + Number(tx.quantity_change || 0), 0))
+      } else {
+        // معالجة AbortError بشكل خاص
+        const isAbortError = rpcError?.message?.includes("AbortError") || rpcError?.message?.includes("aborted")
+        if (!isAbortError) {
+          console.error(`RPC error for product ${productId}:`, rpcError)
+        }
+        return 0
+      }
+    } catch (error: any) {
+      // معالجة AbortError بشكل خاص
+      const isAbortError = error?.message?.includes("AbortError") || error?.message?.includes("aborted") || error?.name === "AbortError"
+      if (!isAbortError) {
+        console.error(`Error fetching available quantity for product ${productId}:`, error)
+      }
+      return 0
+    }
+  }, [companyId, supabase])
+
+  // دالة للتحقق من صحة الكمية المدخلة مقابل الرصيد المتاح
+  const validateItemQuantity = useCallback((item: WriteOffItem, availableQty: number): string | null => {
+    if (!item.product_id) {
+      return null // لا تحقق إذا لم يتم اختيار المنتج بعد
+    }
+
+    if (item.quantity <= 0) {
+      return isAr ? "الكمية يجب أن تكون أكبر من صفر" : "Quantity must be greater than zero"
+    }
+
+    if (item.quantity > availableQty) {
+      return isAr 
+        ? `الكمية المدخلة (${item.quantity}) تتجاوز الرصيد المتاح (${availableQty}) في المخزن المحدد`
+        : `Entered quantity (${item.quantity}) exceeds available stock (${availableQty}) in selected warehouse`
+    }
+
+    if (availableQty === 0) {
+      return isAr 
+        ? "هذا المنتج غير متوفر في المخزن المختار"
+        : "This product is not available in the selected warehouse"
+    }
+
+    return null
+  }, [isAr])
+
   // إضافة منتج جديد للإهلاك
   const addItem = () => {
     setNewItems([...newItems, {
@@ -444,11 +550,17 @@ export default function WriteOffsPage() {
 
       if (field === "quantity" || field === "unit_cost") {
         updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
+        
+        // التحقق من الكمية عند تغييرها
+        if (field === "quantity" && updated[index].product_id && updated[index].available_qty !== undefined) {
+          const validationError = validateItemQuantity(updated[index], updated[index].available_qty || 0)
+          updated[index].validation_error = validationError || undefined
+        }
       }
 
       return updated
     })
-  }, [products, companyId, warehouseId, branchId, costCenterId, supabase])
+  }, [products, companyId, warehouseId, branchId, costCenterId, supabase, validateItemQuantity])
 
   // تحديث الرصيد المتاح لجميع المنتجات عند تغيير الفرع/المخزن/مركز التكلفة
   const refreshAvailableQuantities = useCallback(async (targetBranchId: string | null, targetWarehouseId: string | null, targetCostCenterId: string | null, items: WriteOffItem[]) => {
@@ -538,19 +650,14 @@ export default function WriteOffsPage() {
     }
   }, [companyId, supabase])
 
-  // دالة debounced لتحديث الرصيد مع إلغاء الطلبات السابقة
-  const debouncedRefreshQuantities = useCallback(async (
+  // دالة debounced لتحديث الرصيد مع التحقق من الكمية
+  const debouncedRefreshQuantities = useCallback((
     targetBranchId: string | null,
     targetWarehouseId: string | null,
     targetCostCenterId: string | null,
     items: WriteOffItem[],
     setItems: (items: WriteOffItem[]) => void
   ) => {
-    // إلغاء الطلب السابق إذا كان موجوداً
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-
     // إلغاء timeout السابق
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current)
@@ -559,19 +666,43 @@ export default function WriteOffsPage() {
     // إنشاء timeout جديد مع debounce (300ms)
     refreshTimeoutRef.current = setTimeout(async () => {
       try {
-        const updated = await refreshAvailableQuantities(targetBranchId, targetWarehouseId, targetCostCenterId, items)
-        if (updated && updated.length > 0) {
-          setItems(updated)
+        // تحديث الرصيد لكل منتج مع التحقق من الكمية
+        const updatedItems = await Promise.all(
+          items.map(async (item) => {
+            if (!item.product_id) {
+              return { ...item, available_qty: 0, validation_error: undefined }
+            }
+
+            const availableQty = await getAvailableQuantity(
+              item.product_id,
+              targetBranchId,
+              targetWarehouseId,
+              targetCostCenterId
+            )
+
+            // التحقق من الكمية المدخلة مقابل الرصيد المتاح
+            const validationError = validateItemQuantity(item, availableQty)
+
+            return {
+              ...item,
+              available_qty: availableQty,
+              validation_error: validationError || undefined
+            }
+          })
+        )
+
+        if (updatedItems && updatedItems.length > 0) {
+          setItems(updatedItems)
         }
       } catch (error) {
-        // تجاهل AbortError
+        // معالجة AbortError بشكل خاص
         const isAbortError = (error as any)?.message?.includes("AbortError") || (error as any)?.message?.includes("aborted")
         if (!isAbortError) {
           console.error("Error in debounced refresh:", error)
         }
       }
     }, 300)
-  }, [refreshAvailableQuantities])
+  }, [getAvailableQuantity, validateItemQuantity])
 
   // حذف عنصر
   const removeItem = (index: number) => {
@@ -580,6 +711,11 @@ export default function WriteOffsPage() {
 
   // حساب الإجمالي
   const totalCost = newItems.reduce((sum, item) => sum + item.total_cost, 0)
+
+  // التحقق من وجود أخطاء validation
+  const hasValidationErrors = newItems.some(item => item.validation_error)
+  const canSaveNewWriteOff = !saving && newItems.length > 0 && !hasValidationErrors && 
+    companyId && warehouseId && branchId && costCenterId
 
   // حفظ إهلاك جديد
   const handleSaveWriteOff = async () => {
@@ -615,6 +751,28 @@ export default function WriteOffsPage() {
       }
       if (item.quantity <= 0) {
         toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "الكمية يجب أن تكون أكبر من صفر" : "Quantity must be greater than zero", variant: "destructive" })
+        return
+      }
+      
+      // 🧾 Governance Rule: التحقق من validation_error
+      if (item.validation_error) {
+        toast({
+          title: isAr ? "خطأ في التحقق" : "Validation Error",
+          description: item.validation_error,
+          variant: "destructive"
+        })
+        return
+      }
+      
+      // التحقق من أن الكمية لا تتجاوز الرصيد المتاح
+      if (item.available_qty !== undefined && item.quantity > item.available_qty) {
+        toast({
+          title: isAr ? "خطأ في الكمية" : "Quantity Error",
+          description: isAr 
+            ? `الكمية المدخلة (${item.quantity}) تتجاوز الرصيد المتاح (${item.available_qty}) للمنتج ${item.product_name || item.product_sku || ''}`
+            : `Entered quantity (${item.quantity}) exceeds available stock (${item.available_qty}) for product ${item.product_name || item.product_sku || ''}`,
+          variant: "destructive"
+        })
         return
       }
     }
@@ -998,11 +1156,17 @@ export default function WriteOffsPage() {
 
       if (field === "quantity" || field === "unit_cost") {
         updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
+        
+        // التحقق من الكمية عند تغييرها
+        if (field === "quantity" && updated[index].product_id && updated[index].available_qty !== undefined) {
+          const validationError = validateItemQuantity(updated[index], updated[index].available_qty || 0)
+          updated[index].validation_error = validationError || undefined
+        }
       }
 
       return updated
     })
-  }, [products, companyId, selectedWriteOff, branchId, costCenterId, supabase])
+  }, [products, companyId, selectedWriteOff, branchId, costCenterId, supabase, validateItemQuantity])
 
   // إضافة منتج في وضع التعديل
   const addEditItem = () => {
@@ -1818,6 +1982,16 @@ export default function WriteOffsPage() {
                               </div>
                             </div>
                           </div>
+
+                          {/* رسالة الخطأ - Validation Error */}
+                          {item.validation_error && (
+                            <div className="mt-2 p-2 bg-destructive/10 border border-destructive/20 rounded-md">
+                              <div className="flex items-start gap-2">
+                                <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                                <p className="text-xs text-destructive">{item.validation_error}</p>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
 
@@ -2238,6 +2412,16 @@ export default function WriteOffsPage() {
                                     </div>
                                   </div>
                                 </div>
+
+                                {/* رسالة الخطأ - Validation Error */}
+                                {item.validation_error && (
+                                  <div className="mt-2 p-2 bg-destructive/10 border border-destructive/20 rounded-md">
+                                    <div className="flex items-start gap-2">
+                                      <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                                      <p className="text-xs text-destructive">{item.validation_error}</p>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             ))}
 
