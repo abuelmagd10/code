@@ -434,7 +434,7 @@ export default function WriteOffsPage() {
       // تحديث الرصيد لكل منتج
       const updatedItems = await Promise.all(
         items.map(async (item) => {
-          if (!item.product_id) return item
+          if (!item.product_id) return { ...item, available_qty: 0 }
 
           try {
             const { data: availableQty, error: rpcError } = await supabase.rpc("get_available_inventory_quantity", {
@@ -446,7 +446,8 @@ export default function WriteOffsPage() {
             })
 
             if (!rpcError && availableQty !== null && availableQty !== undefined) {
-              return { ...item, available_qty: availableQty || 0 }
+              // ✅ دائماً نستخدم القيمة من RPC (حتى لو كانت 0) - هذا هو الرصيد الفعلي في المخزن المحدد
+              return { ...item, available_qty: Number(availableQty) || 0 }
             } else if (rpcError && (rpcError.code === "42883" || rpcError.code === "P0001")) {
               // حساب مباشر من inventory_transactions
               let fallbackQuery = supabase
@@ -460,15 +461,27 @@ export default function WriteOffsPage() {
               if (targetWarehouseId) fallbackQuery = fallbackQuery.eq("warehouse_id", targetWarehouseId)
               if (targetCostCenterId) fallbackQuery = fallbackQuery.eq("cost_center_id", targetCostCenterId)
 
-              const { data: transactions } = await fallbackQuery
+              const { data: transactions, error: txError } = await fallbackQuery
+              
+              if (txError) {
+                console.error(`Error fetching transactions for product ${item.product_id}:`, txError)
+                // إذا كان هناك خطأ، نعيد 0 لأننا لا نعرف الرصيد الفعلي
+                return { ...item, available_qty: 0 }
+              }
+
               const calculatedQty = Math.max(0, (transactions || []).reduce((sum: number, tx: any) => sum + Number(tx.quantity_change || 0), 0))
+              // ✅ دائماً نستخدم القيمة المحسوبة (حتى لو كانت 0) - هذا هو الرصيد الفعلي في المخزن المحدد
               return { ...item, available_qty: calculatedQty }
+            } else {
+              // إذا كان هناك خطأ آخر في RPC، نعيد 0 لأننا لا نعرف الرصيد الفعلي
+              console.error(`RPC error for product ${item.product_id}:`, rpcError)
+              return { ...item, available_qty: 0 }
             }
           } catch (error) {
             console.error(`Error fetching available quantity for product ${item.product_id}:`, error)
+            // في حالة الخطأ، نعيد 0 لأننا لا نعرف الرصيد الفعلي
+            return { ...item, available_qty: 0 }
           }
-
-          return item
         })
       )
 
