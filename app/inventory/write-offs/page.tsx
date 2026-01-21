@@ -490,6 +490,10 @@ export default function WriteOffsPage() {
         }),
       })
 
+      if (!validationResponse.ok) {
+        throw new Error(`Validation failed: ${validationResponse.status} ${validationResponse.statusText}`)
+      }
+
       const validationResult = await validationResponse.json()
 
       if (!validationResult.isValid && validationResult.errors && validationResult.errors.length > 0) {
@@ -828,6 +832,10 @@ export default function WriteOffsPage() {
             cost_center_id: costCenterId,
           }),
         })
+
+        if (!validationResponse.ok) {
+          throw new Error(`Validation failed: ${validationResponse.status} ${validationResponse.statusText}`)
+        }
 
         const validationResult = await validationResponse.json()
 
@@ -1931,6 +1939,9 @@ export default function WriteOffsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{isAr ? "رفض الإهلاك" : "Reject Write-off"}</DialogTitle>
+              <DialogDescription>
+                {isAr ? "أدخل سبب رفض الإهلاك" : "Enter the reason for rejecting the write-off"}
+              </DialogDescription>
             </DialogHeader>
             <div>
               <Label>{isAr ? "سبب الرفض" : "Rejection Reason"} *</Label>
