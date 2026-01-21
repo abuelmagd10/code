@@ -22,7 +22,6 @@ CREATE OR REPLACE FUNCTION get_available_inventory_quantity(
 RETURNS INTEGER AS $$
 DECLARE
   v_available_qty INTEGER := 0;
-  v_product_qty INTEGER := 0;
   v_transaction_count INTEGER := 0;
   v_final_branch_id UUID;
   v_final_cost_center_id UUID;
@@ -95,15 +94,11 @@ BEGIN
       AND (is_deleted IS NULL OR is_deleted = false);
   END IF;
 
-  -- ✅ الخطوة 4: إذا لم توجد transactions، استخدم quantity_on_hand مباشرة
-  -- هذا يضمن أن المنتجات التي لم يتم تسجيل حركات مخزون لها يمكن إهلاكها
+  -- ✅ الخطوة 4: إذا لم توجد transactions في المخزن المحدد، نرجع 0
+  -- ⚠️ لا نستخدم quantity_on_hand لأنه الرصيد الإجمالي في جميع المخازن، وليس في المخزن المحدد
+  -- إذا لم توجد transactions في المخزن المحدد، فهذا يعني أن الرصيد = 0 في هذا المخزن
   IF v_transaction_count = 0 THEN
-    SELECT COALESCE(quantity_on_hand, 0) INTO v_product_qty
-    FROM products
-    WHERE id = p_product_id AND company_id = p_company_id;
-    
-    -- ✅ إرجاع quantity_on_hand حتى لو كان 0 (لأنه القيمة الصحيحة)
-    RETURN GREATEST(0, v_product_qty);
+    RETURN 0;
   END IF;
   
   -- ✅ الخطوة 5: إذا كانت هناك transactions، استخدم المجموع المحسوب
@@ -437,6 +432,6 @@ BEGIN
   RAISE NOTICE '';
   RAISE NOTICE '📝 ملاحظات مهمة:';
   RAISE NOTICE '  - الدالة الآن تحسب الرصيد بناءً على cost_center_id المرتبط بـ branch';
-  RAISE NOTICE '  - إذا لم يكن هناك transactions، يتم استخدام quantity_on_hand من المنتج';
+  RAISE NOTICE '  - إذا لم يكن هناك transactions في المخزن المحدد، يتم إرجاع 0 (لا يوجد رصيد في هذا المخزن)';
   RAISE NOTICE '  - جميع Triggers تستخدم cost_center_id الصحيح من branch';
 END $$;

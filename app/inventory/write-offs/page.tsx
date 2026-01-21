@@ -394,10 +394,12 @@ export default function WriteOffsPage() {
                   })
                 } else if (!rpcError && availableQty !== null && availableQty !== undefined) {
                   // ✅ دائماً نستخدم القيمة من RPC (حتى لو كانت 0) - هذا هو الرصيد الفعلي في المخزن المحدد
+                  const finalQty = Number(availableQty) || 0
+                  console.log("✅ Setting available_qty to:", finalQty, "for product", value, "in warehouse", warehouseId)
                   setNewItems(prevItems => {
                     const newUpdated = [...prevItems]
                     if (newUpdated[index]?.product_id === value) {
-                      newUpdated[index] = { ...newUpdated[index], available_qty: Number(availableQty) || 0 }
+                      newUpdated[index] = { ...newUpdated[index], available_qty: finalQty }
                     }
                     return newUpdated
                   })
