@@ -1752,7 +1752,18 @@ export default function WriteOffsPage() {
                                     <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "المنتج" : "Product"}</Label>
                                     <Select value={item.product_id} onValueChange={v => updateEditItem(idx, "product_id", v)}>
                                       <SelectTrigger className="h-9 text-sm mt-1">
-                                        <SelectValue placeholder={isAr ? "اختر منتج..." : "Select..."} />
+                                        <SelectValue placeholder={isAr ? "اختر منتج..." : "Select..."}>
+                                          {item.product_name ? (
+                                            <div className="flex items-center gap-2">
+                                              <span className="truncate">{item.product_name}</span>
+                                              {item.product_sku && (
+                                                <span className="text-xs text-muted-foreground">({item.product_sku})</span>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <span className="text-muted-foreground">{isAr ? "اختر منتج..." : "Select..."}</span>
+                                          )}
+                                        </SelectValue>
                                       </SelectTrigger>
                                       <SelectContent>
                                         {products.map(p => (
