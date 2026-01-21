@@ -1737,6 +1737,17 @@ export default function WriteOffsPage() {
                           costCenterId={selectedWriteOff.cost_center_id || userContext?.cost_center_id || costCenterId}
                           warehouseId={selectedWriteOff.warehouse_id || userContext?.warehouse_id || warehouseId}
                           onBranchChange={(value) => {
+                            // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً بفرع ولم يُسمح بالتجاوز
+                            if (!canOverrideContext && userContext?.branch_id && value && value !== userContext.branch_id) {
+                              toast({
+                                title: isAr ? "فرع غير صالح" : "Invalid Branch",
+                                description: isAr 
+                                  ? "يجب إجراء عملية المخزون في فرعك المحدد"
+                                  : "Inventory operation must be in your assigned branch",
+                                variant: "destructive"
+                              })
+                              return
+                            }
                             setBranchId(value)
                             // تحديث selectedWriteOff إذا كان موجوداً
                             if (selectedWriteOff) {
@@ -1744,6 +1755,17 @@ export default function WriteOffsPage() {
                             }
                           }}
                           onCostCenterChange={(value) => {
+                            // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً بمركز تكلفة ولم يُسمح بالتجاوز
+                            if (!canOverrideContext && userContext?.cost_center_id && value && value !== userContext.cost_center_id) {
+                              toast({
+                                title: isAr ? "مركز تكلفة غير صالح" : "Invalid Cost Center",
+                                description: isAr 
+                                  ? "يجب إجراء عملية المخزون في مركز التكلفة المحدد لك"
+                                  : "Inventory operation must be in your assigned cost center",
+                                variant: "destructive"
+                              })
+                              return
+                            }
                             setCostCenterId(value)
                             // تحديث selectedWriteOff إذا كان موجوداً
                             if (selectedWriteOff) {
@@ -1751,6 +1773,17 @@ export default function WriteOffsPage() {
                             }
                           }}
                           onWarehouseChange={(value) => {
+                            // 🔐 التحقق من القيود: إذا كان المستخدم مقيداً بمخزن ولم يُسمح بالتجاوز
+                            if (!canOverrideContext && userContext?.warehouse_id && value && value !== userContext.warehouse_id) {
+                              toast({
+                                title: isAr ? "لا صلاحية للمخزن" : "Warehouse Access Denied",
+                                description: isAr 
+                                  ? "يمكنك إجراء عمليات المخزون فقط في المخزن المحدد لك"
+                                  : "You can only perform inventory operations in your assigned warehouse",
+                                variant: "destructive"
+                              })
+                              return
+                            }
                             setWarehouseId(value)
                             // تحديث selectedWriteOff إذا كان موجوداً
                             if (selectedWriteOff) {
