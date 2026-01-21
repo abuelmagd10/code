@@ -962,13 +962,30 @@ export default function WriteOffsPage() {
 
   // عرض تفاصيل الإهلاك
   const handleView = async (wo: WriteOff) => {
+    // ✅ جلب البيانات المحدثة دائماً من قاعدة البيانات بدلاً من استخدام wo من state
+    const { data: freshWriteOff } = await supabase
+      .from("inventory_write_offs")
+      .select("*")
+      .eq("id", wo.id)
+      .single()
+
+    if (!freshWriteOff) {
+      toast({ 
+        title: isAr ? "خطأ" : "Error", 
+        description: isAr ? "لم يتم العثور على الإهلاك" : "Write-off not found", 
+        variant: "destructive" 
+      })
+      return
+    }
+
+    // جلب العناصر المحدثة
     const { data: items } = await supabase
       .from("inventory_write_off_items")
       .select("*, products(name, sku)")
       .eq("write_off_id", wo.id)
 
     const writeOffWithItems = {
-      ...wo,
+      ...freshWriteOff,
       items: (items || []).map((it: any) => ({
         ...it,
         product_name: it.products?.name,
@@ -1389,10 +1406,45 @@ export default function WriteOffsPage() {
         changed_fields: changedFields,
       })
 
-      toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })
+      // إعادة تحميل البيانات المحدثة مباشرة قبل إظهار الرسالة
+      const { data: updatedWriteOff } = await supabase
+        .from("inventory_write_offs")
+        .select("*")
+        .eq("id", selectedWriteOff.id)
+        .single()
+      
+      if (updatedWriteOff) {
+        // جلب العناصر المحدثة
+        const { data: updatedItems } = await supabase
+          .from("inventory_write_off_items")
+          .select("*, products(name, sku)")
+          .eq("write_off_id", selectedWriteOff.id)
+        
+        const writeOffWithUpdatedItems = {
+          ...updatedWriteOff,
+          items: (updatedItems || []).map((it: any) => ({
+            ...it,
+            product_name: it.products?.name,
+            product_sku: it.products?.sku,
+          })),
+        }
+        
+        // تحديث selectedWriteOff بالبيانات الجديدة
+        setSelectedWriteOff(writeOffWithUpdatedItems)
+        resetEditForm(writeOffWithUpdatedItems)
+        
+        // تحديث القائمة الرئيسية
+        await loadData()
+        
+        toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })
+      } else {
+        // إذا لم نتمكن من جلب البيانات المحدثة، نعيد تحميل كل شيء
+        await loadData()
+        toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })
+      }
+      
       setIsEditMode(false)
-      setShowViewDialog(false)
-      loadData()
+      // لا نغلق Dialog حتى يرى المستخدم البيانات المحدثة
     } catch (err: any) {
       console.error("Error saving edit:", err)
       toast({ title: isAr ? "خطأ" : "Error", description: err.message, variant: "destructive" })
