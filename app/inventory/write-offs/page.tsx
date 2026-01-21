@@ -900,6 +900,11 @@ export default function WriteOffsPage() {
         items: selectedWriteOff.items,
       }
 
+      // 🧾 Governance: استخدام القيم المحددة من BranchCostCenterSelector
+      const finalWarehouseId = selectedWriteOff.warehouse_id || userContext?.warehouse_id || warehouseId
+      const finalBranchId = selectedWriteOff.branch_id || userContext?.branch_id || branchId
+      const finalCostCenterId = selectedWriteOff.cost_center_id || userContext?.cost_center_id || costCenterId
+
       // تحديث الإهلاك الرئيسي
       const { error: updateErr } = await supabase
         .from("inventory_write_offs")
@@ -909,6 +914,9 @@ export default function WriteOffsPage() {
           notes: editNotes || null,
           write_off_date: editDate,
           total_cost: editTotalCost,
+          warehouse_id: finalWarehouseId,
+          branch_id: finalBranchId,
+          cost_center_id: finalCostCenterId,
           updated_at: new Date().toISOString(),
         })
         .eq("id", selectedWriteOff.id)
@@ -1717,6 +1725,42 @@ export default function WriteOffsPage() {
                             <Input value={editReasonDetails} onChange={e => setEditReasonDetails(e.target.value)} placeholder={isAr ? "وصف تفصيلي..." : "Description..."} className="h-9 text-sm" />
                           </div>
                         </div>
+                      </div>
+
+                      {/* Branch and Cost Center Selection - Edit Mode */}
+                      <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 sm:p-4">
+                        <h3 className="font-medium text-sm flex items-center gap-2 mb-3">
+                          {isAr ? "الفرع ومركز التكلفة والمخزن" : "Branch, Cost Center & Warehouse"}
+                        </h3>
+                        <BranchCostCenterSelector
+                          branchId={selectedWriteOff.branch_id || userContext?.branch_id || branchId}
+                          costCenterId={selectedWriteOff.cost_center_id || userContext?.cost_center_id || costCenterId}
+                          warehouseId={selectedWriteOff.warehouse_id || userContext?.warehouse_id || warehouseId}
+                          onBranchChange={(value) => {
+                            setBranchId(value)
+                            // تحديث selectedWriteOff إذا كان موجوداً
+                            if (selectedWriteOff) {
+                              setSelectedWriteOff({ ...selectedWriteOff, branch_id: value })
+                            }
+                          }}
+                          onCostCenterChange={(value) => {
+                            setCostCenterId(value)
+                            // تحديث selectedWriteOff إذا كان موجوداً
+                            if (selectedWriteOff) {
+                              setSelectedWriteOff({ ...selectedWriteOff, cost_center_id: value })
+                            }
+                          }}
+                          onWarehouseChange={(value) => {
+                            setWarehouseId(value)
+                            // تحديث selectedWriteOff إذا كان موجوداً
+                            if (selectedWriteOff) {
+                              setSelectedWriteOff({ ...selectedWriteOff, warehouse_id: value })
+                            }
+                          }}
+                          lang={isAr ? "ar" : "en"}
+                          showLabels={true}
+                          showWarehouse={true}
+                        />
                       </div>
 
                       {/* Items - Edit Mode */}
