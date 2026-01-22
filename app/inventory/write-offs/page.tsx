@@ -944,6 +944,15 @@ export default function WriteOffsPage() {
       // 🔔 إرسال إشعار للمعتمدين (Owner و Admin) عند إنشاء إهلاك جديد
       try {
         const { notifyWriteOffApprovalRequest } = await import('@/lib/notification-helpers')
+        console.log('🔔 Sending write-off approval notification:', {
+          companyId,
+          writeOffId: wo.id,
+          writeOffNumber,
+          branchId,
+          warehouseId,
+          costCenterId,
+          createdBy: user?.user?.id
+        })
         await notifyWriteOffApprovalRequest({
           companyId,
           writeOffId: wo.id,
@@ -954,8 +963,14 @@ export default function WriteOffsPage() {
           createdBy: user?.user?.id || '',
           appLang: isAr ? 'ar' : 'en'
         })
-      } catch (notificationError) {
-        console.error('Error sending write-off approval notification:', notificationError)
+        console.log('✅ Write-off approval notification sent successfully')
+      } catch (notificationError: any) {
+        console.error('❌ Error sending write-off approval notification:', notificationError)
+        console.error('Error details:', {
+          message: notificationError?.message,
+          stack: notificationError?.stack,
+          error: notificationError
+        })
         // لا نوقف العملية إذا فشل الإشعار
       }
 
@@ -1582,6 +1597,41 @@ export default function WriteOffsPage() {
           // ✅ تحديث نهائي لـ selectedWriteOff بالبيانات الأحدث
           setSelectedWriteOff(finalWriteOffWithItems)
           resetEditForm(finalWriteOffWithItems)
+        }
+
+        // 🔔 إرسال إشعار للمعتمدين إذا كان الإهلاك في حالة pending
+        if (selectedWriteOff.status === 'pending') {
+          try {
+            const { notifyWriteOffModified } = await import('@/lib/notification-helpers')
+            console.log('🔔 Sending write-off modification notification:', {
+              companyId,
+              writeOffId: writeOffIdToUpdate,
+              writeOffNumber: selectedWriteOff.write_off_number,
+              branchId: finalBranchId,
+              warehouseId: finalWarehouseId,
+              costCenterId: finalCostCenterId,
+              modifiedBy: userId
+            })
+            await notifyWriteOffModified({
+              companyId,
+              writeOffId: writeOffIdToUpdate,
+              writeOffNumber: selectedWriteOff.write_off_number,
+              branchId: finalBranchId || undefined,
+              warehouseId: finalWarehouseId || undefined,
+              costCenterId: finalCostCenterId || undefined,
+              modifiedBy: userId || '',
+              appLang: isAr ? 'ar' : 'en'
+            })
+            console.log('✅ Write-off modification notification sent successfully')
+          } catch (notificationError: any) {
+            console.error('❌ Error sending write-off modification notification:', notificationError)
+            console.error('Error details:', {
+              message: notificationError?.message,
+              stack: notificationError?.stack,
+              error: notificationError
+            })
+            // لا نوقف العملية إذا فشل الإشعار
+          }
         }
         
         toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })

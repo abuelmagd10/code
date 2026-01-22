@@ -144,6 +144,14 @@ export async function createNotification(params: {
 }) {
   const supabase = createClient()
 
+  console.log('📤 Calling create_notification RPC:', {
+    companyId: params.companyId,
+    referenceType: params.referenceType,
+    referenceId: params.referenceId,
+    assignedToRole: params.assignedToRole,
+    assignedToUser: params.assignedToUser
+  })
+
   const { data, error } = await supabase.rpc('create_notification', {
     p_company_id: params.companyId,
     p_reference_type: params.referenceType,
@@ -163,7 +171,12 @@ export async function createNotification(params: {
     p_category: params.category || 'system'
   })
 
-  if (error) throw error
+  if (error) {
+    console.error('❌ Error in create_notification RPC:', error)
+    throw error
+  }
+
+  console.log('✅ create_notification RPC succeeded:', data)
   return data
 }
 

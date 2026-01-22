@@ -411,41 +411,55 @@ export async function notifyWriteOffApprovalRequest(params: {
 
   const eventKey = `write_off:${writeOffId}:approval_request`
 
-  // إشعار لـ Owner
-  await createNotification({
-    companyId,
-    referenceType: 'inventory_write_off',
-    referenceId: writeOffId,
-    title,
-    message,
-    createdBy,
-    branchId,
-    warehouseId,
-    costCenterId,
-    assignedToRole: 'owner',
-    priority: 'high' as NotificationPriority,
-    eventKey: `${eventKey}:owner`,
-    severity: 'warning',
-    category: 'inventory'
-  })
+  try {
+    // إشعار لـ Owner
+    console.log('🔔 Creating notification for Owner:', { companyId, writeOffId, writeOffNumber })
+    await createNotification({
+      companyId,
+      referenceType: 'inventory_write_off',
+      referenceId: writeOffId,
+      title,
+      message,
+      createdBy,
+      branchId,
+      warehouseId,
+      costCenterId,
+      assignedToRole: 'owner',
+      priority: 'high' as NotificationPriority,
+      eventKey: `${eventKey}:owner`,
+      severity: 'warning',
+      category: 'inventory'
+    })
+    console.log('✅ Owner notification created successfully')
+  } catch (error: any) {
+    console.error('❌ Error creating Owner notification:', error)
+    throw error
+  }
 
-  // إشعار لـ Admin
-  await createNotification({
-    companyId,
-    referenceType: 'inventory_write_off',
-    referenceId: writeOffId,
-    title,
-    message,
-    createdBy,
-    branchId,
-    warehouseId,
-    costCenterId,
-    assignedToRole: 'admin',
-    priority: 'high' as NotificationPriority,
-    eventKey: `${eventKey}:admin`,
-    severity: 'warning',
-    category: 'inventory'
-  })
+  try {
+    // إشعار لـ Admin
+    console.log('🔔 Creating notification for Admin:', { companyId, writeOffId, writeOffNumber })
+    await createNotification({
+      companyId,
+      referenceType: 'inventory_write_off',
+      referenceId: writeOffId,
+      title,
+      message,
+      createdBy,
+      branchId,
+      warehouseId,
+      costCenterId,
+      assignedToRole: 'admin',
+      priority: 'high' as NotificationPriority,
+      eventKey: `${eventKey}:admin`,
+      severity: 'warning',
+      category: 'inventory'
+    })
+    console.log('✅ Admin notification created successfully')
+  } catch (error: any) {
+    console.error('❌ Error creating Admin notification:', error)
+    throw error
+  }
 }
 
 /**
@@ -474,41 +488,55 @@ export async function notifyWriteOffModified(params: {
 
   const eventKey = `write_off:${writeOffId}:modified`
 
-  // إشعار لـ Owner
-  await createNotification({
-    companyId,
-    referenceType: 'inventory_write_off',
-    referenceId: writeOffId,
-    title,
-    message,
-    createdBy: modifiedBy,
-    branchId,
-    warehouseId,
-    costCenterId,
-    assignedToRole: 'owner',
-    priority: 'high' as NotificationPriority,
-    eventKey: `${eventKey}:owner`,
-    severity: 'warning',
-    category: 'inventory'
-  })
+  try {
+    // إشعار لـ Owner
+    console.log('🔔 Creating modification notification for Owner:', { companyId, writeOffId, writeOffNumber })
+    await createNotification({
+      companyId,
+      referenceType: 'inventory_write_off',
+      referenceId: writeOffId,
+      title,
+      message,
+      createdBy: modifiedBy,
+      branchId,
+      warehouseId,
+      costCenterId,
+      assignedToRole: 'owner',
+      priority: 'high' as NotificationPriority,
+      eventKey: `${eventKey}:owner`,
+      severity: 'warning',
+      category: 'inventory'
+    })
+    console.log('✅ Owner modification notification created successfully')
+  } catch (error: any) {
+    console.error('❌ Error creating Owner modification notification:', error)
+    throw error
+  }
 
-  // إشعار لـ Admin
-  await createNotification({
-    companyId,
-    referenceType: 'inventory_write_off',
-    referenceId: writeOffId,
-    title,
-    message,
-    createdBy: modifiedBy,
-    branchId,
-    warehouseId,
-    costCenterId,
-    assignedToRole: 'admin',
-    priority: 'high' as NotificationPriority,
-    eventKey: `${eventKey}:admin`,
-    severity: 'warning',
-    category: 'inventory'
-  })
+  try {
+    // إشعار لـ Admin
+    console.log('🔔 Creating modification notification for Admin:', { companyId, writeOffId, writeOffNumber })
+    await createNotification({
+      companyId,
+      referenceType: 'inventory_write_off',
+      referenceId: writeOffId,
+      title,
+      message,
+      createdBy: modifiedBy,
+      branchId,
+      warehouseId,
+      costCenterId,
+      assignedToRole: 'admin',
+      priority: 'high' as NotificationPriority,
+      eventKey: `${eventKey}:admin`,
+      severity: 'warning',
+      category: 'inventory'
+    })
+    console.log('✅ Admin modification notification created successfully')
+  } catch (error: any) {
+    console.error('❌ Error creating Admin modification notification:', error)
+    throw error
+  }
 }
 
 /**
