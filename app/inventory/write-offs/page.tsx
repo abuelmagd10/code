@@ -1579,34 +1579,16 @@ export default function WriteOffsPage() {
           .eq("id", writeOffIdToUpdate)
           .single()
         
-        if (finalRefresh) {
-          const { data: finalItems } = await supabase
-            .from("inventory_write_off_items")
-            .select("*, products(name, sku)")
-            .eq("write_off_id", writeOffIdToUpdate)
-          
-          const finalWriteOffWithItems = {
-            ...finalRefresh,
-            items: (finalItems || []).map((it: any) => ({
-              ...it,
-              product_name: it.products?.name,
-              product_sku: it.products?.sku,
-            })),
-          }
-          
-          // ✅ تحديث نهائي لـ selectedWriteOff بالبيانات الأحدث
-          setSelectedWriteOff(finalWriteOffWithItems)
-          resetEditForm(finalWriteOffWithItems)
-        }
-
         // 🔔 إرسال إشعار للمعتمدين إذا كان الإهلاك في حالة pending
-        if (selectedWriteOff.status === 'pending') {
+        // استخدام finalRefresh.status بدلاً من selectedWriteOff.status لأن selectedWriteOff قد يكون قديماً
+        const currentStatus = finalRefresh?.status || selectedWriteOff.status
+        if (currentStatus === 'pending') {
           try {
             const { notifyWriteOffModified } = await import('@/lib/notification-helpers')
             console.log('🔔 Sending write-off modification notification:', {
               companyId,
               writeOffId: writeOffIdToUpdate,
-              writeOffNumber: selectedWriteOff.write_off_number,
+              writeOffNumber: finalRefresh?.write_off_number || selectedWriteOff.write_off_number,
               branchId: finalBranchId,
               warehouseId: finalWarehouseId,
               costCenterId: finalCostCenterId,
@@ -1615,7 +1597,7 @@ export default function WriteOffsPage() {
             await notifyWriteOffModified({
               companyId,
               writeOffId: writeOffIdToUpdate,
-              writeOffNumber: selectedWriteOff.write_off_number,
+              writeOffNumber: finalRefresh?.write_off_number || selectedWriteOff.write_off_number,
               branchId: finalBranchId || undefined,
               warehouseId: finalWarehouseId || undefined,
               costCenterId: finalCostCenterId || undefined,
@@ -1634,10 +1616,42 @@ export default function WriteOffsPage() {
           }
         }
         
+        if (finalRefresh) {
+          const { data: finalItems } = await supabase
+            .from("inventory_write_off_items")
+            .select("*, products(name, sku)")
+            .eq("write_off_id", writeOffIdToUpdate)
+          
+          const finalWriteOffWithItems = {
+            ...finalRefresh,
+            items: (finalItems || []).map((it: any) => ({
+              ...it,
+              product_name: it.products?.name,
+              product_sku: it.products?.sku,
+            })),
+          }
+          
+          // ✅ تحديث نهائي لـ selectedWriteOff بالبيانات الأحدث
+          setSelectedWriteOff(finalWriteOffWithItems)
+          resetEditForm(finalWriteOffWithItems)
+          
+          // ✅ إعادة فتح Dialog مع البيانات المحدثة
+          setIsEditMode(false)
+          // إعادة جلب البيانات من قاعدة البيانات للتأكد من العرض الصحيح
+          await handleView(finalWriteOffWithItems)
+        }
+        
         toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })
       } else {
         // إذا لم نتمكن من جلب البيانات المحدثة، نعيد تحميل كل شيء
         await loadData()
+        
+        // ✅ إعادة فتح Dialog مع البيانات المحدثة من القائمة
+        const updatedWriteOff = writeOffs.find(w => w.id === writeOffIdToUpdate)
+        if (updatedWriteOff) {
+          await handleView(updatedWriteOff)
+        }
+        
         toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })
       }
       
