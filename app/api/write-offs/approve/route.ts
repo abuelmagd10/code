@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // جلب بيانات الإهلاك
+    // جلب بيانات الإهلاك (بما في ذلك created_by للمنشئ)
     const { data: writeOff, error: writeOffError } = await supabase
       .from('inventory_write_offs')
       .select(`
@@ -80,7 +80,8 @@ export async function POST(request: NextRequest) {
         branch_id,
         warehouse_id,
         cost_center_id,
-        total_cost
+        total_cost,
+        created_by
       `)
       .eq('id', writeOffId)
       .eq('company_id', companyId)
@@ -320,6 +321,33 @@ export async function POST(request: NextRequest) {
         },
         { status: 500 }
       )
+    }
+
+    // 🔔 إرسال إشعارات عند اعتماد الإهلاك
+    try {
+      const { 
+        notifyWriteOffApproved, 
+        archiveWriteOffApprovalNotifications 
+      } = await import('@/lib/notification-helpers')
+
+      // إرسال إشعار للمنشئ
+      await notifyWriteOffApproved({
+        companyId,
+        writeOffId,
+        writeOffNumber: writeOff.write_off_number,
+        createdBy: writeOff.created_by || user.id, // المنشئ الأصلي
+        approvedBy: user.id,
+        appLang: 'ar' // يمكن جعله ديناميكي لاحقاً
+      })
+
+      // أرشفة إشعارات الاعتماد السابقة
+      await archiveWriteOffApprovalNotifications({
+        companyId,
+        writeOffId
+      })
+    } catch (notificationError) {
+      console.error('Error sending write-off approval notifications:', notificationError)
+      // لا نوقف العملية إذا فشل الإشعار
     }
 
     return NextResponse.json({

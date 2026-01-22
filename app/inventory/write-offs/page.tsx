@@ -941,6 +941,24 @@ export default function WriteOffsPage() {
 
       if (itemsErr) throw itemsErr
 
+      // 🔔 إرسال إشعار للمعتمدين (Owner و Admin) عند إنشاء إهلاك جديد
+      try {
+        const { notifyWriteOffApprovalRequest } = await import('@/lib/notification-helpers')
+        await notifyWriteOffApprovalRequest({
+          companyId,
+          writeOffId: wo.id,
+          writeOffNumber: writeOffNumber,
+          branchId: branchId || undefined,
+          warehouseId: warehouseId || undefined,
+          costCenterId: costCenterId || undefined,
+          createdBy: user?.user?.id || '',
+          appLang: isAr ? 'ar' : 'en'
+        })
+      } catch (notificationError) {
+        console.error('Error sending write-off approval notification:', notificationError)
+        // لا نوقف العملية إذا فشل الإشعار
+      }
+
       toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم إنشاء الإهلاك بنجاح" : "Write-off created successfully" })
       setShowNewDialog(false)
       resetForm()

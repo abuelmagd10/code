@@ -380,3 +380,242 @@ export async function notifyPurchaseApprovalRequest(params: {
     category: 'approvals'
   })
 }
+
+// =====================================================
+// 🔔 Inventory Write-Off Approval Notifications
+// =====================================================
+
+/**
+ * إنشاء إشعار عند إنشاء إهلاك جديد بحالة Pending
+ * يتم إرسال الإشعار إلى Owner و Admin فقط
+ */
+export async function notifyWriteOffApprovalRequest(params: {
+  companyId: string
+  writeOffId: string
+  writeOffNumber: string
+  branchId?: string
+  warehouseId?: string
+  costCenterId?: string
+  createdBy: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, writeOffId, writeOffNumber, branchId, warehouseId, costCenterId, createdBy, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? 'New Write-Off Approval Request'
+    : 'طلب اعتماد إهلاك جديد'
+  
+  const message = appLang === 'en'
+    ? `A new write-off ${writeOffNumber} is pending your approval`
+    : `يوجد إهلاك جديد رقم ${writeOffNumber} في انتظار اعتمادك`
+
+  const eventKey = `write_off:${writeOffId}:approval_request`
+
+  // إشعار لـ Owner
+  await createNotification({
+    companyId,
+    referenceType: 'inventory_write_off',
+    referenceId: writeOffId,
+    title,
+    message,
+    createdBy,
+    branchId,
+    warehouseId,
+    costCenterId,
+    assignedToRole: 'owner',
+    priority: 'high' as NotificationPriority,
+    eventKey: `${eventKey}:owner`,
+    severity: 'warning',
+    category: 'inventory'
+  })
+
+  // إشعار لـ Admin
+  await createNotification({
+    companyId,
+    referenceType: 'inventory_write_off',
+    referenceId: writeOffId,
+    title,
+    message,
+    createdBy,
+    branchId,
+    warehouseId,
+    costCenterId,
+    assignedToRole: 'admin',
+    priority: 'high' as NotificationPriority,
+    eventKey: `${eventKey}:admin`,
+    severity: 'warning',
+    category: 'inventory'
+  })
+}
+
+/**
+ * إنشاء إشعار عند تعديل إهلاك قبل الاعتماد
+ * يتم إرسال الإشعار إلى Owner و Admin لإعادة المراجعة
+ */
+export async function notifyWriteOffModified(params: {
+  companyId: string
+  writeOffId: string
+  writeOffNumber: string
+  branchId?: string
+  warehouseId?: string
+  costCenterId?: string
+  modifiedBy: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, writeOffId, writeOffNumber, branchId, warehouseId, costCenterId, modifiedBy, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? 'Write-Off Modified - Re-approval Required'
+    : 'تم تعديل إهلاك في انتظار الاعتماد'
+  
+  const message = appLang === 'en'
+    ? `Write-off ${writeOffNumber} has been modified and requires re-review and approval`
+    : `تم تعديل الإهلاك رقم ${writeOffNumber} ويحتاج إعادة مراجعة واعتماد`
+
+  const eventKey = `write_off:${writeOffId}:modified`
+
+  // إشعار لـ Owner
+  await createNotification({
+    companyId,
+    referenceType: 'inventory_write_off',
+    referenceId: writeOffId,
+    title,
+    message,
+    createdBy: modifiedBy,
+    branchId,
+    warehouseId,
+    costCenterId,
+    assignedToRole: 'owner',
+    priority: 'high' as NotificationPriority,
+    eventKey: `${eventKey}:owner`,
+    severity: 'warning',
+    category: 'inventory'
+  })
+
+  // إشعار لـ Admin
+  await createNotification({
+    companyId,
+    referenceType: 'inventory_write_off',
+    referenceId: writeOffId,
+    title,
+    message,
+    createdBy: modifiedBy,
+    branchId,
+    warehouseId,
+    costCenterId,
+    assignedToRole: 'admin',
+    priority: 'high' as NotificationPriority,
+    eventKey: `${eventKey}:admin`,
+    severity: 'warning',
+    category: 'inventory'
+  })
+}
+
+/**
+ * إنشاء إشعار عند اعتماد الإهلاك
+ * يتم إرسال الإشعار للمنشئ فقط
+ */
+export async function notifyWriteOffApproved(params: {
+  companyId: string
+  writeOffId: string
+  writeOffNumber: string
+  createdBy: string // المنشئ الأصلي
+  approvedBy: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, writeOffId, writeOffNumber, createdBy, approvedBy, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? 'Write-Off Approved'
+    : 'تم اعتماد الإهلاك'
+  
+  const message = appLang === 'en'
+    ? `Write-off ${writeOffNumber} has been approved successfully`
+    : `تم اعتماد الإهلاك رقم ${writeOffNumber} بنجاح`
+
+  // إشعار للمنشئ فقط
+  await createNotification({
+    companyId,
+    referenceType: 'inventory_write_off',
+    referenceId: writeOffId,
+    title,
+    message,
+    createdBy: approvedBy,
+    assignedToUser: createdBy, // إرسال للمنشئ الأصلي
+    priority: 'normal' as NotificationPriority,
+    eventKey: `write_off:${writeOffId}:approved`,
+    severity: 'success',
+    category: 'inventory'
+  })
+}
+
+/**
+ * إغلاق/أرشفة إشعارات الاعتماد السابقة عند اعتماد الإهلاك
+ * يتم تحديث جميع إشعارات approval_request لهذا الإهلاك إلى actioned
+ */
+export async function archiveWriteOffApprovalNotifications(params: {
+  companyId: string
+  writeOffId: string
+}) {
+  const { companyId, writeOffId } = params
+  const supabase = createClient()
+
+  // تحديث جميع إشعارات approval_request و modified لهذا الإهلاك
+  const { error } = await supabase
+    .from('notifications')
+    .update({
+      status: 'actioned',
+      actioned_at: new Date().toISOString()
+    })
+    .eq('company_id', companyId)
+    .eq('reference_type', 'inventory_write_off')
+    .eq('reference_id', writeOffId)
+    .in('status', ['unread', 'read']) // فقط الإشعارات غير المؤرشفة
+
+  if (error) {
+    console.error('Error archiving write-off approval notifications:', error)
+    // لا نرمي خطأ لأن هذا ليس حرجاً
+  }
+}
+
+/**
+ * إنشاء إشعار عند رفض الإهلاك (مستقبلاً)
+ */
+export async function notifyWriteOffRejected(params: {
+  companyId: string
+  writeOffId: string
+  writeOffNumber: string
+  createdBy: string // المنشئ الأصلي
+  rejectedBy: string
+  rejectionReason?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, writeOffId, writeOffNumber, createdBy, rejectedBy, rejectionReason, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? 'Write-Off Rejected'
+    : 'تم رفض الإهلاك'
+  
+  const reasonText = rejectionReason 
+    ? (appLang === 'en' ? ` Reason: ${rejectionReason}` : ` السبب: ${rejectionReason}`)
+    : ''
+  
+  const message = appLang === 'en'
+    ? `Write-off ${writeOffNumber} has been rejected. Please review the data and resubmit for approval.${reasonText}`
+    : `تم رفض الإهلاك رقم ${writeOffNumber}. يرجى مراجعة البيانات وإعادة الإرسال للاعتماد.${reasonText}`
+
+  // إشعار للمنشئ فقط
+  await createNotification({
+    companyId,
+    referenceType: 'inventory_write_off',
+    referenceId: writeOffId,
+    title,
+    message,
+    createdBy: rejectedBy,
+    assignedToUser: createdBy, // إرسال للمنشئ الأصلي
+    priority: 'high' as NotificationPriority,
+    eventKey: `write_off:${writeOffId}:rejected`,
+    severity: 'error',
+    category: 'inventory'
+  })
+}
