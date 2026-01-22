@@ -1021,10 +1021,40 @@ export default function WriteOffsPage() {
 
   // تفعيل وضع التعديل
   const enableEditMode = () => {
-    if (selectedWriteOff) {
-      resetEditForm(selectedWriteOff)
-      setIsEditMode(true)
+    if (!selectedWriteOff) return
+
+    // 🔐 ERP-Grade Governance Rule: منع التعديل بعد الاعتماد إلا لـ Admin و Owner
+    if (selectedWriteOff.status === 'approved') {
+      const userRole = userContext?.role || 'viewer'
+      const canEditApproved = userRole === 'owner' || userRole === 'admin'
+      
+      if (!canEditApproved) {
+        toast({
+          title: isAr ? "🚫 غير مسموح" : "🚫 Not Allowed",
+          description: isAr 
+            ? "لا يمكن تعديل إهلاك معتمد. العملية مسموحة فقط للإدارة العليا (Admin/Owner)."
+            : "Cannot edit approved write-off. Operation allowed only for top management (Admin/Owner).",
+          variant: "destructive",
+          duration: 8000,
+        })
+        return
+      }
     }
+
+    // ✅ التحقق من أن الإهلاك في حالة pending أو أن المستخدم لديه صلاحية
+    if (selectedWriteOff.status !== 'pending' && selectedWriteOff.status !== 'approved') {
+      toast({
+        title: isAr ? "🚫 غير مسموح" : "🚫 Not Allowed",
+        description: isAr 
+          ? `لا يمكن تعديل إهلاك بحالة "${STATUS_LABELS[selectedWriteOff.status]?.label_ar || selectedWriteOff.status}"`
+          : `Cannot edit write-off with status "${STATUS_LABELS[selectedWriteOff.status]?.label_en || selectedWriteOff.status}"`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    resetEditForm(selectedWriteOff)
+    setIsEditMode(true)
   }
 
   // إلغاء وضع التعديل
@@ -1207,7 +1237,36 @@ export default function WriteOffsPage() {
 
   // حفظ التعديلات
   const handleSaveEdit = async () => {
-    if (!selectedWriteOff || !companyId) return
+    if (!selectedWriteOff || !companyId) {
+      toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "لم يتم تحديد إهلاك للتعديل" : "No write-off selected for editing", variant: "destructive" })
+      return
+    }
+
+    // ✅ التحقق من أن selectedWriteOff.id موجود وصحيح
+    if (!selectedWriteOff.id) {
+      toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "معرف الإهلاك غير صحيح" : "Invalid write-off ID", variant: "destructive" })
+      return
+    }
+
+    // 🔐 ERP-Grade Governance Rule: منع التعديل بعد الاعتماد إلا لـ Admin و Owner
+    if (selectedWriteOff.status === 'approved') {
+      const userRole = userContext?.role || 'viewer'
+      const canEditApproved = userRole === 'owner' || userRole === 'admin'
+      
+      if (!canEditApproved) {
+        toast({
+          title: isAr ? "🚫 غير مسموح" : "🚫 Not Allowed",
+          description: isAr 
+            ? "لا يمكن تعديل إهلاك معتمد. العملية مسموحة فقط للإدارة العليا (Admin/Owner)."
+            : "Cannot edit approved write-off. Operation allowed only for top management (Admin/Owner).",
+          variant: "destructive",
+          duration: 8000,
+        })
+        return
+      }
+    }
+
+    console.log(`🔄 Editing write-off: ${selectedWriteOff.id} (${selectedWriteOff.write_off_number})`)
 
     // التحقق من البيانات
     if (editItems.length === 0) {
@@ -1325,10 +1384,15 @@ export default function WriteOffsPage() {
       const finalBranchId = selectedWriteOff.branch_id || userContext?.branch_id || branchId
       const finalCostCenterId = selectedWriteOff.cost_center_id || userContext?.cost_center_id || costCenterId
 
-      // تحديث الإهلاك الرئيسي
-      const { error: updateErr } = await supabase
-        .from("inventory_write_offs")
-        .update({
+      // ✅ التأكد من أن selectedWriteOff.id صحيح قبل التحديث
+      const writeOffIdToUpdate = selectedWriteOff.id
+      console.log(`📝 Updating write-off ID: ${writeOffIdToUpdate}`)
+
+      // 🔐 Backend Validation: استخدام API endpoint للتحقق من الصلاحيات
+      const updateResponse = await fetch(`/api/write-offs/${writeOffIdToUpdate}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           reason: editReason,
           reason_details: editReasonDetails || null,
           notes: editNotes || null,
@@ -1337,36 +1401,75 @@ export default function WriteOffsPage() {
           warehouse_id: finalWarehouseId,
           branch_id: finalBranchId,
           cost_center_id: finalCostCenterId,
-          updated_at: new Date().toISOString(),
+        }),
+      })
+
+      if (!updateResponse.ok) {
+        const errorData = await updateResponse.json()
+        const errorMessage = errorData.error_ar || errorData.error || (isAr ? "فشل في تحديث الإهلاك" : "Failed to update write-off")
+        toast({
+          title: isAr ? "خطأ" : "Error",
+          description: errorMessage,
+          variant: "destructive"
         })
-        .eq("id", selectedWriteOff.id)
+        return
+      }
 
-      if (updateErr) throw updateErr
+      const updateResult = await updateResponse.json()
 
-      // حذف العناصر القديمة
-      const { error: deleteErr } = await supabase
+      if (!updateResult.success || !updateResult.data) {
+        console.error("Error updating write-off:", updateResult.error)
+        throw new Error(updateResult.error_ar || updateResult.error || "Failed to update write-off")
+      }
+
+      const updatedWriteOffData = updateResult.data
+      console.log(`✅ Updated write-off: ${updatedWriteOffData.write_off_number} (ID: ${writeOffIdToUpdate})`)
+
+      // ✅ حذف العناصر القديمة - التأكد من حذف جميع العناصر المرتبطة بهذا الإهلاك
+      // استخدام writeOffIdToUpdate بدلاً من selectedWriteOff.id للتأكد من الصحة
+      const { data: deletedItems, error: deleteErr } = await supabase
         .from("inventory_write_off_items")
         .delete()
-        .eq("write_off_id", selectedWriteOff.id)
+        .eq("write_off_id", writeOffIdToUpdate)
+        .select()
 
-      if (deleteErr) throw deleteErr
+      if (deleteErr) {
+        console.error("Error deleting old items:", deleteErr)
+        throw deleteErr
+      }
 
-      // إضافة العناصر الجديدة
-      const itemsToInsert = editItems.map(item => ({
-        write_off_id: selectedWriteOff.id,
-        product_id: item.product_id,
-        quantity: item.quantity,
-        unit_cost: item.unit_cost,
-        total_cost: item.total_cost,
-        batch_number: item.batch_number || null,
-        expiry_date: item.expiry_date || null,
-      }))
+      console.log(`✅ Deleted ${deletedItems?.length || 0} old items for write-off ${writeOffIdToUpdate}`)
 
-      const { error: insertErr } = await supabase
-        .from("inventory_write_off_items")
-        .insert(itemsToInsert)
+      // ✅ إضافة العناصر الجديدة فقط إذا كانت موجودة
+      if (editItems.length > 0) {
+        const itemsToInsert = editItems
+          .filter(item => item.product_id) // التأكد من وجود product_id
+          .map(item => ({
+            write_off_id: writeOffIdToUpdate, // ✅ استخدام writeOffIdToUpdate للتأكد من الربط بالإهلاك الصحيح
+            product_id: item.product_id,
+            quantity: item.quantity,
+            unit_cost: item.unit_cost,
+            total_cost: item.total_cost,
+            batch_number: item.batch_number || null,
+            expiry_date: item.expiry_date || null,
+            item_reason: item.item_reason || null,
+            notes: item.notes || null,
+          }))
 
-      if (insertErr) throw insertErr
+        if (itemsToInsert.length > 0) {
+          const { data: insertedItems, error: insertErr } = await supabase
+            .from("inventory_write_off_items")
+            .insert(itemsToInsert)
+            .select()
+
+          if (insertErr) {
+            console.error("Error inserting new items:", insertErr)
+            throw insertErr
+          }
+
+          console.log(`✅ Inserted ${insertedItems?.length || 0} new items for write-off ${writeOffIdToUpdate}`)
+        }
+      }
 
       // تسجيل في سجل المراجعة
       const newData = {
@@ -1406,35 +1509,62 @@ export default function WriteOffsPage() {
         changed_fields: changedFields,
       })
 
-      // إعادة تحميل البيانات المحدثة مباشرة قبل إظهار الرسالة
-      const { data: updatedWriteOff } = await supabase
+      // ✅ إعادة تحميل البيانات المحدثة مباشرة قبل إظهار الرسالة
+      const { data: refreshedWriteOff } = await supabase
         .from("inventory_write_offs")
         .select("*")
-        .eq("id", selectedWriteOff.id)
+        .eq("id", writeOffIdToUpdate)
         .single()
       
-      if (updatedWriteOff) {
+      if (refreshedWriteOff) {
         // جلب العناصر المحدثة
-        const { data: updatedItems } = await supabase
+        const { data: refreshedItems } = await supabase
           .from("inventory_write_off_items")
           .select("*, products(name, sku)")
-          .eq("write_off_id", selectedWriteOff.id)
+          .eq("write_off_id", writeOffIdToUpdate)
         
         const writeOffWithUpdatedItems = {
-          ...updatedWriteOff,
-          items: (updatedItems || []).map((it: any) => ({
+          ...refreshedWriteOff,
+          items: (refreshedItems || []).map((it: any) => ({
             ...it,
             product_name: it.products?.name,
             product_sku: it.products?.sku,
           })),
         }
         
-        // تحديث selectedWriteOff بالبيانات الجديدة
+        // ✅ تحديث selectedWriteOff بالبيانات الجديدة المحدثة من قاعدة البيانات
         setSelectedWriteOff(writeOffWithUpdatedItems)
         resetEditForm(writeOffWithUpdatedItems)
         
-        // تحديث القائمة الرئيسية
+        // ✅ تحديث القائمة الرئيسية
         await loadData()
+        
+        // ✅ إعادة جلب البيانات المحدثة مرة أخرى للتأكد من العرض الصحيح
+        const { data: finalRefresh } = await supabase
+          .from("inventory_write_offs")
+          .select("*")
+          .eq("id", writeOffIdToUpdate)
+          .single()
+        
+        if (finalRefresh) {
+          const { data: finalItems } = await supabase
+            .from("inventory_write_off_items")
+            .select("*, products(name, sku)")
+            .eq("write_off_id", writeOffIdToUpdate)
+          
+          const finalWriteOffWithItems = {
+            ...finalRefresh,
+            items: (finalItems || []).map((it: any) => ({
+              ...it,
+              product_name: it.products?.name,
+              product_sku: it.products?.sku,
+            })),
+          }
+          
+          // ✅ تحديث نهائي لـ selectedWriteOff بالبيانات الأحدث
+          setSelectedWriteOff(finalWriteOffWithItems)
+          resetEditForm(finalWriteOffWithItems)
+        }
         
         toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })
       } else {
@@ -2104,13 +2234,21 @@ export default function WriteOffsPage() {
                       : (isAr ? "عرض تفاصيل الإهلاك" : "View write-off details")}
                   </DialogDescription>
                 </div>
-                {/* زر التعديل - يظهر فقط في حالة pending ولديه صلاحية */}
-                {selectedWriteOff?.status === "pending" && canEdit && !isEditMode && (
-                  <Button variant="outline" size="sm" onClick={enableEditMode} className="w-fit h-8 text-xs gap-1.5">
-                    <Edit3 className="h-3.5 w-3.5" />
-                    {isAr ? "تعديل" : "Edit"}
-                  </Button>
-                )}
+                {/* زر التعديل - يظهر فقط في حالة pending أو approved (لـ Admin/Owner فقط) */}
+                {(() => {
+                  const userRole = userContext?.role || 'viewer'
+                  const canEditApproved = userRole === 'owner' || userRole === 'admin'
+                  const canEditPending = canEdit && selectedWriteOff?.status === 'pending'
+                  const canEditApprovedWriteOff = canEditApproved && selectedWriteOff?.status === 'approved'
+                  const showEditButton = (canEditPending || canEditApprovedWriteOff) && !isEditMode
+                  
+                  return showEditButton ? (
+                    <Button variant="outline" size="sm" onClick={enableEditMode} className="w-fit h-8 text-xs gap-1.5">
+                      <Edit3 className="h-3.5 w-3.5" />
+                      {isAr ? "تعديل" : "Edit"}
+                    </Button>
+                  ) : null
+                })()}
               </div>
             </DialogHeader>
 
