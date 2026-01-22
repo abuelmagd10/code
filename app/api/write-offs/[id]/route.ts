@@ -12,9 +12,10 @@ import { getActiveCompanyId } from "@/lib/company"
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     
@@ -37,7 +38,7 @@ export async function PATCH(
     const { data: writeOff, error: fetchError } = await supabase
       .from("inventory_write_offs")
       .select("*")
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", companyId)
       .single()
 
@@ -90,7 +91,7 @@ export async function PATCH(
         ...body,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", companyId)
       .select()
       .single()
@@ -114,9 +115,10 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     
@@ -139,7 +141,7 @@ export async function DELETE(
     const { data: writeOff, error: fetchError } = await supabase
       .from("inventory_write_offs")
       .select("*")
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", companyId)
       .single()
 
@@ -186,7 +188,7 @@ export async function DELETE(
     const { error: deleteError } = await supabase
       .from("inventory_write_offs")
       .delete()
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", companyId)
 
     if (deleteError) {
