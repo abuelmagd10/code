@@ -45,7 +45,7 @@ export async function notifyRefundRequestCreated(params: {
     assignedToRole: 'manager',
     priority: 'high' as NotificationPriority,
     eventKey: `${eventKey}:manager`,
-    severity: 'high',
+    severity: 'warning',
     category: 'finance'
   })
 
@@ -61,7 +61,7 @@ export async function notifyRefundRequestCreated(params: {
     assignedToRole: 'owner',
     priority: 'high' as NotificationPriority,
     eventKey: `${eventKey}:owner`,
-    severity: 'high',
+    severity: 'warning',
     category: 'finance'
   })
 }
@@ -572,7 +572,7 @@ export async function notifyWriteOffApproved(params: {
     assignedToUser: createdBy, // إرسال للمنشئ الأصلي
     priority: 'normal' as NotificationPriority,
     eventKey: `write_off:${writeOffId}:approved`,
-    severity: 'success',
+    severity: 'info',
     category: 'inventory'
   })
 }
