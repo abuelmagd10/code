@@ -80,10 +80,17 @@ BEGIN
     )
     AND (p_branch_id IS NULL OR n.branch_id = p_branch_id OR n.branch_id IS NULL)
     AND (p_warehouse_id IS NULL OR n.warehouse_id = p_warehouse_id OR n.warehouse_id IS NULL)
-    AND (p_status IS NULL OR n.status = p_status)
-    -- ✅ إصلاح: إذا كان المستخدم يطلب المؤرشفة، نعرضها
-    -- إذا لم يطلب المؤرشفة، نستبعدها (السلوك الافتراضي)
-    AND (p_status = 'archived' OR n.status != 'archived')
+    -- ✅ إصلاح: منطق الأرشيف
+    -- إذا كان p_status = 'archived' → نعرض المؤرشفة فقط
+    -- إذا كان p_status = NULL (الكل) → نعرض كل شيء ما عدا المؤرشفة (السلوك الافتراضي)
+    -- إذا كان p_status = أي قيمة أخرى → نعرض حسب الحالة
+    AND (
+      p_status = 'archived' AND n.status = 'archived'  -- طلب المؤرشفة → نعرض المؤرشفة فقط
+      OR 
+      (p_status IS NULL OR p_status != 'archived') AND n.status != 'archived'  -- غير المؤرشفة → نستبعد المؤرشفة
+      OR
+      (p_status IS NOT NULL AND p_status != 'archived' AND n.status = p_status)  -- حالة محددة → نعرض حسب الحالة
+    )
     AND (n.expires_at IS NULL OR n.expires_at > NOW())
     -- ✅ فلترة حسب severity و category (مع دعم NULL للأعمدة القديمة)
     AND (p_severity IS NULL OR COALESCE(n.severity, 'info') = p_severity)
