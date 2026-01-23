@@ -80,16 +80,15 @@ BEGIN
     )
     AND (p_branch_id IS NULL OR n.branch_id = p_branch_id OR n.branch_id IS NULL)
     AND (p_warehouse_id IS NULL OR n.warehouse_id = p_warehouse_id OR n.warehouse_id IS NULL)
-    -- ✅ إصلاح: منطق الأرشيف
+    -- ✅ إصلاح منطق الأرشيف: 
     -- إذا كان p_status = 'archived' → نعرض المؤرشفة فقط
-    -- إذا كان p_status = NULL (الكل) → نعرض كل شيء ما عدا المؤرشفة (السلوك الافتراضي)
-    -- إذا كان p_status = أي قيمة أخرى → نعرض حسب الحالة
+    -- إذا كان p_status = NULL أو أي قيمة أخرى → نعرض حسب الحالة المطلوبة (لكن نستبعد المؤرشفة ما لم تكن مطلوبة)
     AND (
-      p_status = 'archived' AND n.status = 'archived'  -- طلب المؤرشفة → نعرض المؤرشفة فقط
-      OR 
-      (p_status IS NULL OR p_status != 'archived') AND n.status != 'archived'  -- غير المؤرشفة → نستبعد المؤرشفة
-      OR
-      (p_status IS NOT NULL AND p_status != 'archived' AND n.status = p_status)  -- حالة محددة → نعرض حسب الحالة
+      CASE 
+        WHEN p_status = 'archived' THEN n.status = 'archived'  -- طلب المؤرشفة → نعرض المؤرشفة فقط
+        WHEN p_status IS NULL THEN n.status != 'archived'  -- الكل → نستبعد المؤرشفة
+        ELSE n.status = p_status AND n.status != 'archived'  -- حالة محددة → نعرض حسب الحالة (لكن نستبعد المؤرشفة)
+      END
     )
     AND (n.expires_at IS NULL OR n.expires_at > NOW())
     -- ✅ فلترة حسب severity و category (مع دعم NULL للأعمدة القديمة)
