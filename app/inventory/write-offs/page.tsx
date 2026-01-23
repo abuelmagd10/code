@@ -1832,19 +1832,29 @@ export default function WriteOffsPage() {
       // 🔔 إرسال إشعار للمعتمدين إذا كان الإهلاك في حالة pending
       // استخدام finalRefresh.status بدلاً من selectedWriteOff.status لأن selectedWriteOff قد يكون قديماً
       const currentStatus = finalRefresh?.status || selectedWriteOff.status
+      console.log('🔍 [NOTIFICATION_CHECK] Current status:', currentStatus, {
+        finalRefreshStatus: finalRefresh?.status,
+        selectedWriteOffStatus: selectedWriteOff.status,
+        writeOffId: writeOffIdToUpdate,
+        writeOffNumber: finalRefresh?.write_off_number || selectedWriteOff.write_off_number
+      })
+      
       if (currentStatus === 'pending') {
           try {
+            // ✅ التأكد من أن userId معرف
+            if (!userId) {
+              console.error('❌ [NOTIFICATION_ERROR] userId is missing! Cannot send notification.')
+              const { data: userData } = await supabase.auth.getUser()
+              const fallbackUserId = userData?.user?.id
+              if (!fallbackUserId) {
+                console.error('❌ [NOTIFICATION_ERROR] Cannot get userId from auth.getUser()')
+                throw new Error('User ID is required to send notification')
+              }
+              console.log('⚠️ [NOTIFICATION_WARNING] Using fallback userId:', fallbackUserId)
+            }
+            
             const { notifyWriteOffModified } = await import('@/lib/notification-helpers')
-            console.log('🔔 Sending write-off modification notification:', {
-              companyId,
-              writeOffId: writeOffIdToUpdate,
-              writeOffNumber: finalRefresh?.write_off_number || selectedWriteOff.write_off_number,
-              branchId: finalBranchId,
-              warehouseId: finalWarehouseId,
-              costCenterId: finalCostCenterId,
-              modifiedBy: userId
-            })
-            await notifyWriteOffModified({
+            const notificationParams = {
               companyId,
               writeOffId: writeOffIdToUpdate,
               writeOffNumber: finalRefresh?.write_off_number || selectedWriteOff.write_off_number,
@@ -1853,17 +1863,25 @@ export default function WriteOffsPage() {
               costCenterId: finalCostCenterId || undefined,
               modifiedBy: userId || '',
               appLang: isAr ? 'ar' : 'en'
-            })
-            console.log('✅ Write-off modification notification sent successfully')
+            }
+            
+            console.log('🔔 [NOTIFICATION] Sending write-off modification notification:', notificationParams)
+            await notifyWriteOffModified(notificationParams)
+            console.log('✅ [NOTIFICATION] Write-off modification notification sent successfully')
           } catch (notificationError: any) {
-            console.error('❌ Error sending write-off modification notification:', notificationError)
-            console.error('Error details:', {
+            console.error('❌ [NOTIFICATION_ERROR] Error sending write-off modification notification:', notificationError)
+            console.error('❌ [NOTIFICATION_ERROR] Error details:', {
               message: notificationError?.message,
+              code: notificationError?.code,
+              details: notificationError?.details,
+              hint: notificationError?.hint,
               stack: notificationError?.stack,
               error: notificationError
             })
             // لا نوقف العملية إذا فشل الإشعار
           }
+        } else {
+          console.log('⚠️ [NOTIFICATION_SKIP] Skipping notification - write-off status is not pending:', currentStatus)
         }
         
         if (finalRefresh) {
