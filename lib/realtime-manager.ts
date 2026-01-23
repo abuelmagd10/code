@@ -258,7 +258,9 @@ class RealtimeManager {
         // الإهلاك: المالك والمدير يروا كل شيء، الباقي حسب warehouse و branch
         // ✅ Owner/Admin: يرى كل شيء (تم التحقق أعلاه)
         // للمستخدمين الآخرين: فلترة حسب warehouse و branch
-        // ✅ مهم: المستخدم يجب أن يرى تحديثات على إهلاكاته الخاصة (حتى لو لم يكن هو من عدلها)
+        // ⚠️ مهم: Supabase Postgres Changes لا يدعم OR logic في الفلتر
+        // ✅ الحل: نزيل فلتر created_by من buildFilter ونعتمد على shouldProcessEvent للفلترة
+        // ✅ هذا يضمن أن المستخدم يستقبل جميع الأحداث المتعلقة بإهلاكاته أو إهلاكات في نفس الفرع/المخزن
         let depFilter = filter
         if (accessFilter.filterByBranch && branchId) {
           depFilter += `.and(branch_id.eq.${branchId}`
@@ -273,13 +275,8 @@ class RealtimeManager {
         if (accessFilter.filterByWarehouse && warehouseId) {
           depFilter += `.and.warehouse_id.eq.${warehouseId}`
         }
-        // ✅ تصحيح: الجدول يستخدم created_by وليس created_by_user_id
-        // ✅ مهم: نسمح للمستخدم برؤية تحديثات على إهلاكاته الخاصة
-        if (accessFilter.filterByCreatedBy && userId) {
-          // ✅ المستخدم يرى: إهلاكاته الخاصة (created_by = userId)
-          // ✅ هذا يضمن أن المستخدم يرى تحديثات (رفض/اعتماد) على إهلاكاته
-          depFilter += `.and.created_by.eq.${userId}`
-        }
+        // ✅ لا نضيف فلتر created_by هنا - نعتمد على shouldProcessEvent للفلترة
+        // ✅ هذا يضمن أن المستخدم يستقبل أحداث UPDATE على إهلاكاته الخاصة
         return depFilter
 
       case 'inventory_transactions':
