@@ -37,7 +37,7 @@ RETURNS TABLE (
   priority VARCHAR(20),
   status VARCHAR(20),
   created_at TIMESTAMPTZ,
-  branch_name VARCHAR(255),
+  branch_name TEXT,        -- ✅ TEXT (لأن branches.name هو TEXT)
   warehouse_name VARCHAR(255),
   severity TEXT,
   category TEXT,
