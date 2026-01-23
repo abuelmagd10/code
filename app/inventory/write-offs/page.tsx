@@ -996,13 +996,17 @@ export default function WriteOffsPage() {
   // عرض تفاصيل الإهلاك
   const handleView = async (wo: WriteOff) => {
     // ✅ جلب البيانات المحدثة دائماً من قاعدة البيانات بدلاً من استخدام wo من state
-    const { data: freshWriteOff } = await supabase
+    // هذا يضمن عدم عرض أي بيانات قديمة أو cache
+    console.log(`🔍 Loading fresh write-off data for ID: ${wo.id}`)
+    
+    const { data: freshWriteOff, error: headerErr } = await supabase
       .from("inventory_write_offs")
       .select("*")
       .eq("id", wo.id)
       .single()
 
-    if (!freshWriteOff) {
+    if (headerErr || !freshWriteOff) {
+      console.error("Error loading write-off header:", headerErr)
       toast({ 
         title: isAr ? "خطأ" : "Error", 
         description: isAr ? "لم يتم العثور على الإهلاك" : "Write-off not found", 
@@ -1011,12 +1015,29 @@ export default function WriteOffsPage() {
       return
     }
 
-    // جلب العناصر المحدثة
-    const { data: items } = await supabase
+    console.log(`✅ Loaded write-off header: ${freshWriteOff.write_off_number}`)
+
+    // جلب العناصر المحدثة مباشرة من قاعدة البيانات (بدون cache)
+    // ترتيب حسب تاريخ الإنشاء لضمان الترتيب الصحيح
+    const { data: items, error: itemsErr } = await supabase
       .from("inventory_write_off_items")
       .select("*, products(name, sku)")
       .eq("write_off_id", wo.id)
+      .order("created_at", { ascending: true })
 
+    if (itemsErr) {
+      console.error("Error loading write-off items:", itemsErr)
+      toast({ 
+        title: isAr ? "خطأ" : "Error", 
+        description: isAr ? "فشل في جلب عناصر الإهلاك" : "Failed to load write-off items", 
+        variant: "destructive" 
+      })
+      return
+    }
+
+    console.log(`✅ Loaded ${items?.length || 0} items from database (no cache)`)
+
+    // ✅ بناء كائن الإهلاك مع العناصر المحدثة فقط
     const writeOffWithItems = {
       ...freshWriteOff,
       items: (items || []).map((it: any) => ({
@@ -1026,6 +1047,9 @@ export default function WriteOffsPage() {
       })),
     }
 
+    console.log(`📊 Displaying write-off: ${writeOffWithItems.write_off_number} with ${writeOffWithItems.items?.length || 0} items`)
+
+    // ✅ تحديث state بالبيانات المحدثة من قاعدة البيانات
     setSelectedWriteOff(writeOffWithItems)
     setIsEditMode(false)
     resetEditForm(writeOffWithItems)
@@ -1460,6 +1484,22 @@ export default function WriteOffsPage() {
 
       // ✅ حذف العناصر القديمة - التأكد من حذف جميع العناصر المرتبطة بهذا الإهلاك
       // استخدام writeOffIdToUpdate بدلاً من selectedWriteOff.id للتأكد من الصحة
+      console.log(`🗑️ Deleting all old items for write-off ${writeOffIdToUpdate}...`)
+      
+      // أولاً: جلب جميع العناصر القديمة للتأكد من وجودها
+      const { data: existingItems, error: fetchErr } = await supabase
+        .from("inventory_write_off_items")
+        .select("id")
+        .eq("write_off_id", writeOffIdToUpdate)
+
+      if (fetchErr) {
+        console.error("Error fetching existing items:", fetchErr)
+        throw fetchErr
+      }
+
+      console.log(`📋 Found ${existingItems?.length || 0} existing items to delete`)
+
+      // حذف جميع العناصر القديمة
       const { data: deletedItems, error: deleteErr } = await supabase
         .from("inventory_write_off_items")
         .delete()
@@ -1472,6 +1512,33 @@ export default function WriteOffsPage() {
       }
 
       console.log(`✅ Deleted ${deletedItems?.length || 0} old items for write-off ${writeOffIdToUpdate}`)
+
+      // ✅ التحقق من أن جميع العناصر تم حذفها
+      const { data: verifyDeleted, error: verifyErr } = await supabase
+        .from("inventory_write_off_items")
+        .select("id")
+        .eq("write_off_id", writeOffIdToUpdate)
+
+      if (verifyErr) {
+        console.error("Error verifying deletion:", verifyErr)
+        throw verifyErr
+      }
+
+      if (verifyDeleted && verifyDeleted.length > 0) {
+        console.warn(`⚠️ Warning: ${verifyDeleted.length} items still exist after deletion. Retrying...`)
+        // إعادة المحاولة
+        const { error: retryErr } = await supabase
+          .from("inventory_write_off_items")
+          .delete()
+          .eq("write_off_id", writeOffIdToUpdate)
+
+        if (retryErr) {
+          console.error("Error in retry deletion:", retryErr)
+          throw retryErr
+        }
+      }
+
+      console.log(`✅ Verified: All old items deleted for write-off ${writeOffIdToUpdate}`)
 
       // ✅ إضافة العناصر الجديدة فقط إذا كانت موجودة
       if (editItems.length > 0) {
@@ -1490,6 +1557,8 @@ export default function WriteOffsPage() {
           }))
 
         if (itemsToInsert.length > 0) {
+          console.log(`📝 Inserting ${itemsToInsert.length} new items for write-off ${writeOffIdToUpdate}...`)
+          
           const { data: insertedItems, error: insertErr } = await supabase
             .from("inventory_write_off_items")
             .insert(itemsToInsert)
@@ -1501,7 +1570,22 @@ export default function WriteOffsPage() {
           }
 
           console.log(`✅ Inserted ${insertedItems?.length || 0} new items for write-off ${writeOffIdToUpdate}`)
+          
+          // ✅ التحقق من أن العناصر الجديدة تم إدراجها بشكل صحيح
+          const { data: verifyInserted, error: verifyInsertErr } = await supabase
+            .from("inventory_write_off_items")
+            .select("id, product_id, quantity")
+            .eq("write_off_id", writeOffIdToUpdate)
+
+          if (verifyInsertErr) {
+            console.error("Error verifying insertion:", verifyInsertErr)
+            throw verifyInsertErr
+          }
+
+          console.log(`✅ Verified: ${verifyInserted?.length || 0} items now exist for write-off ${writeOffIdToUpdate}`)
         }
+      } else {
+        console.log(`⚠️ No items to insert for write-off ${writeOffIdToUpdate}`)
       }
 
       // تسجيل في سجل المراجعة
@@ -1543,46 +1627,80 @@ export default function WriteOffsPage() {
       })
 
       // ✅ إعادة تحميل البيانات المحدثة مباشرة قبل إظهار الرسالة
-      const { data: refreshedWriteOff } = await supabase
+      // انتظار صغير للتأكد من اكتمال جميع العمليات في قاعدة البيانات
+      await new Promise(resolve => setTimeout(resolve, 200))
+      
+      console.log(`🔄 Refreshing write-off data for ${writeOffIdToUpdate}...`)
+      
+      // جلب البيانات المحدثة من قاعدة البيانات مباشرة (بدون cache)
+      const { data: refreshedWriteOff, error: refreshErr } = await supabase
         .from("inventory_write_offs")
         .select("*")
         .eq("id", writeOffIdToUpdate)
         .single()
       
-      if (refreshedWriteOff) {
-        // جلب العناصر المحدثة
-        const { data: refreshedItems } = await supabase
-          .from("inventory_write_off_items")
-          .select("*, products(name, sku)")
-          .eq("write_off_id", writeOffIdToUpdate)
-        
-        const writeOffWithUpdatedItems = {
-          ...refreshedWriteOff,
-          items: (refreshedItems || []).map((it: any) => ({
-            ...it,
-            product_name: it.products?.name,
-            product_sku: it.products?.sku,
-          })),
-        }
-        
-        // ✅ تحديث selectedWriteOff بالبيانات الجديدة المحدثة من قاعدة البيانات
-        setSelectedWriteOff(writeOffWithUpdatedItems)
-        resetEditForm(writeOffWithUpdatedItems)
-        
-        // ✅ تحديث القائمة الرئيسية
-        await loadData()
-        
-        // ✅ إعادة جلب البيانات المحدثة مرة أخرى للتأكد من العرض الصحيح
-        const { data: finalRefresh } = await supabase
-          .from("inventory_write_offs")
-          .select("*")
-          .eq("id", writeOffIdToUpdate)
-          .single()
-        
-        // 🔔 إرسال إشعار للمعتمدين إذا كان الإهلاك في حالة pending
-        // استخدام finalRefresh.status بدلاً من selectedWriteOff.status لأن selectedWriteOff قد يكون قديماً
-        const currentStatus = finalRefresh?.status || selectedWriteOff.status
-        if (currentStatus === 'pending') {
+      if (refreshErr) {
+        console.error("Error refreshing write-off:", refreshErr)
+        throw refreshErr
+      }
+      
+      if (!refreshedWriteOff) {
+        throw new Error("Failed to refresh write-off data")
+      }
+      
+      console.log(`✅ Refreshed write-off header: ${refreshedWriteOff.write_off_number}`)
+      
+      // جلب العناصر المحدثة مباشرة من قاعدة البيانات (بدون cache)
+      const { data: refreshedItems, error: itemsErr } = await supabase
+        .from("inventory_write_off_items")
+        .select("*, products(name, sku)")
+        .eq("write_off_id", writeOffIdToUpdate)
+        .order("created_at", { ascending: true }) // ترتيب حسب تاريخ الإنشاء
+      
+      if (itemsErr) {
+        console.error("Error refreshing items:", itemsErr)
+        throw itemsErr
+      }
+      
+      console.log(`✅ Refreshed ${refreshedItems?.length || 0} items from database`)
+      
+      // ✅ التأكد من أننا نحصل على البيانات المحدثة فقط (لا cache)
+      const writeOffWithUpdatedItems = {
+        ...refreshedWriteOff,
+        items: (refreshedItems || []).map((it: any) => ({
+          ...it,
+          product_name: it.products?.name,
+          product_sku: it.products?.sku,
+        })),
+      }
+      
+      console.log(`📊 Final write-off data: ${writeOffWithUpdatedItems.items?.length || 0} items, Total: ${writeOffWithUpdatedItems.total_cost}`)
+      
+      // ✅ تحديث selectedWriteOff بالبيانات الجديدة المحدثة من قاعدة البيانات
+      setSelectedWriteOff(writeOffWithUpdatedItems)
+      resetEditForm(writeOffWithUpdatedItems)
+      
+      // ✅ تحديث القائمة الرئيسية
+      await loadData()
+      
+      // ✅ إعادة جلب البيانات المحدثة مرة أخرى للتأكد من العرض الصحيح (بدون cache)
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      const { data: finalRefresh, error: finalErr } = await supabase
+        .from("inventory_write_offs")
+        .select("*")
+        .eq("id", writeOffIdToUpdate)
+        .single()
+      
+      if (finalErr) {
+        console.error("Error in final refresh:", finalErr)
+        // لا نرمي خطأ هنا، نستخدم البيانات السابقة
+      }
+      
+      // 🔔 إرسال إشعار للمعتمدين إذا كان الإهلاك في حالة pending
+      // استخدام finalRefresh.status بدلاً من selectedWriteOff.status لأن selectedWriteOff قد يكون قديماً
+      const currentStatus = finalRefresh?.status || selectedWriteOff.status
+      if (currentStatus === 'pending') {
           try {
             const { notifyWriteOffModified } = await import('@/lib/notification-helpers')
             console.log('🔔 Sending write-off modification notification:', {
@@ -1617,10 +1735,17 @@ export default function WriteOffsPage() {
         }
         
         if (finalRefresh) {
-          const { data: finalItems } = await supabase
+          // جلب العناصر المحدثة مباشرة من قاعدة البيانات (بدون cache)
+          const { data: finalItems, error: finalItemsErr } = await supabase
             .from("inventory_write_off_items")
             .select("*, products(name, sku)")
             .eq("write_off_id", writeOffIdToUpdate)
+            .order("created_at", { ascending: true }) // ترتيب حسب تاريخ الإنشاء
+          
+          if (finalItemsErr) {
+            console.error("Error fetching final items:", finalItemsErr)
+            // نستخدم البيانات السابقة
+          }
           
           const finalWriteOffWithItems = {
             ...finalRefresh,
@@ -1631,16 +1756,29 @@ export default function WriteOffsPage() {
             })),
           }
           
+          console.log(`📊 Final verification: ${finalWriteOffWithItems.items?.length || 0} items in write-off ${finalWriteOffWithItems.write_off_number}`)
+          
           // ✅ تحديث نهائي لـ selectedWriteOff بالبيانات الأحدث
           // إغلاق Dialog مؤقتاً لإجبار React على إعادة رسمه بالبيانات الجديدة
           setShowViewDialog(false)
           setIsEditMode(false)
           
           // انتظار صغير للتأكد من إغلاق Dialog
-          await new Promise(resolve => setTimeout(resolve, 100))
+          await new Promise(resolve => setTimeout(resolve, 150))
           
           // إعادة فتح Dialog مع البيانات المحدثة من قاعدة البيانات
+          // استخدام handleView الذي يجلب البيانات مباشرة من قاعدة البيانات
           await handleView(finalWriteOffWithItems)
+        } else {
+          // إذا لم نتمكن من جلب finalRefresh، نستخدم writeOffWithUpdatedItems
+          console.log(`⚠️ Using writeOffWithUpdatedItems as fallback`)
+          
+          setShowViewDialog(false)
+          setIsEditMode(false)
+          
+          await new Promise(resolve => setTimeout(resolve, 150))
+          
+          await handleView(writeOffWithUpdatedItems)
         }
         
         toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })
