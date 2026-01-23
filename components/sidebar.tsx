@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -384,103 +384,8 @@ export function Sidebar() {
     }
     loadPerms()
     
-    // جلب عدد الإشعارات غير المقروءة
-    const loadUnreadCount = async () => {
-      try {
-        const { data: { user } } = await supabaseHook.auth.getUser()
-        if (!user) {
-          setCurrentUserId("")
-          setUnreadCount(0)
-          return
-        }
-        
-        setCurrentUserId(user.id)
-        const cid = await getActiveCompanyId(supabaseHook)
-        if (!cid) {
-          setUnreadCount(0)
-          return
-        }
-
-        // جلب branch_id و role من company_members
-        const { data: member } = await supabaseHook
-          .from('company_members')
-          .select('branch_id, role')
-          .eq('company_id', cid)
-          .eq('user_id', user.id)
-          .maybeSingle()
-
-        try {
-          const count = await getUnreadNotificationCount(
-            user.id, 
-            cid,
-            member?.branch_id || undefined,
-            member?.role || undefined
-          )
-          setUnreadCount(count || 0)
-        } catch (notifError: any) {
-          // إذا كان الجدول غير موجود (404)، لا نعرض خطأ
-          if (notifError?.message?.includes('404') || notifError?.message?.includes('does not exist')) {
-            console.warn("Notifications table not found - run SQL script first")
-            setUnreadCount(0)
-          } else {
-            console.error("Error loading unread count:", notifError)
-            setUnreadCount(0)
-          }
-        }
-      } catch (error) {
-        // لا نعطل باقي الوظائف عند فشل تحميل الإشعارات
-        console.error("Error in loadUnreadCount:", error)
-        setUnreadCount(0)
-      }
-    }
-    
+    // جلب عدد الإشعارات غير المقروءة (استخدام الدالة المعرفة خارج useEffect)
     loadUnreadCount()
-    
-    // 🔔 Real-Time: تحديث عدد الإشعارات غير المقروءة تلقائياً
-    useEffect(() => {
-      if (!currentUserId || !activeCompanyId) return
-
-      console.log('🔔 [SIDEBAR_REALTIME] Setting up notification count subscription...', {
-        userId: currentUserId,
-        companyId: activeCompanyId
-      })
-
-      // إنشاء Realtime channel لتحديث عدد الإشعارات
-      const channel = supabaseHook
-        .channel(`notification_count:${activeCompanyId}:${currentUserId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*', // INSERT, UPDATE, DELETE
-            schema: 'public',
-            table: 'notifications',
-            filter: `company_id=eq.${activeCompanyId}` // فلترة حسب الشركة
-          },
-          async (payload: any) => {
-            console.log('🔔 [SIDEBAR_REALTIME] Notification event received, updating count...', {
-              eventType: payload.eventType
-            })
-
-            // تحديث عدد الإشعارات غير المقروءة
-            // نستخدم loadUnreadCount لأنها تتحقق من الدور والفرع تلقائياً
-            await loadUnreadCount()
-          }
-        )
-        .subscribe((status: any) => {
-          console.log('🔔 [SIDEBAR_REALTIME] Subscription status:', status)
-          if (status === 'SUBSCRIBED') {
-            console.log('✅ [SIDEBAR_REALTIME] Successfully subscribed to notification count updates')
-          } else if (status === 'CHANNEL_ERROR') {
-            console.error('❌ [SIDEBAR_REALTIME] Channel error - check Supabase Realtime configuration')
-          }
-        })
-
-      // تنظيف الاشتراك عند إلغاء التثبيت
-      return () => {
-        console.log('🔕 [SIDEBAR_REALTIME] Unsubscribing from notification count updates...')
-        supabaseHook.removeChannel(channel)
-      }
-    }, [currentUserId, activeCompanyId, supabaseHook])
     
     // تحديث عدد الإشعارات عند تغيير الشركة أو عند استقبال حدث
     const handleNotificationsUpdate = () => {
