@@ -414,26 +414,47 @@ export async function notifyWriteOffApprovalRequest(params: {
   const eventKey = `write_off:${writeOffId}:approval_request`
 
   // ✅ حماية من التكرار: فحص إذا كان الإشعار موجوداً بالفعل
+  // نستخدم RPC call للتحقق من وجود إشعار بنفس event_key
   const supabase = createClient()
   try {
-    const { data: existingNotifications, error: checkError } = await supabase
-      .from('notifications')
-      .select('id, event_key, created_at')
-      .eq('company_id', companyId)
-      .eq('event_key', eventKey)
-      .neq('status', 'archived')
-      .limit(1)
+    console.log('🔍 [NOTIFY] Checking for existing notification with event_key:', eventKey)
+    
+    // استخدام RPC للتحقق من التكرار (أكثر أماناً من RLS)
+    const { data: existingCheck, error: checkError } = await supabase.rpc('check_notification_exists', {
+      p_company_id: companyId,
+      p_event_key: eventKey
+    }).single()
 
-    if (checkError) {
+    if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
       console.warn('⚠️ [NOTIFY] Error checking for existing notifications:', checkError)
-    } else if (existingNotifications && existingNotifications.length > 0) {
+    } else if (existingCheck && existingCheck.exists) {
       console.log('⚠️ [NOTIFY] Notification already exists with event_key:', eventKey, 'Skipping creation.')
-      console.log('⚠️ [NOTIFY] Existing notification ID:', existingNotifications[0].id)
+      console.log('⚠️ [NOTIFY] Existing notification ID:', existingCheck.notification_id)
       return // ✅ منع التكرار - الإشعار موجود بالفعل
+    } else {
+      console.log('✅ [NOTIFY] No existing notification found, proceeding with creation')
     }
   } catch (checkErr: any) {
-    console.warn('⚠️ [NOTIFY] Error checking for duplicates:', checkErr)
-    // نستمر في الإنشاء رغم الخطأ في الفحص
+    // إذا لم تكن الدالة موجودة، نستخدم فحص مباشر
+    console.warn('⚠️ [NOTIFY] RPC check failed, using direct query:', checkErr?.message)
+    try {
+      const { data: existingNotifications, error: directError } = await supabase
+        .from('notifications')
+        .select('id, event_key, created_at')
+        .eq('company_id', companyId)
+        .eq('event_key', eventKey)
+        .neq('status', 'archived')
+        .limit(1)
+
+      if (!directError && existingNotifications && existingNotifications.length > 0) {
+        console.log('⚠️ [NOTIFY] Notification already exists (direct check). Skipping creation.')
+        console.log('⚠️ [NOTIFY] Existing notification ID:', existingNotifications[0].id)
+        return
+      }
+    } catch (directErr: any) {
+      console.warn('⚠️ [NOTIFY] Direct check also failed:', directErr)
+      // نستمر في الإنشاء رغم الخطأ في الفحص
+    }
   }
 
   // إشعار لـ Admin
@@ -511,24 +532,44 @@ export async function notifyWriteOffModified(params: {
   // ✅ حماية من التكرار: فحص إذا كان الإشعار موجوداً بالفعل
   const supabase = createClient()
   try {
-    const { data: existingNotifications, error: checkError } = await supabase
-      .from('notifications')
-      .select('id, event_key, created_at')
-      .eq('company_id', companyId)
-      .eq('event_key', eventKey)
-      .neq('status', 'archived')
-      .limit(1)
+    console.log('🔍 [NOTIFY] Checking for existing modification notification with event_key:', eventKey)
+    
+    // استخدام RPC للتحقق من التكرار (أكثر أماناً من RLS)
+    const { data: existingCheck, error: checkError } = await supabase.rpc('check_notification_exists', {
+      p_company_id: companyId,
+      p_event_key: eventKey
+    }).single()
 
-    if (checkError) {
+    if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
       console.warn('⚠️ [NOTIFY] Error checking for existing modification notifications:', checkError)
-    } else if (existingNotifications && existingNotifications.length > 0) {
+    } else if (existingCheck && existingCheck.exists) {
       console.log('⚠️ [NOTIFY] Modification notification already exists with event_key:', eventKey, 'Skipping creation.')
-      console.log('⚠️ [NOTIFY] Existing notification ID:', existingNotifications[0].id)
+      console.log('⚠️ [NOTIFY] Existing notification ID:', existingCheck.notification_id)
       return // ✅ منع التكرار - الإشعار موجود بالفعل
+    } else {
+      console.log('✅ [NOTIFY] No existing modification notification found, proceeding with creation')
     }
   } catch (checkErr: any) {
-    console.warn('⚠️ [NOTIFY] Error checking for duplicates:', checkErr)
-    // نستمر في الإنشاء رغم الخطأ في الفحص
+    // إذا لم تكن الدالة موجودة، نستخدم فحص مباشر
+    console.warn('⚠️ [NOTIFY] RPC check failed, using direct query:', checkErr?.message)
+    try {
+      const { data: existingNotifications, error: directError } = await supabase
+        .from('notifications')
+        .select('id, event_key, created_at')
+        .eq('company_id', companyId)
+        .eq('event_key', eventKey)
+        .neq('status', 'archived')
+        .limit(1)
+
+      if (!directError && existingNotifications && existingNotifications.length > 0) {
+        console.log('⚠️ [NOTIFY] Modification notification already exists (direct check). Skipping creation.')
+        console.log('⚠️ [NOTIFY] Existing notification ID:', existingNotifications[0].id)
+        return
+      }
+    } catch (directErr: any) {
+      console.warn('⚠️ [NOTIFY] Direct check also failed:', directErr)
+      // نستمر في الإنشاء رغم الخطأ في الفحص
+    }
   }
 
   try {

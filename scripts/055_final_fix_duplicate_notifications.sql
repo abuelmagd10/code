@@ -209,5 +209,35 @@ BEGIN
   RAISE NOTICE '✅ تم حذف % إشعار مكرر بدون event_key', v_deleted_count;
 END $$;
 
+-- ✅ 6. إنشاء دالة مساعدة للتحقق من وجود إشعار
+CREATE OR REPLACE FUNCTION check_notification_exists(
+  p_company_id UUID,
+  p_event_key TEXT
+)
+RETURNS TABLE (
+  exists BOOLEAN,
+  notification_id UUID
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_notification_id UUID;
+BEGIN
+  SELECT id INTO v_notification_id
+  FROM notifications
+  WHERE company_id = p_company_id
+    AND event_key = p_event_key
+    AND status != 'archived'
+  LIMIT 1;
+
+  IF v_notification_id IS NOT NULL THEN
+    RETURN QUERY SELECT TRUE, v_notification_id;
+  ELSE
+    RETURN QUERY SELECT FALSE, NULL::UUID;
+  END IF;
+END;
+$$;
+
 -- ✅ تم الإصلاح بنجاح
 SELECT '✅ تم تطبيق الحل النهائي لمنع التكرار في الإشعارات!' AS status;
