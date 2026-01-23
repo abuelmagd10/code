@@ -2693,7 +2693,7 @@ export default function WriteOffsPage() {
                       <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-2">
                         <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
                         <span className="text-xs sm:text-sm text-amber-800 dark:text-amber-200">
-                          {isAr ? "وضع التعديل - سيتم تسجيل جميع التغييرات" : "Edit mode - All changes will be logged"}
+                          {isAr ? "وضع التعديل - سيتم حذف العناصر القديمة وإضافة العناصر الجديدة فقط" : "Edit mode - Old items will be deleted and only new items will be added"}
                         </span>
                       </div>
 
