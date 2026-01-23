@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { CurrencySyncProvider } from "./currency-sync-provider"
 import { PermissionsProvider } from "@/lib/permissions-context"
+import { RealtimeProvider } from "@/lib/realtime-provider"
 import { AppShell } from "@/components/app-shell"
 
 const _geist = Geist({ subsets: ["latin"] })
@@ -103,13 +104,15 @@ export default function RootLayout({
           <TooltipProvider>
             <CurrencySyncProvider>
               <PermissionsProvider>
-                <AppShell>
-                  <ErrorBoundary>
-                    {children}
-                  </ErrorBoundary>
-                </AppShell>
-                <Toaster />
-                {process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true" ? <Analytics /> : null}
+                <RealtimeProvider autoSubscribe={['notifications']}>
+                  <AppShell>
+                    <ErrorBoundary>
+                      {children}
+                    </ErrorBoundary>
+                  </AppShell>
+                  <Toaster />
+                  {process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true" ? <Analytics /> : null}
+                </RealtimeProvider>
               </PermissionsProvider>
             </CurrencySyncProvider>
           </TooltipProvider>

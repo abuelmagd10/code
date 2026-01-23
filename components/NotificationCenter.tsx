@@ -12,6 +12,7 @@ import { getUserNotifications, markNotificationAsRead, type Notification, type N
 import { getActiveCompanyId } from "@/lib/company"
 import { formatDistanceToNow } from "date-fns"
 import { ar } from "date-fns/locale/ar"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface NotificationCenterProps {
   open: boolean
@@ -261,219 +262,162 @@ export function NotificationCenter({
     }
   }, [open, loadNotifications])
 
-  // 🔔 Real-Time: الاستماع للإشعارات الجديدة والمحدثة (ERP Standard)
-  useEffect(() => {
-    if (!companyId || !userId || !mounted) return
+  // ✅ دالة مساعدة للتحقق من أن الإشعار ينطبق على المستخدم
+  const shouldShowNotification = useCallback((notification: any): boolean => {
+    // ✅ 1. التحقق من company_id
+    if (notification.company_id !== companyId) {
+      return false
+    }
 
-    console.log('🔔 [REALTIME] Setting up enterprise notification subscription...', {
-      companyId,
-      userId,
-      branchId: branchId || 'null',
-      warehouseId: warehouseId || 'null',
-      userRole
-    })
-
-    // ✅ دالة مساعدة للتحقق من أن الإشعار ينطبق على المستخدم
-    const shouldShowNotification = (notification: any): boolean => {
-      // ✅ 1. التحقق من company_id
-      if (notification.company_id !== companyId) {
-        return false
+    // ✅ 2. التحقق من assigned_to_user
+    if (notification.assigned_to_user) {
+      // إذا كان موجه لمستخدم محدد، يجب أن يكون المستخدم الحالي
+      if (notification.assigned_to_user !== userId) {
+        // إلا إذا كان owner أو admin
+        if (userRole !== 'owner' && userRole !== 'admin') {
+          return false
+        }
       }
+    }
 
-      // ✅ 2. التحقق من assigned_to_user
-      if (notification.assigned_to_user) {
-        // إذا كان موجه لمستخدم محدد، يجب أن يكون المستخدم الحالي
-        if (notification.assigned_to_user !== userId) {
-          // إلا إذا كان owner أو admin
-          if (userRole !== 'owner' && userRole !== 'admin') {
+    // ✅ 3. التحقق من assigned_to_role
+    if (notification.assigned_to_role) {
+      // إذا كان موجه لدور محدد
+      if (notification.assigned_to_role !== userRole) {
+        // إلا إذا كان owner أو admin
+        if (userRole !== 'owner' && userRole !== 'admin') {
+          // owner يرى إشعارات admin
+          if (!(notification.assigned_to_role === 'admin' && userRole === 'owner')) {
             return false
           }
         }
       }
+    }
 
-      // ✅ 3. التحقق من assigned_to_role
-      if (notification.assigned_to_role) {
-        // إذا كان موجه لدور محدد
-        if (notification.assigned_to_role !== userRole) {
-          // إلا إذا كان owner أو admin
-          if (userRole !== 'owner' && userRole !== 'admin') {
-            // owner يرى إشعارات admin
-            if (!(notification.assigned_to_role === 'admin' && userRole === 'owner')) {
-              return false
-            }
-          }
-        }
-      }
-
-      // ✅ 4. التحقق من branch_id (فقط للمستخدمين العاديين، owner/admin يرون كل شيء)
-      if (branchId && userRole !== 'owner' && userRole !== 'admin') {
-        // إذا كان branch_id محدد في الإشعار وليس NULL
-        if (notification.branch_id && notification.branch_id !== branchId) {
-          return false
-        }
-        // إذا كان branch_id NULL → إشعار عام → نعرضه
-      }
-
-      // ✅ 5. التحقق من warehouse_id (فقط للمستخدمين العاديين، owner/admin يرون كل شيء)
-      if (warehouseId && userRole !== 'owner' && userRole !== 'admin') {
-        // إذا كان warehouse_id محدد في الإشعار وليس NULL
-        if (notification.warehouse_id && notification.warehouse_id !== warehouseId) {
-          return false
-        }
-        // إذا كان warehouse_id NULL → إشعار عام → نعرضه
-      }
-
-      // ✅ 6. التحقق من انتهاء الصلاحية
-      if (notification.expires_at) {
-        const expiresAt = new Date(notification.expires_at)
-        if (expiresAt <= new Date()) {
-          return false
-        }
-      }
-
-      // ✅ 7. استبعاد المؤرشفة
-      if (notification.status === 'archived') {
+    // ✅ 4. التحقق من branch_id (فقط للمستخدمين العاديين، owner/admin يرون كل شيء)
+    if (branchId && userRole !== 'owner' && userRole !== 'admin') {
+      // إذا كان branch_id محدد في الإشعار وليس NULL
+      if (notification.branch_id && notification.branch_id !== branchId) {
         return false
       }
-
-      return true
+      // إذا كان branch_id NULL → إشعار عام → نعرضه
     }
 
-    // ✅ دالة مساعدة لإضافة/تحديث الإشعار مباشرة في الـ state
-    const addOrUpdateNotification = (notification: any) => {
-      if (!notification || !notification.id) {
-        console.warn('⚠️ [REALTIME] Invalid notification received:', notification)
-        return
+    // ✅ 5. التحقق من warehouse_id (فقط للمستخدمين العاديين، owner/admin يرون كل شيء)
+    if (warehouseId && userRole !== 'owner' && userRole !== 'admin') {
+      // إذا كان warehouse_id محدد في الإشعار وليس NULL
+      if (notification.warehouse_id && notification.warehouse_id !== warehouseId) {
+        return false
       }
+      // إذا كان warehouse_id NULL → إشعار عام → نعرضه
+    }
 
-      setNotifications(prev => {
-        // ✅ استخدام Map لمنع التكرار (استخدام id كـ key)
-        const notificationsMap = new Map<string, Notification>()
-        
-        // إضافة الإشعارات الموجودة
-        prev.forEach(n => {
-          if (n && n.id) {
-            notificationsMap.set(n.id, n)
+    // ✅ 6. التحقق من انتهاء الصلاحية
+    if (notification.expires_at) {
+      const expiresAt = new Date(notification.expires_at)
+      if (expiresAt <= new Date()) {
+        return false
+      }
+    }
+
+    // ✅ 7. استبعاد المؤرشفة
+    if (notification.status === 'archived') {
+      return false
+    }
+
+    return true
+  }, [companyId, userId, branchId, warehouseId, userRole])
+
+  // ✅ دالة مساعدة لإضافة/تحديث الإشعار مباشرة في الـ state
+  const addOrUpdateNotification = useCallback((notification: Notification) => {
+    if (!notification || !notification.id) {
+      console.warn('⚠️ [REALTIME] Invalid notification received:', notification)
+      return
+    }
+
+    setNotifications(prev => {
+      // ✅ استخدام Map لمنع التكرار (استخدام id كـ key)
+      const notificationsMap = new Map<string, Notification>()
+      
+      // إضافة الإشعارات الموجودة
+      prev.forEach(n => {
+        if (n && n.id) {
+          notificationsMap.set(n.id, n)
+        }
+      })
+      
+      // إضافة/تحديث الإشعار الجديد
+      const notificationId = notification.id
+      if (notificationsMap.has(notificationId)) {
+        // تحديث الإشعار الموجود
+        notificationsMap.set(notificationId, notification)
+        console.log('🔄 [REALTIME] Updated notification in state:', notificationId)
+      } else {
+        // إضافة الإشعار الجديد
+        notificationsMap.set(notificationId, notification)
+        console.log('➕ [REALTIME] Added new notification to state:', notificationId)
+      }
+      
+      // تحويل Map إلى Array وترتيب
+      const updated = Array.from(notificationsMap.values())
+      
+      // ✅ فحص إضافي للتأكد من عدم وجود تكرارات
+      const ids = updated.map(n => n.id)
+      const uniqueIds = new Set(ids)
+      if (ids.length !== uniqueIds.size) {
+        console.error(`❌ [REALTIME] CRITICAL: Duplicate IDs detected! ${ids.length} total, ${uniqueIds.size} unique`)
+        // إزالة التكرارات الإضافية (الاحتفاظ بالأحدث)
+        const deduplicated = new Map<string, Notification>()
+        updated.forEach(n => {
+          if (!deduplicated.has(n.id) || new Date(n.created_at) > new Date(deduplicated.get(n.id)!.created_at)) {
+            deduplicated.set(n.id, n)
           }
         })
-        
-        // إضافة/تحديث الإشعار الجديد
-        const notificationId = notification.id
-        if (notificationsMap.has(notificationId)) {
-          // تحديث الإشعار الموجود
-          notificationsMap.set(notificationId, notification as Notification)
-          console.log('🔄 [REALTIME] Updated notification in state:', notificationId)
-        } else {
-          // إضافة الإشعار الجديد
-          notificationsMap.set(notificationId, notification as Notification)
-          console.log('➕ [REALTIME] Added new notification to state:', notificationId)
-        }
-        
-        // تحويل Map إلى Array وترتيب
-        const updated = Array.from(notificationsMap.values())
-        
-        // ✅ فحص إضافي للتأكد من عدم وجود تكرارات
-        const ids = updated.map(n => n.id)
-        const uniqueIds = new Set(ids)
-        if (ids.length !== uniqueIds.size) {
-          console.error(`❌ [REALTIME] CRITICAL: Duplicate IDs detected! ${ids.length} total, ${uniqueIds.size} unique`)
-          // إزالة التكرارات الإضافية (الاحتفاظ بالأحدث)
-          const deduplicated = new Map<string, Notification>()
-          updated.forEach(n => {
-            if (!deduplicated.has(n.id) || new Date(n.created_at) > new Date(deduplicated.get(n.id)!.created_at)) {
-              deduplicated.set(n.id, n)
-            }
-          })
-          const final = Array.from(deduplicated.values())
-          console.log(`🔧 [REALTIME] Removed duplicates. Final count: ${final.length}`)
-          updated.splice(0, updated.length, ...final)
-        }
-        
-        updated.sort((a, b) => {
-          const priorityOrder = { urgent: 1, high: 2, normal: 3, low: 4 }
-          const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority]
-          if (priorityDiff !== 0) return priorityDiff
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        })
-        
-        console.log(`✅ [REALTIME] Total notifications in state: ${updated.length} (verified no duplicates)`)
-        return updated
+        const final = Array.from(deduplicated.values())
+        console.log(`🔧 [REALTIME] Removed duplicates. Final count: ${final.length}`)
+        updated.splice(0, updated.length, ...final)
+      }
+      
+      updated.sort((a, b) => {
+        const priorityOrder = { urgent: 1, high: 2, normal: 3, low: 4 }
+        const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority]
+        if (priorityDiff !== 0) return priorityDiff
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       })
+      
+      console.log(`✅ [REALTIME] Total notifications in state: ${updated.length} (verified no duplicates)`)
+      return updated
+    })
 
-      // ✅ تحديث عداد الإشعارات في sidebar
+    // ✅ تحديث عداد الإشعارات في sidebar
+    window.dispatchEvent(new Event('notifications_updated'))
+  }, [])
+
+  // 🔔 Real-Time: الاستماع للإشعارات الجديدة والمحدثة (ERP Standard)
+  useRealtimeTable<Notification>({
+    table: 'notifications',
+    enabled: mounted && !!companyId && !!userId,
+    filter: (event) => {
+      const notification = event.new || event.old
+      if (!notification) return false
+      return shouldShowNotification(notification)
+    },
+    onInsert: (notification) => {
+      if (shouldShowNotification(notification)) {
+        addOrUpdateNotification(notification)
+      }
+    },
+    onUpdate: (newNotification) => {
+      if (shouldShowNotification(newNotification)) {
+        addOrUpdateNotification(newNotification)
+      }
+    },
+    onDelete: (oldNotification) => {
+      setNotifications(prev => prev.filter(n => n.id !== oldNotification.id))
       window.dispatchEvent(new Event('notifications_updated'))
-    }
+    },
+  })
 
-    // إنشاء Realtime channel للإشعارات
-    const channel = supabase
-      .channel(`notifications:${companyId}:${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*', // INSERT, UPDATE, DELETE
-          schema: 'public',
-          table: 'notifications',
-          filter: `company_id=eq.${companyId}` // فلترة حسب الشركة فقط
-        },
-        async (payload: any) => {
-          console.log('🔔 [REALTIME] Notification event received:', {
-            eventType: payload.eventType,
-            notificationId: payload.new?.id || payload.old?.id,
-            assignedToRole: payload.new?.assigned_to_role,
-            assignedToUser: payload.new?.assigned_to_user
-          })
-
-          if (payload.eventType === 'INSERT') {
-            const notification = payload.new as any
-            
-            // ✅ التحقق من أن الإشعار ينطبق على المستخدم
-            if (shouldShowNotification(notification)) {
-              console.log('✅ [REALTIME] New notification matches user - adding to state')
-              addOrUpdateNotification(notification)
-            } else {
-              console.log('⏭️ [REALTIME] New notification does not match user - skipping')
-            }
-          } else if (payload.eventType === 'UPDATE') {
-            const notification = payload.new as any
-            
-            // ✅ التحقق من أن الإشعار ينطبق على المستخدم
-            if (shouldShowNotification(notification)) {
-              console.log('✅ [REALTIME] Updated notification matches user - updating in state')
-              addOrUpdateNotification(notification)
-            } else {
-              // إذا كان الإشعار لا ينطبق بعد التحديث، نزيله من القائمة
-              console.log('🗑️ [REALTIME] Updated notification no longer matches user - removing from state')
-              setNotifications(prev => prev.filter(n => n.id !== notification.id))
-            }
-          } else if (payload.eventType === 'DELETE') {
-            const notificationId = payload.old.id
-            console.log('🗑️ [REALTIME] Notification DELETE detected:', notificationId)
-            // إزالة الإشعار المحذوف من القائمة
-            setNotifications(prev => {
-              const filtered = prev.filter(n => n.id !== notificationId)
-              console.log(`✅ [REALTIME] Removed deleted notification. Remaining: ${filtered.length}`)
-              return filtered
-            })
-            // ✅ تحديث عداد الإشعارات
-            window.dispatchEvent(new Event('notifications_updated'))
-          }
-        }
-      )
-      .subscribe((status: any) => {
-        console.log('🔔 [REALTIME] Subscription status:', status)
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ [REALTIME] Successfully subscribed to notifications channel')
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ [REALTIME] Channel error - check Supabase Realtime configuration')
-        }
-      })
-
-    // تنظيف الاشتراك عند إلغاء التثبيت
-    return () => {
-      console.log('🔕 [REALTIME] Unsubscribing from notifications...')
-      supabase.removeChannel(channel)
-    }
-  }, [companyId, userId, branchId, warehouseId, userRole, supabase, mounted])
 
   const handleNotificationClick = async (notification: Notification) => {
     if (notification.status === "unread") {
