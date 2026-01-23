@@ -1781,7 +1781,7 @@ export default function WriteOffsPage() {
           await handleView(writeOffWithUpdatedItems)
         }
         
-        toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })
+      toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })
       
       setIsEditMode(false)
       // لا نغلق Dialog حتى يرى المستخدم البيانات المحدثة
