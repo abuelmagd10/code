@@ -30,6 +30,7 @@ export type ReferenceType =
 const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string) => string> = {
   // المخزون
   'write_off': (id) => `/inventory/write-offs?highlight=${id}`,
+  'inventory_write_off': (id) => `/inventory/write-offs?highlight=${id}`,
   'inventory_transfer': (id) => `/inventory-transfers/${id}`,
   
   // المبيعات

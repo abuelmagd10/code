@@ -144,25 +144,56 @@ export function NotificationCenter({
       if (missingIds.length === 0) return
 
       try {
-        const { data: usersData } = await supabase
-          .from('users')
-          .select('id, display_name, email')
-          .in('id', missingIds)
+        const { data: usersData, error } = await supabase
+          .from('user_profiles')
+          .select('user_id, display_name')
+          .in('user_id', missingIds)
+
+        if (error) {
+          console.warn('⚠️ [NotificationCenter] Error loading user profiles:', error)
+          // Set default values for missing users
+          setCreatedByUsers(prev => {
+            const newMap = new Map(prev)
+            missingIds.forEach(id => {
+              if (!newMap.has(id)) {
+                newMap.set(id, { name: 'Unknown', email: undefined })
+              }
+            })
+            return newMap
+          })
+          return
+        }
 
         if (usersData) {
           setCreatedByUsers(prev => {
             const newMap = new Map(prev)
-            usersData.forEach((user: { id: string; display_name?: string; email?: string }) => {
-              newMap.set(user.id, {
-                name: user.display_name || user.email || 'Unknown',
-                email: user.email
+            usersData.forEach((user: { user_id: string; display_name?: string }) => {
+              newMap.set(user.user_id, {
+                name: user.display_name || 'Unknown',
+                email: undefined
               })
+            })
+            // Set default for any missing IDs
+            missingIds.forEach(id => {
+              if (!newMap.has(id)) {
+                newMap.set(id, { name: 'Unknown', email: undefined })
+              }
             })
             return newMap
           })
         }
       } catch (error) {
-        console.error('Error loading user names:', error)
+        console.error('❌ [NotificationCenter] Error loading user names:', error)
+        // Set default values on error
+        setCreatedByUsers(prev => {
+          const newMap = new Map(prev)
+          missingIds.forEach(id => {
+            if (!newMap.has(id)) {
+              newMap.set(id, { name: 'Unknown', email: undefined })
+            }
+          })
+          return newMap
+        })
       }
     }
 
