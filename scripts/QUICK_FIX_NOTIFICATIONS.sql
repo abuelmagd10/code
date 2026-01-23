@@ -91,8 +91,24 @@ BEGIN
       OR (n.assigned_to_role = 'admin' AND v_user_role = 'owner')
       OR v_user_role IS NULL
     )
-    AND (p_branch_id IS NULL OR n.branch_id = p_branch_id OR n.branch_id IS NULL)
-    AND (p_warehouse_id IS NULL OR n.warehouse_id = p_warehouse_id OR n.warehouse_id IS NULL)
+    AND (
+      -- ✅ منطق محسّن للفلترة حسب الفرع:
+      -- 1. Owner و Admin يرون جميع الإشعارات في الشركة بغض النظر عن branch_id
+      -- 2. المستخدمون الآخرون يرون فقط إشعارات فرعهم
+      v_user_role IN ('owner', 'admin')
+      OR p_branch_id IS NULL 
+      OR n.branch_id = p_branch_id 
+      OR n.branch_id IS NULL
+    )
+    AND (
+      -- ✅ منطق محسّن للفلترة حسب المخزن:
+      -- 1. Owner و Admin يرون جميع الإشعارات بغض النظر عن warehouse_id
+      -- 2. المستخدمون الآخرون يرون فقط إشعارات مخزنهم
+      v_user_role IN ('owner', 'admin')
+      OR p_warehouse_id IS NULL 
+      OR n.warehouse_id = p_warehouse_id 
+      OR n.warehouse_id IS NULL
+    )
     AND (p_status IS NULL OR n.status = p_status)
     AND (p_severity IS NULL OR COALESCE(n.severity, 'info') = p_severity)
     AND (p_category IS NULL OR COALESCE(n.category, 'system') = p_category)
