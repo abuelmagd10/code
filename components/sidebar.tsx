@@ -837,7 +837,11 @@ export function Sidebar() {
                           router.push(fallbackPath)
                         }
                         setShowCompanySwitcher(false)
-                      }}
+                      } catch (err) {
+                        console.error('❌ Error switching company:', err)
+                        setShowCompanySwitcher(false)
+                      }
+                    }}
                     className={`w-full flex items-center gap-3 p-3 hover:bg-slate-700 ${company.id === activeCompanyId ? 'bg-blue-600/20 border-r-2 border-blue-500' : ''}`}
                   >
                     {company.logo_url ? (
@@ -955,7 +959,11 @@ export function Sidebar() {
                             router.push(fallbackPath)
                           }
                           setShowCompanySwitcher(false)
-                        }}
+                        } catch (err) {
+                          console.error('❌ Error switching company:', err)
+                          setShowCompanySwitcher(false)
+                        }
+                      }}
                       className={`w-full flex items-center gap-3 p-3 hover:bg-slate-700 transition-colors ${company.id === activeCompanyId ? 'bg-blue-600/20 border-r-2 border-blue-500' : ''}`}
                     >
                       {company.logo_url ? (
