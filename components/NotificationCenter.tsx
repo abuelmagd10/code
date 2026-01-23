@@ -138,21 +138,37 @@ export function NotificationCenter({
   // 🔹 Load user names for created_by
   useEffect(() => {
     const loadUserNames = async () => {
-      // ✅ فلترة: إزالة undefined و null و القيم الفارغة
+      // ✅ فلترة صارمة: إزالة undefined, null, القيم الفارغة, والسلسلة "undefined"
       const userIds = new Set(
         displayNotifications
           .map(n => n.created_by)
-          .filter((id): id is string => !!id && typeof id === 'string' && id !== 'undefined')
+          .filter((id): id is string => {
+            // فلترة صارمة: فقط UUIDs صالحة
+            if (!id) return false
+            if (typeof id !== 'string') return false
+            if (id === 'undefined' || id === 'null' || id.trim() === '') return false
+            // التحقق من أن القيمة تبدو كـ UUID (اختياري - للتحقق الإضافي)
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+            return uuidRegex.test(id)
+          })
       )
       const missingIds = Array.from(userIds).filter(id => !createdByUsers.has(id))
       
       if (missingIds.length === 0) return
 
+      // ✅ التحقق الإضافي: التأكد من أن جميع IDs صالحة قبل الاستعلام
+      const validIds = missingIds.filter(id => {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        return uuidRegex.test(id)
+      })
+
+      if (validIds.length === 0) return
+
       try {
         const { data: usersData, error } = await supabase
           .from('user_profiles')
           .select('user_id, display_name')
-          .in('user_id', missingIds)
+          .in('user_id', validIds)
 
         if (error) {
           console.warn('⚠️ [NotificationCenter] Error loading user profiles:', error)
@@ -178,8 +194,8 @@ export function NotificationCenter({
                 email: undefined
               })
             })
-            // Set default for any missing IDs
-            missingIds.forEach(id => {
+            // Set default for any missing IDs (validIds فقط)
+            validIds.forEach(id => {
               if (!newMap.has(id)) {
                 newMap.set(id, { name: 'Unknown', email: undefined })
               }
@@ -189,10 +205,10 @@ export function NotificationCenter({
         }
       } catch (error) {
         console.error('❌ [NotificationCenter] Error loading user names:', error)
-        // Set default values on error
+        // Set default values on error (validIds فقط)
         setCreatedByUsers(prev => {
           const newMap = new Map(prev)
-          missingIds.forEach(id => {
+          validIds.forEach(id => {
             if (!newMap.has(id)) {
               newMap.set(id, { name: 'Unknown', email: undefined })
             }
