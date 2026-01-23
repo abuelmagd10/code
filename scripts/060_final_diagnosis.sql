@@ -38,8 +38,8 @@ SELECT
     WHEN COUNT(*) > 0 THEN 'EXISTS'
     ELSE 'MISSING'
   END as index_status,
-  indexname,
-  indexdef
+  COALESCE(MAX(indexname), 'NONE') as indexname,
+  COALESCE(MAX(indexdef), 'NONE') as indexdef
 FROM pg_indexes
 WHERE tablename = 'notifications'
   AND indexname LIKE '%event_key%';
