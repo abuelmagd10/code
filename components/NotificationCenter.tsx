@@ -54,10 +54,25 @@ export function NotificationCenter({
   }, [])
 
   const loadNotifications = useCallback(async () => {
-    if (!companyId || !userId) return
+    if (!companyId || !userId) {
+      console.warn('⚠️ [NOTIFICATION_CENTER] Missing companyId or userId:', { companyId, userId })
+      return
+    }
 
     try {
       setLoading(true)
+      console.log('🔄 [NOTIFICATION_CENTER] Loading notifications for:', {
+        userId,
+        companyId,
+        branchId: branchId || 'null',
+        warehouseId: warehouseId || 'null',
+        userRole,
+        filterStatus,
+        filterPriority,
+        filterSeverity,
+        filterCategory
+      })
+
       const status = filterStatus === "all" ? undefined : filterStatus
       const data = await getUserNotifications({
         userId,
@@ -69,19 +84,25 @@ export function NotificationCenter({
         category: filterCategory !== "all" ? filterCategory : undefined
       })
 
+      console.log(`📊 [NOTIFICATION_CENTER] Received ${data?.length || 0} notifications from database`)
+
       // Filter by priority and search
       let filtered = data || []
       
       if (filterPriority !== "all") {
+        const beforePriority = filtered.length
         filtered = filtered.filter(n => n.priority === filterPriority)
+        console.log(`🔍 [NOTIFICATION_CENTER] After priority filter (${filterPriority}): ${beforePriority} → ${filtered.length}`)
       }
 
       if (searchQuery.trim()) {
+        const beforeSearch = filtered.length
         const query = searchQuery.toLowerCase()
         filtered = filtered.filter(n => 
           n.title.toLowerCase().includes(query) ||
           n.message.toLowerCase().includes(query)
         )
+        console.log(`🔍 [NOTIFICATION_CENTER] After search filter: ${beforeSearch} → ${filtered.length}`)
       }
 
       // Sort by priority and date
@@ -92,13 +113,21 @@ export function NotificationCenter({
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       })
 
+      console.log(`✅ [NOTIFICATION_CENTER] Setting ${filtered.length} notifications to state`)
       setNotifications(filtered)
-    } catch (error) {
-      console.error("Error loading notifications:", error)
+    } catch (error: any) {
+      console.error("❌ [NOTIFICATION_CENTER] Error loading notifications:", error)
+      console.error("❌ [NOTIFICATION_CENTER] Error details:", {
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint
+      })
+      setNotifications([])
     } finally {
       setLoading(false)
     }
-  }, [userId, companyId, branchId, warehouseId, filterStatus, filterPriority, filterSeverity, filterCategory, searchQuery])
+  }, [userId, companyId, branchId, warehouseId, userRole, filterStatus, filterPriority, filterSeverity, filterCategory, searchQuery])
 
   useEffect(() => {
     if (open) {

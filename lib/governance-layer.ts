@@ -196,6 +196,16 @@ export async function getUserNotifications(params: {
 }) {
   const supabase = createClient()
 
+  console.log('📥 [GET_NOTIFICATIONS] Fetching notifications:', {
+    userId: params.userId,
+    companyId: params.companyId,
+    branchId: params.branchId || 'null',
+    warehouseId: params.warehouseId || 'null',
+    status: params.status || 'null',
+    severity: params.severity || 'null',
+    category: params.category || 'null'
+  })
+
   const { data, error } = await supabase.rpc('get_user_notifications', {
     p_user_id: params.userId,
     p_company_id: params.companyId,
@@ -207,7 +217,21 @@ export async function getUserNotifications(params: {
     p_category: params.category || null
   })
 
-  if (error) throw error
+  if (error) {
+    console.error('❌ [GET_NOTIFICATIONS] Error fetching notifications:', error)
+    throw error
+  }
+
+  console.log(`✅ [GET_NOTIFICATIONS] Fetched ${data?.length || 0} notifications`)
+  if (data && data.length > 0) {
+    console.log('📋 [GET_NOTIFICATIONS] Sample notifications:', data.slice(0, 3).map((n: any) => ({
+      id: n.id,
+      title: n.title,
+      assigned_to_role: n.assigned_to_role,
+      status: n.status
+    })))
+  }
+
   return data as Notification[]
 }
 
