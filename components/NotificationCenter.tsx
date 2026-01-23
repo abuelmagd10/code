@@ -174,15 +174,20 @@ export function NotificationCenter({
       
       // ✅ دمج الإشعارات الجديدة مع الموجودة في الـ state (لتجنب التكرار)
       setNotifications(prev => {
-        // إنشاء Map لتتبع الإشعارات الموجودة
-        const existingMap = new Map(prev.map(n => [n.id, n]))
+        // إنشاء Map لتتبع الإشعارات الموجودة (استخدام id كـ key)
+        const existingMap = new Map<string, Notification>()
         
-        // إضافة/تحديث الإشعارات الجديدة
+        // إضافة الإشعارات الموجودة أولاً
+        prev.forEach(n => {
+          existingMap.set(n.id, n)
+        })
+        
+        // إضافة/تحديث الإشعارات الجديدة من DB
         filtered.forEach(n => {
           existingMap.set(n.id, n)
         })
         
-        // تحويل Map إلى Array وإزالة التكرارات
+        // تحويل Map إلى Array (Map يمنع التكرار تلقائياً)
         const merged = Array.from(existingMap.values())
         
         // ترتيب حسب الأولوية والتاريخ
@@ -193,7 +198,18 @@ export function NotificationCenter({
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         })
         
-        console.log(`🔄 [NOTIFICATION_CENTER] Merged notifications: ${prev.length} existing + ${filtered.length} new = ${merged.length} total`)
+        console.log(`🔄 [NOTIFICATION_CENTER] Merged notifications: ${prev.length} existing + ${filtered.length} from DB = ${merged.length} total (duplicates removed)`)
+        
+        // ✅ التحقق من عدم وجود تكرارات
+        const ids = merged.map(n => n.id)
+        const uniqueIds = new Set(ids)
+        if (ids.length !== uniqueIds.size) {
+          console.warn(`⚠️ [NOTIFICATION_CENTER] Duplicate notifications detected! ${ids.length} total, ${uniqueIds.size} unique`)
+          // إزالة التكرارات الإضافية
+          const deduplicated = Array.from(uniqueIds).map(id => merged.find(n => n.id === id)!).filter(Boolean)
+          return deduplicated
+        }
+        
         return merged
       })
     } catch (error: any) {
@@ -303,21 +319,37 @@ export function NotificationCenter({
     // ✅ دالة مساعدة لإضافة/تحديث الإشعار مباشرة في الـ state
     const addOrUpdateNotification = (notification: any) => {
       setNotifications(prev => {
-        // التحقق من وجود الإشعار مسبقاً
-        const existingIndex = prev.findIndex(n => n.id === notification.id)
+        // ✅ استخدام Map لمنع التكرار
+        const notificationsMap = new Map<string, Notification>()
         
-        if (existingIndex >= 0) {
+        // إضافة الإشعارات الموجودة
+        prev.forEach(n => {
+          notificationsMap.set(n.id, n)
+        })
+        
+        // إضافة/تحديث الإشعار الجديد
+        const notificationId = notification.id
+        if (notificationsMap.has(notificationId)) {
           // تحديث الإشعار الموجود
-          const updated = [...prev]
-          updated[existingIndex] = notification as Notification
-          console.log('🔄 [REALTIME] Updated notification in state:', notification.id)
-          return updated
+          notificationsMap.set(notificationId, notification as Notification)
+          console.log('🔄 [REALTIME] Updated notification in state:', notificationId)
         } else {
-          // إضافة الإشعار الجديد في البداية (الأحدث أولاً)
-          const updated = [notification as Notification, ...prev]
-          console.log('➕ [REALTIME] Added new notification to state:', notification.id)
-          return updated
+          // إضافة الإشعار الجديد
+          notificationsMap.set(notificationId, notification as Notification)
+          console.log('➕ [REALTIME] Added new notification to state:', notificationId)
         }
+        
+        // تحويل Map إلى Array وترتيب
+        const updated = Array.from(notificationsMap.values())
+        updated.sort((a, b) => {
+          const priorityOrder = { urgent: 1, high: 2, normal: 3, low: 4 }
+          const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority]
+          if (priorityDiff !== 0) return priorityDiff
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        })
+        
+        console.log(`✅ [REALTIME] Total notifications in state: ${updated.length} (no duplicates)`)
+        return updated
       })
 
       // ✅ تحديث عداد الإشعارات في sidebar
