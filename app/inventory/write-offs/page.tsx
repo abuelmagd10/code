@@ -942,17 +942,20 @@ export default function WriteOffsPage() {
       if (itemsErr) throw itemsErr
 
       // 🔔 إرسال إشعار للمعتمدين (Owner و Admin) عند إنشاء إهلاك جديد
+      // ⚠️ مهم: يجب تشغيل QUICK_FIX_NOTIFICATIONS.sql في Supabase أولاً
       try {
         const { notifyWriteOffApprovalRequest } = await import('@/lib/notification-helpers')
-        console.log('🔔 Sending write-off approval notification:', {
+        console.log('🔔 [WRITE-OFF CREATE] Starting notification process...')
+        console.log('🔔 [WRITE-OFF CREATE] Parameters:', {
           companyId,
           writeOffId: wo.id,
           writeOffNumber,
-          branchId,
-          warehouseId,
-          costCenterId,
-          createdBy: user?.user?.id
+          branchId: branchId || 'null',
+          warehouseId: warehouseId || 'null',
+          costCenterId: costCenterId || 'null',
+          createdBy: user?.user?.id || 'null'
         })
+        
         await notifyWriteOffApprovalRequest({
           companyId,
           writeOffId: wo.id,
@@ -963,14 +966,24 @@ export default function WriteOffsPage() {
           createdBy: user?.user?.id || '',
           appLang: isAr ? 'ar' : 'en'
         })
-        console.log('✅ Write-off approval notification sent successfully')
+        
+        console.log('✅ [WRITE-OFF CREATE] Write-off approval notification sent successfully')
       } catch (notificationError: any) {
-        console.error('❌ Error sending write-off approval notification:', notificationError)
-        console.error('Error details:', {
-          message: notificationError?.message,
-          stack: notificationError?.stack,
-          error: notificationError
+        console.error('❌ [WRITE-OFF CREATE] CRITICAL: Error sending write-off approval notification')
+        console.error('❌ [WRITE-OFF CREATE] Error message:', notificationError?.message)
+        console.error('❌ [WRITE-OFF CREATE] Error stack:', notificationError?.stack)
+        console.error('❌ [WRITE-OFF CREATE] Full error:', JSON.stringify(notificationError, null, 2))
+        
+        // ⚠️ تحذير للمستخدم إذا فشل الإشعار
+        toast({
+          title: isAr ? "تحذير" : "Warning",
+          description: isAr 
+            ? "تم إنشاء الإهلاك بنجاح، لكن فشل إرسال الإشعارات. يرجى التحقق من إعدادات قاعدة البيانات."
+            : "Write-off created successfully, but failed to send notifications. Please check database settings.",
+          variant: "destructive",
+          duration: 8000
         })
+        
         // لا نوقف العملية إذا فشل الإشعار
       }
 

@@ -411,9 +411,17 @@ export async function notifyWriteOffApprovalRequest(params: {
 
   const eventKey = `write_off:${writeOffId}:approval_request`
 
+  // إشعار لـ Owner
   try {
-    // إشعار لـ Owner
-    console.log('🔔 Creating notification for Owner:', { companyId, writeOffId, writeOffNumber })
+    console.log('🔔 [NOTIFY] Creating notification for Owner:', { 
+      companyId, 
+      writeOffId, 
+      writeOffNumber,
+      branchId: branchId || 'null',
+      warehouseId: warehouseId || 'null',
+      costCenterId: costCenterId || 'null'
+    })
+    
     await createNotification({
       companyId,
       referenceType: 'inventory_write_off',
@@ -430,15 +438,32 @@ export async function notifyWriteOffApprovalRequest(params: {
       severity: 'warning',
       category: 'inventory'
     })
-    console.log('✅ Owner notification created successfully')
+    
+    console.log('✅ [NOTIFY] Owner notification created successfully')
   } catch (error: any) {
-    console.error('❌ Error creating Owner notification:', error)
-    throw error
+    console.error('❌ [NOTIFY] CRITICAL: Error creating Owner notification')
+    console.error('❌ [NOTIFY] Error details:', {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      stack: error?.stack
+    })
+    // ⚠️ إذا فشل إنشاء إشعار Owner، نتابع مع Admin
+    console.warn('⚠️ [NOTIFY] Continuing with Admin notification despite Owner failure...')
   }
 
+  // إشعار لـ Admin
   try {
-    // إشعار لـ Admin
-    console.log('🔔 Creating notification for Admin:', { companyId, writeOffId, writeOffNumber })
+    console.log('🔔 [NOTIFY] Creating notification for Admin:', { 
+      companyId, 
+      writeOffId, 
+      writeOffNumber,
+      branchId: branchId || 'null',
+      warehouseId: warehouseId || 'null',
+      costCenterId: costCenterId || 'null'
+    })
+    
     await createNotification({
       companyId,
       referenceType: 'inventory_write_off',
@@ -455,10 +480,20 @@ export async function notifyWriteOffApprovalRequest(params: {
       severity: 'warning',
       category: 'inventory'
     })
-    console.log('✅ Admin notification created successfully')
+    
+    console.log('✅ [NOTIFY] Admin notification created successfully')
   } catch (error: any) {
-    console.error('❌ Error creating Admin notification:', error)
-    throw error
+    console.error('❌ [NOTIFY] CRITICAL: Error creating Admin notification')
+    console.error('❌ [NOTIFY] Error details:', {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      stack: error?.stack
+    })
+    
+    // ⚠️ إذا فشل كلاهما، نرمي خطأ
+    throw new Error(`Failed to create notifications for write-off ${writeOffNumber}. Please ensure QUICK_FIX_NOTIFICATIONS.sql has been run in Supabase. Error: ${error?.message || 'Unknown error'}`)
   }
 }
 
