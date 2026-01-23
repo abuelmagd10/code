@@ -171,7 +171,31 @@ export function NotificationCenter({
       })
 
       console.log(`✅ [NOTIFICATION_CENTER] Setting ${filtered.length} notifications to state`)
-      setNotifications(filtered)
+      
+      // ✅ دمج الإشعارات الجديدة مع الموجودة في الـ state (لتجنب التكرار)
+      setNotifications(prev => {
+        // إنشاء Map لتتبع الإشعارات الموجودة
+        const existingMap = new Map(prev.map(n => [n.id, n]))
+        
+        // إضافة/تحديث الإشعارات الجديدة
+        filtered.forEach(n => {
+          existingMap.set(n.id, n)
+        })
+        
+        // تحويل Map إلى Array وإزالة التكرارات
+        const merged = Array.from(existingMap.values())
+        
+        // ترتيب حسب الأولوية والتاريخ
+        merged.sort((a, b) => {
+          const priorityOrder = { urgent: 1, high: 2, normal: 3, low: 4 }
+          const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority]
+          if (priorityDiff !== 0) return priorityDiff
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        })
+        
+        console.log(`🔄 [NOTIFICATION_CENTER] Merged notifications: ${prev.length} existing + ${filtered.length} new = ${merged.length} total`)
+        return merged
+      })
     } catch (error: any) {
       console.error("❌ [NOTIFICATION_CENTER] Error loading notifications:", error)
       console.error("❌ [NOTIFICATION_CENTER] Error details:", {
