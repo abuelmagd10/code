@@ -48,30 +48,33 @@ END $$;
 -- 3️⃣ التحقق من دالة create_notification
 DO $$
 DECLARE
-  v_param_count INTEGER;
+  v_function_exists BOOLEAN;
+  v_param_text TEXT;
 BEGIN
   -- التحقق من وجود الدالة
-  IF NOT EXISTS (
+  SELECT EXISTS (
     SELECT 1 FROM pg_proc p
     JOIN pg_namespace n ON p.pronamespace = n.oid
     WHERE n.nspname = 'public' AND p.proname = 'create_notification'
-  ) THEN
+  ) INTO v_function_exists;
+  
+  IF NOT v_function_exists THEN
     RAISE EXCEPTION '❌ دالة create_notification غير موجودة';
   END IF;
   
-  -- التحقق من المعاملات
-  SELECT COUNT(*) INTO v_param_count
+  -- التحقق من المعاملات باستخدام pg_get_function_arguments
+  SELECT pg_get_function_arguments(p.oid) INTO v_param_text
   FROM pg_proc p
   JOIN pg_namespace n ON p.pronamespace = n.oid
-  JOIN pg_proc_arguments pa ON p.oid = pa.prooid
-  WHERE n.nspname = 'public' 
-    AND p.proname = 'create_notification'
-    AND pa.proname IN ('p_event_key', 'p_severity', 'p_category');
+  WHERE n.nspname = 'public' AND p.proname = 'create_notification'
+  LIMIT 1;
   
-  IF v_param_count >= 3 THEN
+  IF v_param_text LIKE '%p_event_key%' 
+     AND v_param_text LIKE '%p_severity%' 
+     AND v_param_text LIKE '%p_category%' THEN
     RAISE NOTICE '✅ دالة create_notification تدعم المعاملات الجديدة (event_key, severity, category)';
   ELSE
-    RAISE EXCEPTION '❌ دالة create_notification لا تدعم المعاملات الجديدة - شغّل QUICK_FIX_NOTIFICATIONS.sql';
+    RAISE EXCEPTION '❌ دالة create_notification لا تدعم المعاملات الجديدة - شغّل QUICK_FIX_NOTIFICATIONS.sql. المعاملات الحالية: %', v_param_text;
   END IF;
 END $$;
 
