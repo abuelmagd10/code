@@ -427,7 +427,7 @@ export async function notifyWriteOffApprovalRequest(params: {
 
     if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
       console.warn('⚠️ [NOTIFY] Error checking for existing notifications:', checkError)
-    } else if (existingCheck && existingCheck.exists) {
+    } else if (existingCheck && existingCheck.notification_exists) {
       console.log('⚠️ [NOTIFY] Notification already exists with event_key:', eventKey, 'Skipping creation.')
       console.log('⚠️ [NOTIFY] Existing notification ID:', existingCheck.notification_id)
       return // ✅ منع التكرار - الإشعار موجود بالفعل
