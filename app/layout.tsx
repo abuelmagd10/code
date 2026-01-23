@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { CurrencySyncProvider } from "./currency-sync-provider"
 import { PermissionsProvider } from "@/lib/permissions-context"
+import { AccessProvider } from "@/lib/access-context"
 import { RealtimeProvider } from "@/lib/realtime-provider"
 import { AppShell } from "@/components/app-shell"
 
@@ -104,15 +105,17 @@ export default function RootLayout({
           <TooltipProvider>
             <CurrencySyncProvider>
               <PermissionsProvider>
-                <RealtimeProvider autoSubscribe={['notifications']}>
-                  <AppShell>
-                    <ErrorBoundary>
-                      {children}
-                    </ErrorBoundary>
-                  </AppShell>
-                  <Toaster />
-                  {process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true" ? <Analytics /> : null}
-                </RealtimeProvider>
+                <AccessProvider>
+                  <RealtimeProvider autoSubscribe={['notifications']}>
+                    <AppShell>
+                      <ErrorBoundary>
+                        {children}
+                      </ErrorBoundary>
+                    </AppShell>
+                    <Toaster />
+                    {process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true" ? <Analytics /> : null}
+                  </RealtimeProvider>
+                </AccessProvider>
               </PermissionsProvider>
             </CurrencySyncProvider>
           </TooltipProvider>

@@ -29,6 +29,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getCachedPermissions, clearPermissionsCache, getResourceFromPath } from "@/lib/permissions-context"
+import { useAccess } from "@/lib/access-context"
 import { NotificationCenter } from "@/components/NotificationCenter"
 import { getUnreadNotificationCount } from "@/lib/governance-layer"
 
@@ -105,21 +106,39 @@ export function Sidebar() {
   const router = useRouter()
   const supabaseHook = useSupabase()
 
-  // ========== قراءة الصلاحيات من الكاش (Client-side only) ==========
-  // نستخدم قيم افتراضية آمنة للريندر الأولي (SSR)
+  // 🔐 استخدام AccessContext كمصدر وحيد للصلاحيات
+  const { isReady: accessReady, canAccessPage, profile } = useAccess()
+  
+  // 🔐 استخدام role من AccessContext
+  const myRole = profile?.role || ""
+  
+  // الحفاظ على التوافق مع النظام القديم (fallback)
   const [permissionsReady, setPermissionsReady] = useState<boolean>(false)
   const [deniedResources, setDeniedResources] = useState<string[]>([])
-  const [myRole, setMyRole] = useState<string>("")
 
-  // تحميل من الكاش عند التركيب (Hydration)
+  // تحميل من الكاش عند التركيب (Hydration) - Fallback
   useEffect(() => {
-    const cached = getCachedPermissions()
-    if (cached.isValid) {
-      setDeniedResources(cached.deniedResources)
-      setMyRole(cached.role)
+    if (accessReady && profile) {
+      // استخدام AccessContext
       setPermissionsReady(true)
+      // حساب deniedResources من allowed_pages
+      const allResources = [
+        "dashboard", "products", "inventory", "customers", "suppliers",
+        "sales_orders", "purchase_orders", "invoices", "bills", "payments",
+        "journal_entries", "banking", "reports", "chart_of_accounts",
+        "shareholders", "settings", "users", "taxes", "branches", "warehouses"
+      ]
+      const denied = allResources.filter(r => !profile.allowed_pages.includes(r) && r !== "profile")
+      setDeniedResources(denied)
+    } else {
+      // Fallback: استخدام الكاش القديم
+      const cached = getCachedPermissions()
+      if (cached.isValid) {
+        setDeniedResources(cached.deniedResources)
+        setPermissionsReady(true)
+      }
     }
-  }, [])
+  }, [accessReady, profile])
   const [userProfile, setUserProfile] = useState<{ username?: string; display_name?: string } | null>(null)
   const [userBranch, setUserBranch] = useState<{ id: string; name: string } | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
@@ -186,12 +205,18 @@ export function Sidebar() {
     return ''
   }
 
-  // دالة للتحقق من صلاحية الوصول
+  // دالة للتحقق من صلاحية الوصول - 🔐 محدثة لاستخدام AccessContext
   const isItemAllowed = (href: string): boolean => {
-    // إذا لم تجهز الصلاحيات بعد، لا نعرض أي شيء (إلا الملف الشخصي)
     const res = getResourceFromHref(href)
     if (res === 'profile' || res === 'no_permissions') return true
-    if (!permissionsReady) return false // ⚠️ مهم: منع العرض حتى تجهز الصلاحيات
+    
+    // 🔐 استخدام AccessContext إذا كان جاهزاً
+    if (accessReady && profile) {
+      return canAccessPage(res)
+    }
+    
+    // Fallback: استخدام النظام القديم
+    if (!permissionsReady) return false
     return !res || deniedResources.indexOf(res) === -1
   }
 
@@ -553,7 +578,6 @@ export function Sidebar() {
       const cached = getCachedPermissions()
       if (cached.isValid) {
         setDeniedResources(cached.deniedResources)
-        setMyRole(cached.role)
         setPermissionsReady(true)
       }
 
@@ -566,7 +590,7 @@ export function Sidebar() {
       }
       const { data: myMember } = await supabaseHook.from('company_members').select('role').eq('company_id', cid).eq('user_id', user.id).maybeSingle()
       const role = String(myMember?.role || '')
-      setMyRole(role)
+      // 🔐 myRole يأتي من AccessContext الآن (profile?.role)
       if (["owner", "admin"].includes(role)) {
         setDeniedResources([])
         setPermissionsReady(true)

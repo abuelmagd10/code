@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { usePermissions, getResourceFromPath, canAccessPageSync, getCachedPermissions } from "@/lib/permissions-context"
+import { useAccess } from "@/lib/access-context"
 import { Loader2, ShieldAlert } from "lucide-react"
 
 interface PageGuardProps {
@@ -27,7 +28,16 @@ export function PageGuard({
 }: PageGuardProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const { isReady, isLoading, canAccessPage, role } = usePermissions()
+  
+  // 🔐 استخدام AccessContext كمصدر أساسي
+  const { isReady: accessReady, canAccessPage: canAccessPageFromAccess, getFirstAllowedPage } = useAccess()
+  
+  // Fallback: استخدام PermissionsContext
+  const { isReady: permsReady, isLoading, canAccessPage: canAccessPageFromPerms, role } = usePermissions()
+  
+  // استخدام AccessContext إذا كان جاهزاً، وإلا PermissionsContext
+  const isReady = accessReady || permsReady
+  const canAccessPage = accessReady ? canAccessPageFromAccess : canAccessPageFromPerms
 
   // تحديد المورد من المسار إذا لم يُحدد
   const targetResource = resource || getResourceFromPath(pathname)
@@ -86,13 +96,20 @@ export function PageGuard({
 
       // إذا لم يكن showAccessDenied مفعلاً، قم بالتوجيه
       if (!showAccessDenied) {
-        const redirectTo = fallbackPath || "/dashboard"
+        // 🔐 استخدام getFirstAllowedPage من AccessContext إذا كان متاحاً
+        const redirectTo = fallbackPath || (accessReady ? getFirstAllowedPage() : "/dashboard")
         router.replace(redirectTo)
+        
+        // إظهار رسالة للمستخدم
+        if (typeof window !== "undefined") {
+          // سيتم إظهار Toast من useGovernanceRealtime
+          console.log("🔄 [PageGuard] Redirecting due to permission change")
+        }
       }
     }
   }, [isReady, isLoading, canAccessPage, targetResource, router, fallbackPath, showAccessDenied, pathname])
 
-  // الاستماع لتحديثات الصلاحيات
+  // 🔐 الاستماع لتحديثات الصلاحيات من Realtime
   useEffect(() => {
     const handlePermissionsUpdate = () => {
       // إذا كنا في صفحة users، نضع flag لمنع إعادة التوجيه
@@ -102,6 +119,10 @@ export function PageGuard({
         setTimeout(() => {
           isRefreshingRef.current = false
         }, 2000)
+      } else {
+        // 🔐 إعادة فحص الصلاحية عند تحديث الصلاحيات
+        // سيتم إعادة فحص الصلاحية في useEffect أعلاه
+        console.log("🔄 [PageGuard] Permissions updated, rechecking access...")
       }
     }
 
@@ -109,7 +130,7 @@ export function PageGuard({
       window.addEventListener("permissions_updated", handlePermissionsUpdate)
       return () => window.removeEventListener("permissions_updated", handlePermissionsUpdate)
     }
-  }, [pathname])
+  }, [pathname, canAccessPage, targetResource])
 
   // حالة التحميل - لا تعرض أي محتوى
   if (accessState === "loading") {
@@ -136,9 +157,19 @@ export function PageGuard({
               غير مصرح بالوصول
             </h1>
             <p className="text-gray-500 mb-6">
-              ليس لديك صلاحية للوصول إلى هذه الصفحة.
-              <br />
-              يرجى التواصل مع مدير النظام إذا كنت تعتقد أن هذا خطأ.
+              {accessReady ? (
+                <>
+                  تم تحديث صلاحياتك بواسطة الإدارة.
+                  <br />
+                  لم يعد مسموح لك الوصول إلى هذه الصفحة.
+                </>
+              ) : (
+                <>
+                  ليس لديك صلاحية للوصول إلى هذه الصفحة.
+                  <br />
+                  يرجى التواصل مع مدير النظام إذا كنت تعتقد أن هذا خطأ.
+                </>
+              )}
             </p>
             <button
               onClick={() => router.back()}
@@ -196,7 +227,14 @@ export function PermissionGate({
  */
 export function usePageAccess(resource?: string) {
   const pathname = usePathname()
-  const { isReady, isLoading, canAccessPage, role } = usePermissions()
+  
+  // 🔐 استخدام AccessContext كمصدر أساسي
+  const { isReady: accessReady, canAccessPage: canAccessPageFromAccess, profile } = useAccess()
+  const { isReady: permsReady, isLoading, canAccessPage: canAccessPageFromPerms, role: roleFromPerms } = usePermissions()
+  
+  const isReady = accessReady || permsReady
+  const canAccessPage = accessReady ? canAccessPageFromAccess : canAccessPageFromPerms
+  const role = profile?.role || roleFromPerms
 
   const targetResource = resource || getResourceFromPath(pathname)
 

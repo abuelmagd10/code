@@ -9,6 +9,8 @@ import {
   getCachedPermissions,
   canAccessPageSync,
 } from "@/lib/permissions-context"
+import { useAccess } from "@/lib/access-context"
+import { RealtimeRouteGuard } from "@/components/realtime-route-guard"
 
 // الصفحات العامة التي لا تحتاج تحقق من الصلاحيات
 const PUBLIC_PATHS = [
@@ -36,7 +38,15 @@ interface AppShellProps {
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const { isReady, isLoading, canAccessPage } = usePermissions()
+  
+  // 🔐 استخدام AccessContext كمصدر أساسي
+  const { isReady: accessReady, canAccessPage: canAccessPageFromAccess, getFirstAllowedPage } = useAccess()
+  
+  // Fallback: استخدام PermissionsContext
+  const { isReady: permsReady, isLoading, canAccessPage: canAccessPageFromPerms } = usePermissions()
+  
+  const isReady = accessReady || permsReady
+  const canAccessPage = accessReady ? canAccessPageFromAccess : canAccessPageFromPerms
 
   // تحديد إذا كانت الصفحة عامة
   const isPublicPage = PUBLIC_PATHS.some(p => pathname.startsWith(p)) || pathname === "/"
@@ -135,7 +145,11 @@ export function AppShell({ children }: AppShellProps) {
     )
   }
 
-  // حالة السماح - عرض المحتوى (الصفحة تتولى Sidebar بنفسها)
-  return <>{children}</>
+  // حالة السماح - عرض المحتوى مع RealtimeRouteGuard
+  return (
+    <RealtimeRouteGuard>
+      {children}
+    </RealtimeRouteGuard>
+  )
 }
 

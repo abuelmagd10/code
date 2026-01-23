@@ -1,0 +1,106 @@
+/**
+ * 🔐 Realtime Route Guard - حماية المسارات لحظياً
+ * 
+ * مكون مركزي يحمي جميع المسارات ويحدثها فوراً عند تغيير الصلاحيات
+ */
+
+"use client"
+
+import { useEffect, useState } from "react"
+import { useRouter, usePathname } from "next/navigation"
+import { useAccess } from "@/lib/access-context"
+import { getResourceFromPath } from "@/lib/permissions-context"
+import { useGovernanceRealtime } from "@/hooks/use-governance-realtime"
+import { Loader2, ShieldAlert } from "lucide-react"
+
+/**
+ * Realtime Route Guard Component
+ * 
+ * يحمي المسارات ويحدثها فوراً عند تغيير الصلاحيات
+ */
+export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const { isReady, canAccessPage, getFirstAllowedPage, profile } = useAccess()
+  const [isChecking, setIsChecking] = useState(true)
+  const [hasAccess, setHasAccess] = useState(false)
+
+  // 🔐 الاستماع لتحديثات الصلاحيات من Realtime
+  useGovernanceRealtime({
+    onPermissionsChanged: async () => {
+      console.log("🔄 [RealtimeRouteGuard] Permissions changed, rechecking access...")
+      // إعادة فحص الصلاحية
+      const resource = getResourceFromPath(pathname)
+      const access = canAccessPage(resource)
+      setHasAccess(access)
+      
+      if (!access) {
+        // إغلاق الصفحة وإعادة التوجيه
+        const redirectTo = getFirstAllowedPage()
+        console.log(`🔄 [RealtimeRouteGuard] Redirecting to: ${redirectTo}`)
+        router.replace(redirectTo)
+      }
+    },
+    showNotifications: true,
+  })
+
+  // فحص الصلاحية عند تحميل الصفحة أو تغيير المسار
+  useEffect(() => {
+    if (!isReady) {
+      setIsChecking(true)
+      return
+    }
+
+    const resource = getResourceFromPath(pathname)
+    const access = canAccessPage(resource)
+    
+    setHasAccess(access)
+    setIsChecking(false)
+
+    if (!access) {
+      // منع الوصول وإعادة التوجيه
+      const redirectTo = getFirstAllowedPage()
+      console.log(`🚫 [RealtimeRouteGuard] Access denied to ${pathname}, redirecting to: ${redirectTo}`)
+      router.replace(redirectTo)
+    }
+  }, [isReady, pathname, canAccessPage, getFirstAllowedPage, router])
+
+  // حالة التحميل
+  if (isChecking || !isReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900">
+        <div className="text-center">
+          <Loader2 className="h-10 w-10 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-500 dark:text-gray-400">جاري التحقق من الصلاحيات...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // حالة عدم الصلاحية
+  if (!hasAccess) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900">
+        <div className="text-center max-w-md px-4">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldAlert className="h-8 w-8 text-red-600 dark:text-red-400" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+            غير مصرح بالوصول
+          </h1>
+          <p className="text-gray-500 dark:text-gray-400 mb-6">
+            تم تحديث صلاحياتك بواسطة الإدارة.
+            <br />
+            لم يعد مسموح لك الوصول إلى هذه الصفحة.
+          </p>
+          <p className="text-sm text-gray-400 dark:text-gray-500">
+            سيتم توجيهك تلقائياً إلى صفحة مسموحة...
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // حالة السماح - اعرض المحتوى
+  return <>{children}</>
+}
