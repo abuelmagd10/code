@@ -104,10 +104,78 @@ SELECT create_notification(
 */
 
 -- 8️⃣ التحقق من وجود أعمدة event_key, severity, category
+-- ⚠️ ملاحظة: هذه الأعمدة قد لا تكون موجودة إذا لم يتم تشغيل migration scripts
+-- المطلوب: scripts/055_final_fix_duplicate_notifications.sql أو scripts/upgrade_notifications_enterprise.sql
+
+DO $$
+DECLARE
+  v_event_key_exists BOOLEAN;
+  v_severity_exists BOOLEAN;
+  v_category_exists BOOLEAN;
+  v_missing_columns TEXT[];
+BEGIN
+  -- التحقق من وجود كل عمود
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'notifications' AND column_name = 'event_key'
+  ) INTO v_event_key_exists;
+  
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'notifications' AND column_name = 'severity'
+  ) INTO v_severity_exists;
+  
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'notifications' AND column_name = 'category'
+  ) INTO v_category_exists;
+  
+  -- بناء قائمة الأعمدة المفقودة
+  IF NOT v_event_key_exists THEN
+    v_missing_columns := array_append(v_missing_columns, 'event_key');
+  END IF;
+  
+  IF NOT v_severity_exists THEN
+    v_missing_columns := array_append(v_missing_columns, 'severity');
+  END IF;
+  
+  IF NOT v_category_exists THEN
+    v_missing_columns := array_append(v_missing_columns, 'category');
+  END IF;
+  
+  -- عرض النتائج
+  RAISE NOTICE '═══════════════════════════════════════════════════════════════';
+  RAISE NOTICE '8️⃣ فحص الأعمدة الجديدة (event_key, severity, category)';
+  RAISE NOTICE '═══════════════════════════════════════════════════════════════';
+  RAISE NOTICE 'event_key: %', CASE WHEN v_event_key_exists THEN '✅ موجود' ELSE '❌ غير موجود' END;
+  RAISE NOTICE 'severity: %', CASE WHEN v_severity_exists THEN '✅ موجود' ELSE '❌ غير موجود' END;
+  RAISE NOTICE 'category: %', CASE WHEN v_category_exists THEN '✅ موجود' ELSE '❌ غير موجود' END;
+  
+  -- إذا كانت هناك أعمدة مفقودة
+  IF array_length(v_missing_columns, 1) > 0 THEN
+    RAISE NOTICE '';
+    RAISE NOTICE '⚠️  تحذير: الأعمدة التالية غير موجودة: %', array_to_string(v_missing_columns, ', ');
+    RAISE NOTICE '⚠️  هذه الأعمدة اختيارية ولكنها مطلوبة للميزات المتقدمة';
+    RAISE NOTICE '';
+    RAISE NOTICE '📋 الحل: شغّل أحد الـ migration scripts التالية:';
+    RAISE NOTICE '   1. scripts/055_final_fix_duplicate_notifications.sql (موصى به)';
+    RAISE NOTICE '   2. scripts/upgrade_notifications_enterprise.sql';
+    RAISE NOTICE '';
+    RAISE NOTICE '💡 ملاحظة: إذا لم تكن هذه الأعمدة موجودة، قد لا تعمل بعض الميزات';
+    RAISE NOTICE '   لكن الإشعارات الأساسية يجب أن تعمل بدونها.';
+  ELSE
+    RAISE NOTICE '';
+    RAISE NOTICE '✅ جميع الأعمدة الجديدة موجودة!';
+  END IF;
+  RAISE NOTICE '═══════════════════════════════════════════════════════════════';
+END $$;
+
+-- عرض تفاصيل الأعمدة الموجودة فقط
 SELECT 
   column_name,
   data_type,
-  is_nullable
+  is_nullable,
+  column_default
 FROM information_schema.columns
 WHERE table_name = 'notifications'
   AND column_name IN ('event_key', 'severity', 'category')
