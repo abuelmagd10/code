@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { Bell, X, CheckCircle, Archive, Search, Filter, AlertCircle, Info, AlertTriangle, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -42,6 +42,29 @@ export function NotificationCenter({
   const [searchQuery, setSearchQuery] = useState("")
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [mounted, setMounted] = useState(false)
+
+  // ✅ فحص إضافي للتأكد من عدم وجود تكرارات قبل العرض
+  const displayNotifications = useMemo(() => {
+    const notificationIds = notifications.map(n => n.id)
+    const uniqueIds = new Set(notificationIds)
+    if (notificationIds.length !== uniqueIds.size) {
+      console.error(`❌ [NOTIFICATION_CENTER] CRITICAL: Duplicate IDs in render! ${notificationIds.length} total, ${uniqueIds.size} unique`)
+      console.error(`❌ [NOTIFICATION_CENTER] Duplicate IDs:`, notificationIds.filter((id, index) => notificationIds.indexOf(id) !== index))
+      // إزالة التكرارات (الاحتفاظ بالأول فقط)
+      const seen = new Set<string>()
+      const deduplicated = notifications.filter(n => {
+        if (seen.has(n.id)) {
+          console.warn(`⚠️ [NOTIFICATION_CENTER] Removing duplicate notification: ${n.id}`)
+          return false
+        }
+        seen.add(n.id)
+        return true
+      })
+      console.log(`🔧 [NOTIFICATION_CENTER] Deduplicated for render: ${notifications.length} → ${deduplicated.length}`)
+      return deduplicated
+    }
+    return notifications
+  }, [notifications])
 
   useEffect(() => {
     setMounted(true)
@@ -743,10 +766,10 @@ export function NotificationCenter({
             </div>
           ) : (
             <div className="space-y-2 py-4">
-              {notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+              {displayNotifications.map((notification) => (
+                    <div
+                      key={notification.id}
+                      className={`p-4 rounded-lg border cursor-pointer transition-colors ${
                     notification.status === 'unread'
                       ? 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800'
                       : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'
