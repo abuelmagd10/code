@@ -20,6 +20,7 @@ import { CompanyHeader } from "@/components/company-header"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { validateInventoryTransaction, type UserContext } from "@/lib/validation"
 import { validateWriteOffItems, type WriteOffItemValidation } from "@/lib/write-off-governance"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 // تنسيق العملة
 function formatCurrency(amount: number, currency: string = "EGP"): string {
@@ -62,6 +63,7 @@ interface WriteOffItem {
 
 interface WriteOff {
   id: string
+  company_id?: string // ✅ مطلوب للفلترة
   write_off_number: string
   write_off_date: string
   status: string
@@ -295,6 +297,91 @@ export default function WriteOffsPage() {
   }, [supabase, statusFilter, dateFrom, dateTo])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // 🔄 Realtime: الاشتراك في تحديثات الإهلاك (ERP Standard)
+  useRealtimeTable<WriteOff>({
+    table: 'inventory_write_offs',
+    enabled: !!companyId && !!userContext,
+    filter: (event) => {
+      // ✅ فلتر إضافي: التحقق من company_id
+      const record = event.new || event.old
+      if (!record || !companyId) {
+        return false
+      }
+      // التحقق من company_id إذا كان موجوداً في السجل
+      const recordWithCompany = record as WriteOff & { company_id?: string }
+      if (recordWithCompany.company_id && recordWithCompany.company_id !== companyId) {
+        return false
+      }
+
+      // ✅ Owner/Admin: يرى كل شيء في الشركة
+      const userRole = userContext?.role || 'viewer'
+      if (userRole === 'owner' || userRole === 'admin') {
+        return true
+      }
+
+      // ✅ للمستخدمين الآخرين: فلترة حسب warehouse و branch
+      const isCanOverride = ['owner', 'admin', 'manager'].includes(userRole)
+      const isAccountantOrManager = ['accountant', 'manager'].includes(userRole)
+      const userBranchId = userContext?.branch_id || null
+      const userWarehouseId = userContext?.warehouse_id || null
+
+      if (isCanOverride) {
+        // للمالك والمدير: لا فلترة
+        return true
+      } else if (isAccountantOrManager && userBranchId) {
+        // للمحاسب والمدير: فلترة حسب warehouse_id في الفرع
+        if (userWarehouseId && record.warehouse_id === userWarehouseId) {
+          return true
+        }
+        // يمكن رؤية إهلاكات الفرع (حسب منطق loadData)
+        return record.branch_id === userBranchId || !record.branch_id
+      } else if (userWarehouseId) {
+        // للموظف: فلترة حسب warehouse_id فقط
+        return record.warehouse_id === userWarehouseId
+      }
+
+      return false
+    },
+    onInsert: (newWriteOff) => {
+      console.log('➕ [Realtime] New write-off inserted:', newWriteOff.id)
+      // ✅ إضافة السجل الجديد في المقدمة
+      setWriteOffs(prev => {
+        // ✅ منع التكرار: فحص إذا كان السجل موجوداً
+        if (prev.find(w => w.id === newWriteOff.id)) {
+          console.warn('⚠️ [Realtime] Write-off already exists, skipping insert:', newWriteOff.id)
+          return prev
+        }
+        return [newWriteOff, ...prev]
+      })
+    },
+    onUpdate: (newWriteOff, oldWriteOff) => {
+      console.log('🔄 [Realtime] Write-off updated:', newWriteOff.id, {
+        oldStatus: oldWriteOff?.status,
+        newStatus: newWriteOff.status
+      })
+      // ✅ تحديث السجل الموجود - استبدال كامل (لا دمج جزئي)
+      setWriteOffs(prev => {
+        const existingIndex = prev.findIndex(w => w.id === newWriteOff.id)
+        if (existingIndex >= 0) {
+          // ✅ استبدال السجل بالكامل بالنسخة الجديدة
+          const updated = [...prev]
+          updated[existingIndex] = newWriteOff
+          console.log('✅ [Realtime] Write-off replaced in state:', newWriteOff.id)
+          return updated
+        } else {
+          // ✅ إذا لم يكن موجوداً (مثل حالة المالك يرى إهلاك جديد)، نضيفه
+          console.log('➕ [Realtime] Write-off not found, adding to list:', newWriteOff.id)
+          return [newWriteOff, ...prev]
+        }
+      })
+    },
+    onDelete: (oldWriteOff) => {
+      console.log('🗑️ [Realtime] Write-off deleted:', oldWriteOff.id)
+      // ✅ حذف السجل من القائمة
+      setWriteOffs(prev => prev.filter(w => w.id !== oldWriteOff.id))
+    }
+  })
 
   // Cleanup: إلغاء timeout عند إلغاء المكون
   useEffect(() => {

@@ -18,6 +18,7 @@ export type RealtimeEventType = 'INSERT' | 'UPDATE' | 'DELETE'
 export type RealtimeTable = 
   | 'notifications'
   | 'depreciation'
+  | 'inventory_write_offs' // جدول الإهلاك الفعلي
   | 'inventory_transactions'
   | 'purchase_orders'
   | 'sales_orders'
@@ -141,6 +142,24 @@ class RealtimeManager {
   }
 
   /**
+   * تحويل اسم الجدول المنطقي إلى اسم الجدول الفعلي في Supabase
+   */
+  private getActualTableName(table: RealtimeTable): string {
+    // Mapping للجداول التي لها أسماء مختلفة في Supabase
+    const tableMapping: Record<RealtimeTable, string> = {
+      'notifications': 'notifications',
+      'depreciation': 'inventory_write_offs', // جدول الإهلاك الفعلي
+      'inventory_write_offs': 'inventory_write_offs',
+      'inventory_transactions': 'inventory_transactions',
+      'purchase_orders': 'purchase_orders',
+      'sales_orders': 'sales_orders',
+      'invoices': 'invoices',
+      'approvals': 'approval_workflows', // قد يكون اسم مختلف
+    }
+    return tableMapping[table] || table
+  }
+
+  /**
    * الاشتراك في جدول معين
    */
   async subscribe(table: RealtimeTable): Promise<void> {
@@ -164,6 +183,9 @@ class RealtimeManager {
       // بناء الفلتر حسب الصلاحيات
       const filter = this.buildFilter(table)
 
+      // الحصول على اسم الجدول الفعلي في Supabase
+      const actualTableName = this.getActualTableName(table)
+
       // الاشتراك في الأحداث
       channel
         .on(
@@ -171,7 +193,7 @@ class RealtimeManager {
           {
             event: '*',
             schema: 'public',
-            table,
+            table: actualTableName, // ✅ استخدام الاسم الفعلي
             filter,
           },
           (payload: RealtimePostgresChangesPayload<any>) => {
@@ -232,6 +254,29 @@ class RealtimeManager {
         return notifFilter
 
       case 'depreciation':
+      case 'inventory_write_offs':
+        // الإهلاك: المالك والمدير يروا كل شيء، الباقي حسب warehouse و branch
+        // ✅ Owner/Admin: يرى كل شيء (تم التحقق أعلاه)
+        // للمستخدمين الآخرين: فلترة حسب warehouse و branch
+        let depFilter = filter
+        if (accessFilter.filterByBranch && branchId) {
+          depFilter += `.and(branch_id.eq.${branchId}`
+          if (accessFilter.allowedBranchIds && accessFilter.allowedBranchIds.length > 0) {
+            // إذا كان لديه صلاحية لعدة فروع
+            const branchIds = [branchId, ...accessFilter.allowedBranchIds].join(',')
+            depFilter = filter + `.and.branch_id.in.(${branchIds})`
+          } else {
+            depFilter += `.or.branch_id.is.null)`
+          }
+        }
+        if (accessFilter.filterByWarehouse && warehouseId) {
+          depFilter += `.and.warehouse_id.eq.${warehouseId}`
+        }
+        if (accessFilter.filterByCreatedBy && userId) {
+          depFilter += `.and.created_by_user_id.eq.${userId}`
+        }
+        return depFilter
+
       case 'inventory_transactions':
         // حركات المخزون: حسب warehouse و branch
         let invFilter = filter
