@@ -1854,6 +1854,7 @@ export default function WriteOffsPage() {
             }
             
             const { notifyWriteOffModified } = await import('@/lib/notification-helpers')
+            const appLang: 'ar' | 'en' = isAr ? 'ar' : 'en'
             const notificationParams = {
               companyId,
               writeOffId: writeOffIdToUpdate,
@@ -1862,7 +1863,7 @@ export default function WriteOffsPage() {
               warehouseId: finalWarehouseId || undefined,
               costCenterId: finalCostCenterId || undefined,
               modifiedBy: userId || '',
-              appLang: (isAr ? 'ar' : 'en') as 'ar' | 'en'
+              appLang
             }
             
             console.log('🔔 [NOTIFICATION] Sending write-off modification notification:', notificationParams)
