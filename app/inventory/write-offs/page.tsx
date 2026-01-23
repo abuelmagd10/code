@@ -1842,15 +1842,16 @@ export default function WriteOffsPage() {
       if (currentStatus === 'pending') {
           try {
             // ✅ التأكد من أن userId معرف
-            if (!userId) {
-              console.error('❌ [NOTIFICATION_ERROR] userId is missing! Cannot send notification.')
+            let finalUserId = userId
+            if (!finalUserId) {
+              console.warn('⚠️ [NOTIFICATION_WARNING] userId is missing! Trying to get from auth.getUser()...')
               const { data: userData } = await supabase.auth.getUser()
-              const fallbackUserId = userData?.user?.id
-              if (!fallbackUserId) {
+              finalUserId = userData?.user?.id
+              if (!finalUserId) {
                 console.error('❌ [NOTIFICATION_ERROR] Cannot get userId from auth.getUser()')
                 throw new Error('User ID is required to send notification')
               }
-              console.log('⚠️ [NOTIFICATION_WARNING] Using fallback userId:', fallbackUserId)
+              console.log('✅ [NOTIFICATION] Using userId from auth.getUser():', finalUserId)
             }
             
             const { notifyWriteOffModified } = await import('@/lib/notification-helpers')
@@ -1862,7 +1863,7 @@ export default function WriteOffsPage() {
               branchId: finalBranchId || undefined,
               warehouseId: finalWarehouseId || undefined,
               costCenterId: finalCostCenterId || undefined,
-              modifiedBy: userId || '',
+              modifiedBy: finalUserId,
               appLang
             }
             
