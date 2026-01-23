@@ -1645,7 +1645,7 @@ export default function WriteOffsPage() {
           }
           
           // ✅ إعادة حساب total_cost من مجموع العناصر المضافة
-          const calculatedTotalCost = itemsToInsert.reduce((sum, item) => sum + (item.total_cost || 0), 0)
+          const calculatedTotalCost = itemsToInsert.reduce((sum: number, item: any) => sum + (item.total_cost || 0), 0)
           console.log(`💰 Calculated total cost from items: ${calculatedTotalCost}`)
           
           // ✅ تحديث total_cost في قاعدة البيانات
