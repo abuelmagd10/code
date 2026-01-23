@@ -135,6 +135,67 @@ export function NotificationCenter({
     }
   }, [open, loadNotifications])
 
+  // 🔔 Real-Time: الاستماع للإشعارات الجديدة والمحدثة
+  useEffect(() => {
+    if (!companyId || !userId || !mounted) return
+
+    console.log('🔔 [REALTIME] Setting up notification subscription...', {
+      companyId,
+      userId,
+      branchId: branchId || 'null',
+      warehouseId: warehouseId || 'null',
+      userRole
+    })
+
+    // إنشاء Realtime channel للإشعارات
+    const channel = supabase
+      .channel(`notifications:${companyId}:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'notifications',
+          filter: `company_id=eq.${companyId}` // فلترة حسب الشركة
+        },
+        async (payload: any) => {
+          console.log('🔔 [REALTIME] Notification event received:', {
+            eventType: payload.eventType,
+            new: payload.new,
+            old: payload.old
+          })
+
+          // التحقق من أن الإشعار ينطبق على المستخدم الحالي
+          // (سيتم الفلترة في getUserNotifications)
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const notification = payload.new as any
+            
+            // ✅ التحقق من أن الإشعار ينطبق على المستخدم
+            // (سيتم التحقق الكامل في loadNotifications)
+            console.log('🔄 [REALTIME] Reloading notifications after event...')
+            await loadNotifications()
+          } else if (payload.eventType === 'DELETE') {
+            // إزالة الإشعار المحذوف من القائمة
+            setNotifications(prev => prev.filter(n => n.id !== payload.old.id))
+          }
+        }
+      )
+      .subscribe((status: any) => {
+        console.log('🔔 [REALTIME] Subscription status:', status)
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ [REALTIME] Successfully subscribed to notifications')
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ [REALTIME] Channel error - check Supabase Realtime configuration')
+        }
+      })
+
+    // تنظيف الاشتراك عند إلغاء التثبيت
+    return () => {
+      console.log('🔕 [REALTIME] Unsubscribing from notifications...')
+      supabase.removeChannel(channel)
+    }
+  }, [companyId, userId, branchId, warehouseId, userRole, supabase, loadNotifications, mounted])
+
   const handleNotificationClick = async (notification: Notification) => {
     if (notification.status === "unread") {
       try {

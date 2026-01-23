@@ -436,6 +436,52 @@ export function Sidebar() {
     
     loadUnreadCount()
     
+    // 🔔 Real-Time: تحديث عدد الإشعارات غير المقروءة تلقائياً
+    useEffect(() => {
+      if (!currentUserId || !activeCompanyId) return
+
+      console.log('🔔 [SIDEBAR_REALTIME] Setting up notification count subscription...', {
+        userId: currentUserId,
+        companyId: activeCompanyId
+      })
+
+      // إنشاء Realtime channel لتحديث عدد الإشعارات
+      const channel = supabaseHook
+        .channel(`notification_count:${activeCompanyId}:${currentUserId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // INSERT, UPDATE, DELETE
+            schema: 'public',
+            table: 'notifications',
+            filter: `company_id=eq.${activeCompanyId}` // فلترة حسب الشركة
+          },
+          async (payload: any) => {
+            console.log('🔔 [SIDEBAR_REALTIME] Notification event received, updating count...', {
+              eventType: payload.eventType
+            })
+
+            // تحديث عدد الإشعارات غير المقروءة
+            // نستخدم loadUnreadCount لأنها تتحقق من الدور والفرع تلقائياً
+            await loadUnreadCount()
+          }
+        )
+        .subscribe((status: any) => {
+          console.log('🔔 [SIDEBAR_REALTIME] Subscription status:', status)
+          if (status === 'SUBSCRIBED') {
+            console.log('✅ [SIDEBAR_REALTIME] Successfully subscribed to notification count updates')
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error('❌ [SIDEBAR_REALTIME] Channel error - check Supabase Realtime configuration')
+          }
+        })
+
+      // تنظيف الاشتراك عند إلغاء التثبيت
+      return () => {
+        console.log('🔕 [SIDEBAR_REALTIME] Unsubscribing from notification count updates...')
+        supabaseHook.removeChannel(channel)
+      }
+    }, [currentUserId, activeCompanyId, supabaseHook])
+    
     // تحديث عدد الإشعارات عند تغيير الشركة أو عند استقبال حدث
     const handleNotificationsUpdate = () => {
       loadUnreadCount()
