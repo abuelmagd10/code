@@ -138,7 +138,12 @@ export function NotificationCenter({
   // 🔹 Load user names for created_by
   useEffect(() => {
     const loadUserNames = async () => {
-      const userIds = new Set(displayNotifications.map(n => n.created_by))
+      // ✅ فلترة: إزالة undefined و null و القيم الفارغة
+      const userIds = new Set(
+        displayNotifications
+          .map(n => n.created_by)
+          .filter((id): id is string => !!id && typeof id === 'string' && id !== 'undefined')
+      )
       const missingIds = Array.from(userIds).filter(id => !createdByUsers.has(id))
       
       if (missingIds.length === 0) return
