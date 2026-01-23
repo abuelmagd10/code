@@ -6,6 +6,8 @@
 import { createNotification, type NotificationPriority } from '@/lib/governance-layer'
 import { createClient } from '@/lib/supabase/client'
 
+// ✅ Import Supabase client للفحص من التكرار
+
 /**
  * إنشاء إشعار عند إنشاء طلب استرداد نقدي
  * ✅ محدث: يدعم event_key و severity و category
@@ -411,6 +413,29 @@ export async function notifyWriteOffApprovalRequest(params: {
 
   const eventKey = `write_off:${writeOffId}:approval_request`
 
+  // ✅ حماية من التكرار: فحص إذا كان الإشعار موجوداً بالفعل
+  const supabase = createClient()
+  try {
+    const { data: existingNotifications, error: checkError } = await supabase
+      .from('notifications')
+      .select('id, event_key, created_at')
+      .eq('company_id', companyId)
+      .eq('event_key', eventKey)
+      .neq('status', 'archived')
+      .limit(1)
+
+    if (checkError) {
+      console.warn('⚠️ [NOTIFY] Error checking for existing notifications:', checkError)
+    } else if (existingNotifications && existingNotifications.length > 0) {
+      console.log('⚠️ [NOTIFY] Notification already exists with event_key:', eventKey, 'Skipping creation.')
+      console.log('⚠️ [NOTIFY] Existing notification ID:', existingNotifications[0].id)
+      return // ✅ منع التكرار - الإشعار موجود بالفعل
+    }
+  } catch (checkErr: any) {
+    console.warn('⚠️ [NOTIFY] Error checking for duplicates:', checkErr)
+    // نستمر في الإنشاء رغم الخطأ في الفحص
+  }
+
   // إشعار لـ Admin
   try {
     // ✅ ERP Standard: ننشئ إشعار admin فقط لأن owner يرى إشعارات admin (تجنب التكرار)
@@ -418,12 +443,13 @@ export async function notifyWriteOffApprovalRequest(params: {
       companyId, 
       writeOffId, 
       writeOffNumber,
+      eventKey,
       branchId: branchId || 'null',
       warehouseId: warehouseId || 'null',
       costCenterId: costCenterId || 'null'
     })
     
-    await createNotification({
+    const notificationId = await createNotification({
       companyId,
       referenceType: 'inventory_write_off',
       referenceId: writeOffId,
@@ -440,7 +466,7 @@ export async function notifyWriteOffApprovalRequest(params: {
       category: 'inventory'
     })
     
-    console.log('✅ [NOTIFY] Admin notification created successfully')
+    console.log('✅ [NOTIFY] Admin notification created successfully. ID:', notificationId)
   } catch (error: any) {
     console.error('❌ [NOTIFY] CRITICAL: Error creating Admin notification')
     console.error('❌ [NOTIFY] Error details:', {
@@ -482,11 +508,39 @@ export async function notifyWriteOffModified(params: {
 
   const eventKey = `write_off:${writeOffId}:modified`
 
+  // ✅ حماية من التكرار: فحص إذا كان الإشعار موجوداً بالفعل
+  const supabase = createClient()
+  try {
+    const { data: existingNotifications, error: checkError } = await supabase
+      .from('notifications')
+      .select('id, event_key, created_at')
+      .eq('company_id', companyId)
+      .eq('event_key', eventKey)
+      .neq('status', 'archived')
+      .limit(1)
+
+    if (checkError) {
+      console.warn('⚠️ [NOTIFY] Error checking for existing modification notifications:', checkError)
+    } else if (existingNotifications && existingNotifications.length > 0) {
+      console.log('⚠️ [NOTIFY] Modification notification already exists with event_key:', eventKey, 'Skipping creation.')
+      console.log('⚠️ [NOTIFY] Existing notification ID:', existingNotifications[0].id)
+      return // ✅ منع التكرار - الإشعار موجود بالفعل
+    }
+  } catch (checkErr: any) {
+    console.warn('⚠️ [NOTIFY] Error checking for duplicates:', checkErr)
+    // نستمر في الإنشاء رغم الخطأ في الفحص
+  }
+
   try {
     // إشعار لـ Admin
     // ✅ ERP Standard: ننشئ إشعار admin فقط لأن owner يرى إشعارات admin (تجنب التكرار)
-    console.log('🔔 Creating modification notification for Admin (owner will also see it):', { companyId, writeOffId, writeOffNumber })
-    await createNotification({
+    console.log('🔔 [NOTIFY] Creating modification notification for Admin (owner will also see it):', { 
+      companyId, 
+      writeOffId, 
+      writeOffNumber,
+      eventKey
+    })
+    const notificationId = await createNotification({
       companyId,
       referenceType: 'inventory_write_off',
       referenceId: writeOffId,
@@ -502,7 +556,7 @@ export async function notifyWriteOffModified(params: {
       severity: 'warning',
       category: 'inventory'
     })
-    console.log('✅ Admin modification notification created successfully')
+    console.log('✅ [NOTIFY] Admin modification notification created successfully. ID:', notificationId)
   } catch (error: any) {
     console.error('❌ Error creating Admin modification notification:', error)
     throw error
