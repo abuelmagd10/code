@@ -141,6 +141,9 @@ class RealtimeManager {
         role: this.context.role,
       })
 
+      // 🔐 الاشتراك في قناة الحوكمة
+      await this.subscribeToGovernance()
+
       this.isInitialized = true
     } catch (error) {
       console.error('❌ [RealtimeManager] Initialization error:', error)
