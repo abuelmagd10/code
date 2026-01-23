@@ -454,14 +454,17 @@ class RealtimeManager {
       warehouse_id: record.warehouse_id || null,
     }
     
-    // ✅ استثناء خاص: للمستخدمين العاديين، نسمح برؤية تحديثات على سجلاتهم الخاصة
+    // ✅ استثناء خاص: للمستخدمين الذين أنشأوا السجل، نسمح برؤية تحديثات على سجلاتهم الخاصة
     // حتى لو لم يكونوا هم من عدلوها (مثل حالة رفض/اعتماد من المالك)
-    if (accessFilter.filterByCreatedBy && userId && (record.created_by === userId || record.created_by_user_id === userId)) {
+    // ⚠️ مهم: نفحص created_by مباشرة بدون الاعتماد على filterByCreatedBy
+    // لأن store_manager قد يكون لديه filterByCreatedBy: false لكنه أنشأ السجل
+    if (userId && (record.created_by === userId || record.created_by_user_id === userId)) {
       // المستخدم أنشأ هذا السجل → يرى جميع التحديثات عليه
       console.log(`✅ [RealtimeManager] User can see update on their own record:`, {
         recordId: record.id,
         userId,
-        createdBy: record.created_by || record.created_by_user_id
+        createdBy: record.created_by || record.created_by_user_id,
+        userRole: accessInfo.role
       })
       return true
     }
