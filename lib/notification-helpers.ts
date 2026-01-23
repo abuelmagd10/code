@@ -389,7 +389,7 @@ export async function notifyPurchaseApprovalRequest(params: {
 
 /**
  * إنشاء إشعار عند إنشاء إهلاك جديد بحالة Pending
- * يتم إرسال الإشعار إلى Owner و Admin فقط
+ * ✅ يتم إرسال الإشعار إلى Admin فقط (Owner يرى إشعارات Admin تلقائياً - تجنب التكرار)
  */
 export async function notifyWriteOffApprovalRequest(params: {
   companyId: string
