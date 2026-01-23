@@ -25,6 +25,12 @@ export type RealtimeTable =
   | 'invoices'
   | 'approvals'
   | 'inventory_transfers' // ✅ النقل بين المخازن
+  // 🔐 جداول الحوكمة (Governance)
+  | 'company_members'
+  | 'branches'
+  | 'warehouses'
+  | 'company_role_permissions'
+  | 'permissions'
 
 export interface RealtimeEvent<T = any> {
   type: RealtimeEventType
@@ -53,6 +59,16 @@ export interface RealtimeContext {
 
 export type RealtimeEventHandler<T = any> = (event: RealtimeEvent<T>) => void | Promise<void>
 
+// 🔐 Governance Event Handlers
+export type GovernanceEventHandler = (event: {
+  type: RealtimeEventType
+  table: 'company_members' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions'
+  new?: any
+  old?: any
+  timestamp: number
+  affectsCurrentUser: boolean // هل يؤثر على المستخدم الحالي؟
+}) => void | Promise<void>
+
 // =====================================================
 // Realtime Manager Class
 // =====================================================
@@ -67,6 +83,11 @@ class RealtimeManager {
   // ✅ منع التكرار: تتبع الأحداث المعالجة مؤخراً
   private processedEvents: Map<string, number> = new Map() // eventKey -> timestamp
   private readonly EVENT_DEDUP_WINDOW = 5000 // 5 ثواني
+  
+  // 🔐 Governance Realtime Channel
+  private governanceChannel: RealtimeChannel | null = null
+  private governanceHandlers: Set<GovernanceEventHandler> = new Set()
+  private isGovernanceSubscribed = false
 
   /**
    * تهيئة المدير مع سياق المستخدم
@@ -134,6 +155,9 @@ class RealtimeManager {
     this.isInitialized = false
     await this.initialize()
     
+    // 🔐 إعادة الاشتراك في قناة الحوكمة
+    await this.subscribeToGovernance()
+    
     // إعادة الاشتراك في جميع الجداول
     for (const [table, subscription] of this.subscriptions.entries()) {
       if (subscription.isActive) {
@@ -157,6 +181,12 @@ class RealtimeManager {
       'invoices': 'invoices',
       'approvals': 'approval_workflows', // قد يكون اسم مختلف
       'inventory_transfers': 'inventory_transfers', // ✅ النقل بين المخازن
+      // 🔐 جداول الحوكمة
+      'company_members': 'company_members',
+      'branches': 'branches',
+      'warehouses': 'warehouses',
+      'company_role_permissions': 'company_role_permissions',
+      'permissions': 'permissions',
     }
     return tableMapping[table] || table
   }
@@ -562,6 +592,261 @@ class RealtimeManager {
    */
   isSubscribed(table: RealtimeTable): boolean {
     return this.subscriptions.get(table)?.isActive || false
+  }
+
+  // =====================================================
+  // 🔐 Governance Realtime System
+  // =====================================================
+
+  /**
+   * الاشتراك في قناة الحوكمة (Governance Channel)
+   * تستمع لتغييرات الصلاحيات والأدوار والعضويات
+   */
+  private async subscribeToGovernance(): Promise<void> {
+    if (!this.context || this.isGovernanceSubscribed) {
+      return
+    }
+
+    try {
+      const { companyId, userId } = this.context
+      if (!companyId || !userId) {
+        console.warn('⚠️ [RealtimeManager] Cannot subscribe to governance: missing context')
+        return
+      }
+
+      // إلغاء الاشتراك السابق إن وجد
+      await this.unsubscribeFromGovernance()
+
+      const channelName = `governance_realtime_channel:${companyId}:${userId}`
+      const channel = this.supabase.channel(channelName)
+
+      // 🔐 الاشتراك في company_members (تغييرات العضوية والدور)
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'company_members',
+            filter: `company_id=eq.${companyId}`,
+          },
+          (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('company_members', payload)
+        )
+
+      // 🔐 الاشتراك في branches (تغييرات الفروع)
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'branches',
+            filter: `company_id=eq.${companyId}`,
+          },
+          (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('branches', payload)
+        )
+
+      // 🔐 الاشتراك في warehouses (تغييرات المخازن)
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'warehouses',
+            filter: `company_id=eq.${companyId}`,
+          },
+          (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('warehouses', payload)
+        )
+
+      // 🔐 الاشتراك في company_role_permissions (تغييرات صلاحيات الأدوار)
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'company_role_permissions',
+            filter: `company_id=eq.${companyId}`,
+          },
+          (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('company_role_permissions', payload)
+        )
+
+      // 🔐 الاشتراك في permissions (تغييرات الصلاحيات العامة)
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'permissions',
+          },
+          (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('permissions', payload)
+        )
+
+      channel.subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => {
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ [RealtimeManager] Subscribed to Governance Channel')
+          this.isGovernanceSubscribed = true
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ [RealtimeManager] Error subscribing to Governance Channel')
+          this.isGovernanceSubscribed = false
+        }
+      })
+
+      this.governanceChannel = channel
+    } catch (error) {
+      console.error('❌ [RealtimeManager] Error subscribing to governance:', error)
+    }
+  }
+
+  /**
+   * معالجة أحداث الحوكمة
+   */
+  private async handleGovernanceEvent(
+    table: 'company_members' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions',
+    payload: RealtimePostgresChangesPayload<any>
+  ): Promise<void> {
+    try {
+      if (!this.context) return
+
+      const { userId, companyId, role } = this.context
+      const record = payload.new || payload.old
+
+      if (!record) return
+
+      // 🔐 منع التكرار
+      const eventKey = `governance:${table}:${payload.eventType}:${record.id}:${Date.now()}`
+      const now = Date.now()
+      const lastProcessed = this.processedEvents.get(eventKey)
+      if (lastProcessed && (now - lastProcessed) < this.EVENT_DEDUP_WINDOW) {
+        return
+      }
+      this.processedEvents.set(eventKey, now)
+
+      // 🔐 التحقق من الصلاحيات: فقط الأحداث في نفس الشركة
+      if (record.company_id && record.company_id !== companyId) {
+        console.warn(`🚫 [RealtimeManager] Governance event rejected: different company`)
+        return
+      }
+
+      // 🔐 تحديد إذا كان الحدث يؤثر على المستخدم الحالي
+      let affectsCurrentUser = false
+
+      if (table === 'company_members') {
+        // إذا كان الحدث يخص المستخدم الحالي
+        affectsCurrentUser = record.user_id === userId
+      } else if (table === 'branches') {
+        // إذا كان الفرع مرتبط بالمستخدم الحالي
+        affectsCurrentUser = this.context.branchId === record.id
+      } else if (table === 'warehouses') {
+        // إذا كان المخزن مرتبط بالمستخدم الحالي
+        affectsCurrentUser = this.context.warehouseId === record.id
+      } else if (table === 'company_role_permissions') {
+        // إذا كان التغيير يخص دور المستخدم الحالي
+        affectsCurrentUser = record.role === role
+      } else if (table === 'permissions') {
+        // الصلاحيات العامة تؤثر على الجميع
+        affectsCurrentUser = true
+      }
+
+      // 🔐 Owner/Admin: يرى جميع الأحداث (لكن affectsCurrentUser يبقى صحيح فقط إذا كان يخصهم)
+      const canSeeEvent = role === 'owner' || role === 'admin' || affectsCurrentUser
+
+      if (!canSeeEvent) {
+        // المستخدمون الآخرون لا يرون إلا الأحداث التي تخصهم
+        return
+      }
+
+      const event = {
+        type: payload.eventType as RealtimeEventType,
+        table,
+        new: payload.new,
+        old: payload.old,
+        timestamp: now,
+        affectsCurrentUser,
+      }
+
+      // إرسال الحدث لجميع معالجات الحوكمة
+      this.governanceHandlers.forEach((handler) => {
+        try {
+          handler(event)
+        } catch (error) {
+          console.error(`❌ [RealtimeManager] Error in governance event handler:`, error)
+        }
+      })
+
+      // 🔐 إذا كان الحدث يؤثر على المستخدم الحالي، إعادة بناء السياق والاشتراكات
+      if (affectsCurrentUser) {
+        console.log(`🔄 [RealtimeManager] Governance event affects current user, rebuilding context...`, {
+          table,
+          eventType: payload.eventType,
+        })
+        await this.rebuildContextAndSubscriptions()
+      }
+    } catch (error) {
+      console.error(`❌ [RealtimeManager] Error handling governance event for ${table}:`, error)
+    }
+  }
+
+  /**
+   * إعادة بناء السياق والاشتراكات بعد تغيير الصلاحيات
+   */
+  private async rebuildContextAndSubscriptions(): Promise<void> {
+    try {
+      console.log('🔄 [RealtimeManager] Rebuilding context and subscriptions...')
+
+      // إلغاء جميع الاشتراكات الحالية
+      await this.unsubscribeAll()
+
+      // إعادة تهيئة السياق
+      await this.updateContext()
+
+      // إعادة الاشتراك في جميع الجداول
+      const tablesToResubscribe: RealtimeTable[] = [
+        'notifications',
+        'inventory_transactions',
+        'purchase_orders',
+        'sales_orders',
+        'invoices',
+        'approvals',
+        'inventory_transfers',
+      ]
+
+      for (const table of tablesToResubscribe) {
+        await this.subscribe(table)
+      }
+
+      console.log('✅ [RealtimeManager] Context and subscriptions rebuilt successfully')
+    } catch (error) {
+      console.error('❌ [RealtimeManager] Error rebuilding context:', error)
+    }
+  }
+
+  /**
+   * إلغاء الاشتراك من قناة الحوكمة
+   */
+  private async unsubscribeFromGovernance(): Promise<void> {
+    if (this.governanceChannel) {
+      try {
+        await this.supabase.removeChannel(this.governanceChannel)
+        this.governanceChannel = null
+        this.isGovernanceSubscribed = false
+        console.log('✅ [RealtimeManager] Unsubscribed from Governance Channel')
+      } catch (error) {
+        console.error('❌ [RealtimeManager] Error unsubscribing from governance:', error)
+      }
+    }
+  }
+
+  /**
+   * تسجيل معالج أحداث الحوكمة
+   */
+  onGovernanceChange(handler: GovernanceEventHandler): () => void {
+    this.governanceHandlers.add(handler)
+    return () => {
+      this.governanceHandlers.delete(handler)
+    }
   }
 }
 

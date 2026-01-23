@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import { useGovernanceRealtime } from "@/hooks/use-governance-realtime"
 
 // مفاتيح التخزين المحلي
 const STORAGE_KEYS = {
@@ -369,6 +370,13 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
       return () => window.removeEventListener("permissions_updated", handlePermissionsUpdate)
     }
   }, [loadPermissions])
+
+  // 🔐 استخدام نظام Realtime للحوكمة
+  useGovernanceRealtime({
+    onPermissionsChanged: loadPermissions,
+    onRoleChanged: loadPermissions,
+    showNotifications: true,
+  })
 
   const value = useMemo<PermissionsContextType>(() => ({
     isLoading,

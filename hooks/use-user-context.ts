@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import type { UserContext, ValidationResult } from "@/lib/validation"
+import { useGovernanceRealtime } from "@/hooks/use-governance-realtime"
 import {
   validateUserDocumentAccess,
   validateFinancialTransaction,
@@ -129,6 +130,14 @@ export function useUserContext(): UseUserContextReturn {
   useEffect(() => {
     loadUserContext()
   }, [loadUserContext])
+
+  // 🔐 استخدام نظام Realtime للحوكمة
+  useGovernanceRealtime({
+    onPermissionsChanged: loadUserContext,
+    onRoleChanged: loadUserContext,
+    onBranchOrWarehouseChanged: loadUserContext,
+    showNotifications: true,
+  })
 
   // Check if user can override context restrictions
   const canOverrideContext = userContext
