@@ -259,8 +259,9 @@ class RealtimeManager {
         // ✅ Owner/Admin: يرى كل شيء (تم التحقق أعلاه)
         // للمستخدمين الآخرين: فلترة حسب warehouse و branch
         // ⚠️ مهم: Supabase Postgres Changes لا يدعم OR logic في الفلتر
-        // ✅ الحل: نزيل فلتر created_by من buildFilter ونعتمد على shouldProcessEvent للفلترة
-        // ✅ هذا يضمن أن المستخدم يستقبل جميع الأحداث المتعلقة بإهلاكاته أو إهلاكات في نفس الفرع/المخزن
+        // ✅ الحل: نزيل فلتر created_by و warehouse_id من buildFilter ونعتمد على shouldProcessEvent للفلترة
+        // ✅ هذا يضمن أن المستخدم يستقبل جميع الأحداث المتعلقة بإهلاكاته (حتى لو كانت في مخزن آخر)
+        // ✅ أو إهلاكات في نفس الفرع/المخزن
         let depFilter = filter
         if (accessFilter.filterByBranch && branchId) {
           depFilter += `.and(branch_id.eq.${branchId}`
@@ -272,9 +273,8 @@ class RealtimeManager {
             depFilter += `.or.branch_id.is.null)`
           }
         }
-        if (accessFilter.filterByWarehouse && warehouseId) {
-          depFilter += `.and.warehouse_id.eq.${warehouseId}`
-        }
+        // ✅ لا نضيف فلتر warehouse_id هنا - نعتمد على shouldProcessEvent للفلترة
+        // ✅ هذا يضمن أن المستخدم يستقبل أحداث UPDATE على إهلاكاته الخاصة حتى لو كانت في مخزن آخر
         // ✅ لا نضيف فلتر created_by هنا - نعتمد على shouldProcessEvent للفلترة
         // ✅ هذا يضمن أن المستخدم يستقبل أحداث UPDATE على إهلاكاته الخاصة
         return depFilter
