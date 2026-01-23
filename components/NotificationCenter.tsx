@@ -85,14 +85,38 @@ export function NotificationCenter({
       })
 
       console.log(`📊 [NOTIFICATION_CENTER] Received ${data?.length || 0} notifications from database`)
+      
+      // ✅ Log تفصيلي للإشعارات المستلمة
+      if (data && data.length > 0) {
+        console.log(`📋 [NOTIFICATION_CENTER] Sample notifications (first 5):`, data.slice(0, 5).map((n: any) => ({
+          id: n.id,
+          title: n.title,
+          priority: n.priority,
+          status: n.status,
+          assigned_to_role: n.assigned_to_role
+        })))
+      }
 
       // Filter by priority and search
       let filtered = data || []
+      const initialCount = filtered.length
       
       if (filterPriority !== "all") {
         const beforePriority = filtered.length
         filtered = filtered.filter(n => n.priority === filterPriority)
         console.log(`🔍 [NOTIFICATION_CENTER] After priority filter (${filterPriority}): ${beforePriority} → ${filtered.length}`)
+      }
+
+      if (filterSeverity !== "all") {
+        const beforeSeverity = filtered.length
+        filtered = filtered.filter(n => (n.severity || 'info') === filterSeverity)
+        console.log(`🔍 [NOTIFICATION_CENTER] After severity filter (${filterSeverity}): ${beforeSeverity} → ${filtered.length}`)
+      }
+
+      if (filterCategory !== "all") {
+        const beforeCategory = filtered.length
+        filtered = filtered.filter(n => (n.category || 'system') === filterCategory)
+        console.log(`🔍 [NOTIFICATION_CENTER] After category filter (${filterCategory}): ${beforeCategory} → ${filtered.length}`)
       }
 
       if (searchQuery.trim()) {
@@ -103,6 +127,11 @@ export function NotificationCenter({
           n.message.toLowerCase().includes(query)
         )
         console.log(`🔍 [NOTIFICATION_CENTER] After search filter: ${beforeSearch} → ${filtered.length}`)
+      }
+
+      // ✅ Log نهائي
+      if (initialCount !== filtered.length) {
+        console.log(`⚠️ [NOTIFICATION_CENTER] Filtering reduced notifications: ${initialCount} → ${filtered.length} (${initialCount - filtered.length} hidden)`)
       }
 
       // Sort by priority and date
