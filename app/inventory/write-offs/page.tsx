@@ -1782,50 +1782,6 @@ export default function WriteOffsPage() {
         }
         
         toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })
-      } else {
-        // إذا لم نتمكن من جلب البيانات المحدثة، نعيد تحميل كل شيء
-        await loadData()
-        
-        // إغلاق Dialog مؤقتاً لإجبار React على إعادة رسمه بالبيانات الجديدة
-        setShowViewDialog(false)
-        setIsEditMode(false)
-        
-        // انتظار صغير للتأكد من إغلاق Dialog
-        await new Promise(resolve => setTimeout(resolve, 100))
-        
-        // ✅ إعادة فتح Dialog مع البيانات المحدثة من القائمة
-        const updatedWriteOff = writeOffs.find(w => w.id === writeOffIdToUpdate)
-        if (updatedWriteOff) {
-          await handleView(updatedWriteOff)
-        } else {
-          // إذا لم نجد الإهلاك في القائمة، نجلب البيانات مباشرة من قاعدة البيانات
-          const { data: directWriteOff } = await supabase
-            .from("inventory_write_offs")
-            .select("*")
-            .eq("id", writeOffIdToUpdate)
-            .single()
-          
-          if (directWriteOff) {
-            const { data: directItems } = await supabase
-              .from("inventory_write_off_items")
-              .select("*, products(name, sku)")
-              .eq("write_off_id", writeOffIdToUpdate)
-            
-            const directWriteOffWithItems = {
-              ...directWriteOff,
-              items: (directItems || []).map((it: any) => ({
-                ...it,
-                product_name: it.products?.name,
-                product_sku: it.products?.sku,
-              })),
-            }
-            
-            await handleView(directWriteOffWithItems)
-          }
-        }
-        
-        toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })
-      }
       
       setIsEditMode(false)
       // لا نغلق Dialog حتى يرى المستخدم البيانات المحدثة
