@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Bell, X, CheckCircle, Archive, Search, Filter, AlertCircle, Info, AlertTriangle, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -129,6 +129,12 @@ export function NotificationCenter({
     }
   }, [userId, companyId, branchId, warehouseId, userRole, filterStatus, filterPriority, filterSeverity, filterCategory, searchQuery])
 
+  // ✅ استخدام useRef لتخزين أحدث إصدار من loadNotifications لتجنب infinite loop
+  const loadNotificationsRef = useRef(loadNotifications)
+  useEffect(() => {
+    loadNotificationsRef.current = loadNotifications
+  }, [loadNotifications])
+
   useEffect(() => {
     if (open) {
       loadNotifications()
@@ -173,7 +179,8 @@ export function NotificationCenter({
             // ✅ التحقق من أن الإشعار ينطبق على المستخدم
             // (سيتم التحقق الكامل في loadNotifications)
             console.log('🔄 [REALTIME] Reloading notifications after event...')
-            await loadNotifications()
+            // استخدام ref لتجنب infinite loop
+            await loadNotificationsRef.current()
           } else if (payload.eventType === 'DELETE') {
             // إزالة الإشعار المحذوف من القائمة
             setNotifications(prev => prev.filter(n => n.id !== payload.old.id))
@@ -194,7 +201,7 @@ export function NotificationCenter({
       console.log('🔕 [REALTIME] Unsubscribing from notifications...')
       supabase.removeChannel(channel)
     }
-  }, [companyId, userId, branchId, warehouseId, userRole, supabase, loadNotifications, mounted])
+  }, [companyId, userId, branchId, warehouseId, userRole, supabase, mounted])
 
   const handleNotificationClick = async (notification: Notification) => {
     if (notification.status === "unread") {
