@@ -176,14 +176,30 @@ export function NotificationCenter({
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const notification = payload.new as any
             
+            console.log('🔄 [REALTIME] Notification INSERT/UPDATE detected:', {
+              notificationId: notification.id,
+              assignedToRole: notification.assigned_to_role,
+              assignedToUser: notification.assigned_to_user,
+              referenceType: notification.reference_type,
+              currentUserRole: userRole,
+              currentUserId: userId
+            })
+            
             // ✅ التحقق من أن الإشعار ينطبق على المستخدم
             // (سيتم التحقق الكامل في loadNotifications)
             console.log('🔄 [REALTIME] Reloading notifications after event...')
             // استخدام ref لتجنب infinite loop
             await loadNotificationsRef.current()
+            
+            console.log('✅ [REALTIME] Notifications reloaded after event')
           } else if (payload.eventType === 'DELETE') {
+            console.log('🗑️ [REALTIME] Notification DELETE detected:', payload.old.id)
             // إزالة الإشعار المحذوف من القائمة
-            setNotifications(prev => prev.filter(n => n.id !== payload.old.id))
+            setNotifications(prev => {
+              const filtered = prev.filter(n => n.id !== payload.old.id)
+              console.log(`✅ [REALTIME] Removed deleted notification. Remaining: ${filtered.length}`)
+              return filtered
+            })
           }
         }
       )

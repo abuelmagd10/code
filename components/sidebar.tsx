@@ -331,15 +331,18 @@ export function Sidebar() {
           table: 'notifications',
           filter: `company_id=eq.${activeCompanyId}` // فلترة حسب الشركة
         },
-        async (payload: any) => {
-          console.log('🔔 [SIDEBAR_REALTIME] Notification event received, updating count...', {
-            eventType: payload.eventType
-          })
+          async (payload: any) => {
+            console.log('🔔 [SIDEBAR_REALTIME] Notification event received, updating count...', {
+              eventType: payload.eventType,
+              notificationId: payload.new?.id || payload.old?.id,
+              assignedToRole: payload.new?.assigned_to_role
+            })
 
-          // تحديث عدد الإشعارات غير المقروءة
-          // نستخدم ref لتجنب infinite loop
-          await loadUnreadCountRef.current()
-        }
+            // تحديث عدد الإشعارات غير المقروءة
+            // نستخدم ref لتجنب infinite loop
+            await loadUnreadCountRef.current()
+            console.log('✅ [SIDEBAR_REALTIME] Unread count updated after event')
+          }
       )
       .subscribe((status: any) => {
         console.log('🔔 [SIDEBAR_REALTIME] Subscription status:', status)
