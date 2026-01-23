@@ -1539,7 +1539,7 @@ export default function WriteOffsPage() {
         
         if (verifyAfterRetry && verifyAfterRetry.length > 0) {
           console.error(`❌ CRITICAL: ${verifyAfterRetry.length} items still exist after retry deletion!`)
-          console.error(`   Item IDs: ${verifyAfterRetry.map(i => i.id).join(', ')}`)
+          console.error(`   Item IDs: ${verifyAfterRetry.map((i: any) => i.id).join(', ')}`)
           throw new Error(`Failed to delete all old items. ${verifyAfterRetry.length} items still exist.`)
         }
       }
@@ -1589,73 +1589,6 @@ export default function WriteOffsPage() {
       // ✅ الآن إضافة العناصر الجديدة فقط
       console.log(`📝 Step 3: Inserting new items...`)
       
-      // أولاً: جلب جميع العناصر القديمة للتأكد من وجودها
-      const { data: existingItems, error: fetchErr } = await supabase
-        .from("inventory_write_off_items")
-        .select("id")
-        .eq("write_off_id", writeOffIdToUpdate)
-
-      if (fetchErr) {
-        console.error("Error fetching existing items:", fetchErr)
-        throw fetchErr
-      }
-
-      console.log(`📋 Found ${existingItems?.length || 0} existing items to delete`)
-
-      // حذف جميع العناصر القديمة
-      const { data: deletedItems, error: deleteErr } = await supabase
-        .from("inventory_write_off_items")
-        .delete()
-        .eq("write_off_id", writeOffIdToUpdate)
-        .select()
-
-      if (deleteErr) {
-        console.error("Error deleting old items:", deleteErr)
-        throw deleteErr
-      }
-
-      console.log(`✅ Deleted ${deletedItems?.length || 0} old items for write-off ${writeOffIdToUpdate}`)
-
-      // ✅ التحقق من أن جميع العناصر تم حذفها
-      const { data: verifyDeleted, error: verifyErr } = await supabase
-        .from("inventory_write_off_items")
-        .select("id")
-        .eq("write_off_id", writeOffIdToUpdate)
-
-      if (verifyErr) {
-        console.error("Error verifying deletion:", verifyErr)
-        throw verifyErr
-      }
-
-      if (verifyDeleted && verifyDeleted.length > 0) {
-        console.warn(`⚠️ Warning: ${verifyDeleted.length} items still exist after deletion. Retrying...`)
-        // إعادة المحاولة مع انتظار صغير
-        await new Promise(resolve => setTimeout(resolve, 100))
-        
-        const { error: retryErr } = await supabase
-          .from("inventory_write_off_items")
-          .delete()
-          .eq("write_off_id", writeOffIdToUpdate)
-
-        if (retryErr) {
-          console.error("Error in retry deletion:", retryErr)
-          throw retryErr
-        }
-        
-        // التحقق مرة أخرى بعد إعادة المحاولة
-        const { data: verifyAfterRetry } = await supabase
-          .from("inventory_write_off_items")
-          .select("id")
-          .eq("write_off_id", writeOffIdToUpdate)
-        
-        if (verifyAfterRetry && verifyAfterRetry.length > 0) {
-          console.error(`❌ CRITICAL: ${verifyAfterRetry.length} items still exist after retry deletion!`)
-          throw new Error(`Failed to delete all old items. ${verifyAfterRetry.length} items still exist.`)
-        }
-      }
-
-      console.log(`✅ Verified: All old items deleted for write-off ${writeOffIdToUpdate}`)
-
       // ✅ إضافة العناصر الجديدة فقط إذا كانت موجودة
       if (editItems.length > 0) {
         const itemsToInsert = editItems
@@ -1704,7 +1637,7 @@ export default function WriteOffsPage() {
           console.log(`✅ Verified: ${verifyInserted?.length || 0} items now exist for write-off ${writeOffIdToUpdate}`)
           
           // ✅ التحقق من عدم وجود عناصر مكررة
-          const itemIds = verifyInserted?.map(item => item.id) || []
+          const itemIds = verifyInserted?.map((item: any) => item.id) || []
           const uniqueIds = new Set(itemIds)
           if (itemIds.length !== uniqueIds.size) {
             console.error(`❌ CRITICAL: Duplicate items detected! Total: ${itemIds.length}, Unique: ${uniqueIds.size}`)
