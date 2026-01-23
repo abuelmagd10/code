@@ -96,8 +96,9 @@ export function PageGuard({
 
       // إذا لم يكن showAccessDenied مفعلاً، قم بالتوجيه
       if (!showAccessDenied) {
-        // 🔐 استخدام getFirstAllowedPage من AccessContext إذا كان متاحاً
-        const redirectTo = fallbackPath || (accessReady ? getFirstAllowedPage() : "/dashboard")
+        // 🔐 استخدام getFirstAllowedPage من AccessContext (دائماً)
+        // لا نستخدم /dashboard كصفحة افتراضية أبداً
+        const redirectTo = fallbackPath || (accessReady ? getFirstAllowedPage() : "/no-access")
         router.replace(redirectTo)
         
         // إظهار رسالة للمستخدم
@@ -157,19 +158,9 @@ export function PageGuard({
               غير مصرح بالوصول
             </h1>
             <p className="text-gray-500 mb-6">
-              {accessReady ? (
-                <>
-                  تم تحديث صلاحياتك بواسطة الإدارة.
-                  <br />
-                  لم يعد مسموح لك الوصول إلى هذه الصفحة.
-                </>
-              ) : (
-                <>
-                  ليس لديك صلاحية للوصول إلى هذه الصفحة.
-                  <br />
-                  يرجى التواصل مع مدير النظام إذا كنت تعتقد أن هذا خطأ.
-                </>
-              )}
+              ليس لديك صلاحية للوصول إلى هذه الصفحة.
+              <br />
+              يرجى التواصل مع مدير النظام إذا كنت تعتقد أن هذا خطأ.
             </p>
             <button
               onClick={() => router.back()}
@@ -209,7 +200,12 @@ export function PermissionGate({
   action = "read",
   fallback = null,
 }: PermissionGateProps) {
-  const { isReady, canAction } = usePermissions()
+  // 🔐 استخدام AccessContext كمصدر أساسي
+  const { isReady: accessReady, canAction: canActionFromAccess } = useAccess()
+  const { isReady: permsReady, canAction: canActionFromPerms } = usePermissions()
+  
+  const isReady = accessReady || permsReady
+  const canAction = accessReady ? canActionFromAccess : canActionFromPerms
 
   // أثناء التحميل، لا تعرض شيئاً
   if (!isReady) return null
@@ -227,14 +223,7 @@ export function PermissionGate({
  */
 export function usePageAccess(resource?: string) {
   const pathname = usePathname()
-  
-  // 🔐 استخدام AccessContext كمصدر أساسي
-  const { isReady: accessReady, canAccessPage: canAccessPageFromAccess, profile } = useAccess()
-  const { isReady: permsReady, isLoading, canAccessPage: canAccessPageFromPerms, role: roleFromPerms } = usePermissions()
-  
-  const isReady = accessReady || permsReady
-  const canAccessPage = accessReady ? canAccessPageFromAccess : canAccessPageFromPerms
-  const role = profile?.role || roleFromPerms
+  const { isReady, isLoading, canAccessPage, role } = usePermissions()
 
   const targetResource = resource || getResourceFromPath(pathname)
 

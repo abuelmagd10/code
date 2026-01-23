@@ -120,7 +120,9 @@ export function AppShell({ children }: AppShellProps) {
       setAccessState("allowed")
     } else {
       setAccessState("denied")
-      router.replace("/dashboard")
+      // 🔐 استخدام getFirstAllowedPage بدلاً من /dashboard
+      const redirectTo = accessReady ? getFirstAllowedPage() : "/no-access"
+      router.replace(redirectTo)
     }
   }, [pathname, isReady, isLoading, canAccessPage, isPublicPage, resource, router, cachedData])
 
@@ -145,11 +147,7 @@ export function AppShell({ children }: AppShellProps) {
     )
   }
 
-  // حالة السماح - عرض المحتوى مع RealtimeRouteGuard
-  return (
-    <RealtimeRouteGuard>
-      {children}
-    </RealtimeRouteGuard>
-  )
+  // حالة السماح - عرض المحتوى (الصفحة تتولى Sidebar بنفسها)
+  return <>{children}</>
 }
 

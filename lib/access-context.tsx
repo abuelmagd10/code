@@ -78,6 +78,69 @@ const AccessContext = createContext<AccessContextType | null>(null)
 // =====================================================
 
 /**
+ * 🔐 دالة مركزية لاختيار أول صفحة مسموحة
+ * 
+ * أولوية الصفحات:
+ * 1. dashboard (إذا كان مسموحاً)
+ * 2. approvals (إذا كان مسموحاً)
+ * 3. invoices (المبيعات)
+ * 4. sales_orders
+ * 5. customers
+ * 6. bills (المشتريات)
+ * 7. purchase_orders
+ * 8. suppliers
+ * 9. products (المخزون)
+ * 10. inventory
+ * 11. payments (المالية)
+ * 12. reports (التقارير)
+ * 13. settings (الإعدادات)
+ * 
+ * @param allowedPages - قائمة الصفحات المسموح بها
+ * @returns مسار أول صفحة مسموحة، أو "/no-access" إذا لم توجد صفحات
+ */
+export function getFirstAllowedRoute(allowedPages: string[]): string {
+  // إذا لم توجد صفحات مسموحة
+  if (!allowedPages || allowedPages.length === 0) {
+    return "/no-access"
+  }
+
+  // أولوية الصفحات الرئيسية
+  const priorityPages = [
+    "dashboard",
+    "approvals",
+    "invoices",
+    "sales_orders",
+    "customers",
+    "bills",
+    "purchase_orders",
+    "suppliers",
+    "products",
+    "inventory",
+    "payments",
+    "journal_entries",
+    "reports",
+    "settings",
+  ]
+
+  // البحث عن أول صفحة مسموحة حسب الأولوية
+  for (const page of priorityPages) {
+    if (allowedPages.includes(page)) {
+      // تحويل resource إلى route
+      return `/${page.replace(/_/g, "-")}`
+    }
+  }
+
+  // إذا لم توجد صفحة من الأولويات، إرجاع أول صفحة من allowedPages
+  const firstPage = allowedPages[0]
+  if (firstPage) {
+    return `/${firstPage.replace(/_/g, "-")}`
+  }
+
+  // إذا لم توجد أي صفحة، إرجاع /no-access
+  return "/no-access"
+}
+
+/**
  * جلب Access Profile من API
  */
 async function fetchAccessProfile(
@@ -321,29 +384,15 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
   }, [isReady, profile])
 
   const getFirstAllowedPage = useCallback((): string => {
-    if (!profile) return "/dashboard"
-    
-    // Owner/Admin: Dashboard
-    if (profile.is_owner || profile.is_admin) return "/dashboard"
-    
-    // البحث عن أول صفحة مسموحة
-    const priorityPages = [
-      "dashboard",
-      "invoices",
-      "sales_orders",
-      "customers",
-      "products",
-      "inventory",
-    ]
-    
-    for (const page of priorityPages) {
-      if (profile.allowed_pages.includes(page)) {
-        return `/${page.replace(/_/g, "-")}`
-      }
+    if (!profile) {
+      // إذا لم يكن هناك profile، إرجاع /no-access
+      return "/no-access"
     }
     
-    // إذا لم توجد صفحة مسموحة، إرجاع dashboard
-    return "/dashboard"
+    // 🔐 استخدام الدالة المركزية
+    // حتى Owner/Admin يجب أن يمر عبر getFirstAllowedRoute
+    // لأنهم قد لا يملكون dashboard في بعض الحالات النادرة
+    return getFirstAllowedRoute(profile.allowed_pages)
   }, [profile])
 
   const value = useMemo<AccessContextType>(() => ({

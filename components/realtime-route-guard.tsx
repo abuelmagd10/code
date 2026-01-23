@@ -29,15 +29,20 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
   useGovernanceRealtime({
     onPermissionsChanged: async () => {
       console.log("🔄 [RealtimeRouteGuard] Permissions changed, rechecking access...")
-      // إعادة فحص الصلاحية
+      
+      // إعادة فحص الصلاحية للصفحة الحالية
       const resource = getResourceFromPath(pathname)
       const access = canAccessPage(resource)
-      setHasAccess(access)
       
-      if (!access) {
-        // إغلاق الصفحة وإعادة التوجيه
+      if (access) {
+        // ✅ الصفحة الحالية لا تزال مسموحة - لا نعيد التوجيه
+        setHasAccess(true)
+        console.log(`✅ [RealtimeRouteGuard] Current page ${pathname} is still allowed`)
+      } else {
+        // ❌ الصفحة الحالية لم تعد مسموحة - إغلاق وإعادة توجيه
+        setHasAccess(false)
         const redirectTo = getFirstAllowedPage()
-        console.log(`🔄 [RealtimeRouteGuard] Redirecting to: ${redirectTo}`)
+        console.log(`🔄 [RealtimeRouteGuard] Current page ${pathname} is no longer allowed, redirecting to: ${redirectTo}`)
         router.replace(redirectTo)
       }
     },

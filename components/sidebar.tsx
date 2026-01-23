@@ -107,7 +107,7 @@ export function Sidebar() {
   const supabaseHook = useSupabase()
 
   // 🔐 استخدام AccessContext كمصدر وحيد للصلاحيات
-  const { isReady: accessReady, canAccessPage, profile } = useAccess()
+  const { isReady: accessReady, canAccessPage, profile, getFirstAllowedPage } = useAccess()
   
   // 🔐 استخدام role من AccessContext
   const myRole = profile?.role || ""
@@ -827,20 +827,17 @@ export function Sidebar() {
 
                         // ✅ الحصول على أول صفحة مسموح بها والتوجيه إليها
                         try {
-                          const res = await fetch('/api/first-allowed-page')
-                          const data = await res.json()
-                          const targetPath = data.path || '/dashboard'
+                          // 🔐 استخدام getFirstAllowedPage من AccessContext
+                          const targetPath = getFirstAllowedPage()
                           router.push(targetPath)
-                        } catch {
-                          // في حالة الخطأ، جرب Dashboard
-                          router.push('/dashboard')
+                        } catch (err) {
+                          console.error('❌ Error switching company:', err)
+                          // في حالة الخطأ، استخدام getFirstAllowedPage
+                          const fallbackPath = getFirstAllowedPage()
+                          router.push(fallbackPath)
                         }
-                      } catch (err) {
-                        console.error('❌ Error switching company:', err)
-                        router.push('/dashboard')
-                      }
-                      setShowCompanySwitcher(false)
-                    }}
+                        setShowCompanySwitcher(false)
+                      }}
                     className={`w-full flex items-center gap-3 p-3 hover:bg-slate-700 ${company.id === activeCompanyId ? 'bg-blue-600/20 border-r-2 border-blue-500' : ''}`}
                   >
                     {company.logo_url ? (
@@ -947,22 +944,18 @@ export function Sidebar() {
 
                           // ✅ الحصول على أول صفحة مسموح بها والتوجيه إليها
                           try {
-                            const res = await fetch('/api/first-allowed-page')
-                            const data = await res.json()
-                            const targetPath = data.path || '/dashboard'
+                            // 🔐 استخدام getFirstAllowedPage من AccessContext
+                            const targetPath = getFirstAllowedPage()
                             console.log('✅ Redirecting to first allowed page:', targetPath)
                             router.push(targetPath)
-                          } catch (fetchErr) {
-                            console.error('❌ Error fetching first allowed page:', fetchErr)
-                            // في حالة الخطأ، جرب Dashboard
-                            router.push('/dashboard')
+                          } catch (err) {
+                            console.error('❌ Error switching company:', err)
+                            // في حالة الخطأ، استخدام getFirstAllowedPage
+                            const fallbackPath = getFirstAllowedPage()
+                            router.push(fallbackPath)
                           }
-                        } catch (err) {
-                          console.error('❌ Error switching company:', err)
-                          router.push('/dashboard')
-                        }
-                        setShowCompanySwitcher(false)
-                      }}
+                          setShowCompanySwitcher(false)
+                        }}
                       className={`w-full flex items-center gap-3 p-3 hover:bg-slate-700 transition-colors ${company.id === activeCompanyId ? 'bg-blue-600/20 border-r-2 border-blue-500' : ''}`}
                     >
                       {company.logo_url ? (
