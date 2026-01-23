@@ -16,9 +16,11 @@ import { type UserContext, getRoleAccessLevel } from "@/lib/validation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useUserContext } from "@/hooks/use-user-context"
 import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface InventoryTransaction {
   id: string
+  company_id?: string
   product_id: string
   transaction_type: string
   quantity_change: number
@@ -123,6 +125,67 @@ export default function InventoryPage() {
     if (!selectedBranchId || !selectedWarehouseId || !selectedCostCenterId) return
     loadInventoryData(userContext, selectedBranchId, selectedWarehouseId, selectedCostCenterId)
   }, [userContext, selectedBranchId, selectedWarehouseId, selectedCostCenterId])
+
+  // ✅ Realtime: الاشتراك في تحديثات حركات المخزون
+  useRealtimeTable<InventoryTransaction>({
+    table: 'inventory_transactions',
+    enabled: !!userContext?.company_id && !!selectedWarehouseId,
+    onInsert: (newTransaction) => {
+      // ✅ فحص التكرار قبل الإضافة
+      setTransactions(prev => {
+        if (prev.find(t => t.id === newTransaction.id)) {
+          return prev; // السجل موجود بالفعل
+        }
+        // ✅ إضافة فقط إذا كان في نفس المخزن المحدد
+        if (selectedWarehouseId && newTransaction.warehouse_id === selectedWarehouseId) {
+          return [newTransaction, ...prev];
+        }
+        return prev;
+      });
+      
+      // ✅ تحديث الأرصدة إذا كان المنتج في نفس المخزن
+      if (selectedWarehouseId && newTransaction.warehouse_id === selectedWarehouseId && newTransaction.product_id) {
+        // إعادة تحميل البيانات لتحديث الأرصدة
+        if (userContext) {
+          loadInventoryData(userContext, selectedBranchId, selectedWarehouseId, selectedCostCenterId);
+        }
+      }
+    },
+    onUpdate: (newTransaction) => {
+      // ✅ تحديث السجل في القائمة
+      setTransactions(prev => prev.map(transaction => 
+        transaction.id === newTransaction.id ? newTransaction : transaction
+      ));
+      
+      // ✅ تحديث الأرصدة إذا لزم الأمر
+      if (selectedWarehouseId && newTransaction.warehouse_id === selectedWarehouseId && newTransaction.product_id) {
+        if (userContext) {
+          loadInventoryData(userContext, selectedBranchId, selectedWarehouseId, selectedCostCenterId);
+        }
+      }
+    },
+    onDelete: (oldTransaction) => {
+      // ✅ حذف السجل من القائمة
+      setTransactions(prev => prev.filter(transaction => transaction.id !== oldTransaction.id));
+      
+      // ✅ تحديث الأرصدة
+      if (selectedWarehouseId && oldTransaction.warehouse_id === selectedWarehouseId && oldTransaction.product_id) {
+        if (userContext) {
+          loadInventoryData(userContext, selectedBranchId, selectedWarehouseId, selectedCostCenterId);
+        }
+      }
+    },
+    filter: (event) => {
+      // ✅ فلتر إضافي: التحقق من company_id و warehouse_id
+      const record = (event.new || event.old) as InventoryTransaction & { company_id?: string };
+      if (!record || !userContext?.company_id || !record.company_id) {
+        return false;
+      }
+      // ✅ فقط الحركات في نفس الشركة والمخزن المحدد
+      return record.company_id === userContext.company_id && 
+             (!selectedWarehouseId || record.warehouse_id === selectedWarehouseId);
+    }
+  });
 
   const applyBranchDefaults = useCallback(async (companyId: string, branchId: string) => {
     const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")

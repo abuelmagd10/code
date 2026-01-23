@@ -267,56 +267,27 @@ class RealtimeManager {
         return filter
 
       case 'inventory_transactions':
-        // حركات المخزون: حسب warehouse و branch
-        let invFilter = filter
-        if (accessFilter.filterByBranch && branchId) {
-          invFilter += `.and(branch_id.eq.${branchId}`
-          if (accessFilter.allowedBranchIds && accessFilter.allowedBranchIds.length > 0) {
-            // إذا كان لديه صلاحية لعدة فروع
-            const branchIds = [branchId, ...accessFilter.allowedBranchIds].join(',')
-            invFilter = filter + `.and.branch_id.in.(${branchIds})`
-          } else {
-            invFilter += `.or.branch_id.is.null)`
-          }
-        }
-        if (accessFilter.filterByWarehouse && warehouseId) {
-          invFilter += `.and.warehouse_id.eq.${warehouseId}`
-        }
-        if (accessFilter.filterByCreatedBy && userId) {
-          invFilter += `.and.created_by_user_id.eq.${userId}`
-        }
-        return invFilter
+        // ✅ حركات المخزون: استخدام company_id فقط
+        // ✅ الفلترة التفصيلية تتم في shouldProcessEvent (يدعم OR logic)
+        // ✅ هذا يضمن أن المستخدم يستقبل جميع الأحداث المتعلقة بحركاته (حتى لو كانت في فرع/مخزن آخر)
+        // ✅ أو حركات في نفس الفرع/المخزن
+        return filter
 
       case 'purchase_orders':
       case 'sales_orders':
       case 'invoices':
-        // الأوامر والفواتير: حسب branch و cost_center
-        let orderFilter = filter
-        if (accessFilter.filterByBranch && branchId) {
-          if (accessFilter.allowedBranchIds && accessFilter.allowedBranchIds.length > 0) {
-            const branchIds = [branchId, ...accessFilter.allowedBranchIds].join(',')
-            orderFilter = filter + `.and.branch_id.in.(${branchIds})`
-          } else {
-            orderFilter += `.and(branch_id.eq.${branchId}.or.branch_id.is.null)`
-          }
-        }
-        if (accessFilter.filterByCostCenter && costCenterId) {
-          orderFilter += `.and(cost_center_id.eq.${costCenterId}.or.cost_center_id.is.null)`
-        }
-        if (accessFilter.filterByCreatedBy && userId) {
-          orderFilter += `.and.created_by_user_id.eq.${userId}`
-        }
-        return orderFilter
+        // ✅ الأوامر والفواتير: استخدام company_id فقط
+        // ✅ الفلترة التفصيلية تتم في shouldProcessEvent (يدعم OR logic)
+        // ✅ هذا يضمن أن المستخدم يستقبل جميع الأحداث المتعلقة بأوامره (حتى لو كانت في فرع آخر)
+        // ✅ أو أوامر في نفس الفرع/مركز التكلفة
+        return filter
 
       case 'approvals':
-        // الموافقات: حسب branch و role
-        let approvalFilter = filter
-        if (accessFilter.filterByBranch && branchId) {
-          approvalFilter += `.and(branch_id.eq.${branchId}.or.branch_id.is.null)`
-        }
-        // الموافقات عادة موجهة لدور معين
-        approvalFilter += `.and(assigned_to_role.eq.${role}.or.assigned_to_user.eq.${userId})`
-        return approvalFilter
+        // ✅ الموافقات: استخدام company_id فقط
+        // ✅ الفلترة التفصيلية تتم في shouldProcessEvent (يدعم OR logic)
+        // ✅ هذا يضمن أن المستخدم يستقبل جميع الأحداث المتعلقة بموافقاته (حتى لو كانت في فرع آخر)
+        // ✅ أو موافقات موجهة لدوره/مستخدمه
+        return filter
 
       default:
         // افتراضي: حسب company_id و branch_id
@@ -480,6 +451,18 @@ class RealtimeManager {
       return true
     }
 
+    // ✅ استثناء خاص: للمدير (manager)، نسمح برؤية تحديثات على سجلات في فرعه
+    // حتى لو لم يكن هو منشئها
+    if (accessFilter.filterByBranch && accessInfo.branchId && record.branch_id === accessInfo.branchId) {
+      console.log(`✅ [RealtimeManager] Manager can see update on record in their branch:`, {
+        recordId: record.id,
+        userId,
+        branchId: record.branch_id,
+        userBranchId: accessInfo.branchId
+      })
+      return true
+    }
+
     // ✅ استخدام canAccessRecord للتحقق الشامل
     const hasAccess = canAccessRecord(accessInfo, recordForCheck)
     
@@ -495,7 +478,21 @@ class RealtimeManager {
     }
 
     // ✅ طبقة 3: فحوصات إضافية حسب نوع الجدول
-    // (يمكن إضافة فحوصات خاصة بكل جدول هنا)
+    // ✅ فحوصات خاصة بكل جدول (للجداول التي تحتاج منطق خاص)
+    
+    // ✅ notifications: التحقق من assigned_to_user أو assigned_to_role
+    if (record.assigned_to_user || record.assigned_to_role) {
+      if (record.assigned_to_user === userId || record.assigned_to_role === role) {
+        return true
+      }
+    }
+
+    // ✅ approvals: التحقق من assigned_to_user أو assigned_to_role
+    if (record.assigned_to_user || record.assigned_to_role) {
+      if (record.assigned_to_user === userId || record.assigned_to_role === role) {
+        return true
+      }
+    }
 
     return true
   }

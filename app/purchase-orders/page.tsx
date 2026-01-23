@@ -28,6 +28,7 @@ import { OrderActions } from "@/components/OrderActions";
 import { LoadingState } from "@/components/ui/loading-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FilterContainer } from "@/components/ui/filter-container";
+import { useRealtimeTable } from "@/hooks/use-realtime-table";
 
 type Supplier = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; cost_price?: number; item_type?: 'product' | 'service' };
@@ -381,6 +382,66 @@ export default function PurchaseOrdersPage() {
     };
     load();
   }, [supabase]);
+
+  // ✅ Realtime: الاشتراك في تحديثات أوامر الشراء
+  useRealtimeTable<PurchaseOrder>({
+    table: 'purchase_orders',
+    enabled: !!userContext?.company_id,
+    onInsert: (newOrder) => {
+      // ✅ فحص التكرار قبل الإضافة
+      setOrders(prev => {
+        if (prev.find(o => o.id === newOrder.id)) {
+          return prev; // السجل موجود بالفعل
+        }
+        return [newOrder, ...prev];
+      });
+    },
+    onUpdate: (newOrder, oldOrder) => {
+      // ✅ تحديث السجل في القائمة
+      setOrders(prev => prev.map(order => 
+        order.id === newOrder.id ? newOrder : order
+      ));
+      
+      // ✅ إذا تغيرت الفاتورة المرتبطة، تحديث linkedBills
+      if (newOrder.bill_id !== oldOrder.bill_id) {
+        if (newOrder.bill_id) {
+          // تحديث حالة الفاتورة المرتبطة
+          supabase
+            .from("bills")
+            .select("id, status, total_amount, paid_amount, returned_amount, return_status")
+            .eq("id", newOrder.bill_id)
+            .single()
+            .then(({ data: bill }: { data: LinkedBill | null }): void => {
+              if (bill) {
+                setLinkedBills(prev => ({
+                  ...prev,
+                  [bill.id]: {
+                    id: bill.id,
+                    status: bill.status,
+                    total_amount: bill.total_amount,
+                    paid_amount: bill.paid_amount,
+                    returned_amount: bill.returned_amount,
+                    return_status: bill.return_status
+                  }
+                }));
+              }
+            });
+        }
+      }
+    },
+    onDelete: (oldOrder) => {
+      // ✅ حذف السجل من القائمة
+      setOrders(prev => prev.filter(order => order.id !== oldOrder.id));
+    },
+    filter: (event) => {
+      // ✅ فلتر إضافي: التحقق من company_id
+      const record = event.new || event.old;
+      if (!record || !userContext?.company_id) {
+        return false;
+      }
+      return record.company_id === userContext.company_id;
+    }
+  });
 
   // 🔄 إعادة تحميل البيانات عند العودة للصفحة (للتأكد من تحديث البطاقات الإحصائية)
   useEffect(() => {

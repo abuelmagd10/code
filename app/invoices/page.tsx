@@ -25,6 +25,7 @@ import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { PageHeaderList } from "@/components/PageHeader"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,6 +57,7 @@ interface Customer {
 
 interface Invoice {
   id: string
+  company_id?: string
   invoice_number: string
   customer_id: string
   invoice_date: string
@@ -334,6 +336,40 @@ export default function InvoicesPage() {
     window.addEventListener('company_updated', handleCompanyChange);
     return () => window.removeEventListener('company_updated', handleCompanyChange);
   }, []);
+
+  // ✅ Realtime: الاشتراك في تحديثات الفواتير
+  useRealtimeTable<Invoice>({
+    table: 'invoices',
+    enabled: !!userContext?.company_id,
+    onInsert: (newInvoice) => {
+      // ✅ فحص التكرار قبل الإضافة
+      setInvoices(prev => {
+        if (prev.find(inv => inv.id === newInvoice.id)) {
+          return prev; // السجل موجود بالفعل
+        }
+        return [newInvoice, ...prev];
+      });
+    },
+    onUpdate: (newInvoice, oldInvoice) => {
+      // ✅ تحديث السجل في القائمة
+      setInvoices(prev => prev.map(invoice => 
+        invoice.id === newInvoice.id ? newInvoice : invoice
+      ));
+    },
+    onDelete: (oldInvoice) => {
+      // ✅ حذف السجل من القائمة
+      setInvoices(prev => prev.filter(invoice => invoice.id !== oldInvoice.id));
+    },
+    filter: (event) => {
+      // ✅ فلتر إضافي: التحقق من company_id
+      const record = event.new || event.old;
+      if (!record || !userContext?.company_id) {
+        return false;
+      }
+      const invoiceRecord = record as Invoice & { company_id?: string };
+      return invoiceRecord.company_id === userContext.company_id;
+    }
+  });
 
   const loadData = async () => {
     try {

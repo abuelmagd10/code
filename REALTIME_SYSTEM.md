@@ -16,8 +16,10 @@
 
 #### 1️⃣ **فلترة على مستوى قاعدة البيانات (Database Level)**
 - يتم بناء فلاتر Postgres Changes حسب الصلاحيات
-- الفلتر يمنع استقبال الأحداث من الأساس إذا لم تكن مصرحاً بها
-- **مثال**: `company_id=eq.${companyId}.and.branch_id.eq.${branchId}`
+- **القرار المعماري**: استخدام `company_id` فقط في `buildFilter` لجميع الجداول الحساسة
+- الفلترة التفصيلية (branch_id, warehouse_id, created_by) تتم في `shouldProcessEvent` (يدعم OR logic)
+- **مثال**: `company_id=eq.${companyId}` (فقط)
+- **السبب**: Supabase Postgres Changes لا يدعم OR logic في الفلتر، لذلك نستخدم فلترة ذكية في `shouldProcessEvent`
 
 #### 2️⃣ **التحقق من الصلاحيات (Authorization Check)**
 - كل حدث يتم التحقق منه باستخدام `canAccessRecord()` من نظام الصلاحيات
@@ -88,15 +90,16 @@
 
 ### الجداول المدعومة
 
-| الجدول | الحالة | الوصف |
-|--------|--------|-------|
-| ✅ `notifications` | **مكتمل** | الإشعارات - يعمل بالكامل |
-| ⏳ `depreciation` | جاهز | الإهلاك |
-| ⏳ `inventory_transactions` | جاهز | حركات المخزون |
-| ⏳ `purchase_orders` | جاهز | أوامر الشراء |
-| ⏳ `sales_orders` | جاهز | أوامر البيع |
-| ⏳ `invoices` | جاهز | الفواتير |
-| ⏳ `approvals` | جاهز | الموافقات |
+| الجدول | الحالة | الوصف | اسم الجدول في Supabase |
+|--------|--------|-------|------------------------|
+| ✅ `notifications` | **مكتمل** | الإشعارات - يعمل بالكامل | `notifications` |
+| ✅ `depreciation` | **جاهز** | الإهلاك | `inventory_write_offs` |
+| ✅ `inventory_write_offs` | **جاهز** | الإهلاك (اسم بديل) | `inventory_write_offs` |
+| ✅ `inventory_transactions` | **جاهز** | حركات المخزون | `inventory_transactions` |
+| ✅ `purchase_orders` | **جاهز** | أوامر الشراء | `purchase_orders` |
+| ✅ `sales_orders` | **جاهز** | أوامر البيع | `sales_orders` |
+| ✅ `invoices` | **جاهز** | الفواتير | `invoices` |
+| ✅ `approvals` | **جاهز** | الموافقات | `approval_workflows` |
 
 ### كيفية التطبيق
 
@@ -359,13 +362,18 @@ function MyComponent() {
 - [x] DELETE يزيل السجل فوراً
 
 ### ✅ التغطية
-- [x] notifications (مكتمل)
-- [ ] depreciation (جاهز للتطبيق)
-- [ ] inventory_transactions (جاهز للتطبيق)
-- [ ] purchase_orders (جاهز للتطبيق)
-- [ ] sales_orders (جاهز للتطبيق)
-- [ ] invoices (جاهز للتطبيق)
-- [ ] approvals (جاهز للتطبيق)
+
+**✅ Realtime مفعّل على جميع الجداول في Supabase!**
+
+- [x] notifications (مكتمل - مفعّل في Supabase)
+- [x] depreciation / inventory_write_offs (جاهز - مفعّل في Supabase)
+- [x] inventory_transactions (جاهز - مفعّل في Supabase)
+- [x] purchase_orders (جاهز - مفعّل في Supabase)
+- [x] sales_orders (جاهز - مفعّل في Supabase)
+- [x] invoices (جاهز - مفعّل في Supabase)
+- [x] approvals / approval_workflows (جاهز - مفعّل في Supabase)
+
+**جميع الجداول جاهزة للاستخدام!** فقط أضف `useRealtimeTable` في الصفحات.
 
 ---
 

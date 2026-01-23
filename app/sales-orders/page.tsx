@@ -31,6 +31,7 @@ import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument
 import { PageHeaderList } from "@/components/PageHeader";
 import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { StatusBadge } from "@/components/DataTableFormatters";
+import { useRealtimeTable } from "@/hooks/use-realtime-table";
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service' };
@@ -981,6 +982,46 @@ function SalesOrdersContent() {
     window.addEventListener('company_updated', handleCompanyChange);
     return () => window.removeEventListener('company_updated', handleCompanyChange);
   }, [supabase]);
+
+  // ✅ Realtime: الاشتراك في تحديثات أوامر البيع
+  useRealtimeTable<SalesOrder>({
+    table: 'sales_orders',
+    enabled: !!userContext?.company_id,
+    onInsert: (newOrder) => {
+      // ✅ فحص التكرار قبل الإضافة
+      setOrders(prev => {
+        if (prev.find(o => o.id === newOrder.id)) {
+          return prev; // السجل موجود بالفعل
+        }
+        return [newOrder, ...prev];
+      });
+    },
+    onUpdate: (newOrder, oldOrder) => {
+      // ✅ تحديث السجل في القائمة
+      setOrders(prev => prev.map(order => 
+        order.id === newOrder.id ? newOrder : order
+      ));
+      
+      // ✅ إذا تغيرت الفاتورة المرتبطة، تحديث linkedInvoices
+      if (newOrder.invoice_id !== oldOrder.invoice_id) {
+        if (newOrder.invoice_id) {
+          refreshInvoiceStatus(newOrder.invoice_id);
+        }
+      }
+    },
+    onDelete: (oldOrder) => {
+      // ✅ حذف السجل من القائمة
+      setOrders(prev => prev.filter(order => order.id !== oldOrder.id));
+    },
+    filter: (event) => {
+      // ✅ فلتر إضافي: التحقق من company_id
+      const record = event.new || event.old;
+      if (!record || !userContext?.company_id) {
+        return false;
+      }
+      return record.company_id === userContext.company_id;
+    }
+  });
 
   // تحديث دوري لحالة الفواتير كل 30 ثانية
   useEffect(() => {
