@@ -72,14 +72,44 @@ BEGIN
   LEFT JOIN branches b ON (n.branch_id = b.id AND b.company_id = p_company_id)
   LEFT JOIN warehouses w ON (n.warehouse_id = w.id AND w.company_id = p_company_id)
   WHERE n.company_id = p_company_id
-    AND (n.assigned_to_user = p_user_id OR n.assigned_to_user IS NULL)
+    -- ✅ منطق محسّن للفلترة حسب assigned_to_user:
+    -- 1. Owner و Admin يرون جميع الإشعارات في الشركة بغض النظر عن assigned_to_user
+    -- 2. المستخدمون الآخرون يرون فقط الإشعارات المخصصة لهم أو بدون تخصيص
     AND (
-      n.assigned_to_role = v_user_role 
+      v_user_role IN ('owner', 'admin')
+      OR n.assigned_to_user = p_user_id 
+      OR n.assigned_to_user IS NULL
+    )
+    -- ✅ منطق محسّن للفلترة حسب الدور:
+    -- 1. Owner و Admin يرون جميع الإشعارات بغض النظر عن assigned_to_role
+    -- 2. إذا كان assigned_to_role = NULL → يظهر للجميع
+    -- 3. إذا كان assigned_to_role = v_user_role → يظهر للمستخدم
+    -- 4. إذا كان assigned_to_role = 'admin' و v_user_role = 'owner' → يظهر (owner أعلى من admin)
+    AND (
+      v_user_role IN ('owner', 'admin')
       OR n.assigned_to_role IS NULL
+      OR n.assigned_to_role = v_user_role
+      OR (n.assigned_to_role = 'admin' AND v_user_role = 'owner')
       OR v_user_role IS NULL
     )
-    AND (p_branch_id IS NULL OR n.branch_id = p_branch_id OR n.branch_id IS NULL)
-    AND (p_warehouse_id IS NULL OR n.warehouse_id = p_warehouse_id OR n.warehouse_id IS NULL)
+    -- ✅ منطق محسّن للفلترة حسب الفرع:
+    -- 1. Owner و Admin يرون جميع الإشعارات في الشركة بغض النظر عن branch_id
+    -- 2. المستخدمون الآخرون يرون فقط إشعارات فرعهم
+    AND (
+      v_user_role IN ('owner', 'admin')
+      OR p_branch_id IS NULL 
+      OR n.branch_id = p_branch_id 
+      OR n.branch_id IS NULL
+    )
+    -- ✅ منطق محسّن للفلترة حسب المخزن:
+    -- 1. Owner و Admin يرون جميع الإشعارات بغض النظر عن warehouse_id
+    -- 2. المستخدمون الآخرون يرون فقط إشعارات مخزنهم
+    AND (
+      v_user_role IN ('owner', 'admin')
+      OR p_warehouse_id IS NULL 
+      OR n.warehouse_id = p_warehouse_id 
+      OR n.warehouse_id IS NULL
+    )
     -- ✅ إصلاح منطق الأرشيف: 
     -- إذا كان p_status = 'archived' → نعرض المؤرشفة فقط
     -- إذا كان p_status = NULL أو أي قيمة أخرى → نعرض حسب الحالة المطلوبة (لكن نستبعد المؤرشفة ما لم تكن مطلوبة)
