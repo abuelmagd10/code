@@ -122,6 +122,7 @@
 | ✅ `sales_orders` | **جاهز** | جاهز للتطبيق في صفحة أوامر البيع | `sales_orders` |
 | ✅ `invoices` | **جاهز** | جاهز للتطبيق في صفحة الفواتير | `invoices` |
 | ✅ `approvals` | **جاهز** | جاهز للتطبيق في صفحة الموافقات | `approval_workflows` |
+| ✅ `inventory_transfers` | **مكتمل** | مطبق في صفحة المخزون مع أعمدة Incoming/Outgoing | `inventory_transfers` |
 
 ### كيفية التطبيق
 

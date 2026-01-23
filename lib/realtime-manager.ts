@@ -24,6 +24,7 @@ export type RealtimeTable =
   | 'sales_orders'
   | 'invoices'
   | 'approvals'
+  | 'inventory_transfers' // ✅ النقل بين المخازن
 
 export interface RealtimeEvent<T = any> {
   type: RealtimeEventType
@@ -155,6 +156,7 @@ class RealtimeManager {
       'sales_orders': 'sales_orders',
       'invoices': 'invoices',
       'approvals': 'approval_workflows', // قد يكون اسم مختلف
+      'inventory_transfers': 'inventory_transfers', // ✅ النقل بين المخازن
     }
     return tableMapping[table] || table
   }
@@ -287,6 +289,13 @@ class RealtimeManager {
         // ✅ الفلترة التفصيلية تتم في shouldProcessEvent (يدعم OR logic)
         // ✅ هذا يضمن أن المستخدم يستقبل جميع الأحداث المتعلقة بموافقاته (حتى لو كانت في فرع آخر)
         // ✅ أو موافقات موجهة لدوره/مستخدمه
+        return filter
+
+      case 'inventory_transfers':
+        // ✅ النقل بين المخازن: استخدام company_id فقط
+        // ✅ الفلترة التفصيلية تتم في shouldProcessEvent (يدعم OR logic)
+        // ✅ هذا يضمن أن المستخدم يستقبل جميع الأحداث المتعلقة بنقله (حتى لو كانت في فرع آخر)
+        // ✅ أو نقل في نفس الفرع/المخزن
         return filter
 
       default:

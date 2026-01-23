@@ -69,6 +69,12 @@ export default function InventoryPage() {
   const [saleReturnTotals, setSaleReturnTotals] = useState<Record<string, number>>({})
   const [purchaseReturnTotals, setPurchaseReturnTotals] = useState<Record<string, number>>({})
   const [productsWithMovements, setProductsWithMovements] = useState<Set<string>>(new Set()) // 🆕 المنتجات التي لها حركات في المخزن
+  
+  // ✅ بيانات النقل (Incoming/Outgoing Transfers)
+  // incomingTransfers: { productId: [{ quantity: number, warehouseName: string, warehouseId: string }] }
+  const [incomingTransfers, setIncomingTransfers] = useState<Record<string, Array<{ quantity: number; warehouseName: string; warehouseId: string }>>>({})
+  // outgoingTransfers: { productId: [{ quantity: number, warehouseName: string, warehouseId: string }] }
+  const [outgoingTransfers, setOutgoingTransfers] = useState<Record<string, Array<{ quantity: number; warehouseName: string; warehouseId: string }>>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingInventory, setIsLoadingInventory] = useState(false) // 🆕 تحميل عند تغيير المخزن
   const [movementFilter, setMovementFilter] = useState<'all' | 'purchase' | 'sale'>('all')
@@ -184,6 +190,47 @@ export default function InventoryPage() {
       // ✅ فقط الحركات في نفس الشركة والمخزن المحدد
       return record.company_id === userContext.company_id && 
              (!selectedWarehouseId || record.warehouse_id === selectedWarehouseId);
+    }
+  });
+
+  // ✅ Realtime: الاشتراك في تحديثات النقل بين المخازن
+  useRealtimeTable<{ id: string; company_id?: string; source_warehouse_id?: string; destination_warehouse_id?: string; status?: string }>({
+    table: 'inventory_transfers',
+    enabled: !!userContext?.company_id && !!selectedWarehouseId,
+    onInsert: (newTransfer) => {
+      // ✅ إعادة تحميل بيانات النقل عند إضافة نقل جديد
+      if (userContext && selectedBranchId && selectedWarehouseId && selectedCostCenterId) {
+        loadTransferData(userContext, selectedBranchId, selectedWarehouseId, userContext.company_id);
+      }
+    },
+    onUpdate: (newTransfer, oldTransfer) => {
+      // ✅ إعادة تحميل بيانات النقل عند تحديث نقل
+      // خاصة عند تغيير الحالة (pending → in_transit → received)
+      if (newTransfer.status !== oldTransfer.status || 
+          newTransfer.source_warehouse_id !== oldTransfer.source_warehouse_id ||
+          newTransfer.destination_warehouse_id !== oldTransfer.destination_warehouse_id) {
+        if (userContext && selectedBranchId && selectedWarehouseId && selectedCostCenterId) {
+          loadTransferData(userContext, selectedBranchId, selectedWarehouseId, userContext.company_id);
+        }
+      }
+    },
+    onDelete: (oldTransfer) => {
+      // ✅ إعادة تحميل بيانات النقل عند حذف نقل
+      if (userContext && selectedBranchId && selectedWarehouseId && selectedCostCenterId) {
+        loadTransferData(userContext, selectedBranchId, selectedWarehouseId, userContext.company_id);
+      }
+    },
+    filter: (event) => {
+      // ✅ فلتر إضافي: التحقق من company_id و warehouse_id
+      const record = event.new || event.old;
+      if (!record || !userContext?.company_id || !record.company_id) {
+        return false;
+      }
+      // ✅ فقط النقل في نفس الشركة والمخزن المحدد (مصدر أو وجهة)
+      return record.company_id === userContext.company_id && 
+             (!selectedWarehouseId || 
+              record.source_warehouse_id === selectedWarehouseId || 
+              record.destination_warehouse_id === selectedWarehouseId);
     }
   });
 
@@ -420,10 +467,176 @@ export default function InventoryPage() {
       // 🆕 تحديد المنتجات التي لها حركات في المخزن المحدد
       const productsSet = new Set<string>(Object.keys(agg))
       setProductsWithMovements(productsSet)
+
+      // ✅ جلب بيانات النقل (Incoming/Outgoing Transfers)
+      await loadTransferData(context, branchId, warehouseId, companyId)
     } catch (error) {
       console.error("Error loading inventory data:", error)
     } finally {
       setIsLoadingInventory(false) // 🆕 إنهاء التحميل
+    }
+  }
+
+  // ✅ دالة لجلب بيانات النقل (Incoming/Outgoing Transfers)
+  const loadTransferData = async (context: UserContext, branchId: string, warehouseId: string, companyId: string) => {
+    try {
+      if (!warehouseId) {
+        setIncomingTransfers({})
+        setOutgoingTransfers({})
+        return
+      }
+
+      const role = String(context.role || "").trim().toLowerCase().replace(/\s+/g, "_")
+      const isOwnerOrAdmin = ['owner', 'admin'].includes(role)
+      const isManager = ['manager', 'accountant'].includes(role)
+      const isStoreManager = role === 'store_manager'
+
+      // ✅ جلب النقل الواردة (Incoming) - حيث destination_warehouse_id = warehouseId
+      let incomingQuery = supabase
+        .from("inventory_transfers")
+        .select(`
+          id,
+          status,
+          destination_warehouse_id,
+          source_warehouse_id,
+          source_warehouses:warehouses!inventory_transfers_source_warehouse_id_fkey(id, name),
+          inventory_transfer_items!inner(
+            product_id,
+            quantity_sent,
+            quantity_received,
+            products(id, name)
+          )
+        `)
+        .eq("company_id", companyId)
+        .eq("destination_warehouse_id", warehouseId)
+        .is("deleted_at", null)
+        .in("status", ["pending", "in_transit", "received"]) // فقط النقل النشطة
+
+      // ✅ فلترة حسب الصلاحيات
+      if (!isOwnerOrAdmin) {
+        if (isManager && context.branch_id) {
+          // Manager: يرى فقط النقل في فرعه
+          incomingQuery = incomingQuery.eq("destination_branch_id", context.branch_id)
+        } else if (isStoreManager && context.warehouse_id) {
+          // Store Manager: يرى فقط النقل الموجهة لمخزنه
+          incomingQuery = incomingQuery.eq("destination_warehouse_id", context.warehouse_id)
+        } else {
+          // Staff: لا يرى النقل (أو حسب الصلاحيات المحددة)
+          setIncomingTransfers({})
+          setOutgoingTransfers({})
+          return
+        }
+      }
+
+      const { data: incomingTransfersData } = await incomingQuery
+
+      // ✅ جلب النقل الصادرة (Outgoing) - حيث source_warehouse_id = warehouseId
+      let outgoingQuery = supabase
+        .from("inventory_transfers")
+        .select(`
+          id,
+          status,
+          source_warehouse_id,
+          destination_warehouse_id,
+          destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name),
+          inventory_transfer_items!inner(
+            product_id,
+            quantity_sent,
+            quantity_received,
+            products(id, name)
+          )
+        `)
+        .eq("company_id", companyId)
+        .eq("source_warehouse_id", warehouseId)
+        .is("deleted_at", null)
+        .in("status", ["pending", "in_transit", "received"]) // فقط النقل النشطة
+
+      // ✅ فلترة حسب الصلاحيات
+      if (!isOwnerOrAdmin) {
+        if (isManager && context.branch_id) {
+          // Manager: يرى فقط النقل في فرعه
+          outgoingQuery = outgoingQuery.eq("source_branch_id", context.branch_id)
+        } else if (isStoreManager && context.warehouse_id) {
+          // Store Manager: يرى فقط النقل من مخزنه
+          outgoingQuery = outgoingQuery.eq("source_warehouse_id", context.warehouse_id)
+        } else {
+          // Staff: لا يرى النقل
+          setOutgoingTransfers({})
+          return
+        }
+      }
+
+      const { data: outgoingTransfersData } = await outgoingQuery
+
+      // ✅ تجميع بيانات النقل الواردة حسب المنتج
+      const incomingMap: Record<string, Array<{ quantity: number; warehouseName: string; warehouseId: string }>> = {}
+      if (incomingTransfersData) {
+        incomingTransfersData.forEach((transfer: any) => {
+          const sourceWarehouseName = transfer.source_warehouses?.name || 'مخزن غير معروف'
+          const sourceWarehouseId = transfer.source_warehouse_id
+          
+          transfer.inventory_transfer_items?.forEach((item: any) => {
+            const productId = item.product_id
+            // استخدام quantity_sent إذا كان موجوداً، وإلا quantity_received
+            const quantity = item.quantity_sent || item.quantity_received || 0
+            
+            if (!incomingMap[productId]) {
+              incomingMap[productId] = []
+            }
+            
+            // التحقق من عدم التكرار (نفس المخزن)
+            const existing = incomingMap[productId].find(t => t.warehouseId === sourceWarehouseId)
+            if (existing) {
+              existing.quantity += quantity
+            } else {
+              incomingMap[productId].push({
+                quantity,
+                warehouseName: sourceWarehouseName,
+                warehouseId: sourceWarehouseId
+              })
+            }
+          })
+        })
+      }
+
+      // ✅ تجميع بيانات النقل الصادرة حسب المنتج
+      const outgoingMap: Record<string, Array<{ quantity: number; warehouseName: string; warehouseId: string }>> = {}
+      if (outgoingTransfersData) {
+        outgoingTransfersData.forEach((transfer: any) => {
+          const destWarehouseName = transfer.destination_warehouses?.name || (appLang === 'en' ? 'Unknown Warehouse' : 'مخزن غير معروف')
+          const destWarehouseId = transfer.destination_warehouse_id
+          
+          transfer.inventory_transfer_items?.forEach((item: any) => {
+            const productId = item.product_id
+            // استخدام quantity_sent (الكمية المرسلة)
+            const quantity = item.quantity_sent || item.quantity_received || 0
+            
+            if (!outgoingMap[productId]) {
+              outgoingMap[productId] = []
+            }
+            
+            // التحقق من عدم التكرار (نفس المخزن)
+            const existing = outgoingMap[productId].find(t => t.warehouseId === destWarehouseId)
+            if (existing) {
+              existing.quantity += quantity
+            } else {
+              outgoingMap[productId].push({
+                quantity,
+                warehouseName: destWarehouseName,
+                warehouseId: destWarehouseId
+              })
+            }
+          })
+        })
+      }
+
+      setIncomingTransfers(incomingMap)
+      setOutgoingTransfers(outgoingMap)
+    } catch (error) {
+      console.error("Error loading transfer data:", error)
+      // لا نعرض خطأ للمستخدم، فقط نترك البيانات فارغة
+      setIncomingTransfers({})
+      setOutgoingTransfers({})
     }
   }
 
@@ -653,7 +866,7 @@ export default function InventoryPage() {
             <CardContent className="p-0">
               {isLoading || isLoadingInventory ? (
                 <TableSkeleton
-                  cols={7}
+                  cols={9}
                   rows={8}
                   className="mt-4"
                 />
@@ -707,6 +920,18 @@ export default function InventoryPage() {
                           <div className="flex items-center gap-2 justify-center">
                             <AlertCircle className="w-4 h-4 text-red-600" />
                             <span>{appLang === 'en' ? 'Write-offs' : 'الهالك'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <ArrowDown className="w-4 h-4 text-green-600" />
+                            <span>{appLang === 'en' ? 'Incoming Transfers' : 'النقل الواردة'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <ArrowUp className="w-4 h-4 text-blue-600" />
+                            <span>{appLang === 'en' ? 'Outgoing Transfers' : 'النقل الصادرة'}</span>
                           </div>
                         </th>
                         <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
@@ -820,6 +1045,82 @@ export default function InventoryPage() {
                                   {writeOff.toLocaleString()}
                                 </span>
                               </div>
+                            </td>
+
+                            {/* ✅ النقل الواردة (Incoming Transfers) */}
+                            <td className="px-4 py-4 text-center">
+                              {(() => {
+                                const incoming = incomingTransfers[product.id] || []
+                                const totalIncoming = incoming.reduce((sum, t) => sum + t.quantity, 0)
+                                
+                                if (totalIncoming === 0) {
+                                  return (
+                                    <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800">
+                                      <ArrowDown className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                                      <span className="font-bold text-base text-gray-500 dark:text-gray-400">
+                                        0
+                                      </span>
+                                    </div>
+                                  )
+                                }
+                                
+                                return (
+                                  <div className="flex flex-col gap-1">
+                                    <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                                      <ArrowDown className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                      <span className="font-bold text-base text-green-700 dark:text-green-300">
+                                        {totalIncoming.toLocaleString()}
+                                      </span>
+                                    </div>
+                                    {/* عرض تفاصيل المخازن */}
+                                    <div className="flex flex-col gap-0.5 text-xs text-gray-600 dark:text-gray-400">
+                                      {incoming.map((transfer, idx) => (
+                                        <div key={idx} className="text-right px-2">
+                                          {transfer.quantity.toLocaleString()} {appLang === 'en' ? 'from' : 'من'} {transfer.warehouseName}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )
+                              })()}
+                            </td>
+
+                            {/* ✅ النقل الصادرة (Outgoing Transfers) */}
+                            <td className="px-4 py-4 text-center">
+                              {(() => {
+                                const outgoing = outgoingTransfers[product.id] || []
+                                const totalOutgoing = outgoing.reduce((sum, t) => sum + t.quantity, 0)
+                                
+                                if (totalOutgoing === 0) {
+                                  return (
+                                    <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800">
+                                      <ArrowUp className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                                      <span className="font-bold text-base text-gray-500 dark:text-gray-400">
+                                        0
+                                      </span>
+                                    </div>
+                                  )
+                                }
+                                
+                                return (
+                                  <div className="flex flex-col gap-1">
+                                    <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                                      <ArrowUp className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                      <span className="font-bold text-base text-blue-700 dark:text-blue-300">
+                                        {totalOutgoing.toLocaleString()}
+                                      </span>
+                                    </div>
+                                    {/* عرض تفاصيل المخازن */}
+                                    <div className="flex flex-col gap-0.5 text-xs text-gray-600 dark:text-gray-400">
+                                      {outgoing.map((transfer, idx) => (
+                                        <div key={idx} className="text-right px-2">
+                                          {transfer.quantity.toLocaleString()} {appLang === 'en' ? 'to' : 'إلى'} {transfer.warehouseName}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )
+                              })()}
                             </td>
 
                             {/* المخزون المتاح */}

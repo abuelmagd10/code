@@ -100,6 +100,7 @@
 | ✅ `sales_orders` | **جاهز** | أوامر البيع | `sales_orders` |
 | ✅ `invoices` | **جاهز** | الفواتير | `invoices` |
 | ✅ `approvals` | **جاهز** | الموافقات | `approval_workflows` |
+| ✅ `inventory_transfers` | **جاهز** | النقل بين المخازن | `inventory_transfers` |
 
 ### كيفية التطبيق
 

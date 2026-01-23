@@ -12,6 +12,7 @@
 -- ✅ sales_orders - أوامر البيع
 -- ✅ invoices - الفواتير
 -- ✅ approval_workflows - الموافقات
+-- ✅ inventory_transfers - النقل بين المخازن
 -- =====================================================
 
 -- ملاحظة: في Supabase، يتم تفعيل Realtime من Dashboard عادة
@@ -183,6 +184,26 @@ BEGIN
     END IF;
   ELSE
     RAISE NOTICE '⚠️ Table approval_workflows does not exist';
+  END IF;
+END $$;
+
+-- inventory_transfers (للنقل بين المخازن)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'inventory_transfers') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables 
+      WHERE pubname = 'supabase_realtime' 
+      AND schemaname = 'public' 
+      AND tablename = 'inventory_transfers'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE inventory_transfers;
+      RAISE NOTICE '✅ Added inventory_transfers to realtime';
+    ELSE
+      RAISE NOTICE '✅ inventory_transfers already in realtime publication';
+    END IF;
+  ELSE
+    RAISE NOTICE '⚠️ Table inventory_transfers does not exist';
   END IF;
 END $$;
 

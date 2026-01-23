@@ -387,3 +387,49 @@ useRealtimeTable({
 5. ✅ أرسل أحداث لتحديث الإشعارات عند الحاجة
 
 **النتيجة**: نظام ERP احترافي بدون أي Refresh! 🎉
+
+---
+
+## 📦 مثال متقدم: صفحة المخزون مع أعمدة النقل
+
+### إضافة أعمدة Incoming/Outgoing Transfers
+
+```tsx
+// ✅ State لحفظ بيانات النقل
+const [incomingTransfers, setIncomingTransfers] = useState<Record<string, Array<{ 
+  quantity: number; 
+  warehouseName: string; 
+  warehouseId: string 
+}>>>({})
+const [outgoingTransfers, setOutgoingTransfers] = useState<Record<string, Array<{ 
+  quantity: number; 
+  warehouseName: string; 
+  warehouseId: string 
+}>>>({})
+
+// ✅ دالة لجلب بيانات النقل مع فلترة الصلاحيات
+const loadTransferData = async (context: UserContext, branchId: string, warehouseId: string, companyId: string) => {
+  // جلب النقل الواردة (destination_warehouse_id = warehouseId)
+  // جلب النقل الصادرة (source_warehouse_id = warehouseId)
+  // فلترة حسب الصلاحيات (Owner/Admin/Manager/Store Manager)
+  // تجميع البيانات حسب المنتج والمخزن
+}
+
+// ✅ Realtime للنقل
+useRealtimeTable({
+  table: 'inventory_transfers',
+  enabled: !!userContext?.company_id && !!selectedWarehouseId,
+  onInsert: () => loadTransferData(...),
+  onUpdate: () => loadTransferData(...),
+  onDelete: () => loadTransferData(...)
+})
+
+// ✅ عرض في الجدول
+{incomingTransfers[product.id]?.map((transfer, idx) => (
+  <div key={idx}>
+    {transfer.quantity} من {transfer.warehouseName}
+  </div>
+))}
+```
+
+**النتيجة**: تحديث لحظي لأعمدة النقل عند أي تغيير! ✅
