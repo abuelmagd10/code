@@ -1037,9 +1037,13 @@ export default function WriteOffsPage() {
 
     console.log(`✅ Loaded ${items?.length || 0} items from database (no cache)`)
 
+    // ✅ إعادة حساب total_cost من مجموع العناصر للتأكد من الدقة
+    const calculatedTotalCost = (items || []).reduce((sum: number, item: any) => sum + (item.total_cost || 0), 0)
+    
     // ✅ بناء كائن الإهلاك مع العناصر المحدثة فقط
     const writeOffWithItems = {
       ...freshWriteOff,
+      total_cost: calculatedTotalCost, // استخدام القيمة المحسوبة من العناصر
       items: (items || []).map((it: any) => ({
         ...it,
         product_name: it.products?.name,
@@ -1047,7 +1051,28 @@ export default function WriteOffsPage() {
       })),
     }
 
-    console.log(`📊 Displaying write-off: ${writeOffWithItems.write_off_number} with ${writeOffWithItems.items?.length || 0} items`)
+    // ✅ التحقق من تطابق total_cost في قاعدة البيانات مع المحسوب
+    if (Math.abs(calculatedTotalCost - (freshWriteOff.total_cost || 0)) > 0.01) {
+      console.warn(`⚠️ Total cost mismatch in database! DB: ${freshWriteOff.total_cost}, Calculated: ${calculatedTotalCost}`)
+      console.warn(`   Updating total_cost in database to match calculated value...`)
+      
+      // تحديث total_cost في قاعدة البيانات
+      const { error: fixErr } = await supabase
+        .from("inventory_write_offs")
+        .update({
+          total_cost: calculatedTotalCost,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", wo.id)
+      
+      if (fixErr) {
+        console.error("Error fixing total_cost:", fixErr)
+      } else {
+        console.log(`✅ Fixed total_cost in database: ${calculatedTotalCost}`)
+      }
+    }
+
+    console.log(`📊 Displaying write-off: ${writeOffWithItems.write_off_number} with ${writeOffWithItems.items?.length || 0} items, Total: ${writeOffWithItems.total_cost}`)
 
     // ✅ تحديث state بالبيانات المحدثة من قاعدة البيانات
     setSelectedWriteOff(writeOffWithItems)
@@ -1526,7 +1551,9 @@ export default function WriteOffsPage() {
 
       if (verifyDeleted && verifyDeleted.length > 0) {
         console.warn(`⚠️ Warning: ${verifyDeleted.length} items still exist after deletion. Retrying...`)
-        // إعادة المحاولة
+        // إعادة المحاولة مع انتظار صغير
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
         const { error: retryErr } = await supabase
           .from("inventory_write_off_items")
           .delete()
@@ -1535,6 +1562,17 @@ export default function WriteOffsPage() {
         if (retryErr) {
           console.error("Error in retry deletion:", retryErr)
           throw retryErr
+        }
+        
+        // التحقق مرة أخرى بعد إعادة المحاولة
+        const { data: verifyAfterRetry } = await supabase
+          .from("inventory_write_off_items")
+          .select("id")
+          .eq("write_off_id", writeOffIdToUpdate)
+        
+        if (verifyAfterRetry && verifyAfterRetry.length > 0) {
+          console.error(`❌ CRITICAL: ${verifyAfterRetry.length} items still exist after retry deletion!`)
+          throw new Error(`Failed to delete all old items. ${verifyAfterRetry.length} items still exist.`)
         }
       }
 
@@ -1572,10 +1610,13 @@ export default function WriteOffsPage() {
           console.log(`✅ Inserted ${insertedItems?.length || 0} new items for write-off ${writeOffIdToUpdate}`)
           
           // ✅ التحقق من أن العناصر الجديدة تم إدراجها بشكل صحيح
+          await new Promise(resolve => setTimeout(resolve, 100)) // انتظار صغير للتأكد من اكتمال الإدراج
+          
           const { data: verifyInserted, error: verifyInsertErr } = await supabase
             .from("inventory_write_off_items")
-            .select("id, product_id, quantity")
+            .select("id, product_id, quantity, total_cost")
             .eq("write_off_id", writeOffIdToUpdate)
+            .order("created_at", { ascending: true })
 
           if (verifyInsertErr) {
             console.error("Error verifying insertion:", verifyInsertErr)
@@ -1583,9 +1624,52 @@ export default function WriteOffsPage() {
           }
 
           console.log(`✅ Verified: ${verifyInserted?.length || 0} items now exist for write-off ${writeOffIdToUpdate}`)
+          
+          // ✅ التحقق من عدم وجود عناصر مكررة
+          const itemIds = verifyInserted?.map(item => item.id) || []
+          const uniqueIds = new Set(itemIds)
+          if (itemIds.length !== uniqueIds.size) {
+            console.error(`❌ CRITICAL: Duplicate items detected! Total: ${itemIds.length}, Unique: ${uniqueIds.size}`)
+            throw new Error("Duplicate items detected after insertion")
+          }
+          
+          // ✅ إعادة حساب total_cost من مجموع العناصر المضافة
+          const calculatedTotalCost = itemsToInsert.reduce((sum, item) => sum + (item.total_cost || 0), 0)
+          console.log(`💰 Calculated total cost from items: ${calculatedTotalCost}`)
+          
+          // ✅ تحديث total_cost في قاعدة البيانات
+          const { error: totalCostUpdateErr } = await supabase
+            .from("inventory_write_offs")
+            .update({
+              total_cost: calculatedTotalCost,
+              updated_at: new Date().toISOString()
+            })
+            .eq("id", writeOffIdToUpdate)
+          
+          if (totalCostUpdateErr) {
+            console.error("Error updating total_cost:", totalCostUpdateErr)
+            // لا نرمي خطأ هنا، نتابع العملية
+          } else {
+            console.log(`✅ Updated total_cost in database: ${calculatedTotalCost}`)
+          }
         }
       } else {
         console.log(`⚠️ No items to insert for write-off ${writeOffIdToUpdate}`)
+        
+        // ✅ إذا لم تكن هناك عناصر، يجب تحديث total_cost إلى 0
+        const { error: totalCostUpdateErr } = await supabase
+          .from("inventory_write_offs")
+          .update({
+            total_cost: 0,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", writeOffIdToUpdate)
+        
+        if (totalCostUpdateErr) {
+          console.error("Error updating total_cost to 0:", totalCostUpdateErr)
+        } else {
+          console.log(`✅ Updated total_cost to 0 (no items)`)
+        }
       }
 
       // تسجيل في سجل المراجعة
@@ -1672,6 +1756,30 @@ export default function WriteOffsPage() {
           product_name: it.products?.name,
           product_sku: it.products?.sku,
         })),
+      }
+      
+      // ✅ إعادة حساب total_cost من مجموع العناصر للتأكد من الدقة
+      const recalculatedTotalCost = writeOffWithUpdatedItems.items?.reduce((sum: number, item: any) => sum + (item.total_cost || 0), 0) || 0
+      
+      // ✅ تحديث total_cost في الكائن إذا كان مختلفاً
+      if (Math.abs(recalculatedTotalCost - (writeOffWithUpdatedItems.total_cost || 0)) > 0.01) {
+        console.log(`⚠️ Total cost mismatch! DB: ${writeOffWithUpdatedItems.total_cost}, Calculated: ${recalculatedTotalCost}`)
+        writeOffWithUpdatedItems.total_cost = recalculatedTotalCost
+        
+        // ✅ تحديث total_cost في قاعدة البيانات
+        const { error: fixTotalCostErr } = await supabase
+          .from("inventory_write_offs")
+          .update({
+            total_cost: recalculatedTotalCost,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", writeOffIdToUpdate)
+        
+        if (fixTotalCostErr) {
+          console.error("Error fixing total_cost:", fixTotalCostErr)
+        } else {
+          console.log(`✅ Fixed total_cost in database: ${recalculatedTotalCost}`)
+        }
       }
       
       console.log(`📊 Final write-off data: ${writeOffWithUpdatedItems.items?.length || 0} items, Total: ${writeOffWithUpdatedItems.total_cost}`)
