@@ -1862,7 +1862,7 @@ export default function WriteOffsPage() {
               warehouseId: finalWarehouseId || undefined,
               costCenterId: finalCostCenterId || undefined,
               modifiedBy: userId || '',
-              appLang: isAr ? 'ar' : 'en'
+              appLang: (isAr ? 'ar' : 'en') as 'ar' | 'en'
             }
             
             console.log('🔔 [NOTIFICATION] Sending write-off modification notification:', notificationParams)
