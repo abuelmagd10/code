@@ -97,9 +97,25 @@ export function NotificationCenter({
         })))
       }
 
-      // Filter by priority and search
+      // ✅ فلترة في الواجهة (ERP Standard):
+      // 1. فلترة حسب branch/warehouse (إذا كان محدداً)
+      // 2. فلترة حسب priority, severity, category, search
       let filtered = data || []
       const initialCount = filtered.length
+      
+      // ✅ فلترة حسب branch (في الواجهة)
+      if (branchId) {
+        const beforeBranch = filtered.length
+        filtered = filtered.filter(n => !n.branch_id || n.branch_id === branchId)
+        console.log(`🔍 [NOTIFICATION_CENTER] After branch filter: ${beforeBranch} → ${filtered.length}`)
+      }
+
+      // ✅ فلترة حسب warehouse (في الواجهة)
+      if (warehouseId) {
+        const beforeWarehouse = filtered.length
+        filtered = filtered.filter(n => !n.warehouse_id || n.warehouse_id === warehouseId)
+        console.log(`🔍 [NOTIFICATION_CENTER] After warehouse filter: ${beforeWarehouse} → ${filtered.length}`)
+      }
       
       if (filterPriority !== "all") {
         const beforePriority = filtered.length
@@ -170,17 +186,89 @@ export function NotificationCenter({
     }
   }, [open, loadNotifications])
 
-  // 🔔 Real-Time: الاستماع للإشعارات الجديدة والمحدثة
+  // 🔔 Real-Time: الاستماع للإشعارات الجديدة والمحدثة (ERP Standard)
   useEffect(() => {
     if (!companyId || !userId || !mounted) return
 
-    console.log('🔔 [REALTIME] Setting up notification subscription...', {
+    console.log('🔔 [REALTIME] Setting up enterprise notification subscription...', {
       companyId,
       userId,
       branchId: branchId || 'null',
       warehouseId: warehouseId || 'null',
       userRole
     })
+
+    // ✅ دالة مساعدة للتحقق من أن الإشعار ينطبق على المستخدم
+    const shouldShowNotification = (notification: any): boolean => {
+      // ✅ 1. التحقق من company_id
+      if (notification.company_id !== companyId) {
+        return false
+      }
+
+      // ✅ 2. التحقق من assigned_to_user
+      if (notification.assigned_to_user) {
+        // إذا كان موجه لمستخدم محدد، يجب أن يكون المستخدم الحالي
+        if (notification.assigned_to_user !== userId) {
+          // إلا إذا كان owner أو admin
+          if (userRole !== 'owner' && userRole !== 'admin') {
+            return false
+          }
+        }
+      }
+
+      // ✅ 3. التحقق من assigned_to_role
+      if (notification.assigned_to_role) {
+        // إذا كان موجه لدور محدد
+        if (notification.assigned_to_role !== userRole) {
+          // إلا إذا كان owner أو admin
+          if (userRole !== 'owner' && userRole !== 'admin') {
+            // owner يرى إشعارات admin
+            if (!(notification.assigned_to_role === 'admin' && userRole === 'owner')) {
+              return false
+            }
+          }
+        }
+      }
+
+      // ✅ 4. التحقق من انتهاء الصلاحية
+      if (notification.expires_at) {
+        const expiresAt = new Date(notification.expires_at)
+        if (expiresAt <= new Date()) {
+          return false
+        }
+      }
+
+      // ✅ 5. استبعاد المؤرشفة
+      if (notification.status === 'archived') {
+        return false
+      }
+
+      return true
+    }
+
+    // ✅ دالة مساعدة لإضافة/تحديث الإشعار مباشرة في الـ state
+    const addOrUpdateNotification = (notification: any) => {
+      setNotifications(prev => {
+        // التحقق من وجود الإشعار مسبقاً
+        const existingIndex = prev.findIndex(n => n.id === notification.id)
+        
+        if (existingIndex >= 0) {
+          // تحديث الإشعار الموجود
+          const updated = [...prev]
+          updated[existingIndex] = notification as Notification
+          console.log('🔄 [REALTIME] Updated notification in state:', notification.id)
+          return updated
+        } else {
+          // إضافة الإشعار الجديد في البداية (الأحدث أولاً)
+          const updated = [notification as Notification, ...prev]
+          console.log('➕ [REALTIME] Added new notification to state:', notification.id)
+          return updated
+        }
+      })
+
+      // ✅ تحديث عداد الإشعارات في sidebar
+      window.dispatchEvent(new Event('notifications_updated'))
+    }
 
     // إنشاء Realtime channel للإشعارات
     const channel = supabase
@@ -191,51 +279,56 @@ export function NotificationCenter({
           event: '*', // INSERT, UPDATE, DELETE
           schema: 'public',
           table: 'notifications',
-          filter: `company_id=eq.${companyId}` // فلترة حسب الشركة
+          filter: `company_id=eq.${companyId}` // فلترة حسب الشركة فقط
         },
         async (payload: any) => {
           console.log('🔔 [REALTIME] Notification event received:', {
             eventType: payload.eventType,
-            new: payload.new,
-            old: payload.old
+            notificationId: payload.new?.id || payload.old?.id,
+            assignedToRole: payload.new?.assigned_to_role,
+            assignedToUser: payload.new?.assigned_to_user
           })
 
-          // التحقق من أن الإشعار ينطبق على المستخدم الحالي
-          // (سيتم الفلترة في getUserNotifications)
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          if (payload.eventType === 'INSERT') {
             const notification = payload.new as any
             
-            console.log('🔄 [REALTIME] Notification INSERT/UPDATE detected:', {
-              notificationId: notification.id,
-              assignedToRole: notification.assigned_to_role,
-              assignedToUser: notification.assigned_to_user,
-              referenceType: notification.reference_type,
-              currentUserRole: userRole,
-              currentUserId: userId
-            })
+            // ✅ التحقق من أن الإشعار ينطبق على المستخدم
+            if (shouldShowNotification(notification)) {
+              console.log('✅ [REALTIME] New notification matches user - adding to state')
+              addOrUpdateNotification(notification)
+            } else {
+              console.log('⏭️ [REALTIME] New notification does not match user - skipping')
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const notification = payload.new as any
             
             // ✅ التحقق من أن الإشعار ينطبق على المستخدم
-            // (سيتم التحقق الكامل في loadNotifications)
-            console.log('🔄 [REALTIME] Reloading notifications after event...')
-            // استخدام ref لتجنب infinite loop
-            await loadNotificationsRef.current()
-            
-            console.log('✅ [REALTIME] Notifications reloaded after event')
+            if (shouldShowNotification(notification)) {
+              console.log('✅ [REALTIME] Updated notification matches user - updating in state')
+              addOrUpdateNotification(notification)
+            } else {
+              // إذا كان الإشعار لا ينطبق بعد التحديث، نزيله من القائمة
+              console.log('🗑️ [REALTIME] Updated notification no longer matches user - removing from state')
+              setNotifications(prev => prev.filter(n => n.id !== notification.id))
+            }
           } else if (payload.eventType === 'DELETE') {
-            console.log('🗑️ [REALTIME] Notification DELETE detected:', payload.old.id)
+            const notificationId = payload.old.id
+            console.log('🗑️ [REALTIME] Notification DELETE detected:', notificationId)
             // إزالة الإشعار المحذوف من القائمة
             setNotifications(prev => {
-              const filtered = prev.filter(n => n.id !== payload.old.id)
+              const filtered = prev.filter(n => n.id !== notificationId)
               console.log(`✅ [REALTIME] Removed deleted notification. Remaining: ${filtered.length}`)
               return filtered
             })
+            // ✅ تحديث عداد الإشعارات
+            window.dispatchEvent(new Event('notifications_updated'))
           }
         }
       )
       .subscribe((status: any) => {
         console.log('🔔 [REALTIME] Subscription status:', status)
         if (status === 'SUBSCRIBED') {
-          console.log('✅ [REALTIME] Successfully subscribed to notifications')
+          console.log('✅ [REALTIME] Successfully subscribed to notifications channel')
         } else if (status === 'CHANNEL_ERROR') {
           console.error('❌ [REALTIME] Channel error - check Supabase Realtime configuration')
         }

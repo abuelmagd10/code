@@ -311,14 +311,82 @@ export function Sidebar() {
     loadUnreadCountRef.current = loadUnreadCount
   }, [loadUnreadCount])
 
-  // 🔔 Real-Time: تحديث عدد الإشعارات غير المقروءة تلقائياً
+  // 🔔 Real-Time: تحديث عدد الإشعارات غير المقروءة تلقائياً (ERP Standard)
   useEffect(() => {
     if (!currentUserId || !activeCompanyId) return
 
-    console.log('🔔 [SIDEBAR_REALTIME] Setting up notification count subscription...', {
+    console.log('🔔 [SIDEBAR_REALTIME] Setting up enterprise notification count subscription...', {
       userId: currentUserId,
       companyId: activeCompanyId
     })
+
+    // ✅ جلب دور المستخدم للفلترة الصحيحة
+    let userRoleForFiltering: string | null = null
+    const loadUserRole = async () => {
+      try {
+        const { data: member } = await supabaseHook
+          .from('company_members')
+          .select('role')
+          .eq('company_id', activeCompanyId)
+          .eq('user_id', currentUserId)
+          .maybeSingle()
+        userRoleForFiltering = member?.role || null
+      } catch (error) {
+        console.error('Error loading user role for notification filtering:', error)
+      }
+    }
+    loadUserRole()
+
+    // ✅ دالة مساعدة للتحقق من أن الإشعار يؤثر على العدد
+    const shouldAffectCount = (notification: any): boolean => {
+      // 1. التحقق من company_id
+      if (notification.company_id !== activeCompanyId) {
+        return false
+      }
+
+      // 2. التحقق من assigned_to_user
+      if (notification.assigned_to_user) {
+        if (notification.assigned_to_user !== currentUserId) {
+          // إلا إذا كان owner أو admin
+          if (userRoleForFiltering !== 'owner' && userRoleForFiltering !== 'admin') {
+            return false
+          }
+        }
+      }
+
+      // 3. التحقق من assigned_to_role
+      if (notification.assigned_to_role) {
+        if (notification.assigned_to_role !== userRoleForFiltering) {
+          // إلا إذا كان owner أو admin
+          if (userRoleForFiltering !== 'owner' && userRoleForFiltering !== 'admin') {
+            // owner يرى إشعارات admin
+            if (!(notification.assigned_to_role === 'admin' && userRoleForFiltering === 'owner')) {
+              return false
+            }
+          }
+        }
+      }
+
+      // 4. التحقق من الحالة (unread فقط)
+      if (notification.status !== 'unread') {
+        return false
+      }
+
+      // 5. التحقق من انتهاء الصلاحية
+      if (notification.expires_at) {
+        const expiresAt = new Date(notification.expires_at)
+        if (expiresAt <= new Date()) {
+          return false
+        }
+      }
+
+      // 6. استبعاد المؤرشفة
+      if (notification.status === 'archived') {
+        return false
+      }
+
+      return true
+    }
 
     // إنشاء Realtime channel لتحديث عدد الإشعارات
     const channel = supabaseHook
@@ -331,23 +399,56 @@ export function Sidebar() {
           table: 'notifications',
           filter: `company_id=eq.${activeCompanyId}` // فلترة حسب الشركة
         },
-          async (payload: any) => {
-            console.log('🔔 [SIDEBAR_REALTIME] Notification event received, updating count...', {
-              eventType: payload.eventType,
-              notificationId: payload.new?.id || payload.old?.id,
-              assignedToRole: payload.new?.assigned_to_role
-            })
+        async (payload: any) => {
+          console.log('🔔 [SIDEBAR_REALTIME] Notification event received:', {
+            eventType: payload.eventType,
+            notificationId: payload.new?.id || payload.old?.id
+          })
 
-            // تحديث عدد الإشعارات غير المقروءة
-            // نستخدم ref لتجنب infinite loop
-            await loadUnreadCountRef.current()
-            console.log('✅ [SIDEBAR_REALTIME] Unread count updated after event')
+          // ✅ تحديث العدد مباشرة بناءً على الحدث
+          if (payload.eventType === 'INSERT') {
+            const notification = payload.new as any
+            if (shouldAffectCount(notification)) {
+              console.log('➕ [SIDEBAR_REALTIME] New unread notification - incrementing count')
+              setUnreadCount(prev => prev + 1)
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const notification = payload.new as any
+            const oldNotification = payload.old as any
+            
+            // إذا تغيرت الحالة من unread إلى read/archived
+            if (oldNotification.status === 'unread' && notification.status !== 'unread') {
+              if (shouldAffectCount(oldNotification)) {
+                console.log('➖ [SIDEBAR_REALTIME] Notification marked as read - decrementing count')
+                setUnreadCount(prev => Math.max(0, prev - 1))
+              }
+            }
+            // إذا تغيرت الحالة من read إلى unread
+            else if (oldNotification.status !== 'unread' && notification.status === 'unread') {
+              if (shouldAffectCount(notification)) {
+                console.log('➕ [SIDEBAR_REALTIME] Notification marked as unread - incrementing count')
+                setUnreadCount(prev => prev + 1)
+              }
+            }
+          } else if (payload.eventType === 'DELETE') {
+            const notification = payload.old as any
+            if (shouldAffectCount(notification)) {
+              console.log('➖ [SIDEBAR_REALTIME] Notification deleted - decrementing count')
+              setUnreadCount(prev => Math.max(0, prev - 1))
+            }
           }
+
+          // ✅ أيضاً تحديث العدد الكامل (للتأكد من الدقة)
+          // استخدام ref لتجنب infinite loop
+          setTimeout(() => {
+            loadUnreadCountRef.current()
+          }, 500)
+        }
       )
       .subscribe((status: any) => {
         console.log('🔔 [SIDEBAR_REALTIME] Subscription status:', status)
         if (status === 'SUBSCRIBED') {
-          console.log('✅ [SIDEBAR_REALTIME] Successfully subscribed to notification count updates')
+          console.log('✅ [SIDEBAR_REALTIME] Successfully subscribed to notification count')
         } else if (status === 'CHANNEL_ERROR') {
           console.error('❌ [SIDEBAR_REALTIME] Channel error - check Supabase Realtime configuration')
         }
