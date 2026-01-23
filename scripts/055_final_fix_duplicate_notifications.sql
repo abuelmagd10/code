@@ -215,7 +215,7 @@ CREATE OR REPLACE FUNCTION check_notification_exists(
   p_event_key TEXT
 )
 RETURNS TABLE (
-  exists BOOLEAN,
+  notification_exists BOOLEAN,
   notification_id UUID
 )
 LANGUAGE plpgsql
