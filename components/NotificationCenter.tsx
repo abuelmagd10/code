@@ -651,7 +651,13 @@ export function NotificationCenter({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+      <DialogContent 
+        className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden"
+        aria-describedby="notification-center-description"
+      >
+        <span id="notification-center-description" className="sr-only">
+          {appLang === 'en' ? 'Notification center with filters and actions' : 'مركز الإشعارات مع الفلاتر والإجراءات'}
+        </span>
         {/* 🔹 A. Header Bar */}
         <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
           <div className="flex items-center justify-between mb-4">
