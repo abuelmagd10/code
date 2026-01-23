@@ -2,6 +2,7 @@
 -- ⚡ إصلاح سريع لنظام الإشعارات
 -- =====================================================
 -- شغّل هذا الـ script في Supabase SQL Editor لحل مشكلة 400
+-- ✅ محدث: إصلاح منطق فلترة الإشعارات حسب الدور (owner/admin)
 -- =====================================================
 
 -- 1️⃣ إضافة الأعمدة إذا لم تكن موجودة
@@ -80,8 +81,14 @@ BEGIN
   WHERE n.company_id = p_company_id
     AND (n.assigned_to_user = p_user_id OR n.assigned_to_user IS NULL)
     AND (
-      n.assigned_to_role = v_user_role 
-      OR n.assigned_to_role IS NULL
+      -- ✅ منطق محسّن للفلترة حسب الدور:
+      -- 1. إذا كان assigned_to_role = NULL → يظهر للجميع
+      -- 2. إذا كان assigned_to_role = v_user_role → يظهر للمستخدم
+      -- 3. إذا كان assigned_to_role = 'admin' و v_user_role = 'owner' → يظهر (owner أعلى من admin)
+      -- 4. إذا كان assigned_to_role = 'owner' و v_user_role = 'owner' → يظهر فقط
+      n.assigned_to_role IS NULL
+      OR n.assigned_to_role = v_user_role
+      OR (n.assigned_to_role = 'admin' AND v_user_role = 'owner')
       OR v_user_role IS NULL
     )
     AND (p_branch_id IS NULL OR n.branch_id = p_branch_id OR n.branch_id IS NULL)
