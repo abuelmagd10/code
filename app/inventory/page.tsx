@@ -1215,6 +1215,48 @@ export default function InventoryPage() {
                             </span>
                           </div>
                         </td>
+                        {/* ✅ إجمالي النقل الواردة (Incoming Transfers) */}
+                        <td className="px-4 py-4 text-center">
+                          {(() => {
+                            const totalIncoming = displayedProducts.reduce((sum, p) => {
+                              const incoming = incomingTransfers[p.id] || []
+                              return sum + incoming.reduce((s, t) => s + t.quantity, 0)
+                            }, 0)
+                            
+                            return (
+                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${totalIncoming > 0
+                                ? 'bg-green-200 dark:bg-green-800 border border-green-400 dark:border-green-600'
+                                : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                                }`}>
+                                <ArrowDown className={`w-5 h-5 ${totalIncoming > 0 ? 'text-green-700 dark:text-green-300' : 'text-gray-500 dark:text-gray-400'}`} />
+                                <span className={`font-bold text-lg ${totalIncoming > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                                  {totalIncoming.toLocaleString()}
+                                </span>
+                              </div>
+                            )
+                          })()}
+                        </td>
+                        {/* ✅ إجمالي النقل الصادرة (Outgoing Transfers) */}
+                        <td className="px-4 py-4 text-center">
+                          {(() => {
+                            const totalOutgoing = displayedProducts.reduce((sum, p) => {
+                              const outgoing = outgoingTransfers[p.id] || []
+                              return sum + outgoing.reduce((s, t) => s + t.quantity, 0)
+                            }, 0)
+                            
+                            return (
+                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${totalOutgoing > 0
+                                ? 'bg-blue-200 dark:bg-blue-800 border border-blue-400 dark:border-blue-600'
+                                : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                                }`}>
+                                <ArrowUp className={`w-5 h-5 ${totalOutgoing > 0 ? 'text-blue-700 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400'}`} />
+                                <span className={`font-bold text-lg ${totalOutgoing > 0 ? 'text-blue-800 dark:text-blue-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                                  {totalOutgoing.toLocaleString()}
+                                </span>
+                              </div>
+                            )
+                          })()}
+                        </td>
                         <td className="px-4 py-4 text-center">
                           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-200 dark:bg-blue-800 border border-blue-400 dark:border-blue-600">
                             <BarChart3 className="w-5 h-5 text-blue-700 dark:text-blue-300" />
