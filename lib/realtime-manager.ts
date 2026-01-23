@@ -259,25 +259,12 @@ class RealtimeManager {
         // ✅ Owner/Admin: يرى كل شيء (تم التحقق أعلاه)
         // للمستخدمين الآخرين: فلترة حسب warehouse و branch
         // ⚠️ مهم: Supabase Postgres Changes لا يدعم OR logic في الفلتر
-        // ✅ الحل: نزيل فلتر created_by و warehouse_id من buildFilter ونعتمد على shouldProcessEvent للفلترة
-        // ✅ هذا يضمن أن المستخدم يستقبل جميع الأحداث المتعلقة بإهلاكاته (حتى لو كانت في مخزن آخر)
+        // ✅ الحل: نزيل جميع الفلاتر (branch_id, warehouse_id, created_by) من buildFilter
+        // ✅ ونعتمد على shouldProcessEvent للفلترة (يدعم OR logic)
+        // ✅ هذا يضمن أن المستخدم يستقبل جميع الأحداث المتعلقة بإهلاكاته (حتى لو كانت في فرع/مخزن آخر)
         // ✅ أو إهلاكات في نفس الفرع/المخزن
-        let depFilter = filter
-        if (accessFilter.filterByBranch && branchId) {
-          depFilter += `.and(branch_id.eq.${branchId}`
-          if (accessFilter.allowedBranchIds && accessFilter.allowedBranchIds.length > 0) {
-            // إذا كان لديه صلاحية لعدة فروع
-            const branchIds = [branchId, ...accessFilter.allowedBranchIds].join(',')
-            depFilter = filter + `.and.branch_id.in.(${branchIds})`
-          } else {
-            depFilter += `.or.branch_id.is.null)`
-          }
-        }
-        // ✅ لا نضيف فلتر warehouse_id هنا - نعتمد على shouldProcessEvent للفلترة
-        // ✅ هذا يضمن أن المستخدم يستقبل أحداث UPDATE على إهلاكاته الخاصة حتى لو كانت في مخزن آخر
-        // ✅ لا نضيف فلتر created_by هنا - نعتمد على shouldProcessEvent للفلترة
-        // ✅ هذا يضمن أن المستخدم يستقبل أحداث UPDATE على إهلاكاته الخاصة
-        return depFilter
+        // ✅ فقط company_id filter يبقى - الباقي في shouldProcessEvent
+        return filter
 
       case 'inventory_transactions':
         // حركات المخزون: حسب warehouse و branch
