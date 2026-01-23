@@ -1,0 +1,208 @@
+-- =====================================================
+-- 🔄 تفعيل Realtime على الجداول المطلوبة
+-- =====================================================
+-- هذا السكريبت يفعل Realtime (Postgres Changes) على الجداول الأساسية
+-- يجب تشغيله في Supabase SQL Editor
+-- =====================================================
+
+-- ملاحظة: في Supabase، يتم تفعيل Realtime من Dashboard عادة
+-- لكن يمكن أيضاً استخدام هذا السكريبت إذا كان لديك صلاحيات
+
+-- =====================================================
+-- 1️⃣ التحقق من Publication
+-- =====================================================
+
+-- التحقق من وجود supabase_realtime publication
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime'
+  ) THEN
+    -- إنشاء publication إذا لم يكن موجوداً
+    CREATE PUBLICATION supabase_realtime FOR ALL TABLES;
+    RAISE NOTICE '✅ Created supabase_realtime publication';
+  ELSE
+    RAISE NOTICE '✅ supabase_realtime publication already exists';
+  END IF;
+END $$;
+
+-- =====================================================
+-- 2️⃣ إضافة الجداول إلى Publication
+-- =====================================================
+
+-- ملاحظة: في Supabase، عادة ما يتم تفعيل Realtime من Dashboard
+-- لكن يمكن استخدام ALTER PUBLICATION لإضافة الجداول
+
+-- notifications (مفعّل بالفعل عادة)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'notifications') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables 
+      WHERE pubname = 'supabase_realtime' 
+      AND schemaname = 'public' 
+      AND tablename = 'notifications'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+      RAISE NOTICE '✅ Added notifications to realtime';
+    ELSE
+      RAISE NOTICE '✅ notifications already in realtime publication';
+    END IF;
+  ELSE
+    RAISE NOTICE '⚠️ Table notifications does not exist';
+  END IF;
+END $$;
+
+-- inventory_write_offs (للإهلاك)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'inventory_write_offs') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables 
+      WHERE pubname = 'supabase_realtime' 
+      AND schemaname = 'public' 
+      AND tablename = 'inventory_write_offs'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE inventory_write_offs;
+      RAISE NOTICE '✅ Added inventory_write_offs to realtime';
+    ELSE
+      RAISE NOTICE '✅ inventory_write_offs already in realtime publication';
+    END IF;
+  ELSE
+    RAISE NOTICE '⚠️ Table inventory_write_offs does not exist';
+  END IF;
+END $$;
+
+-- inventory_transactions (للمخزون)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'inventory_transactions') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables 
+      WHERE pubname = 'supabase_realtime' 
+      AND schemaname = 'public' 
+      AND tablename = 'inventory_transactions'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE inventory_transactions;
+      RAISE NOTICE '✅ Added inventory_transactions to realtime';
+    ELSE
+      RAISE NOTICE '✅ inventory_transactions already in realtime publication';
+    END IF;
+  ELSE
+    RAISE NOTICE '⚠️ Table inventory_transactions does not exist';
+  END IF;
+END $$;
+
+-- purchase_orders (لأوامر الشراء)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'purchase_orders') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables 
+      WHERE pubname = 'supabase_realtime' 
+      AND schemaname = 'public' 
+      AND tablename = 'purchase_orders'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE purchase_orders;
+      RAISE NOTICE '✅ Added purchase_orders to realtime';
+    ELSE
+      RAISE NOTICE '✅ purchase_orders already in realtime publication';
+    END IF;
+  ELSE
+    RAISE NOTICE '⚠️ Table purchase_orders does not exist';
+  END IF;
+END $$;
+
+-- sales_orders (لأوامر البيع)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'sales_orders') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables 
+      WHERE pubname = 'supabase_realtime' 
+      AND schemaname = 'public' 
+      AND tablename = 'sales_orders'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE sales_orders;
+      RAISE NOTICE '✅ Added sales_orders to realtime';
+    ELSE
+      RAISE NOTICE '✅ sales_orders already in realtime publication';
+    END IF;
+  ELSE
+    RAISE NOTICE '⚠️ Table sales_orders does not exist';
+  END IF;
+END $$;
+
+-- invoices (للفواتير)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'invoices') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables 
+      WHERE pubname = 'supabase_realtime' 
+      AND schemaname = 'public' 
+      AND tablename = 'invoices'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE invoices;
+      RAISE NOTICE '✅ Added invoices to realtime';
+    ELSE
+      RAISE NOTICE '✅ invoices already in realtime publication';
+    END IF;
+  ELSE
+    RAISE NOTICE '⚠️ Table invoices does not exist';
+  END IF;
+END $$;
+
+-- approval_workflows (للموافقات)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'approval_workflows') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables 
+      WHERE pubname = 'supabase_realtime' 
+      AND schemaname = 'public' 
+      AND tablename = 'approval_workflows'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE approval_workflows;
+      RAISE NOTICE '✅ Added approval_workflows to realtime';
+    ELSE
+      RAISE NOTICE '✅ approval_workflows already in realtime publication';
+    END IF;
+  ELSE
+    RAISE NOTICE '⚠️ Table approval_workflows does not exist';
+  END IF;
+END $$;
+
+-- =====================================================
+-- 3️⃣ التحقق من التفعيل
+-- =====================================================
+
+-- عرض الجداول المفعلة في Realtime
+SELECT 
+  schemaname,
+  tablename,
+  '✅ Enabled' as realtime_status
+FROM pg_publication_tables 
+WHERE pubname = 'supabase_realtime' 
+  AND schemaname = 'public'
+  AND tablename IN (
+    'notifications',
+    'inventory_write_offs',
+    'inventory_transactions',
+    'purchase_orders',
+    'sales_orders',
+    'invoices',
+    'approval_workflows'
+  )
+ORDER BY tablename;
+
+-- =====================================================
+-- ✅ انتهى
+-- =====================================================
+
+-- ملاحظة: 
+-- في Supabase Dashboard، يمكنك أيضاً تفعيل Realtime يدوياً:
+-- 1. اذهب إلى Database → Replication
+-- 2. فعّل مفتاح التبديل لكل جدول
+-- 
+-- هذا السكريبت مفيد إذا كنت تريد تفعيل عدة جداول دفعة واحدة

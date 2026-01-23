@@ -258,6 +258,7 @@ class RealtimeManager {
         // الإهلاك: المالك والمدير يروا كل شيء، الباقي حسب warehouse و branch
         // ✅ Owner/Admin: يرى كل شيء (تم التحقق أعلاه)
         // للمستخدمين الآخرين: فلترة حسب warehouse و branch
+        // ✅ مهم: المستخدم يجب أن يرى تحديثات على إهلاكاته الخاصة (حتى لو لم يكن هو من عدلها)
         let depFilter = filter
         if (accessFilter.filterByBranch && branchId) {
           depFilter += `.and(branch_id.eq.${branchId}`
@@ -272,8 +273,12 @@ class RealtimeManager {
         if (accessFilter.filterByWarehouse && warehouseId) {
           depFilter += `.and.warehouse_id.eq.${warehouseId}`
         }
+        // ✅ تصحيح: الجدول يستخدم created_by وليس created_by_user_id
+        // ✅ مهم: نسمح للمستخدم برؤية تحديثات على إهلاكاته الخاصة
         if (accessFilter.filterByCreatedBy && userId) {
-          depFilter += `.and.created_by_user_id.eq.${userId}`
+          // ✅ المستخدم يرى: إهلاكاته الخاصة (created_by = userId)
+          // ✅ هذا يضمن أن المستخدم يرى تحديثات (رفض/اعتماد) على إهلاكاته
+          depFilter += `.and.created_by.eq.${userId}`
         }
         return depFilter
 
@@ -434,7 +439,7 @@ class RealtimeManager {
       return false
     }
 
-    const { companyId, accessInfo, accessFilter } = this.context
+    const { companyId, accessInfo, accessFilter, userId } = this.context
 
     // ✅ طبقة 1: التحقق الإجباري من company_id
     if (record.company_id !== companyId) {
@@ -444,11 +449,24 @@ class RealtimeManager {
 
     // ✅ طبقة 2: استخدام نظام الصلاحيات الموجود
     // تحويل السجل إلى التنسيق المتوقع
+    // ✅ مهم: بعض الجداول تستخدم created_by والبعض created_by_user_id
     const recordForCheck = {
       created_by_user_id: record.created_by_user_id || record.created_by || null,
       branch_id: record.branch_id || null,
       cost_center_id: record.cost_center_id || null,
       warehouse_id: record.warehouse_id || null,
+    }
+    
+    // ✅ استثناء خاص: للمستخدمين العاديين، نسمح برؤية تحديثات على سجلاتهم الخاصة
+    // حتى لو لم يكونوا هم من عدلوها (مثل حالة رفض/اعتماد من المالك)
+    if (accessFilter.filterByCreatedBy && userId && (record.created_by === userId || record.created_by_user_id === userId)) {
+      // المستخدم أنشأ هذا السجل → يرى جميع التحديثات عليه
+      console.log(`✅ [RealtimeManager] User can see update on their own record:`, {
+        recordId: record.id,
+        userId,
+        createdBy: record.created_by || record.created_by_user_id
+      })
+      return true
     }
 
     // ✅ استخدام canAccessRecord للتحقق الشامل

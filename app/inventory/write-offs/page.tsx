@@ -325,11 +325,21 @@ export default function WriteOffsPage() {
       const isAccountantOrManager = ['accountant', 'manager'].includes(userRole)
       const userBranchId = userContext?.branch_id || null
       const userWarehouseId = userContext?.warehouse_id || null
+      const userId = userContext?.user_id || null
 
       if (isCanOverride) {
         // للمالك والمدير: لا فلترة
         return true
-      } else if (isAccountantOrManager && userBranchId) {
+      }
+      
+      // ✅ مهم: المستخدم الذي أنشأ الإهلاك يجب أن يرى جميع التحديثات عليه
+      // حتى لو لم يكن هو من عدلها (مثل حالة رفض/اعتماد من المالك)
+      if (userId && record.created_by === userId) {
+        console.log('✅ [Realtime] User can see update on their own write-off:', record.id)
+        return true
+      }
+      
+      if (isAccountantOrManager && userBranchId) {
         // للمحاسب والمدير: فلترة حسب warehouse_id في الفرع
         if (userWarehouseId && record.warehouse_id === userWarehouseId) {
           return true
