@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getUserNotifications, markNotificationAsRead, type Notification, type NotificationStatus, type NotificationPriority, type NotificationSeverity, type NotificationCategory } from "@/lib/governance-layer"
@@ -629,11 +629,10 @@ export function NotificationCenter({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent 
           className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden"
-          aria-describedby="notification-center-loading-description"
         >
-          <span id="notification-center-loading-description" className="sr-only">
+          <DialogDescription className="sr-only">
             {appLang === 'en' ? 'Loading notification center' : 'جاري تحميل مركز الإشعارات'}
-          </span>
+          </DialogDescription>
           <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
             <DialogTitle className="text-xl font-bold">
               {appLang === 'en' ? 'Notifications' : 'مركز الإشعارات'}
@@ -653,11 +652,10 @@ export function NotificationCenter({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
         className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden"
-        aria-describedby="notification-center-description"
       >
-        <span id="notification-center-description" className="sr-only">
+        <DialogDescription className="sr-only">
           {appLang === 'en' ? 'Notification center with filters and actions' : 'مركز الإشعارات مع الفلاتر والإجراءات'}
-        </span>
+        </DialogDescription>
         {/* 🔹 A. Header Bar */}
         <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
           <div className="flex items-center justify-between mb-4">
