@@ -411,51 +411,10 @@ export async function notifyWriteOffApprovalRequest(params: {
 
   const eventKey = `write_off:${writeOffId}:approval_request`
 
-  // إشعار لـ Owner
-  try {
-    console.log('🔔 [NOTIFY] Creating notification for Owner:', { 
-      companyId, 
-      writeOffId, 
-      writeOffNumber,
-      branchId: branchId || 'null',
-      warehouseId: warehouseId || 'null',
-      costCenterId: costCenterId || 'null'
-    })
-    
-    await createNotification({
-      companyId,
-      referenceType: 'inventory_write_off',
-      referenceId: writeOffId,
-      title,
-      message,
-      createdBy,
-      branchId,
-      warehouseId,
-      costCenterId,
-      assignedToRole: 'owner',
-      priority: 'high' as NotificationPriority,
-      eventKey: `${eventKey}:owner`,
-      severity: 'warning',
-      category: 'inventory'
-    })
-    
-    console.log('✅ [NOTIFY] Owner notification created successfully')
-  } catch (error: any) {
-    console.error('❌ [NOTIFY] CRITICAL: Error creating Owner notification')
-    console.error('❌ [NOTIFY] Error details:', {
-      message: error?.message,
-      code: error?.code,
-      details: error?.details,
-      hint: error?.hint,
-      stack: error?.stack
-    })
-    // ⚠️ إذا فشل إنشاء إشعار Owner، نتابع مع Admin
-    console.warn('⚠️ [NOTIFY] Continuing with Admin notification despite Owner failure...')
-  }
-
   // إشعار لـ Admin
   try {
-    console.log('🔔 [NOTIFY] Creating notification for Admin:', { 
+    // ✅ ERP Standard: ننشئ إشعار admin فقط لأن owner يرى إشعارات admin (تجنب التكرار)
+    console.log('🔔 [NOTIFY] Creating notification for Admin (owner will also see it):', { 
       companyId, 
       writeOffId, 
       writeOffNumber,
@@ -476,7 +435,7 @@ export async function notifyWriteOffApprovalRequest(params: {
       costCenterId,
       assignedToRole: 'admin',
       priority: 'high' as NotificationPriority,
-      eventKey: `${eventKey}:admin`,
+      eventKey,
       severity: 'warning',
       category: 'inventory'
     })
@@ -524,33 +483,9 @@ export async function notifyWriteOffModified(params: {
   const eventKey = `write_off:${writeOffId}:modified`
 
   try {
-    // إشعار لـ Owner
-    console.log('🔔 Creating modification notification for Owner:', { companyId, writeOffId, writeOffNumber })
-    await createNotification({
-      companyId,
-      referenceType: 'inventory_write_off',
-      referenceId: writeOffId,
-      title,
-      message,
-      createdBy: modifiedBy,
-      branchId,
-      warehouseId,
-      costCenterId,
-      assignedToRole: 'owner',
-      priority: 'high' as NotificationPriority,
-      eventKey: `${eventKey}:owner`,
-      severity: 'warning',
-      category: 'inventory'
-    })
-    console.log('✅ Owner modification notification created successfully')
-  } catch (error: any) {
-    console.error('❌ Error creating Owner modification notification:', error)
-    throw error
-  }
-
-  try {
     // إشعار لـ Admin
-    console.log('🔔 Creating modification notification for Admin:', { companyId, writeOffId, writeOffNumber })
+    // ✅ ERP Standard: ننشئ إشعار admin فقط لأن owner يرى إشعارات admin (تجنب التكرار)
+    console.log('🔔 Creating modification notification for Admin (owner will also see it):', { companyId, writeOffId, writeOffNumber })
     await createNotification({
       companyId,
       referenceType: 'inventory_write_off',
@@ -563,7 +498,7 @@ export async function notifyWriteOffModified(params: {
       costCenterId,
       assignedToRole: 'admin',
       priority: 'high' as NotificationPriority,
-      eventKey: `${eventKey}:admin`,
+      eventKey,
       severity: 'warning',
       category: 'inventory'
     })
