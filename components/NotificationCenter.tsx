@@ -104,17 +104,29 @@ export function NotificationCenter({
       const initialCount = filtered.length
       
       // ✅ فلترة حسب branch (في الواجهة)
-      if (branchId) {
+      // Owner و Admin يرون كل الإشعارات بغض النظر عن branch
+      if (branchId && userRole !== 'owner' && userRole !== 'admin') {
         const beforeBranch = filtered.length
-        filtered = filtered.filter(n => !n.branch_id || n.branch_id === branchId)
+        filtered = filtered.filter(n => 
+          !n.branch_id || // إذا كان branch_id NULL → إشعار عام → نعرضه
+          n.branch_id === branchId // أو إذا كان branch_id = branchId الحالي
+        )
         console.log(`🔍 [NOTIFICATION_CENTER] After branch filter: ${beforeBranch} → ${filtered.length}`)
+      } else if (branchId && (userRole === 'owner' || userRole === 'admin')) {
+        console.log(`🔍 [NOTIFICATION_CENTER] Skipping branch filter - user is ${userRole}`)
       }
 
       // ✅ فلترة حسب warehouse (في الواجهة)
-      if (warehouseId) {
+      // Owner و Admin يرون كل الإشعارات بغض النظر عن warehouse
+      if (warehouseId && userRole !== 'owner' && userRole !== 'admin') {
         const beforeWarehouse = filtered.length
-        filtered = filtered.filter(n => !n.warehouse_id || n.warehouse_id === warehouseId)
+        filtered = filtered.filter(n => 
+          !n.warehouse_id || // إذا كان warehouse_id NULL → إشعار عام → نعرضه
+          n.warehouse_id === warehouseId // أو إذا كان warehouse_id = warehouseId الحالي
+        )
         console.log(`🔍 [NOTIFICATION_CENTER] After warehouse filter: ${beforeWarehouse} → ${filtered.length}`)
+      } else if (warehouseId && (userRole === 'owner' || userRole === 'admin')) {
+        console.log(`🔍 [NOTIFICATION_CENTER] Skipping warehouse filter - user is ${userRole}`)
       }
       
       if (filterPriority !== "all") {
@@ -230,7 +242,25 @@ export function NotificationCenter({
         }
       }
 
-      // ✅ 4. التحقق من انتهاء الصلاحية
+      // ✅ 4. التحقق من branch_id (فقط للمستخدمين العاديين، owner/admin يرون كل شيء)
+      if (branchId && userRole !== 'owner' && userRole !== 'admin') {
+        // إذا كان branch_id محدد في الإشعار وليس NULL
+        if (notification.branch_id && notification.branch_id !== branchId) {
+          return false
+        }
+        // إذا كان branch_id NULL → إشعار عام → نعرضه
+      }
+
+      // ✅ 5. التحقق من warehouse_id (فقط للمستخدمين العاديين، owner/admin يرون كل شيء)
+      if (warehouseId && userRole !== 'owner' && userRole !== 'admin') {
+        // إذا كان warehouse_id محدد في الإشعار وليس NULL
+        if (notification.warehouse_id && notification.warehouse_id !== warehouseId) {
+          return false
+        }
+        // إذا كان warehouse_id NULL → إشعار عام → نعرضه
+      }
+
+      // ✅ 6. التحقق من انتهاء الصلاحية
       if (notification.expires_at) {
         const expiresAt = new Date(notification.expires_at)
         if (expiresAt <= new Date()) {
@@ -238,7 +268,7 @@ export function NotificationCenter({
         }
       }
 
-      // ✅ 5. استبعاد المؤرشفة
+      // ✅ 7. استبعاد المؤرشفة
       if (notification.status === 'archived') {
         return false
       }
