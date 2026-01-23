@@ -74,7 +74,7 @@ SELECT
 
 -- ✅ 6. التحقق من الإشعارات المفقودة (موجودة في notifications لكن غير مرجعة من get_user_notifications)
 WITH all_notifications AS (
-  SELECT id, title, assigned_to_role, assigned_to_user, branch_id, warehouse_id, status
+  SELECT id, title, assigned_to_role, assigned_to_user, branch_id, warehouse_id, status, created_at
   FROM notifications
   WHERE company_id = 'f0ffc062-1e6e-4324-8be4-f5052e881a67'
     AND (assigned_to_role IN ('owner', 'admin') OR assigned_to_role IS NULL)
@@ -96,6 +96,7 @@ SELECT
   an.branch_id,
   an.warehouse_id,
   an.status,
+  an.created_at,
   CASE 
     WHEN rn.id IS NULL THEN '❌ Missing'
     ELSE '✅ Found'
