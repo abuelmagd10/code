@@ -436,12 +436,23 @@ class RealtimeManager {
       return false
     }
 
-    const { companyId, accessInfo, accessFilter, userId } = this.context
+    const { companyId, accessInfo, accessFilter, userId, role } = this.context
 
     // ✅ طبقة 1: التحقق الإجباري من company_id
     if (record.company_id !== companyId) {
       console.warn(`🚫 [RealtimeManager] Event rejected: different company (${record.company_id} vs ${companyId})`)
       return false
+    }
+
+    // ✅ طبقة 1.5: Owner/Admin يروا كل شيء في الشركة (بغض النظر عن الفرع أو المنشئ)
+    // ⚠️ مهم: هذا يجب أن يكون قبل أي فحوصات أخرى
+    if (role === 'owner' || role === 'admin' || accessInfo.isUnrestricted) {
+      console.log(`✅ [RealtimeManager] Owner/Admin can see all events in company:`, {
+        recordId: record.id,
+        userRole: role,
+        companyId: record.company_id
+      })
+      return true
     }
 
     // ✅ طبقة 2: استخدام نظام الصلاحيات الموجود
@@ -465,6 +476,19 @@ class RealtimeManager {
         userId,
         createdBy: record.created_by || record.created_by_user_id,
         userRole: accessInfo.role
+      })
+      return true
+    }
+
+    // ✅ استثناء خاص: لمسئول المخزن (store_manager)، نسمح برؤية تحديثات على إهلاكات في مخزنه
+    // حتى لو لم يكن هو منشئها (مثل حالة رفض/اعتماد من المالك)
+    if (accessFilter.filterByWarehouse && accessInfo.warehouseId && record.warehouse_id === accessInfo.warehouseId) {
+      // المستخدم مسئول عن هذا المخزن → يرى جميع التحديثات على إهلاكاته
+      console.log(`✅ [RealtimeManager] Store manager can see update on write-off in their warehouse:`, {
+        recordId: record.id,
+        userId,
+        warehouseId: record.warehouse_id,
+        userWarehouseId: accessInfo.warehouseId
       })
       return true
     }

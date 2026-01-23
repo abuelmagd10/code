@@ -299,8 +299,9 @@ export default function WriteOffsPage() {
   useEffect(() => { loadData() }, [loadData])
 
   // 🔄 Realtime: الاشتراك في تحديثات الإهلاك (ERP Standard)
+  // ✅ استخدام 'depreciation' كاسم منطقي (يتم تحويله تلقائياً إلى 'inventory_write_offs')
   useRealtimeTable<WriteOff>({
-    table: 'inventory_write_offs',
+    table: 'inventory_write_offs', // ✅ أو 'depreciation' - كلاهما يعمل
     enabled: !!companyId && !!userContext,
     filter: (event) => {
       // ✅ فلتر إضافي: التحقق من company_id
