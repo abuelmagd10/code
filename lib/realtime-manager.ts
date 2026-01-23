@@ -606,16 +606,33 @@ class RealtimeManager {
    * تستمع لتغييرات الصلاحيات والأدوار والعضويات
    */
   private async subscribeToGovernance(): Promise<void> {
-    if (!this.context || this.isGovernanceSubscribed) {
+    console.log('🔐 [RealtimeManager] subscribeToGovernance called', {
+      hasContext: !!this.context,
+      isGovernanceSubscribed: this.isGovernanceSubscribed,
+      context: this.context ? {
+        companyId: this.context.companyId,
+        userId: this.context.userId
+      } : null
+    })
+
+    if (!this.context) {
+      console.warn('⚠️ [RealtimeManager] Cannot subscribe to governance: no context')
+      return
+    }
+
+    if (this.isGovernanceSubscribed) {
+      console.log('ℹ️ [RealtimeManager] Already subscribed to governance channel')
       return
     }
 
     try {
       const { companyId, userId } = this.context
       if (!companyId || !userId) {
-        console.warn('⚠️ [RealtimeManager] Cannot subscribe to governance: missing context')
+        console.warn('⚠️ [RealtimeManager] Cannot subscribe to governance: missing context', { companyId, userId })
         return
       }
+
+      console.log('🔐 [RealtimeManager] Starting governance subscription...', { companyId, userId })
 
       // إلغاء الاشتراك السابق إن وجد
       await this.unsubscribeFromGovernance()

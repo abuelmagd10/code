@@ -79,9 +79,11 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
   }, [onPermissionsChanged, onRoleChanged, onBranchOrWarehouseChanged])
 
   useEffect(() => {
+    console.log('🔐 [GovernanceRealtime] Setting up governance realtime hook')
     const manager = getRealtimeManager()
 
     const handler: GovernanceEventHandler = async (event) => {
+      console.log('🔐 [GovernanceRealtime] Event received:', event)
       try {
         const { table, type, affectsCurrentUser, new: newRecord, old: oldRecord } = event
 
