@@ -321,12 +321,21 @@ export function NotificationCenter({
       if (notification.warehouse_id && notification.warehouse_id !== warehouseId) return false
     }
     if (notification.expires_at && new Date(notification.expires_at) <= new Date()) return false
-    if (notification.status === 'archived') return false
+    // ✅ احترام فلتر الحالة: إذا كان المستخدم يريد رؤية المؤرشفة، نعرضها
+    if (notification.status === 'archived' && filterStatus !== 'archived') return false
     return true
-  }, [companyId, userId, branchId, warehouseId, userRole])
+  }, [companyId, userId, branchId, warehouseId, userRole, filterStatus])
 
   const addOrUpdateNotification = useCallback((notification: Notification) => {
     if (!notification || !notification.id) return
+
+    // ✅ احترام فلتر الحالة: إذا كان المؤرشف ولا نريد رؤيته، نتجاهله
+    if (notification.status === 'archived' && filterStatus !== 'archived' && filterStatus !== 'all') {
+      // إزالة الإشعار المؤرشف من القائمة إذا لم يكن المستخدم يريد رؤيته
+      setNotifications(prev => prev.filter(n => n.id !== notification.id))
+      window.dispatchEvent(new Event('notifications_updated'))
+      return
+    }
 
     setNotifications(prev => {
       const map = new Map<string, Notification>()
@@ -343,7 +352,7 @@ export function NotificationCenter({
     })
 
     window.dispatchEvent(new Event('notifications_updated'))
-  }, [])
+  }, [filterStatus])
 
   useRealtimeTable<Notification>({
     table: 'notifications',
@@ -402,7 +411,20 @@ export function NotificationCenter({
         supabase.from('notifications').update({ status: 'archived' }).eq('id', id)
       ))
 
-      setNotifications(prev => prev.filter(n => !readIds.includes(n.id)))
+      // ✅ إذا كان المستخدم يريد رؤية المؤرشفة، نحدث status بدلاً من الإزالة
+      if (filterStatus === 'archived') {
+        setNotifications(prev => 
+          prev.map(n => 
+            readIds.includes(n.id)
+              ? { ...n, status: "archived" as NotificationStatus }
+              : n
+          )
+        )
+      } else {
+        // ✅ إذا لم يكن يريد رؤية المؤرشفة، نزيلها من القائمة
+        setNotifications(prev => prev.filter(n => !readIds.includes(n.id)))
+      }
+      
       window.dispatchEvent(new Event('notifications_updated'))
       toast({
         title: appLang === 'en' ? 'Success' : 'نجح',
@@ -410,6 +432,11 @@ export function NotificationCenter({
       })
     } catch (error) {
       console.error("Error archiving all read:", error)
+      toast({
+        title: appLang === 'en' ? 'Error' : 'خطأ',
+        description: appLang === 'en' ? 'Failed to archive notifications' : 'فشل في أرشفة الإشعارات',
+        variant: "destructive"
+      })
     }
   }
 
