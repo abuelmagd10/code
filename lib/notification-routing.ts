@@ -54,6 +54,12 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string) => string> = {
   // الموافقات
   'approval_request': (id) => `/approvals?highlight=${id}`,
   'refund_request': (id) => `/payments?highlight=refund-${id}`,
+  
+  // الحوكمة والإعدادات
+  'user_branch_change': (id) => `/settings/users?highlight=${id}`,
+  'user_warehouse_change': (id) => `/settings/users?highlight=${id}`,
+  'user_role_change': (id) => `/settings/users?highlight=${id}`,
+  'permission_change': (id) => `/settings/users?highlight=${id}`,
 }
 
 /**

@@ -600,7 +600,13 @@ export function NotificationCenter({
   if (!mounted) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+        <DialogContent 
+          className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden"
+          aria-describedby="notification-center-loading-description"
+        >
+          <span id="notification-center-loading-description" className="sr-only">
+            {appLang === 'en' ? 'Loading notification center' : 'جاري تحميل مركز الإشعارات'}
+          </span>
           <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
             <DialogTitle className="text-xl font-bold">
               {appLang === 'en' ? 'Notifications' : 'مركز الإشعارات'}
