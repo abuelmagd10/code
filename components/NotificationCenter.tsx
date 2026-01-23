@@ -318,13 +318,20 @@ export function NotificationCenter({
 
     // ✅ دالة مساعدة لإضافة/تحديث الإشعار مباشرة في الـ state
     const addOrUpdateNotification = (notification: any) => {
+      if (!notification || !notification.id) {
+        console.warn('⚠️ [REALTIME] Invalid notification received:', notification)
+        return
+      }
+
       setNotifications(prev => {
-        // ✅ استخدام Map لمنع التكرار
+        // ✅ استخدام Map لمنع التكرار (استخدام id كـ key)
         const notificationsMap = new Map<string, Notification>()
         
         // إضافة الإشعارات الموجودة
         prev.forEach(n => {
-          notificationsMap.set(n.id, n)
+          if (n && n.id) {
+            notificationsMap.set(n.id, n)
+          }
         })
         
         // إضافة/تحديث الإشعار الجديد
@@ -341,6 +348,24 @@ export function NotificationCenter({
         
         // تحويل Map إلى Array وترتيب
         const updated = Array.from(notificationsMap.values())
+        
+        // ✅ فحص إضافي للتأكد من عدم وجود تكرارات
+        const ids = updated.map(n => n.id)
+        const uniqueIds = new Set(ids)
+        if (ids.length !== uniqueIds.size) {
+          console.error(`❌ [REALTIME] CRITICAL: Duplicate IDs detected! ${ids.length} total, ${uniqueIds.size} unique`)
+          // إزالة التكرارات الإضافية (الاحتفاظ بالأحدث)
+          const deduplicated = new Map<string, Notification>()
+          updated.forEach(n => {
+            if (!deduplicated.has(n.id) || new Date(n.created_at) > new Date(deduplicated.get(n.id)!.created_at)) {
+              deduplicated.set(n.id, n)
+            }
+          })
+          const final = Array.from(deduplicated.values())
+          console.log(`🔧 [REALTIME] Removed duplicates. Final count: ${final.length}`)
+          updated.splice(0, updated.length, ...final)
+        }
+        
         updated.sort((a, b) => {
           const priorityOrder = { urgent: 1, high: 2, normal: 3, low: 4 }
           const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority]
@@ -348,7 +373,7 @@ export function NotificationCenter({
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         })
         
-        console.log(`✅ [REALTIME] Total notifications in state: ${updated.length} (no duplicates)`)
+        console.log(`✅ [REALTIME] Total notifications in state: ${updated.length} (verified no duplicates)`)
         return updated
       })
 
