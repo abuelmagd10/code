@@ -5,7 +5,20 @@
 -- الحل: تعديل منطق get_user_notifications ليرى Owner/Admin جميع الإشعارات
 -- =====================================================
 
--- ✅ تحديث دالة get_user_notifications
+-- ✅ حذف الدالة القديمة أولاً (إذا كانت موجودة)
+DROP FUNCTION IF EXISTS get_user_notifications(
+  UUID, UUID, UUID, UUID, VARCHAR, TEXT, TEXT
+);
+
+DROP FUNCTION IF EXISTS get_user_notifications(
+  UUID, UUID, UUID, UUID, VARCHAR
+);
+
+DROP FUNCTION IF EXISTS get_user_notifications(
+  UUID, UUID
+);
+
+-- ✅ إنشاء/تحديث دالة get_user_notifications
 CREATE OR REPLACE FUNCTION get_user_notifications(
   p_user_id UUID,
   p_company_id UUID,
