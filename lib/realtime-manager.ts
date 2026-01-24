@@ -194,12 +194,7 @@ class RealtimeManager {
       await this.subscribeToGovernance()
 
       this.isInitialized = true
-    } catch (error: any) {
-      // ✅ معالجة AbortError بشكل صحيح - لا نرمي الخطأ إذا كان AbortError
-      if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-        console.warn('⚠️ [RealtimeManager] Initialization aborted (component unmounted or request cancelled)')
-        return // لا نرمي الخطأ، فقط نتوقف
-      }
+    } catch (error) {
       console.error('❌ [RealtimeManager] Initialization error:', error)
       throw error
     }
@@ -715,13 +710,13 @@ class RealtimeManager {
     }
 
     try {
-      const { companyId, userId } = this.context
+      const { companyId, userId, role } = this.context
       if (!companyId || !userId) {
         console.warn('⚠️ [RealtimeManager] Cannot subscribe to governance: missing context', { companyId, userId })
         return
       }
 
-      console.log('🔐 [RealtimeManager] Starting governance subscription...', { companyId, userId })
+      console.log('🔐 [RealtimeManager] Starting governance subscription...', { companyId, userId, role })
 
       // إلغاء الاشتراك السابق إن وجد
       await this.unsubscribeFromGovernance()
@@ -730,6 +725,12 @@ class RealtimeManager {
       const channel = this.supabase.channel(channelName)
 
       // 🔐 الاشتراك في company_members (تغييرات العضوية والدور)
+      // ✅ فلترة حسب company_id و user_id - المستخدم يستقبل فقط التغييرات الخاصة به
+      // ✅ Owner/Admin يستقبلون جميع التغييرات في الشركة (يتم التعامل معه في handleGovernanceEvent)
+      const companyMembersFilter = role === 'owner' || role === 'admin'
+        ? `company_id=eq.${companyId}` // Owner/Admin: جميع التغييرات في الشركة
+        : `company_id=eq.${companyId}.and.user_id=eq.${userId}` // المستخدمون الآخرون: فقط تغييراتهم
+      
       channel
         .on(
           'postgres_changes',
@@ -737,7 +738,7 @@ class RealtimeManager {
             event: '*',
             schema: 'public',
             table: 'company_members',
-            filter: `company_id=eq.${companyId}`,
+            filter: companyMembersFilter,
           },
           (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('company_members', payload)
         )

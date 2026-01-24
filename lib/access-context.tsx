@@ -344,7 +344,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
 
   // 🔐 إعادة تهيئة كاملة للسياق الأمني (عند تغيير الفرع)
   // ✅ تحديث البيانات فقط - لا unmount للـ contexts
-  const refreshUserSecurityContext = useCallback(async () => {
+  const refreshUserSecurityContext = useCallback(async (branchChanged: boolean = false) => {
     // منع التكرار
     if (isRefreshingRef.current) {
       console.log('🔄 [AccessContext] Already refreshing security context, skipping...')
@@ -353,14 +353,32 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
 
     try {
       isRefreshingRef.current = true
-      console.log('🔄 [AccessContext] Refreshing user security context (data only, no redirect)...')
+      console.log('🔄 [AccessContext] Refreshing user security context (data only, no redirect)...', { branchChanged })
 
       // 🔹 1. إعادة تحميل بيانات المستخدم كاملة من السيرفر
       // ✅ هذا يحدث profile فقط - لا unmount للـ context
+      const oldBranchId = profile?.branch_id || null
       const freshProfile = await loadAccessProfile()
       if (!freshProfile) {
         console.warn('⚠️ [AccessContext] Failed to load fresh profile')
         return
+      }
+
+      // 🔹 1.5. التحقق من تغيير الفرع وتحديثه تلقائياً
+      const newBranchId = freshProfile.branch_id || null
+      if (branchChanged && oldBranchId !== newBranchId && newBranchId) {
+        console.log(`🔄 [AccessContext] Branch changed from ${oldBranchId} to ${newBranchId}, updating context...`)
+        
+        // ✅ إطلاق event لتحديث الفرع في جميع أنحاء التطبيق
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('user_context_changed', {
+            detail: {
+              oldBranchId,
+              newBranchId,
+              reason: 'branch_changed_via_realtime'
+            }
+          }))
+        }
       }
 
       // 🔹 2. تحديث Realtime Manager بسياق الفرع الجديد
@@ -414,7 +432,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     } finally {
       isRefreshingRef.current = false
     }
-  }, [supabase, pathname, loadAccessProfile, toast])
+  }, [supabase, pathname, loadAccessProfile, toast, profile])
 
   // 🔐 توجيه تلقائي لأول صفحة مسموحة
   const redirectToFirstAllowedPage = useCallback(() => {
