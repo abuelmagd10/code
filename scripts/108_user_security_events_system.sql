@@ -371,6 +371,9 @@ BEGIN
 END;
 $$;
 
+-- ✅ حذف الـ Trigger القديم إن وجد (للتطبيق الآمن)
+DROP TRIGGER IF EXISTS trigger_company_role_permissions_changed ON company_role_permissions;
+
 CREATE TRIGGER trigger_company_role_permissions_changed
   AFTER INSERT OR UPDATE OR DELETE ON company_role_permissions
   FOR EACH ROW
