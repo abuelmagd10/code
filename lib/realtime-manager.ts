@@ -1040,6 +1040,12 @@ class RealtimeManager {
           table,
           eventType: payload.eventType,
           affectsCurrentUser,
+          roleChanged: table === 'company_members' && oldRecord?.role !== newRecord?.role,
+          branchChanged: table === 'company_members' && oldRecord?.branch_id !== newRecord?.branch_id,
+          oldRole: oldRecord?.role,
+          newRole: newRecord?.role,
+          oldBranchId: oldRecord?.branch_id,
+          newBranchId: newRecord?.branch_id,
         })
         
         // ✅ إعادة بناء السياق والاشتراكات
@@ -1048,6 +1054,14 @@ class RealtimeManager {
         // ✅ إطلاق event لتحديث AccessContext (سيتم استدعاء refreshUserSecurityContext من useGovernanceRealtime)
         // ✅ لا نستدعي refreshUserSecurityContext مباشرة - نعتمد على useGovernanceRealtime handlers
         console.log(`✅ [RealtimeManager] Context rebuilt, handlers will be called by useGovernanceRealtime`)
+      } else {
+        console.log(`ℹ️ [RealtimeManager] Governance event does not affect current user, skipping context rebuild`, {
+          table,
+          eventType: payload.eventType,
+          affectsCurrentUser,
+          recordUserId: record.user_id,
+          currentUserId: userId,
+        })
       }
     } catch (error) {
       console.error(`❌ [RealtimeManager] Error handling governance event for ${table}:`, error)

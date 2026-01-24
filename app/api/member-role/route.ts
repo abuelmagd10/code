@@ -35,9 +35,62 @@ export async function POST(req: NextRequest) {
     }
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
 
-    const { error: updateError } = await admin.from("company_members").update({ role }).eq("company_id", companyId).eq("user_id", userId)
+    // ✅ جلب الدور القديم قبل التحديث (للتأكد من التغيير)
+    const { data: oldMember } = await admin
+      .from("company_members")
+      .select("role")
+      .eq("company_id", companyId)
+      .eq("user_id", userId)
+      .maybeSingle()
+
+    const actualOldRole = oldMember?.role || ""
+
+    console.log('🔄 [member-role API] Updating user role:', {
+      userId,
+      companyId,
+      oldRole: actualOldRole,
+      newRole: role,
+      changedBy: user.id,
+    })
+
+    // ✅ تحديث الدور في company_members (هذا سيطلق Trigger تلقائياً)
+    const { error: updateError, data: updateData } = await admin
+      .from("company_members")
+      .update({ role })
+      .eq("company_id", companyId)
+      .eq("user_id", userId)
+      .select()
+
     if (updateError) {
+      console.error('❌ [member-role API] Update error:', updateError)
       return apiError(HTTP_STATUS.BAD_REQUEST, "خطأ في تحديث الدور", updateError.message)
+    }
+
+    console.log('✅ [member-role API] Role updated successfully:', {
+      userId,
+      oldRole: actualOldRole,
+      newRole: role,
+      updatedRows: updateData?.length || 0,
+    })
+
+    // ✅ التحقق من أن Trigger أطلق user_security_event
+    // ✅ ننتظر قليلاً ثم نتحقق من وجود الحدث
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    const { data: securityEvent } = await admin
+      .from("user_security_events")
+      .select("id, event_type, created_at")
+      .eq("user_id", userId)
+      .eq("company_id", companyId)
+      .eq("event_type", "role_changed")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (securityEvent) {
+      console.log('✅ [member-role API] user_security_event created by trigger:', securityEvent)
+    } else {
+      console.warn('⚠️ [member-role API] user_security_event not found - trigger may not have fired')
     }
 
     // تسجيل تغيير الصلاحيات في سجل المراجعة
