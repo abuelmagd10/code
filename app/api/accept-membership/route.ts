@@ -28,13 +28,17 @@ export async function POST(req: NextRequest) {
         .eq('user_id', userId)
         .limit(1)
       if (!exists || exists.length === 0) {
-        const { error: insErr } = await admin
+        const { data: newMember, error: insErr } = await admin
           .from('company_members')
           .insert({ company_id: companyId, user_id: userId, role: (inv as any).role, email })
+          .select('id')
+          .single()
         if (insErr) continue
+        await admin.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
+        try { await admin.from('audit_logs').insert({ action: 'INSERT', target_table: 'company_members', company_id: companyId, user_id: userId, record_id: newMember?.id, new_data: { email, role: (inv as any).role } }) } catch {}
+      } else {
+        await admin.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
       }
-      await admin.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
-      try { await admin.from('audit_logs').insert({ action: 'INSERT', target_table: 'company_members', company_id: companyId, user_id: userId, record_id: (inv as any).id, new_data: { email, role: (inv as any).role } }) } catch {}
       chosenCompanyId = chosenCompanyId || companyId
     }
     try {

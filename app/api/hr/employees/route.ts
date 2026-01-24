@@ -79,16 +79,16 @@ export async function POST(req: NextRequest) {
     }
     const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
-    let ins = await client.from("employees").insert(payload)
+    let ins = await client.from("employees").insert(payload).select('id').single()
     if (useHr && ins.error && ((ins.error as any).code === "PGRST205" || String(ins.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
-      ins = await clientHr.from("employees").insert({ company_id: companyId, ...employee })
+      ins = await clientHr.from("employees").insert({ company_id: companyId, ...employee }).select('id').single()
     }
     const { error: insertError } = ins
     if (insertError) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إضافة الموظف", insertError.message)
     }
-    try { await admin.from('audit_logs').insert({ action: 'INSERT', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: ins.data?.[0]?.id, new_data: { full_name: employee.full_name } }) } catch {}
+    try { await admin.from('audit_logs').insert({ action: 'INSERT', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: ins.data?.id, new_data: { full_name: employee.full_name } }) } catch {}
     return apiSuccess({ ok: true }, HTTP_STATUS.CREATED)
   } catch (e: any) {
     return internalError("حدث خطأ أثناء إضافة الموظف", e?.message)
