@@ -35,12 +35,23 @@ export async function POST(req: NextRequest) {
     }
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
 
+    // ✅ جلب الدور القديم من قاعدة البيانات قبل التحديث (لضمان دقة audit trail)
+    const { data: oldMember } = await admin
+      .from("company_members")
+      .select("role")
+      .eq("company_id", companyId)
+      .eq("user_id", userId)
+      .maybeSingle()
+
+    const actualOldRole = oldMember?.role || ""
+
     const { error: updateError } = await admin.from("company_members").update({ role }).eq("company_id", companyId).eq("user_id", userId)
     if (updateError) {
       return apiError(HTTP_STATUS.BAD_REQUEST, "خطأ في تحديث الدور", updateError.message)
     }
 
     // تسجيل تغيير الصلاحيات في سجل المراجعة
+    // ✅ استخدام actualOldRole من قاعدة البيانات (ليس من request body) لضمان دقة audit trail
     try {
       await admin.from('audit_logs').insert({
         action: 'PERMISSIONS',
@@ -50,7 +61,7 @@ export async function POST(req: NextRequest) {
         target_table: 'company_members',
         record_id: userId,
         record_identifier: targetUserEmail || targetUserName,
-        old_data: { role: oldRole },
+        old_data: { role: actualOldRole }, // ✅ استخدام actualOldRole من DB (ليس oldRole من request)
         new_data: { role },
         changed_fields: ['role'],
         ip_address: req.headers.get("x-forwarded-for")?.split(",")[0] || null,
