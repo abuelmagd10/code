@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إنشاء سطور القيد", linesErr.message)
     }
 
-    try { await admin.from('audit_logs').insert({ action: 'payroll_paid', company_id: companyId, user_id: user.id, details: { year, month, total, entry_id: entry?.id } }) } catch {}
+    try { await admin.from('audit_logs').insert({ action: 'payroll_paid', target_table: 'journal_entries', company_id: companyId, user_id: user.id, record_id: entry?.id, new_data: { year, month, total, entry_id: entry?.id } }) } catch {}
     return apiSuccess({ ok: true, total, entry_id: entry?.id })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء صرف المرتبات", e?.message)
