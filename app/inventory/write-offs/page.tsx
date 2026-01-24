@@ -352,8 +352,8 @@ export default function WriteOffsPage() {
           return {
             ...wo,
             // تحويل empty strings إلى null للحفاظ على السلوك المتوقع
-            branch_name: wo.branch_id ? (branchesMap.get(wo.branch_id)?.trim() || null) : null,
-            warehouse_name: wo.warehouse_id ? (warehousesMap.get(wo.warehouse_id)?.trim() || null) : null,
+            branch_name: wo.branch_id ? ((branchesMap.get(wo.branch_id) as string | undefined)?.trim() || null) : null,
+            warehouse_name: wo.warehouse_id ? ((warehousesMap.get(wo.warehouse_id) as string | undefined)?.trim() || null) : null,
             created_by_name: usersMap.get(wo.created_by) || 'Unknown',
             total_quantity: totalQty,
             items_count: itemsCount,
@@ -448,10 +448,10 @@ export default function WriteOffsPage() {
     // تحويل empty strings إلى undefined للحفاظ على السلوك المتوقع
     // لأن branchesMap و warehousesMap يخزنان empty strings عند عدم وجود اسم (b.name || '')
     const branchName: string | undefined = writeOff.branch_id 
-      ? (branchesMap.get(writeOff.branch_id)?.trim() || undefined)
+      ? ((branchesMap.get(writeOff.branch_id) as string | undefined)?.trim() || undefined)
       : undefined
     const warehouseName: string | undefined = writeOff.warehouse_id 
-      ? (warehousesMap.get(writeOff.warehouse_id)?.trim() || undefined)
+      ? ((warehousesMap.get(writeOff.warehouse_id) as string | undefined)?.trim() || undefined)
       : undefined
     const createdByName: string = (usersMap.get(writeOff.created_by) || 'Unknown')
     
