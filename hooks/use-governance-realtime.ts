@@ -117,14 +117,15 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
           // ✅ لذلك نتحقق من وجود role في payload.new أولاً
           // ✅ استخدام 'in' operator للتحقق من وجود الحقل حتى لو كانت القيمة falsy (null, "", 0, false)
           // ✅ هذا يضمن اكتشاف التغييرات حتى عند تعيين القيم إلى null أو empty string
+          // ✅ لكن نتحقق فقط من المقارنة الفعلية - لا نعتبر غياب الحقل في oldRecord تغييراً (false positive)
           const roleChanged = type === 'UPDATE' && ('role' in (newRecord || {}))
-            ? (oldRecord?.role !== newRecord?.role || !('role' in (oldRecord || {}))) // ✅ إذا لم يكن role في oldRecord، نعتبره تغيير
+            ? (oldRecord?.role !== newRecord?.role) // ✅ فقط مقارنة القيم - إذا لم يكن role في oldRecord، Supabase لم يحدّثه
             : (oldRecord?.role !== newRecord?.role)
           const branchChanged = type === 'UPDATE' && ('branch_id' in (newRecord || {}))
-            ? (oldRecord?.branch_id !== newRecord?.branch_id || !('branch_id' in (oldRecord || {})))
+            ? (oldRecord?.branch_id !== newRecord?.branch_id) // ✅ فقط مقارنة القيم
             : (oldRecord?.branch_id !== newRecord?.branch_id)
           const warehouseChanged = type === 'UPDATE' && ('warehouse_id' in (newRecord || {}))
-            ? (oldRecord?.warehouse_id !== newRecord?.warehouse_id || !('warehouse_id' in (oldRecord || {})))
+            ? (oldRecord?.warehouse_id !== newRecord?.warehouse_id) // ✅ فقط مقارنة القيم
             : (oldRecord?.warehouse_id !== newRecord?.warehouse_id)
           
           console.log(`🔍 [GovernanceRealtime] company_members change detection:`, {
