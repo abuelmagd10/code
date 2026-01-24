@@ -769,12 +769,12 @@ class RealtimeManager {
         )
 
       // 🔐 الاشتراك في user_branch_access (تغييرات الفروع المسموحة للمستخدم)
-      // ✅ فلترة حسب company_id و user_id - المستخدم يستقبل فقط التغييرات الخاصة به
-      // ✅ Owner/Admin يستقبلون جميع التغييرات في الشركة (يتم التعامل معه في handleGovernanceEvent)
+      // ✅ فلترة حسب company_id فقط - الفلترة التفصيلية تتم في handleGovernanceEvent
+      // ⚠️ ملاحظة مهمة: Supabase Realtime قد لا يرسل user_id في payload.old في UPDATE events
+      // ✅ لذلك نستخدم filter بسيط (company_id فقط) ونعتمد على affectsCurrentUser في handleGovernanceEvent
+      // ✅ هذا يضمن أن جميع المستخدمين يستقبلون الأحداث، لكن handleGovernanceEvent يفلترها حسب user_id
       // ✅ هذا ضروري لـ BLIND REFRESH mechanism عند تغيير allowed_branches
-      const userBranchAccessFilter = role === 'owner' || role === 'admin'
-        ? `company_id=eq.${companyId}` // Owner/Admin: جميع التغييرات في الشركة
-        : `company_id=eq.${companyId}.and.user_id=eq.${userId}` // المستخدمون الآخرون: فقط تغييراتهم
+      const userBranchAccessFilter = `company_id=eq.${companyId}` // جميع التغييرات في الشركة - الفلترة في handleGovernanceEvent
       
       console.log('🔐 [RealtimeManager] Subscribing to user_branch_access', {
         companyId,
