@@ -1014,12 +1014,20 @@ class RealtimeManager {
       })
 
       // 🔐 إذا كان الحدث يؤثر على المستخدم الحالي، إعادة بناء السياق والاشتراكات
+      // ✅ ERP Grade Requirement: إعادة بناء السياق فوراً عند أي تغيير
       if (affectsCurrentUser) {
-        console.log(`🔄 [RealtimeManager] Governance event affects current user, rebuilding context...`, {
+        console.log(`🔄 [RealtimeManager] Governance event affects current user, rebuilding context (ERP Grade)...`, {
           table,
           eventType: payload.eventType,
+          affectsCurrentUser,
         })
+        
+        // ✅ إعادة بناء السياق والاشتراكات
         await this.rebuildContextAndSubscriptions()
+        
+        // ✅ إطلاق event لتحديث AccessContext (سيتم استدعاء refreshUserSecurityContext من useGovernanceRealtime)
+        // ✅ لا نستدعي refreshUserSecurityContext مباشرة - نعتمد على useGovernanceRealtime handlers
+        console.log(`✅ [RealtimeManager] Context rebuilt, handlers will be called by useGovernanceRealtime`)
       }
     } catch (error) {
       console.error(`❌ [RealtimeManager] Error handling governance event for ${table}:`, error)

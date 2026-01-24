@@ -135,28 +135,30 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
       })
 
       if (access) {
-        // ✅ الصفحة الحالية لا تزال مسموحة - لا نعيد التوجيه
+        // ✅ الصفحة الحالية لا تزال مسموحة - لا نعيد التوجيه (ERP Grade Requirement)
         setHasAccess(true)
-        console.log(`✅ [RealtimeRouteGuard] Current page ${currentPathname} is still allowed - staying on page`)
+        console.log(`✅ [RealtimeRouteGuard] Current page ${currentPathname} is still allowed - staying on page (ERP Grade)`)
       } else {
-        // ❌ الصفحة الحالية لم تعد مسموحة - إعادة توجيه ديناميكية
+        // ❌ الصفحة الحالية لم تعد مسموحة - إعادة توجيه ديناميكية (ERP Grade Requirement)
         setHasAccess(false)
         
-        // ✅ حساب أول صفحة مسموحة ديناميكياً (ليست dashboard ثابتة)
+        // ✅ حساب أول صفحة مسموحة ديناميكياً (ERP Grade Requirement - لا redirect ثابت إلى /dashboard)
+        // ✅ استخدام getFirstAllowedPage() ديناميكياً - لا hardcoded paths
         const redirectTo = getFirstAllowedPage()
         
-        console.log('🔄 [RealtimeRouteGuard] Current page no longer allowed, calculating redirect...', {
+        console.log('🔄 [RealtimeRouteGuard] Current page no longer allowed, calculating redirect (ERP Grade)...', {
           currentPath: currentPathname,
           redirectTo,
           allowedPages: currentProfile.allowed_pages,
+          role: currentProfile.role,
         })
 
         // ✅ التحقق من أن الصفحة الهدف صالحة
         if (redirectTo && redirectTo !== "/no-access") {
-          console.log(`🔄 [RealtimeRouteGuard] Redirecting from ${currentPathname} to ${redirectTo} (first allowed page)`)
+          console.log(`🔄 [RealtimeRouteGuard] Redirecting from ${currentPathname} to ${redirectTo} (first allowed page - ERP Grade)`)
           router.replace(redirectTo)
         } else {
-          console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user - redirecting to /no-access`)
+          console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user - redirecting to /no-access (ERP Grade)`)
           setHasAccess(false)
           router.replace('/no-access')
         }
@@ -198,7 +200,8 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
     showNotifications: true,
   })
 
-  // 🔐 الاستماع لتحديثات profile لإعادة تقييم الصفحة تلقائياً
+  // 🔐 الاستماع لتحديثات profile لإعادة تقييم الصفحة تلقائياً (ERP Grade - لحظي 100%)
+  // ✅ هذا useEffect هو النقطة الحرجة - يعيد تقييم الصفحة فوراً عند أي تغيير في profile
   useEffect(() => {
     // ✅ فقط إذا كان AccessContext جاهزاً و profile موجود
     if (!isReady || !profile) {
@@ -225,14 +228,16 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
     // ✅ لا نحدث lastProfileVersionRef هنا - سيتم تحديثه بعد اكتمال المعالجة في reevaluateCurrentRoute
     pendingProfileVersionRef.current = currentProfileVersion
 
-    // ✅ Profile تغير - إعادة تقييم الصفحة الحالية
-    console.log('🔄 [RealtimeRouteGuard] Profile updated, triggering route reevaluation...', {
+    // ✅ Profile تغير - إعادة تقييم الصفحة الحالية فوراً (ERP Grade Requirement)
+    console.log('🔄 [RealtimeRouteGuard] Profile updated, triggering route reevaluation (ERP Grade)...', {
       role: profile.role,
       branchId: profile.branch_id,
       allowedPagesCount: profile.allowed_pages.length,
+      allowedBranchesCount: profile.allowed_branches.length,
+      currentPath: pathnameRef.current,
     })
 
-    // ✅ تأخير بسيط لضمان اكتمال جميع التحديثات
+    // ✅ تأخير بسيط لضمان اكتمال refreshUserSecurityContext (200ms كافٍ)
     const timeoutId = setTimeout(() => {
       // ✅ التحقق مرة أخرى من أن reevaluateCurrentRoute لا يعمل حالياً
       if (!isReevaluatingRef.current) {
@@ -240,12 +245,37 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
       } else {
         console.log('🔄 [RealtimeRouteGuard] Skipping reevaluation - already in progress')
       }
-    }, 150) // 150ms لضمان اكتمال refreshUserSecurityContext
+    }, 200) // 200ms لضمان اكتمال refreshUserSecurityContext
 
     return () => {
       clearTimeout(timeoutId)
     }
   }, [profile, isReady, reevaluateCurrentRoute])
+  
+  // 🔐 الاستماع لـ access_profile_updated event (ERP Grade - لحظي 100%)
+  // ✅ هذا يضمن إعادة التقييم حتى لو لم يتغير profile object reference
+  useEffect(() => {
+    const handleAccessProfileUpdated = (event: CustomEvent) => {
+      console.log('🔄 [RealtimeRouteGuard] access_profile_updated event received, triggering reevaluation...', {
+        detail: event.detail,
+      })
+      
+      // ✅ إعادة تقييم الصفحة الحالية فوراً
+      if (!isReevaluatingRef.current) {
+        // ✅ تأخير بسيط لضمان اكتمال جميع التحديثات
+        setTimeout(() => {
+          reevaluateCurrentRoute()
+        }, 100)
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('access_profile_updated', handleAccessProfileUpdated as EventListener)
+      return () => {
+        window.removeEventListener('access_profile_updated', handleAccessProfileUpdated as EventListener)
+      }
+    }
+  }, [reevaluateCurrentRoute])
 
   // 🔐 فحص الصلاحية عند تحميل الصفحة أو تغيير المسار (الفحص الأولي فقط)
   // ✅ هذا useEffect للفحص الأولي فقط - لا يتعارض مع reevaluateCurrentRoute
@@ -286,18 +316,19 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
     setIsChecking(false)
 
     if (!access) {
-      // ❌ الصفحة الحالية غير مسموحة - إعادة توجيه ديناميكية
+      // ❌ الصفحة الحالية غير مسموحة - إعادة توجيه ديناميكية (ERP Grade Requirement)
+      // ✅ استخدام getFirstAllowedPage() ديناميكياً - لا hardcoded paths
       const redirectTo = getFirstAllowedPage()
-      console.log(`🚫 [RealtimeRouteGuard] Initial check: Access denied to ${pathname}, redirecting to: ${redirectTo}`)
+      console.log(`🚫 [RealtimeRouteGuard] Initial check: Access denied to ${pathname}, redirecting to: ${redirectTo} (ERP Grade)`)
       
       if (redirectTo && redirectTo !== "/no-access") {
         router.replace(redirectTo)
       } else {
-        console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user - redirecting to /no-access`)
+        console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user - redirecting to /no-access (ERP Grade)`)
         router.replace('/no-access')
       }
     } else {
-      console.log(`✅ [RealtimeRouteGuard] Initial check: Access granted to ${pathname}`)
+      console.log(`✅ [RealtimeRouteGuard] Initial check: Access granted to ${pathname} (ERP Grade)`)
     }
   }, [isReady, pathname, canAccessPage, getFirstAllowedPage, router, profile])
 

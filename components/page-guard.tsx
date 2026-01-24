@@ -54,13 +54,14 @@ export function PageGuard({
 
   const [accessState, setAccessState] = useState<"loading" | "allowed" | "denied">(initialAccessCheck.current)
 
-  // إذا كان الوصول مرفوضاً فوراً من الكاش، قم بالتوجيه مباشرة
+  // إذا كان الوصول مرفوضاً فوراً من الكاش، قم بالتوجيه مباشرة (ERP Grade - ديناميكي)
   useEffect(() => {
     if (initialAccessCheck.current === "denied" && !showAccessDenied) {
-      const redirectTo = fallbackPath || "/dashboard"
+      // ✅ استخدام getFirstAllowedPage ديناميكياً - لا hardcoded /dashboard
+      const redirectTo = fallbackPath || (accessReady ? getFirstAllowedPage() : "/no-access")
       router.replace(redirectTo)
     }
-  }, [])
+  }, [fallbackPath, accessReady, getFirstAllowedPage, showAccessDenied, router])
 
   // Flag لمنع إعادة التوجيه أثناء تحديث الصلاحيات
   const isRefreshingRef = useRef(false)

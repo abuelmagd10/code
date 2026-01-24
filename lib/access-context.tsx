@@ -376,8 +376,9 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     }
   }, [supabase])
 
-  // 🔐 إعادة تهيئة كاملة للسياق الأمني (عند تغيير الفرع)
+  // 🔐 إعادة تهيئة كاملة للسياق الأمني (ERP Grade - لحظي 100%)
   // ✅ تحديث البيانات فقط - لا unmount للـ contexts
+  // ✅ يضمن جلب البيانات من السيرفر مباشرة وبناء Access Profile جديد بالكامل
   const refreshUserSecurityContext = useCallback(async (branchChanged: boolean = false) => {
     // منع التكرار
     if (isRefreshingRef.current) {
@@ -387,23 +388,48 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
 
     try {
       isRefreshingRef.current = true
-      console.log('🔄 [AccessContext] Refreshing user security context (data only, no redirect)...', { branchChanged })
+      console.log('🔄 [AccessContext] Refreshing user security context (ERP Grade - realtime)...', { branchChanged })
 
-      // 🔹 1. إعادة تحميل بيانات المستخدم كاملة من السيرفر
-      // ✅ هذا يحدث profile فقط - لا unmount للـ context
+      // 🔹 1. إعادة تحميل بيانات المستخدم كاملة من السيرفر مباشرة (لا cache)
+      // ✅ هذا يضمن أن البيانات محدثة 100% من قاعدة البيانات
+      // ✅ لا نعتمد على payload من Realtime - نذهب للسيرفر مباشرة
       const oldBranchId = profile?.branch_id || null
+      const oldRole = profile?.role || null
+      const oldAllowedBranches = profile?.allowed_branches || []
+      const oldAllowedPages = profile?.allowed_pages || []
+      
+      // ✅ جلب بيانات جديدة من السيرفر مباشرة (لا cache)
       const freshProfile = await loadAccessProfile()
       if (!freshProfile) {
         console.warn('⚠️ [AccessContext] Failed to load fresh profile')
         return
       }
-
-      // 🔹 1.5. التحقق من تغيير الفرع وتحديثه تلقائياً
-      // ✅ التحقق من التغيير الفعلي حتى لو لم يتم تمرير branchChanged = true
-      const newBranchId = freshProfile.branch_id || null
-      const actualBranchChanged = oldBranchId !== newBranchId
       
-      if (actualBranchChanged && newBranchId) {
+      // ✅ التحقق من التغييرات الفعلية
+      const roleChanged = oldRole !== freshProfile.role
+      const branchChangedActual = oldBranchId !== freshProfile.branch_id
+      const allowedBranchesChanged = JSON.stringify([...oldAllowedBranches].sort()) !== JSON.stringify([...freshProfile.allowed_branches].sort())
+      const allowedPagesChanged = JSON.stringify([...oldAllowedPages].sort()) !== JSON.stringify([...freshProfile.allowed_pages].sort())
+      
+      console.log('🔄 [AccessContext] Profile changes detected:', {
+        roleChanged,
+        branchChangedActual,
+        allowedBranchesChanged,
+        allowedPagesChanged,
+        oldRole,
+        newRole: freshProfile.role,
+        oldBranchId,
+        newBranchId: freshProfile.branch_id,
+      })
+
+      // 🔹 2. بناء Access Profile جديد بالكامل (ليس merge جزئي)
+      // ✅ تحديث profile state بالكامل - لا merge
+      setProfile(freshProfile)
+      
+      // 🔹 3. التحقق من تغيير الفرع وتحديثه تلقائياً
+      const newBranchId = freshProfile.branch_id || null
+      
+      if (branchChangedActual && newBranchId) {
         console.log(`🔄 [AccessContext] Branch changed from ${oldBranchId} to ${newBranchId}, updating context...`)
         
         // ✅ إطلاق event لتحديث الفرع في جميع أنحاء التطبيق
@@ -419,34 +445,27 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         }
       }
       
-      // ✅ التحقق من تغيير allowed_branches أيضاً
-      const oldAllowedBranches = profile?.allowed_branches || []
-      const newAllowedBranches = freshProfile.allowed_branches || []
-      // ✅ استخدام نسخة من arrays قبل sort لتجنب تغيير الأصلية
-      const allowedBranchesChanged = JSON.stringify([...oldAllowedBranches].sort()) !== JSON.stringify([...newAllowedBranches].sort())
-      
+      // 🔹 4. التحقق من تغيير allowed_branches
       if (allowedBranchesChanged) {
         console.log(`🔄 [AccessContext] Allowed branches changed:`, {
           old: oldAllowedBranches,
-          new: newAllowedBranches
+          new: freshProfile.allowed_branches
         })
         
         // ✅ إذا كان الفرع الحالي لم يعد ضمن allowed_branches، يجب تحديث الفرع تلقائياً
-        if (newBranchId && !newAllowedBranches.includes(newBranchId) && newAllowedBranches.length > 0) {
-          // ✅ اختيار أول فرع في الترتيب الأبجدي (lexicographic order) للحفاظ على السلوك الأصلي
-          // ✅ استخدام نسخة من array قبل sort لتجنب تغيير الأصلية
-          const firstAllowedBranch = [...newAllowedBranches].sort()[0]
+        if (newBranchId && !freshProfile.allowed_branches.includes(newBranchId) && freshProfile.allowed_branches.length > 0) {
+          // ✅ اختيار أول فرع في الترتيب الأبجدي
+          const firstAllowedBranch = [...freshProfile.allowed_branches].sort()[0]
           console.log(`🔄 [AccessContext] Current branch ${newBranchId} no longer in allowed_branches, switching to: ${firstAllowedBranch}`)
           
           // ✅ إطلاق event لتحديث الفرع في جميع أنحاء التطبيق
-          // ✅ هذا يحدث الفرع في الواجهة فقط - التغيير الفعلي في قاعدة البيانات يتم من قبل Owner/Admin
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('user_context_changed', {
               detail: {
                 oldBranchId: newBranchId,
                 newBranchId: firstAllowedBranch,
                 reason: 'allowed_branches_changed_via_realtime',
-                allowedBranches: newAllowedBranches
+                allowedBranches: freshProfile.allowed_branches
               }
             }))
           }
@@ -458,14 +477,14 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
                 oldBranchId: newBranchId,
                 newBranchId: newBranchId,
                 reason: 'allowed_branches_updated_via_realtime',
-                allowedBranches: newAllowedBranches
+                allowedBranches: freshProfile.allowed_branches
               }
             }))
           }
         }
       }
 
-      // 🔹 2. تحديث Realtime Manager بسياق الفرع الجديد
+      // 🔹 5. تحديث Realtime Manager بسياق الفرع الجديد
       // ✅ تحديث السياق فقط - لا unmount
       try {
         const realtimeManager = getRealtimeManager()
@@ -480,34 +499,63 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         console.error('❌ [AccessContext] Error updating realtime context:', realtimeError)
       }
 
-      // 🔹 3. تحديث البيانات فقط - لا إعادة توجيه ولا unmount
-      // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
-      // ✅ لا unmount للـ contexts - فقط تحديث state
+      // 🔹 6. إطلاق events لتحديث UI والصلاحيات (ERP Grade - لحظي 100%)
+      // ✅ هذا يحدث UI فقط - لا unmount
+      // ✅ نطلق جميع الأحداث المطلوبة لتحديث النظام بالكامل
+      if (typeof window !== 'undefined') {
+        // ✅ إطلاق event لتحديث UI (Sidebar, Menus, etc.)
+        window.dispatchEvent(new CustomEvent('access_profile_updated', {
+          detail: {
+            role: freshProfile.role,
+            branch_id: freshProfile.branch_id,
+            allowed_pages: freshProfile.allowed_pages,
+            allowed_branches: freshProfile.allowed_branches,
+            roleChanged,
+            branchChanged: branchChangedActual,
+            allowedPagesChanged,
+            allowedBranchesChanged,
+          }
+        }))
+        
+        // ✅ إطلاق event للمكونات الأخرى التي تستمع لـ permissions_updated
+        window.dispatchEvent(new CustomEvent('permissions_updated', {
+          detail: {
+            role: freshProfile.role,
+            allowed_pages: freshProfile.allowed_pages,
+            allowed_actions: freshProfile.allowed_actions,
+          }
+        }))
+        
+        // ✅ إطلاق event عند تغيير الدور
+        if (roleChanged) {
+          window.dispatchEvent(new CustomEvent('user_context_changed', {
+            detail: {
+              oldRole,
+              newRole: freshProfile.role,
+              reason: 'role_changed_via_realtime',
+            }
+          }))
+        }
+      }
+
+      // 🔹 7. لا يتم أي redirect داخل هذه الدالة (ERP Grade Requirement)
+      // ✅ التحكم في التوجيه يكون فقط داخل RealtimeRouteGuard
+      // ✅ RealtimeRouteGuard سيعيد تقييم الصفحة الحالية تلقائياً بعد تحديث profile
       const currentResource = getResourceFromPath(pathname)
       const hasAccess = freshProfile.is_owner || freshProfile.is_admin || freshProfile.allowed_pages.includes(currentResource)
 
       if (!hasAccess) {
-        console.log(`⚠️ [AccessContext] Current page ${pathname} is no longer allowed after context update`)
-        // ✅ لا نعيد التوجيه هنا - سيتم التعامل معه في RealtimeRouteGuard
-        // ✅ لا unmount - فقط تحديث البيانات
+        console.log(`⚠️ [AccessContext] Current page ${pathname} is no longer allowed after context update (will be handled by RealtimeRouteGuard)`)
       } else {
         console.log(`✅ [AccessContext] Current page ${pathname} is still allowed after context update`)
       }
 
-      // 🔹 4. إطلاق events لتحديث UI والصلاحيات
-      // ✅ هذا يحدث UI فقط - لا unmount
-      // ✅ نطلق permissions_updated event للمكونات الأخرى التي تستمع له (sidebar, page-guard, invoices, etc.)
-      // ✅ PermissionsContext لا يستمع لهذا الحدث لأنه يستخدم useGovernanceRealtime مباشرة
-      if (typeof window !== 'undefined') {
-        // ✅ إطلاق event لتحديث UI (Sidebar, Menus, etc.)
-        window.dispatchEvent(new Event('access_profile_updated'))
-        
-        // ✅ إطلاق event للمكونات الأخرى التي تستمع لـ permissions_updated
-        // ✅ هذه المكونات لا تستخدم useGovernanceRealtime مباشرة
-        window.dispatchEvent(new Event('permissions_updated'))
-      }
-
-      console.log('✅ [AccessContext] Security context refreshed successfully (data only)')
+      console.log('✅ [AccessContext] Security context refreshed successfully (ERP Grade - realtime 100%)', {
+        role: freshProfile.role,
+        branch_id: freshProfile.branch_id,
+        allowedPagesCount: freshProfile.allowed_pages.length,
+        allowedBranchesCount: freshProfile.allowed_branches.length,
+      })
     } catch (error: any) {
       // ✅ معالجة AbortError بشكل صحيح
       if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
