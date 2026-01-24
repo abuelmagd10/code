@@ -750,6 +750,7 @@ export function Sidebar() {
         window.removeEventListener('app_language_changed', handler)
         window.removeEventListener('company_updated', onCompanyUpdated)
         window.removeEventListener('permissions_updated', onPermissionsUpdated)
+        window.removeEventListener('access_profile_updated', onAccessProfileUpdated)
         window.removeEventListener('profile_updated', onProfileUpdated)
         window.removeEventListener('notifications_updated', handleNotificationsUpdate)
       }

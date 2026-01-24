@@ -456,7 +456,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       
       // ✅ إذا كان Permissions جاهزاً بالفعل (من localStorage cache)
       // نتحقق مباشرة
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         // محاولة قراءة من localStorage للتحقق
         const permsLoaded = localStorage.getItem('erp_permissions_loaded')
         if (permsLoaded === 'true' && isReady && !bootstrapCheckedRef.current) {
@@ -466,6 +466,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       
       return () => {
         window.removeEventListener('permissions_ready', handlePermissionsReady)
+        clearTimeout(timeoutId)
       }
     }
   }, [isReady])
