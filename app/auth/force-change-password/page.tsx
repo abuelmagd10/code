@@ -50,10 +50,42 @@ export default function ForceChangePasswordPage() {
           }
         }
       } catch {}
+      
+      // ✅ الانتظار حتى اكتمال bootstrap قبل redirect
+      const waitForBootstrap = (): Promise<void> => {
+        return new Promise((resolve) => {
+          if (typeof window !== 'undefined') {
+            const handleBootstrapComplete = () => {
+              window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
+              resolve()
+            }
+            
+            window.addEventListener('bootstrap_complete', handleBootstrapComplete)
+            
+            // ✅ timeout احتياطي (5 ثواني)
+            setTimeout(() => {
+              window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
+              console.warn('⚠️ [ForceChangePassword] Bootstrap timeout, proceeding anyway')
+              resolve()
+            }, 5000)
+          } else {
+            resolve()
+          }
+        })
+      }
+      
+      // ✅ الانتظار ثم التوجيه
+      await waitForBootstrap()
+      
       try {
+        const res = await fetch("/api/first-allowed-page")
+        const data = await res.json()
+        const url = data.path || (cidForRedirect ? `/dashboard?cid=${cidForRedirect}` : "/dashboard")
+        window.location.href = url
+      } catch {
         const url = cidForRedirect ? `/dashboard?cid=${cidForRedirect}` : "/dashboard"
         window.location.href = url
-      } catch { window.location.href = "/dashboard" }
+      }
     } finally { setLoading(false) }
   }
 

@@ -315,16 +315,41 @@ function CallbackInner() {
         // No pending invitation - CREATE COMPANY AUTOMATICALLY (for new users only)
         try {
           await createCompanyFromMetadata(user.id, user.user_metadata, user.email)
-          setStatus("تم إنشاء الشركة بنجاح! جاري توجيهك للوحة التحكم...")
-          setTimeout(async () => {
-            try {
-              const res = await fetch("/api/first-allowed-page")
-              const data = await res.json()
-              router.replace(data.path || "/dashboard")
-            } catch {
-              router.replace("/dashboard")
-            }
-          }, 2000)
+          setStatus("تم إنشاء الشركة بنجاح! جاري تحميل الصلاحيات...")
+          
+          // ✅ الانتظار حتى اكتمال bootstrap قبل redirect
+          const waitForBootstrap = (): Promise<void> => {
+            return new Promise((resolve) => {
+              if (typeof window !== 'undefined') {
+                const handleBootstrapComplete = () => {
+                  window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
+                  resolve()
+                }
+                
+                window.addEventListener('bootstrap_complete', handleBootstrapComplete)
+                
+                // ✅ timeout احتياطي (5 ثواني)
+                setTimeout(() => {
+                  window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
+                  console.warn('⚠️ [Callback] Bootstrap timeout, proceeding anyway')
+                  resolve()
+                }, 5000)
+              } else {
+                resolve()
+              }
+            })
+          }
+          
+          // ✅ الانتظار ثم التوجيه
+          await waitForBootstrap()
+          
+          try {
+            const res = await fetch("/api/first-allowed-page")
+            const data = await res.json()
+            router.replace(data.path || "/dashboard")
+          } catch {
+            router.replace("/dashboard")
+          }
         } catch (createErr: any) {
           console.error('Error creating company:', createErr)
           setStatus("سيتم توجيهك لإعداد شركتك...")
@@ -337,16 +362,41 @@ function CallbackInner() {
           localStorage.setItem('active_company_id', String(companyId))
           document.cookie = `active_company_id=${String(companyId)}; path=/; max-age=31536000`
         } catch {}
-        setStatus("تم التحقق بنجاح، سيتم توجيهك...")
-        setTimeout(async () => {
-          try {
-            const res = await fetch("/api/first-allowed-page")
-            const data = await res.json()
-            router.replace(data.path || "/dashboard")
-          } catch {
-            router.replace("/dashboard")
-          }
-        }, 1500)
+        setStatus("تم التحقق بنجاح، جاري تحميل الصلاحيات...")
+        
+        // ✅ الانتظار حتى اكتمال bootstrap قبل redirect
+        const waitForBootstrap = (): Promise<void> => {
+          return new Promise((resolve) => {
+            if (typeof window !== 'undefined') {
+              const handleBootstrapComplete = () => {
+                window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
+                resolve()
+              }
+              
+              window.addEventListener('bootstrap_complete', handleBootstrapComplete)
+              
+              // ✅ timeout احتياطي (5 ثواني)
+              setTimeout(() => {
+                window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
+                console.warn('⚠️ [Callback] Bootstrap timeout, proceeding anyway')
+                resolve()
+              }, 5000)
+            } else {
+              resolve()
+            }
+          })
+        }
+        
+        // ✅ الانتظار ثم التوجيه
+        await waitForBootstrap()
+        
+        try {
+          const res = await fetch("/api/first-allowed-page")
+          const data = await res.json()
+          router.replace(data.path || "/dashboard")
+        } catch {
+          router.replace("/dashboard")
+        }
       }
     }
 

@@ -697,7 +697,12 @@ export function Sidebar() {
             }
           }
         }
-      } catch (err) {
+      } catch (err: any) {
+        // ✅ معالجة AbortError بشكل صحيح
+        if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
+          console.warn('⚠️ [Sidebar] Loading user role and branch aborted (component unmounted)')
+          return
+        }
         console.error("Error loading user role and branch:", err)
       }
     }
@@ -745,7 +750,6 @@ export function Sidebar() {
         window.removeEventListener('app_language_changed', handler)
         window.removeEventListener('company_updated', onCompanyUpdated)
         window.removeEventListener('permissions_updated', onPermissionsUpdated)
-        window.removeEventListener('access_profile_updated', onAccessProfileUpdated)
         window.removeEventListener('profile_updated', onProfileUpdated)
         window.removeEventListener('notifications_updated', handleNotificationsUpdate)
       }

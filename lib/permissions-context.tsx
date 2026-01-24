@@ -314,6 +314,12 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
     } finally {
       setIsReady(true)
       setIsLoading(false)
+      
+      // ✅ إطلاق event عند اكتمال تحميل Permissions
+      if (typeof window !== 'undefined') {
+        console.log('✅ [PermissionsContext] Permissions loaded, dispatching permissions_ready event')
+        window.dispatchEvent(new Event('permissions_ready'))
+      }
     }
   }, [supabase])
 

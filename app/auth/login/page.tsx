@@ -95,7 +95,49 @@ export default function LoginPage() {
       if (must) {
         router.push("/auth/force-change-password")
       } else {
-        // الحصول على أول صفحة مسموح بها للمستخدم
+        // ✅ الانتظار حتى اكتمال bootstrap قبل redirect
+        // ✅ هذا يمنع unmount للـ contexts أثناء التهيئة
+        const waitForBootstrap = (): Promise<void> => {
+          return new Promise((resolve) => {
+            // ✅ إذا كان bootstrap مكتملاً بالفعل، انتقل مباشرة
+            if (typeof window !== 'undefined') {
+              const checkBootstrap = () => {
+                // التحقق من localStorage للـ bootstrap state
+                const permsLoaded = localStorage.getItem('erp_permissions_loaded')
+                if (permsLoaded === 'true') {
+                  // ✅ انتظار قصير للتأكد من اكتمال التحميل
+                  setTimeout(resolve, 200)
+                  return
+                }
+              }
+              
+              // ✅ الاستماع لـ bootstrap_complete event
+              const handleBootstrapComplete = () => {
+                window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
+                resolve()
+              }
+              
+              window.addEventListener('bootstrap_complete', handleBootstrapComplete)
+              
+              // ✅ فحص فوري
+              checkBootstrap()
+              
+              // ✅ timeout احتياطي (5 ثواني)
+              setTimeout(() => {
+                window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
+                console.warn('⚠️ [Login] Bootstrap timeout, proceeding anyway')
+                resolve()
+              }, 5000)
+            } else {
+              resolve()
+            }
+          })
+        }
+        
+        // ✅ الانتظار حتى اكتمال bootstrap
+        await waitForBootstrap()
+        
+        // ✅ الآن يمكن التوجيه بأمان - bootstrap مكتمل
         try {
           const res = await fetch("/api/first-allowed-page")
           const data = await res.json()

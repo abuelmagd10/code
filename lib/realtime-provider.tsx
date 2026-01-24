@@ -40,11 +40,46 @@ export function RealtimeProvider({
   const managerRef = useRef<ReturnType<typeof getRealtimeManager> | null>(null)
   const handlersRef = useRef<Map<RealtimeTable, Set<RealtimeEventHandler>>>(new Map())
 
-  // تهيئة Manager
+  // ✅ تهيئة Manager - الانتظار حتى اكتمال bootstrap
   useEffect(() => {
     let mounted = true
 
     const init = async () => {
+      // ✅ الانتظار حتى اكتمال bootstrap (Access + Permissions)
+      const waitForBootstrap = (): Promise<void> => {
+        return new Promise((resolve) => {
+          if (typeof window !== 'undefined') {
+            // ✅ إذا كان bootstrap مكتملاً بالفعل، انتقل مباشرة
+            const permsLoaded = localStorage.getItem('erp_permissions_loaded')
+            if (permsLoaded === 'true') {
+              setTimeout(resolve, 100)
+              return
+            }
+            
+            const handleBootstrapComplete = () => {
+              window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
+              resolve()
+            }
+            
+            window.addEventListener('bootstrap_complete', handleBootstrapComplete)
+            
+            // ✅ timeout احتياطي (5 ثواني)
+            setTimeout(() => {
+              window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
+              console.warn('⚠️ [RealtimeProvider] Bootstrap timeout, initializing anyway')
+              resolve()
+            }, 5000)
+          } else {
+            resolve()
+          }
+        })
+      }
+      
+      // ✅ الانتظار حتى اكتمال bootstrap
+      await waitForBootstrap()
+      
+      if (!mounted) return
+      
       try {
         const manager = getRealtimeManager()
         await manager.initialize()

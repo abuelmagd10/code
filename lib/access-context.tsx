@@ -58,6 +58,9 @@ export interface AccessContextType {
   isLoading: boolean
   isReady: boolean
   
+  // ✅ Bootstrap state - يمنع redirect أثناء التهيئة
+  isBootstrapComplete: boolean
+  
   // Access Profile
   profile: AccessProfile | null
   
@@ -295,8 +298,10 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(true)
   const [isReady, setIsReady] = useState(false)
+  const [isBootstrapComplete, setIsBootstrapComplete] = useState(false)
   const [profile, setProfile] = useState<AccessProfile | null>(null)
   const isRefreshingRef = useRef(false) // منع التكرار أثناء التحديث
+  const bootstrapCheckedRef = useRef(false) // منع فحص bootstrap المتكرر
 
   // تحميل Access Profile
   const loadAccessProfile = useCallback(async (): Promise<AccessProfile | null> => {
@@ -423,6 +428,48 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     router.replace(firstPage)
   }, [profile, router])
 
+  // ✅ فحص اكتمال Bootstrap (Access + Permissions)
+  useEffect(() => {
+    if (bootstrapCheckedRef.current) return
+    
+    // ✅ التحقق من اكتمال Access
+    if (!isReady) return
+    
+    // ✅ التحقق من اكتمال Permissions عبر event
+    // PermissionsContext يطلق 'permissions_ready' event عند اكتمال التحميل
+    const handlePermissionsReady = () => {
+      if (!bootstrapCheckedRef.current && isReady) {
+        bootstrapCheckedRef.current = true
+        setIsBootstrapComplete(true)
+        
+        // ✅ إطلاق event عند اكتمال bootstrap
+        if (typeof window !== 'undefined') {
+          console.log('✅ [AccessContext] Bootstrap complete - Access + Permissions loaded')
+          window.dispatchEvent(new Event('bootstrap_complete'))
+        }
+      }
+    }
+    
+    // ✅ الاستماع لـ permissions_ready event
+    if (typeof window !== 'undefined') {
+      window.addEventListener('permissions_ready', handlePermissionsReady)
+      
+      // ✅ إذا كان Permissions جاهزاً بالفعل (من localStorage cache)
+      // نتحقق مباشرة
+      setTimeout(() => {
+        // محاولة قراءة من localStorage للتحقق
+        const permsLoaded = localStorage.getItem('erp_permissions_loaded')
+        if (permsLoaded === 'true' && isReady && !bootstrapCheckedRef.current) {
+          handlePermissionsReady()
+        }
+      }, 100)
+      
+      return () => {
+        window.removeEventListener('permissions_ready', handlePermissionsReady)
+      }
+    }
+  }, [isReady])
+  
   // تحميل Access Profile عند البدء
   useEffect(() => {
     loadAccessProfile()
@@ -530,6 +577,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AccessContextType>(() => ({
     isLoading,
     isReady,
+    isBootstrapComplete,
     profile,
     canAccessPage,
     canAction,
@@ -539,7 +587,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       await loadAccessProfile()
     },
     getFirstAllowedPage,
-  }), [isLoading, isReady, profile, canAccessPage, canAction, canAccessBranch, canAccessWarehouse, loadAccessProfile, getFirstAllowedPage])
+  }), [isLoading, isReady, isBootstrapComplete, profile, canAccessPage, canAction, canAccessBranch, canAccessWarehouse, loadAccessProfile, getFirstAllowedPage])
 
   return (
     <AccessContext.Provider value={value}>
