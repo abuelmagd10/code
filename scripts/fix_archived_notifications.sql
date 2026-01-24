@@ -133,14 +133,17 @@ BEGIN
       OR n.warehouse_id = p_warehouse_id 
       OR n.warehouse_id IS NULL
     )
-    -- ✅ إصلاح منطق الأرشيف: 
+    -- ✅ إصلاح منطق الحالات: 
+    -- إذا كان p_status = NULL → نعرض جميع الحالات (unread, read, actioned) لكن نستبعد archived
     -- إذا كان p_status = 'archived' → نعرض المؤرشفة فقط
-    -- إذا كان p_status = NULL أو أي قيمة أخرى → نعرض حسب الحالة المطلوبة (لكن نستبعد المؤرشفة ما لم تكن مطلوبة)
+    -- إذا كان p_status = 'actioned' → نعرض actioned فقط
+    -- إذا كان p_status = أي حالة أخرى → نعرض حسب الحالة المطلوبة
     AND (
       CASE 
+        WHEN p_status IS NULL THEN n.status != 'archived'  -- الكل → نستبعد المؤرشفة (لكن نعرض unread, read, actioned)
         WHEN p_status = 'archived' THEN n.status = 'archived'  -- طلب المؤرشفة → نعرض المؤرشفة فقط
-        WHEN p_status IS NULL THEN n.status != 'archived'  -- الكل → نستبعد المؤرشفة
-        ELSE n.status = p_status AND n.status != 'archived'  -- حالة محددة → نعرض حسب الحالة (لكن نستبعد المؤرشفة)
+        WHEN p_status = 'actioned' THEN n.status = 'actioned'  -- طلب تم التنفيذ → نعرض actioned فقط
+        ELSE n.status = p_status  -- حالة محددة → نعرض حسب الحالة المطلوبة
       END
     )
     AND (n.expires_at IS NULL OR n.expires_at > NOW())

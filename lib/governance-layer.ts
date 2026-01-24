@@ -250,6 +250,36 @@ export async function markNotificationAsRead(notificationId: string, userId: str
   return data
 }
 
+/**
+ * ✅ تحديث حالة الإشعار (موحد)
+ * الحالات المدعومة: 'unread', 'read', 'actioned', 'archived'
+ */
+export async function updateNotificationStatus(
+  notificationId: string,
+  newStatus: NotificationStatus,
+  userId: string
+): Promise<{ success: boolean; error?: string; notification_id?: string; old_status?: string; new_status?: string }> {
+  const supabase = createClient()
+
+  const { data, error } = await supabase.rpc('update_notification_status', {
+    p_notification_id: notificationId,
+    p_new_status: newStatus,
+    p_user_id: userId
+  })
+
+  if (error) {
+    console.error('❌ [UPDATE_NOTIFICATION_STATUS] Error:', error)
+    throw error
+  }
+
+  // ✅ data هو JSONB object
+  if (data && typeof data === 'object' && 'success' in data) {
+    return data as { success: boolean; error?: string; notification_id?: string; old_status?: string; new_status?: string }
+  }
+
+  return { success: false, error: 'Invalid response from server' }
+}
+
 // =====================================================
 // Approval Workflow Functions
 // =====================================================

@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { getUserNotifications, markNotificationAsRead, type Notification, type NotificationStatus, type NotificationPriority, type NotificationSeverity, type NotificationCategory } from "@/lib/governance-layer"
+import { getUserNotifications, markNotificationAsRead, updateNotificationStatus, type Notification, type NotificationStatus, type NotificationPriority, type NotificationSeverity, type NotificationCategory } from "@/lib/governance-layer"
 import { formatDistanceToNow } from "date-fns"
 import { ar } from "date-fns/locale/ar"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
@@ -274,7 +274,12 @@ export function NotificationCenter({
     try {
       setLoading(true)
 
-      const status = filterStatus === "all" ? undefined : filterStatus
+      // ✅ إصلاح منطق الفلترة: 
+      // - "all" → null (يعرض unread, read, actioned لكن يستبعد archived)
+      // - "archived" → "archived" (يعرض المؤرشفة فقط)
+      // - "actioned" → "actioned" (يعرض actioned فقط)
+      // - أي حالة أخرى → الحالة المطلوبة
+      const status = filterStatus === "all" ? null : filterStatus
       const data = await getUserNotifications({
         userId,
         companyId,
@@ -539,43 +544,81 @@ export function NotificationCenter({
   const handleMarkAsActioned = async (notificationId: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
     try {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ 
-          status: 'actioned',
-          actioned_at: new Date().toISOString()
-        })
-        .eq('id', notificationId)
+      const result = await updateNotificationStatus(notificationId, 'actioned', userId)
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update notification status')
+      }
 
-      if (error) throw error
-
+      // ✅ تحديث الحالة محليًا
       setNotifications(prev => 
-        prev.map(n => 
-          n.id === notificationId 
-            ? { ...n, status: "actioned" as NotificationStatus, actioned_at: new Date().toISOString() }
-            : n
-        )
+        prev.map(n => {
+          if (n.id === notificationId) {
+            const updated = { ...n, status: "actioned" as NotificationStatus }
+            if (!updated.actioned_at) {
+              updated.actioned_at = new Date().toISOString()
+            }
+            return updated
+          }
+          return n
+        })
       )
+
+      // ✅ إذا كان الفلتر لا يسمح بعرض actioned، نزيله من القائمة
+      if (filterStatus !== 'actioned' && filterStatus !== 'all') {
+        setNotifications(prev => prev.filter(n => n.id !== notificationId))
+      }
+
       window.dispatchEvent(new Event('notifications_updated'))
+      toast({
+        title: appLang === 'en' ? 'Success' : 'نجح',
+        description: appLang === 'en' ? 'Notification marked as actioned' : 'تم تحديد الإشعار كتم التنفيذ',
+      })
     } catch (error) {
       console.error("Error marking as actioned:", error)
+      toast({
+        title: appLang === 'en' ? 'Error' : 'خطأ',
+        description: appLang === 'en' ? 'Failed to update notification status' : 'فشل في تحديث حالة الإشعار',
+        variant: "destructive"
+      })
     }
   }
 
   const handleArchive = async (notificationId: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
     try {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ status: 'archived' })
-        .eq('id', notificationId)
+      const result = await updateNotificationStatus(notificationId, 'archived', userId)
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to archive notification')
+      }
 
-      if (error) throw error
+      // ✅ إذا كان المستخدم يريد رؤية المؤرشفة، نحدث status بدلاً من الإزالة
+      if (filterStatus === 'archived') {
+        setNotifications(prev =>
+          prev.map(n =>
+            n.id === notificationId
+              ? { ...n, status: "archived" as NotificationStatus }
+              : n
+          )
+        )
+      } else {
+        // ✅ إذا لم يكن يريد رؤية المؤرشفة، نزيلها من القائمة
+        setNotifications(prev => prev.filter(n => n.id !== notificationId))
+      }
 
-      setNotifications(prev => prev.filter(n => n.id !== notificationId))
       window.dispatchEvent(new Event('notifications_updated'))
+      toast({
+        title: appLang === 'en' ? 'Success' : 'نجح',
+        description: appLang === 'en' ? 'Notification archived' : 'تم أرشفة الإشعار',
+      })
     } catch (error) {
       console.error("Error archiving notification:", error)
+      toast({
+        title: appLang === 'en' ? 'Error' : 'خطأ',
+        description: appLang === 'en' ? 'Failed to archive notification' : 'فشل في أرشفة الإشعار',
+        variant: "destructive"
+      })
     }
   }
 
