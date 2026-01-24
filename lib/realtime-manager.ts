@@ -754,10 +754,12 @@ class RealtimeManager {
             filter: companyMembersFilter,
           },
           (payload: RealtimePostgresChangesPayload<any>) => {
+            const newRecord = payload.new as any
+            const oldRecord = payload.old as any
             console.log('🔐 [RealtimeManager] company_members event received from Supabase Realtime', {
               eventType: payload.eventType,
-              new: payload.new ? { id: payload.new.id, user_id: payload.new.user_id, role: payload.new.role, branch_id: payload.new.branch_id } : null,
-              old: payload.old ? { id: payload.old.id, user_id: payload.old.user_id, role: payload.old.role, branch_id: payload.old.branch_id } : null,
+              new: newRecord ? { id: newRecord.id, user_id: newRecord.user_id, role: newRecord.role, branch_id: newRecord.branch_id } : null,
+              old: oldRecord ? { id: oldRecord.id, user_id: oldRecord.user_id, role: oldRecord.role, branch_id: oldRecord.branch_id } : null,
             })
             this.handleGovernanceEvent('company_members', payload)
           }
