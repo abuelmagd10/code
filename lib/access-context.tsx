@@ -147,7 +147,9 @@ export function getFirstAllowedRoute(allowedPages: string[]): string {
 }
 
 /**
- * جلب Access Profile من API
+ * جلب Access Profile من API (ERP Grade - لحظي 100%)
+ * ✅ يجلب البيانات من السيرفر مباشرة بدون أي cache
+ * ✅ يتم استدعاؤه عند أي تغيير في السياق الأمني لضمان البيانات المحدثة
  */
 async function fetchAccessProfile(
   supabase: any,
@@ -155,7 +157,8 @@ async function fetchAccessProfile(
   companyId: string
 ): Promise<AccessProfile | null> {
   try {
-    // جلب معلومات العضوية
+    // ✅ جلب معلومات العضوية من السيرفر مباشرة (لا cache)
+    // ✅ استخدام .maybeSingle() لضمان جلب أحدث البيانات
     const { data: member } = await supabase
       .from("company_members")
       .select("role, branch_id, warehouse_id, cost_center_id")
@@ -203,7 +206,7 @@ async function fetchAccessProfile(
       ]
       allowed_actions = ["*"] // كل العمليات
     } else {
-      // جلب الصلاحيات من company_role_permissions
+      // ✅ جلب الصلاحيات من company_role_permissions من السيرفر مباشرة (لا cache)
       const { data: permissions } = await supabase
         .from("company_role_permissions")
         .select("resource, can_access, can_read, can_write, can_update, can_delete, all_access, allowed_actions")
@@ -248,7 +251,7 @@ async function fetchAccessProfile(
     // جلب الفروع المسموح بها
     let allowed_branches: string[] = []
     if (!isFullAccess) {
-      // ✅ جلب الفروع من user_branch_access إذا كان موجوداً
+      // ✅ جلب الفروع من user_branch_access من السيرفر مباشرة (لا cache)
       try {
         const { data: branchAccess } = await supabase
           .from("user_branch_access")
@@ -327,10 +330,12 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
   const isRefreshingRef = useRef(false) // منع التكرار أثناء التحديث
   const bootstrapCheckedRef = useRef(false) // منع فحص bootstrap المتكرر
 
-  // تحميل Access Profile
+  // تحميل Access Profile (ERP Grade - لحظي 100%)
+  // ✅ يجلب البيانات من السيرفر مباشرة بدون أي cache
+  // ✅ يتم استدعاؤه عند أي تغيير في السياق الأمني لضمان البيانات المحدثة
   const loadAccessProfile = useCallback(async (): Promise<AccessProfile | null> => {
     try {
-      console.log('🔄 [AccessContext] loadAccessProfile called')
+      console.log('🔄 [AccessContext] loadAccessProfile called (ERP Grade - fetching from server directly)')
       setIsLoading(true)
 
       const { data: { user } } = await supabase.auth.getUser()
@@ -351,7 +356,8 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         return null
       }
 
-      console.log('🔄 [AccessContext] Fetching access profile...', { userId: user.id, companyId })
+      // ✅ جلب Access Profile من السيرفر مباشرة (لا cache)
+      console.log('🔄 [AccessContext] Fetching access profile from server (ERP Grade)...', { userId: user.id, companyId })
       const accessProfile = await fetchAccessProfile(supabase, user.id, companyId)
       console.log('✅ [AccessContext] Access profile loaded:', {
         branchId: accessProfile?.branch_id,

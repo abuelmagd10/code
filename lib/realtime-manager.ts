@@ -32,6 +32,7 @@ export type RealtimeTable =
   | 'warehouses'
   | 'company_role_permissions'
   | 'permissions'
+  | 'user_security_events' // ✅ أحداث تغيير السياق الأمني (ERP Grade)
 
 export interface RealtimeEvent<T = any> {
   type: RealtimeEventType
@@ -63,7 +64,7 @@ export type RealtimeEventHandler<T = any> = (event: RealtimeEvent<T>) => void | 
 // 🔐 Governance Event Handlers
 export type GovernanceEventHandler = (event: {
   type: RealtimeEventType
-  table: 'company_members' | 'user_branch_access' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions'
+  table: 'company_members' | 'user_branch_access' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions' | 'user_security_events'
   new?: any
   old?: any
   timestamp: number
@@ -262,6 +263,7 @@ class RealtimeManager {
       'warehouses': 'warehouses',
       'company_role_permissions': 'company_role_permissions',
       'permissions': 'permissions',
+      'user_security_events': 'user_security_events',
     }
     return tableMapping[table] || table
   }
@@ -824,6 +826,23 @@ class RealtimeManager {
           (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('permissions', payload)
         )
 
+      // 🔐 الاشتراك في user_security_events (أحداث تغيير السياق الأمني - ERP Grade)
+      // ✅ هذا هو القناة الرسمية لإعلام جلسة المستخدم أن صلاحياته تغيرت
+      // ✅ فلترة صارمة: user_id فقط - المستخدم يستقبل فقط أحداثه
+      const userSecurityEventsFilter = `user_id=eq.${userId}`
+      
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT', // ✅ فقط INSERT (الأحداث الجديدة)
+            schema: 'public',
+            table: 'user_security_events',
+            filter: userSecurityEventsFilter,
+          },
+          (payload: RealtimePostgresChangesPayload<any>) => this.handleUserSecurityEvent(payload)
+        )
+
       channel.subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => {
         console.log(`🔔 [RealtimeManager] Governance Channel subscription status:`, {
           status,
@@ -836,13 +855,14 @@ class RealtimeManager {
           console.log('✅ [RealtimeManager] Subscribed to Governance Channel', {
             channelName,
             subscriptions: {
-              company_members: true,
-              user_branch_access: true,
-              branches: true,
-              warehouses: true,
-              company_role_permissions: true,
-              permissions: true,
-            },
+            company_members: true,
+            user_branch_access: true,
+            branches: true,
+            warehouses: true,
+            company_role_permissions: true,
+            permissions: true,
+            user_security_events: true,
+          },
           })
           this.isGovernanceSubscribed = true
         } else if (status === 'CHANNEL_ERROR') {
@@ -1031,6 +1051,90 @@ class RealtimeManager {
       }
     } catch (error) {
       console.error(`❌ [RealtimeManager] Error handling governance event for ${table}:`, error)
+    }
+  }
+
+  /**
+   * معالجة أحداث user_security_events (ERP Grade - لحظي 100%)
+   * ✅ هذا هو القناة الرسمية لإعلام جلسة المستخدم أن صلاحياته تغيرت
+   */
+  private async handleUserSecurityEvent(
+    payload: RealtimePostgresChangesPayload<any>
+  ): Promise<void> {
+    try {
+      if (!this.context) {
+        console.warn('⚠️ [RealtimeManager] handleUserSecurityEvent: no context')
+        return
+      }
+
+      const { userId, companyId } = this.context
+      const event = payload.new as any
+
+      if (!event) {
+        console.warn('⚠️ [RealtimeManager] handleUserSecurityEvent: no event in payload')
+        return
+      }
+
+      // ✅ التحقق من أن الحدث يخص المستخدم الحالي
+      if (event.user_id !== userId || event.company_id !== companyId) {
+        console.warn('⚠️ [RealtimeManager] handleUserSecurityEvent: event does not match current user', {
+          eventUserId: event.user_id,
+          currentUserId: userId,
+          eventCompanyId: event.company_id,
+          currentCompanyId: companyId,
+        })
+        return
+      }
+
+      console.log('🔔 [RealtimeManager] User security event received (ERP Grade):', {
+        eventType: event.event_type,
+        eventId: event.id,
+        userId: event.user_id,
+        companyId: event.company_id,
+        eventData: event.event_data,
+      })
+
+      // ✅ منع التكرار
+      const eventKey = `user_security_event:${event.id}`
+      const now = Date.now()
+      const lastProcessed = this.processedEvents.get(eventKey)
+      if (lastProcessed && (now - lastProcessed) < this.EVENT_DEDUP_WINDOW) {
+        console.warn(`⚠️ [RealtimeManager] Duplicate user security event ignored: ${eventKey}`)
+        return
+      }
+      this.processedEvents.set(eventKey, now)
+
+      // ✅ إطلاق event للمعالجات (سيتم استدعاء refreshUserSecurityContext من useGovernanceRealtime)
+      const governanceEvent: Parameters<GovernanceEventHandler>[0] = {
+        type: 'INSERT' as RealtimeEventType,
+        table: 'user_security_events' as any,
+        new: event,
+        old: undefined,
+        timestamp: now,
+        affectsCurrentUser: true, // ✅ دائماً true لأننا فلترنا حسب user_id
+      }
+
+      console.log(`✅ [RealtimeManager] Dispatching user security event to handlers:`, {
+        eventType: event.event_type,
+        handlersCount: this.governanceHandlers.size,
+      })
+
+      // ✅ إرسال الحدث لجميع معالجات الحوكمة
+      this.governanceHandlers.forEach((handler) => {
+        try {
+          handler(governanceEvent)
+        } catch (error) {
+          console.error(`❌ [RealtimeManager] Error in user security event handler:`, error)
+        }
+      })
+
+      // ✅ إعادة بناء السياق والاشتراكات فوراً (ERP Grade Requirement)
+      console.log(`🔄 [RealtimeManager] User security event affects current user, rebuilding context...`, {
+        eventType: event.event_type,
+      })
+      await this.rebuildContextAndSubscriptions()
+    } catch (error) {
+      console.error(`❌ [RealtimeManager] Error handling user security event:`, error)
     }
   }
 
