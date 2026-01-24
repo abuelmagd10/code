@@ -91,31 +91,46 @@ BEGIN
   WHERE id = p_notification_id;
 
   -- ✅ Audit Log (استخدام البنية الصحيحة لـ audit_logs)
-  -- البنية المتوقعة: company_id, user_id, action, details (JSONB), created_at
+  -- البنية الفعلية: company_id, user_id, action (INSERT/UPDATE/DELETE/REVERT), target_table, record_id, old_data, new_data
   BEGIN
     INSERT INTO audit_logs (
       company_id,
       user_id,
       action,
-      details,
-      created_at
+      target_table,
+      record_id,
+      record_identifier,
+      old_data,
+      new_data,
+      changed_fields
     )
     VALUES (
       v_company_id,
       p_user_id,
-      'notification_status_changed',
+      'UPDATE', -- ✅ يجب أن يكون أحد: INSERT, UPDATE, DELETE, REVERT
+      'notifications',
+      p_notification_id,
+      'notification_' || p_notification_id::TEXT,
       jsonb_build_object(
-        'entity_type', 'notification',
-        'entity_id', p_notification_id,
-        'old_status', v_notification.status,
-        'new_status', p_new_status,
-        'notification_title', v_notification.title
+        'status', v_notification.status,
+        'read_at', v_notification.read_at,
+        'actioned_at', v_notification.actioned_at
       ),
-      NOW()
+      jsonb_build_object(
+        'status', p_new_status,
+        'read_at', CASE WHEN p_new_status IN ('read', 'actioned') AND v_notification.read_at IS NULL THEN NOW() ELSE v_notification.read_at END,
+        'actioned_at', CASE WHEN p_new_status = 'actioned' AND v_notification.actioned_at IS NULL THEN NOW() ELSE v_notification.actioned_at END,
+        'notification_title', v_notification.title,
+        'notification_id', p_notification_id
+      ),
+      ARRAY['status'] -- ✅ الحقول التي تغيرت
     );
   EXCEPTION
     WHEN undefined_table THEN
       -- ✅ إذا كان جدول audit_logs غير موجود، نتجاهل الخطأ
+      NULL;
+    WHEN check_violation THEN
+      -- ✅ إذا كان action غير مسموح، نتجاهل الخطأ
       NULL;
     WHEN OTHERS THEN
       -- ✅ إذا كان هناك خطأ آخر (مثل عمود غير موجود)، نتجاهله أيضاً
