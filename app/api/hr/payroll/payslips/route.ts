@@ -68,19 +68,15 @@ export async function PUT(req: NextRequest) {
       .eq('company_id', companyId)
       .eq('payroll_run_id', runId)
       .eq('employee_id', employeeId)
-      .select('id')
-      .single()
     if (upd.error) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تحديث كشف المرتب", upd.error.message)
     }
     try {
       await (admin || ssr).from('audit_logs').insert({
-        action: 'UPDATE',
-        target_table: 'payslips',
+        action: 'payslip_updated',
         company_id: companyId,
         user_id: user!.id,
-        record_id: upd.data?.id,
-        new_data: { runId, employeeId }
+        details: { runId, employeeId }
       })
     } catch {}
     return apiSuccess({ ok: true })
@@ -131,17 +127,6 @@ export async function DELETE(req: NextRequest) {
       )
     }
 
-    // الحصول على معرف السجل قبل الحذف
-    const { data: payslipToDelete } = await client
-      .from('payslips')
-      .select('id')
-      .eq('company_id', companyId)
-      .eq('payroll_run_id', runId)
-      .eq('employee_id', employeeId)
-      .single()
-
-    const payslipId = payslipToDelete?.id as string | undefined
-
     const del = await client
       .from('payslips')
       .delete()
@@ -153,12 +138,10 @@ export async function DELETE(req: NextRequest) {
     }
     try {
       await (admin || ssr).from('audit_logs').insert({
-        action: 'DELETE',
-        target_table: 'payslips',
+        action: 'payslip_deleted',
         company_id: companyId,
         user_id: user!.id,
-        record_id: payslipId,
-        old_data: { runId, employeeId }
+        details: { runId, employeeId }
       })
     } catch {}
     return apiSuccess({ ok: true })

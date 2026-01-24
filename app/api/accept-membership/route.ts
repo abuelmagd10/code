@@ -28,23 +28,19 @@ export async function POST(req: NextRequest) {
         .eq('user_id', userId)
         .limit(1)
       if (!exists || exists.length === 0) {
-        const { data: newMember, error: insErr } = await admin
+        const { error: insErr } = await admin
           .from('company_members')
           .insert({ company_id: companyId, user_id: userId, role: (inv as any).role, email })
-          .select('id')
-          .single()
         if (insErr) continue
-        await admin.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
-        try { await admin.from('audit_logs').insert({ action: 'INSERT', target_table: 'company_members', company_id: companyId, user_id: userId, record_id: newMember?.id, new_data: { email, role: (inv as any).role } }) } catch {}
-      } else {
-        await admin.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
       }
+      await admin.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
+      try { await admin.from('audit_logs').insert({ action: 'invite_accepted', company_id: companyId, user_id: userId, details: { email, role: (inv as any).role } as any }) } catch {}
       chosenCompanyId = chosenCompanyId || companyId
     }
     try {
       if (chosenCompanyId) {
         await (admin as any).auth.admin.updateUserById(userId, { user_metadata: { active_company_id: chosenCompanyId } })
-        try { await admin.from('audit_logs').insert({ action: 'UPDATE', target_table: 'users', company_id: chosenCompanyId, user_id: userId, record_id: userId, new_data: { active_company_id: chosenCompanyId } }) } catch {}
+        try { await admin.from('audit_logs').insert({ action: 'active_company_set', company_id: chosenCompanyId, user_id: userId, details: {} }) } catch {}
       }
     } catch {}
     return NextResponse.json({ ok: true, companyId: chosenCompanyId }, { status: 200 })

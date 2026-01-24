@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
         target_table: 'payroll_runs',
         company_id: companyId,
         user_id: user!.id,
-        record_id: runId,
+        record_id: ins.data?.[0]?.id,
         new_data: { year, month, count: rows.length }
       })
     } catch {}

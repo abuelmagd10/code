@@ -60,10 +60,10 @@ export async function POST(req: NextRequest) {
 
     try {
       await admin.from('audit_logs').insert({
-        action: 'INSERT',
-        target_table: 'company_invitations',
+        action: 'invite_sent',
         company_id: companyId,
         user_id: user.id,
+        target_table: 'company_invitations',
         record_id: inviteId || null,
         new_data: { email, role }
       })

@@ -33,14 +33,16 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
       // ✅ انتظار تحديث البيانات أولاً
       await new Promise(resolve => setTimeout(resolve, 100))
       
-      // إعادة فحص الصلاحية للصفحة الحالية
-      const resource = getResourceFromPath(pathname)
+      // ✅ استخدام pathname الحالي (من hook) بدلاً من captured value
+      // ✅ هذا يضمن أننا نفحص الصفحة الحالية وليس الصفحة القديمة
+      const currentPathname = pathname
+      const resource = getResourceFromPath(currentPathname)
       const access = canAccessPage(resource)
       
       if (access) {
         // ✅ الصفحة الحالية لا تزال مسموحة - لا نعيد التوجيه
         setHasAccess(true)
-        console.log(`✅ [RealtimeRouteGuard] Current page ${pathname} is still allowed`)
+        console.log(`✅ [RealtimeRouteGuard] Current page ${currentPathname} is still allowed`)
       } else {
         // ❌ الصفحة الحالية لم تعد مسموحة - إعادة توجيه ديناميكية
         setHasAccess(false)
@@ -50,7 +52,7 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
         
         // ✅ التحقق من أن الصفحة الهدف صالحة
         if (redirectTo && redirectTo !== "/no-access") {
-          console.log(`🔄 [RealtimeRouteGuard] Current page ${pathname} is no longer allowed, redirecting to: ${redirectTo}`)
+          console.log(`🔄 [RealtimeRouteGuard] Current page ${currentPathname} is no longer allowed, redirecting to: ${redirectTo}`)
           router.replace(redirectTo)
         } else {
           console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user`)
@@ -65,12 +67,15 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
       // ✅ انتظار تحديث البيانات أولاً
       await new Promise(resolve => setTimeout(resolve, 100))
       
-      const resource = getResourceFromPath(pathname)
+      // ✅ استخدام pathname الحالي (من hook) بدلاً من captured value
+      // ✅ هذا يضمن أننا نفحص الصفحة الحالية وليس الصفحة القديمة
+      const currentPathname = pathname
+      const resource = getResourceFromPath(currentPathname)
       const access = canAccessPage(resource)
       
       if (access) {
         setHasAccess(true)
-        console.log(`✅ [RealtimeRouteGuard] Current page ${pathname} is still allowed after branch change`)
+        console.log(`✅ [RealtimeRouteGuard] Current page ${currentPathname} is still allowed after branch change`)
       } else {
         setHasAccess(false)
         
@@ -79,7 +84,7 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
         
         // ✅ التحقق من أن الصفحة الهدف صالحة
         if (redirectTo && redirectTo !== "/no-access") {
-          console.log(`🔄 [RealtimeRouteGuard] Current page ${pathname} not allowed after branch change, redirecting to: ${redirectTo}`)
+          console.log(`🔄 [RealtimeRouteGuard] Current page ${currentPathname} not allowed after branch change, redirecting to: ${redirectTo}`)
           router.replace(redirectTo)
         } else {
           console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user after branch change`)
@@ -106,8 +111,15 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
     if (!access) {
       // منع الوصول وإعادة التوجيه
       const redirectTo = getFirstAllowedPage()
-      console.log(`🚫 [RealtimeRouteGuard] Access denied to ${pathname}, redirecting to: ${redirectTo}`)
-      router.replace(redirectTo)
+      
+      // ✅ التحقق من أن الصفحة الهدف صالحة (نفس التحقق الموجود في realtime handlers)
+      if (redirectTo && redirectTo !== "/no-access") {
+        console.log(`🚫 [RealtimeRouteGuard] Access denied to ${pathname}, redirecting to: ${redirectTo}`)
+        router.replace(redirectTo)
+      } else {
+        console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user, showing no-access screen`)
+        setHasAccess(false)
+      }
     }
   }, [isReady, pathname, canAccessPage, getFirstAllowedPage, router])
 

@@ -246,9 +246,31 @@ async function fetchAccessProfile(
     }
 
     // جلب الفروع المسموح بها
+    // ✅ دعم الفروع المتعددة من user_branch_access (إذا كان موجوداً)
+    // ✅ Fallback إلى branch_id من company_members (فرع واحد)
     let allowed_branches: string[] = []
-    if (!isFullAccess && member.branch_id) {
-      allowed_branches = [member.branch_id]
+    if (!isFullAccess) {
+      // ✅ محاولة جلب الفروع من user_branch_access أولاً (دعم فروع متعددة)
+      try {
+        const { data: branchAccess } = await supabase
+          .from("user_branch_access")
+          .select("branch_id")
+          .eq("company_id", companyId)
+          .eq("user_id", userId)
+          .eq("is_active", true)
+        
+        if (branchAccess && branchAccess.length > 0) {
+          allowed_branches = branchAccess.map((a: any) => a.branch_id).filter(Boolean)
+        }
+      } catch (error) {
+        // ✅ إذا فشل query user_branch_access، نستخدم branch_id من company_members
+        console.warn("[AccessContext] Error fetching user_branch_access, falling back to company_members.branch_id:", error)
+      }
+      
+      // ✅ Fallback: إذا لم يكن هناك فروع من user_branch_access، نستخدم branch_id من company_members
+      if (allowed_branches.length === 0 && member.branch_id) {
+        allowed_branches = [member.branch_id]
+      }
     }
 
     // جلب المخازن المسموح بها

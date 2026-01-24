@@ -81,16 +81,16 @@ export async function POST(req: NextRequest) {
     }
     const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
-    let up = await client.from("attendance_records").upsert({ company_id: companyId, employee_id: employeeId, day_date: dayDate, status }, { onConflict: "company_id,employee_id,day_date" }).select('id').single()
+    let up = await client.from("attendance_records").upsert({ company_id: companyId, employee_id: employeeId, day_date: dayDate, status }, { onConflict: "company_id,employee_id,day_date" })
     if (useHr && up.error && ((up.error as any).code === "PGRST205" || String(up.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
-      up = await clientHr.from("attendance_records").upsert({ company_id: companyId, employee_id: employeeId, day_date: dayDate, status }, { onConflict: "company_id,employee_id,day_date" }).select('id').single()
+      up = await clientHr.from("attendance_records").upsert({ company_id: companyId, employee_id: employeeId, day_date: dayDate, status }, { onConflict: "company_id,employee_id,day_date" })
     }
     const { error: upsertError } = up
     if (upsertError) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تسجيل الحضور", upsertError.message)
     }
-    try { await admin.from('audit_logs').insert({ action: 'UPDATE', target_table: 'attendance_records', company_id: companyId, user_id: user.id, record_id: up.data?.id, new_data: { employeeId, dayDate, status } }) } catch {}
+    try { await admin.from('audit_logs').insert({ action: 'UPDATE', target_table: 'attendance_records', company_id: companyId, user_id: user.id, record_id: up.data?.[0]?.id, new_data: { employeeId, dayDate, status } }) } catch {}
     return apiSuccess({ ok: true })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء تسجيل الحضور", e?.message)
