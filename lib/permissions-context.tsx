@@ -238,6 +238,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
 
   // تحميل الصلاحيات من الخادم
   const loadPermissions = useCallback(async () => {
+    console.log('🔄 [PermissionsContext] loadPermissions called')
     // لا نُظهر حالة التحميل إذا كان هناك كاش صالح
     if (!cachedData.current.isValid) {
       setIsLoading(true)
@@ -246,6 +247,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
+        console.warn('⚠️ [PermissionsContext] No user found in loadPermissions')
         clearPermissionsCache()
         setIsReady(true)
         setIsLoading(false)
@@ -255,6 +257,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
 
       const cid = await getActiveCompanyId(supabase)
       if (!cid) {
+        console.warn('⚠️ [PermissionsContext] No company ID found in loadPermissions')
         setIsReady(true)
         setIsLoading(false)
         return
@@ -262,6 +265,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
       setCompanyId(cid)
 
       // جلب الدور
+      console.log('🔄 [PermissionsContext] Fetching user role...', { userId: user.id, companyId: cid })
       const { data: member } = await supabase
         .from("company_members")
         .select("role")
@@ -270,6 +274,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
         .maybeSingle()
 
       const userRole = String(member?.role || "")
+      console.log('✅ [PermissionsContext] User role loaded:', { role: userRole })
       setRole(userRole)
 
       // owner و admin و general_manager لديهم كل الصلاحيات

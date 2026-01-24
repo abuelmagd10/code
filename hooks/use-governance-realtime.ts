@@ -79,23 +79,36 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
   }, [onPermissionsChanged, onRoleChanged, onBranchOrWarehouseChanged])
 
   useEffect(() => {
-    console.log('🔐 [GovernanceRealtime] Setting up governance realtime hook')
+    console.log('🔐 [GovernanceRealtime] Setting up governance realtime hook', {
+      hasOnPermissionsChanged: !!onPermissionsChanged,
+      hasOnRoleChanged: !!onRoleChanged,
+      hasOnBranchOrWarehouseChanged: !!onBranchOrWarehouseChanged,
+    })
     const manager = getRealtimeManager()
 
     const handler: GovernanceEventHandler = async (event) => {
-      console.log('🔐 [GovernanceRealtime] Event received:', event)
+      console.log('🔐 [GovernanceRealtime] Event received:', {
+        table: event.table,
+        type: event.type,
+        affectsCurrentUser: event.affectsCurrentUser,
+        hasNew: !!event.new,
+        hasOld: !!event.old,
+      })
       try {
         const { table, type, affectsCurrentUser, new: newRecord, old: oldRecord } = event
 
         if (!affectsCurrentUser) {
           // الحدث لا يؤثر على المستخدم الحالي
+          console.log('⚠️ [GovernanceRealtime] Event does not affect current user, skipping')
           return
         }
 
-        console.log(`🔄 [GovernanceRealtime] Event received:`, {
+        console.log(`🔄 [GovernanceRealtime] Processing event that affects current user:`, {
           table,
           type,
           affectsCurrentUser,
+          newRecord: newRecord ? { id: newRecord.id, user_id: newRecord.user_id, role: newRecord.role, branch_id: newRecord.branch_id } : null,
+          oldRecord: oldRecord ? { id: oldRecord.id, user_id: oldRecord.user_id, role: oldRecord.role, branch_id: oldRecord.branch_id } : null,
         })
 
         // 🔐 معالجة الأحداث حسب نوع الجدول

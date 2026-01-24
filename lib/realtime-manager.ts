@@ -818,25 +818,48 @@ class RealtimeManager {
     payload: RealtimePostgresChangesPayload<any>
   ): Promise<void> {
     try {
-      if (!this.context) return
+      if (!this.context) {
+        console.warn('⚠️ [RealtimeManager] handleGovernanceEvent: no context')
+        return
+      }
 
       const { userId, companyId, role } = this.context
-      const record = payload.new || payload.old
+      const newRecord = payload.new as any
+      const oldRecord = payload.old as any
+      const record = newRecord || oldRecord
 
-      if (!record) return
+      if (!record) {
+        console.warn('⚠️ [RealtimeManager] handleGovernanceEvent: no record in payload')
+        return
+      }
+
+      console.log(`🔐 [RealtimeManager] Governance event received:`, {
+        table,
+        eventType: payload.eventType,
+        recordId: record.id,
+        userId: record.user_id,
+        companyId: record.company_id,
+        currentUserId: userId,
+        currentCompanyId: companyId,
+        currentRole: role,
+      })
 
       // 🔐 منع التكرار
       const eventKey = `governance:${table}:${payload.eventType}:${record.id}:${Date.now()}`
       const now = Date.now()
       const lastProcessed = this.processedEvents.get(eventKey)
       if (lastProcessed && (now - lastProcessed) < this.EVENT_DEDUP_WINDOW) {
+        console.warn(`⚠️ [RealtimeManager] Duplicate governance event ignored: ${eventKey}`)
         return
       }
       this.processedEvents.set(eventKey, now)
 
       // 🔐 التحقق من الصلاحيات: فقط الأحداث في نفس الشركة
       if (record.company_id && record.company_id !== companyId) {
-        console.warn(`🚫 [RealtimeManager] Governance event rejected: different company`)
+        console.warn(`🚫 [RealtimeManager] Governance event rejected: different company`, {
+          recordCompanyId: record.company_id,
+          currentCompanyId: companyId,
+        })
         return
       }
 
@@ -846,6 +869,13 @@ class RealtimeManager {
       if (table === 'company_members') {
         // إذا كان الحدث يخص المستخدم الحالي
         affectsCurrentUser = record.user_id === userId
+        console.log(`🔐 [RealtimeManager] company_members event check:`, {
+          recordUserId: record.user_id,
+          currentUserId: userId,
+          affectsCurrentUser,
+          roleChanged: oldRecord?.role !== newRecord?.role,
+          branchChanged: oldRecord?.branch_id !== newRecord?.branch_id,
+        })
       } else if (table === 'branches') {
         // إذا كان الفرع مرتبط بالمستخدم الحالي
         affectsCurrentUser = this.context.branchId === record.id
@@ -865,6 +895,13 @@ class RealtimeManager {
 
       if (!canSeeEvent) {
         // المستخدمون الآخرون لا يرون إلا الأحداث التي تخصهم
+        console.warn(`🚫 [RealtimeManager] Governance event rejected: user not affected`, {
+          table,
+          recordUserId: record.user_id,
+          currentUserId: userId,
+          role,
+          affectsCurrentUser,
+        })
         return
       }
 
@@ -876,6 +913,13 @@ class RealtimeManager {
         timestamp: now,
         affectsCurrentUser,
       }
+
+      console.log(`✅ [RealtimeManager] Dispatching governance event to handlers:`, {
+        table,
+        eventType: payload.eventType,
+        affectsCurrentUser,
+        handlersCount: this.governanceHandlers.size,
+      })
 
       // إرسال الحدث لجميع معالجات الحوكمة
       this.governanceHandlers.forEach((handler) => {

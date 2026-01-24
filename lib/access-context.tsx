@@ -306,10 +306,12 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
   // تحميل Access Profile
   const loadAccessProfile = useCallback(async (): Promise<AccessProfile | null> => {
     try {
+      console.log('🔄 [AccessContext] loadAccessProfile called')
       setIsLoading(true)
 
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
+        console.warn('⚠️ [AccessContext] No user found in loadAccessProfile')
         setProfile(null)
         setIsReady(true)
         setIsLoading(false)
@@ -318,13 +320,21 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
 
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) {
+        console.warn('⚠️ [AccessContext] No company ID found in loadAccessProfile')
         setProfile(null)
         setIsReady(true)
         setIsLoading(false)
         return null
       }
 
+      console.log('🔄 [AccessContext] Fetching access profile...', { userId: user.id, companyId })
       const accessProfile = await fetchAccessProfile(supabase, user.id, companyId)
+      console.log('✅ [AccessContext] Access profile loaded:', {
+        branchId: accessProfile?.branch_id,
+        role: accessProfile?.role,
+        allowedPages: accessProfile?.allowed_pages?.length || 0,
+        allowedBranches: accessProfile?.allowed_branches?.length || 0,
+      })
       setProfile(accessProfile)
       setIsReady(true)
       return accessProfile
@@ -410,10 +420,14 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         console.log(`✅ [AccessContext] Current page ${pathname} is still allowed after context update`)
       }
 
-      // 🔹 4. إطلاق event لتحديث UI (Sidebar, Menus, etc.)
+      // 🔹 4. إطلاق events لتحديث UI والصلاحيات
       // ✅ هذا يحدث UI فقط - لا unmount
       if (typeof window !== 'undefined') {
+        // ✅ إطلاق event لتحديث UI (Sidebar, Menus, etc.)
         window.dispatchEvent(new Event('access_profile_updated'))
+        
+        // ✅ إطلاق event لإعادة تحميل الصلاحيات في PermissionsContext
+        window.dispatchEvent(new Event('permissions_updated'))
       }
 
       console.log('✅ [AccessContext] Security context refreshed successfully (data only)')
@@ -514,22 +528,24 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     onPermissionsChanged: async () => {
       // ✅ تحديث البيانات فقط - لا إعادة توجيه
       console.log('🔄 [AccessContext] Permissions changed via Realtime, reloading profile...')
-      await loadAccessProfile()
+      // ✅ استخدام refreshUserSecurityContext لإعادة تحميل كامل مع إطلاق الأحداث
+      await refreshUserSecurityContext(false)
       // ✅ لا نعيد قيمة - فقط تحديث السياق
       // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
     },
     onRoleChanged: async () => {
       // ✅ تحديث البيانات فقط - لا إعادة توجيه
       console.log('🔄 [AccessContext] Role changed via Realtime, reloading profile...')
-      await loadAccessProfile()
+      // ✅ استخدام refreshUserSecurityContext لإعادة تحميل كامل مع إطلاق الأحداث
+      await refreshUserSecurityContext(false)
       // ✅ لا نعيد قيمة - فقط تحديث السياق
       // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
     },
     onBranchOrWarehouseChanged: async () => {
       // ✅ تحديث البيانات فقط - لا إعادة توجيه
       console.log('🔄 [AccessContext] Branch/Warehouse changed via Realtime, refreshing context...')
-      // ✅ استخدام refreshUserSecurityContext لكن بدون إعادة توجيه
-      await refreshUserSecurityContext()
+      // ✅ استخدام refreshUserSecurityContext مع branchChanged = true لإطلاق user_context_changed event
+      await refreshUserSecurityContext(true)
       // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
     },
     showNotifications: true,
