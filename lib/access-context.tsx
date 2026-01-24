@@ -247,8 +247,32 @@ async function fetchAccessProfile(
 
     // جلب الفروع المسموح بها
     let allowed_branches: string[] = []
-    if (!isFullAccess && member.branch_id) {
-      allowed_branches = [member.branch_id]
+    if (!isFullAccess) {
+      // ✅ جلب الفروع من user_branch_access إذا كان موجوداً
+      try {
+        const { data: branchAccess } = await supabase
+          .from("user_branch_access")
+          .select("branch_id")
+          .eq("company_id", companyId)
+          .eq("user_id", userId)
+          .eq("is_active", true)
+        
+        if (branchAccess && branchAccess.length > 0) {
+          allowed_branches = branchAccess.map((a: any) => a.branch_id)
+        }
+      } catch (error) {
+        console.warn("[AccessContext] Error fetching user_branch_access, falling back to member.branch_id:", error)
+      }
+      
+      // ✅ إضافة الفرع الأساسي من company_members إذا لم يكن موجوداً
+      if (member.branch_id && !allowed_branches.includes(member.branch_id)) {
+        allowed_branches.push(member.branch_id)
+      }
+      
+      // ✅ إذا لم يكن هناك فروع من user_branch_access، نستخدم branch_id من company_members
+      if (allowed_branches.length === 0 && member.branch_id) {
+        allowed_branches = [member.branch_id]
+      }
     }
 
     // جلب المخازن المسموح بها
@@ -375,8 +399,11 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 🔹 1.5. التحقق من تغيير الفرع وتحديثه تلقائياً
+      // ✅ التحقق من التغيير الفعلي حتى لو لم يتم تمرير branchChanged = true
       const newBranchId = freshProfile.branch_id || null
-      if (branchChanged && oldBranchId !== newBranchId && newBranchId) {
+      const actualBranchChanged = oldBranchId !== newBranchId
+      
+      if (actualBranchChanged && newBranchId) {
         console.log(`🔄 [AccessContext] Branch changed from ${oldBranchId} to ${newBranchId}, updating context...`)
         
         // ✅ إطلاق event لتحديث الفرع في جميع أنحاء التطبيق
@@ -385,9 +412,53 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
             detail: {
               oldBranchId,
               newBranchId,
-              reason: 'branch_changed_via_realtime'
+              reason: 'branch_changed_via_realtime',
+              allowedBranches: freshProfile.allowed_branches || []
             }
           }))
+        }
+      }
+      
+      // ✅ التحقق من تغيير allowed_branches أيضاً
+      const oldAllowedBranches = profile?.allowed_branches || []
+      const newAllowedBranches = freshProfile.allowed_branches || []
+      const allowedBranchesChanged = JSON.stringify(oldAllowedBranches.sort()) !== JSON.stringify(newAllowedBranches.sort())
+      
+      if (allowedBranchesChanged) {
+        console.log(`🔄 [AccessContext] Allowed branches changed:`, {
+          old: oldAllowedBranches,
+          new: newAllowedBranches
+        })
+        
+        // ✅ إذا كان الفرع الحالي لم يعد ضمن allowed_branches، يجب تحديث الفرع تلقائياً
+        if (newBranchId && !newAllowedBranches.includes(newBranchId) && newAllowedBranches.length > 0) {
+          const firstAllowedBranch = newAllowedBranches[0]
+          console.log(`🔄 [AccessContext] Current branch ${newBranchId} no longer in allowed_branches, switching to: ${firstAllowedBranch}`)
+          
+          // ✅ إطلاق event لتحديث الفرع في جميع أنحاء التطبيق
+          // ✅ هذا يحدث الفرع في الواجهة فقط - التغيير الفعلي في قاعدة البيانات يتم من قبل Owner/Admin
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('user_context_changed', {
+              detail: {
+                oldBranchId: newBranchId,
+                newBranchId: firstAllowedBranch,
+                reason: 'allowed_branches_changed_via_realtime',
+                allowedBranches: newAllowedBranches
+              }
+            }))
+          }
+        } else if (allowedBranchesChanged) {
+          // ✅ إذا تغير allowed_branches لكن الفرع الحالي لا يزال ضمنها، نطلق event للتحديث فقط
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('user_context_changed', {
+              detail: {
+                oldBranchId: newBranchId,
+                newBranchId: newBranchId,
+                reason: 'allowed_branches_updated_via_realtime',
+                allowedBranches: newAllowedBranches
+              }
+            }))
+          }
         }
       }
 

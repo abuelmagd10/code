@@ -174,6 +174,28 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
             await handlersRef.current.onPermissionsChanged()
           }
           return
+        } else if (table === 'user_branch_access') {
+          // ✅ تغيير في الفروع المسموحة للمستخدم (allowed_branches)
+          // ✅ هذا يؤثر على الصلاحيات والفرع الحالي
+          if (showNotifications) {
+            toast({
+              title: "تم تحديث الفروع المسموحة",
+              description: "تم تحديث الفروع المسموحة لك. سيتم تحديث البيانات المعروضة.",
+              variant: "default",
+            })
+          }
+
+          // ✅ استدعاء onBranchOrWarehouseChanged لأن تغيير allowed_branches يؤثر على الفرع
+          if (handlersRef.current.onBranchOrWarehouseChanged) {
+            await handlersRef.current.onBranchOrWarehouseChanged()
+            return
+          }
+          
+          // ✅ إذا لم يكن onBranchOrWarehouseChanged معرّف، نستخدم onPermissionsChanged كـ fallback
+          if (handlersRef.current.onPermissionsChanged) {
+            await handlersRef.current.onPermissionsChanged()
+          }
+          return
         } else if (table === 'company_role_permissions') {
           // تغيير في صلاحيات الدور
           if (showNotifications) {

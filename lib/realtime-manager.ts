@@ -27,6 +27,7 @@ export type RealtimeTable =
   | 'inventory_transfers' // ✅ النقل بين المخازن
   // 🔐 جداول الحوكمة (Governance)
   | 'company_members'
+  | 'user_branch_access' // ✅ الفروع المسموحة للمستخدم
   | 'branches'
   | 'warehouses'
   | 'company_role_permissions'
@@ -62,7 +63,7 @@ export type RealtimeEventHandler<T = any> = (event: RealtimeEvent<T>) => void | 
 // 🔐 Governance Event Handlers
 export type GovernanceEventHandler = (event: {
   type: RealtimeEventType
-  table: 'company_members' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions'
+  table: 'company_members' | 'user_branch_access' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions'
   new?: any
   old?: any
   timestamp: number
@@ -256,6 +257,7 @@ class RealtimeManager {
       'inventory_transfers': 'inventory_transfers', // ✅ النقل بين المخازن
       // 🔐 جداول الحوكمة
       'company_members': 'company_members',
+      'user_branch_access': 'user_branch_access',
       'branches': 'branches',
       'warehouses': 'warehouses',
       'company_role_permissions': 'company_role_permissions',
@@ -743,6 +745,22 @@ class RealtimeManager {
           (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('company_members', payload)
         )
 
+      // 🔐 الاشتراك في user_branch_access (تغييرات الفروع المسموحة)
+      // ✅ فلترة صارمة: company_id و user_id فقط - المستخدم يستقبل فقط تعديل فروعه
+      const userBranchAccessFilter = `company_id=eq.${companyId}.and.user_id=eq.${userId}`
+      
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // INSERT, UPDATE, DELETE
+            schema: 'public',
+            table: 'user_branch_access',
+            filter: userBranchAccessFilter,
+          },
+          (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('user_branch_access', payload)
+        )
+
       // 🔐 الاشتراك في branches (تغييرات الفروع)
       channel
         .on(
@@ -814,7 +832,7 @@ class RealtimeManager {
    * معالجة أحداث الحوكمة
    */
   private async handleGovernanceEvent(
-    table: 'company_members' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions',
+    table: 'company_members' | 'user_branch_access' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions',
     payload: RealtimePostgresChangesPayload<any>
   ): Promise<void> {
     try {
@@ -905,9 +923,9 @@ class RealtimeManager {
         return
       }
 
-      const event = {
+      const event: Parameters<GovernanceEventHandler>[0] = {
         type: payload.eventType as RealtimeEventType,
-        table,
+        table: table as 'company_members' | 'user_branch_access' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions',
         new: payload.new,
         old: payload.old,
         timestamp: now,
