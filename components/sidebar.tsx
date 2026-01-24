@@ -368,7 +368,12 @@ export function Sidebar() {
           .eq('user_id', currentUserId)
           .maybeSingle()
         userRoleForFiltering = member?.role || null
-      } catch (error) {
+      } catch (error: any) {
+        // ✅ معالجة AbortError بشكل صحيح
+        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+          console.warn('⚠️ [Sidebar] Loading user role for notification filtering aborted')
+          return
+        }
         console.error('Error loading user role for notification filtering:', error)
       }
     }
@@ -692,12 +697,7 @@ export function Sidebar() {
             }
           }
         }
-      } catch (err: any) {
-        // ✅ معالجة AbortError بشكل صحيح
-        if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
-          console.warn('⚠️ [Sidebar] Loading user role and branch aborted (component unmounted)')
-          return
-        }
+      } catch (err) {
         console.error("Error loading user role and branch:", err)
       }
     }
@@ -713,50 +713,20 @@ export function Sidebar() {
       handleNotificationsUpdate() // تحديث عدد الإشعارات عند تغيير الشركة
     }
     const onPermissionsUpdated = async () => { 
-      // ✅ لا نعيد التوجيه إذا كنا في صفحة users (قد يكون المستخدم يقوم بتعديل صلاحياته)
-      const currentPath = pathname
-      if (currentPath === '/settings/users') {
-        // نحن في صفحة users - نحدث الصلاحيات فقط بدون إعادة التوجيه
-        setTimeout(() => {
-          loadPerms()
-        }, 100)
-        return
-      }
-
-      // تأخير بسيط لتجنب مشاكل hydration
-      setTimeout(async () => {
+      // ✅ تحديث الصلاحيات فقط - لا إعادة توجيه
+      // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
+      console.log('🔄 [Sidebar] Permissions updated, reloading permissions...')
+      setTimeout(() => {
         loadPerms()
-        
-        // 🔐 التحقق من الصفحة الحالية وإعادة التوجيه إذا لزم الأمر
-        try {
-          if (!currentPath || currentPath === '/auth/login' || currentPath === '/auth/callback' || currentPath.startsWith('/invitations/') || currentPath === '/no-permissions') {
-            return // لا نتحقق من صفحات المصادقة أو صفحة "لا توجد صلاحيات"
-          }
-          
-          // التحقق من صلاحية الصفحة الحالية
-          const checkRes = await fetch(`/api/check-page-access?path=${encodeURIComponent(currentPath)}`)
-          if (!checkRes.ok) return
-          
-          const checkData = await checkRes.json()
-          
-          // إذا لم يكن المستخدم لديه صلاحية للصفحة الحالية، قم بإعادة التوجيه
-          if (!checkData.allowed) {
-            // الحصول على أول صفحة مسموح بها
-            const res = await fetch('/api/first-allowed-page')
-            if (res.ok) {
-              const data = await res.json()
-              const allowedPath = data.path || '/no-permissions'
-              // ✅ لا نعيد التوجيه إذا كنا في صفحة users
-              if (currentPath !== '/settings/users') {
-                router.replace(allowedPath)
-              }
-            }
-          }
-        } catch (error) {
-          console.error("Error checking page access after permissions update:", error)
-          // لا نوقف العملية إذا فشل التحقق
-        }
       }, 100)
+    }
+    
+    const onAccessProfileUpdated = async () => {
+      // ✅ تحديث Access Profile - تحديث القوائم فقط
+      // ✅ لا إعادة توجيه - يتم التعامل معه في RealtimeRouteGuard
+      console.log('🔄 [Sidebar] Access profile updated, UI will refresh automatically via React state')
+      // ✅ Sidebar سيتم تحديثه تلقائياً عبر React state من AccessContext
+      // ✅ لا حاجة لإعادة تحميل يدوي - React سيتعامل معه
     }
     const onProfileUpdated = () => { loadUserProfile() }
     if (typeof window !== 'undefined') {
@@ -764,6 +734,7 @@ export function Sidebar() {
       window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
       window.addEventListener('company_updated', onCompanyUpdated)
       window.addEventListener('permissions_updated', onPermissionsUpdated)
+      window.addEventListener('access_profile_updated', onAccessProfileUpdated)
       window.addEventListener('profile_updated', onProfileUpdated)
       window.addEventListener('notifications_updated', handleNotificationsUpdate)
       // company_updated يتم التعامل معه في onCompanyUpdated
@@ -774,6 +745,7 @@ export function Sidebar() {
         window.removeEventListener('app_language_changed', handler)
         window.removeEventListener('company_updated', onCompanyUpdated)
         window.removeEventListener('permissions_updated', onPermissionsUpdated)
+        window.removeEventListener('access_profile_updated', onAccessProfileUpdated)
         window.removeEventListener('profile_updated', onProfileUpdated)
         window.removeEventListener('notifications_updated', handleNotificationsUpdate)
       }

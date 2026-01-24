@@ -338,6 +338,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
   }, [supabase])
 
   // 🔐 إعادة تهيئة كاملة للسياق الأمني (عند تغيير الفرع)
+  // ✅ تحديث البيانات فقط - لا unmount للـ contexts
   const refreshUserSecurityContext = useCallback(async () => {
     // منع التكرار
     if (isRefreshingRef.current) {
@@ -347,9 +348,10 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
 
     try {
       isRefreshingRef.current = true
-      console.log('🔄 [AccessContext] Refreshing user security context...')
+      console.log('🔄 [AccessContext] Refreshing user security context (data only, no redirect)...')
 
       // 🔹 1. إعادة تحميل بيانات المستخدم كاملة من السيرفر
+      // ✅ هذا يحدث profile فقط - لا unmount للـ context
       const freshProfile = await loadAccessProfile()
       if (!freshProfile) {
         console.warn('⚠️ [AccessContext] Failed to load fresh profile')
@@ -357,6 +359,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 🔹 2. تحديث Realtime Manager بسياق الفرع الجديد
+      // ✅ تحديث السياق فقط - لا unmount
       try {
         const realtimeManager = getRealtimeManager()
         await realtimeManager.updateContext()
@@ -370,28 +373,27 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         console.error('❌ [AccessContext] Error updating realtime context:', realtimeError)
       }
 
-      // 🔹 3. التحقق من الصفحة الحالية وإعادة التوجيه إذا لزم الأمر
+      // 🔹 3. تحديث البيانات فقط - لا إعادة توجيه ولا unmount
+      // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
+      // ✅ لا unmount للـ contexts - فقط تحديث state
       const currentResource = getResourceFromPath(pathname)
       const hasAccess = freshProfile.is_owner || freshProfile.is_admin || freshProfile.allowed_pages.includes(currentResource)
 
       if (!hasAccess) {
-        // الصفحة الحالية غير مسموحة في الفرع الجديد
-        const firstAllowedPage = getFirstAllowedRoute(freshProfile.allowed_pages)
-        console.log(`🔄 [AccessContext] Current page ${pathname} not allowed, redirecting to: ${firstAllowedPage}`)
-        
-        // توجيه تلقائي لأول صفحة مسموحة
-        router.replace(firstAllowedPage)
-        
-        toast({
-          title: "تم تحديث تعيينك",
-          description: "تم تحديث الفرع الخاص بك. تم توجيهك للصفحات المتاحة لك.",
-          variant: "default",
-        })
+        console.log(`⚠️ [AccessContext] Current page ${pathname} is no longer allowed after context update`)
+        // ✅ لا نعيد التوجيه هنا - سيتم التعامل معه في RealtimeRouteGuard
+        // ✅ لا unmount - فقط تحديث البيانات
       } else {
-        console.log(`✅ [AccessContext] Current page ${pathname} is still allowed`)
+        console.log(`✅ [AccessContext] Current page ${pathname} is still allowed after context update`)
       }
 
-      console.log('✅ [AccessContext] Security context refreshed successfully')
+      // 🔹 4. إطلاق event لتحديث UI (Sidebar, Menus, etc.)
+      // ✅ هذا يحدث UI فقط - لا unmount
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('access_profile_updated'))
+      }
+
+      console.log('✅ [AccessContext] Security context refreshed successfully (data only)')
     } catch (error: any) {
       // ✅ معالجة AbortError بشكل صحيح
       if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
@@ -407,7 +409,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     } finally {
       isRefreshingRef.current = false
     }
-  }, [supabase, router, pathname, loadAccessProfile, toast])
+  }, [supabase, pathname, loadAccessProfile, toast])
 
   // 🔐 توجيه تلقائي لأول صفحة مسموحة
   const redirectToFirstAllowedPage = useCallback(() => {
@@ -444,16 +446,25 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
   // 🔐 استخدام نظام Realtime للحوكمة
   useGovernanceRealtime({
     onPermissionsChanged: async () => {
+      // ✅ تحديث البيانات فقط - لا إعادة توجيه
+      console.log('🔄 [AccessContext] Permissions changed via Realtime, reloading profile...')
       await loadAccessProfile()
-      // لا نعيد قيمة - فقط تحديث السياق
+      // ✅ لا نعيد قيمة - فقط تحديث السياق
+      // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
     },
     onRoleChanged: async () => {
+      // ✅ تحديث البيانات فقط - لا إعادة توجيه
+      console.log('🔄 [AccessContext] Role changed via Realtime, reloading profile...')
       await loadAccessProfile()
-      // لا نعيد قيمة - فقط تحديث السياق
+      // ✅ لا نعيد قيمة - فقط تحديث السياق
+      // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
     },
     onBranchOrWarehouseChanged: async () => {
-      // ✅ استخدام refreshUserSecurityContext عند تغيير الفرع/المخزن
+      // ✅ تحديث البيانات فقط - لا إعادة توجيه
+      console.log('🔄 [AccessContext] Branch/Warehouse changed via Realtime, refreshing context...')
+      // ✅ استخدام refreshUserSecurityContext لكن بدون إعادة توجيه
       await refreshUserSecurityContext()
+      // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
     },
     showNotifications: true,
   })
