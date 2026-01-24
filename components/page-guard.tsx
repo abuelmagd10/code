@@ -91,12 +91,11 @@ export function PageGuard({
     }
     
     // ✅ إذا كان accessReady أصبح true بعد أن كان false، نعيد التوجيه للصفحة الصحيحة
-    // ✅ لكن فقط إذا كنا لا نزال في نفس المسار الذي تم التوجيه إليه (لمنع إعادة التوجيه غير المرغوب فيها)
+    // ✅ Bug Fix: إزالة فحص pathname بسبب async navigation - نعتمد على initialRedirectPathRef فقط
     if (wasAccessNotReadyRef.current && hasRedirectedRef.current) {
-      // ✅ استخدام pathnameRef.current بدلاً من pathname مباشرة (لمنع re-run cycle)
-      const currentPath = pathnameRef.current
-      // ✅ فقط إذا كنا لا نزال في /no-access أو المسار الذي تم التوجيه إليه
-      if (initialRedirectPathRef.current && (currentPath === initialRedirectPathRef.current || currentPath === "/no-access")) {
+      // ✅ إذا كنا قد قمنا بالتوجيه إلى /no-access أو fallbackPath مؤقتاً، نعيد التوجيه الآن
+      // ✅ لا نفحص pathname الحالي لأنه قد لا يكون محدثاً بعد بسبب async navigation
+      if (initialRedirectPathRef.current) {
         // ✅ إعادة التوجيه للصفحة الصحيحة الآن بعد أن أصبح accessReady true
         const redirectTo = fallbackPath || getFirstAllowedPage()
         router.replace(redirectTo)
