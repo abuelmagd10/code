@@ -422,7 +422,8 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       // ✅ التحقق من تغيير allowed_branches أيضاً
       const oldAllowedBranches = profile?.allowed_branches || []
       const newAllowedBranches = freshProfile.allowed_branches || []
-      const allowedBranchesChanged = JSON.stringify(oldAllowedBranches.sort()) !== JSON.stringify(newAllowedBranches.sort())
+      // ✅ استخدام نسخة من arrays قبل sort لتجنب تغيير الأصلية
+      const allowedBranchesChanged = JSON.stringify([...oldAllowedBranches].sort()) !== JSON.stringify([...newAllowedBranches].sort())
       
       if (allowedBranchesChanged) {
         console.log(`🔄 [AccessContext] Allowed branches changed:`, {

@@ -894,6 +894,18 @@ class RealtimeManager {
           roleChanged: oldRecord?.role !== newRecord?.role,
           branchChanged: oldRecord?.branch_id !== newRecord?.branch_id,
         })
+      } else if (table === 'user_branch_access') {
+        // ✅ إذا كان الحدث يخص المستخدم الحالي (تم الفلترة مسبقاً في subscription)
+        // ✅ لكن نتحقق مرة أخرى للأمان
+        affectsCurrentUser = record.user_id === userId
+        console.log(`🔐 [RealtimeManager] user_branch_access event check:`, {
+          recordUserId: record.user_id,
+          currentUserId: userId,
+          affectsCurrentUser,
+          branchId: record.branch_id,
+          isActive: record.is_active,
+          eventType: payload.eventType,
+        })
       } else if (table === 'branches') {
         // إذا كان الفرع مرتبط بالمستخدم الحالي
         affectsCurrentUser = this.context.branchId === record.id
