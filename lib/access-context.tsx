@@ -433,7 +433,9 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         
         // ✅ إذا كان الفرع الحالي لم يعد ضمن allowed_branches، يجب تحديث الفرع تلقائياً
         if (newBranchId && !newAllowedBranches.includes(newBranchId) && newAllowedBranches.length > 0) {
-          const firstAllowedBranch = newAllowedBranches[0]
+          // ✅ اختيار أول فرع في الترتيب الأبجدي (lexicographic order) للحفاظ على السلوك الأصلي
+          // ✅ استخدام نسخة من array قبل sort لتجنب تغيير الأصلية
+          const firstAllowedBranch = [...newAllowedBranches].sort()[0]
           console.log(`🔄 [AccessContext] Current branch ${newBranchId} no longer in allowed_branches, switching to: ${firstAllowedBranch}`)
           
           // ✅ إطلاق event لتحديث الفرع في جميع أنحاء التطبيق
