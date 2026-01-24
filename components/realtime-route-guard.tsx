@@ -31,7 +31,8 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
   const [isChecking, setIsChecking] = useState(true)
   const [hasAccess, setHasAccess] = useState(false)
   const isReevaluatingRef = useRef(false) // منع إعادة التقييم المتعددة المتزامنة
-  const lastProfileVersionRef = useRef<string | null>(null) // تتبع نسخة profile لتجنب إعادة التقييم المكررة
+  const lastProfileVersionRef = useRef<string | null>(null) // تتبع نسخة profile التي تم معالجتها بنجاح
+  const pendingProfileVersionRef = useRef<string | null>(null) // تتبع profile الذي يتم معالجته حالياً (لمنع التكرار)
   const profileRef = useRef(profile) // ✅ Ref لتخزين profile الحالي (يتم تحديثه في useEffect)
   const isReadyRef = useRef(isReady) // ✅ Ref لتخزين isReady الحالي
   const pathnameRef = useRef(pathname) // ✅ Ref لتخزين pathname الحالي
@@ -117,6 +118,9 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
         return
       }
 
+      // ✅ الحصول على النسخة الحالية من profile بعد الانتظار
+      const finalProfileVersion = `${currentProfile.role}-${currentProfile.branch_id}-${currentProfile.allowed_pages.length}-${currentProfile.allowed_branches.length}`
+
       const resource = getResourceFromPath(currentPathname)
       const access = canAccessPage(resource)
 
@@ -155,9 +159,15 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
           router.replace('/no-access')
         }
       }
+
+      // ✅ تحديث lastProfileVersionRef بعد اكتمال المعالجة بنجاح
+      lastProfileVersionRef.current = finalProfileVersion
+      pendingProfileVersionRef.current = null
     } catch (error) {
       console.error('❌ [RealtimeRouteGuard] Error during route reevaluation:', error)
       setHasAccess(false)
+      // ✅ في حالة الخطأ، نزيل pendingProfileVersionRef لكن لا نحدث lastProfileVersionRef
+      pendingProfileVersionRef.current = null
     } finally {
       isReevaluatingRef.current = false
     }
@@ -196,13 +206,22 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
     // ✅ التحقق من أن profile تغير فعلياً (ليس مجرد mount أولي)
     const currentProfileVersion = `${profile.role}-${profile.branch_id}-${profile.allowed_pages.length}-${profile.allowed_branches.length}`
     
+    // ✅ التحقق من أن profile لم يتم معالجته بالفعل
     if (currentProfileVersion === lastProfileVersionRef.current) {
-      // ✅ نفس النسخة - لا حاجة لإعادة التقييم
+      // ✅ نفس النسخة - تم معالجتها بالفعل
       return
     }
 
-    // ✅ تحديث lastProfileVersionRef فوراً لتجنب إعادة التقييم المكررة
-    lastProfileVersionRef.current = currentProfileVersion
+    // ✅ التحقق من أن profile لا يتم معالجته حالياً
+    if (currentProfileVersion === pendingProfileVersionRef.current) {
+      // ✅ نفس النسخة قيد المعالجة - لا حاجة لإعادة التقييم
+      console.log('🔄 [RealtimeRouteGuard] Profile version already being processed, skipping...')
+      return
+    }
+
+    // ✅ تعيين pendingProfileVersionRef لمنع إعادة التقييم المكررة
+    // ✅ لا نحدث lastProfileVersionRef هنا - سيتم تحديثه بعد اكتمال المعالجة في reevaluateCurrentRoute
+    pendingProfileVersionRef.current = currentProfileVersion
 
     // ✅ Profile تغير - إعادة تقييم الصفحة الحالية
     console.log('🔄 [RealtimeRouteGuard] Profile updated, triggering route reevaluation...', {
