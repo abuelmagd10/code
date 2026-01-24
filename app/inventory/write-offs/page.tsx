@@ -2416,6 +2416,12 @@ export default function WriteOffsPage() {
     }
   }, [filteredWriteOffs])
 
+  // ✅ حساب عدد الأعمدة قبل أول عمود مجموع (للمحاذاة الصحيحة)
+  // الأعمدة: 0=number, 1=date, 2=branch, 3=warehouse, 4=reason, 5=products, 6=total_quantity, 7=total_cost, 8=status, 9=created_by, 10=actions
+  // أول عمود مجموع هو total_quantity (index 6)
+  const columnsBeforeTotals = 6 // write_off_number, write_off_date, branch_name, warehouse_name, reason, products_summary
+  const columnsAfterTotals = 3 // status, created_by_name, id/actions
+
   // تصدير CSV
   const handleExport = () => {
     const headers = ["رقم الإهلاك", "التاريخ", "الحالة", "السبب", "التكلفة الإجمالية"]
@@ -2586,22 +2592,34 @@ export default function WriteOffsPage() {
                 footer={{
                   render: () => (
                     <tr>
-                      <td colSpan={5} className="px-3 py-4 text-right">
+                      {/* ✅ العمود الأول: كلمة "المجموع" */}
+                      <td className="px-3 py-4 text-left">
                         <span className="text-gray-700 dark:text-gray-200 font-semibold">
                           {isAr ? "المجموع" : "Total"} ({filteredWriteOffs.length} {isAr ? "إهلاك" : "write-offs"})
                         </span>
                       </td>
+                      {/* ✅ الأعمدة غير الرقمية: فارغة (date, branch, warehouse, reason, products) */}
+                      <td className="px-3 py-4"></td>
+                      <td className="px-3 py-4"></td>
+                      <td className="px-3 py-4"></td>
+                      <td className="px-3 py-4"></td>
+                      <td className="px-3 py-4"></td>
+                      {/* ✅ عمود إجمالي الكمية */}
                       <td className="px-3 py-4 text-right">
                         <span className="font-semibold text-gray-900 dark:text-white">
                           {totals.totalQuantity.toLocaleString()}
                         </span>
                       </td>
+                      {/* ✅ عمود إجمالي التكلفة */}
                       <td className="px-3 py-4 text-right">
                         <span className="font-semibold text-gray-900 dark:text-white">
                           {formatCurrency(totals.totalCost)}
                         </span>
                       </td>
-                      <td colSpan={4}></td>
+                      {/* ✅ الأعمدة بعد المجموع: فارغة (status, created_by, actions) */}
+                      <td className="px-3 py-4"></td>
+                      <td className="px-3 py-4"></td>
+                      <td className="px-3 py-4"></td>
                     </tr>
                   )
                 }}
