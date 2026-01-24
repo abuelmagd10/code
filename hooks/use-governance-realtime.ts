@@ -113,95 +113,35 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
 
         // 🔐 معالجة الأحداث حسب نوع الجدول
         if (table === 'company_members') {
-          // ✅ تحسين اكتشاف التغييرات: في UPDATE، قد لا يحتوي payload.old على role إذا لم يكن ضمن الحقول المحدّثة
-          // ✅ لذلك نتحقق من وجود role في payload.new أولاً
-          // ✅ استخدام 'in' operator للتحقق من وجود الحقل حتى لو كانت القيمة falsy (null, "", 0, false)
-          // ✅ هذا يضمن اكتشاف التغييرات حتى عند تعيين القيم إلى null أو empty string
-          // ✅ لكن نتحقق فقط من المقارنة الفعلية - لا نعتبر غياب الحقل في oldRecord تغييراً (false positive)
-          const roleChanged = type === 'UPDATE' && ('role' in (newRecord || {}))
-            ? (oldRecord?.role !== newRecord?.role) // ✅ فقط مقارنة القيم - إذا لم يكن role في oldRecord، Supabase لم يحدّثه
-            : (oldRecord?.role !== newRecord?.role)
-          const branchChanged = type === 'UPDATE' && ('branch_id' in (newRecord || {}))
-            ? (oldRecord?.branch_id !== newRecord?.branch_id) // ✅ فقط مقارنة القيم
-            : (oldRecord?.branch_id !== newRecord?.branch_id)
-          const warehouseChanged = type === 'UPDATE' && ('warehouse_id' in (newRecord || {}))
-            ? (oldRecord?.warehouse_id !== newRecord?.warehouse_id) // ✅ فقط مقارنة القيم
-            : (oldRecord?.warehouse_id !== newRecord?.warehouse_id)
+          // ✅ BLIND REFRESH: في ERP احترافي، عند أي UPDATE على company_members للمستخدم الحالي
+          // ✅ نستدعي refreshUserSecurityContext مباشرة بدون أي تحليل أو مقارنة
+          // ✅ هذا يضمن أن أي تغيير (role, branch, warehouse, permissions) يتم اكتشافه وتحديثه فوراً
+          // ✅ بدون شروط، بدون فلاتر، بدون تحقق - فقط تحديث كامل من السيرفر
           
-          console.log(`🔍 [GovernanceRealtime] company_members change detection:`, {
+          console.log(`🔄 [GovernanceRealtime] company_members UPDATE detected - performing blind refresh (no analysis, no comparison)`, {
             type,
-            roleChanged,
-            branchChanged,
-            warehouseChanged,
-            oldRole: oldRecord?.role,
-            newRole: newRecord?.role,
-            oldBranchId: oldRecord?.branch_id,
-            newBranchId: newRecord?.branch_id,
-            hasOldRecord: !!oldRecord,
+            eventType: type,
+            userId: newRecord?.user_id || oldRecord?.user_id,
             hasNewRecord: !!newRecord,
+            hasOldRecord: !!oldRecord,
           })
-          
-          // ✅ أولوية المعالجة: role > branch/warehouse > permissions
-          // ✅ إذا تغير role و branch معاً، نعالج role فقط (لأنه يؤثر على الصلاحيات بشكل أكبر)
-          // ✅ هذا يمنع استدعاء handlers متعددة معاً وتحديثات متضاربة للـ state
-          
-          if (roleChanged) {
-            // تغيير الدور (الأولوية الأولى)
-            if (showNotifications) {
-              toast({
-                title: "تم تحديث صلاحياتك",
-                description: "تم تحديث دورك بواسطة الإدارة. قد تتغير بعض الصفحات المتاحة لك.",
-                variant: "default",
-              })
-            }
 
-            if (handlersRef.current.onRoleChanged) {
-              await handlersRef.current.onRoleChanged()
-              // ✅ عند تغيير الدور، لا نستدعي handlers أخرى لأن onRoleChanged يتعامل معه
-              return
-            }
-            
-            // ✅ إذا لم يكن onRoleChanged معرّف، نستخدم onPermissionsChanged كـ fallback
-            if (handlersRef.current.onPermissionsChanged) {
-              await handlersRef.current.onPermissionsChanged()
-            }
-            return
+          // ✅ إشعار المستخدم (اختياري)
+          if (showNotifications && type === 'UPDATE') {
+            toast({
+              title: "تم تحديث صلاحياتك",
+              description: "تم تحديث بياناتك بواسطة الإدارة. سيتم تحديث الصفحات المتاحة لك.",
+              variant: "default",
+            })
           }
 
-          if (branchChanged || warehouseChanged) {
-            // تغيير الفرع أو المخزن (الأولوية الثانية - فقط إذا لم يتغير role)
-            if (showNotifications) {
-              toast({
-                title: "تم تحديث تعيينك",
-                description: "تم تحديث الفرع أو المخزن الخاص بك. سيتم تحديث البيانات المعروضة.",
-                variant: "default",
-              })
-            }
-
-            if (handlersRef.current.onBranchOrWarehouseChanged) {
-              await handlersRef.current.onBranchOrWarehouseChanged()
-              // ✅ عند تغيير الفرع/المخزن، لا نستدعي onPermissionsChanged لأن onBranchOrWarehouseChanged يتعامل معه
-              return
-            }
-            
-            // ✅ إذا لم يكن onBranchOrWarehouseChanged معرّف، نستخدم onPermissionsChanged كـ fallback
-            if (handlersRef.current.onPermissionsChanged) {
-              await handlersRef.current.onPermissionsChanged()
-            }
-            return
-          }
-
-          // ✅ فقط إذا لم يكن هناك تغيير في role أو branch/warehouse، نستدعي onPermissionsChanged
-          // ✅ هذا يحدث عند تغييرات أخرى في company_members (مثل allowed_branches)
+          // ✅ استدعاء refreshUserSecurityContext مباشرة - بدون أي شروط
+          // ✅ refreshUserSecurityContext سيقوم بـ:
+          // ✅ 1. Query جديد من السيرفر (role, branch_id, allowed_branches, permissions)
+          // ✅ 2. تحديث AccessContext كامل
+          // ✅ 3. إطلاق الأحداث الثلاثة (permissions_updated, access_profile_updated, user_context_changed)
           if (handlersRef.current.onPermissionsChanged) {
             await handlersRef.current.onPermissionsChanged()
-          }
-          
-          // ✅ FALLBACK CRITICAL: إذا كان type = UPDATE ولم يتم اكتشاف أي تغيير محدد
-          // ✅ نستدعي refreshUserSecurityContext على أي حال لضمان التحديث
-          // ✅ هذا يضمن أن أي UPDATE على company_members سيؤدي إلى تحديث السياق حتى لو لم نتمكن من اكتشاف التغيير المحدد
-          if (type === 'UPDATE' && !roleChanged && !branchChanged && !warehouseChanged) {
-            console.warn(`⚠️ [GovernanceRealtime] UPDATE on company_members but no specific change detected (role/branch/warehouse), refreshUserSecurityContext already called above`)
           }
           return
         }
