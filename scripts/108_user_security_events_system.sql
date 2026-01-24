@@ -147,6 +147,9 @@ BEGIN
 END;
 $$;
 
+-- ✅ حذف الـ Trigger القديم إن وجد (للتطبيق الآمن)
+DROP TRIGGER IF EXISTS trigger_company_members_role_changed ON company_members;
+
 CREATE TRIGGER trigger_company_members_role_changed
   AFTER UPDATE ON company_members
   FOR EACH ROW
@@ -362,6 +365,9 @@ BEGIN
 END;
 $$;
 
+-- ✅ حذف الـ Trigger القديم إن وجد (للتطبيق الآمن)
+DROP TRIGGER IF EXISTS trigger_company_role_permissions_changed ON company_role_permissions;
+
 CREATE TRIGGER trigger_company_role_permissions_changed
   AFTER INSERT OR UPDATE OR DELETE ON company_role_permissions
   FOR EACH ROW
@@ -394,17 +400,7 @@ $$;
 -- =====================================
 
 -- ✅ تفعيل Realtime Replication لجدول user_security_events
--- ✅ استخدام DO block لتجنب خطأ إذا كان الجدول موجوداً مسبقاً في الـ publication
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables 
-    WHERE pubname = 'supabase_realtime' 
-    AND tablename = 'user_security_events'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE user_security_events;
-  END IF;
-END $$;
+ALTER PUBLICATION supabase_realtime ADD TABLE user_security_events;
 
 -- =====================================
 -- ✅ تم إنشاء نظام user_security_events بنجاح
