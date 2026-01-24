@@ -920,12 +920,21 @@ class RealtimeManager {
         return
       }
 
+      // ✅ BLIND REFRESH: في UPDATE، قد لا يحتوي payload على user_id في record مباشرة
+      // ✅ لذلك نستخدم newRecord.user_id أو oldRecord.user_id
+      const recordUserId = newRecord?.user_id || oldRecord?.user_id
+      const recordCompanyId = newRecord?.company_id || oldRecord?.company_id
+
       console.log(`🔐 [RealtimeManager] Governance event received:`, {
         table,
         eventType: payload.eventType,
         recordId: record.id,
-        userId: record.user_id,
-        companyId: record.company_id,
+        recordUserId,
+        recordCompanyId,
+        newRecordUserId: newRecord?.user_id,
+        oldRecordUserId: oldRecord?.user_id,
+        newRecordCompanyId: newRecord?.company_id,
+        oldRecordCompanyId: oldRecord?.company_id,
         currentUserId: userId,
         currentCompanyId: companyId,
         currentRole: role,
@@ -946,9 +955,10 @@ class RealtimeManager {
       this.processedEvents.set(eventKey, now)
 
       // 🔐 التحقق من الصلاحيات: فقط الأحداث في نفس الشركة
-      if (record.company_id && record.company_id !== companyId) {
+      // ✅ استخدام recordCompanyId من newRecord أو oldRecord
+      if (recordCompanyId && recordCompanyId !== companyId) {
         console.warn(`🚫 [RealtimeManager] Governance event rejected: different company`, {
-          recordCompanyId: record.company_id,
+          recordCompanyId,
           currentCompanyId: companyId,
         })
         return
