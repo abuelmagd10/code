@@ -1026,13 +1026,16 @@ class RealtimeManager {
       }
 
       // إرسال الحدث لجميع معالجات الحوكمة
-      this.governanceHandlers.forEach((handler, index) => {
+      const handlersArray: GovernanceEventHandler[] = Array.from(this.governanceHandlers)
+      const handlersCount = handlersArray.length
+      handlersArray.forEach((handler, index) => {
+        const handlerNumber = index + 1
         try {
-          console.log(`🔄 [RealtimeManager] Calling governance handler ${index + 1}/${this.governanceHandlers.size}...`)
+          console.log(`🔄 [RealtimeManager] Calling governance handler ${handlerNumber}/${handlersCount}...`)
           handler(event)
-          console.log(`✅ [RealtimeManager] Governance handler ${index + 1} completed`)
+          console.log(`✅ [RealtimeManager] Governance handler ${handlerNumber} completed`)
         } catch (error) {
-          console.error(`❌ [RealtimeManager] Error in governance event handler ${index + 1}:`, error)
+          console.error(`❌ [RealtimeManager] Error in governance event handler ${handlerNumber}:`, error)
         }
       })
 
