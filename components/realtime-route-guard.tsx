@@ -87,9 +87,11 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
           const currentProfile = profileRef.current
           if (currentProfile) {
             const currentProfileVersion = `${currentProfile.role}-${currentProfile.branch_id}-${currentProfile.allowed_pages.length}-${currentProfile.allowed_branches.length}`
-            if (currentProfileVersion !== lastProfileVersionRef.current) {
+            // ✅ التحقق من أن profile أصبح موجوداً - لا نحدث lastProfileVersionRef هنا
+            // ✅ سيتم تحديثه بعد اكتمال المعالجة في نهاية reevaluateCurrentRoute
+            // ✅ هذا يمنع التباين بين pendingProfileVersionRef و lastProfileVersionRef
+            if (currentProfileVersion !== pendingProfileVersionRef.current) {
               // ✅ Profile محدث - يمكن المتابعة
-              lastProfileVersionRef.current = currentProfileVersion
               break
             }
           }
