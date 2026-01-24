@@ -105,7 +105,6 @@ BEGIN
   UPDATE notifications
   SET 
     status = p_new_status,
-    updated_at = NOW(),
     -- ✅ تحديث الحقول المرتبطة بالحالة
     read_at = CASE WHEN p_new_status IN ('read', 'actioned') AND read_at IS NULL THEN NOW() ELSE read_at END,
     actioned_at = CASE WHEN p_new_status = 'actioned' AND actioned_at IS NULL THEN NOW() ELSE actioned_at END

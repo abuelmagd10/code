@@ -4,7 +4,7 @@
 -- ✅ توحيد منطق الحالات: unread, read, actioned, archived
 -- ✅ التحقق من الصلاحيات (company_id, assigned_to_user, assigned_to_role)
 -- ✅ Audit Logging لكل تغيير
--- ✅ تحديث updated_at تلقائيًا
+-- ✅ تحديث read_at و actioned_at تلقائيًا
 -- =====================================================
 
 -- ✅ حذف الدالة القديمة إن وجدت
@@ -85,7 +85,6 @@ BEGIN
   UPDATE notifications
   SET 
     status = p_new_status,
-    updated_at = NOW(),
     -- ✅ تحديث الحقول المرتبطة بالحالة
     read_at = CASE WHEN p_new_status IN ('read', 'actioned') AND read_at IS NULL THEN NOW() ELSE read_at END,
     actioned_at = CASE WHEN p_new_status = 'actioned' AND actioned_at IS NULL THEN NOW() ELSE actioned_at END
@@ -121,8 +120,7 @@ BEGIN
     'success', true,
     'notification_id', p_notification_id,
     'old_status', v_notification.status,
-    'new_status', p_new_status,
-    'updated_at', NOW()
+    'new_status', p_new_status
   );
 
 EXCEPTION
