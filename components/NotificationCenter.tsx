@@ -987,10 +987,10 @@ export function NotificationCenter({
                               <span>{notification.warehouse_name}</span>
                             </div>
                           )}
-                          {createdBy && (
+                          {notification.created_by && (
                             <div className="flex items-center gap-1">
                               <User className="w-3 h-3" />
-                              <span>{createdBy.name}</span>
+                              <span>{createdBy?.name || 'Unknown'}</span>
                             </div>
                           )}
                           <div className="flex items-center gap-1">
