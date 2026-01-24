@@ -444,9 +444,13 @@ export default function WriteOffsPage() {
     }
     
     // ✅ بناء السجل المخصّص (enriched)
-    const branchName: string | undefined = writeOff.branch_id ? (branchesMap.get(writeOff.branch_id) || undefined) : undefined
-    const warehouseName: string | undefined = writeOff.warehouse_id ? (warehousesMap.get(writeOff.warehouse_id) || undefined) : undefined
-    const createdByName: string = (usersMap.get(writeOff.created_by) || 'Unknown') as string
+    const branchName: string | undefined = writeOff.branch_id 
+      ? (branchesMap.get(writeOff.branch_id) as string | undefined) 
+      : undefined
+    const warehouseName: string | undefined = writeOff.warehouse_id 
+      ? (warehousesMap.get(writeOff.warehouse_id) as string | undefined) 
+      : undefined
+    const createdByName: string = (usersMap.get(writeOff.created_by) as string | undefined) || 'Unknown'
     
     return {
       ...writeOff,
