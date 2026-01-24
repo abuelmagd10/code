@@ -393,6 +393,72 @@ export default function WriteOffsPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  // ✅ دالة مساعدة لإثراء بيانات الإهلاك (enrichment)
+  const enrichWriteOff = useCallback(async (writeOff: WriteOff): Promise<WriteOff> => {
+    const writeOffId = writeOff.id
+    
+    // ✅ جلب branches, warehouses, users, items في batch
+    const branchIds = writeOff.branch_id ? [writeOff.branch_id] : []
+    const warehouseIds = writeOff.warehouse_id ? [writeOff.warehouse_id] : []
+    const userIds = writeOff.created_by ? [writeOff.created_by] : []
+    
+    const [branchesResult, warehousesResult, usersResult, itemsResult] = await Promise.all([
+      branchIds.length > 0
+        ? supabase.from("branches").select("id, name").in("id", branchIds)
+        : Promise.resolve({ data: [] }),
+      warehouseIds.length > 0
+        ? supabase.from("warehouses").select("id, name").in("id", warehouseIds)
+        : Promise.resolve({ data: [] }),
+      userIds.length > 0
+        ? supabase.from("user_profiles").select("user_id, display_name").in("user_id", userIds)
+        : Promise.resolve({ data: [] }),
+      supabase
+        .from("inventory_write_off_items")
+        .select("write_off_id, quantity, products(name)")
+        .eq("write_off_id", writeOffId)
+    ])
+    
+    // ✅ بناء maps
+    const branchesMap = new Map((branchesResult.data || []).map((b: any) => [b.id, b.name]))
+    const warehousesMap = new Map((warehousesResult.data || []).map((w: any) => [w.id, w.name]))
+    const usersMap = new Map((usersResult.data || []).map((u: any) => [u.user_id, u.display_name || 'Unknown']))
+    
+    // ✅ حساب totals و products summary
+    const items = (itemsResult.data || []).filter((item: any) => item.write_off_id === writeOffId)
+    const totalQty = items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+    const itemsCount = items.length
+    
+    const productNames = items
+      .map((item: any) => item.products?.name)
+      .filter(Boolean)
+      .slice(0, 2)
+    
+    let productsSummary = ''
+    if (productNames.length === 0) {
+      productsSummary = '-'
+    } else if (productNames.length === 1) {
+      productsSummary = `${productNames[0]} (${itemsCount})`
+    } else {
+      const remaining = itemsCount - 2
+      productsSummary = `${productNames.join(', ')}${remaining > 0 ? ` (+${remaining})` : ''}`
+    }
+    
+    // ✅ بناء السجل المخصّص (enriched)
+    const branchName: string | null = writeOff.branch_id ? (branchesMap.get(writeOff.branch_id) || null) : null
+    const warehouseName: string | null = writeOff.warehouse_id ? (warehousesMap.get(writeOff.warehouse_id) || null) : null
+    const createdByName: string = (usersMap.get(writeOff.created_by) || 'Unknown') as string
+    
+    return {
+      ...writeOff,
+      branch_name: branchName,
+      warehouse_name: warehouseName,
+      created_by_name: createdByName,
+      total_quantity: totalQty,
+      items_count: itemsCount,
+      products_summary: productsSummary
+    }
+  }, [supabase])
+
   // 🔄 Realtime: الاشتراك في تحديثات الإهلاك (ERP Standard)
   // ✅ استخدام 'depreciation' كاسم منطقي (يتم تحويله تلقائياً إلى 'inventory_write_offs')
   useRealtimeTable<WriteOff>({
@@ -449,38 +515,130 @@ export default function WriteOffsPage() {
 
       return false
     },
-    onInsert: (newWriteOff) => {
+    onInsert: async (newWriteOff) => {
       console.log('➕ [Realtime] New write-off inserted:', newWriteOff.id)
-      // ✅ إضافة السجل الجديد في المقدمة
-      setWriteOffs(prev => {
-        // ✅ منع التكرار: فحص إذا كان السجل موجوداً
-        if (prev.find(w => w.id === newWriteOff.id)) {
-          console.warn('⚠️ [Realtime] Write-off already exists, skipping insert:', newWriteOff.id)
-          return prev
-        }
-        return [newWriteOff, ...prev]
-      })
+      
+      // ✅ إثراء البيانات المخصّصة (enrichment) للسجل الجديد
+      try {
+        const enrichedWriteOff = await enrichWriteOff(newWriteOff)
+        
+        // ✅ إضافة السجل الجديد في المقدمة
+        setWriteOffs(prev => {
+          // ✅ منع التكرار: فحص إذا كان السجل موجوداً
+          if (prev.find(w => w.id === enrichedWriteOff.id)) {
+            console.warn('⚠️ [Realtime] Write-off already exists, skipping insert:', enrichedWriteOff.id)
+            return prev
+          }
+          console.log('✅ [Realtime] Adding enriched write-off to list:', enrichedWriteOff.id)
+          return [enrichedWriteOff, ...prev]
+        })
+      } catch (error) {
+        console.error('❌ [Realtime] Error enriching new write-off data:', error)
+        // ✅ Fallback: إضافة بدون enrichment
+        setWriteOffs(prev => {
+          if (prev.find(w => w.id === newWriteOff.id)) {
+            return prev
+          }
+          return [newWriteOff, ...prev]
+        })
+      }
     },
-    onUpdate: (newWriteOff, oldWriteOff) => {
+    onUpdate: async (newWriteOff, oldWriteOff) => {
       console.log('🔄 [Realtime] Write-off updated:', newWriteOff.id, {
         oldStatus: oldWriteOff?.status,
         newStatus: newWriteOff.status
       })
-      // ✅ تحديث السجل الموجود - استبدال كامل (لا دمج جزئي)
-      setWriteOffs(prev => {
-        const existingIndex = prev.findIndex(w => w.id === newWriteOff.id)
-        if (existingIndex >= 0) {
-          // ✅ استبدال السجل بالكامل بالنسخة الجديدة
-          const updated = [...prev]
-          updated[existingIndex] = newWriteOff
-          console.log('✅ [Realtime] Write-off replaced in state:', newWriteOff.id)
-          return updated
+      
+      // ✅ إعادة جلب البيانات المخصّصة (enrichment) للسجل المحدث
+      // لأن Realtime event لا يحتوي على branch_name, warehouse_name, created_by_name, total_quantity, products_summary
+      try {
+        const writeOffId = newWriteOff.id
+        
+        // ✅ جلب branches, warehouses, users, items في batch
+        const branchIds = newWriteOff.branch_id ? [newWriteOff.branch_id] : []
+        const warehouseIds = newWriteOff.warehouse_id ? [newWriteOff.warehouse_id] : []
+        const userIds = newWriteOff.created_by ? [newWriteOff.created_by] : []
+        
+        const [branchesResult, warehousesResult, usersResult, itemsResult] = await Promise.all([
+          branchIds.length > 0
+            ? supabase.from("branches").select("id, name").in("id", branchIds)
+            : Promise.resolve({ data: [] }),
+          warehouseIds.length > 0
+            ? supabase.from("warehouses").select("id, name").in("id", warehouseIds)
+            : Promise.resolve({ data: [] }),
+          userIds.length > 0
+            ? supabase.from("user_profiles").select("user_id, display_name").in("user_id", userIds)
+            : Promise.resolve({ data: [] }),
+          supabase
+            .from("inventory_write_off_items")
+            .select("write_off_id, quantity, products(name)")
+            .eq("write_off_id", writeOffId)
+        ])
+        
+        // ✅ بناء maps
+        const branchesMap = new Map((branchesResult.data || []).map((b: any) => [b.id, b.name]))
+        const warehousesMap = new Map((warehousesResult.data || []).map((w: any) => [w.id, w.name]))
+        const usersMap = new Map((usersResult.data || []).map((u: any) => [u.user_id, u.display_name || 'Unknown']))
+        
+        // ✅ حساب totals و products summary
+        const items = (itemsResult.data || []).filter((item: any) => item.write_off_id === writeOffId)
+        const totalQty = items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+        const itemsCount = items.length
+        
+        const productNames = items
+          .map((item: any) => item.products?.name)
+          .filter(Boolean)
+          .slice(0, 2)
+        
+        let productsSummary = ''
+        if (productNames.length === 0) {
+          productsSummary = '-'
+        } else if (productNames.length === 1) {
+          productsSummary = `${productNames[0]} (${itemsCount})`
         } else {
-          // ✅ إذا لم يكن موجوداً (مثل حالة المالك يرى إهلاك جديد)، نضيفه
-          console.log('➕ [Realtime] Write-off not found, adding to list:', newWriteOff.id)
-          return [newWriteOff, ...prev]
+          const remaining = itemsCount - 2
+          productsSummary = `${productNames.join(', ')}${remaining > 0 ? ` (+${remaining})` : ''}`
         }
-      })
+        
+        // ✅ بناء السجل المخصّص (enriched)
+        const enrichedWriteOff: WriteOff = {
+          ...newWriteOff,
+          branch_name: newWriteOff.branch_id ? (branchesMap.get(newWriteOff.branch_id) || null) : null,
+          warehouse_name: newWriteOff.warehouse_id ? (warehousesMap.get(newWriteOff.warehouse_id) || null) : null,
+          created_by_name: usersMap.get(newWriteOff.created_by) || 'Unknown',
+          total_quantity: totalQty,
+          items_count: itemsCount,
+          products_summary: productsSummary
+        }
+        
+        // ✅ تحديث السجل الموجود - استبدال كامل بالنسخة المخصّصة
+        setWriteOffs(prev => {
+          const existingIndex = prev.findIndex(w => w.id === enrichedWriteOff.id)
+          if (existingIndex >= 0) {
+            const updated = [...prev]
+            updated[existingIndex] = enrichedWriteOff
+            console.log('✅ [Realtime] Write-off replaced with enriched data:', enrichedWriteOff.id)
+            return updated
+          } else {
+            // ✅ إذا لم يكن موجوداً (مثل حالة المالك يرى إهلاك جديد)، نضيفه
+            console.log('➕ [Realtime] Write-off not found, adding enriched to list:', enrichedWriteOff.id)
+            return [enrichedWriteOff, ...prev]
+          }
+        })
+      } catch (error) {
+        console.error('❌ [Realtime] Error enriching write-off data:', error)
+        // ✅ Fallback: تحديث بدون enrichment
+        setWriteOffs(prev => {
+          const existingIndex = prev.findIndex(w => w.id === newWriteOff.id)
+          if (existingIndex >= 0) {
+            const updated = [...prev]
+            updated[existingIndex] = newWriteOff
+            return updated
+          } else {
+            return [newWriteOff, ...prev]
+          }
+        })
+      }
     },
     onDelete: (oldWriteOff) => {
       console.log('🗑️ [Realtime] Write-off deleted:', oldWriteOff.id)
@@ -2005,11 +2163,7 @@ export default function WriteOffsPage() {
       setSelectedWriteOff(writeOffWithUpdatedItems)
       resetEditForm(writeOffWithUpdatedItems)
       
-      // ✅ تحديث القائمة الرئيسية
-      await loadData()
-      
-      // ✅ إعادة جلب البيانات المحدثة مرة أخرى للتأكد من العرض الصحيح (بدون cache)
-      await new Promise(resolve => setTimeout(resolve, 100))
+      // ✅ لا حاجة لـ loadData() - Realtime سيتولى التحديث تلقائياً
       
       const { data: finalRefresh, error: finalErr } = await supabase
         .from("inventory_write_offs")
@@ -2406,7 +2560,7 @@ export default function WriteOffsPage() {
         </div>
       )
     }
-  ], [isAr, appLang, handleView])
+  ], [isAr, appLang, handleView, enrichWriteOff])
 
   // ✅ إحصائيات المجموع
   const totals = useMemo(() => {

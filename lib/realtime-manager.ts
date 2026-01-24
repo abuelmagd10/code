@@ -232,6 +232,17 @@ class RealtimeManager {
             filter,
           },
           (payload: RealtimePostgresChangesPayload<any>) => {
+            // ✅ Logging مؤقت للتحقق من وصول الأحداث
+            if (table === 'inventory_write_offs' || table === 'depreciation') {
+              console.log('[REALTIME] write_off event', {
+                type: payload.eventType,
+                id: payload.new?.id || payload.old?.id,
+                status: payload.new?.status,
+                branch: payload.new?.branch_id,
+                warehouse: payload.new?.warehouse_id,
+                company_id: payload.new?.company_id || payload.old?.company_id
+              })
+            }
             this.handleEvent(table, payload)
           }
         )
