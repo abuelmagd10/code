@@ -200,6 +200,9 @@ BEGIN
 END;
 $$;
 
+-- ✅ حذف الـ Trigger القديم إن وجد (للتطبيق الآمن)
+DROP TRIGGER IF EXISTS trigger_company_members_branch_changed ON company_members;
+
 CREATE TRIGGER trigger_company_members_branch_changed
   AFTER UPDATE ON company_members
   FOR EACH ROW
@@ -319,6 +322,9 @@ BEGIN
 END;
 $$;
 
+-- ✅ حذف الـ Trigger القديم إن وجد (للتطبيق الآمن)
+DROP TRIGGER IF EXISTS trigger_user_branch_access_changed ON user_branch_access;
+
 CREATE TRIGGER trigger_user_branch_access_changed
   AFTER INSERT OR UPDATE OR DELETE ON user_branch_access
   FOR EACH ROW
@@ -364,9 +370,6 @@ BEGIN
   RETURN COALESCE(NEW, OLD);
 END;
 $$;
-
--- ✅ حذف الـ Trigger القديم إن وجد (للتطبيق الآمن)
-DROP TRIGGER IF EXISTS trigger_company_role_permissions_changed ON company_role_permissions;
 
 CREATE TRIGGER trigger_company_role_permissions_changed
   AFTER INSERT OR UPDATE OR DELETE ON company_role_permissions
