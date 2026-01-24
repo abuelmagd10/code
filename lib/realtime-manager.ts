@@ -346,12 +346,10 @@ class RealtimeManager {
         return filter
 
       default:
-        // افتراضي: حسب company_id و branch_id
+        // ✅ افتراضي: حسب company_id و branch_id (فرع واحد فقط)
+        // 🎯 قرار معماري: المستخدم له فرع واحد فقط - لا دعم للفروع المتعددة
         if (accessFilter.filterByBranch && branchId) {
-          if (accessFilter.allowedBranchIds && accessFilter.allowedBranchIds.length > 0) {
-            const branchIds = [branchId, ...accessFilter.allowedBranchIds].join(',')
-            return filter + `.and.branch_id.in.(${branchIds})`
-          }
+          // ✅ استخدام branch_id واحد فقط (من company_members.branch_id)
           return filter + `.and.branch_id.eq.${branchId}`
         }
         return filter

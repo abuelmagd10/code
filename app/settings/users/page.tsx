@@ -84,12 +84,11 @@ export default function UsersSettingsPage() {
   const [shareCanDelete, setShareCanDelete] = useState(false)
   const [permissionLoading, setPermissionLoading] = useState(false)
 
-  // 🏢 إدارة فروع الموظف (Multi-Branch)
+  // 🏢 إدارة فرع الموظف (Single Branch - Mandatory)
   const [showMemberBranchDialog, setShowMemberBranchDialog] = useState(false)
   const [editingMemberId, setEditingMemberId] = useState<string>("")
   const [editingMemberName, setEditingMemberName] = useState<string>("")
-  const [memberBranches, setMemberBranches] = useState<string[]>([])
-  const [memberPrimaryBranch, setMemberPrimaryBranch] = useState<string>("")
+  const [memberBranchId, setMemberBranchId] = useState<string>("")
   const [savingMemberBranches, setSavingMemberBranches] = useState(false)
   const [resendingInvite, setResendingInvite] = useState<string | null>(null)
 
@@ -505,31 +504,29 @@ export default function UsersSettingsPage() {
     setShareCanDelete(false)
   }
 
-  // 🏢 فتح dialog إدارة فروع الموظف
+  // 🏢 فتح dialog إدارة فرع الموظف (Single Branch - Mandatory)
   const openMemberBranchDialog = async (member: Member) => {
     setEditingMemberId(member.user_id)
     setEditingMemberName(member.display_name || member.email || member.username || "")
 
-    // جلب الفروع المرتبطة بهذا الموظف
-    const memberAccess = userBranchAccess.filter(a => a.user_id === member.user_id && a.is_active)
-    const branchIds = memberAccess.map(a => a.branch_id)
-    const primaryBranch = memberAccess.find(a => a.is_primary)?.branch_id || member.branch_id || ""
-
-    setMemberBranches(branchIds.length > 0 ? branchIds : (member.branch_id ? [member.branch_id] : []))
-    setMemberPrimaryBranch(primaryBranch)
+    // ✅ المستخدم له فرع واحد فقط - استخدام branch_id من company_members
+    const memberBranchId = member.branch_id || ""
+    setMemberBranchId(memberBranchId)
     setShowMemberBranchDialog(true)
   }
 
-  // 🏢 حفظ فروع الموظف
+  // 🏢 حفظ فرع الموظف (Single Branch - Mandatory)
   const saveMemberBranches = async () => {
-    if (!editingMemberId || memberBranches.length === 0) {
-      toastActionError(toast, "حفظ", "الفروع", "يجب تحديد فرع واحد على الأقل")
+    if (!editingMemberId || !memberBranchId) {
+      toastActionError(toast, "حفظ", "الفرع", "يجب تحديد فرع واحد إلزاميًا")
       return
     }
     setSavingMemberBranches(true)
     try {
-      // 1. تحديث الفرع الرئيسي في company_members
-      const primaryBranch = memberPrimaryBranch || memberBranches[0]
+      // ✅ التحقق من أن branch_id ليس مصفوفة (منع التلاعب)
+      if (Array.isArray(memberBranchId)) {
+        throw new Error('User can belong to only one branch')
+      }
 
       // 🏢 جلب المخزن التابع للفرع الجديد (إذا كان المستخدم store_manager)
       const currentMember = members.find(m => m.user_id === editingMemberId)
@@ -540,21 +537,22 @@ export default function UsersSettingsPage() {
           .from("warehouses")
           .select("id")
           .eq("company_id", companyId)
-          .eq("branch_id", primaryBranch)
+          .eq("branch_id", memberBranchId)
           .maybeSingle()
 
         warehouseId = branchWarehouse?.id || null
         console.log("🏢 Auto-updating warehouse for store_manager:", {
           userId: editingMemberId,
-          newBranchId: primaryBranch,
+          newBranchId: memberBranchId,
           newWarehouseId: warehouseId
         })
       }
 
+      // ✅ تحديث الفرع في company_members (فرع واحد فقط)
       const { error: updateError } = await supabase
         .from("company_members")
         .update({
-          branch_id: primaryBranch,
+          branch_id: memberBranchId,
           warehouse_id: warehouseId // 🏢 تحديث المخزن تلقائياً
         })
         .eq("company_id", companyId)
@@ -562,27 +560,40 @@ export default function UsersSettingsPage() {
 
       if (updateError) throw updateError
 
-      // 2. إضافة/تحديث وصول الفروع المتعددة
-      const res = await fetch("/api/permissions/branch-access", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      // ✅ تحديث user_branch_access - فرع واحد فقط
+      // حذف جميع الفروع القديمة أولاً
+      await supabase
+        .from("user_branch_access")
+        .update({ is_active: false })
+        .eq("company_id", companyId)
+        .eq("user_id", editingMemberId)
+
+      // إضافة الفرع الجديد كفرع أساسي
+      const { error: accessError } = await supabase
+        .from("user_branch_access")
+        .upsert({
           company_id: companyId,
           user_id: editingMemberId,
-          branch_ids: memberBranches,
-          primary_branch_id: primaryBranch,
-          replace_existing: true
-        })
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
+          branch_id: memberBranchId,
+          is_primary: true,
+          access_type: 'full',
+          can_view_customers: true,
+          can_view_orders: true,
+          can_view_invoices: true,
+          can_view_inventory: true,
+          can_view_prices: false,
+          is_active: true,
+          created_by: currentUserId
+        }, { onConflict: "company_id,user_id,branch_id" })
+
+      if (accessError) throw accessError
 
       // تحديث القائمة المحلية
       setMembers(prev => prev.map(m =>
-        m.user_id === editingMemberId ? { ...m, branch_id: primaryBranch, warehouse_id: warehouseId } : m
+        m.user_id === editingMemberId ? { ...m, branch_id: memberBranchId, warehouse_id: warehouseId } : m
       ))
 
-      toastActionSuccess(toast, "حفظ", "فروع الموظف")
+      toastActionSuccess(toast, "حفظ", "فرع الموظف")
       
       // إنشاء إشعار للمستخدم عند تغيير فرعه
       try {
@@ -591,7 +602,7 @@ export default function UsersSettingsPage() {
         await notifyUserBranchChanged({
           companyId,
           userId: editingMemberId,
-          branchId: primaryBranch || undefined,
+          branchId: memberBranchId || undefined,
           changedBy: currentUserId,
           appLang
         })
@@ -1156,56 +1167,37 @@ export default function UsersSettingsPage() {
               <div className="space-y-2">
                 <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                   <MapPin className="w-4 h-4" />
-                  الفروع المتاحة للموظف <span className="text-red-500">*</span>
+                  الفرع التابع له الموظف <span className="text-red-500">*</span>
                 </Label>
-                <p className="text-xs text-gray-500">اختر الفروع التي يمكن للموظف الوصول إليها</p>
-                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto p-2 bg-gray-50 dark:bg-slate-800 rounded-lg">
-                  {branches.map((branch) => (
-                    <div key={branch.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700">
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          id={`branch-${branch.id}`}
-                          checked={memberBranches.includes(branch.id)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setMemberBranches(prev => [...prev, branch.id])
-                              if (memberBranches.length === 0) setMemberPrimaryBranch(branch.id)
-                            } else {
-                              setMemberBranches(prev => prev.filter(id => id !== branch.id))
-                              if (memberPrimaryBranch === branch.id) {
-                                const remaining = memberBranches.filter(id => id !== branch.id)
-                                setMemberPrimaryBranch(remaining[0] || "")
-                              }
-                            }
-                          }}
-                        />
-                        <label htmlFor={`branch-${branch.id}`} className="text-sm cursor-pointer flex items-center gap-2">
-                          {branch.name}
-                          {branch.is_main && <Badge className="text-[9px] bg-blue-100 text-blue-700">رئيسي</Badge>}
-                        </label>
-                      </div>
-                      {memberBranches.includes(branch.id) && (
-                        <Button
-                          variant={memberPrimaryBranch === branch.id ? "default" : "outline"}
-                          size="sm"
-                          className="h-6 text-[10px]"
-                          onClick={() => setMemberPrimaryBranch(branch.id)}
-                        >
-                          {memberPrimaryBranch === branch.id ? "✓ الفرع الأساسي" : "تعيين كأساسي"}
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <p className="text-xs text-gray-500">اختر الفرع الواحد الذي ينتمي إليه الموظف (إلزامي)</p>
+                <Select
+                  value={memberBranchId}
+                  onValueChange={(value) => setMemberBranchId(value)}
+                >
+                  <SelectTrigger className="w-full bg-white dark:bg-slate-800">
+                    <SelectValue placeholder="اختر الفرع" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branches.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        <div className="flex items-center gap-2">
+                          <span>{branch.name}</span>
+                          {branch.is_main && (
+                            <Badge className="text-[9px] bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                              رئيسي
+                            </Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
-              {memberBranches.length > 0 && (
+              {memberBranchId && (
                 <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
                   <p className="text-sm text-emerald-700 dark:text-emerald-400">
-                    <strong>الفروع المحددة:</strong> {memberBranches.length} فرع
-                  </p>
-                  <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-1">
-                    <strong>الفرع الأساسي:</strong> {branches.find(b => b.id === memberPrimaryBranch)?.name || "غير محدد"}
+                    <strong>الفرع المحدد:</strong> {branches.find(b => b.id === memberBranchId)?.name || "غير محدد"}
                   </p>
                 </div>
               )}
@@ -1213,7 +1205,8 @@ export default function UsersSettingsPage() {
               <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
                 <p className="text-xs text-amber-700 dark:text-amber-400">
                   <AlertCircle className="w-3 h-3 inline ml-1" />
-                  الموظف سيتمكن من الوصول للبيانات التشغيلية (عملاء، مخزون، فواتير) في الفروع المحددة فقط.
+                  <strong>قرار معماري إلزامي:</strong> كل موظف يجب أن ينتمي إلى فرع واحد فقط.
+                  هذا يضمن عزل البيانات بين الفروع، منطق الصلاحيات الصحيح، وRealtime مستقر.
                   المدراء والمالكون يمكنهم الوصول لجميع الفروع.
                 </p>
               </div>
@@ -1223,10 +1216,10 @@ export default function UsersSettingsPage() {
               <Button
                 className="gap-2 bg-gradient-to-r from-emerald-500 to-teal-500"
                 onClick={saveMemberBranches}
-                disabled={savingMemberBranches || memberBranches.length === 0}
+                disabled={savingMemberBranches || !memberBranchId}
               >
                 {savingMemberBranches ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                حفظ الفروع
+                حفظ الفرع
               </Button>
             </DialogFooter>
           </DialogContent>

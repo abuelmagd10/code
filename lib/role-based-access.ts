@@ -45,9 +45,10 @@ export interface AccessFilter {
   createdByUserId?: string
 
   // للمديرين: قيود تنظيمية
+  // 🎯 قرار معماري: المستخدم له فرع واحد فقط - لا دعم للفروع المتعددة
   filterByBranch: boolean
   branchId?: string | null
-  allowedBranchIds?: string[]
+  // ❌ allowedBranchIds: deprecated - تم إزالته لضمان فرع واحد فقط
 
   filterByCostCenter: boolean
   costCenterId?: string | null
@@ -198,13 +199,9 @@ export function applyAccessFilter(
     filteredQuery = filteredQuery.eq(createdByColumn, filter.createdByUserId)
   }
 
-  // فلتر الفرع
-  if (filter.filterByBranch) {
-    if (filter.allowedBranchIds && filter.allowedBranchIds.length > 0) {
-      filteredQuery = filteredQuery.in(branchColumn, filter.allowedBranchIds)
-    } else if (filter.branchId) {
-      filteredQuery = filteredQuery.eq(branchColumn, filter.branchId)
-    }
+  // ✅ فلتر الفرع (فرع واحد فقط - قرار معماري إلزامي)
+  if (filter.filterByBranch && filter.branchId) {
+    filteredQuery = filteredQuery.eq(branchColumn, filter.branchId)
   }
 
   // فلتر مركز التكلفة
