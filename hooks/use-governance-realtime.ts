@@ -130,10 +130,16 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
 
             if (handlersRef.current.onRoleChanged) {
               await handlersRef.current.onRoleChanged()
+              // ✅ عند تغيير الدور، لا نستدعي onPermissionsChanged لأن onRoleChanged يتعامل معه
+              // ✅ هذا يمنع استدعاء refreshUserSecurityContext مرتين
+              return
             }
             
-            // ✅ عند تغيير الدور، لا نستدعي onPermissionsChanged لأن onRoleChanged يتعامل معه
-            // ✅ هذا يمنع استدعاء refreshUserSecurityContext مرتين
+            // ✅ إذا لم يكن onRoleChanged معرّف، نستخدم onPermissionsChanged كـ fallback
+            // ✅ هذا يضمن أن PermissionsContext يتم تحديثه حتى لو لم يكن onRoleChanged معرّف
+            if (handlersRef.current.onPermissionsChanged) {
+              await handlersRef.current.onPermissionsChanged()
+            }
             return
           }
 
@@ -149,10 +155,16 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
 
             if (handlersRef.current.onBranchOrWarehouseChanged) {
               await handlersRef.current.onBranchOrWarehouseChanged()
+              // ✅ عند تغيير الفرع/المخزن، لا نستدعي onPermissionsChanged لأن onBranchOrWarehouseChanged يتعامل معه
+              // ✅ هذا يمنع استدعاء refreshUserSecurityContext مرتين
+              return
             }
             
-            // ✅ عند تغيير الفرع/المخزن، لا نستدعي onPermissionsChanged لأن onBranchOrWarehouseChanged يتعامل معه
-            // ✅ هذا يمنع استدعاء refreshUserSecurityContext مرتين
+            // ✅ إذا لم يكن onBranchOrWarehouseChanged معرّف، نستخدم onPermissionsChanged كـ fallback
+            // ✅ هذا يضمن أن PermissionsContext يتم تحديثه حتى لو لم يكن onBranchOrWarehouseChanged معرّف
+            if (handlersRef.current.onPermissionsChanged) {
+              await handlersRef.current.onPermissionsChanged()
+            }
             return
           }
 

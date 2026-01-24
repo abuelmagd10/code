@@ -420,12 +420,17 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         console.log(`✅ [AccessContext] Current page ${pathname} is still allowed after context update`)
       }
 
-      // 🔹 4. إطلاق events لتحديث UI
+      // 🔹 4. إطلاق events لتحديث UI والصلاحيات
       // ✅ هذا يحدث UI فقط - لا unmount
-      // ✅ لا نطلق permissions_updated event لأن PermissionsContext يستخدم useGovernanceRealtime مباشرة
+      // ✅ نطلق permissions_updated event للمكونات الأخرى التي تستمع له (sidebar, page-guard, invoices, etc.)
+      // ✅ PermissionsContext لا يستمع لهذا الحدث لأنه يستخدم useGovernanceRealtime مباشرة
       if (typeof window !== 'undefined') {
         // ✅ إطلاق event لتحديث UI (Sidebar, Menus, etc.)
         window.dispatchEvent(new Event('access_profile_updated'))
+        
+        // ✅ إطلاق event للمكونات الأخرى التي تستمع لـ permissions_updated
+        // ✅ هذه المكونات لا تستخدم useGovernanceRealtime مباشرة
+        window.dispatchEvent(new Event('permissions_updated'))
       }
 
       console.log('✅ [AccessContext] Security context refreshed successfully (data only)')
