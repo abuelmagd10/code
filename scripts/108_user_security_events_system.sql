@@ -37,6 +37,10 @@ CREATE INDEX IF NOT EXISTS idx_user_security_events_unprocessed ON user_security
 
 ALTER TABLE user_security_events ENABLE ROW LEVEL SECURITY;
 
+-- ✅ حذف الـ Policies القديمة إن وجدت (للتطبيق الآمن)
+DROP POLICY IF EXISTS "Users can read their own security events" ON user_security_events;
+DROP POLICY IF EXISTS "Owners and admins can read all events in their company" ON user_security_events;
+
 -- ✅ Policy: المستخدم يستطيع قراءة أحداثه فقط
 CREATE POLICY "Users can read their own security events"
   ON user_security_events
@@ -390,7 +394,17 @@ $$;
 -- =====================================
 
 -- ✅ تفعيل Realtime Replication لجدول user_security_events
-ALTER PUBLICATION supabase_realtime ADD TABLE user_security_events;
+-- ✅ استخدام DO block لتجنب خطأ إذا كان الجدول موجوداً مسبقاً في الـ publication
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' 
+    AND tablename = 'user_security_events'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE user_security_events;
+  END IF;
+END $$;
 
 -- =====================================
 -- ✅ تم إنشاء نظام user_security_events بنجاح
