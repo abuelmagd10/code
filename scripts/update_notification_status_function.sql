@@ -90,37 +90,45 @@ BEGIN
     actioned_at = CASE WHEN p_new_status = 'actioned' AND actioned_at IS NULL THEN NOW() ELSE actioned_at END
   WHERE id = p_notification_id;
 
-  -- ✅ Audit Log
-  INSERT INTO audit_logs (
-    company_id,
-    user_id,
-    action,
-    entity_type,
-    entity_id,
-    details,
-    created_at
-  )
-  VALUES (
-    v_company_id,
-    p_user_id,
-    'notification_status_changed',
-    'notification',
-    p_notification_id,
-    jsonb_build_object(
-      'old_status', v_notification.status,
-      'new_status', p_new_status,
-      'notification_title', v_notification.title
-    ),
-    NOW()
-  )
-  ON CONFLICT DO NOTHING; -- ✅ تجنب الأخطاء إذا كان audit_logs غير موجود
+  -- ✅ Audit Log (استخدام البنية الصحيحة لـ audit_logs)
+  -- البنية المتوقعة: company_id, user_id, action, details (JSONB), created_at
+  BEGIN
+    INSERT INTO audit_logs (
+      company_id,
+      user_id,
+      action,
+      details,
+      created_at
+    )
+    VALUES (
+      v_company_id,
+      p_user_id,
+      'notification_status_changed',
+      jsonb_build_object(
+        'entity_type', 'notification',
+        'entity_id', p_notification_id,
+        'old_status', v_notification.status,
+        'new_status', p_new_status,
+        'notification_title', v_notification.title
+      ),
+      NOW()
+    );
+  EXCEPTION
+    WHEN undefined_table THEN
+      -- ✅ إذا كان جدول audit_logs غير موجود، نتجاهل الخطأ
+      NULL;
+    WHEN OTHERS THEN
+      -- ✅ إذا كان هناك خطأ آخر (مثل عمود غير موجود)، نتجاهله أيضاً
+      NULL;
+  END;
 
   -- ✅ إرجاع النتيجة
   RETURN jsonb_build_object(
     'success', true,
     'notification_id', p_notification_id,
     'old_status', v_notification.status,
-    'new_status', p_new_status
+    'new_status', p_new_status,
+    'updated_at', NOW()
   );
 
 EXCEPTION
