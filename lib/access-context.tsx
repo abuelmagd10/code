@@ -10,10 +10,13 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useRouter, usePathname } from "next/navigation"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { useGovernanceRealtime } from "@/hooks/use-governance-realtime"
 import { useToast } from "@/hooks/use-toast"
+import { getRealtimeManager } from "@/lib/realtime-manager"
+import { getResourceFromPath } from "@/lib/permissions-context"
 
 // =====================================================
 // Types
@@ -287,13 +290,16 @@ async function fetchAccessProfile(
 
 export function AccessProvider({ children }: { children: React.ReactNode }) {
   const supabase = useSupabase()
+  const router = useRouter()
+  const pathname = usePathname()
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(true)
   const [isReady, setIsReady] = useState(false)
   const [profile, setProfile] = useState<AccessProfile | null>(null)
+  const isRefreshingRef = useRef(false) // منع التكرار أثناء التحديث
 
   // تحميل Access Profile
-  const loadAccessProfile = useCallback(async () => {
+  const loadAccessProfile = useCallback(async (): Promise<AccessProfile | null> => {
     try {
       setIsLoading(true)
 
@@ -302,7 +308,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         setProfile(null)
         setIsReady(true)
         setIsLoading(false)
-        return
+        return null
       }
 
       const companyId = await getActiveCompanyId(supabase)
@@ -310,30 +316,130 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         setProfile(null)
         setIsReady(true)
         setIsLoading(false)
-        return
+        return null
       }
 
       const accessProfile = await fetchAccessProfile(supabase, user.id, companyId)
       setProfile(accessProfile)
       setIsReady(true)
+      return accessProfile
     } catch (error) {
       console.error("[AccessContext] Error loading access profile:", error)
       setProfile(null)
+      return null
     } finally {
       setIsLoading(false)
     }
   }, [supabase])
+
+  // 🔐 إعادة تهيئة كاملة للسياق الأمني (عند تغيير الفرع)
+  const refreshUserSecurityContext = useCallback(async () => {
+    // منع التكرار
+    if (isRefreshingRef.current) {
+      console.log('🔄 [AccessContext] Already refreshing security context, skipping...')
+      return
+    }
+
+    try {
+      isRefreshingRef.current = true
+      console.log('🔄 [AccessContext] Refreshing user security context...')
+
+      // 🔹 1. إعادة تحميل بيانات المستخدم كاملة من السيرفر
+      const freshProfile = await loadAccessProfile()
+      if (!freshProfile) {
+        console.warn('⚠️ [AccessContext] Failed to load fresh profile')
+        return
+      }
+
+      // 🔹 2. تحديث Realtime Manager بسياق الفرع الجديد
+      try {
+        const realtimeManager = getRealtimeManager()
+        await realtimeManager.updateContext()
+        console.log('✅ [AccessContext] Realtime context updated')
+      } catch (realtimeError) {
+        console.error('❌ [AccessContext] Error updating realtime context:', realtimeError)
+      }
+
+      // 🔹 3. التحقق من الصفحة الحالية وإعادة التوجيه إذا لزم الأمر
+      const currentResource = getResourceFromPath(pathname)
+      const hasAccess = freshProfile.is_owner || freshProfile.is_admin || freshProfile.allowed_pages.includes(currentResource)
+
+      if (!hasAccess) {
+        // الصفحة الحالية غير مسموحة في الفرع الجديد
+        const firstAllowedPage = getFirstAllowedRoute(freshProfile.allowed_pages)
+        console.log(`🔄 [AccessContext] Current page ${pathname} not allowed, redirecting to: ${firstAllowedPage}`)
+        
+        // توجيه تلقائي لأول صفحة مسموحة
+        router.replace(firstAllowedPage)
+        
+        toast({
+          title: "تم تحديث تعيينك",
+          description: "تم تحديث الفرع الخاص بك. تم توجيهك للصفحات المتاحة لك.",
+          variant: "default",
+        })
+      } else {
+        console.log(`✅ [AccessContext] Current page ${pathname} is still allowed`)
+      }
+
+      console.log('✅ [AccessContext] Security context refreshed successfully')
+    } catch (error) {
+      console.error('❌ [AccessContext] Error refreshing security context:', error)
+      toast({
+        title: "خطأ في تحديث السياق",
+        description: "حدث خطأ أثناء تحديث السياق. يرجى تحديث الصفحة.",
+        variant: "destructive",
+      })
+    } finally {
+      isRefreshingRef.current = false
+    }
+  }, [supabase, router, pathname, loadAccessProfile, toast])
+
+  // 🔐 توجيه تلقائي لأول صفحة مسموحة
+  const redirectToFirstAllowedPage = useCallback(() => {
+    if (!profile) {
+      router.replace('/no-access')
+      return
+    }
+
+    const firstPage = getFirstAllowedRoute(profile.allowed_pages)
+    console.log(`🔄 [AccessContext] Redirecting to first allowed page: ${firstPage}`)
+    router.replace(firstPage)
+  }, [profile, router])
 
   // تحميل Access Profile عند البدء
   useEffect(() => {
     loadAccessProfile()
   }, [loadAccessProfile])
 
+  // 🔐 الاستماع لـ user_context_changed event
+  useEffect(() => {
+    const handleUserContextChanged = () => {
+      console.log('🔄 [AccessContext] user_context_changed event received')
+      refreshUserSecurityContext()
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('user_context_changed', handleUserContextChanged)
+      return () => {
+        window.removeEventListener('user_context_changed', handleUserContextChanged)
+      }
+    }
+  }, [refreshUserSecurityContext])
+
   // 🔐 استخدام نظام Realtime للحوكمة
   useGovernanceRealtime({
-    onPermissionsChanged: loadAccessProfile,
-    onRoleChanged: loadAccessProfile,
-    onBranchOrWarehouseChanged: loadAccessProfile,
+    onPermissionsChanged: async () => {
+      await loadAccessProfile()
+      // لا نعيد قيمة - فقط تحديث السياق
+    },
+    onRoleChanged: async () => {
+      await loadAccessProfile()
+      // لا نعيد قيمة - فقط تحديث السياق
+    },
+    onBranchOrWarehouseChanged: async () => {
+      // ✅ استخدام refreshUserSecurityContext عند تغيير الفرع/المخزن
+      await refreshUserSecurityContext()
+    },
     showNotifications: true,
   })
 
@@ -403,7 +509,9 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     canAction,
     canAccessBranch,
     canAccessWarehouse,
-    refreshAccess: loadAccessProfile,
+    refreshAccess: async () => {
+      await loadAccessProfile()
+    },
     getFirstAllowedPage,
   }), [isLoading, isReady, profile, canAccessPage, canAction, canAccessBranch, canAccessWarehouse, loadAccessProfile, getFirstAllowedPage])
 

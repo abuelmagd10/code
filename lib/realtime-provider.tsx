@@ -69,8 +69,18 @@ export function RealtimeProvider({
             }
             window.addEventListener('company_updated', handleCompanyChange)
             
+            // 🔐 الاستماع لتغيير الفرع/المخزن
+            const handleUserContextChanged = async () => {
+              if (managerRef.current) {
+                console.log('🔄 [RealtimeProvider] user_context_changed event received')
+                await managerRef.current.updateContext()
+              }
+            }
+            window.addEventListener('user_context_changed', handleUserContextChanged)
+            
             return () => {
               window.removeEventListener('company_updated', handleCompanyChange)
+              window.removeEventListener('user_context_changed', handleUserContextChanged)
             }
           }
         }

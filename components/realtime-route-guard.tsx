@@ -46,6 +46,23 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
         router.replace(redirectTo)
       }
     },
+    onBranchOrWarehouseChanged: async () => {
+      // ✅ عند تغيير الفرع/المخزن، إعادة فحص الصلاحية
+      console.log("🔄 [RealtimeRouteGuard] Branch/Warehouse changed, rechecking access...")
+      
+      const resource = getResourceFromPath(pathname)
+      const access = canAccessPage(resource)
+      
+      if (access) {
+        setHasAccess(true)
+        console.log(`✅ [RealtimeRouteGuard] Current page ${pathname} is still allowed after branch change`)
+      } else {
+        setHasAccess(false)
+        const redirectTo = getFirstAllowedPage()
+        console.log(`🔄 [RealtimeRouteGuard] Current page ${pathname} not allowed after branch change, redirecting to: ${redirectTo}`)
+        router.replace(redirectTo)
+      }
+    },
     showNotifications: true,
   })
 

@@ -91,10 +91,12 @@ export function AppShell({ children }: AppShellProps) {
     if (!isPublicPage && cachedData.isValid) {
       const hasAccess = canAccessPageSync(resource)
       if (!hasAccess) {
-        router.replace("/dashboard")
+        // 🔐 استخدام getFirstAllowedPage بدلاً من /dashboard
+        const redirectTo = accessReady ? getFirstAllowedPage() : "/no-access"
+        router.replace(redirectTo)
       }
     }
-  }, [pathname, isPublicPage, cachedData, resource, router])
+  }, [pathname, isPublicPage, cachedData, resource, router, accessReady, getFirstAllowedPage])
 
   // تحديث الحالة بناءً على الصلاحيات المحملة
   useEffect(() => {
