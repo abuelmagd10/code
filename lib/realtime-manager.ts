@@ -74,7 +74,14 @@ export type GovernanceEventHandler = (event: {
 // =====================================================
 
 class RealtimeManager {
-  private supabase = getClient() || createClient()
+  // ✅ Lazy initialization للـ Supabase client لتجنب مشاكل التهيئة المبكرة
+  private _supabase: ReturnType<typeof getClient> | ReturnType<typeof createClient> | null = null
+  private get supabase() {
+    if (!this._supabase) {
+      this._supabase = getClient() || createClient()
+    }
+    return this._supabase
+  }
   private subscriptions: Map<RealtimeTable, RealtimeSubscription> = new Map()
   private eventHandlers: Map<RealtimeTable, Set<RealtimeEventHandler>> = new Map()
   private context: RealtimeContext | null = null
@@ -105,20 +112,59 @@ class RealtimeManager {
 
   private async _doInitialize(): Promise<void> {
     try {
+      // ✅ التأكد من أن Supabase client جاهز
+      if (!this.supabase) {
+        console.warn('⚠️ [RealtimeManager] Supabase client not available, skipping initialization')
+        return
+      }
+
       // جلب سياق المستخدم
-      const { data: { user } } = await this.supabase.auth.getUser()
+      const { data: { user }, error: userError } = await this.supabase.auth.getUser()
+      
+      // ✅ معالجة AbortError بشكل صحيح
+      if (userError) {
+        // تجاهل AbortError لأنه يحدث عادة عند إلغاء المكون
+        if (userError.name === 'AbortError' || userError.message?.includes('aborted')) {
+          console.warn('⚠️ [RealtimeManager] Initialization aborted (component unmounted)')
+          return
+        }
+        throw userError
+      }
+      
       if (!user) {
         console.warn('⚠️ [RealtimeManager] No authenticated user, skipping initialization')
         return
       }
 
-      const companyId = await getActiveCompanyId(this.supabase)
+      let companyId: string | null = null
+      try {
+        companyId = await getActiveCompanyId(this.supabase)
+      } catch (error: any) {
+        // ✅ تجاهل AbortError
+        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+          console.warn('⚠️ [RealtimeManager] getActiveCompanyId aborted')
+          return
+        }
+        throw error
+      }
+      
       if (!companyId) {
         console.warn('⚠️ [RealtimeManager] No active company, skipping initialization')
         return
       }
 
-      const accessInfo = await getUserAccessInfo(this.supabase, user.id)
+      let accessInfo: UserAccessInfo | null = null
+      try {
+        accessInfo = await getUserAccessInfo(this.supabase, user.id)
+      } catch (error: any) {
+        // ✅ تجاهل AbortError
+        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+          console.warn('⚠️ [RealtimeManager] getUserAccessInfo aborted')
+          return
+        }
+        throw error
+      }
+      
       if (!accessInfo) {
         console.warn('⚠️ [RealtimeManager] Could not get access info, skipping initialization')
         return
@@ -148,7 +194,12 @@ class RealtimeManager {
       await this.subscribeToGovernance()
 
       this.isInitialized = true
-    } catch (error) {
+    } catch (error: any) {
+      // ✅ معالجة AbortError بشكل صحيح - لا نرمي الخطأ إذا كان AbortError
+      if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+        console.warn('⚠️ [RealtimeManager] Initialization aborted (component unmounted or request cancelled)')
+        return // لا نرمي الخطأ، فقط نتوقف
+      }
       console.error('❌ [RealtimeManager] Initialization error:', error)
       throw error
     }

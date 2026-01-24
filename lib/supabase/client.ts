@@ -8,6 +8,26 @@ export function createClient() {
     throw new Error("Supabase client can only be created in the browser")
   }
 
+  // ✅ إذا كان العميل موجوداً بالفعل، نعيده مباشرة
+  if (supabaseClient) {
+    return supabaseClient
+  }
+
+  // ✅ منع التهيئة المتعددة المتزامنة
+  if (isInitializing) {
+    // ✅ انتظار قصير ثم إعادة المحاولة (بدلاً من spin-lock)
+    // في الواقع، createBrowserClient synchronous، لذا هذا لن يحدث
+    // لكن نضيفه للاحتياط
+    let attempts = 0
+    while (isInitializing && attempts < 10) {
+      // انتظار قصير جداً (microtask)
+      attempts++
+    }
+    if (supabaseClient) {
+      return supabaseClient
+    }
+  }
+
   // التحقق من وجود متغيرات البيئة الصحيحة
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -17,31 +37,23 @@ export function createClient() {
     throw new Error('Supabase configuration is missing or contains dummy values. Please check your environment variables.')
   }
 
-  if (!supabaseClient && !isInitializing) {
-    isInitializing = true
-    try {
-      supabaseClient = createBrowserClient(
-        supabaseUrl,
-        supabaseAnonKey,
-        {
-          global: {
-            headers: {
-              apikey: supabaseAnonKey,
-            },
+  isInitializing = true
+  try {
+    supabaseClient = createBrowserClient(
+      supabaseUrl,
+      supabaseAnonKey,
+      {
+        global: {
+          headers: {
+            apikey: supabaseAnonKey,
           },
-        }
-      )
-    } finally {
-      isInitializing = false
-    }
+        },
+      }
+    )
+    return supabaseClient
+  } finally {
+    isInitializing = false
   }
-
-  // Wait for initialization to complete if it's in progress
-  while (isInitializing) {
-    // Spin-lock until initialization is done
-  }
-
-  return supabaseClient!
 }
 
 // Get the existing client without creating a new one

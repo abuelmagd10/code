@@ -98,7 +98,12 @@ export function RealtimeProvider({
             }
           }
         }
-      } catch (error) {
+      } catch (error: any) {
+        // ✅ معالجة AbortError بشكل صحيح
+        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+          console.warn('⚠️ [RealtimeProvider] Initialization aborted (component unmounted)')
+          return
+        }
         console.error('❌ [RealtimeProvider] Initialization error:', error)
         if (mounted) {
           setIsReady(false)
