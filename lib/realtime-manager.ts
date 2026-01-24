@@ -849,13 +849,46 @@ class RealtimeManager {
         )
 
       channel.subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => {
+        console.log('🔐 [RealtimeManager] Governance Channel subscription status:', status)
         if (status === 'SUBSCRIBED') {
-          console.log('✅ [RealtimeManager] Subscribed to Governance Channel')
+          console.log('✅ [RealtimeManager] Successfully subscribed to Governance Channel', {
+            channelName,
+            companyId,
+            userId,
+            role,
+            tables: ['company_members', 'user_branch_access', 'branches', 'warehouses', 'company_role_permissions', 'permissions'],
+            handlersRegistered: this.governanceHandlers.size,
+          })
           this.isGovernanceSubscribed = true
+          
+          // ✅ تحذير إذا لم تكن هناك handlers مسجلة بعد
+          if (this.governanceHandlers.size === 0) {
+            console.warn('⚠️ [RealtimeManager] Governance channel subscribed but NO handlers registered yet!')
+            console.warn('⚠️ [RealtimeManager] This may mean use-governance-realtime hook is not mounted yet.')
+            console.warn('⚠️ [RealtimeManager] Events will be lost until handlers are registered.')
+          } else {
+            console.log('✅ [RealtimeManager] Governance handlers are registered and ready', {
+              handlersCount: this.governanceHandlers.size,
+            })
+          }
+        } else if (status === 'TIMED_OUT') {
+          console.error('❌ [RealtimeManager] Governance Channel subscription TIMED_OUT - Realtime may not work!')
+          console.error('❌ [RealtimeManager] This usually means Supabase Realtime is not enabled or network issue.')
+          this.isGovernanceSubscribed = false
+        } else if (status === 'CLOSED') {
+          console.warn('⚠️ [RealtimeManager] Governance Channel CLOSED')
+          this.isGovernanceSubscribed = false
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ [RealtimeManager] Error subscribing to Governance Channel')
+          console.error('❌ [RealtimeManager] Error subscribing to Governance Channel - Realtime will not work!')
+          console.error('❌ [RealtimeManager] Check Supabase Realtime configuration and network connection.')
           this.isGovernanceSubscribed = false
         }
+      })
+      
+      // ✅ Logging إضافي للتأكد من أن channel تم تعيينه
+      console.log('🔐 [RealtimeManager] Governance channel created and subscription initiated', {
+        channelName,
+        hasChannel: !!channel,
       })
 
       this.governanceChannel = channel
