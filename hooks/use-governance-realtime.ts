@@ -87,19 +87,26 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
     const manager = getRealtimeManager()
 
     const handler: GovernanceEventHandler = async (event) => {
-      console.log('🔐 [GovernanceRealtime] Event received:', {
+      console.log('🔐 [GovernanceRealtime] Event received from RealtimeManager:', {
         table: event.table,
         type: event.type,
         affectsCurrentUser: event.affectsCurrentUser,
         hasNew: !!event.new,
         hasOld: !!event.old,
+        newRecord: event.new ? { id: event.new.id, user_id: event.new.user_id, role: event.new.role, branch_id: event.new.branch_id } : null,
+        oldRecord: event.old ? { id: event.old.id, user_id: event.old.user_id, role: event.old.role, branch_id: event.old.branch_id } : null,
       })
       try {
         const { table, type, affectsCurrentUser, new: newRecord, old: oldRecord } = event
 
         if (!affectsCurrentUser) {
           // الحدث لا يؤثر على المستخدم الحالي
-          console.log('⚠️ [GovernanceRealtime] Event does not affect current user, skipping')
+          console.log('⚠️ [GovernanceRealtime] Event does not affect current user, skipping', {
+            table,
+            type,
+            newRecordUserId: newRecord?.user_id,
+            oldRecordUserId: oldRecord?.user_id,
+          })
           return
         }
 

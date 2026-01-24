@@ -700,7 +700,8 @@ class RealtimeManager {
       isGovernanceSubscribed: this.isGovernanceSubscribed,
       context: this.context ? {
         companyId: this.context.companyId,
-        userId: this.context.userId
+        userId: this.context.userId,
+        role: this.context.role
       } : null
     })
 
@@ -710,8 +711,8 @@ class RealtimeManager {
     }
 
     if (this.isGovernanceSubscribed) {
-      console.log('ℹ️ [RealtimeManager] Already subscribed to governance channel')
-      return
+      console.log('ℹ️ [RealtimeManager] Already subscribed to governance channel - unsubscribing first to ensure fresh subscription')
+      await this.unsubscribeFromGovernance()
     }
 
     try {
@@ -736,6 +737,13 @@ class RealtimeManager {
         ? `company_id=eq.${companyId}` // Owner/Admin: جميع التغييرات في الشركة
         : `company_id=eq.${companyId}.and.user_id=eq.${userId}` // المستخدمون الآخرون: فقط تغييراتهم
       
+      console.log('🔐 [RealtimeManager] Setting up company_members subscription', {
+        companyId,
+        userId,
+        role,
+        filter: companyMembersFilter,
+      })
+      
       channel
         .on(
           'postgres_changes',
@@ -745,7 +753,14 @@ class RealtimeManager {
             table: 'company_members',
             filter: companyMembersFilter,
           },
-          (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('company_members', payload)
+          (payload: RealtimePostgresChangesPayload<any>) => {
+            console.log('🔐 [RealtimeManager] company_members event received from Supabase Realtime', {
+              eventType: payload.eventType,
+              new: payload.new ? { id: payload.new.id, user_id: payload.new.user_id, role: payload.new.role, branch_id: payload.new.branch_id } : null,
+              old: payload.old ? { id: payload.old.id, user_id: payload.old.user_id, role: payload.old.role, branch_id: payload.old.branch_id } : null,
+            })
+            this.handleGovernanceEvent('company_members', payload)
+          }
         )
 
       // 🔐 الاشتراك في user_branch_access (تغييرات الفروع المسموحة للمستخدم)
@@ -1022,20 +1037,36 @@ class RealtimeManager {
         console.warn(`⚠️ [RealtimeManager] No governance handlers registered! Event will be lost.`, {
           table,
           affectsCurrentUser,
+          eventType: payload.eventType,
+          recordUserId: newRecord?.user_id || oldRecord?.user_id,
         })
+        console.warn(`⚠️ [RealtimeManager] This means use-governance-realtime hook is not registered or not mounted!`)
       }
 
       // إرسال الحدث لجميع معالجات الحوكمة
       const handlersArray: GovernanceEventHandler[] = Array.from(this.governanceHandlers)
       const handlersCount = handlersArray.length
+      
+      console.log(`🔄 [RealtimeManager] Dispatching governance event to ${handlersCount} handler(s)...`, {
+        table,
+        eventType: payload.eventType,
+        affectsCurrentUser,
+        recordUserId: newRecord?.user_id || oldRecord?.user_id,
+        currentUserId: userId,
+      })
+      
       handlersArray.forEach((handler, index) => {
         const handlerNumber = index + 1
         try {
           console.log(`🔄 [RealtimeManager] Calling governance handler ${handlerNumber}/${handlersCount}...`)
-          handler(event)
-          console.log(`✅ [RealtimeManager] Governance handler ${handlerNumber} completed`)
+          // ✅ استدعاء handler بشكل async للتأكد من أنه يتم تنفيذه
+          Promise.resolve(handler(event)).then(() => {
+            console.log(`✅ [RealtimeManager] Governance handler ${handlerNumber} completed successfully`)
+          }).catch((error) => {
+            console.error(`❌ [RealtimeManager] Error in governance event handler ${handlerNumber}:`, error)
+          })
         } catch (error) {
-          console.error(`❌ [RealtimeManager] Error in governance event handler ${handlerNumber}:`, error)
+          console.error(`❌ [RealtimeManager] Synchronous error in governance event handler ${handlerNumber}:`, error)
         }
       })
 
