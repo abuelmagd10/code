@@ -140,12 +140,12 @@ export function buildAccessFilter(accessInfo: UserAccessInfo): AccessFilter {
   }
 
   // المحاسب والمدير: قيود تنظيمية فقط
+  // ✅ قرار معماري: فرع واحد فقط - لا دعم للفروع المتعددة
   if (accessInfo.isManager) {
     return {
       filterByCreatedBy: false,
       filterByBranch: true,
-      branchId: accessInfo.branchId,
-      allowedBranchIds: accessInfo.branchAccess,
+      branchId: accessInfo.branchId, // ✅ فرع واحد فقط
       filterByCostCenter: true,
       costCenterId: accessInfo.costCenterId,
       filterByWarehouse: true,
@@ -154,12 +154,12 @@ export function buildAccessFilter(accessInfo: UserAccessInfo): AccessFilter {
   }
 
   // الموظف: فقط ما أنشأه + قيود تنظيمية
+  // ✅ قرار معماري: فرع واحد فقط - لا دعم للفروع المتعددة
   return {
     filterByCreatedBy: true,
     createdByUserId: accessInfo.userId,
     filterByBranch: true,
-    branchId: accessInfo.branchId,
-    allowedBranchIds: accessInfo.branchAccess,
+    branchId: accessInfo.branchId, // ✅ فرع واحد فقط
     filterByCostCenter: true,
     costCenterId: accessInfo.costCenterId,
     filterByWarehouse: true,
