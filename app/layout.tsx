@@ -99,6 +99,10 @@ export default function RootLayout({
         <Script id="lang-init" strategy="beforeInteractive">
           {`(function(){try{var ck=(document.cookie||'').split('; ').find(function(x){return x.indexOf('app_language=')===0});var cv=ck?ck.split('=')[1]:null;var v=cv||localStorage.getItem('app_language')||'ar';var l=(v==='en'?'en':'ar');document.documentElement.lang=l;document.documentElement.dir=(l==='en'?'ltr':'rtl');window.addEventListener('app_language_changed',function(){try{var ck2=(document.cookie||'').split('; ').find(function(x){return x.indexOf('app_language=')===0});var cv2=ck2?ck2.split('=')[1]:null;var v2=cv2||localStorage.getItem('app_language')||'ar';var l2=(v2==='en'?'en':'ar');document.documentElement.lang=l2;document.documentElement.dir=(l2==='en'?'ltr':'rtl');}catch(e){}});window.addEventListener('storage',function(e){try{if(e&&e.key==='app_language'){var v3=e.newValue||'ar';var l3=(v3==='en'?'en':'ar');document.documentElement.lang=l3;document.documentElement.dir=(l3==='en'?'ltr':'rtl');}}catch(e){}});}catch(e){}})();`}
         </Script>
+        {/* ✅ Global AbortError Handler - Silently ignore AbortErrors from unmounted components */}
+        <Script id="abort-error-handler" strategy="afterInteractive">
+          {`(function(){if(typeof window!=='undefined'){window.addEventListener('unhandledrejection',function(event){var error=event.reason;if(error&&(error.name==='AbortError'||(error.message&&error.message.includes('aborted'))||(error.toString&&error.toString().includes('AbortError')))){event.preventDefault();console.warn('⚠️ [Global] Unhandled AbortError suppressed (component unmounted):',error.message||error.toString());return false;}});}})();`}
+        </Script>
         {/* Service Worker Registration - Secure Multi-Tenant */}
         <Script src="/sw-register.js" strategy="afterInteractive" />
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>

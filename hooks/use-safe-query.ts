@@ -59,8 +59,16 @@ export function useSafeQuery<T>({
 
       // Reset retry count on success
       setRetryCount(0)
-    } catch (err) {
+    } catch (err: any) {
       const error = err instanceof Error ? err : new Error('Unknown error occurred')
+      
+      // ✅ معالجة AbortError بشكل صحيح
+      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
+        console.warn('⚠️ [useSafeQuery] Query aborted (component unmounted)')
+        setIsLoading(false)
+        return
+      }
+      
       console.error('[useSafeQuery] Error:', error)
       setError(error)
 

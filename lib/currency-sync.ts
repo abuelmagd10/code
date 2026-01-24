@@ -72,7 +72,12 @@ export async function syncUserCurrency(supabase: SupabaseClient): Promise<string
     }
 
     return companyCurrency
-  } catch (error) {
+  } catch (error: any) {
+    // ✅ معالجة AbortError بشكل صحيح
+    if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+      console.warn('⚠️ [CurrencySync] Syncing user currency aborted (component unmounted)')
+      return 'EGP'
+    }
     console.error('Error syncing user currency:', error)
     return 'EGP'
   }

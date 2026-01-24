@@ -323,7 +323,12 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       setProfile(accessProfile)
       setIsReady(true)
       return accessProfile
-    } catch (error) {
+    } catch (error: any) {
+      // ✅ معالجة AbortError بشكل صحيح
+      if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+        console.warn('⚠️ [AccessContext] Loading access profile aborted (component unmounted)')
+        return null
+      }
       console.error("[AccessContext] Error loading access profile:", error)
       setProfile(null)
       return null
@@ -356,7 +361,12 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         const realtimeManager = getRealtimeManager()
         await realtimeManager.updateContext()
         console.log('✅ [AccessContext] Realtime context updated')
-      } catch (realtimeError) {
+      } catch (realtimeError: any) {
+        // ✅ معالجة AbortError بشكل صحيح
+        if (realtimeError?.name === 'AbortError' || realtimeError?.message?.includes('aborted')) {
+          console.warn('⚠️ [AccessContext] Realtime context update aborted')
+          return
+        }
         console.error('❌ [AccessContext] Error updating realtime context:', realtimeError)
       }
 
@@ -382,7 +392,12 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       }
 
       console.log('✅ [AccessContext] Security context refreshed successfully')
-    } catch (error) {
+    } catch (error: any) {
+      // ✅ معالجة AbortError بشكل صحيح
+      if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+        console.warn('⚠️ [AccessContext] Security context refresh aborted (component unmounted)')
+        return
+      }
       console.error('❌ [AccessContext] Error refreshing security context:', error)
       toast({
         title: "خطأ في تحديث السياق",

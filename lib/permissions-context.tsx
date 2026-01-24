@@ -304,7 +304,12 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
       setDeniedResources(denied)
       // حفظ في الكاش
       setCachedPermissions(denied, userRole)
-    } catch (error) {
+    } catch (error: any) {
+      // ✅ معالجة AbortError بشكل صحيح
+      if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+        console.warn('⚠️ [PermissionsContext] Loading permissions aborted (component unmounted)')
+        return
+      }
       console.error("Error loading permissions:", error)
     } finally {
       setIsReady(true)

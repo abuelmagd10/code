@@ -314,6 +314,12 @@ export function Sidebar() {
         )
         setUnreadCount(count || 0)
       } catch (notifError: any) {
+        // ✅ معالجة AbortError بشكل صحيح
+        if (notifError?.name === 'AbortError' || notifError?.message?.includes('aborted')) {
+          console.warn('⚠️ [Sidebar] Loading unread count aborted (component unmounted)')
+          setUnreadCount(0)
+          return
+        }
         // إذا كان الجدول غير موجود (404)، لا نعرض خطأ
         if (notifError?.message?.includes('404') || notifError?.message?.includes('does not exist')) {
           console.warn("Notifications table not found - run SQL script first")
@@ -323,7 +329,13 @@ export function Sidebar() {
           setUnreadCount(0)
         }
       }
-    } catch (error) {
+    } catch (error: any) {
+      // ✅ معالجة AbortError بشكل صحيح
+      if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+        console.warn('⚠️ [Sidebar] loadUnreadCount aborted (component unmounted)')
+        setUnreadCount(0)
+        return
+      }
       // لا نعطل باقي الوظائف عند فشل تحميل الإشعارات
       console.error("Error in loadUnreadCount:", error)
       setUnreadCount(0)
@@ -680,7 +692,12 @@ export function Sidebar() {
             }
           }
         }
-      } catch (err) {
+      } catch (err: any) {
+        // ✅ معالجة AbortError بشكل صحيح
+        if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
+          console.warn('⚠️ [Sidebar] Loading user role and branch aborted (component unmounted)')
+          return
+        }
         console.error("Error loading user role and branch:", err)
       }
     }
