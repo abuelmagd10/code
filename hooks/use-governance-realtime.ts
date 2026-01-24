@@ -117,7 +117,11 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
           const roleChanged = oldRecord?.role !== newRecord?.role
           const branchChanged = oldRecord?.branch_id !== newRecord?.branch_id
           const warehouseChanged = oldRecord?.warehouse_id !== newRecord?.warehouse_id
+          
+          // ✅ تتبع ما تم معالجته لتجنب استدعاء onPermissionsChanged مرتين
+          let handledBySpecificHandler = false
 
+          // ✅ معالجة تغيير الدور (إذا حدث)
           if (roleChanged) {
             // تغيير الدور
             if (showNotifications) {
@@ -130,19 +134,17 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
 
             if (handlersRef.current.onRoleChanged) {
               await handlersRef.current.onRoleChanged()
-              // ✅ عند تغيير الدور، لا نستدعي onPermissionsChanged لأن onRoleChanged يتعامل معه
-              // ✅ هذا يمنع استدعاء refreshUserSecurityContext مرتين
-              return
+              handledBySpecificHandler = true
+            } else {
+              // ✅ إذا لم يكن onRoleChanged معرّف، نستخدم onPermissionsChanged كـ fallback
+              if (handlersRef.current.onPermissionsChanged) {
+                await handlersRef.current.onPermissionsChanged()
+                handledBySpecificHandler = true
+              }
             }
-            
-            // ✅ إذا لم يكن onRoleChanged معرّف، نستخدم onPermissionsChanged كـ fallback
-            // ✅ هذا يضمن أن PermissionsContext يتم تحديثه حتى لو لم يكن onRoleChanged معرّف
-            if (handlersRef.current.onPermissionsChanged) {
-              await handlersRef.current.onPermissionsChanged()
-            }
-            return
           }
 
+          // ✅ معالجة تغيير الفرع/المخزن (إذا حدث) - حتى لو تم معالجة roleChanged
           if (branchChanged || warehouseChanged) {
             // تغيير الفرع أو المخزن
             if (showNotifications) {
@@ -155,24 +157,26 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
 
             if (handlersRef.current.onBranchOrWarehouseChanged) {
               await handlersRef.current.onBranchOrWarehouseChanged()
-              // ✅ عند تغيير الفرع/المخزن، لا نستدعي onPermissionsChanged لأن onBranchOrWarehouseChanged يتعامل معه
-              // ✅ هذا يمنع استدعاء refreshUserSecurityContext مرتين
-              return
+              handledBySpecificHandler = true
+            } else {
+              // ✅ إذا لم يكن onBranchOrWarehouseChanged معرّف، نستخدم onPermissionsChanged كـ fallback
+              // ✅ لكن فقط إذا لم يتم استدعاؤه بالفعل من roleChanged fallback
+              if (handlersRef.current.onPermissionsChanged && !handledBySpecificHandler) {
+                await handlersRef.current.onPermissionsChanged()
+                handledBySpecificHandler = true
+              }
             }
-            
-            // ✅ إذا لم يكن onBranchOrWarehouseChanged معرّف، نستخدم onPermissionsChanged كـ fallback
-            // ✅ هذا يضمن أن PermissionsContext يتم تحديثه حتى لو لم يكن onBranchOrWarehouseChanged معرّف
-            if (handlersRef.current.onPermissionsChanged) {
-              await handlersRef.current.onPermissionsChanged()
-            }
-            return
           }
 
           // ✅ فقط إذا لم يكن هناك تغيير في role أو branch/warehouse، نستدعي onPermissionsChanged
+          // ✅ أو إذا لم يتم معالجة أي تغيير بواسطة handlers محددة
           // ✅ هذا يحدث عند تغييرات أخرى في company_members (مثل allowed_branches)
-          if (handlersRef.current.onPermissionsChanged) {
+          if (!handledBySpecificHandler && handlersRef.current.onPermissionsChanged) {
             await handlersRef.current.onPermissionsChanged()
           }
+          
+          // ✅ return بعد معالجة جميع التغييرات
+          return
         } else if (table === 'company_role_permissions') {
           // تغيير في صلاحيات الدور
           if (showNotifications) {
