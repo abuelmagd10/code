@@ -351,9 +351,9 @@ export default function WriteOffsPage() {
           
           return {
             ...wo,
-            branch_name: wo.branch_id ? (branchesMap.get(wo.branch_id) || undefined) : undefined,
-            warehouse_name: wo.warehouse_id ? (warehousesMap.get(wo.warehouse_id) || undefined) : undefined,
-            created_by_name: (usersMap.get(wo.created_by) || 'Unknown') as string,
+            branch_name: wo.branch_id ? (branchesMap.get(wo.branch_id) || null) : null,
+            warehouse_name: wo.warehouse_id ? (warehousesMap.get(wo.warehouse_id) || null) : null,
+            created_by_name: usersMap.get(wo.created_by) || 'Unknown',
             total_quantity: totalQty,
             items_count: itemsCount,
             products_summary: productsSummary
@@ -419,9 +419,9 @@ export default function WriteOffsPage() {
     ])
     
     // ✅ بناء maps
-    const branchesMap = new Map((branchesResult.data || []).map((b: any) => [b.id, b.name]))
-    const warehousesMap = new Map((warehousesResult.data || []).map((w: any) => [w.id, w.name]))
-    const usersMap = new Map((usersResult.data || []).map((u: any) => [u.user_id, u.display_name || 'Unknown']))
+    const branchesMap = new Map<string, string>((branchesResult.data || []).map((b: any) => [b.id, b.name || '']))
+    const warehousesMap = new Map<string, string>((warehousesResult.data || []).map((w: any) => [w.id, w.name || '']))
+    const usersMap = new Map<string, string>((usersResult.data || []).map((u: any) => [u.user_id, u.display_name || 'Unknown']))
     
     // ✅ حساب totals و products summary
     const items = (itemsResult.data || []).filter((item: any) => item.write_off_id === writeOffId)
