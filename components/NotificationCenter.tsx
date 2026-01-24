@@ -138,23 +138,34 @@ export function NotificationCenter({
   // 🔹 Load user names for created_by
   useEffect(() => {
     const loadUserNames = async () => {
+      if (!supabase || displayNotifications.length === 0) return
+
       // ✅ فلترة صارمة: إزالة undefined, null, القيم الفارغة, والسلسلة "undefined"
+      const allCreatedByIds = displayNotifications.map(n => n.created_by)
+      console.log('📋 [NotificationCenter] All created_by IDs:', allCreatedByIds)
+      
       const userIds = new Set(
-        displayNotifications
-          .map(n => n.created_by)
+        allCreatedByIds
           .filter((id): id is string => {
             // فلترة صارمة: فقط UUIDs صالحة
             if (!id) return false
             if (typeof id !== 'string') return false
             if (id === 'undefined' || id === 'null' || id.trim() === '') return false
-            // التحقق من أن القيمة تبدو كـ UUID (اختياري - للتحقق الإضافي)
+            // التحقق من أن القيمة تبدو كـ UUID
             const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
             return uuidRegex.test(id)
           })
       )
-      const missingIds = Array.from(userIds).filter(id => !createdByUsers.has(id))
       
-      if (missingIds.length === 0) return
+      console.log('✅ [NotificationCenter] Valid user IDs after filtering:', Array.from(userIds))
+      
+      const missingIds = Array.from(userIds).filter(id => !createdByUsers.has(id))
+      console.log('🔍 [NotificationCenter] Missing user IDs to fetch:', missingIds)
+      
+      if (missingIds.length === 0) {
+        console.log('✅ [NotificationCenter] All user names already loaded')
+        return
+      }
 
       // ✅ التحقق الإضافي: التأكد من أن جميع IDs صالحة قبل الاستعلام
       const validIds = missingIds.filter(id => {
@@ -162,7 +173,12 @@ export function NotificationCenter({
         return uuidRegex.test(id)
       })
 
-      if (validIds.length === 0) return
+      if (validIds.length === 0) {
+        console.warn('⚠️ [NotificationCenter] No valid UUIDs to fetch')
+        return
+      }
+
+      console.log('📥 [NotificationCenter] Fetching user profiles for:', validIds)
 
       try {
         const { data: usersData, error } = await supabase
@@ -171,11 +187,11 @@ export function NotificationCenter({
           .in('user_id', validIds)
 
         if (error) {
-          console.warn('⚠️ [NotificationCenter] Error loading user profiles:', error)
+          console.error('❌ [NotificationCenter] Error loading user profiles:', error)
           // Set default values for missing users
           setCreatedByUsers(prev => {
             const newMap = new Map(prev)
-            missingIds.forEach(id => {
+            validIds.forEach(id => {
               if (!newMap.has(id)) {
                 newMap.set(id, { name: 'Unknown', email: undefined })
               }
@@ -185,16 +201,41 @@ export function NotificationCenter({
           return
         }
 
-        if (usersData) {
+        console.log('✅ [NotificationCenter] Fetched user profiles:', usersData)
+
+        if (usersData && usersData.length > 0) {
           setCreatedByUsers(prev => {
             const newMap = new Map(prev)
-            usersData.forEach((user: { user_id: string; display_name?: string }) => {
+            usersData.forEach((user: { user_id: string; display_name?: string | null }) => {
+              // ✅ معالجة أفضل للـ display_name
+              let displayName = 'Unknown'
+              if (user.display_name) {
+                const trimmed = user.display_name.trim()
+                if (trimmed.length > 0) {
+                  displayName = trimmed
+                }
+              }
+              console.log(`📝 [NotificationCenter] Setting user ${user.user_id}: "${displayName}"`)
               newMap.set(user.user_id, {
-                name: user.display_name || 'Unknown',
+                name: displayName,
                 email: undefined
               })
             })
             // Set default for any missing IDs (validIds فقط)
+            validIds.forEach(id => {
+              if (!newMap.has(id)) {
+                console.warn(`⚠️ [NotificationCenter] User ${id} not found in database, setting to Unknown`)
+                newMap.set(id, { name: 'Unknown', email: undefined })
+              }
+            })
+            console.log('✅ [NotificationCenter] Updated createdByUsers map:', Array.from(newMap.entries()).map(([k, v]) => `${k}: ${v.name}`))
+            return newMap
+          })
+        } else {
+          console.warn('⚠️ [NotificationCenter] No user profiles returned from query for IDs:', validIds)
+          // Set default values if no data returned
+          setCreatedByUsers(prev => {
+            const newMap = new Map(prev)
             validIds.forEach(id => {
               if (!newMap.has(id)) {
                 newMap.set(id, { name: 'Unknown', email: undefined })
@@ -218,9 +259,10 @@ export function NotificationCenter({
       }
     }
 
-    if (displayNotifications.length > 0) {
+    if (displayNotifications.length > 0 && supabase) {
       loadUserNames()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayNotifications, supabase])
 
   const loadNotifications = useCallback(async () => {
@@ -887,6 +929,15 @@ export function NotificationCenter({
                 const statusStyles = getStatusStyles(notification.status)
                 const createdBy = createdByUsers.get(notification.created_by)
                 const isApproval = notification.category === 'approvals' && (userRole === 'owner' || userRole === 'admin')
+                
+                // 🔍 Debug: Log created_by lookup
+                if (!createdBy && notification.created_by) {
+                  console.log(`⚠️ [NotificationCenter] No user found for created_by: ${notification.created_by}`, {
+                    notificationId: notification.id,
+                    createdByUsersSize: createdByUsers.size,
+                    createdByUsersKeys: Array.from(createdByUsers.keys())
+                  })
+                }
                 
                 return (
                   <div
