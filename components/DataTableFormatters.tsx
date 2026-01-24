@@ -176,6 +176,17 @@ export const statusConfigs: Record<string, {
     variant: 'default',
     className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
     label: { ar: 'مكتمل', en: 'Completed' }
+  },
+  // Write-off statuses
+  locked: {
+    variant: 'secondary',
+    className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
+    label: { ar: 'مقفل', en: 'Locked' }
+  },
+  cancelled: {
+    variant: 'destructive',
+    className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+    label: { ar: 'ملغي', en: 'Cancelled' }
   }
 }
 

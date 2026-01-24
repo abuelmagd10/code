@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -21,6 +21,11 @@ import { BranchCostCenterSelector } from "@/components/branch-cost-center-select
 import { validateInventoryTransaction, type UserContext } from "@/lib/validation"
 import { validateWriteOffItems, type WriteOffItemValidation } from "@/lib/write-off-governance"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { StatusBadge } from "@/components/DataTableFormatters"
+import { usePagination } from "@/lib/pagination"
+import { DataPagination } from "@/components/data-pagination"
+import { PageHeaderList } from "@/components/PageHeader"
 
 // تنسيق العملة
 function formatCurrency(amount: number, currency: string = "EGP"): string {
@@ -79,12 +84,20 @@ interface WriteOff {
   cost_center_id?: string | null
   items?: WriteOffItem[]
   notes?: string
+  // ✅ حقول إضافية للعرض في القائمة
+  branch_name?: string
+  warehouse_name?: string
+  created_by_name?: string
+  total_quantity?: number // مجموع الكميات من items
+  products_summary?: string // ملخص المنتجات (أول منتج أو اثنين + عدد البنود)
+  items_count?: number // عدد البنود
 }
 
 export default function WriteOffsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
   const isAr = true // اللغة العربية افتراضياً
+  const appLang: 'ar' | 'en' = isAr ? 'ar' : 'en'
 
   // States
   const [loading, setLoading] = useState(true)
@@ -92,6 +105,9 @@ export default function WriteOffsPage() {
   const [writeOffs, setWriteOffs] = useState<WriteOff[]>([])
   const [products, setProducts] = useState<any[]>([])
   const [accounts, setAccounts] = useState<any[]>([])
+  
+  // ✅ Pagination
+  const [pageSize, setPageSize] = useState(20)
 
   // Permissions
   const [canCreate, setCanCreate] = useState(false)
@@ -234,7 +250,7 @@ export default function WriteOffsPage() {
         allowedWarehouseIds = (branchWarehouses || []).map((w: any) => w.id)
       }
 
-      // Load write-offs مع الفلترة
+      // ✅ Load write-offs
       let query = supabase
         .from("inventory_write_offs")
         .select("*")
@@ -268,7 +284,86 @@ export default function WriteOffsPage() {
       query = query.order("created_at", { ascending: false })
 
       const { data: wos } = await query
-      setWriteOffs(wos || [])
+      
+      // ✅ جلب معلومات إضافية (branch_name, warehouse_name, created_by_name, products summary)
+      if (wos && wos.length > 0) {
+        const writeOffIds = wos.map((wo: any) => wo.id)
+        const branchIds = new Set(wos.map((wo: any) => wo.branch_id).filter(Boolean))
+        const warehouseIds = new Set(wos.map((wo: any) => wo.warehouse_id).filter(Boolean))
+        const userIds = new Set(wos.map((wo: any) => wo.created_by).filter(Boolean))
+        
+        // ✅ جلب branches
+        const { data: branchesData } = branchIds.size > 0
+          ? await supabase
+              .from("branches")
+              .select("id, name")
+              .in("id", Array.from(branchIds))
+          : { data: [] }
+        
+        // ✅ جلب warehouses
+        const { data: warehousesData } = warehouseIds.size > 0
+          ? await supabase
+              .from("warehouses")
+              .select("id, name")
+              .in("id", Array.from(warehouseIds))
+          : { data: [] }
+        
+        // ✅ جلب user profiles
+        const { data: usersData } = userIds.size > 0
+          ? await supabase
+              .from("user_profiles")
+              .select("user_id, display_name")
+              .in("user_id", Array.from(userIds))
+          : { data: [] }
+        
+        // ✅ جلب items مع products
+        const { data: itemsData } = await supabase
+          .from("inventory_write_off_items")
+          .select("write_off_id, quantity, products(name)")
+          .in("write_off_id", writeOffIds)
+        
+        // ✅ بناء maps للبحث السريع
+        const branchesMap = new Map((branchesData || []).map((b: any) => [b.id, b.name]))
+        const warehousesMap = new Map((warehousesData || []).map((w: any) => [w.id, w.name]))
+        const usersMap = new Map((usersData || []).map((u: any) => [u.user_id, u.display_name || 'Unknown']))
+        
+        // ✅ تجميع البيانات
+        const enrichedWriteOffs = wos.map((wo: any) => {
+          const items = (itemsData || []).filter((item: any) => item.write_off_id === wo.id)
+          const totalQty = items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+          const itemsCount = items.length
+          
+          // ✅ بناء ملخص المنتجات
+          const productNames = items
+            .map((item: any) => item.products?.name)
+            .filter(Boolean)
+            .slice(0, 2)
+          
+          let productsSummary = ''
+          if (productNames.length === 0) {
+            productsSummary = '-'
+          } else if (productNames.length === 1) {
+            productsSummary = `${productNames[0]} (${itemsCount})`
+          } else {
+            const remaining = itemsCount - 2
+            productsSummary = `${productNames.join(', ')}${remaining > 0 ? ` (+${remaining})` : ''}`
+          }
+          
+          return {
+            ...wo,
+            branch_name: wo.branch_id ? (branchesMap.get(wo.branch_id) || null) : null,
+            warehouse_name: wo.warehouse_id ? (warehousesMap.get(wo.warehouse_id) || null) : null,
+            created_by_name: usersMap.get(wo.created_by) || 'Unknown',
+            total_quantity: totalQty,
+            items_count: itemsCount,
+            products_summary: productsSummary
+          }
+        })
+        
+        setWriteOffs(enrichedWriteOffs)
+      } else {
+        setWriteOffs([])
+      }
 
       // Load products مع الفلترة حسب الفرع والمخزن
       let productsQuery = supabase
@@ -2171,10 +2266,160 @@ export default function WriteOffsPage() {
     }
   }
 
+  // ✅ Filtered write-offs (الفلاتر موجودة بالفعل في loadData)
+  const filteredWriteOffs = useMemo(() => {
+    return writeOffs
+  }, [writeOffs])
+
+  // ✅ Pagination logic
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedWriteOffs,
+    hasNext,
+    hasPrevious,
+    goToPage,
+    nextPage,
+    previousPage,
+    setPageSize: updatePageSize
+  } = usePagination(filteredWriteOffs, { pageSize })
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    updatePageSize(newSize)
+  }
+
+  // ✅ تعريف أعمدة الجدول الموحد
+  const tableColumns: DataTableColumn<WriteOff>[] = useMemo(() => [
+    {
+      key: 'write_off_number',
+      header: isAr ? 'رقم الإهلاك' : 'Write-off No.',
+      type: 'text',
+      align: 'left',
+      width: 'min-w-[120px]',
+      format: (value) => (
+        <span className="font-medium text-blue-600 dark:text-blue-400 font-mono">{value}</span>
+      )
+    },
+    {
+      key: 'write_off_date',
+      header: isAr ? 'التاريخ' : 'Date',
+      type: 'date',
+      align: 'right',
+      width: 'w-32'
+    },
+    {
+      key: 'branch_name',
+      header: isAr ? 'الفرع' : 'Branch',
+      type: 'text',
+      align: 'left',
+      hidden: 'md',
+      format: (_, row) => row.branch_name || '-'
+    },
+    {
+      key: 'warehouse_name',
+      header: isAr ? 'المخزن' : 'Warehouse',
+      type: 'text',
+      align: 'left',
+      hidden: 'lg',
+      format: (_, row) => row.warehouse_name || '-'
+    },
+    {
+      key: 'reason',
+      header: isAr ? 'النوع / السبب' : 'Type / Reason',
+      type: 'text',
+      align: 'left',
+      hidden: 'sm',
+      format: (_, row) => {
+        const reasonLabel = isAr
+          ? WRITE_OFF_REASONS.find(r => r.value === row.reason)?.label_ar
+          : WRITE_OFF_REASONS.find(r => r.value === row.reason)?.label_en
+        return reasonLabel || row.reason
+      }
+    },
+    {
+      key: 'products_summary',
+      header: isAr ? 'المنتجات' : 'Products',
+      type: 'custom',
+      align: 'left',
+      width: 'min-w-[200px]',
+      format: (_, row) => {
+        if (!row.products_summary || row.products_summary === '-') return '-'
+        return (
+          <div className="text-xs space-y-0.5">
+            <div className="font-medium text-gray-900 dark:text-white">
+              {row.products_summary}
+            </div>
+            {row.items_count && row.items_count > 0 && (
+              <div className="text-gray-500 dark:text-gray-400">
+                {isAr ? `${row.items_count} منتج` : `${row.items_count} items`}
+              </div>
+            )}
+          </div>
+        )
+      }
+    },
+    {
+      key: 'total_quantity',
+      header: isAr ? 'إجمالي الكمية' : 'Total Qty',
+      type: 'number',
+      align: 'right',
+      width: 'w-28',
+      format: (_, row) => row.total_quantity || 0
+    },
+    {
+      key: 'total_cost',
+      header: isAr ? 'إجمالي التكلفة' : 'Total Cost',
+      type: 'currency',
+      align: 'right',
+      width: 'w-36',
+      format: (_, row) => formatCurrency(row.total_cost)
+    },
+    {
+      key: 'status',
+      header: isAr ? 'الحالة' : 'Status',
+      type: 'status',
+      align: 'center',
+      width: 'w-32',
+      format: (_, row) => <StatusBadge status={row.status} lang={appLang} />
+    },
+    {
+      key: 'created_by_name',
+      header: isAr ? 'أنشئ بواسطة' : 'Created By',
+      type: 'text',
+      align: 'left',
+      hidden: 'xl',
+      format: (_, row) => row.created_by_name || '-'
+    },
+    {
+      key: 'id',
+      header: isAr ? 'الإجراءات' : 'Actions',
+      type: 'actions',
+      align: 'center',
+      width: 'w-24',
+      format: (_, row) => (
+        <div className="flex gap-2 justify-center">
+          <Button variant="ghost" size="sm" onClick={() => handleView(row)}>
+            <Eye className="w-4 h-4" />
+          </Button>
+        </div>
+      )
+    }
+  ], [isAr, appLang, handleView])
+
+  // ✅ إحصائيات المجموع
+  const totals = useMemo(() => {
+    return {
+      totalQuantity: filteredWriteOffs.reduce((sum, wo) => sum + (wo.total_quantity || 0), 0),
+      totalCost: filteredWriteOffs.reduce((sum, wo) => sum + (wo.total_cost || 0), 0)
+    }
+  }, [filteredWriteOffs])
+
   // تصدير CSV
   const handleExport = () => {
     const headers = ["رقم الإهلاك", "التاريخ", "الحالة", "السبب", "التكلفة الإجمالية"]
-    const rows = writeOffs.map(wo => [
+    const rows = filteredWriteOffs.map(wo => [
       wo.write_off_number,
       wo.write_off_date,
       STATUS_LABELS[wo.status]?.label_ar || wo.status,
@@ -2326,59 +2571,56 @@ export default function WriteOffsPage() {
             </CardContent>
           </Card>
 
-          {/* Table - جدول الإهلاكات */}
+          {/* Table - جدول الإهلاكات الموحد */}
           <Card>
             <CardHeader className="pb-2 sm:pb-4">
               <CardTitle className="text-sm sm:text-base">{isAr ? "قائمة الإهلاكات" : "Write-offs List"}</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-gray-50 dark:bg-slate-800">
-                      <TableHead className="text-xs sm:text-sm">{isAr ? "الرقم" : "Number"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm">{isAr ? "التاريخ" : "Date"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm hidden sm:table-cell">{isAr ? "السبب" : "Reason"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm">{isAr ? "التكلفة" : "Cost"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm">{isAr ? "الحالة" : "Status"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm">{isAr ? "عرض" : "View"}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {writeOffs.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                          <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                          {isAr ? "لا توجد إهلاكات" : "No write-offs found"}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      writeOffs.map(wo => (
-                        <TableRow key={wo.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                          <TableCell className="font-mono text-xs sm:text-sm">{wo.write_off_number}</TableCell>
-                          <TableCell className="text-xs sm:text-sm">{wo.write_off_date}</TableCell>
-                          <TableCell className="text-xs sm:text-sm hidden sm:table-cell">
-                            {isAr
-                              ? WRITE_OFF_REASONS.find(r => r.value === wo.reason)?.label_ar
-                              : WRITE_OFF_REASONS.find(r => r.value === wo.reason)?.label_en}
-                          </TableCell>
-                          <TableCell className="text-xs sm:text-sm">{formatCurrency(wo.total_cost)}</TableCell>
-                          <TableCell>
-                            <Badge className={`text-xs ${STATUS_LABELS[wo.status]?.color}`}>
-                              {isAr ? STATUS_LABELS[wo.status]?.label_ar : STATUS_LABELS[wo.status]?.label_en}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="sm" onClick={() => handleView(wo)}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+              <DataTable
+                columns={tableColumns}
+                data={paginatedWriteOffs}
+                keyField="id"
+                lang={appLang}
+                emptyMessage={isAr ? "لا توجد إهلاكات" : "No write-offs found"}
+                footer={{
+                  render: () => (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-4 text-right">
+                        <span className="text-gray-700 dark:text-gray-200 font-semibold">
+                          {isAr ? "المجموع" : "Total"} ({filteredWriteOffs.length} {isAr ? "إهلاك" : "write-offs"})
+                        </span>
+                      </td>
+                      <td className="px-3 py-4 text-right">
+                        <span className="font-semibold text-gray-900 dark:text-white">
+                          {totals.totalQuantity.toLocaleString()}
+                        </span>
+                      </td>
+                      <td className="px-3 py-4 text-right">
+                        <span className="font-semibold text-gray-900 dark:text-white">
+                          {formatCurrency(totals.totalCost)}
+                        </span>
+                      </td>
+                      <td colSpan={3}></td>
+                    </tr>
+                  )
+                }}
+              />
+              
+              {/* Pagination */}
+              {totalItems > 0 && (
+                <div className="p-4 border-t">
+                  <DataPagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    totalItems={totalItems}
+                    pageSize={pageSize}
+                    onPageChange={goToPage}
+                    onPageSizeChange={handlePageSizeChange}
+                    lang={appLang}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>{/* End of space-y-4 div */}
