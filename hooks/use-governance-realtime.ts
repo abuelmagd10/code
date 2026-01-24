@@ -174,28 +174,6 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
             await handlersRef.current.onPermissionsChanged()
           }
           return
-        } else if (table === 'user_branch_access') {
-          // ✅ تغيير في الفروع المسموحة للمستخدم (allowed_branches)
-          // ✅ هذا يؤثر على الصلاحيات والفرع الحالي
-          if (showNotifications) {
-            toast({
-              title: "تم تحديث الفروع المسموحة",
-              description: "تم تحديث الفروع المسموحة لك. سيتم تحديث البيانات المعروضة.",
-              variant: "default",
-            })
-          }
-
-          // ✅ استدعاء onBranchOrWarehouseChanged لأن تغيير allowed_branches يؤثر على الفرع
-          if (handlersRef.current.onBranchOrWarehouseChanged) {
-            await handlersRef.current.onBranchOrWarehouseChanged()
-            return
-          }
-          
-          // ✅ إذا لم يكن onBranchOrWarehouseChanged معرّف، نستخدم onPermissionsChanged كـ fallback
-          if (handlersRef.current.onPermissionsChanged) {
-            await handlersRef.current.onPermissionsChanged()
-          }
-          return
         } else if (table === 'company_role_permissions') {
           // تغيير في صلاحيات الدور
           if (showNotifications) {
@@ -208,78 +186,6 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
 
           if (handlersRef.current.onPermissionsChanged) {
             await handlersRef.current.onPermissionsChanged()
-          }
-        } else if (table === 'user_security_events') {
-          // ✅ معالجة أحداث user_security_events (ERP Grade - لحظي 100%)
-          // ✅ هذا هو القناة الرسمية لإعلام جلسة المستخدم أن صلاحياته تغيرت
-          const eventType = newRecord?.event_type
-          const eventData = newRecord?.event_data || {}
-          
-          console.log('🔔 [GovernanceRealtime] User security event received:', {
-            eventType,
-            eventData,
-            eventId: newRecord?.id,
-          })
-          
-          // ✅ حسب نوع الحدث، نستدعي الـ handler المناسب
-          if (eventType === 'role_changed') {
-            if (showNotifications) {
-              toast({
-                title: "تم تحديث دورك",
-                description: `تم تغيير دورك من ${eventData.old_role} إلى ${eventData.new_role}. سيتم تحديث الصلاحيات فوراً.`,
-                variant: "default",
-              })
-            }
-            
-            if (handlersRef.current.onRoleChanged) {
-              await handlersRef.current.onRoleChanged()
-              return
-            }
-            
-            // ✅ Fallback إلى onPermissionsChanged
-            if (handlersRef.current.onPermissionsChanged) {
-              await handlersRef.current.onPermissionsChanged()
-            }
-          } else if (eventType === 'branch_changed' || eventType === 'allowed_branches_changed') {
-            if (showNotifications) {
-              toast({
-                title: "تم تحديث تعيينك",
-                description: "تم تحديث الفرع أو الفروع المسموحة لك. سيتم تحديث البيانات المعروضة.",
-                variant: "default",
-              })
-            }
-            
-            if (handlersRef.current.onBranchOrWarehouseChanged) {
-              await handlersRef.current.onBranchOrWarehouseChanged()
-              return
-            }
-            
-            // ✅ Fallback إلى onPermissionsChanged
-            if (handlersRef.current.onPermissionsChanged) {
-              await handlersRef.current.onPermissionsChanged()
-            }
-          } else if (eventType === 'access_changed') {
-            // ✅ تغيير عام في الصلاحيات
-            if (showNotifications) {
-              toast({
-                title: "تم تحديث صلاحياتك",
-                description: "تم تحديث صلاحياتك. قد تتغير بعض الصفحات المتاحة لك.",
-                variant: "default",
-              })
-            }
-            
-            // ✅ استدعاء onPermissionsChanged أولاً
-            if (handlersRef.current.onPermissionsChanged) {
-              await handlersRef.current.onPermissionsChanged()
-            }
-            
-            // ✅ إذا كان السبب role_changed أو branch_changed، نستدعي الـ handler المخصص أيضاً
-            const reason = eventData.reason
-            if (reason === 'role_changed' && handlersRef.current.onRoleChanged) {
-              await handlersRef.current.onRoleChanged()
-            } else if ((reason === 'branch_changed' || reason === 'allowed_branches_changed') && handlersRef.current.onBranchOrWarehouseChanged) {
-              await handlersRef.current.onBranchOrWarehouseChanged()
-            }
           }
         } else if (table === 'branches' || table === 'warehouses') {
           // تغيير في الفروع أو المخازن

@@ -727,11 +727,17 @@ export function Sidebar() {
     }
     
     const onAccessProfileUpdated = async () => {
-      // ✅ تحديث Access Profile - تحديث القوائم فقط
+      // ✅ تحديث Access Profile - تحديث القوائم والفرع
       // ✅ لا إعادة توجيه - يتم التعامل معه في RealtimeRouteGuard
-      console.log('🔄 [Sidebar] Access profile updated, UI will refresh automatically via React state')
+      console.log('🔄 [Sidebar] Access profile updated, reloading role and branch...')
+      // ✅ إعادة تحميل الدور والفرع لأن profile قد يكون تغير
+      loadUserRoleAndBranch()
       // ✅ Sidebar سيتم تحديثه تلقائياً عبر React state من AccessContext
-      // ✅ لا حاجة لإعادة تحميل يدوي - React سيتعامل معه
+    }
+    const onUserContextChanged = async () => {
+      // ✅ تحديث الفرع عند تغييره عبر Realtime
+      console.log('🔄 [Sidebar] User context changed (branch updated), reloading role and branch...')
+      loadUserRoleAndBranch()
     }
     const onProfileUpdated = () => { loadUserProfile() }
     if (typeof window !== 'undefined') {
@@ -740,6 +746,7 @@ export function Sidebar() {
       window.addEventListener('company_updated', onCompanyUpdated)
       window.addEventListener('permissions_updated', onPermissionsUpdated)
       window.addEventListener('access_profile_updated', onAccessProfileUpdated)
+      window.addEventListener('user_context_changed', onUserContextChanged)
       window.addEventListener('profile_updated', onProfileUpdated)
       window.addEventListener('notifications_updated', handleNotificationsUpdate)
       // company_updated يتم التعامل معه في onCompanyUpdated
@@ -751,6 +758,7 @@ export function Sidebar() {
         window.removeEventListener('company_updated', onCompanyUpdated)
         window.removeEventListener('permissions_updated', onPermissionsUpdated)
         window.removeEventListener('access_profile_updated', onAccessProfileUpdated)
+        window.removeEventListener('user_context_changed', onUserContextChanged)
         window.removeEventListener('profile_updated', onProfileUpdated)
         window.removeEventListener('notifications_updated', handleNotificationsUpdate)
       }

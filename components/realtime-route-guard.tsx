@@ -2,17 +2,11 @@
  * 🔐 Realtime Route Guard - حماية المسارات لحظياً
  * 
  * مكون مركزي يحمي جميع المسارات ويحدثها فوراً عند تغيير الصلاحيات
- * 
- * 🎯 المعيار المعتمد في ERP:
- * 1. إعادة تحميل السياق الأمني أولاً (refreshUserSecurityContext)
- * 2. إعادة تقييم الصفحة الحالية
- * 3. إذا كانت مسموحة → ابقَ فيها
- * 4. إذا لم تعد مسموحة → انتقل لأول صفحة مسموحة ديناميكياً
  */
 
 "use client"
 
-import { useEffect, useState, useRef, useCallback } from "react"
+import { useEffect, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useAccess } from "@/lib/access-context"
 import { getResourceFromPath } from "@/lib/permissions-context"
@@ -30,298 +24,76 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
   const { isReady, canAccessPage, getFirstAllowedPage, profile } = useAccess()
   const [isChecking, setIsChecking] = useState(true)
   const [hasAccess, setHasAccess] = useState(false)
-  const isReevaluatingRef = useRef(false) // منع إعادة التقييم المتعددة المتزامنة
-  const lastProfileVersionRef = useRef<string | null>(null) // تتبع نسخة profile التي تم معالجتها بنجاح
-  const pendingProfileVersionRef = useRef<string | null>(null) // تتبع profile الذي يتم معالجته حالياً (لمنع التكرار)
-  const profileRef = useRef(profile) // ✅ Ref لتخزين profile الحالي (يتم تحديثه في useEffect)
-  const isReadyRef = useRef(isReady) // ✅ Ref لتخزين isReady الحالي
-  const pathnameRef = useRef(pathname) // ✅ Ref لتخزين pathname الحالي
-
-  // ✅ تحديث refs عند تغيير profile أو isReady أو pathname
-  useEffect(() => {
-    profileRef.current = profile
-    isReadyRef.current = isReady
-    pathnameRef.current = pathname
-  }, [profile, isReady, pathname])
-
-  // 🔐 دالة مركزية لإعادة تقييم الصفحة الحالية بعد تحديث السياق الأمني
-  const reevaluateCurrentRoute = useCallback(async () => {
-    // منع إعادة التقييم المتعددة المتزامنة
-    if (isReevaluatingRef.current) {
-      console.log('🔄 [RealtimeRouteGuard] Already reevaluating route, skipping...')
-      return
-    }
-
-    try {
-      isReevaluatingRef.current = true
-      console.log('🔄 [RealtimeRouteGuard] Starting route reevaluation...', { pathname: pathnameRef.current })
-
-      // ✅ انتظار حتى يكتمل تحديث profile (بحد أقصى 2 ثانية)
-      // ✅ نستخدم profileRef.current بدلاً من profile من closure لقراءة القيمة الحالية
-      let attempts = 0
-      const maxAttempts = 20 // 20 * 100ms = 2 seconds
-      const initialProfile = profileRef.current
-      const initialProfileVersion = initialProfile
-        ? `${initialProfile.role}-${initialProfile.branch_id}-${initialProfile.allowed_pages.length}-${initialProfile.allowed_branches.length}`
-        : null
-
-      // ✅ إذا كان profile موجوداً بالفعل، ننتظر قليلاً فقط لضمان اكتمال التحديثات
-      if (initialProfileVersion) {
-        // انتظار 200ms لضمان اكتمال refreshUserSecurityContext
-        await new Promise(resolve => setTimeout(resolve, 200))
-        
-        // ✅ بعد الانتظار، نتحقق من أن profile تغير فعلياً
-        // ✅ نقرأ من profileRef.current للحصول على القيمة المحدثة
-        const currentProfile = profileRef.current
-        if (currentProfile) {
-          const currentProfileVersion = `${currentProfile.role}-${currentProfile.branch_id}-${currentProfile.allowed_pages.length}-${currentProfile.allowed_branches.length}`
-          if (currentProfileVersion !== initialProfileVersion && currentProfileVersion !== lastProfileVersionRef.current) {
-            // ✅ Profile تغير - تحديث lastProfileVersionRef
-            lastProfileVersionRef.current = currentProfileVersion
-          }
-        }
-      } else {
-        // ✅ إذا لم يكن profile موجوداً، ننتظر حتى يظهر
-        // ✅ نستخدم profileRef.current للحصول على القيمة المحدثة في كل iteration
-        while (attempts < maxAttempts) {
-          const currentProfile = profileRef.current
-          if (currentProfile) {
-            const currentProfileVersion = `${currentProfile.role}-${currentProfile.branch_id}-${currentProfile.allowed_pages.length}-${currentProfile.allowed_branches.length}`
-            // ✅ التحقق من أن profile أصبح موجوداً - لا نحدث lastProfileVersionRef هنا
-            // ✅ سيتم تحديثه بعد اكتمال المعالجة في نهاية reevaluateCurrentRoute
-            // ✅ هذا يمنع التباين بين pendingProfileVersionRef و lastProfileVersionRef
-            if (currentProfileVersion !== pendingProfileVersionRef.current) {
-              // ✅ Profile محدث - يمكن المتابعة
-              break
-            }
-          }
-
-          // انتظار 100ms قبل المحاولة التالية
-          await new Promise(resolve => setTimeout(resolve, 100))
-          attempts++
-        }
-
-        if (attempts >= maxAttempts) {
-          console.warn('⚠️ [RealtimeRouteGuard] Timeout waiting for profile update, proceeding anyway...')
-        }
-      }
-
-      // ✅ إعادة فحص الصلاحية للصفحة الحالية
-      // ✅ نستخدم profileRef.current و isReadyRef.current و pathnameRef.current للحصول على القيم المحدثة
-      const currentProfile = profileRef.current
-      const currentIsReady = isReadyRef.current
-      const currentPathname = pathnameRef.current
-      
-      if (!currentIsReady || !currentProfile) {
-        console.warn('⚠️ [RealtimeRouteGuard] Access context not ready, skipping reevaluation', {
-          isReady: currentIsReady,
-          hasProfile: !!currentProfile,
-        })
-        return
-      }
-
-      // ✅ الحصول على النسخة الحالية من profile بعد الانتظار
-      const finalProfileVersion = `${currentProfile.role}-${currentProfile.branch_id}-${currentProfile.allowed_pages.length}-${currentProfile.allowed_branches.length}`
-
-      const resource = getResourceFromPath(currentPathname)
-      const access = canAccessPage(resource)
-
-      console.log('🔍 [RealtimeRouteGuard] Route evaluation result:', {
-        pathname: currentPathname,
-        resource,
-        access,
-        hasProfile: !!currentProfile,
-        allowedPages: currentProfile.allowed_pages.length,
-      })
-
-      if (access) {
-        // ✅ الصفحة الحالية لا تزال مسموحة - لا نعيد التوجيه (ERP Grade Requirement)
-        setHasAccess(true)
-        console.log(`✅ [RealtimeRouteGuard] Current page ${currentPathname} is still allowed - staying on page (ERP Grade)`)
-      } else {
-        // ❌ الصفحة الحالية لم تعد مسموحة - إعادة توجيه ديناميكية (ERP Grade Requirement)
-        setHasAccess(false)
-        
-        // ✅ حساب أول صفحة مسموحة ديناميكياً (ERP Grade Requirement - لا redirect ثابت إلى /dashboard)
-        // ✅ استخدام getFirstAllowedPage() ديناميكياً - لا hardcoded paths
-        const redirectTo = getFirstAllowedPage()
-        
-        console.log('🔄 [RealtimeRouteGuard] Current page no longer allowed, calculating redirect (ERP Grade)...', {
-          currentPath: currentPathname,
-          redirectTo,
-          allowedPages: currentProfile.allowed_pages,
-          role: currentProfile.role,
-        })
-
-        // ✅ التحقق من أن الصفحة الهدف صالحة
-        if (redirectTo && redirectTo !== "/no-access") {
-          console.log(`🔄 [RealtimeRouteGuard] Redirecting from ${currentPathname} to ${redirectTo} (first allowed page - ERP Grade)`)
-          router.replace(redirectTo)
-        } else {
-          console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user - redirecting to /no-access (ERP Grade)`)
-          setHasAccess(false)
-          router.replace('/no-access')
-        }
-      }
-
-      // ✅ تحديث lastProfileVersionRef بعد اكتمال المعالجة بنجاح
-      lastProfileVersionRef.current = finalProfileVersion
-      pendingProfileVersionRef.current = null
-    } catch (error) {
-      console.error('❌ [RealtimeRouteGuard] Error during route reevaluation:', error)
-      setHasAccess(false)
-      // ✅ في حالة الخطأ، نزيل pendingProfileVersionRef لكن لا نحدث lastProfileVersionRef
-      pendingProfileVersionRef.current = null
-    } finally {
-      isReevaluatingRef.current = false
-    }
-  }, [canAccessPage, getFirstAllowedPage, router])
 
   // 🔐 الاستماع لتحديثات الصلاحيات من Realtime
   useGovernanceRealtime({
-    onRoleChanged: async () => {
-      // ✅ عند تغيير الدور، إعادة تقييم الصفحة الحالية
-      console.log("🔄 [RealtimeRouteGuard] Role changed via Realtime, will reevaluate route after context update...")
-      // ✅ لا نستدعي reevaluateCurrentRoute مباشرة - ننتظر حتى يكتمل refreshUserSecurityContext
-      // ✅ سيتم استدعاؤها تلقائياً عند تحديث profile (في useEffect أدناه)
-    },
     onPermissionsChanged: async () => {
-      // ✅ عند تغيير الصلاحيات، إعادة تقييم الصفحة الحالية
-      console.log("🔄 [RealtimeRouteGuard] Permissions changed via Realtime, will reevaluate route after context update...")
-      // ✅ لا نستدعي reevaluateCurrentRoute مباشرة - ننتظر حتى يكتمل refreshUserSecurityContext
-      // ✅ سيتم استدعاؤها تلقائياً عند تحديث profile (في useEffect أدناه)
+      console.log("🔄 [RealtimeRouteGuard] Permissions changed, rechecking access...")
+      
+      // ✅ انتظار تحديث البيانات أولاً
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // إعادة فحص الصلاحية للصفحة الحالية
+      const resource = getResourceFromPath(pathname)
+      const access = canAccessPage(resource)
+      
+      if (access) {
+        // ✅ الصفحة الحالية لا تزال مسموحة - لا نعيد التوجيه
+        setHasAccess(true)
+        console.log(`✅ [RealtimeRouteGuard] Current page ${pathname} is still allowed`)
+      } else {
+        // ❌ الصفحة الحالية لم تعد مسموحة - إعادة توجيه ديناميكية
+        setHasAccess(false)
+        
+        // ✅ حساب أول صفحة مسموحة ديناميكياً (ليست dashboard ثابتة)
+        const redirectTo = getFirstAllowedPage()
+        
+        // ✅ التحقق من أن الصفحة الهدف صالحة
+        if (redirectTo && redirectTo !== "/no-access") {
+          console.log(`🔄 [RealtimeRouteGuard] Current page ${pathname} is no longer allowed, redirecting to: ${redirectTo}`)
+          router.replace(redirectTo)
+        } else {
+          console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user`)
+          setHasAccess(false)
+        }
+      }
     },
     onBranchOrWarehouseChanged: async () => {
-      // ✅ عند تغيير الفرع/المخزن، إعادة تقييم الصفحة الحالية
-      console.log("🔄 [RealtimeRouteGuard] Branch/Warehouse changed via Realtime, will reevaluate route after context update...")
-      // ✅ لا نستدعي reevaluateCurrentRoute مباشرة - ننتظر حتى يكتمل refreshUserSecurityContext
-      // ✅ سيتم استدعاؤها تلقائياً عند تحديث profile (في useEffect أدناه)
+      // ✅ عند تغيير الفرع/المخزن، إعادة فحص الصلاحية
+      console.log("🔄 [RealtimeRouteGuard] Branch/Warehouse changed, rechecking access...")
+      
+      // ✅ انتظار تحديث البيانات أولاً
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      const resource = getResourceFromPath(pathname)
+      const access = canAccessPage(resource)
+      
+      if (access) {
+        setHasAccess(true)
+        console.log(`✅ [RealtimeRouteGuard] Current page ${pathname} is still allowed after branch change`)
+      } else {
+        setHasAccess(false)
+        
+        // ✅ حساب أول صفحة مسموحة ديناميكياً (ليست dashboard ثابتة)
+        const redirectTo = getFirstAllowedPage()
+        
+        // ✅ التحقق من أن الصفحة الهدف صالحة
+        if (redirectTo && redirectTo !== "/no-access") {
+          console.log(`🔄 [RealtimeRouteGuard] Current page ${pathname} not allowed after branch change, redirecting to: ${redirectTo}`)
+          router.replace(redirectTo)
+        } else {
+          console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user after branch change`)
+          setHasAccess(false)
+        }
+      }
     },
     showNotifications: true,
   })
 
-  // 🔐 الاستماع لتحديثات profile لإعادة تقييم الصفحة تلقائياً (ERP Grade - لحظي 100%)
-  // ✅ هذا useEffect هو النقطة الحرجة - يعيد تقييم الصفحة فوراً عند أي تغيير في profile
+  // فحص الصلاحية عند تحميل الصفحة أو تغيير المسار
   useEffect(() => {
-    // ✅ فقط إذا كان AccessContext جاهزاً و profile موجود
-    if (!isReady || !profile) {
-      return
-    }
-
-    // ✅ التحقق من أن profile تغير فعلياً (ليس مجرد mount أولي)
-    const currentProfileVersion = `${profile.role}-${profile.branch_id}-${profile.allowed_pages.length}-${profile.allowed_branches.length}`
-    
-    // ✅ التحقق من أن profile لم يتم معالجته بالفعل
-    if (currentProfileVersion === lastProfileVersionRef.current) {
-      // ✅ نفس النسخة - تم معالجتها بالفعل
-      return
-    }
-
-    // ✅ التحقق من أن profile لا يتم معالجته حالياً
-    if (currentProfileVersion === pendingProfileVersionRef.current) {
-      // ✅ نفس النسخة قيد المعالجة - لا حاجة لإعادة التقييم
-      console.log('🔄 [RealtimeRouteGuard] Profile version already being processed, skipping...')
-      return
-    }
-
-    // ✅ تعيين pendingProfileVersionRef لمنع إعادة التقييم المكررة
-    // ✅ لا نحدث lastProfileVersionRef هنا - سيتم تحديثه بعد اكتمال المعالجة في reevaluateCurrentRoute
-    pendingProfileVersionRef.current = currentProfileVersion
-
-    // ✅ Profile تغير - إعادة تقييم الصفحة الحالية فوراً (ERP Grade Requirement)
-    console.log('🔄 [RealtimeRouteGuard] Profile updated, triggering route reevaluation (ERP Grade)...', {
-      role: profile.role,
-      branchId: profile.branch_id,
-      allowedPagesCount: profile.allowed_pages.length,
-      allowedBranchesCount: profile.allowed_branches.length,
-      currentPath: pathnameRef.current,
-    })
-
-    // ✅ تأخير بسيط لضمان اكتمال refreshUserSecurityContext (200ms كافٍ)
-    const timeoutId = setTimeout(() => {
-      // ✅ التحقق مرة أخرى من أن reevaluateCurrentRoute لا يعمل حالياً
-      if (!isReevaluatingRef.current) {
-        reevaluateCurrentRoute()
-      } else {
-        console.log('🔄 [RealtimeRouteGuard] Skipping reevaluation - already in progress')
-      }
-    }, 200) // 200ms لضمان اكتمال refreshUserSecurityContext
-
-    return () => {
-      clearTimeout(timeoutId)
-    }
-  }, [profile, isReady, reevaluateCurrentRoute])
-  
-  // 🔐 الاستماع لـ access_profile_updated event (ERP Grade - لحظي 100%)
-  // ✅ هذا يضمن إعادة التقييم حتى لو لم يتغير profile object reference
-  // ✅ Ref لحفظ timeout IDs للتنظيف عند unmount
-  const accessProfileUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  
-  useEffect(() => {
-    const handleAccessProfileUpdated = (event: CustomEvent) => {
-      console.log('🔄 [RealtimeRouteGuard] access_profile_updated event received, triggering reevaluation...', {
-        detail: event.detail,
-      })
-      
-      // ✅ إعادة تقييم الصفحة الحالية فوراً
-      if (!isReevaluatingRef.current) {
-        // ✅ تنظيف timeout السابق إن وجد
-        if (accessProfileUpdateTimeoutRef.current) {
-          clearTimeout(accessProfileUpdateTimeoutRef.current)
-          accessProfileUpdateTimeoutRef.current = null
-        }
-        
-        // ✅ تأخير بسيط لضمان اكتمال جميع التحديثات
-        // ✅ حفظ timeout ID للتنظيف عند unmount
-        accessProfileUpdateTimeoutRef.current = setTimeout(() => {
-          accessProfileUpdateTimeoutRef.current = null // ✅ تنظيف ref بعد التنفيذ
-          reevaluateCurrentRoute()
-        }, 100)
-      }
-    }
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('access_profile_updated', handleAccessProfileUpdated as EventListener)
-      return () => {
-        window.removeEventListener('access_profile_updated', handleAccessProfileUpdated as EventListener)
-        // ✅ تنظيف timeout عند unmount لمنع memory leaks
-        if (accessProfileUpdateTimeoutRef.current) {
-          clearTimeout(accessProfileUpdateTimeoutRef.current)
-          accessProfileUpdateTimeoutRef.current = null
-        }
-      }
-    }
-  }, [reevaluateCurrentRoute])
-
-  // 🔐 فحص الصلاحية عند تحميل الصفحة أو تغيير المسار (الفحص الأولي فقط)
-  // ✅ هذا useEffect للفحص الأولي فقط - لا يتعارض مع reevaluateCurrentRoute
-  useEffect(() => {
-    // ✅ منع الفحص إذا كان reevaluateCurrentRoute يعمل حالياً
-    if (isReevaluatingRef.current) {
-      return
-    }
-
     if (!isReady) {
       setIsChecking(true)
-      return
-    }
-
-    // ✅ فقط إذا لم يكن هناك profile محدث بعد، نستخدم الفحص الأولي
-    // ✅ بعد ذلك، سيتم التعامل مع التحديثات عبر reevaluateCurrentRoute
-    if (!profile) {
-      setIsChecking(true)
-      return
-    }
-
-    // ✅ تحديث lastProfileVersionRef للفحص الأولي
-    const currentProfileVersion = `${profile.role}-${profile.branch_id}-${profile.allowed_pages.length}-${profile.allowed_branches.length}`
-    
-    // ✅ فقط عند الفحص الأولي (lastProfileVersionRef.current === null)
-    // ✅ إذا كان profile تغير، نترك reevaluateCurrentRoute يتعامل معه
-    if (lastProfileVersionRef.current === null) {
-      lastProfileVersionRef.current = currentProfileVersion
-    } else if (currentProfileVersion !== lastProfileVersionRef.current) {
-      // ✅ Profile تغير - لا نتعامل معه هنا، سيتم التعامل معه في useEffect الأول
       return
     }
 
@@ -332,21 +104,12 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
     setIsChecking(false)
 
     if (!access) {
-      // ❌ الصفحة الحالية غير مسموحة - إعادة توجيه ديناميكية (ERP Grade Requirement)
-      // ✅ استخدام getFirstAllowedPage() ديناميكياً - لا hardcoded paths
+      // منع الوصول وإعادة التوجيه
       const redirectTo = getFirstAllowedPage()
-      console.log(`🚫 [RealtimeRouteGuard] Initial check: Access denied to ${pathname}, redirecting to: ${redirectTo} (ERP Grade)`)
-      
-      if (redirectTo && redirectTo !== "/no-access") {
-        router.replace(redirectTo)
-      } else {
-        console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user - redirecting to /no-access (ERP Grade)`)
-        router.replace('/no-access')
-      }
-    } else {
-      console.log(`✅ [RealtimeRouteGuard] Initial check: Access granted to ${pathname} (ERP Grade)`)
+      console.log(`🚫 [RealtimeRouteGuard] Access denied to ${pathname}, redirecting to: ${redirectTo}`)
+      router.replace(redirectTo)
     }
-  }, [isReady, pathname, canAccessPage, getFirstAllowedPage, router, profile])
+  }, [isReady, pathname, canAccessPage, getFirstAllowedPage, router])
 
   // حالة التحميل
   if (isChecking || !isReady) {

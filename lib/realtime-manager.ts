@@ -27,12 +27,10 @@ export type RealtimeTable =
   | 'inventory_transfers' // ✅ النقل بين المخازن
   // 🔐 جداول الحوكمة (Governance)
   | 'company_members'
-  | 'user_branch_access' // ✅ الفروع المسموحة للمستخدم
   | 'branches'
   | 'warehouses'
   | 'company_role_permissions'
   | 'permissions'
-  | 'user_security_events' // ✅ أحداث تغيير السياق الأمني (ERP Grade)
 
 export interface RealtimeEvent<T = any> {
   type: RealtimeEventType
@@ -64,7 +62,7 @@ export type RealtimeEventHandler<T = any> = (event: RealtimeEvent<T>) => void | 
 // 🔐 Governance Event Handlers
 export type GovernanceEventHandler = (event: {
   type: RealtimeEventType
-  table: 'company_members' | 'user_branch_access' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions' | 'user_security_events'
+  table: 'company_members' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions'
   new?: any
   old?: any
   timestamp: number
@@ -258,12 +256,10 @@ class RealtimeManager {
       'inventory_transfers': 'inventory_transfers', // ✅ النقل بين المخازن
       // 🔐 جداول الحوكمة
       'company_members': 'company_members',
-      'user_branch_access': 'user_branch_access',
       'branches': 'branches',
       'warehouses': 'warehouses',
       'company_role_permissions': 'company_role_permissions',
       'permissions': 'permissions',
-      'user_security_events': 'user_security_events',
     }
     return tableMapping[table] || table
   }
@@ -720,24 +716,12 @@ class RealtimeManager {
         return
       }
 
-      console.log('🔐 [RealtimeManager] Starting governance subscription...', { 
-        companyId, 
-        userId, 
-        role,
-        hasContext: !!this.context,
-        contextBranchId: this.context?.branchId,
-      })
+      console.log('🔐 [RealtimeManager] Starting governance subscription...', { companyId, userId, role })
 
       // إلغاء الاشتراك السابق إن وجد
       await this.unsubscribeFromGovernance()
 
       const channelName = `governance_realtime_channel:${companyId}:${userId}`
-      console.log('🔐 [RealtimeManager] Creating governance channel:', {
-        channelName,
-        companyId,
-        userId,
-        role,
-      })
       const channel = this.supabase.channel(channelName)
 
       // 🔐 الاشتراك في company_members (تغييرات العضوية والدور)
@@ -757,22 +741,6 @@ class RealtimeManager {
             filter: companyMembersFilter,
           },
           (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('company_members', payload)
-        )
-
-      // 🔐 الاشتراك في user_branch_access (تغييرات الفروع المسموحة)
-      // ✅ فلترة صارمة: company_id و user_id فقط - المستخدم يستقبل فقط تعديل فروعه
-      const userBranchAccessFilter = `company_id=eq.${companyId}.and.user_id=eq.${userId}`
-      
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*', // INSERT, UPDATE, DELETE
-            schema: 'public',
-            table: 'user_branch_access',
-            filter: userBranchAccessFilter,
-          },
-          (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('user_branch_access', payload)
         )
 
       // 🔐 الاشتراك في branches (تغييرات الفروع)
@@ -826,60 +794,12 @@ class RealtimeManager {
           (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('permissions', payload)
         )
 
-      // 🔐 الاشتراك في user_security_events (أحداث تغيير السياق الأمني - ERP Grade)
-      // ✅ هذا هو القناة الرسمية لإعلام جلسة المستخدم أن صلاحياته تغيرت
-      // ✅ فلترة صارمة: user_id فقط - المستخدم يستقبل فقط أحداثه
-      const userSecurityEventsFilter = `user_id=eq.${userId}`
-      
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT', // ✅ فقط INSERT (الأحداث الجديدة)
-            schema: 'public',
-            table: 'user_security_events',
-            filter: userSecurityEventsFilter,
-          },
-          (payload: RealtimePostgresChangesPayload<any>) => this.handleUserSecurityEvent(payload)
-        )
-
       channel.subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => {
-        console.log(`🔔 [RealtimeManager] Governance Channel subscription status:`, {
-          status,
-          channelName,
-          companyId,
-          userId,
-          role,
-        })
         if (status === 'SUBSCRIBED') {
-          console.log('✅ [RealtimeManager] Subscribed to Governance Channel', {
-            channelName,
-            subscriptions: {
-            company_members: true,
-            user_branch_access: true,
-            branches: true,
-            warehouses: true,
-            company_role_permissions: true,
-            permissions: true,
-            user_security_events: true,
-          },
-          })
+          console.log('✅ [RealtimeManager] Subscribed to Governance Channel')
           this.isGovernanceSubscribed = true
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ [RealtimeManager] Error subscribing to Governance Channel', {
-            status,
-            channelName,
-          })
-          this.isGovernanceSubscribed = false
-        } else if (status === 'TIMED_OUT') {
-          console.warn('⚠️ [RealtimeManager] Governance Channel subscription timed out', {
-            channelName,
-          })
-          this.isGovernanceSubscribed = false
-        } else if (status === 'CLOSED') {
-          console.warn('⚠️ [RealtimeManager] Governance Channel closed', {
-            channelName,
-          })
+          console.error('❌ [RealtimeManager] Error subscribing to Governance Channel')
           this.isGovernanceSubscribed = false
         }
       })
@@ -894,21 +814,9 @@ class RealtimeManager {
    * معالجة أحداث الحوكمة
    */
   private async handleGovernanceEvent(
-    table: 'company_members' | 'user_branch_access' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions',
+    table: 'company_members' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions',
     payload: RealtimePostgresChangesPayload<any>
   ): Promise<void> {
-    // ✅ Logging فوري عند استقبال الحدث - قبل أي معالجة
-    const newRecord = payload.new as any
-    const oldRecord = payload.old as any
-    console.log(`🔔 [RealtimeManager] handleGovernanceEvent CALLED:`, {
-      table,
-      eventType: payload.eventType,
-      hasNew: !!payload.new,
-      hasOld: !!payload.old,
-      newRecord: newRecord ? { id: newRecord.id, user_id: newRecord.user_id, role: newRecord.role, branch_id: newRecord.branch_id } : null,
-      oldRecord: oldRecord ? { id: oldRecord.id, user_id: oldRecord.user_id, role: oldRecord.role, branch_id: oldRecord.branch_id } : null,
-    })
-
     try {
       if (!this.context) {
         console.warn('⚠️ [RealtimeManager] handleGovernanceEvent: no context')
@@ -916,7 +824,8 @@ class RealtimeManager {
       }
 
       const { userId, companyId, role } = this.context
-      // ✅ newRecord و oldRecord تم تعريفهما أعلاه
+      const newRecord = payload.new as any
+      const oldRecord = payload.old as any
       const record = newRecord || oldRecord
 
       if (!record) {
@@ -967,18 +876,6 @@ class RealtimeManager {
           roleChanged: oldRecord?.role !== newRecord?.role,
           branchChanged: oldRecord?.branch_id !== newRecord?.branch_id,
         })
-      } else if (table === 'user_branch_access') {
-        // ✅ إذا كان الحدث يخص المستخدم الحالي (تم الفلترة مسبقاً في subscription)
-        // ✅ لكن نتحقق مرة أخرى للأمان
-        affectsCurrentUser = record.user_id === userId
-        console.log(`🔐 [RealtimeManager] user_branch_access event check:`, {
-          recordUserId: record.user_id,
-          currentUserId: userId,
-          affectsCurrentUser,
-          branchId: record.branch_id,
-          isActive: record.is_active,
-          eventType: payload.eventType,
-        })
       } else if (table === 'branches') {
         // إذا كان الفرع مرتبط بالمستخدم الحالي
         affectsCurrentUser = this.context.branchId === record.id
@@ -1008,9 +905,9 @@ class RealtimeManager {
         return
       }
 
-      const event: Parameters<GovernanceEventHandler>[0] = {
+      const event = {
         type: payload.eventType as RealtimeEventType,
-        table: table as 'company_members' | 'user_branch_access' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions',
+        table,
         new: payload.new,
         old: payload.old,
         timestamp: now,
@@ -1034,121 +931,15 @@ class RealtimeManager {
       })
 
       // 🔐 إذا كان الحدث يؤثر على المستخدم الحالي، إعادة بناء السياق والاشتراكات
-      // ✅ ERP Grade Requirement: إعادة بناء السياق فوراً عند أي تغيير
       if (affectsCurrentUser) {
-        console.log(`🔄 [RealtimeManager] Governance event affects current user, rebuilding context (ERP Grade)...`, {
+        console.log(`🔄 [RealtimeManager] Governance event affects current user, rebuilding context...`, {
           table,
           eventType: payload.eventType,
-          affectsCurrentUser,
-          roleChanged: table === 'company_members' && oldRecord?.role !== newRecord?.role,
-          branchChanged: table === 'company_members' && oldRecord?.branch_id !== newRecord?.branch_id,
-          oldRole: oldRecord?.role,
-          newRole: newRecord?.role,
-          oldBranchId: oldRecord?.branch_id,
-          newBranchId: newRecord?.branch_id,
         })
-        
-        // ✅ إعادة بناء السياق والاشتراكات
         await this.rebuildContextAndSubscriptions()
-        
-        // ✅ إطلاق event لتحديث AccessContext (سيتم استدعاء refreshUserSecurityContext من useGovernanceRealtime)
-        // ✅ لا نستدعي refreshUserSecurityContext مباشرة - نعتمد على useGovernanceRealtime handlers
-        console.log(`✅ [RealtimeManager] Context rebuilt, handlers will be called by useGovernanceRealtime`)
-      } else {
-        console.log(`ℹ️ [RealtimeManager] Governance event does not affect current user, skipping context rebuild`, {
-          table,
-          eventType: payload.eventType,
-          affectsCurrentUser,
-          recordUserId: record.user_id,
-          currentUserId: userId,
-        })
       }
     } catch (error) {
       console.error(`❌ [RealtimeManager] Error handling governance event for ${table}:`, error)
-    }
-  }
-
-  /**
-   * معالجة أحداث user_security_events (ERP Grade - لحظي 100%)
-   * ✅ هذا هو القناة الرسمية لإعلام جلسة المستخدم أن صلاحياته تغيرت
-   */
-  private async handleUserSecurityEvent(
-    payload: RealtimePostgresChangesPayload<any>
-  ): Promise<void> {
-    try {
-      if (!this.context) {
-        console.warn('⚠️ [RealtimeManager] handleUserSecurityEvent: no context')
-        return
-      }
-
-      const { userId, companyId } = this.context
-      const event = payload.new as any
-
-      if (!event) {
-        console.warn('⚠️ [RealtimeManager] handleUserSecurityEvent: no event in payload')
-        return
-      }
-
-      // ✅ التحقق من أن الحدث يخص المستخدم الحالي
-      if (event.user_id !== userId || event.company_id !== companyId) {
-        console.warn('⚠️ [RealtimeManager] handleUserSecurityEvent: event does not match current user', {
-          eventUserId: event.user_id,
-          currentUserId: userId,
-          eventCompanyId: event.company_id,
-          currentCompanyId: companyId,
-        })
-        return
-      }
-
-      console.log('🔔 [RealtimeManager] User security event received (ERP Grade):', {
-        eventType: event.event_type,
-        eventId: event.id,
-        userId: event.user_id,
-        companyId: event.company_id,
-        eventData: event.event_data,
-      })
-
-      // ✅ منع التكرار
-      const eventKey = `user_security_event:${event.id}`
-      const now = Date.now()
-      const lastProcessed = this.processedEvents.get(eventKey)
-      if (lastProcessed && (now - lastProcessed) < this.EVENT_DEDUP_WINDOW) {
-        console.warn(`⚠️ [RealtimeManager] Duplicate user security event ignored: ${eventKey}`)
-        return
-      }
-      this.processedEvents.set(eventKey, now)
-
-      // ✅ إطلاق event للمعالجات (سيتم استدعاء refreshUserSecurityContext من useGovernanceRealtime)
-      const governanceEvent: Parameters<GovernanceEventHandler>[0] = {
-        type: 'INSERT' as RealtimeEventType,
-        table: 'user_security_events' as any,
-        new: event,
-        old: undefined,
-        timestamp: now,
-        affectsCurrentUser: true, // ✅ دائماً true لأننا فلترنا حسب user_id
-      }
-
-      console.log(`✅ [RealtimeManager] Dispatching user security event to handlers:`, {
-        eventType: event.event_type,
-        handlersCount: this.governanceHandlers.size,
-      })
-
-      // ✅ إرسال الحدث لجميع معالجات الحوكمة
-      this.governanceHandlers.forEach((handler) => {
-        try {
-          handler(governanceEvent)
-        } catch (error) {
-          console.error(`❌ [RealtimeManager] Error in user security event handler:`, error)
-        }
-      })
-
-      // ✅ إعادة بناء السياق والاشتراكات فوراً (ERP Grade Requirement)
-      console.log(`🔄 [RealtimeManager] User security event affects current user, rebuilding context...`, {
-        eventType: event.event_type,
-      })
-      await this.rebuildContextAndSubscriptions()
-    } catch (error) {
-      console.error(`❌ [RealtimeManager] Error handling user security event:`, error)
     }
   }
 
