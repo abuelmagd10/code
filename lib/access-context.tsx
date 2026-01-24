@@ -155,13 +155,27 @@ async function fetchAccessProfile(
   companyId: string
 ): Promise<AccessProfile | null> {
   try {
-    // جلب معلومات العضوية
+    // ✅ SINGLE SOURCE OF TRUTH: جلب معلومات العضوية من company_members مباشرة
+    // ✅ هذا هو المصدر الوحيد للدور والفرع - لا joins، لا relations، لا جداول أخرى
+    console.log(`📊 [AccessContext] fetchAccessProfile: Querying company_members (Single Source of Truth)`, {
+      userId,
+      companyId,
+    })
+    
     const { data: member } = await supabase
       .from("company_members")
       .select("role, branch_id, warehouse_id, cost_center_id")
       .eq("company_id", companyId)
       .eq("user_id", userId)
       .maybeSingle()
+    
+    console.log(`📊 [AccessContext] fetchAccessProfile: Member data retrieved`, {
+      hasMember: !!member,
+      role: member?.role,
+      branchId: member?.branch_id,
+      warehouseId: member?.warehouse_id,
+      costCenterId: member?.cost_center_id,
+    })
 
     if (!member) {
       return null
@@ -374,8 +388,9 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     }
   }, [supabase])
 
-  // 🔐 إعادة تهيئة كاملة للسياق الأمني (عند تغيير الفرع)
-  // ✅ تحديث البيانات فقط - لا unmount للـ contexts
+  // 🔐 إعادة تهيئة كاملة للسياق الأمني (BLIND REFRESH - بدون شروط)
+  // ✅ في ERP احترافي: عند أي UPDATE على company_members، نستدعي هذا مباشرة
+  // ✅ بدون تحليل، بدون مقارنة، بدون شروط - فقط query جديد من السيرفر وتحديث كامل
   const refreshUserSecurityContext = useCallback(async (branchChanged: boolean = false) => {
     // منع التكرار
     if (isRefreshingRef.current) {
@@ -385,7 +400,10 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
 
     try {
       isRefreshingRef.current = true
-      console.log('🔄 [AccessContext] Refreshing user security context (data only, no redirect)...', { branchChanged })
+      console.log('🔄 [AccessContext] BLIND REFRESH: Refreshing user security context (full server query, no conditions)...', { 
+        branchChanged,
+        timestamp: new Date().toISOString(),
+      })
 
       // 🔹 1. إعادة تحميل بيانات المستخدم كاملة من السيرفر
       // ✅ هذا يحدث profile فقط - لا unmount للـ context
@@ -573,30 +591,36 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshUserSecurityContext])
 
-  // 🔐 استخدام نظام Realtime للحوكمة
+  // 🔐 استخدام نظام Realtime للحوكمة (BLIND REFRESH)
+  // ✅ عند أي UPDATE على company_members للمستخدم الحالي:
+  // ✅ 1. RealtimeManager يستقبل الحدث من Supabase
+  // ✅ 2. useGovernanceRealtime يستدعي onPermissionsChanged مباشرة (بدون شروط)
+  // ✅ 3. refreshUserSecurityContext يقوم بـ query جديد من company_members (Single Source of Truth)
+  // ✅ 4. يتم تحديث AccessContext كامل وإطلاق الأحداث الثلاثة
   useGovernanceRealtime({
     onPermissionsChanged: async () => {
-      // ✅ تحديث البيانات فقط - لا إعادة توجيه
-      console.log('🔄 [AccessContext] Permissions changed via Realtime, reloading profile...')
-      // ✅ استخدام refreshUserSecurityContext لإعادة تحميل كامل مع إطلاق الأحداث
+      // ✅ BLIND REFRESH: استدعاء refreshUserSecurityContext مباشرة بدون أي شروط
+      // ✅ هذا يضمن أن أي تغيير في company_members يتم اكتشافه وتحديثه فوراً
+      console.log('🔄 [AccessContext] BLIND REFRESH triggered via Realtime (onPermissionsChanged) - calling refreshUserSecurityContext...')
+      // ✅ استخدام refreshUserSecurityContext لإعادة تحميل كامل من company_members (Single Source of Truth)
       await refreshUserSecurityContext(false)
+      console.log('✅ [AccessContext] BLIND REFRESH completed successfully')
       // ✅ لا نعيد قيمة - فقط تحديث السياق
       // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
     },
     onRoleChanged: async () => {
-      // ✅ تحديث البيانات فقط - لا إعادة توجيه
-      console.log('🔄 [AccessContext] Role changed via Realtime, reloading profile...')
-      // ✅ استخدام refreshUserSecurityContext لإعادة تحميل كامل مع إطلاق الأحداث
+      // ✅ BLIND REFRESH: نفس المنطق - استدعاء refreshUserSecurityContext مباشرة
+      // ✅ (هذا handler لن يُستدعى بعد Blind Refresh، لكن نتركه للتوافق مع الكود القديم)
+      console.log('🔄 [AccessContext] BLIND REFRESH triggered via Realtime (onRoleChanged) - calling refreshUserSecurityContext...')
       await refreshUserSecurityContext(false)
-      // ✅ لا نعيد قيمة - فقط تحديث السياق
-      // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
+      console.log('✅ [AccessContext] BLIND REFRESH completed successfully')
     },
     onBranchOrWarehouseChanged: async () => {
-      // ✅ تحديث البيانات فقط - لا إعادة توجيه
-      console.log('🔄 [AccessContext] Branch/Warehouse changed via Realtime, refreshing context...')
-      // ✅ استخدام refreshUserSecurityContext مع branchChanged = true لإطلاق user_context_changed event
+      // ✅ BLIND REFRESH: نفس المنطق - استدعاء refreshUserSecurityContext مباشرة
+      // ✅ (هذا handler لن يُستدعى بعد Blind Refresh، لكن نتركه للتوافق مع الكود القديم)
+      console.log('🔄 [AccessContext] BLIND REFRESH triggered via Realtime (onBranchOrWarehouseChanged) - calling refreshUserSecurityContext...')
       await refreshUserSecurityContext(true)
-      // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
+      console.log('✅ [AccessContext] BLIND REFRESH completed successfully')
     },
     showNotifications: true,
   })

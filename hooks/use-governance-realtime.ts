@@ -135,13 +135,18 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
             })
           }
 
-          // ✅ استدعاء refreshUserSecurityContext مباشرة - بدون أي شروط
+          // ✅ BLIND REFRESH: استدعاء refreshUserSecurityContext مباشرة - بدون أي شروط
           // ✅ refreshUserSecurityContext سيقوم بـ:
-          // ✅ 1. Query جديد من السيرفر (role, branch_id, allowed_branches, permissions)
-          // ✅ 2. تحديث AccessContext كامل
+          // ✅ 1. Query جديد من السيرفر (company_members.role, company_members.branch_id, user_branch_access, permissions)
+          // ✅ 2. تحديث AccessContext كامل (setProfile)
           // ✅ 3. إطلاق الأحداث الثلاثة (permissions_updated, access_profile_updated, user_context_changed)
+          // ✅ بدون تحليل، بدون مقارنة، بدون شروط - فقط تحديث كامل من Single Source of Truth
+          console.log(`🔄 [GovernanceRealtime] Calling onPermissionsChanged handler (triggers refreshUserSecurityContext)...`)
           if (handlersRef.current.onPermissionsChanged) {
             await handlersRef.current.onPermissionsChanged()
+            console.log(`✅ [GovernanceRealtime] onPermissionsChanged handler completed successfully`)
+          } else {
+            console.warn(`⚠️ [GovernanceRealtime] onPermissionsChanged handler not defined - refreshUserSecurityContext will not be called!`)
           }
           return
         }

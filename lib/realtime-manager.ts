@@ -745,6 +745,40 @@ class RealtimeManager {
           (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('company_members', payload)
         )
 
+      // 🔐 الاشتراك في user_branch_access (تغييرات الفروع المسموحة للمستخدم)
+      // ✅ فلترة حسب company_id و user_id - المستخدم يستقبل فقط التغييرات الخاصة به
+      // ✅ Owner/Admin يستقبلون جميع التغييرات في الشركة (يتم التعامل معه في handleGovernanceEvent)
+      // ✅ هذا ضروري لـ BLIND REFRESH mechanism عند تغيير allowed_branches
+      const userBranchAccessFilter = role === 'owner' || role === 'admin'
+        ? `company_id=eq.${companyId}` // Owner/Admin: جميع التغييرات في الشركة
+        : `company_id=eq.${companyId}.and.user_id=eq.${userId}` // المستخدمون الآخرون: فقط تغييراتهم
+      
+      console.log('🔐 [RealtimeManager] Subscribing to user_branch_access', {
+        companyId,
+        userId,
+        role,
+        filter: userBranchAccessFilter,
+      })
+      
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'user_branch_access',
+            filter: userBranchAccessFilter,
+          },
+          (payload: RealtimePostgresChangesPayload<any>) => {
+            console.log('🔐 [RealtimeManager] user_branch_access event received', {
+              eventType: payload.eventType,
+              new: payload.new ? Object.keys(payload.new) : null,
+              old: payload.old ? Object.keys(payload.old) : null,
+            })
+            this.handleGovernanceEvent('user_branch_access', payload)
+          }
+        )
+
       // 🔐 الاشتراك في branches (تغييرات الفروع)
       channel
         .on(
@@ -844,6 +878,10 @@ class RealtimeManager {
         currentUserId: userId,
         currentCompanyId: companyId,
         currentRole: role,
+        // ✅ SINGLE SOURCE OF TRUTH: التأكد من أن الحدث من company_members table
+        isCompanyMembersTable: table === 'company_members',
+        payloadNewKeys: payload.new ? Object.keys(payload.new) : null,
+        payloadOldKeys: payload.old ? Object.keys(payload.old) : null,
       })
 
       // 🔐 منع التكرار
