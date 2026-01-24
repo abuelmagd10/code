@@ -226,10 +226,19 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
     }
 
     // تسجيل المعالج
+    console.log('🔐 [GovernanceRealtime] Registering governance event handler...', {
+      hasOnPermissionsChanged: !!onPermissionsChanged,
+      hasOnRoleChanged: !!onRoleChanged,
+      hasOnBranchOrWarehouseChanged: !!onBranchOrWarehouseChanged,
+    })
+    
     const unsubscribe = manager.onGovernanceChange(handler)
+    
+    console.log('✅ [GovernanceRealtime] Governance event handler registered successfully')
 
     return () => {
+      console.log('🔐 [GovernanceRealtime] Unregistering governance event handler...')
       unsubscribe()
     }
-  }, [showNotifications, toast])
+  }, [showNotifications, toast, onPermissionsChanged, onRoleChanged, onBranchOrWarehouseChanged])
 }

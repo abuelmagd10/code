@@ -192,9 +192,12 @@ class RealtimeManager {
       })
 
       // 🔐 الاشتراك في قناة الحوكمة
+      console.log('🔐 [RealtimeManager] Subscribing to governance channel...')
       await this.subscribeToGovernance()
+      console.log('✅ [RealtimeManager] Governance subscription completed')
 
       this.isInitialized = true
+      console.log('✅ [RealtimeManager] Initialization completed successfully')
     } catch (error) {
       console.error('❌ [RealtimeManager] Initialization error:', error)
       throw error
@@ -904,11 +907,20 @@ class RealtimeManager {
       }
 
       // 🔐 تحديد إذا كان الحدث يؤثر على المستخدم الحالي
+      // ✅ BLIND REFRESH: عند أي UPDATE على company_members، نعتبره يؤثر على المستخدم إذا كان user_id يطابق
+      // ✅ حتى لو لم يكن role أو branch_id في payload.old (Supabase قد لا يرسل جميع الحقول)
       let affectsCurrentUser = false
 
       if (table === 'company_members') {
-        // إذا كان الحدث يخص المستخدم الحالي
-        affectsCurrentUser = record.user_id === userId
+        // ✅ BLIND REFRESH: إذا كان الحدث يخص المستخدم الحالي (من newRecord أو oldRecord)
+        // ✅ في UPDATE، قد يكون user_id في newRecord فقط أو oldRecord فقط
+        // ✅ لذلك نتحقق من كليهما
+        const newRecordUserId = newRecord?.user_id
+        const oldRecordUserId = oldRecord?.user_id
+        const recordUserId = newRecordUserId || oldRecordUserId
+        
+        // ✅ إذا كان user_id في أي من newRecord أو oldRecord يطابق userId الحالي، يؤثر على المستخدم
+        affectsCurrentUser = (newRecordUserId === userId) || (oldRecordUserId === userId)
         
         // ✅ تحسين اكتشاف التغييرات: في UPDATE، قد لا يحتوي payload.old على role إذا لم يكن ضمن الحقول المحدّثة
         // ✅ لذلك نتحقق من وجود role في payload.new أولاً
@@ -916,8 +928,10 @@ class RealtimeManager {
         const branchChanged = newRecord?.branch_id && oldRecord?.branch_id !== newRecord?.branch_id
         const warehouseChanged = newRecord?.warehouse_id && oldRecord?.warehouse_id !== newRecord?.warehouse_id
         
-        console.log(`🔐 [RealtimeManager] company_members event check:`, {
-          recordUserId: record.user_id,
+        console.log(`🔐 [RealtimeManager] company_members event check (BLIND REFRESH):`, {
+          recordUserId,
+          newRecordUserId,
+          oldRecordUserId,
           currentUserId: userId,
           affectsCurrentUser,
           eventType: payload.eventType,
@@ -959,19 +973,29 @@ class RealtimeManager {
         affectsCurrentUser = true
       }
 
-      // 🔐 Owner/Admin: يرى جميع الأحداث (لكن affectsCurrentUser يبقى صحيح فقط إذا كان يخصهم)
+      // 🔐 Owner/Admin: يرى جميع الأحداث في الشركة (لكن affectsCurrentUser يبقى صحيح فقط إذا كان يخصهم)
+      // ✅ BLIND REFRESH: عند UPDATE على company_members، نرسل الحدث دائماً إذا كان يؤثر على المستخدم
+      // ✅ حتى لو كان المستخدم ليس owner/admin (لأنه يحتاج لتحديث صلاحياته)
       const canSeeEvent = role === 'owner' || role === 'admin' || affectsCurrentUser
 
       if (!canSeeEvent) {
         // المستخدمون الآخرون لا يرون إلا الأحداث التي تخصهم
         console.warn(`🚫 [RealtimeManager] Governance event rejected: user not affected`, {
           table,
-          recordUserId: record.user_id,
+          recordUserId: newRecord?.user_id || oldRecord?.user_id,
           currentUserId: userId,
           role,
           affectsCurrentUser,
         })
         return
+      }
+      
+      // ✅ BLIND REFRESH: تأكيد إضافي - إذا كان UPDATE على company_members للمستخدم الحالي، نرسل الحدث دائماً
+      if (table === 'company_members' && payload.eventType === 'UPDATE' && affectsCurrentUser) {
+        console.log(`✅ [RealtimeManager] BLIND REFRESH: company_members UPDATE for current user - forcing event dispatch`, {
+          recordUserId: newRecord?.user_id || oldRecord?.user_id,
+          currentUserId: userId,
+        })
       }
 
       const event: Parameters<GovernanceEventHandler>[0] = {
@@ -988,14 +1012,27 @@ class RealtimeManager {
         eventType: payload.eventType,
         affectsCurrentUser,
         handlersCount: this.governanceHandlers.size,
+        recordUserId: newRecord?.user_id || oldRecord?.user_id,
+        currentUserId: userId,
       })
 
+      // ✅ BLIND REFRESH: إرسال الحدث لجميع معالجات الحوكمة
+      // ✅ إذا كان affectsCurrentUser = true، يجب أن يستقبل use-governance-realtime الحدث ويستدعي refreshUserSecurityContext
+      if (this.governanceHandlers.size === 0) {
+        console.warn(`⚠️ [RealtimeManager] No governance handlers registered! Event will be lost.`, {
+          table,
+          affectsCurrentUser,
+        })
+      }
+
       // إرسال الحدث لجميع معالجات الحوكمة
-      this.governanceHandlers.forEach((handler) => {
+      this.governanceHandlers.forEach((handler, index) => {
         try {
+          console.log(`🔄 [RealtimeManager] Calling governance handler ${index + 1}/${this.governanceHandlers.size}...`)
           handler(event)
+          console.log(`✅ [RealtimeManager] Governance handler ${index + 1} completed`)
         } catch (error) {
-          console.error(`❌ [RealtimeManager] Error in governance event handler:`, error)
+          console.error(`❌ [RealtimeManager] Error in governance event handler ${index + 1}:`, error)
         }
       })
 
