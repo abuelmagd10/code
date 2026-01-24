@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { usePermissions, getResourceFromPath, canAccessPageSync, getCachedPermissions } from "@/lib/permissions-context"
 import { useAccess } from "@/lib/access-context"
@@ -163,28 +163,87 @@ export function PageGuard({
     }
   }, [isReady, isLoading, canAccessPage, targetResource, router, fallbackPath, showAccessDenied, pathname, accessReady, getFirstAllowedPage])
 
-  // 🔐 الاستماع لتحديثات الصلاحيات من Realtime
+  // 🔐 إعادة تهيئة PageGuard بالكامل عند تغيير السياق الأمني (ERP Grade - لحظي 100%)
+  // ✅ هذا يضمن أن PageGuard يعيد فحص الصلاحية عند أي تغيير في الدور أو الفرع
+  const reinitializePageGuard = useCallback(() => {
+    console.log("🔄 [PageGuard] Reinitializing due to security context change (ERP Grade)...", {
+      targetResource,
+      currentPath: pathname,
+      accessReady,
+      isReady,
+    })
+    
+    // ✅ إعادة تهيئة جميع refs
+    hasRedirectedRef.current = false
+    wasAccessNotReadyRef.current = false
+    initialRedirectPathRef.current = null
+    isRefreshingRef.current = false
+    
+    // ✅ إعادة حساب initialAccessCheck من الكاش المحدث أولاً
+    const updatedCachedCheck = getCachedPermissions()
+    let hasAccess = false
+    
+    if (updatedCachedCheck.isValid) {
+      // ✅ استخدام canAccessPageSync للفحص الفوري من الكاش
+      hasAccess = canAccessPageSync(targetResource)
+    }
+    
+    // ✅ إذا كان AccessContext جاهزاً، نستخدم canAccessPage منه (أكثر دقة)
+    if (isReady && canAccessPage) {
+      hasAccess = canAccessPage(targetResource)
+    }
+    
+    // ✅ تحديث initialAccessCheck و accessState
+    initialAccessCheck.current = hasAccess ? "allowed" : "denied"
+    setAccessState(hasAccess ? "allowed" : "denied")
+    
+    // ✅ إذا لم تعد الصفحة مسموحة، إعادة التوجيه فوراً
+    if (!hasAccess && !showAccessDenied) {
+      const redirectTo = fallbackPath || (accessReady ? getFirstAllowedPage() : "/no-access")
+      console.log("🔄 [PageGuard] Page no longer allowed after context change, redirecting to:", redirectTo)
+      router.replace(redirectTo)
+    } else if (hasAccess) {
+      console.log("✅ [PageGuard] Page is still allowed after context change")
+    }
+  }, [targetResource, pathname, showAccessDenied, fallbackPath, accessReady, getFirstAllowedPage, router, isReady, canAccessPage])
+
+  // 🔐 الاستماع لتحديثات السياق الأمني من Realtime (ERP Grade - لحظي 100%)
   useEffect(() => {
-    const handlePermissionsUpdate = () => {
-      // إذا كنا في صفحة users، نضع flag لمنع إعادة التوجيه
+    const handleContextChange = (event?: CustomEvent) => {
+      console.log("🔄 [PageGuard] Security context changed, reinitializing...", {
+        eventType: event?.type || "unknown",
+        detail: event?.detail,
+        targetResource,
+        currentPath: pathname,
+      })
+      
+      // ✅ إذا كنا في صفحة users، نضع flag لمنع إعادة التوجيه
       if (pathname === "/settings/users") {
         isRefreshingRef.current = true
         // إعادة تعيين بعد 2 ثانية
         setTimeout(() => {
           isRefreshingRef.current = false
         }, 2000)
-      } else {
-        // 🔐 إعادة فحص الصلاحية عند تحديث الصلاحيات
-        // سيتم إعادة فحص الصلاحية في useEffect أعلاه
-        console.log("🔄 [PageGuard] Permissions updated, rechecking access...")
+        return
       }
+      
+      // ✅ إعادة تهيئة PageGuard بالكامل
+      reinitializePageGuard()
     }
 
     if (typeof window !== "undefined") {
-      window.addEventListener("permissions_updated", handlePermissionsUpdate)
-      return () => window.removeEventListener("permissions_updated", handlePermissionsUpdate)
+      // ✅ الاستماع لجميع الأحداث المتعلقة بتغيير السياق الأمني
+      window.addEventListener("permissions_updated", handleContextChange as EventListener)
+      window.addEventListener("access_profile_updated", handleContextChange as EventListener)
+      window.addEventListener("user_context_changed", handleContextChange as EventListener)
+      
+      return () => {
+        window.removeEventListener("permissions_updated", handleContextChange as EventListener)
+        window.removeEventListener("access_profile_updated", handleContextChange as EventListener)
+        window.removeEventListener("user_context_changed", handleContextChange as EventListener)
+      }
     }
-  }, [pathname, canAccessPage, targetResource])
+  }, [pathname, targetResource, reinitializePageGuard])
 
   // حالة التحميل - لا تعرض أي محتوى
   if (accessState === "loading") {
@@ -287,4 +346,3 @@ export function usePageAccess(resource?: string) {
     resource: targetResource,
   }
 }
-
