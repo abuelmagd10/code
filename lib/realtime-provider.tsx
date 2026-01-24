@@ -60,11 +60,22 @@ export function RealtimeProvider({
             }
           }
 
+          // دالة مساعدة لإعادة الاشتراك في الجداول التلقائية
+          const resubscribeAutoTables = async () => {
+            if (managerRef.current && autoSubscribe.length > 0 && mounted) {
+              for (const table of autoSubscribe) {
+                await managerRef.current.subscribe(table)
+              }
+              console.log('✅ [RealtimeProvider] Resubscribed to auto-subscribe tables:', autoSubscribe)
+            }
+          }
+
           // الاستماع لتغيير الشركة
           if (typeof window !== 'undefined') {
             const handleCompanyChange = async () => {
               if (managerRef.current) {
                 await managerRef.current.updateContext()
+                await resubscribeAutoTables()
               }
             }
             window.addEventListener('company_updated', handleCompanyChange)
@@ -74,6 +85,9 @@ export function RealtimeProvider({
               if (managerRef.current) {
                 console.log('🔄 [RealtimeProvider] user_context_changed event received')
                 await managerRef.current.updateContext()
+                
+                // ✅ إعادة الاشتراك في الجداول التلقائية بعد تحديث السياق
+                await resubscribeAutoTables()
               }
             }
             window.addEventListener('user_context_changed', handleUserContextChanged)
@@ -101,7 +115,7 @@ export function RealtimeProvider({
         managerRef.current.unsubscribeAll().catch(console.error)
       }
     }
-  }, [])
+  }, [autoSubscribe])
 
   // دالة الاشتراك
   const subscribe = useCallback(<T = any>(

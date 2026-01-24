@@ -88,6 +88,9 @@ class RealtimeManager {
   private governanceChannel: RealtimeChannel | null = null
   private governanceHandlers: Set<GovernanceEventHandler> = new Set()
   private isGovernanceSubscribed = false
+  
+  // ✅ منع التكرار: منع استدعاءات متعددة متزامنة لـ updateContext
+  private updateContextPromise: Promise<void> | null = null
 
   /**
    * تهيئة المدير مع سياق المستخدم
@@ -155,15 +158,36 @@ class RealtimeManager {
    * تحديث السياق (عند تغيير الشركة/الفرع)
    */
   async updateContext(): Promise<void> {
+    // ✅ منع التكرار: إذا كان هناك تحديث قيد التنفيذ، انتظر انتهاءه
+    if (this.updateContextPromise) {
+      return this.updateContextPromise
+    }
+
+    this.updateContextPromise = this._doUpdateContext()
+    
+    try {
+      await this.updateContextPromise
+    } finally {
+      this.updateContextPromise = null
+    }
+  }
+
+  private async _doUpdateContext(): Promise<void> {
+    // حفظ الجداول المشتركة فيها قبل إعادة التهيئة
+    const activeSubscriptions = Array.from(this.subscriptions.entries())
+      .filter(([_, subscription]) => subscription.isActive)
+      .map(([table]) => table)
+    
     this.isInitialized = false
     await this.initialize()
     
     // 🔐 إعادة الاشتراك في قناة الحوكمة
     await this.subscribeToGovernance()
     
-    // إعادة الاشتراك في جميع الجداول
-    for (const [table, subscription] of this.subscriptions.entries()) {
-      if (subscription.isActive) {
+    // إعادة الاشتراك في جميع الجداول النشطة (بدون إلغاء الاشتراك أولاً لتجنب التكرار)
+    for (const table of activeSubscriptions) {
+      // ✅ التحقق من أن الجدول غير مشترك بالفعل قبل إعادة الاشتراك
+      if (!this.isSubscribed(table)) {
         await this.subscribe(table)
       }
     }
@@ -208,8 +232,8 @@ class RealtimeManager {
       return
     }
 
-    // إلغاء الاشتراك السابق إن وجد
-    await this.unsubscribe(table)
+    // إلغاء الاشتراك السابق إن وجد (بصمت لتجنب التكرار في السجلات عند إعادة الاشتراك)
+    await this.unsubscribe(table, true)
 
     try {
       const channelName = `realtime:${table}:${this.context.companyId}`
@@ -573,13 +597,15 @@ class RealtimeManager {
   /**
    * إلغاء الاشتراك من جدول
    */
-  async unsubscribe(table: RealtimeTable): Promise<void> {
+  async unsubscribe(table: RealtimeTable, silent: boolean = false): Promise<void> {
     const subscription = this.subscriptions.get(table)
     if (subscription && subscription.isActive) {
       try {
         await this.supabase.removeChannel(subscription.channel)
         subscription.isActive = false
-        console.log(`✅ [RealtimeManager] Unsubscribed from ${table}`)
+        if (!silent) {
+          console.log(`✅ [RealtimeManager] Unsubscribed from ${table}`)
+        }
       } catch (error) {
         console.error(`❌ [RealtimeManager] Error unsubscribing from ${table}:`, error)
       }
