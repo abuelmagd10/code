@@ -275,11 +275,11 @@ export function NotificationCenter({
       setLoading(true)
 
       // ✅ إصلاح منطق الفلترة: 
-      // - "all" → null (يعرض unread, read, actioned لكن يستبعد archived)
+      // - "all" → undefined (يعرض unread, read, actioned لكن يستبعد archived)
       // - "archived" → "archived" (يعرض المؤرشفة فقط)
       // - "actioned" → "actioned" (يعرض actioned فقط)
       // - أي حالة أخرى → الحالة المطلوبة
-      const status = filterStatus === "all" ? null : filterStatus
+      const status = filterStatus === "all" ? undefined : filterStatus
       const data = await getUserNotifications({
         userId,
         companyId,
