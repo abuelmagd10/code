@@ -2601,7 +2601,7 @@ export default function WriteOffsPage() {
                           {formatCurrency(totals.totalCost)}
                         </span>
                       </td>
-                      <td colSpan={3}></td>
+                      <td colSpan={4}></td>
                     </tr>
                   )
                 }}

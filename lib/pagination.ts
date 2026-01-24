@@ -3,7 +3,7 @@
  * Provides hooks and functions for client-side pagination
  */
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 
 export interface PaginationOptions {
   pageSize?: number
@@ -40,6 +40,14 @@ export function usePagination<T>(
 
   const [currentPage, setCurrentPage] = useState(initialPage)
   const [currentPageSize, setCurrentPageSize] = useState(pageSize)
+
+  // ✅ Bug Fix: Update currentPageSize when pageSize prop changes
+  useEffect(() => {
+    if (pageSize !== undefined && pageSize !== currentPageSize) {
+      setCurrentPageSize(pageSize)
+      setCurrentPage(1) // Reset to first page when page size changes externally
+    }
+  }, [pageSize, currentPageSize])
 
   const totalItems = items.length
   const totalPages = Math.ceil(totalItems / currentPageSize)
