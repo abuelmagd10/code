@@ -115,15 +115,16 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
         if (table === 'company_members') {
           // ✅ تحسين اكتشاف التغييرات: في UPDATE، قد لا يحتوي payload.old على role إذا لم يكن ضمن الحقول المحدّثة
           // ✅ لذلك نتحقق من وجود role في payload.new أولاً
-          // ✅ إذا كان type = UPDATE و newRecord يحتوي على role، نعتبره تغيير حتى لو لم يكن في oldRecord
-          const roleChanged = type === 'UPDATE' && newRecord?.role 
-            ? (oldRecord?.role !== newRecord?.role || !oldRecord?.role) // ✅ إذا لم يكن role في oldRecord، نعتبره تغيير
+          // ✅ استخدام 'in' operator للتحقق من وجود الحقل حتى لو كانت القيمة falsy (null, "", 0, false)
+          // ✅ هذا يضمن اكتشاف التغييرات حتى عند تعيين القيم إلى null أو empty string
+          const roleChanged = type === 'UPDATE' && ('role' in (newRecord || {}))
+            ? (oldRecord?.role !== newRecord?.role || !('role' in (oldRecord || {}))) // ✅ إذا لم يكن role في oldRecord، نعتبره تغيير
             : (oldRecord?.role !== newRecord?.role)
-          const branchChanged = type === 'UPDATE' && newRecord?.branch_id
-            ? (oldRecord?.branch_id !== newRecord?.branch_id || !oldRecord?.branch_id)
+          const branchChanged = type === 'UPDATE' && ('branch_id' in (newRecord || {}))
+            ? (oldRecord?.branch_id !== newRecord?.branch_id || !('branch_id' in (oldRecord || {})))
             : (oldRecord?.branch_id !== newRecord?.branch_id)
-          const warehouseChanged = type === 'UPDATE' && newRecord?.warehouse_id
-            ? (oldRecord?.warehouse_id !== newRecord?.warehouse_id || !oldRecord?.warehouse_id)
+          const warehouseChanged = type === 'UPDATE' && ('warehouse_id' in (newRecord || {}))
+            ? (oldRecord?.warehouse_id !== newRecord?.warehouse_id || !('warehouse_id' in (oldRecord || {})))
             : (oldRecord?.warehouse_id !== newRecord?.warehouse_id)
           
           console.log(`🔍 [GovernanceRealtime] company_members change detection:`, {
