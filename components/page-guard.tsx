@@ -56,29 +56,64 @@ export function PageGuard({
   
   // ✅ Ref لتتبع ما إذا تم التوجيه بالفعل (لمنع التكرار)
   const hasRedirectedRef = useRef(false)
+  // ✅ Ref لتتبع ما إذا كان accessReady كان false في البداية (لإعادة التوجيه عند تحميله)
+  const wasAccessNotReadyRef = useRef(false)
+  // ✅ Ref لتتبع المسار الحالي عند التوجيه الأولي (لمنع إعادة التوجيه إذا تغير المسار)
+  const initialRedirectPathRef = useRef<string | null>(null)
+  // ✅ Ref لتخزين pathname الحالي (لمنع إعادة تشغيل الـ effect عند تغيير pathname)
+  const pathnameRef = useRef(pathname)
+
+  // ✅ تحديث pathnameRef عند تغيير pathname (بدون إعادة تشغيل الـ effect الرئيسي)
+  useEffect(() => {
+    pathnameRef.current = pathname
+  }, [pathname])
 
   // إذا كان الوصول مرفوضاً فوراً من الكاش، قم بالتوجيه مباشرة (ERP Grade - ديناميكي)
-  // ✅ هذا effect يجب أن يعمل مرة واحدة فقط عند mount (بناءً على cached permissions)
-  // ✅ Bug Fix: dependency array فارغ لمنع إعادة التوجيه عند تغيير profile
+  // ✅ Bug Fix: إضافة accessReady و getFirstAllowedPage للـ dependencies لمنع stale closure
+  // ✅ Bug Fix: إزالة pathname من dependencies لمنع re-redirect cycle
   useEffect(() => {
-    // ✅ منع إعادة التوجيه إذا تم التوجيه بالفعل
-    if (hasRedirectedRef.current) {
+    // ✅ فقط إذا كان initialAccessCheck.current === "denied"
+    if (initialAccessCheck.current !== "denied" || showAccessDenied) {
       return
     }
     
-    if (initialAccessCheck.current === "denied" && !showAccessDenied) {
-      // ✅ استخدام getFirstAllowedPage ديناميكياً - لا hardcoded /dashboard
-      // ✅ لكن فقط إذا كان accessReady (لضمان أن getFirstAllowedPage يعمل)
-      // ✅ إذا لم يكن جاهزاً، نستخدم /no-access كـ fallback
-      const redirectTo = fallbackPath || (accessReady ? getFirstAllowedPage() : "/no-access")
-      hasRedirectedRef.current = true // ✅ تعيين flag لمنع إعادة التوجيه
+    // ✅ إذا كان accessReady false، ننتظر حتى يصبح true
+    if (!accessReady) {
+      wasAccessNotReadyRef.current = true // ✅ تتبع أن accessReady كان false
+      // ✅ إذا لم يكن جاهزاً، نستخدم /no-access كـ fallback مؤقت
+      if (!hasRedirectedRef.current) {
+        hasRedirectedRef.current = true
+        const redirectTo = fallbackPath || "/no-access"
+        initialRedirectPathRef.current = redirectTo
+        router.replace(redirectTo)
+      }
+      return
+    }
+    
+    // ✅ إذا كان accessReady أصبح true بعد أن كان false، نعيد التوجيه للصفحة الصحيحة
+    // ✅ لكن فقط إذا كنا لا نزال في نفس المسار الذي تم التوجيه إليه (لمنع إعادة التوجيه غير المرغوب فيها)
+    if (wasAccessNotReadyRef.current && hasRedirectedRef.current) {
+      // ✅ استخدام pathnameRef.current بدلاً من pathname مباشرة (لمنع re-run cycle)
+      const currentPath = pathnameRef.current
+      // ✅ فقط إذا كنا لا نزال في /no-access أو المسار الذي تم التوجيه إليه
+      if (initialRedirectPathRef.current && (currentPath === initialRedirectPathRef.current || currentPath === "/no-access")) {
+        // ✅ إعادة التوجيه للصفحة الصحيحة الآن بعد أن أصبح accessReady true
+        const redirectTo = fallbackPath || getFirstAllowedPage()
+        router.replace(redirectTo)
+        wasAccessNotReadyRef.current = false // ✅ إعادة تعيين بعد إعادة التوجيه
+        initialRedirectPathRef.current = null
+      }
+      return
+    }
+    
+    // ✅ إذا كان accessReady true من البداية، نستخدم getFirstAllowedPage مباشرة
+    if (!hasRedirectedRef.current) {
+      const redirectTo = fallbackPath || getFirstAllowedPage()
+      hasRedirectedRef.current = true
+      initialRedirectPathRef.current = redirectTo
       router.replace(redirectTo)
     }
-    // ✅ Bug Fix: dependency array فارغ - يعمل مرة واحدة فقط عند mount
-    // ✅ لا نضيف getFirstAllowedPage أو accessReady للـ dependencies
-    // ✅ لأن هذا effect مخصص فقط للفحص الأولي من الكاش
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [accessReady, getFirstAllowedPage, fallbackPath, showAccessDenied, router])
 
   // Flag لمنع إعادة التوجيه أثناء تحديث الصلاحيات
   const isRefreshingRef = useRef(false)
@@ -116,6 +151,7 @@ export function PageGuard({
       if (!showAccessDenied) {
         // 🔐 استخدام getFirstAllowedPage من AccessContext (دائماً)
         // لا نستخدم /dashboard كصفحة افتراضية أبداً
+        // ✅ Bug Fix: إضافة accessReady و getFirstAllowedPage للـ dependencies
         const redirectTo = fallbackPath || (accessReady ? getFirstAllowedPage() : "/no-access")
         router.replace(redirectTo)
         
@@ -126,7 +162,7 @@ export function PageGuard({
         }
       }
     }
-  }, [isReady, isLoading, canAccessPage, targetResource, router, fallbackPath, showAccessDenied, pathname])
+  }, [isReady, isLoading, canAccessPage, targetResource, router, fallbackPath, showAccessDenied, pathname, accessReady, getFirstAllowedPage])
 
   // 🔐 الاستماع لتحديثات الصلاحيات من Realtime
   useEffect(() => {
