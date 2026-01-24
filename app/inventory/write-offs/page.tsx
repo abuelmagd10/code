@@ -351,9 +351,9 @@ export default function WriteOffsPage() {
           
           return {
             ...wo,
-            branch_name: wo.branch_id ? (branchesMap.get(wo.branch_id) || null) : null,
-            warehouse_name: wo.warehouse_id ? (warehousesMap.get(wo.warehouse_id) || null) : null,
-            created_by_name: usersMap.get(wo.created_by) || 'Unknown',
+            branch_name: wo.branch_id ? (branchesMap.get(wo.branch_id) || undefined) : undefined,
+            warehouse_name: wo.warehouse_id ? (warehousesMap.get(wo.warehouse_id) || undefined) : undefined,
+            created_by_name: (usersMap.get(wo.created_by) || 'Unknown') as string,
             total_quantity: totalQty,
             items_count: itemsCount,
             products_summary: productsSummary
@@ -444,8 +444,8 @@ export default function WriteOffsPage() {
     }
     
     // ✅ بناء السجل المخصّص (enriched)
-    const branchName: string | null = writeOff.branch_id ? (branchesMap.get(writeOff.branch_id) || null) : null
-    const warehouseName: string | null = writeOff.warehouse_id ? (warehousesMap.get(writeOff.warehouse_id) || null) : null
+    const branchName: string | undefined = writeOff.branch_id ? (branchesMap.get(writeOff.branch_id) || undefined) : undefined
+    const warehouseName: string | undefined = writeOff.warehouse_id ? (warehousesMap.get(writeOff.warehouse_id) || undefined) : undefined
     const createdByName: string = (usersMap.get(writeOff.created_by) || 'Unknown') as string
     
     return {
@@ -549,67 +549,10 @@ export default function WriteOffsPage() {
         newStatus: newWriteOff.status
       })
       
-      // ✅ إعادة جلب البيانات المخصّصة (enrichment) للسجل المحدث
+      // ✅ إثراء البيانات المخصّصة (enrichment) للسجل المحدث
       // لأن Realtime event لا يحتوي على branch_name, warehouse_name, created_by_name, total_quantity, products_summary
       try {
-        const writeOffId = newWriteOff.id
-        
-        // ✅ جلب branches, warehouses, users, items في batch
-        const branchIds = newWriteOff.branch_id ? [newWriteOff.branch_id] : []
-        const warehouseIds = newWriteOff.warehouse_id ? [newWriteOff.warehouse_id] : []
-        const userIds = newWriteOff.created_by ? [newWriteOff.created_by] : []
-        
-        const [branchesResult, warehousesResult, usersResult, itemsResult] = await Promise.all([
-          branchIds.length > 0
-            ? supabase.from("branches").select("id, name").in("id", branchIds)
-            : Promise.resolve({ data: [] }),
-          warehouseIds.length > 0
-            ? supabase.from("warehouses").select("id, name").in("id", warehouseIds)
-            : Promise.resolve({ data: [] }),
-          userIds.length > 0
-            ? supabase.from("user_profiles").select("user_id, display_name").in("user_id", userIds)
-            : Promise.resolve({ data: [] }),
-          supabase
-            .from("inventory_write_off_items")
-            .select("write_off_id, quantity, products(name)")
-            .eq("write_off_id", writeOffId)
-        ])
-        
-        // ✅ بناء maps
-        const branchesMap = new Map((branchesResult.data || []).map((b: any) => [b.id, b.name]))
-        const warehousesMap = new Map((warehousesResult.data || []).map((w: any) => [w.id, w.name]))
-        const usersMap = new Map((usersResult.data || []).map((u: any) => [u.user_id, u.display_name || 'Unknown']))
-        
-        // ✅ حساب totals و products summary
-        const items = (itemsResult.data || []).filter((item: any) => item.write_off_id === writeOffId)
-        const totalQty = items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
-        const itemsCount = items.length
-        
-        const productNames = items
-          .map((item: any) => item.products?.name)
-          .filter(Boolean)
-          .slice(0, 2)
-        
-        let productsSummary = ''
-        if (productNames.length === 0) {
-          productsSummary = '-'
-        } else if (productNames.length === 1) {
-          productsSummary = `${productNames[0]} (${itemsCount})`
-        } else {
-          const remaining = itemsCount - 2
-          productsSummary = `${productNames.join(', ')}${remaining > 0 ? ` (+${remaining})` : ''}`
-        }
-        
-        // ✅ بناء السجل المخصّص (enriched)
-        const enrichedWriteOff: WriteOff = {
-          ...newWriteOff,
-          branch_name: newWriteOff.branch_id ? (branchesMap.get(newWriteOff.branch_id) || null) : null,
-          warehouse_name: newWriteOff.warehouse_id ? (warehousesMap.get(newWriteOff.warehouse_id) || null) : null,
-          created_by_name: usersMap.get(newWriteOff.created_by) || 'Unknown',
-          total_quantity: totalQty,
-          items_count: itemsCount,
-          products_summary: productsSummary
-        }
+        const enrichedWriteOff = await enrichWriteOff(newWriteOff)
         
         // ✅ تحديث السجل الموجود - استبدال كامل بالنسخة المخصّصة
         setWriteOffs(prev => {
@@ -617,7 +560,11 @@ export default function WriteOffsPage() {
           if (existingIndex >= 0) {
             const updated = [...prev]
             updated[existingIndex] = enrichedWriteOff
-            console.log('✅ [Realtime] Write-off replaced with enriched data:', enrichedWriteOff.id)
+            console.log('✅ [Realtime] Write-off replaced with enriched data:', enrichedWriteOff.id, {
+              status: enrichedWriteOff.status,
+              totalCost: enrichedWriteOff.total_cost,
+              totalQuantity: enrichedWriteOff.total_quantity
+            })
             return updated
           } else {
             // ✅ إذا لم يكن موجوداً (مثل حالة المالك يرى إهلاك جديد)، نضيفه
