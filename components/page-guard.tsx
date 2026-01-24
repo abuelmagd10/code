@@ -53,15 +53,32 @@ export function PageGuard({
   )
 
   const [accessState, setAccessState] = useState<"loading" | "allowed" | "denied">(initialAccessCheck.current)
+  
+  // ✅ Ref لتتبع ما إذا تم التوجيه بالفعل (لمنع التكرار)
+  const hasRedirectedRef = useRef(false)
 
   // إذا كان الوصول مرفوضاً فوراً من الكاش، قم بالتوجيه مباشرة (ERP Grade - ديناميكي)
+  // ✅ هذا effect يجب أن يعمل مرة واحدة فقط عند mount (بناءً على cached permissions)
+  // ✅ Bug Fix: dependency array فارغ لمنع إعادة التوجيه عند تغيير profile
   useEffect(() => {
+    // ✅ منع إعادة التوجيه إذا تم التوجيه بالفعل
+    if (hasRedirectedRef.current) {
+      return
+    }
+    
     if (initialAccessCheck.current === "denied" && !showAccessDenied) {
       // ✅ استخدام getFirstAllowedPage ديناميكياً - لا hardcoded /dashboard
+      // ✅ لكن فقط إذا كان accessReady (لضمان أن getFirstAllowedPage يعمل)
+      // ✅ إذا لم يكن جاهزاً، نستخدم /no-access كـ fallback
       const redirectTo = fallbackPath || (accessReady ? getFirstAllowedPage() : "/no-access")
+      hasRedirectedRef.current = true // ✅ تعيين flag لمنع إعادة التوجيه
       router.replace(redirectTo)
     }
-  }, [fallbackPath, accessReady, getFirstAllowedPage, showAccessDenied, router])
+    // ✅ Bug Fix: dependency array فارغ - يعمل مرة واحدة فقط عند mount
+    // ✅ لا نضيف getFirstAllowedPage أو accessReady للـ dependencies
+    // ✅ لأن هذا effect مخصص فقط للفحص الأولي من الكاش
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Flag لمنع إعادة التوجيه أثناء تحديث الصلاحيات
   const isRefreshingRef = useRef(false)

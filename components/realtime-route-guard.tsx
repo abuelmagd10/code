@@ -254,6 +254,9 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
   
   // 🔐 الاستماع لـ access_profile_updated event (ERP Grade - لحظي 100%)
   // ✅ هذا يضمن إعادة التقييم حتى لو لم يتغير profile object reference
+  // ✅ Ref لحفظ timeout IDs للتنظيف عند unmount
+  const accessProfileUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  
   useEffect(() => {
     const handleAccessProfileUpdated = (event: CustomEvent) => {
       console.log('🔄 [RealtimeRouteGuard] access_profile_updated event received, triggering reevaluation...', {
@@ -262,8 +265,16 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
       
       // ✅ إعادة تقييم الصفحة الحالية فوراً
       if (!isReevaluatingRef.current) {
+        // ✅ تنظيف timeout السابق إن وجد
+        if (accessProfileUpdateTimeoutRef.current) {
+          clearTimeout(accessProfileUpdateTimeoutRef.current)
+          accessProfileUpdateTimeoutRef.current = null
+        }
+        
         // ✅ تأخير بسيط لضمان اكتمال جميع التحديثات
-        setTimeout(() => {
+        // ✅ حفظ timeout ID للتنظيف عند unmount
+        accessProfileUpdateTimeoutRef.current = setTimeout(() => {
+          accessProfileUpdateTimeoutRef.current = null // ✅ تنظيف ref بعد التنفيذ
           reevaluateCurrentRoute()
         }, 100)
       }
@@ -273,6 +284,11 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
       window.addEventListener('access_profile_updated', handleAccessProfileUpdated as EventListener)
       return () => {
         window.removeEventListener('access_profile_updated', handleAccessProfileUpdated as EventListener)
+        // ✅ تنظيف timeout عند unmount لمنع memory leaks
+        if (accessProfileUpdateTimeoutRef.current) {
+          clearTimeout(accessProfileUpdateTimeoutRef.current)
+          accessProfileUpdateTimeoutRef.current = null
+        }
       }
     }
   }, [reevaluateCurrentRoute])
