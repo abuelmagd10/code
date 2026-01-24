@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     // تسجيل تغيير الصلاحيات في سجل المراجعة
     try {
       await admin.from('audit_logs').insert({
-        action: 'PERMISSIONS',
+        action: 'UPDATE',
         company_id: companyId,
         user_id: changedByUserId || user.id,
         user_email: changedByUserEmail || user.email,

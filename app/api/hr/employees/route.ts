@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     if (insertError) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إضافة الموظف", insertError.message)
     }
-    try { await admin.from('audit_logs').insert({ action: 'employee_added', company_id: companyId, user_id: user.id, details: { full_name: employee.full_name } }) } catch {}
+    try { await admin.from('audit_logs').insert({ action: 'INSERT', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: ins.data?.[0]?.id, new_data: { full_name: employee.full_name } }) } catch {}
     return apiSuccess({ ok: true }, HTTP_STATUS.CREATED)
   } catch (e: any) {
     return internalError("حدث خطأ أثناء إضافة الموظف", e?.message)
@@ -134,7 +134,7 @@ export async function PUT(req: NextRequest) {
     if (updateError) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تحديث الموظف", updateError.message)
     }
-    try { await admin.from('audit_logs').insert({ action: 'employee_updated', company_id: companyId, user_id: user.id, details: { id } }) } catch {}
+    try { await admin.from('audit_logs').insert({ action: 'UPDATE', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: id, new_data: safeUpdate }) } catch {}
     return apiSuccess({ ok: true })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء تحديث الموظف", e?.message)
@@ -176,7 +176,7 @@ export async function DELETE(req: NextRequest) {
     if (deleteError) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في حذف الموظف", deleteError.message)
     }
-    try { await admin.from('audit_logs').insert({ action: 'employee_deleted', company_id: companyId, user_id: user.id, details: { id } }) } catch {}
+    try { await admin.from('audit_logs').insert({ action: 'DELETE', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: id }) } catch {}
     return apiSuccess({ ok: true })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء حذف الموظف", e?.message)

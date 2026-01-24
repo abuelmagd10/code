@@ -139,10 +139,12 @@ export async function POST(req: NextRequest) {
     }
     try {
       await (admin || ssr).from('audit_logs').insert({
-        action: 'payroll_run',
+        action: 'INSERT',
+        target_table: 'payroll_runs',
         company_id: companyId,
         user_id: user!.id,
-        details: { year, month, count: rows.length }
+        record_id: ins.data?.[0]?.id,
+        new_data: { year, month, count: rows.length }
       })
     } catch {}
     return apiSuccess({ ok: true, run_id: runId, count: rows.length })

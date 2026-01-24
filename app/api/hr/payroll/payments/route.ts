@@ -66,7 +66,7 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    try { await admin.from('audit_logs').insert({ action: 'payroll_payment_updated', company_id: companyId, user_id: user.id, details: { runId, entryId } }) } catch {}
+    try { await admin.from('audit_logs').insert({ action: 'UPDATE', target_table: 'journal_entries', company_id: companyId, user_id: user.id, record_id: entryId, new_data: { runId, entryId } }) } catch {}
     return apiSuccess({ ok: true })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء تحديث دفعة المرتبات", e?.message)
@@ -112,7 +112,7 @@ export async function DELETE(req: NextRequest) {
     if (delEntry.error) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في حذف القيد", delEntry.error.message)
     }
-    try { await admin.from('audit_logs').insert({ action: 'payroll_payment_deleted', company_id: companyId, user_id: user.id, details: { entryId } }) } catch {}
+    try { await admin.from('audit_logs').insert({ action: 'DELETE', target_table: 'journal_entries', company_id: companyId, user_id: user.id, record_id: entryId }) } catch {}
     return apiSuccess({ ok: true })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء حذف دفعة المرتبات", e?.message)

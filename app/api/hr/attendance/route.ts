@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     if (upsertError) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تسجيل الحضور", upsertError.message)
     }
-    try { await admin.from('audit_logs').insert({ action: 'attendance_recorded', company_id: companyId, user_id: user.id, details: { employeeId, dayDate, status } }) } catch {}
+    try { await admin.from('audit_logs').insert({ action: 'UPDATE', target_table: 'attendance_records', company_id: companyId, user_id: user.id, record_id: up.data?.[0]?.id, new_data: { employeeId, dayDate, status } }) } catch {}
     return apiSuccess({ ok: true })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء تسجيل الحضور", e?.message)
