@@ -73,10 +73,9 @@ export async function POST(req: NextRequest) {
       updatedRows: updateData?.length || 0,
     })
 
-    // ✅ التحقق من أن Trigger أطلق user_security_event
-    // ✅ ننتظر قليلاً ثم نتحقق من وجود الحدث
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
+    // ✅ التحقق من أن Trigger أطلق user_security_event (بدون delay - Trigger يعمل بشكل متزامن)
+    // ✅ Note: Database triggers execute synchronously within the same transaction
+    // ✅ We check immediately - if the trigger fired, the event will be there
     const { data: securityEvent } = await admin
       .from("user_security_events")
       .select("id, event_type, created_at")
@@ -90,10 +89,12 @@ export async function POST(req: NextRequest) {
     if (securityEvent) {
       console.log('✅ [member-role API] user_security_event created by trigger:', securityEvent)
     } else {
-      console.warn('⚠️ [member-role API] user_security_event not found - trigger may not have fired')
+      // ✅ Warning only - trigger should fire, but Realtime will handle it even if delayed
+      console.warn('⚠️ [member-role API] user_security_event not found immediately - trigger may fire asynchronously, Realtime will handle it')
     }
 
-    // تسجيل تغيير الصلاحيات في سجل المراجعة
+    // ✅ تسجيل تغيير الصلاحيات في سجل المراجعة
+    // ✅ استخدام actualOldRole من قاعدة البيانات (ليس من request body) لضمان دقة audit trail
     try {
       await admin.from('audit_logs').insert({
         action: 'UPDATE',
@@ -103,7 +104,7 @@ export async function POST(req: NextRequest) {
         target_table: 'company_members',
         record_id: userId,
         record_identifier: targetUserEmail || targetUserName,
-        old_data: { role: oldRole },
+        old_data: { role: actualOldRole }, // ✅ استخدام actualOldRole من DB (ليس oldRole من request)
         new_data: { role },
         changed_fields: ['role'],
         ip_address: req.headers.get("x-forwarded-for")?.split(",")[0] || null,
