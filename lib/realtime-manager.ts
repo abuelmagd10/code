@@ -871,12 +871,29 @@ class RealtimeManager {
       if (table === 'company_members') {
         // إذا كان الحدث يخص المستخدم الحالي
         affectsCurrentUser = record.user_id === userId
+        
+        // ✅ تحسين اكتشاف التغييرات: في UPDATE، قد لا يحتوي payload.old على role إذا لم يكن ضمن الحقول المحدّثة
+        // ✅ لذلك نتحقق من وجود role في payload.new أولاً
+        const roleChanged = newRecord?.role && oldRecord?.role !== newRecord?.role
+        const branchChanged = newRecord?.branch_id && oldRecord?.branch_id !== newRecord?.branch_id
+        const warehouseChanged = newRecord?.warehouse_id && oldRecord?.warehouse_id !== newRecord?.warehouse_id
+        
         console.log(`🔐 [RealtimeManager] company_members event check:`, {
           recordUserId: record.user_id,
           currentUserId: userId,
           affectsCurrentUser,
-          roleChanged: oldRecord?.role !== newRecord?.role,
-          branchChanged: oldRecord?.branch_id !== newRecord?.branch_id,
+          eventType: payload.eventType,
+          roleChanged,
+          branchChanged,
+          warehouseChanged,
+          oldRole: oldRecord?.role,
+          newRole: newRecord?.role,
+          oldBranchId: oldRecord?.branch_id,
+          newBranchId: newRecord?.branch_id,
+          oldWarehouseId: oldRecord?.warehouse_id,
+          newWarehouseId: newRecord?.warehouse_id,
+          payloadOld: payload.old ? Object.keys(payload.old) : null,
+          payloadNew: payload.new ? Object.keys(payload.new) : null,
         })
       } else if (table === 'user_branch_access') {
         // ✅ إذا كان الحدث يخص المستخدم الحالي (تم الفلترة مسبقاً في subscription)

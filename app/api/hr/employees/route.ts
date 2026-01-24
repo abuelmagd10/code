@@ -83,7 +83,8 @@ export async function POST(req: NextRequest) {
     let ins = await client.from("employees").insert(payload).select('id')
     if (useHr && ins.error && ((ins.error as any).code === "PGRST205" || String(ins.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
-      ins = await clientHr.from("employees").insert({ company_id: companyId, ...employee }).select('id')
+      // ✅ استخدام payload المعقم بدلاً من ...employee غير المعقم
+      ins = await clientHr.from("employees").insert(payload).select('id')
     }
     const { error: insertError } = ins
     if (insertError) {
@@ -130,7 +131,8 @@ export async function PUT(req: NextRequest) {
     let upd = await client.from("employees").update(safeUpdate).eq("company_id", companyId).eq("id", id)
     if (useHr && upd.error && ((upd.error as any).code === "PGRST205" || String(upd.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
-      upd = await clientHr.from("employees").update(update).eq("company_id", companyId).eq("id", id)
+      // ✅ استخدام safeUpdate المعقم بدلاً من update غير المعقم
+      upd = await clientHr.from("employees").update(safeUpdate).eq("company_id", companyId).eq("id", id)
     }
     const { error: updateError } = upd
     if (updateError) {

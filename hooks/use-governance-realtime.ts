@@ -113,10 +113,31 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
 
         // 🔐 معالجة الأحداث حسب نوع الجدول
         if (table === 'company_members') {
-          // تغيير في العضوية أو الدور
-          const roleChanged = oldRecord?.role !== newRecord?.role
-          const branchChanged = oldRecord?.branch_id !== newRecord?.branch_id
-          const warehouseChanged = oldRecord?.warehouse_id !== newRecord?.warehouse_id
+          // ✅ تحسين اكتشاف التغييرات: في UPDATE، قد لا يحتوي payload.old على role إذا لم يكن ضمن الحقول المحدّثة
+          // ✅ لذلك نتحقق من وجود role في payload.new أولاً
+          // ✅ إذا كان type = UPDATE و newRecord يحتوي على role، نعتبره تغيير حتى لو لم يكن في oldRecord
+          const roleChanged = type === 'UPDATE' && newRecord?.role 
+            ? (oldRecord?.role !== newRecord?.role || !oldRecord?.role) // ✅ إذا لم يكن role في oldRecord، نعتبره تغيير
+            : (oldRecord?.role !== newRecord?.role)
+          const branchChanged = type === 'UPDATE' && newRecord?.branch_id
+            ? (oldRecord?.branch_id !== newRecord?.branch_id || !oldRecord?.branch_id)
+            : (oldRecord?.branch_id !== newRecord?.branch_id)
+          const warehouseChanged = type === 'UPDATE' && newRecord?.warehouse_id
+            ? (oldRecord?.warehouse_id !== newRecord?.warehouse_id || !oldRecord?.warehouse_id)
+            : (oldRecord?.warehouse_id !== newRecord?.warehouse_id)
+          
+          console.log(`🔍 [GovernanceRealtime] company_members change detection:`, {
+            type,
+            roleChanged,
+            branchChanged,
+            warehouseChanged,
+            oldRole: oldRecord?.role,
+            newRole: newRecord?.role,
+            oldBranchId: oldRecord?.branch_id,
+            newBranchId: newRecord?.branch_id,
+            hasOldRecord: !!oldRecord,
+            hasNewRecord: !!newRecord,
+          })
           
           // ✅ أولوية المعالجة: role > branch/warehouse > permissions
           // ✅ إذا تغير role و branch معاً، نعالج role فقط (لأنه يؤثر على الصلاحيات بشكل أكبر)
@@ -173,8 +194,17 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
           if (handlersRef.current.onPermissionsChanged) {
             await handlersRef.current.onPermissionsChanged()
           }
+          
+          // ✅ FALLBACK CRITICAL: إذا كان type = UPDATE ولم يتم اكتشاف أي تغيير محدد
+          // ✅ نستدعي refreshUserSecurityContext على أي حال لضمان التحديث
+          // ✅ هذا يضمن أن أي UPDATE على company_members سيؤدي إلى تحديث السياق حتى لو لم نتمكن من اكتشاف التغيير المحدد
+          if (type === 'UPDATE' && !roleChanged && !branchChanged && !warehouseChanged) {
+            console.warn(`⚠️ [GovernanceRealtime] UPDATE on company_members but no specific change detected (role/branch/warehouse), refreshUserSecurityContext already called above`)
+          }
           return
-        } else if (table === 'user_branch_access') {
+        }
+        
+        if (table === 'user_branch_access') {
           // ✅ تغيير في الفروع المسموحة للمستخدم (allowed_branches)
           // ✅ هذا يؤثر على الصلاحيات والفرع الحالي
           if (showNotifications) {
