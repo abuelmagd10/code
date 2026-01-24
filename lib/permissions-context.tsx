@@ -375,18 +375,9 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
     loadPermissions()
   }, [loadPermissions])
 
-  // الاستماع لتغييرات الصلاحيات
-  useEffect(() => {
-    const handlePermissionsUpdate = () => {
-      loadPermissions()
-    }
-
-    if (typeof window !== "undefined") {
-      window.addEventListener("permissions_updated", handlePermissionsUpdate)
-      return () => window.removeEventListener("permissions_updated", handlePermissionsUpdate)
-    }
-  }, [loadPermissions])
-
+  // ✅ إزالة permissions_updated event listener - useGovernanceRealtime يتعامل معه مباشرة
+  // ✅ هذا يمنع استدعاء loadPermissions مرتين (مرة من event ومرة من useGovernanceRealtime)
+  
   // 🔐 استخدام نظام Realtime للحوكمة
   useGovernanceRealtime({
     onPermissionsChanged: loadPermissions,

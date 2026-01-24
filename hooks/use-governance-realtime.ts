@@ -131,6 +131,10 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
             if (handlersRef.current.onRoleChanged) {
               await handlersRef.current.onRoleChanged()
             }
+            
+            // ✅ عند تغيير الدور، لا نستدعي onPermissionsChanged لأن onRoleChanged يتعامل معه
+            // ✅ هذا يمنع استدعاء refreshUserSecurityContext مرتين
+            return
           }
 
           if (branchChanged || warehouseChanged) {
@@ -146,9 +150,14 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
             if (handlersRef.current.onBranchOrWarehouseChanged) {
               await handlersRef.current.onBranchOrWarehouseChanged()
             }
+            
+            // ✅ عند تغيير الفرع/المخزن، لا نستدعي onPermissionsChanged لأن onBranchOrWarehouseChanged يتعامل معه
+            // ✅ هذا يمنع استدعاء refreshUserSecurityContext مرتين
+            return
           }
 
-          // في جميع الحالات، إعادة تحميل الصلاحيات
+          // ✅ فقط إذا لم يكن هناك تغيير في role أو branch/warehouse، نستدعي onPermissionsChanged
+          // ✅ هذا يحدث عند تغييرات أخرى في company_members (مثل allowed_branches)
           if (handlersRef.current.onPermissionsChanged) {
             await handlersRef.current.onPermissionsChanged()
           }
