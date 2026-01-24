@@ -118,12 +118,12 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
           const branchChanged = oldRecord?.branch_id !== newRecord?.branch_id
           const warehouseChanged = oldRecord?.warehouse_id !== newRecord?.warehouse_id
           
-          // ✅ تتبع ما تم معالجته لتجنب استدعاء onPermissionsChanged مرتين
-          let handledBySpecificHandler = false
-
-          // ✅ معالجة تغيير الدور (إذا حدث)
+          // ✅ أولوية المعالجة: role > branch/warehouse > permissions
+          // ✅ إذا تغير role و branch معاً، نعالج role فقط (لأنه يؤثر على الصلاحيات بشكل أكبر)
+          // ✅ هذا يمنع استدعاء handlers متعددة معاً وتحديثات متضاربة للـ state
+          
           if (roleChanged) {
-            // تغيير الدور
+            // تغيير الدور (الأولوية الأولى)
             if (showNotifications) {
               toast({
                 title: "تم تحديث صلاحياتك",
@@ -134,19 +134,19 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
 
             if (handlersRef.current.onRoleChanged) {
               await handlersRef.current.onRoleChanged()
-              handledBySpecificHandler = true
-            } else {
-              // ✅ إذا لم يكن onRoleChanged معرّف، نستخدم onPermissionsChanged كـ fallback
-              if (handlersRef.current.onPermissionsChanged) {
-                await handlersRef.current.onPermissionsChanged()
-                handledBySpecificHandler = true
-              }
+              // ✅ عند تغيير الدور، لا نستدعي handlers أخرى لأن onRoleChanged يتعامل معه
+              return
             }
+            
+            // ✅ إذا لم يكن onRoleChanged معرّف، نستخدم onPermissionsChanged كـ fallback
+            if (handlersRef.current.onPermissionsChanged) {
+              await handlersRef.current.onPermissionsChanged()
+            }
+            return
           }
 
-          // ✅ معالجة تغيير الفرع/المخزن (إذا حدث) - حتى لو تم معالجة roleChanged
           if (branchChanged || warehouseChanged) {
-            // تغيير الفرع أو المخزن
+            // تغيير الفرع أو المخزن (الأولوية الثانية - فقط إذا لم يتغير role)
             if (showNotifications) {
               toast({
                 title: "تم تحديث تعيينك",
@@ -157,25 +157,22 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
 
             if (handlersRef.current.onBranchOrWarehouseChanged) {
               await handlersRef.current.onBranchOrWarehouseChanged()
-              handledBySpecificHandler = true
-            } else {
-              // ✅ إذا لم يكن onBranchOrWarehouseChanged معرّف، نستخدم onPermissionsChanged كـ fallback
-              // ✅ لكن فقط إذا لم يتم استدعاؤه بالفعل من roleChanged fallback
-              if (handlersRef.current.onPermissionsChanged && !handledBySpecificHandler) {
-                await handlersRef.current.onPermissionsChanged()
-                handledBySpecificHandler = true
-              }
+              // ✅ عند تغيير الفرع/المخزن، لا نستدعي onPermissionsChanged لأن onBranchOrWarehouseChanged يتعامل معه
+              return
             }
+            
+            // ✅ إذا لم يكن onBranchOrWarehouseChanged معرّف، نستخدم onPermissionsChanged كـ fallback
+            if (handlersRef.current.onPermissionsChanged) {
+              await handlersRef.current.onPermissionsChanged()
+            }
+            return
           }
 
           // ✅ فقط إذا لم يكن هناك تغيير في role أو branch/warehouse، نستدعي onPermissionsChanged
-          // ✅ أو إذا لم يتم معالجة أي تغيير بواسطة handlers محددة
           // ✅ هذا يحدث عند تغييرات أخرى في company_members (مثل allowed_branches)
-          if (!handledBySpecificHandler && handlersRef.current.onPermissionsChanged) {
+          if (handlersRef.current.onPermissionsChanged) {
             await handlersRef.current.onPermissionsChanged()
           }
-          
-          // ✅ return بعد معالجة جميع التغييرات
           return
         } else if (table === 'company_role_permissions') {
           // تغيير في صلاحيات الدور
