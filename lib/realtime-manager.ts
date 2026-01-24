@@ -718,12 +718,24 @@ class RealtimeManager {
         return
       }
 
-      console.log('🔐 [RealtimeManager] Starting governance subscription...', { companyId, userId, role })
+      console.log('🔐 [RealtimeManager] Starting governance subscription...', { 
+        companyId, 
+        userId, 
+        role,
+        hasContext: !!this.context,
+        contextBranchId: this.context?.branchId,
+      })
 
       // إلغاء الاشتراك السابق إن وجد
       await this.unsubscribeFromGovernance()
 
       const channelName = `governance_realtime_channel:${companyId}:${userId}`
+      console.log('🔐 [RealtimeManager] Creating governance channel:', {
+        channelName,
+        companyId,
+        userId,
+        role,
+      })
       const channel = this.supabase.channel(channelName)
 
       // 🔐 الاشتراك في company_members (تغييرات العضوية والدور)
@@ -813,11 +825,41 @@ class RealtimeManager {
         )
 
       channel.subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => {
+        console.log(`🔔 [RealtimeManager] Governance Channel subscription status:`, {
+          status,
+          channelName,
+          companyId,
+          userId,
+          role,
+        })
         if (status === 'SUBSCRIBED') {
-          console.log('✅ [RealtimeManager] Subscribed to Governance Channel')
+          console.log('✅ [RealtimeManager] Subscribed to Governance Channel', {
+            channelName,
+            subscriptions: {
+              company_members: true,
+              user_branch_access: true,
+              branches: true,
+              warehouses: true,
+              company_role_permissions: true,
+              permissions: true,
+            },
+          })
           this.isGovernanceSubscribed = true
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ [RealtimeManager] Error subscribing to Governance Channel')
+          console.error('❌ [RealtimeManager] Error subscribing to Governance Channel', {
+            status,
+            channelName,
+          })
+          this.isGovernanceSubscribed = false
+        } else if (status === 'TIMED_OUT') {
+          console.warn('⚠️ [RealtimeManager] Governance Channel subscription timed out', {
+            channelName,
+          })
+          this.isGovernanceSubscribed = false
+        } else if (status === 'CLOSED') {
+          console.warn('⚠️ [RealtimeManager] Governance Channel closed', {
+            channelName,
+          })
           this.isGovernanceSubscribed = false
         }
       })
@@ -835,6 +877,18 @@ class RealtimeManager {
     table: 'company_members' | 'user_branch_access' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions',
     payload: RealtimePostgresChangesPayload<any>
   ): Promise<void> {
+    // ✅ Logging فوري عند استقبال الحدث - قبل أي معالجة
+    const newRecord = payload.new as any
+    const oldRecord = payload.old as any
+    console.log(`🔔 [RealtimeManager] handleGovernanceEvent CALLED:`, {
+      table,
+      eventType: payload.eventType,
+      hasNew: !!payload.new,
+      hasOld: !!payload.old,
+      newRecord: newRecord ? { id: newRecord.id, user_id: newRecord.user_id, role: newRecord.role, branch_id: newRecord.branch_id } : null,
+      oldRecord: oldRecord ? { id: oldRecord.id, user_id: oldRecord.user_id, role: oldRecord.role, branch_id: oldRecord.branch_id } : null,
+    })
+
     try {
       if (!this.context) {
         console.warn('⚠️ [RealtimeManager] handleGovernanceEvent: no context')
@@ -842,8 +896,7 @@ class RealtimeManager {
       }
 
       const { userId, companyId, role } = this.context
-      const newRecord = payload.new as any
-      const oldRecord = payload.old as any
+      // ✅ newRecord و oldRecord تم تعريفهما أعلاه
       const record = newRecord || oldRecord
 
       if (!record) {
