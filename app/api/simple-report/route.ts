@@ -1,3 +1,26 @@
+/**
+ * 🔐 Simple Financial Summary API - تقرير ملخص النشاط المالي
+ * 
+ * ⚠️ OPERATIONAL REPORT (NOT ACCOUNTING REPORT)
+ * 
+ * ✅ هذا تقرير مبسط لغير المحاسبين - ليس تقرير محاسبي رسمي
+ * ✅ يمكنه القراءة من مصادر متعددة (invoices, bills) لتوضيح بسيط
+ * 
+ * ⚠️ ملاحظة مهمة:
+ * - هذا التقرير مبسط وليس محاسبي رسمي
+ * - التقارير المحاسبية الرسمية (Balance Sheet, Income Statement) تعتمد على journal_entries فقط
+ * - هذا التقرير يستخدم invoices و bills لتوضيح بسيط لغير المحاسبين
+ * 
+ * ✅ القواعد:
+ * 1. رأس المال: من journal_entries (محاسبي)
+ * 2. المشتريات: من bills (تشغيلي - للتوضيح فقط)
+ * 3. المصروفات: من journal_entry_lines (محاسبي)
+ * 4. المبيعات: من invoices (تشغيلي - للتوضيح فقط)
+ * 5. COGS: من cogs_transactions (محاسبي)
+ * 
+ * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
+ */
+
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError } from "@/lib/api-security-enhanced"
@@ -51,6 +74,9 @@ export async function GET(request: NextRequest) {
 
     const totalCapital = (capitalData || []).reduce((sum, item) => sum + (item.credit_amount || 0), 0)
 
+    // ✅ المشتريات: من bills (تقرير تشغيلي - للتوضيح فقط)
+    // ⚠️ ملاحظة: هذا تقرير مبسط وليس محاسبي رسمي
+    // التقارير المحاسبية الرسمية تعتمد على journal_entries فقط
     const { data: purchasesData } = await supabase
       .from("bills")
       .select("total_amount, status, bill_date")
@@ -113,6 +139,9 @@ export async function GET(request: NextRequest) {
 
     const totalDepreciation = (depreciationData || []).reduce((sum, item) => sum + (item.debit_amount || 0), 0)
 
+    // ✅ المبيعات: من invoices (تقرير تشغيلي - للتوضيح فقط)
+    // ⚠️ ملاحظة: هذا تقرير مبسط وليس محاسبي رسمي
+    // التقارير المحاسبية الرسمية (Income Statement) تعتمد على journal_entries فقط
     const { data: salesData } = await supabase
       .from("invoices")
       .select("total_amount, status, invoice_date")

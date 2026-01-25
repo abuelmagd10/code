@@ -1,3 +1,25 @@
+/**
+ * 📊 Aging AP API - تقرير الذمم الدائنة
+ * 
+ * ⚠️ OPERATIONAL REPORT (NOT ACCOUNTING REPORT)
+ * 
+ * ✅ هذا تقرير تشغيلي - يمكنه القراءة من bills و payments مباشرة
+ * ✅ ليس تقرير محاسبي رسمي (التقارير المحاسبية تعتمد على journal_entries فقط)
+ * 
+ * ✅ القواعد:
+ * 1. مصدر البيانات: bills و payments (تشغيلي)
+ * 2. الحساب: المتبقي = total_amount - paid_amount - returned_amount
+ * 3. التصنيف: حسب الأيام المتأخرة (0-30, 31-60, 61-90, 90+)
+ * 4. الفروع: دعم كامل للفروع
+ * 
+ * ⚠️ ملاحظة مهمة:
+ * - هذا التقرير تشغيلي وليس محاسبي رسمي
+ * - التقارير المحاسبية الرسمية تعتمد على journal_entries فقط
+ * - هذا التقرير يستخدم bills لتوضيح تشغيلي
+ * 
+ * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+ */
+
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"

@@ -75,15 +75,43 @@ export default function FixedAssetsReportsPage() {
     return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
   }, [supabase, toast, appLang])
   const [depreciationData, setDepreciationData] = useState<DepreciationReport[]>([])
+  const [enhancedReportData, setEnhancedReportData] = useState<any[]>([])
   const [branchFilter, setBranchFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString())
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setAppLang((localStorage.getItem('app_language') as 'ar' | 'en') || 'ar')
     }
   }, [])
+
+  const loadEnhancedReport = useCallback(async () => {
+    try {
+      setIsLoading(true)
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      const params = new URLSearchParams({
+        type: reportType,
+        year: selectedYear
+      })
+
+      const res = await fetch(`/api/fixed-assets-reports?${params.toString()}`)
+      if (!res.ok) {
+        throw new Error('Failed to load report')
+      }
+
+      const data = await res.json()
+      setEnhancedReportData(Array.isArray(data.data) ? data.data : [])
+    } catch (error) {
+      console.error('Error loading enhanced report:', error)
+      toast({ title: appLang === 'en' ? "Error loading report" : "خطأ في تحميل التقرير", variant: "destructive" })
+    } finally {
+      setIsLoading(false)
+    }
+  }, [supabase, toast, appLang, reportType, selectedYear])
 
   const loadAssetsReport = useCallback(async () => {
     try {
@@ -241,7 +269,12 @@ export default function FixedAssetsReportsPage() {
       assets_by_branch: appLang === 'en' ? 'Assets by Branch' : 'الأصول حسب الفرع',
       assets_by_category: appLang === 'en' ? 'Assets by Category' : 'الأصول حسب الفئة',
       depreciation_schedule: appLang === 'en' ? 'Depreciation Schedule' : 'جدول الإهلاك',
-      depreciation_by_period: appLang === 'en' ? 'Depreciation by Period' : 'الإهلاك حسب الفترة'
+      depreciation_by_period: appLang === 'en' ? 'Depreciation by Period' : 'الإهلاك حسب الفترة',
+      monthly_depreciation: appLang === 'en' ? 'Monthly Depreciation %' : 'نسبة الإهلاك الشهري',
+      asset_value_before_after: appLang === 'en' ? 'Asset Value (Before/After)' : 'قيمة الأصل قبل/بعد الإهلاك',
+      remaining_useful_life: appLang === 'en' ? 'Remaining Useful Life' : 'العمر المتبقي',
+      assets_revaluation: appLang === 'en' ? 'Assets Revaluation' : 'الزيادة والنقصان في القيمة',
+      annual_depreciation_schedule: appLang === 'en' ? 'Annual Depreciation Schedule' : 'جدول الإهلاك السنوي'
     }
     return titles[reportType as keyof typeof titles] || titles.assets_list
   }
@@ -300,11 +333,16 @@ export default function FixedAssetsReportsPage() {
                     <SelectItem value="assets_by_category">{appLang === 'en' ? 'Assets by Category' : 'الأصول حسب الفئة'}</SelectItem>
                     <SelectItem value="depreciation_schedule">{appLang === 'en' ? 'Depreciation Schedule' : 'جدول الإهلاك'}</SelectItem>
                     <SelectItem value="depreciation_by_period">{appLang === 'en' ? 'Depreciation by Period' : 'الإهلاك حسب الفترة'}</SelectItem>
+                    <SelectItem value="monthly_depreciation">{appLang === 'en' ? 'Monthly Depreciation %' : 'نسبة الإهلاك الشهري'}</SelectItem>
+                    <SelectItem value="asset_value_before_after">{appLang === 'en' ? 'Asset Value (Before/After)' : 'قيمة الأصل قبل/بعد الإهلاك'}</SelectItem>
+                    <SelectItem value="remaining_useful_life">{appLang === 'en' ? 'Remaining Useful Life' : 'العمر المتبقي'}</SelectItem>
+                    <SelectItem value="assets_revaluation">{appLang === 'en' ? 'Assets Revaluation' : 'الزيادة والنقصان في القيمة'}</SelectItem>
+                    <SelectItem value="annual_depreciation_schedule">{appLang === 'en' ? 'Annual Depreciation Schedule' : 'جدول الإهلاك السنوي'}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              {(reportType.includes('assets')) && (
+              {(reportType.includes('assets') || reportType === 'monthly_depreciation' || reportType === 'asset_value_before_after' || reportType === 'remaining_useful_life' || reportType === 'assets_revaluation') && (
                 <>
                   <div>
                     <label className="text-sm font-medium mb-2 block">{appLang === 'en' ? 'Status Filter' : 'فلتر الحالة'}</label>
@@ -336,6 +374,20 @@ export default function FixedAssetsReportsPage() {
                     </Select>
                   </div>
                 </>
+              )}
+
+              {reportType === 'annual_depreciation_schedule' && (
+                <div>
+                  <label className="text-sm font-medium mb-2 block">{appLang === 'en' ? 'Year' : 'السنة'}</label>
+                  <input
+                    type="number"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-md"
+                    min="2000"
+                    max="2100"
+                  />
+                </div>
               )}
             </div>
           </CardContent>
@@ -442,6 +494,119 @@ export default function FixedAssetsReportsPage() {
                     <TableRow>
                       <TableCell colSpan={7} className="text-center text-gray-500">
                         {appLang === 'en' ? 'No depreciation data found' : 'لا توجد بيانات إهلاك'}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            )}
+
+            {/* Enhanced Reports */}
+            {['monthly_depreciation', 'asset_value_before_after', 'remaining_useful_life', 'assets_revaluation', 'annual_depreciation_schedule'].includes(reportType) && (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {reportType === 'monthly_depreciation' && (
+                      <>
+                        <TableHead>{appLang === 'en' ? 'Asset Code' : 'كود الأصل'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Name' : 'الاسم'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Monthly Depreciation' : 'الإهلاك الشهري'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Depreciation %' : 'نسبة الإهلاك %'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</TableHead>
+                      </>
+                    )}
+                    {reportType === 'asset_value_before_after' && (
+                      <>
+                        <TableHead>{appLang === 'en' ? 'Asset Code' : 'كود الأصل'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Name' : 'الاسم'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Value Before' : 'القيمة قبل الإهلاك'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Value After' : 'القيمة بعد الإهلاك'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Depreciation %' : 'نسبة الإهلاك %'}</TableHead>
+                      </>
+                    )}
+                    {reportType === 'remaining_useful_life' && (
+                      <>
+                        <TableHead>{appLang === 'en' ? 'Asset Code' : 'كود الأصل'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Name' : 'الاسم'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Elapsed Months' : 'الأشهر المنقضية'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Remaining Months' : 'الأشهر المتبقية'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Remaining %' : 'النسبة المتبقية %'}</TableHead>
+                      </>
+                    )}
+                    {reportType === 'assets_revaluation' && (
+                      <>
+                        <TableHead>{appLang === 'en' ? 'Asset Code' : 'كود الأصل'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Name' : 'الاسم'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Initial Value' : 'القيمة الأولية'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Current Value' : 'القيمة الحالية'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Change' : 'التغيير'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Change %' : 'نسبة التغيير %'}</TableHead>
+                      </>
+                    )}
+                    {reportType === 'annual_depreciation_schedule' && (
+                      <>
+                        <TableHead>{appLang === 'en' ? 'Asset Code' : 'كود الأصل'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Name' : 'الاسم'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Year' : 'السنة'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Periods' : 'عدد الفترات'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Total Depreciation' : 'إجمالي الإهلاك'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Monthly Average' : 'المتوسط الشهري'}</TableHead>
+                      </>
+                    )}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {enhancedReportData.map((item: any) => (
+                    <TableRow key={item.asset_id}>
+                      <TableCell className="font-mono">{item.asset_code}</TableCell>
+                      <TableCell>{item.asset_name}</TableCell>
+                      {reportType === 'monthly_depreciation' && (
+                        <>
+                          <TableCell>{formatNumber(item.monthly_depreciation)}</TableCell>
+                          <TableCell>{formatNumber(item.depreciation_percentage)}%</TableCell>
+                          <TableCell>{formatNumber(item.book_value)}</TableCell>
+                        </>
+                      )}
+                      {reportType === 'asset_value_before_after' && (
+                        <>
+                          <TableCell>{formatNumber(item.value_before_depreciation)}</TableCell>
+                          <TableCell>{formatNumber(item.value_after_depreciation)}</TableCell>
+                          <TableCell>{formatNumber(item.depreciation_percentage)}%</TableCell>
+                        </>
+                      )}
+                      {reportType === 'remaining_useful_life' && (
+                        <>
+                          <TableCell>{item.elapsed_months}</TableCell>
+                          <TableCell>{item.remaining_months}</TableCell>
+                          <TableCell>{formatNumber(item.remaining_percentage)}%</TableCell>
+                        </>
+                      )}
+                      {reportType === 'assets_revaluation' && (
+                        <>
+                          <TableCell>{formatNumber(item.initial_value)}</TableCell>
+                          <TableCell>{formatNumber(item.current_value)}</TableCell>
+                          <TableCell className={item.change_amount >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            {formatNumber(item.change_amount)}
+                          </TableCell>
+                          <TableCell className={item.change_percentage >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            {formatNumber(item.change_percentage)}%
+                          </TableCell>
+                        </>
+                      )}
+                      {reportType === 'annual_depreciation_schedule' && (
+                        <>
+                          <TableCell>{item.year}</TableCell>
+                          <TableCell>{item.periods_count}</TableCell>
+                          <TableCell>{formatNumber(item.total_depreciation)}</TableCell>
+                          <TableCell>{formatNumber(item.monthly_average)}</TableCell>
+                        </>
+                      )}
+                    </TableRow>
+                  ))}
+                  {enhancedReportData.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-gray-500">
+                        {appLang === 'en' ? 'No data found' : 'لا توجد بيانات'}
                       </TableCell>
                     </TableRow>
                   )}

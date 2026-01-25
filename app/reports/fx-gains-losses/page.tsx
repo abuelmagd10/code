@@ -44,6 +44,12 @@ export default function FXGainsLossesReportPage() {
     loadData()
   }, [])
 
+  /**
+   * ✅ تحميل بيانات أرباح وخسائر فروق الصرف
+   * ✅ ACCOUNTING REPORT - تقرير محاسبي (من journal_entries فقط)
+   * ✅ يستخدم journal_entry_lines لحسابات FX Gain/Loss
+   * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
+   */
   const loadData = async () => {
     setLoading(true)
     try {
@@ -51,7 +57,7 @@ export default function FXGainsLossesReportPage() {
       if (!cid) return
       setCompanyId(cid)
 
-      // Get FX accounts
+      // ✅ جلب حسابات FX Gain/Loss
       const { data: fxGainAccount } = await supabase
         .from('chart_of_accounts')
         .select('id')
@@ -71,7 +77,7 @@ export default function FXGainsLossesReportPage() {
         return
       }
 
-      // Get journal entries with FX gain/loss lines
+      // ✅ جلب القيود المحاسبية (تقرير محاسبي - من journal_entries فقط)
       const accountIds = [fxGainAccount?.id, fxLossAccount?.id].filter(Boolean)
 
       const { data: lines } = await supabase
@@ -92,7 +98,7 @@ export default function FXGainsLossesReportPage() {
           )
         `)
         .in('account_id', accountIds)
-        .is('journal_entries.deleted_at', null)
+        .is('journal_entries.deleted_at', null) // ✅ استثناء القيود المحذوفة
         .gte('journal_entries.entry_date', dateFrom)
         .lte('journal_entries.entry_date', dateTo)
         .order('journal_entries(entry_date)', { ascending: false })

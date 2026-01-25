@@ -1,3 +1,24 @@
+/**
+ * 📊 Aging AP Base API - تقرير الذمم الدائنة (الأساسي)
+ * 
+ * ⚠️ OPERATIONAL REPORT (NOT ACCOUNTING REPORT)
+ * 
+ * ✅ هذا تقرير تشغيلي - يمكنه القراءة من bills و payments مباشرة
+ * ✅ ليس تقرير محاسبي رسمي (التقارير المحاسبية تعتمد على journal_entries فقط)
+ * 
+ * ✅ القواعد:
+ * 1. مصدر البيانات: bills و payments (تشغيلي)
+ * 2. الحساب: المتبقي = total_amount - paid_amount
+ * 3. التصنيف: حسب الأيام المتأخرة (0-30, 31-60, 61-90, 90+)
+ * 
+ * ⚠️ ملاحظة مهمة:
+ * - هذا التقرير تشغيلي وليس محاسبي رسمي
+ * - التقارير المحاسبية الرسمية تعتمد على journal_entries فقط
+ * - هذا التقرير يستخدم bills لتوضيح تشغيلي
+ * 
+ * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+ */
+
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
@@ -30,11 +51,14 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const endDate = String(searchParams.get("endDate") || new Date().toISOString().slice(0,10))
 
-    // Use 'received' and 'partially_paid' for bills (not 'sent' which is for invoices)
+    // ✅ جلب الفواتير (تقرير تشغيلي - من bills مباشرة)
+    // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
+    // ✅ Use 'received' and 'partially_paid' for bills (not 'sent' which is for invoices)
     const { data: bills, error: billsError } = await admin
       .from("bills")
       .select("id, bill_number, bill_date, due_date, total_amount, status, suppliers(id, name)")
       .eq("company_id", companyId)
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
       .in("status", ["received", "partially_paid"])
 
     if (billsError) {

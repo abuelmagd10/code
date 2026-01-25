@@ -130,13 +130,19 @@ export default function SalesDiscountsReportPage() {
     loadDiscountData()
   }, [fromDate, toDate])
 
+  /**
+   * ✅ تحميل بيانات خصومات المبيعات
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من invoices مباشرة)
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadDiscountData = async () => {
     try {
       setIsLoading(true)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      // Get invoices with discounts (invoice level or item level)
+      // ✅ جلب الفواتير مع الخصومات (تقرير تشغيلي - من invoices مباشرة)
+      // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
       const { data: invoices } = await supabase
         .from('invoices')
         .select(`
@@ -146,7 +152,7 @@ export default function SalesDiscountsReportPage() {
           invoice_items(discount_percent, quantity, unit_price)
         `)
         .eq('company_id', companyId)
-        .or("is_deleted.is.null,is_deleted.eq.false")
+        .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
         .in('status', ['sent', 'partially_paid', 'paid'])
         .gte('invoice_date', fromDate)
         .lte('invoice_date', toDate)

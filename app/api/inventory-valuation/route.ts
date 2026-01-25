@@ -1,3 +1,25 @@
+/**
+ * 📊 Inventory Valuation API - تقييم المخزون
+ * 
+ * ⚠️ OPERATIONAL REPORT (NOT ACCOUNTING REPORT)
+ * 
+ * ✅ هذا تقرير تشغيلي - يعتمد على FIFO lots
+ * ✅ يستخدم fifo_cost_lots كمصدر الحقيقة الوحيد لتكلفة المخزون
+ * 
+ * ✅ القواعد:
+ * 1. مصدر الكميات: inventory_transactions
+ * 2. مصدر التكلفة: fifo_cost_lots (FIFO weighted average)
+ * 3. الفلترة: حسب الشركة، الفرع، المخزن، مركز التكلفة
+ * 4. FIFO: حساب FIFO weighted average cost لكل منتج
+ * 
+ * ⚠️ ملاحظة مهمة:
+ * - هذا التقرير تشغيلي وليس محاسبي رسمي
+ * - يستخدم FIFO lots لحساب قيمة المخزون
+ * - لا يعتمد على products.cost_price (يستخدمه فقط كـ fallback للتوافق)
+ * 
+ * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+ */
+
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
@@ -109,7 +131,8 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // حساب FIFO weighted average cost
+    // ✅ حساب FIFO weighted average cost
+    // ✅ FIFO Weighted Average = SUM(remaining_quantity * unit_cost) / SUM(remaining_quantity)
     const fifoAvgCost: Record<string, number> = {}
     for (const [pid, lots] of Object.entries(fifoByProduct)) {
       const totalQty = lots.reduce((sum, lot) => sum + lot.qty, 0)
@@ -117,14 +140,17 @@ export async function GET(req: NextRequest) {
       fifoAvgCost[pid] = totalQty > 0 ? totalValue / totalQty : 0
     }
 
+    // ✅ بناء النتيجة مع FIFO lots
+    // ⚠️ avg_cost من products.cost_price (للتوافق فقط - لا يُستخدم في الحسابات)
+    // ✅ fifo_avg_cost من fifo_cost_lots (المصدر الوحيد للحقيقة)
     const result = Object.entries(byProduct).map(([id, v]) => ({
       id,
       code: codeById[id],
       name: nameById[id] || id,
       qty: v.qty,
-      avg_cost: Number(costById[id] || 0), // Average Cost (القديم)
-      fifo_avg_cost: fifoAvgCost[id] || Number(costById[id] || 0), // FIFO Weighted Average
-      fifo_lots: fifoByProduct[id] || [] // FIFO layers
+      avg_cost: Number(costById[id] || 0), // ⚠️ للتوافق فقط (deprecated)
+      fifo_avg_cost: fifoAvgCost[id] || 0, // ✅ FIFO Weighted Average (المصدر الوحيد)
+      fifo_lots: fifoByProduct[id] || [] // ✅ FIFO layers
     }))
     
     return NextResponse.json({

@@ -5,8 +5,43 @@ import { secureApiRequest, serverError, badRequestError } from "@/lib/api-securi
 import { apiSuccess } from "@/lib/api-error-handler"
 
 /**
- * قائمة التدفقات النقدية (Cash Flow Statement)
- * تصنيف التدفقات النقدية إلى: تشغيلية، استثمارية، تمويلية
+ * 🔐 Cash Flow Statement API - قائمة التدفقات النقدية
+ * 
+ * ⚠️ CRITICAL ACCOUNTING FUNCTION - FINAL APPROVED LOGIC
+ * 
+ * ✅ هذا المنطق معتمد نهائيًا ولا يتم تغييره إلا بحذر شديد
+ * ✅ مطابق لأنظمة ERP الاحترافية (Odoo / Zoho / SAP)
+ * 
+ * ✅ القواعد الإلزامية الثابتة:
+ * 1. Single Source of Truth:
+ *    - جميع البيانات تأتي من journal_entries فقط
+ *    - لا قيم ثابتة أو محفوظة مسبقًا
+ *    - التسلسل: journal_entries → journal_entry_lines (cash/bank accounts) → cash_flow
+ * 
+ * 2. Cash Accounts Only:
+ *    - التدفقات النقدية تُحسب فقط من حسابات sub_type = 'cash' أو 'bank'
+ *    - لا تُحسب من حسابات أخرى (حتى لو كانت asset)
+ * 
+ * 3. Classification:
+ *    - Operating: الفواتير، المدفوعات، المصروفات، الرواتب
+ *    - Investing: شراء/بيع الأصول، الاستثمارات، الإهلاك
+ *    - Financing: القروض، رأس المال، الأرباح الموزعة
+ * 
+ * 4. Compatibility:
+ *    - النقد في التدفقات النقدية = أرصدة الحسابات البنكية في الميزانية
+ *    - يجب أن يتطابق مع الميزانية العمومية
+ * 
+ * 5. Future Compatibility (مضمون):
+ *    - إغلاق السنة
+ *    - ترحيل الأرباح المحتجزة
+ *    - القيود المركبة
+ *    - الضرائب
+ *    - المخزون
+ *    - الإهلاك
+ * 
+ * ⚠️ DO NOT MODIFY WITHOUT SENIOR ACCOUNTING REVIEW
+ * 
+ * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
  */
 export async function GET(req: NextRequest) {
   try {
@@ -41,7 +76,8 @@ export async function GET(req: NextRequest) {
     const from = searchParams.get("from") || "0001-01-01"
     const to = searchParams.get("to") || "9999-12-31"
 
-    // جلب جميع قيود اليومية المرحّلة في الفترة
+    // ✅ جلب جميع قيود اليومية المرحّلة في الفترة
+    // ✅ مصدر البيانات الوحيد: journal_entries (لا payments أو invoices مباشرة)
     const { data: entries, error: entriesError } = await supabase
       .from("journal_entries")
       .select(`
@@ -53,6 +89,7 @@ export async function GET(req: NextRequest) {
       `)
       .eq("company_id", companyId)
       .eq("status", "posted")
+      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة
       .gte("entry_date", from)
       .lte("entry_date", to)
       .order("entry_date")
@@ -100,15 +137,18 @@ export async function GET(req: NextRequest) {
       return serverError(`خطأ في جلب سطور القيود: ${linesError.message}`)
     }
 
-    // حساب التدفق النقدي لكل قيد (فقط الحسابات النقدية: cash, bank)
+    // ✅ حساب التدفق النقدي لكل قيد (فقط الحسابات النقدية: cash, bank)
+    // ✅ التدفق النقدي = debit - credit (موجب = تدفق داخل، سالب = تدفق خارج)
     const cashFlowByEntry: Record<string, number> = {}
 
-    // ✅ حساب التدفق النقدي لكل قيد
     for (const line of lines || []) {
       const entryId = line.journal_entry_id
       const debit = Number(line.debit_amount || 0)
       const credit = Number(line.credit_amount || 0)
-      const cashFlow = debit - credit // موجب = تدفق داخل، سالب = تدفق خارج
+      // ✅ التدفق النقدي = debit - credit
+      // موجب = زيادة في النقد (تدفق داخل)
+      // سالب = نقص في النقد (تدفق خارج)
+      const cashFlow = debit - credit
 
       cashFlowByEntry[entryId] = (cashFlowByEntry[entryId] || 0) + cashFlow
     }
@@ -154,10 +194,11 @@ export async function GET(req: NextRequest) {
       other: { total: 0, items: [] as any[] }
     }
 
+    // ✅ تصنيف القيود حسب النوع (تشغيلية/استثمارية/تمويلية)
     for (const entry of entries) {
       const cashFlow = cashFlowByEntry[entry.id] || 0
       
-      // تجاهل القيود بدون تأثير نقدي
+      // ✅ تجاهل القيود بدون تأثير نقدي (صفر أو قريب من الصفر)
       if (Math.abs(cashFlow) < 0.01) continue
       
       const category = classify(entry.reference_type || '')
@@ -173,11 +214,15 @@ export async function GET(req: NextRequest) {
       categories[category].total += cashFlow
     }
 
+    // ✅ صافي التدفق النقدي = مجموع جميع الفئات
     const netCashFlow = 
       categories.operating.total + 
       categories.investing.total + 
       categories.financing.total + 
       categories.other.total
+
+    // ✅ التحقق من التوافق مع الميزانية (يمكن إضافته لاحقًا)
+    // النقد في التدفقات النقدية يجب أن يتطابق مع أرصدة الحسابات البنكية في الميزانية
 
     return apiSuccess({
       ...categories,

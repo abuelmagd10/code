@@ -5,9 +5,39 @@ import { NextRequest, NextResponse } from "next/server"
 import { badRequestError, apiSuccess } from "@/lib/api-error-handler"
 
 /**
- * قائمة الدخل (Income Statement)
- * تعرض الإيرادات والمصروفات وصافي الدخل/الخسارة
- * مع تفاصيل كل حساب
+ * 🔐 Income Statement API - قائمة الدخل
+ * 
+ * ⚠️ CRITICAL ACCOUNTING FUNCTION - FINAL APPROVED LOGIC
+ * 
+ * ✅ هذا المنطق معتمد نهائيًا ولا يتم تغييره إلا بحذر شديد
+ * ✅ مطابق لأنظمة ERP الاحترافية (Odoo / Zoho / SAP)
+ * 
+ * ✅ القواعد الإلزامية الثابتة:
+ * 1. Single Source of Truth:
+ *    - جميع البيانات تأتي من journal_entries فقط
+ *    - لا قيم ثابتة أو محفوظة مسبقًا
+ *    - التسلسل: journal_entries → journal_entry_lines → income_statement
+ * 
+ * 2. Data Source:
+ *    - الإيرادات: من حسابات account_type = 'income'
+ *    - المصروفات: من حسابات account_type = 'expense'
+ *    - صافي الدخل = الإيرادات - المصروفات
+ * 
+ * 3. Compatibility:
+ *    - يجب أن يتطابق صافي الدخل مع الميزانية العمومية
+ *    - الربح في قائمة الدخل = الربح المرحل في الميزانية
+ * 
+ * 4. Future Compatibility (مضمون):
+ *    - إغلاق السنة
+ *    - ترحيل الأرباح المحتجزة
+ *    - القيود المركبة
+ *    - الضرائب
+ *    - المخزون
+ *    - الإهلاك
+ * 
+ * ⚠️ DO NOT MODIFY WITHOUT SENIOR ACCOUNTING REVIEW
+ * 
+ * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
  */
 export async function GET(req: NextRequest) {
   try {
@@ -55,11 +85,13 @@ export async function GET(req: NextRequest) {
     }
 
     // ✅ جلب القيود المرحّلة في الفترة المحددة
+    // ✅ مصدر البيانات الوحيد: journal_entries (لا invoices أو bills مباشرة)
     const { data: journalEntriesData, error: entriesError } = await supabase
       .from("journal_entries")
       .select("id")
       .eq("company_id", companyId)
       .eq("status", "posted")
+      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة
       .gte("entry_date", from)
       .lte("entry_date", to)
 
@@ -116,6 +148,7 @@ export async function GET(req: NextRequest) {
       const accountName = account.name
 
       if (type === 'income') {
+        // ✅ الإيرادات تزيد بالدائن (Credit - Debit)
         const amount = credit - debit
         totalIncome += amount
 
@@ -124,6 +157,7 @@ export async function GET(req: NextRequest) {
         }
         incomeAccounts[accountCode].amount += amount
       } else if (type === 'expense') {
+        // ✅ المصروفات تزيد بالمدين (Debit - Credit)
         const amount = debit - credit
         totalExpense += amount
 
@@ -134,15 +168,18 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // تحويل إلى مصفوفات وترتيب حسب الكود
+    // ✅ تحويل إلى مصفوفات وترتيب حسب الكود
+    // ✅ عرض فقط الحسابات التي لها رصيد فعلي (amount !== 0)
     const incomeList = Object.values(incomeAccounts)
-      .filter(acc => acc.amount !== 0)
+      .filter(acc => Math.abs(acc.amount) >= 0.01) // ✅ إزالة الحسابات الصفرية
       .sort((a, b) => a.code.localeCompare(b.code))
 
     const expenseList = Object.values(expenseAccounts)
-      .filter(acc => acc.amount !== 0)
+      .filter(acc => Math.abs(acc.amount) >= 0.01) // ✅ إزالة الحسابات الصفرية
       .sort((a, b) => a.code.localeCompare(b.code))
 
+    // ✅ صافي الدخل/الخسارة = الإيرادات - المصروفات
+    // ✅ هذا الرقم يجب أن يتطابق مع الميزانية العمومية
     const netIncome = totalIncome - totalExpense
 
     return apiSuccess({

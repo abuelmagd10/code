@@ -1,3 +1,25 @@
+/**
+ * 📊 Sales Report API - تقرير المبيعات
+ * 
+ * ⚠️ OPERATIONAL REPORT (NOT ACCOUNTING REPORT)
+ * 
+ * ✅ هذا تقرير تشغيلي - يمكنه القراءة من invoices مباشرة
+ * ✅ ليس تقرير محاسبي رسمي (التقارير المحاسبية تعتمد على journal_entries فقط)
+ * 
+ * ✅ القواعد:
+ * 1. مصدر البيانات: invoices و invoice_items (تشغيلي)
+ * 2. التجميع: حسب العميل
+ * 3. الفلترة: حسب التاريخ، الحالة، العميل، المنتج، نوع العنصر
+ * 4. الفروع: دعم كامل للفروع ومراكز التكلفة
+ * 
+ * ⚠️ ملاحظة مهمة:
+ * - هذا التقرير تشغيلي وليس محاسبي رسمي
+ * - التقارير المحاسبية الرسمية (Income Statement) تعتمد على journal_entries فقط
+ * - هذا التقرير يستخدم invoices لتوضيح تشغيلي
+ * 
+ * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
+ */
+
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
@@ -31,12 +53,14 @@ export async function GET(req: NextRequest) {
     const productId = searchParams.get("product_id") || ""
     const branchFilter = buildBranchFilter(branchId!, member.role)
 
+    // ✅ جلب الفواتير (تقرير تشغيلي - من invoices مباشرة)
+    // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
     let invoicesQuery = supabase
       .from("invoices")
       .select("id, total_amount, invoice_date, status, customer_id, customers!left(name)")
       .eq("company_id", companyId)
       .match(branchFilter)
-      .or("is_deleted.is.null,is_deleted.eq.false")
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
       .gte("invoice_date", from)
       .lte("invoice_date", to)
 

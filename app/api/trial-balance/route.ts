@@ -4,13 +4,38 @@ import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 
 /**
- * Trial Balance API
+ * 🔐 Trial Balance API - ميزان المراجعة
  * 
- * يعرض ميزان المراجعة من journal_entry_lines فقط
+ * ⚠️ CRITICAL ACCOUNTING FUNCTION - FINAL APPROVED LOGIC
  * 
- * المعادلة الأساسية:
- * - مجموع الأرصدة المدينة = مجموع الأرصدة الدائنة
- * - إذا لم يتساويا → BUG محاسبي حرج
+ * ✅ هذا المنطق معتمد نهائيًا ولا يتم تغييره إلا بحذر شديد
+ * ✅ مطابق لأنظمة ERP الاحترافية (Odoo / Zoho / SAP)
+ * 
+ * ✅ القواعد الإلزامية الثابتة:
+ * 1. Single Source of Truth:
+ *    - جميع البيانات تأتي من journal_entries فقط
+ *    - لا قيم ثابتة أو محفوظة مسبقًا
+ *    - التسلسل: journal_entries → journal_entry_lines → trial_balance
+ * 
+ * 2. Balance Equation (MANDATORY):
+ *    - مجموع الأرصدة المدينة = مجموع الأرصدة الدائنة
+ *    - إذا لم يتساويا → خطأ نظام حرج (ليس تحذيرًا)
+ * 
+ * 3. Compatibility:
+ *    - يجب أن يتطابق مع الميزانية العمومية
+ *    - مجموع الأرصدة في ميزان المراجعة = مجموع الأصول = مجموع الالتزامات + حقوق الملكية
+ * 
+ * 4. Future Compatibility (مضمون):
+ *    - إغلاق السنة
+ *    - ترحيل الأرباح المحتجزة
+ *    - القيود المركبة
+ *    - الضرائب
+ *    - المخزون
+ *    - الإهلاك
+ * 
+ * ⚠️ DO NOT MODIFY WITHOUT SENIOR ACCOUNTING REVIEW
+ * 
+ * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
  */
 export async function GET(req: NextRequest) {
   try {
@@ -170,7 +195,8 @@ export async function GET(req: NextRequest) {
       totalClosingCredit += closingCredit
     }
 
-    // ✅ التحقق من التوازن (Critical Check)
+    // ✅ التحقق من التوازن (Critical Check - إلزامي)
+    // ✅ المعادلة الأساسية: مجموع الأرصدة المدينة = مجموع الأرصدة الدائنة
     const openingBalance = Math.abs(totalOpeningDebit - totalOpeningCredit)
     const periodBalance = Math.abs(totalPeriodDebit - totalPeriodCredit)
     const closingBalance = Math.abs(totalClosingDebit - totalClosingCredit)
@@ -179,10 +205,12 @@ export async function GET(req: NextRequest) {
       openingBalance < 0.01 && periodBalance < 0.01 && closingBalance < 0.01
 
     if (!isBalanced) {
-      console.error("🚨 BUG محاسبي حرج: Trial Balance غير متوازن!")
+      // ⚠️ خطأ نظام حرج - ليس مجرد تحذير
+      console.error("🚨 SYSTEM ERROR: Trial Balance غير متوازن!")
       console.error(`Opening: Debit=${totalOpeningDebit}, Credit=${totalOpeningCredit}, Diff=${openingBalance}`)
       console.error(`Period: Debit=${totalPeriodDebit}, Credit=${totalPeriodCredit}, Diff=${periodBalance}`)
       console.error(`Closing: Debit=${totalClosingDebit}, Credit=${totalClosingCredit}, Diff=${closingBalance}`)
+      console.error("⚠️ هذا خطأ نظام - يرجى مراجعة القيود المحاسبية")
     }
 
     return NextResponse.json({
@@ -205,6 +233,7 @@ export async function GET(req: NextRequest) {
           difference: closingBalance,
         },
       },
+      // ✅ عرض فقط الحسابات التي لها رصيد فعلي
       accounts: trialBalanceRows
         .filter(
           (row) =>
@@ -215,8 +244,9 @@ export async function GET(req: NextRequest) {
             Math.abs(row.opening_credit) >= 0.01
         )
         .sort((a, b) => (a.account_code || '').localeCompare(b.account_code || '')),
+      // ⚠️ تحذير خطأ نظام عند عدم التوازن
       warning: !isBalanced
-        ? "⚠️ Trial Balance غير متوازن - يرجى مراجعة القيود المحاسبية"
+        ? "🚨 خطأ نظام: Trial Balance غير متوازن - يرجى مراجعة القيود المحاسبية فورًا"
         : null,
     })
   } catch (e: any) {

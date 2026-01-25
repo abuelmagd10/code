@@ -97,6 +97,11 @@ export default function InvoicesReportPage() {
     loadCustomers()
   }, [supabase])
 
+  /**
+   * ✅ تحميل بيانات تقرير الفواتير
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من invoices مباشرة)
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadInvoices = async () => {
     try {
       setIsLoading(true)
@@ -106,11 +111,13 @@ export default function InvoicesReportPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      // ✅ جلب الفواتير (تقرير تشغيلي - من invoices مباشرة)
+      // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
       let query = supabase
         .from("invoices")
         .select("invoice_number, customer_id, invoice_date, total_amount, paid_amount, status, customers(name)")
         .eq("company_id", companyId)
-        .or("is_deleted.is.null,is_deleted.eq.false")
+        .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
         .in("status", ["sent", "partially_paid", "paid"]) // استبعاد المسودات والملغاة
 
       if (fromDate) query = query.gte("invoice_date", fromDate)

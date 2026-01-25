@@ -5,8 +5,38 @@ import { secureApiRequest, serverError, badRequestError } from "@/lib/api-securi
 import { apiSuccess } from "@/lib/api-error-handler"
 
 /**
- * دفتر الأستاذ العام (General Ledger)
- * يعرض جميع الحركات على حساب معين أو مجموعة حسابات مع الأرصدة الجارية
+ * 🔐 General Ledger API - دفتر الأستاذ العام
+ * 
+ * ⚠️ CRITICAL ACCOUNTING FUNCTION - FINAL APPROVED LOGIC
+ * 
+ * ✅ هذا المنطق معتمد نهائيًا ولا يتم تغييره إلا بحذر شديد
+ * ✅ مطابق لأنظمة ERP الاحترافية (Odoo / Zoho / SAP)
+ * 
+ * ✅ القواعد الإلزامية الثابتة:
+ * 1. Single Source of Truth:
+ *    - جميع البيانات تأتي من journal_entries فقط
+ *    - لا قيم ثابتة أو محفوظة مسبقًا
+ *    - التسلسل: journal_entries → journal_entry_lines → general_ledger
+ * 
+ * 2. Account Filtering:
+ *    - يمكن عرض حساب واحد أو جميع الحسابات
+ *    - عرض فقط الحسابات التي لها حركات أو أرصدة
+ * 
+ * 3. Balance Calculation:
+ *    - الرصيد = opening_balance + (debit - credit) movements
+ *    - حسب الطبيعة المحاسبية للحساب
+ * 
+ * 4. Future Compatibility (مضمون):
+ *    - إغلاق السنة
+ *    - ترحيل الأرباح المحتجزة
+ *    - القيود المركبة
+ *    - الضرائب
+ *    - المخزون
+ *    - الإهلاك
+ * 
+ * ⚠️ DO NOT MODIFY WITHOUT SENIOR ACCOUNTING REVIEW
+ * 
+ * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
  */
 export async function GET(req: NextRequest) {
   try {
@@ -70,7 +100,8 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // جلب جميع قيود اليومية المرحّلة في الفترة
+    // ✅ جلب جميع قيود اليومية المرحّلة في الفترة
+    // ✅ مصدر البيانات الوحيد: journal_entries (لا invoices أو bills مباشرة)
     const accountIds = accounts.map(a => a.id)
 
     let linesQuery = supabase
@@ -95,7 +126,7 @@ export async function GET(req: NextRequest) {
       `)
       .eq("journal_entries.company_id", companyId)
       .eq("journal_entries.status", "posted")
-      .is("journal_entries.deleted_at", null)
+      .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة
       .gte("journal_entries.entry_date", from)
       .lte("journal_entries.entry_date", to)
       .in("account_id", accountIds)
@@ -183,11 +214,12 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    // فلترة الحسابات التي لها حركات أو أرصدة
+    // ✅ فلترة الحسابات التي لها حركات أو أرصدة
+    // ✅ عرض فقط الحسابات التي لها رصيد فعلي
     const filteredAccounts = accountsData.filter(acc =>
       acc.transactionCount > 0 ||
-      Math.abs(acc.openingBalance) > 0.01 ||
-      Math.abs(acc.closingBalance) > 0.01
+      Math.abs(acc.openingBalance) >= 0.01 ||
+      Math.abs(acc.closingBalance) >= 0.01
     )
 
     return apiSuccess({

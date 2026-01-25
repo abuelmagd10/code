@@ -62,27 +62,52 @@ export default function VatSummaryReportPage() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/report-sales-invoices-detail?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&status=${encodeURIComponent('all')}`)
-      const js = res.ok ? await res.json() : []
-      setSales((Array.isArray(js) ? js : []).map((d: any) => ({ id: String(d.id), invoice_number: String(d.invoice_number || ''), customer_name: String(d.customer_name || ''), invoice_date: String(d.invoice_date || ''), tax_amount: Number(d.tax_amount || 0), subtotal: Number(d.subtotal ?? (Number(d.total_amount || 0) - Number(d.tax_amount || 0))), total_amount: Number(d.total_amount || 0) })))
+      // ✅ استخدام APIs الجديدة من journal_entries
+      const [outputRes, inputRes] = await Promise.all([
+        fetch(`/api/vat-output?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&status=all`),
+        fetch(`/api/vat-input?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&status=all`)
+      ])
 
-      const cid = await getCompanyId(supabase)
-      const { data, error } = await supabase
-        .from('bills')
-        .select('id, bill_number, supplier_id, bill_date, status, subtotal, tax_amount, total_amount')
-        .eq('company_id', cid)
-        .gte('bill_date', fromDate)
-        .lte('bill_date', toDate)
-        .in('status', ['sent','partially_paid','paid'])
-        .order('bill_date', { ascending: true })
-      if (error) throw error
-      const supIds = Array.from(new Set((data || []).map((d: any) => String(d.supplier_id))))
-      const { data: suppliers } = await supabase.from('suppliers').select('id,name').in('id', supIds)
-      const supMap = new Map((suppliers || []).map((s: any) => [String(s.id), String(s.name || '')]))
-      setBills((data || []).map((d: any) => ({ id: String(d.id), bill_number: String(d.bill_number || ''), supplier_name: supMap.get(String(d.supplier_id || '')) || '', bill_date: String(d.bill_date || ''), tax_amount: Number(d.tax_amount || 0), subtotal: Number(d.subtotal ?? (Number(d.total_amount || 0) - Number(d.tax_amount || 0))), total_amount: Number(d.total_amount || 0) })))
-    } catch {
-      setSales([]); setBills([])
-    } finally { setLoading(false) }
+      // ✅ معالجة VAT Output
+      if (outputRes.ok) {
+        const outputData = await outputRes.json()
+        const invoices = outputData.data?.invoices || outputData.invoices || []
+        setSales(invoices.map((inv: any) => ({
+          id: String(inv.id),
+          invoice_number: String(inv.invoice_number || ''),
+          customer_name: String(inv.customer_name || ''),
+          invoice_date: String(inv.invoice_date || ''),
+          tax_amount: Number(inv.tax_amount || 0),
+          subtotal: Number(inv.subtotal || 0),
+          total_amount: Number(inv.total_amount || 0)
+        })))
+      } else {
+        setSales([])
+      }
+
+      // ✅ معالجة VAT Input
+      if (inputRes.ok) {
+        const inputData = await inputRes.json()
+        const bills = inputData.data?.bills || inputData.bills || []
+        setBills(bills.map((bill: any) => ({
+          id: String(bill.id),
+          bill_number: String(bill.bill_number || ''),
+          supplier_name: String(bill.supplier_name || ''),
+          bill_date: String(bill.bill_date || ''),
+          tax_amount: Number(bill.tax_amount || 0),
+          subtotal: Number(bill.subtotal || 0),
+          total_amount: Number(bill.total_amount || 0)
+        })))
+      } else {
+        setBills([])
+      }
+    } catch (error: any) {
+      console.error("Error loading VAT summary:", error)
+      setSales([])
+      setBills([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { loadData() }, [fromDate, toDate])

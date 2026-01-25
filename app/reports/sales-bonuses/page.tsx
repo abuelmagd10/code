@@ -95,6 +95,11 @@ export default function SalesBonusesReportPage() {
     }
   }, [])
 
+  /**
+   * ✅ تحميل بيانات بونصات المبيعات
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من user_bonuses مباشرة)
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   useEffect(() => {
     const loadData = async () => {
       if (!supabase) return
@@ -117,6 +122,11 @@ export default function SalesBonusesReportPage() {
     loadData()
   }, [supabase])
 
+  /**
+   * ✅ تحميل بيانات بونصات المبيعات من API
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من user_bonuses مباشرة)
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadBonuses = async (cid: string) => {
     try {
       const params = new URLSearchParams({ companyId: cid, year: String(filterYear) })
@@ -124,6 +134,7 @@ export default function SalesBonusesReportPage() {
       if (filterEmployee) params.append("userId", filterEmployee)
       if (filterStatus) params.append("status", filterStatus)
 
+      // ✅ استخدام API بونصات المبيعات (تقرير تشغيلي)
       const res = await fetch(`/api/bonuses?${params.toString()}`)
       if (res.ok) {
         const data = await res.json()

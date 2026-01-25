@@ -59,9 +59,16 @@ export default function PurchasesReportPage() {
 
   // استخدام الدالة الموحدة للحصول على معرف الشركة
 
+  /**
+   * ✅ تحميل بيانات تقرير المشتريات
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من bills مباشرة)
+   * ✅ يعرض المشتريات حسب المورد مع إمكانية الفلترة حسب المنتج/الخدمة
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadPurchasesData = async () => {
     try {
       setIsLoading(true)
+      // ✅ استخدام API تقرير المشتريات (تقرير تشغيلي)
       const res = await fetch(`/api/report-purchases?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&item_type=${itemTypeFilter}`)
       const rows = res.ok ? await res.json() : []
       setPurchasesData(Array.isArray(rows) ? rows : [])

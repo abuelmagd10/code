@@ -1,3 +1,25 @@
+/**
+ * 📊 Aging AR API - تقرير الذمم المدينة
+ * 
+ * ⚠️ OPERATIONAL REPORT (NOT ACCOUNTING REPORT)
+ * 
+ * ✅ هذا تقرير تشغيلي - يمكنه القراءة من invoices و payments مباشرة
+ * ✅ ليس تقرير محاسبي رسمي (التقارير المحاسبية تعتمد على journal_entries فقط)
+ * 
+ * ✅ القواعد:
+ * 1. مصدر البيانات: invoices و payments (تشغيلي)
+ * 2. الحساب: المتبقي = total_amount - paid_amount - returned_amount
+ * 3. التصنيف: حسب الأيام المتأخرة (0-30, 31-60, 61-90, 90+)
+ * 4. الفروع: دعم كامل للفروع
+ * 
+ * ⚠️ ملاحظة مهمة:
+ * - هذا التقرير تشغيلي وليس محاسبي رسمي
+ * - التقارير المحاسبية الرسمية تعتمد على journal_entries فقط
+ * - هذا التقرير يستخدم invoices لتوضيح تشغيلي
+ * 
+ * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+ */
+
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
@@ -26,12 +48,14 @@ export async function GET(req: NextRequest) {
     const endDate = String(searchParams.get("endDate") || new Date().toISOString().slice(0,10))
     const branchFilter = buildBranchFilter(branchId!, member.role)
 
-    // جلب الفواتير مع المرتجعات (مفلترة حسب الفرع)
+    // ✅ جلب الفواتير (تقرير تشغيلي - من invoices مباشرة)
+    // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
     const { data: invs } = await supabase
       .from("invoices")
       .select("id, customer_id, due_date, total_amount, returned_amount")
       .eq("company_id", companyId)
       .match(branchFilter)
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
       .in("status", ["sent", "partially_paid"])
 
     const { data: pays } = await supabase

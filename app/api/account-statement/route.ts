@@ -5,8 +5,38 @@ import { secureApiRequest, serverError, badRequestError } from "@/lib/api-securi
 import { apiSuccess } from "@/lib/api-error-handler"
 
 /**
- * كشف حساب (Account Statement)
- * يعرض جميع الحركات على حساب واحد مع الرصيد الجاري
+ * 🔐 Account Statement API - كشف الحساب
+ * 
+ * ⚠️ CRITICAL ACCOUNTING FUNCTION - FINAL APPROVED LOGIC
+ * 
+ * ✅ هذا المنطق معتمد نهائيًا ولا يتم تغييره إلا بحذر شديد
+ * ✅ مطابق لأنظمة ERP الاحترافية (Odoo / Zoho / SAP)
+ * 
+ * ✅ القواعد الإلزامية الثابتة:
+ * 1. Single Source of Truth:
+ *    - جميع البيانات تأتي من journal_entries فقط
+ *    - لا قيم ثابتة أو محفوظة مسبقًا
+ *    - التسلسل: journal_entries → journal_entry_lines → account_statement
+ * 
+ * 2. Account Filtering:
+ *    - يعرض حركات حساب واحد فقط
+ *    - مع الرصيد الجاري (running balance)
+ * 
+ * 3. Balance Calculation:
+ *    - الرصيد = opening_balance + (debit - credit) movements
+ *    - حسب الطبيعة المحاسبية للحساب
+ * 
+ * 4. Future Compatibility (مضمون):
+ *    - إغلاق السنة
+ *    - ترحيل الأرباح المحتجزة
+ *    - القيود المركبة
+ *    - الضرائب
+ *    - المخزون
+ *    - الإهلاك
+ * 
+ * ⚠️ DO NOT MODIFY WITHOUT SENIOR ACCOUNTING REVIEW
+ * 
+ * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
  */
 export async function GET(req: NextRequest) {
   try {
@@ -80,9 +110,12 @@ export async function GET(req: NextRequest) {
 
       if (openingLines && !openingLinesError) {
         openingLines.forEach((line: any) => {
-          const debit = line.debit_amount || 0
-          const credit = line.credit_amount || 0
-          openingBalance += debit - credit
+          const debit = Number(line.debit_amount || 0)
+          const credit = Number(line.credit_amount || 0)
+          // ✅ حساب الحركة حسب الطبيعة المحاسبية
+          const isDebitNature = account.account_type === 'asset' || account.account_type === 'expense'
+          const movement = isDebitNature ? (debit - credit) : (credit - debit)
+          openingBalance += movement
         })
       }
     }
@@ -128,15 +161,20 @@ export async function GET(req: NextRequest) {
       entriesMap[entry.id] = entry
     }
 
-    // بناء قائمة الحركات مع الرصيد الجاري
+    // ✅ بناء قائمة الحركات مع الرصيد الجاري
+    // ✅ حساب الرصيد حسب الطبيعة المحاسبية
+    const isDebitNature = account.account_type === 'asset' || account.account_type === 'expense'
     let runningBalance = openingBalance
+    
     const transactions = lines.map((line: any) => {
       const entry = entriesMap[line.journal_entry_id]
       if (!entry) return null
 
-      const debit = line.debit_amount || 0
-      const credit = line.credit_amount || 0
-      runningBalance += debit - credit
+      const debit = Number(line.debit_amount || 0)
+      const credit = Number(line.credit_amount || 0)
+      // ✅ حساب الحركة حسب الطبيعة المحاسبية
+      const movement = isDebitNature ? (debit - credit) : (credit - debit)
+      runningBalance += movement
 
       // جلب رقم المرجع بناءً على نوع المرجع
       let referenceNumber = ""

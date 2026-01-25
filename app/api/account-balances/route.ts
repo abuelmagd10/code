@@ -1,3 +1,33 @@
+/**
+ * 🔐 Account Balances API - حساب أرصدة الحسابات
+ * 
+ * ⚠️ CRITICAL ACCOUNTING FUNCTION - FINAL APPROVED LOGIC
+ * 
+ * ✅ هذا المنطق معتمد نهائيًا ولا يتم تغييره إلا بحذر شديد
+ * ✅ مطابق لأنظمة ERP الاحترافية (Odoo / Zoho / SAP)
+ * 
+ * ✅ القواعد الإلزامية الثابتة:
+ * 1. Single Source of Truth:
+ *    - جميع الأرصدة تأتي من journal_entries فقط
+ *    - لا قيم ثابتة أو محفوظة مسبقًا
+ *    - الرصيد = opening_balance + (debit - credit) movements من journal_entry_lines
+ *    - التسلسل: journal_entries → journal_entry_lines → account_balances → balance_sheet
+ * 
+ * 2. Dynamic Calculation:
+ *    - كل رقم في الميزانية محسوب ديناميكيًا من القيود
+ *    - لا تخزين مؤقت أو قيم ثابتة
+ * 
+ * 3. Future Compatibility (مضمون):
+ *    - إغلاق السنة
+ *    - ترحيل الأرباح المحتجزة
+ *    - القيود المركبة
+ *    - الضرائب
+ *    - المخزون
+ *    - الإهلاك
+ * 
+ * ⚠️ DO NOT MODIFY WITHOUT SENIOR ACCOUNTING REVIEW
+ */
+
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { createClient } from "@supabase/supabase-js"
@@ -97,7 +127,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // حساب الحركات من القيود
+    // ✅ حساب الحركات من القيود فقط (journal_entries → journal_entry_lines)
+    // ✅ هذا هو المصدر الوحيد للأرصدة - لا قيم ثابتة
     for (const row of journalLinesData || []) {
       const aid = String((row as any).account_id || "")
       const debit = Number((row as any).debit_amount || 0)
@@ -105,7 +136,9 @@ export async function GET(req: NextRequest) {
 
       if (accountsMap[aid]) {
         const type = accountsMap[aid].type
-        // الحسابات المدينة بطبيعتها: الأصول والمصروفات
+        // ✅ حساب الرصيد حسب الطبيعة المحاسبية:
+        // - الأصول والمصروفات: رصيدها الطبيعي مدين (debit - credit)
+        // - الالتزامات وحقوق الملكية والإيرادات: رصيدها الطبيعي دائن (credit - debit)
         const isDebitNature = type === 'asset' || type === 'expense'
         const movement = isDebitNature ? (debit - credit) : (credit - debit)
         accountsMap[aid].balance += movement

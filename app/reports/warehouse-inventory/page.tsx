@@ -114,7 +114,11 @@ export default function WarehouseInventoryReportPage() {
     return branches.filter(b => b.id === userBranchId)
   }, [branches, canOverride, userBranchId])
 
-  // Load inventory data
+  /**
+   * ✅ تحميل بيانات مخزون المخازن
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من inventory_transactions مباشرة)
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadInventoryReport = async () => {
     if (!companyId) return
     if (!selectedBranch || !selectedCostCenterId) return
@@ -127,7 +131,8 @@ export default function WarehouseInventoryReportPage() {
       for (const wh of whsToAnalyze) {
         const branch = branches.find(b => b.id === wh.branch_id)
 
-        // Get inventory transactions for this warehouse
+        // ✅ جلب حركات المخزون (تقرير تشغيلي - من inventory_transactions مباشرة)
+        // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
         const { data: transactions } = await supabase
           .from("inventory_transactions")
           .select("quantity_change, transaction_type")
@@ -135,6 +140,7 @@ export default function WarehouseInventoryReportPage() {
           .eq("branch_id", selectedBranch)
           .eq("warehouse_id", wh.id)
           .eq("cost_center_id", selectedCostCenterId)
+          .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الحركات المحذوفة
           .gte("created_at", dateFrom)
           .lte("created_at", dateTo + "T23:59:59")
 

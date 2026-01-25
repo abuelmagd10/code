@@ -1,3 +1,25 @@
+/**
+ * 📊 Purchases Report API - تقرير المشتريات
+ * 
+ * ⚠️ OPERATIONAL REPORT (NOT ACCOUNTING REPORT)
+ * 
+ * ✅ هذا تقرير تشغيلي - يمكنه القراءة من bills مباشرة
+ * ✅ ليس تقرير محاسبي رسمي (التقارير المحاسبية تعتمد على journal_entries فقط)
+ * 
+ * ✅ القواعد:
+ * 1. مصدر البيانات: bills و bill_items (تشغيلي)
+ * 2. التجميع: حسب المورد
+ * 3. الفلترة: حسب التاريخ، الحالة، المورد، المنتج، نوع العنصر
+ * 4. الفروع: دعم كامل للفروع ومراكز التكلفة
+ * 
+ * ⚠️ ملاحظة مهمة:
+ * - هذا التقرير تشغيلي وليس محاسبي رسمي
+ * - التقارير المحاسبية الرسمية تعتمد على journal_entries فقط
+ * - هذا التقرير يستخدم bills لتوضيح تشغيلي
+ * 
+ * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
+ */
+
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
@@ -37,7 +59,8 @@ export async function GET(req: NextRequest) {
     const supplierId = searchParams.get("supplier_id") || ""
     const productId = searchParams.get("product_id") || ""
 
-    // Get bills with items and product info for item_type filtering
+    // ✅ جلب الفواتير (تقرير تشغيلي - من bills مباشرة)
+    // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
     let billsQuery = admin
       .from("bills")
       .select("id, total_amount, bill_date, status, supplier_id, suppliers(name)")

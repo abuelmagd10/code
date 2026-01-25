@@ -1,3 +1,24 @@
+/**
+ * 📊 Sales Invoices Detail API - تفصيل فواتير المبيعات
+ * 
+ * ⚠️ OPERATIONAL REPORT (NOT ACCOUNTING REPORT)
+ * 
+ * ✅ هذا تقرير تشغيلي - يمكنه القراءة من invoices مباشرة
+ * ✅ ليس تقرير محاسبي رسمي (التقارير المحاسبية تعتمد على journal_entries فقط)
+ * 
+ * ✅ القواعد:
+ * 1. مصدر البيانات: invoices (تشغيلي)
+ * 2. الفلترة: حسب التاريخ، الحالة، العميل
+ * 3. العرض: تفاصيل كل فاتورة (رقم، عميل، تاريخ، مبالغ)
+ * 
+ * ⚠️ ملاحظة مهمة:
+ * - هذا التقرير تشغيلي وليس محاسبي رسمي
+ * - التقارير المحاسبية الرسمية تعتمد على journal_entries فقط
+ * - هذا التقرير يستخدم invoices لتوضيح تشغيلي
+ * 
+ * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+ */
+
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
@@ -34,11 +55,13 @@ export async function GET(req: NextRequest) {
     const status = String(searchParams.get("status") || "paid")
     const customerId = searchParams.get("customer_id") || ""
 
+    // ✅ جلب الفواتير (تقرير تشغيلي - من invoices مباشرة)
+    // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
     let q = admin
       .from('invoices')
       .select('id, invoice_number, customer_id, invoice_date, status, subtotal, tax_amount, total_amount, paid_amount, customers(name)')
       .eq('company_id', companyId)
-      .or("is_deleted.is.null,is_deleted.eq.false")
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
       .gte('invoice_date', from)
       .lte('invoice_date', to)
       .order('invoice_date', { ascending: true })

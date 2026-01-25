@@ -80,6 +80,11 @@ export default function ShippingReportPage() {
     if (permChecked && canRead) loadData()
   }, [permChecked, canRead, statusFilter, dateFrom, dateTo])
 
+  /**
+   * ✅ تحميل بيانات الشحنات
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من shipments مباشرة)
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadData = async () => {
     try {
       setIsLoading(true)
@@ -87,10 +92,13 @@ export default function ShippingReportPage() {
       const cid = await getActiveCompanyId(supabase)
       if (!cid) return
 
+      // ✅ جلب الشحنات (تقرير تشغيلي - من shipments مباشرة)
+      // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
       let query = supabase
         .from("shipments")
         .select("*, invoices(invoice_number), shipping_providers(provider_name)")
         .eq("company_id", cid)
+        .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الشحنات المحذوفة
         .order("created_at", { ascending: false })
 
       if (statusFilter !== "all") query = query.eq("status", statusFilter)

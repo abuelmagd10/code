@@ -81,7 +81,11 @@ export default function CostCenterAnalysisPage() {
     return costCenters.filter(cc => cc.branch_id === selectedBranch)
   }, [costCenters, selectedBranch])
 
-  // Load analysis data
+  /**
+   * ✅ تحميل بيانات تحليل مراكز التكلفة
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من invoices, bills, sales_returns مباشرة)
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadAnalysis = async () => {
     if (!companyId) return
     setLoading(true)
@@ -93,32 +97,36 @@ export default function CostCenterAnalysisPage() {
       for (const cc of ccsToAnalyze) {
         const branch = branches.find(b => b.id === cc.branch_id)
 
-        // Get invoices for this cost center
+        // ✅ جلب الفواتير (تقرير تشغيلي - من invoices مباشرة)
+        // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
         const { data: invoices } = await supabase
           .from("invoices")
           .select("total_amount")
           .eq("company_id", companyId)
           .eq("cost_center_id", cc.id)
+          .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
           .gte("invoice_date", dateFrom)
           .lte("invoice_date", dateTo)
           .in("status", ["sent", "paid", "partially_paid"])
 
-        // Get bills for this cost center
+        // ✅ جلب فواتير الشراء (تقرير تشغيلي - من bills مباشرة)
         const { data: bills } = await supabase
           .from("bills")
           .select("total_amount")
           .eq("company_id", companyId)
           .eq("cost_center_id", cc.id)
+          .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
           .gte("bill_date", dateFrom)
           .lte("bill_date", dateTo)
           .in("status", ["sent", "received", "paid", "partially_paid"])
 
-        // Get returns for this cost center
+        // ✅ جلب المرتجعات (تقرير تشغيلي - من sales_returns مباشرة)
         const { data: returns } = await supabase
           .from("sales_returns")
           .select("total_amount")
           .eq("company_id", companyId)
           .eq("cost_center_id", cc.id)
+          .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء المرتجعات المحذوفة
           .gte("return_date", dateFrom)
           .lte("return_date", dateTo)
 

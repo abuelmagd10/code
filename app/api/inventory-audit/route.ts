@@ -1,3 +1,24 @@
+/**
+ * 📊 Inventory Audit API - مراجعة المخزون
+ * 
+ * ⚠️ OPERATIONAL REPORT (NOT ACCOUNTING REPORT)
+ * 
+ * ✅ هذا تقرير تشغيلي - يقارن بين invoices/bills و inventory_transactions
+ * ✅ ليس تقرير محاسبي رسمي (التقارير المحاسبية تعتمد على journal_entries فقط)
+ * 
+ * ✅ القواعد:
+ * 1. مصدر البيانات: invoices, bills, inventory_transactions (تشغيلي)
+ * 2. المقارنة: بين الكميات المتوقعة (من الفواتير) والكميات الفعلية (من حركات المخزون)
+ * 3. الهدف: اكتشاف أي اختلافات في حركات المخزون
+ * 
+ * ⚠️ ملاحظة مهمة:
+ * - هذا التقرير تشغيلي وليس محاسبي رسمي
+ * - يستخدم invoices و bills لمقارنة تشغيلية
+ * - التقارير المحاسبية الرسمية تعتمد على journal_entries فقط
+ * 
+ * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+ */
+
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
@@ -61,11 +82,14 @@ export async function GET(req: NextRequest) {
       return badRequestError("Branch missing required defaults")
     }
 
+    // ✅ جلب الفواتير (تقرير تشغيلي - من invoices مباشرة)
+    // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
     const { data: invoices } = await client
       .from('invoices')
       .select('id, invoice_number, invoice_date')
       .eq('company_id', companyId)
       .eq('branch_id', branchId)
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
       .gte('invoice_date', from)
       .lte('invoice_date', to)
     const invIds = (invoices || []).map((i: any) => i.id)

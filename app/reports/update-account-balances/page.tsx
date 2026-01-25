@@ -62,12 +62,19 @@ export default function UpdateAccountBalancesPage() {
     }
   }
 
+  /**
+   * ✅ حساب الأرصدة من القيود المحاسبية
+   * ✅ ACCOUNTING FUNCTION - يستخدم journal_entries فقط
+   * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
+   */
   const computeBalances = async (): Promise<Record<string, { debit: number; credit: number }>> => {
     if (!companyId) return {}
+    // ✅ جلب القيود المحاسبية (من journal_entries فقط)
     const { data: lines, error } = await supabase
       .from("journal_entry_lines")
-      .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id)")
+      .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id, deleted_at)")
       .eq("journal_entries.company_id", companyId)
+      .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة
     if (error) {
       console.error("Failed loading journal lines:", error)
       return {}

@@ -68,6 +68,12 @@ export default function BankTransactionsReport() {
     } finally { setLoading(false) }
   }
 
+  /**
+   * ✅ تحميل بيانات حركات الحسابات البنكية
+   * ✅ ACCOUNTING REPORT - تقرير محاسبي (من journal_entries فقط)
+   * ✅ يستخدم journal_entries و journal_entry_lines لحسابات cash/bank
+   * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
+   */
   const loadTransactions = async () => {
     try {
       setLoading(true)
@@ -80,11 +86,12 @@ export default function BankTransactionsReport() {
 
       if (accountIds.length === 0) { setTransactions([]); return }
 
+      // ✅ جلب القيود المحاسبية (تقرير محاسبي - من journal_entries فقط)
       const { data: entries } = await supabase
         .from("journal_entries")
         .select("id, entry_date, description, reference_type, branch_id, cost_center_id")
         .eq("company_id", cid)
-        .is("deleted_at", null)
+        .is("deleted_at", null) // ✅ استثناء القيود المحذوفة
         .gte("entry_date", dateFrom)
         .lte("entry_date", dateTo)
         .order("entry_date", { ascending: false })

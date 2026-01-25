@@ -112,6 +112,12 @@ export default function SalesReportPage() {
     }
   }, [fromDate, toDate, itemTypeFilter, statusFilter, customerId])
 
+  /**
+   * ✅ تحميل بيانات تقرير المبيعات
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من invoices مباشرة)
+   * ✅ يعرض المبيعات حسب العميل مع إمكانية الفلترة حسب المنتج/الخدمة
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadSalesData = async () => {
     if (!fromDate || !toDate) return // Guard against empty dates
     try {
@@ -124,6 +130,7 @@ export default function SalesReportPage() {
       })
       if (customerId) params.set('customer_id', customerId)
 
+      // ✅ استخدام API تقرير المبيعات (تقرير تشغيلي)
       const url = `/api/report-sales?${params.toString()}`
       const res = await fetch(url)
 

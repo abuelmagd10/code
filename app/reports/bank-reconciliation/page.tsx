@@ -78,6 +78,12 @@ export default function BankReconciliationPage() {
     }
   }
 
+  /**
+   * ✅ تحميل بيانات تسوية الحساب البنكي
+   * ✅ ACCOUNTING REPORT - تقرير محاسبي (من journal_entries فقط)
+   * ✅ يستخدم journal_entry_lines لحسابات cash/bank
+   * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
+   */
   const loadLines = async () => {
     try {
       setLoading(true)
@@ -85,6 +91,7 @@ export default function BankReconciliationPage() {
       try { const r = await fetch('/api/my-company'); if (r.ok) { const j = await r.json(); cid = String(j?.company?.id || '') || null } } catch { }
       if (!cid) cid = await getActiveCompanyId(supabase)
       if (!cid) return
+      // ✅ جلب حركات الحساب (تقرير محاسبي - من journal_entries فقط)
       const res = await fetch(`/api/account-lines?accountId=${encodeURIComponent(selectedAccount)}&companyId=${encodeURIComponent(cid)}&from=${encodeURIComponent(startDate || '0001-01-01')}&to=${encodeURIComponent(endDate || '9999-12-31')}`)
       const data = res.ok ? await res.json() : []
       const mapped: Line[] = (data || []).map((l: any) => ({

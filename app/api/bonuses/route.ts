@@ -61,12 +61,16 @@ export async function GET(req: NextRequest) {
       })
     }
 
+    // ✅ جلب البونصات (تقرير تشغيلي - من user_bonuses مباشرة)
+    // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
+    // التقارير المحاسبية الرسمية تعتمد على journal_entries فقط
     let query = client.from("user_bonuses").select(`
       *,
       invoices:invoice_id (invoice_number, total_amount, invoice_date, customer_name),
       sales_orders:sales_order_id (so_number),
       employees:employee_id (full_name, employee_code)
     `).eq("company_id", companyId)
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء البونصات المحذوفة
 
     if (userId) query = query.eq("user_id", userId)
     if (status) query = query.eq("status", status)
@@ -145,7 +149,7 @@ export async function POST(req: NextRequest) {
     // Get company bonus settings
     const { data: company, error: companyErr } = await dbClient
       .from("companies")
-      .select("bonus_enabled, bonus_type, bonus_percentage, bonus_fixed_amount, bonus_points_per_value, bonus_daily_cap, bonus_monthly_cap, bonus_payout_mode, currency")
+      .select("bonus_enabled, bonus_type, bonus_percentage, bonus_fixed_amount, bonus_points_per_value, bonus_daily_cap, bonus_monthly_cap, bonus_payout_mode, base_currency, currency")
       .eq("id", companyId)
       .single()
 
@@ -260,7 +264,7 @@ export async function POST(req: NextRequest) {
         invoice_id: invoiceId,
         sales_order_id: invoice.sales_order_id || null,
         bonus_amount: bonusAmount,
-        bonus_currency: invoice.currency || company.base_currency || "EGP",
+        bonus_currency: invoice.currency || (company as any).base_currency || (company as any).currency || "EGP",
         bonus_type: company.bonus_type,
         calculation_base: invoiceTotal,
         calculation_rate: calculationRate,

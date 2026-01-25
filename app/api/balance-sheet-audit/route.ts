@@ -1,3 +1,19 @@
+/**
+ * 📊 Balance Sheet Audit API - فحص توازن الميزانية العمومية
+ * 
+ * ✅ ACCOUNTING AUDIT FUNCTION - فحص محاسبي
+ * 
+ * ✅ هذا API يفحص توازن الميزانية العمومية ويحدد أي اختلافات
+ * ✅ يستخدم journal_entries فقط كمصدر للبيانات
+ * 
+ * ✅ القواعد:
+ * 1. مصدر البيانات: journal_entries و journal_entry_lines (محاسبي)
+ * 2. الفحص: التحقق من معادلة الميزانية (الأصول = الالتزامات + حقوق الملكية)
+ * 3. الكشف: عن الأرصدة السالبة والقيود غير المتوازنة
+ * 
+ * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
+ */
+
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createSSR } from "@/lib/supabase/server"
 import { createClient } from "@supabase/supabase-js"
@@ -55,10 +71,11 @@ export async function GET(req: NextRequest) {
     const parentIds = new Set(accounts?.filter((a: any) => a.parent_id).map((a: any) => a.parent_id))
     const leafAccounts = accounts?.filter((a: any) => !parentIds.has(a.id)) || []
 
-    // 2. جلب جميع سطور القيود
+    // 2. جلب جميع سطور القيود (تقرير محاسبي - من journal_entries فقط)
     const { data: lines, error: linesError } = await db
       .from("journal_entry_lines")
-      .select("journal_entry_id, account_id, debit_amount, credit_amount")
+      .select("journal_entry_id, account_id, debit_amount, credit_amount, journal_entries!inner(deleted_at)")
+      .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة
 
     if (linesError) return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب القيود", linesError.message)
 
@@ -113,10 +130,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 5. فحص القيود غير المتوازنة
+    // 5. فحص القيود غير المتوازنة (تقرير محاسبي - من journal_entries فقط)
     const { data: entries } = await db
       .from("journal_entries")
       .select("id, entry_date, description, reference_type, reference_id")
+      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة
       .eq("company_id", companyId)
 
     const entryTotals: Record<string, { debit: number, credit: number }> = {}

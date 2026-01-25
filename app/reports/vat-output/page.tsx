@@ -69,7 +69,8 @@ export default function VatOutputReportPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/report-sales-invoices-detail?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&status=${encodeURIComponent(status)}`)
+      // ✅ استخدام API الجديد من journal_entries
+      const res = await fetch(`/api/vat-output?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&status=${encodeURIComponent(status)}`)
 
       if (!res.ok) {
         const errorData = await res.json()
@@ -77,9 +78,14 @@ export default function VatOutputReportPage() {
       }
 
       const result = await res.json()
+      // ✅ API الجديد يعيد { success: true, data: { invoices, totalVat, totalSales, period } }
       const data = result.data || result
 
-      if (Array.isArray(data)) {
+      if (data && data.invoices && Array.isArray(data.invoices)) {
+        setRows(data.invoices)
+        setError(null)
+      } else if (Array.isArray(data)) {
+        // ✅ للتوافق مع API القديم
         setRows(data)
         setError(null)
       } else {

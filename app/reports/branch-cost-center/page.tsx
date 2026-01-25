@@ -95,33 +95,43 @@ export default function BranchCostCenterReportPage() {
     return filtered
   }, [warehouses, selectedBranch, selectedCostCenter])
 
-  // Load report data
+  /**
+   * ✅ تحميل بيانات تقرير الفروع ومراكز التكلفة
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من invoices, bills, sales_returns مباشرة)
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadReport = async () => {
     if (!companyId) return
     setLoading(true)
 
     try {
-      // Build filters
+      // ✅ جلب الفواتير (تقرير تشغيلي - من invoices مباشرة)
+      // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
       let invoiceQuery = supabase
         .from("invoices")
         .select("total_amount, subtotal, tax_amount")
         .eq("company_id", companyId)
+        .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
         .gte("invoice_date", dateFrom)
         .lte("invoice_date", dateTo)
         .in("status", ["sent", "paid", "partially_paid"])
 
+      // ✅ جلب فواتير الشراء (تقرير تشغيلي - من bills مباشرة)
       let billQuery = supabase
         .from("bills")
         .select("total_amount, subtotal, tax_amount")
         .eq("company_id", companyId)
+        .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
         .gte("bill_date", dateFrom)
         .lte("bill_date", dateTo)
         .in("status", ["sent", "received", "paid", "partially_paid"])
 
+      // ✅ جلب المرتجعات (تقرير تشغيلي - من sales_returns مباشرة)
       let salesReturnQuery = supabase
         .from("sales_returns")
         .select("total_amount")
         .eq("company_id", companyId)
+        .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء المرتجعات المحذوفة
         .gte("return_date", dateFrom)
         .lte("return_date", dateTo)
 

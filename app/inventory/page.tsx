@@ -323,7 +323,12 @@ export default function InventoryPage() {
     }
   }
 
-  // دالة تحميل بيانات المخزون حسب المخزن المختار
+  /**
+   * ✅ تحميل بيانات المخزون
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من inventory_transactions مباشرة)
+   * ✅ يعرض: كميات المخزون الحالي، الأصناف منخفضة الكمية، حركة الصنف
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadInventoryData = async (context: UserContext, branchId: string, warehouseId: string, costCenterId: string) => {
     try {
       setIsLoadingInventory(true) // 🆕 بدء التحميل
@@ -361,6 +366,8 @@ export default function InventoryPage() {
         createdByUserId: null
       }
       
+      // ✅ جلب حركات المخزون (تقرير تشغيلي - من inventory_transactions مباشرة)
+      // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
       // 🔐 تطبيق الفلاتر الإلزامية على استعلامات المخزون
       // 📌 ملاحظة: لحركات transfer_in و transfer_out، نأخذها بغض النظر عن cost_center_id
       let transactionsQuery = supabase
@@ -398,6 +405,7 @@ export default function InventoryPage() {
       })
       setTransactions(sorted)
 
+      // ✅ حساب الكميات من inventory_transactions (تقرير تشغيلي)
       // 🔐 حساب الكميات من inventory_transactions مع تطبيق الفلاتر الإلزامية
       // 📌 ملاحظة مهمة: لحركات transfer_in و transfer_out، يجب أن نأخذها بغض النظر عن cost_center_id
       // لأن المخزون المحول قد يكون في cost_center_id مختلف لكن في نفس الفرع والمخزن
@@ -405,6 +413,7 @@ export default function InventoryPage() {
       let allTransactionsQuery = supabase
         .from("inventory_transactions")
         .select("product_id, quantity_change, transaction_type, cost_center_id")
+        .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الحركات المحذوفة
       
       // تطبيق قواعد الحوكمة الموحدة (تطبق company_id, branch_id تلقائياً)
       // لكن بدون cost_center_id و warehouse_id لأننا سنتعامل معهما يدوياً

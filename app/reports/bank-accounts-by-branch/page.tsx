@@ -43,17 +43,26 @@ export default function BankAccountsByBranchReport() {
 
   useEffect(() => { loadData() }, [])
 
+  /**
+   * ✅ تحميل بيانات الحسابات البنكية حسب الفرع
+   * ✅ ACCOUNTING REPORT - تقرير محاسبي (من journal_entries فقط)
+   * ✅ يستخدم journal_entry_lines لحسابات cash/bank
+   * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
+   */
   const loadData = async () => {
     try {
       setLoading(true)
       const cid = await getActiveCompanyId(supabase)
       if (!cid) return
 
+      // ✅ جلب القيود المحاسبية (تقرير محاسبي - من journal_entries فقط)
       const [branchRes, ccRes, accRes, linesRes] = await Promise.all([
         supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true),
         supabase.from("cost_centers").select("id, cost_center_name, cost_center_code, branch_id").eq("company_id", cid).eq("is_active", true),
         supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id, cost_center_id, branches(name), cost_centers(cost_center_name)").eq("company_id", cid),
-        supabase.from("journal_entry_lines").select("account_id, debit_amount, credit_amount"),
+        supabase.from("journal_entry_lines")
+          .select("account_id, debit_amount, credit_amount, journal_entries!inner(deleted_at)")
+          .is("journal_entries.deleted_at", null), // ✅ استثناء القيود المحذوفة
       ])
 
       setBranches((branchRes.data || []) as Branch[])

@@ -87,6 +87,16 @@ export default function IncomeStatementPage() {
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
+  /**
+   * 🔐 تحميل بيانات قائمة الدخل من journal_entries فقط
+   * 
+   * ✅ القواعد الإلزامية:
+   * 1. جميع البيانات تأتي من journal_entries → journal_entry_lines
+   * 2. لا قيم ثابتة أو محفوظة مسبقًا
+   * 3. صافي الدخل يجب أن يتطابق مع الميزانية العمومية
+   * 
+   * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
+   */
   const loadIncomeData = async (fromDate: string, toDate: string) => {
     try {
       setIsLoading(true)
@@ -97,6 +107,7 @@ export default function IncomeStatementPage() {
         return
       }
 
+      // ✅ جلب البيانات من API الذي يعتمد فقط على journal_entries
       const res = await fetch(`/api/income-statement?companyId=${encodeURIComponent(companyId)}&from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`)
 
       if (!res.ok) {

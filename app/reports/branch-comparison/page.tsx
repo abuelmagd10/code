@@ -71,7 +71,11 @@ export default function BranchComparisonReportPage() {
     })()
   }, [supabase])
 
-  // Load comparison data
+  /**
+   * ✅ تحميل بيانات مقارنة الفروع
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من invoices, bills, sales_returns مباشرة)
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadComparison = async () => {
     if (!companyId || branches.length === 0) return
     setLoading(true)
@@ -80,32 +84,36 @@ export default function BranchComparisonReportPage() {
       const stats: BranchStats[] = []
 
       for (const branch of branches) {
-        // Get invoices for this branch
+        // ✅ جلب الفواتير (تقرير تشغيلي - من invoices مباشرة)
+        // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
         const { data: invoices } = await supabase
           .from("invoices")
           .select("total_amount, subtotal")
           .eq("company_id", companyId)
           .eq("branch_id", branch.id)
+          .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
           .gte("invoice_date", dateFrom)
           .lte("invoice_date", dateTo)
           .in("status", ["sent", "paid", "partially_paid"])
 
-        // Get bills for this branch
+        // ✅ جلب فواتير الشراء (تقرير تشغيلي - من bills مباشرة)
         const { data: bills } = await supabase
           .from("bills")
           .select("total_amount, subtotal")
           .eq("company_id", companyId)
           .eq("branch_id", branch.id)
+          .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
           .gte("bill_date", dateFrom)
           .lte("bill_date", dateTo)
           .in("status", ["sent", "received", "paid", "partially_paid"])
 
-        // Get returns for this branch
+        // ✅ جلب المرتجعات (تقرير تشغيلي - من sales_returns مباشرة)
         const { data: returns } = await supabase
           .from("sales_returns")
           .select("total_amount")
           .eq("company_id", companyId)
           .eq("branch_id", branch.id)
+          .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء المرتجعات المحذوفة
           .gte("return_date", dateFrom)
           .lte("return_date", dateTo)
 

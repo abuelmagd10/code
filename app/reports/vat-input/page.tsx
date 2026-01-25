@@ -40,6 +40,7 @@ export default function VatInputReportPage() {
   const [status, setStatus] = useState<string>('all')
   const [rows, setRows] = useState<BillRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
@@ -60,26 +61,43 @@ export default function VatInputReportPage() {
 
   const loadData = async () => {
     setLoading(true)
+    setError(null)
     try {
-      const cid = await getCompanyId(supabase)
-      let q = supabase
-        .from('bills')
-        .select('id, bill_number, supplier_id, bill_date, status, subtotal, tax_amount, total_amount')
-        .eq('company_id', cid)
-        .gte('bill_date', fromDate)
-        .lte('bill_date', toDate)
-        .order('bill_date', { ascending: true })
-      if (status === 'all') q = q.in('status', ['sent','partially_paid','paid'])
-      else q = q.eq('status', status)
-      const { data, error } = await q
-      if (error) throw error
-      const supIds = Array.from(new Set((data || []).map((d: any) => String(d.supplier_id))))
-      const { data: suppliers } = await supabase.from('suppliers').select('id,name').in('id', supIds)
-      const supMap = new Map((suppliers || []).map((s: any) => [String(s.id), String(s.name || '')]))
-      setRows((data || []).map((d: any) => ({ id: String(d.id), bill_number: String(d.bill_number || ''), supplier_id: String(d.supplier_id || ''), supplier_name: supMap.get(String(d.supplier_id || '')) || '', bill_date: String(d.bill_date || ''), status: String(d.status || ''), subtotal: Number(d.subtotal || 0), tax_amount: Number(d.tax_amount || 0), total_amount: Number(d.total_amount || 0) })))
-    } catch {
+      // ✅ استخدام API الجديد من journal_entries
+      const res = await fetch(`/api/vat-input?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&status=${encodeURIComponent(status)}`)
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.message || errorData.error || 'فشل في تحميل تقرير ضريبة المدخلات')
+      }
+
+      const result = await res.json()
+      // ✅ API الجديد يعيد { success: true, data: { bills, totalVat, totalPurchases, period } }
+      const data = result.data || result
+
+      if (data && data.bills && Array.isArray(data.bills)) {
+        setRows(data.bills.map((bill: any) => ({
+          id: String(bill.id),
+          bill_number: String(bill.bill_number || ''),
+          supplier_id: String(bill.supplier_id || ''),
+          supplier_name: String(bill.supplier_name || ''),
+          bill_date: String(bill.bill_date || ''),
+          status: String(bill.status || ''),
+          subtotal: Number(bill.subtotal || 0),
+          tax_amount: Number(bill.tax_amount || 0),
+          total_amount: Number(bill.total_amount || 0)
+        })))
+        setError(null)
+      } else {
+        throw new Error('البيانات المستلمة غير صحيحة')
+      }
+    } catch (error: any) {
+      console.error("Error loading VAT input:", error)
+      setError(error.message || 'حدث خطأ أثناء تحميل تقرير ضريبة المدخلات')
       setRows([])
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { loadData() }, [fromDate, toDate, status])

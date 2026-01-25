@@ -57,18 +57,26 @@ export default function PurchaseBillsDetailReportPage() {
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
+  /**
+   * ✅ تحميل بيانات فواتير المشتريات
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من bills مباشرة)
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadData = async () => {
     setLoading(true)
     try {
       const cid = await getCompanyId(supabase)
+      // ✅ جلب الفواتير (تقرير تشغيلي - من bills مباشرة)
+      // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
       let q = supabase
         .from('bills')
         .select('id, bill_number, supplier_id, bill_date, status, total_amount, paid_amount')
         .eq('company_id', cid)
+        .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
         .gte('bill_date', fromDate)
         .lte('bill_date', toDate)
         .order('bill_date', { ascending: true })
-      // Use 'received' instead of 'sent' for bills (sent is for invoices)
+      // ✅ Use 'received' instead of 'sent' for bills (sent is for invoices)
       if (status === 'all') q = q.in('status', ['received','partially_paid','paid'])
       else if (status === 'sent') q = q.eq('status', 'received') // Map 'sent' to 'received' for bills
       else q = q.eq('status', status)

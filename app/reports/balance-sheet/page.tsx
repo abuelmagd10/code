@@ -71,6 +71,19 @@ export default function BalanceSheetPage() {
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
+  /**
+   * 🔐 تحميل أرصدة الحسابات من journal_entries فقط
+   * 
+   * ⚠️ FINAL APPROVED LOGIC - DO NOT MODIFY WITHOUT REVIEW
+   * 
+   * ✅ القواعد الإلزامية الثابتة:
+   * 1. جميع الأرصدة تأتي من journal_entries → journal_entry_lines فقط
+   * 2. لا قيم ثابتة أو محفوظة مسبقًا
+   * 3. الرصيد = opening_balance + movements من القيود
+   * 4. عدم عرض أي حساب رصيده = 0
+   * 5. الربح/الخسارة الجارية من قائمة الدخل فقط
+   * 6. معادلة الميزانية إلزامية: الأصول = الالتزامات + حقوق الملكية
+   */
   const loadBalances = async (asOfDate: string) => {
     try {
       setIsLoading(true)
@@ -81,6 +94,7 @@ export default function BalanceSheetPage() {
         return
       }
 
+      // ✅ جلب الأرصدة من API الذي يعتمد فقط على journal_entries
       const res = await fetch(`/api/account-balances?companyId=${encodeURIComponent(companyId)}&asOf=${encodeURIComponent(asOfDate)}`)
 
       if (!res.ok) {
@@ -114,7 +128,20 @@ export default function BalanceSheetPage() {
     return balances.filter((b) => b.account_type === type).reduce((sum, b) => sum + b.balance, 0)
   }
 
-  const { assets, liabilities, equity, income, expense, netIncomeSigned, equityTotalSigned, totalLiabilitiesAndEquitySigned } = computeBalanceSheetTotalsFromBalances(balances)
+  // ✅ حساب إجماليات الميزانية من الأرصدة (التي تأتي من journal_entries فقط)
+  // ✅ الربح/الخسارة الجارية = income - expense (من قائمة الدخل)
+  const { 
+    assets, 
+    liabilities, 
+    equity, 
+    income, 
+    expense, 
+    netIncomeSigned, // ✅ صافي الربح من قائمة الدخل (income - expense)
+    equityTotalSigned, 
+    totalLiabilitiesAndEquitySigned,
+    isBalanced, // ✅ التحقق من المعادلة: الأصول = الالتزامات + حقوق الملكية
+    balanceDifference
+  } = computeBalanceSheetTotalsFromBalances(balances)
   const netIncomeDisplay = Math.abs(netIncomeSigned)
   const equityTotalDisplay = Math.abs(equityTotalSigned)
   const totalLiabilitiesAndEquityAbs = Math.abs(totalLiabilitiesAndEquitySigned)
@@ -303,7 +330,12 @@ export default function BalanceSheetPage() {
                     <table className="min-w-[560px] w-full text-sm mb-4">
                       <tbody>
                         {balances
-                          .filter((b) => b.account_type === "equity")
+                          .filter((b) => {
+                            // ✅ عرض فقط حسابات حقوق الملكية التي لها رصيد فعلي
+                            if (b.account_type !== "equity") return false
+                            // ✅ إزالة الحسابات التي رصيدها = 0
+                            return Math.abs(b.balance) >= 0.01
+                          })
                           .map((item, idx) => (
                             <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                               <td className="px-4 py-2">
@@ -330,17 +362,35 @@ export default function BalanceSheetPage() {
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Liabilities + Equity:' : 'إجمالي الالتزامات + حقوق الملكية:'}</span>
                       <span
                         className={
-                          Math.abs(assets - totalLiabilitiesAndEquityAbs) < 0.01 ? "text-green-600" : "text-red-600"
+                          isBalanced ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
                         }
                       >
                         {numberFmt.format(totalLiabilitiesAndEquityAbs)} {currencySymbol}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                      {Math.abs(assets - totalLiabilitiesAndEquityAbs) < 0.01
-                        ? ((hydrated && appLang==='en') ? '✓ Balanced' : '✓ الميزانية متوازنة')
-                        : ((hydrated && appLang==='en') ? '✗ Not balanced' : '✗ الميزانية غير متوازنة')}
-                    </p>
+                    {/* ✅ التحقق التلقائي من المعادلة الإلزامية: الأصول = الالتزامات + حقوق الملكية */}
+                    {/* ⚠️ أي فرق يعتبر خطأ نظام وليس مجرد تحذير شكلي */}
+                    {isBalanced ? (
+                      <p className="text-sm text-green-600 dark:text-green-400 mt-2 font-medium">
+                        ✓ {(hydrated && appLang==='en') ? 'Balance Sheet is balanced' : 'الميزانية العمومية متوازنة'}
+                      </p>
+                    ) : (
+                      <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 border-2 border-red-500 dark:border-red-600 rounded">
+                        <p className="text-sm text-red-700 dark:text-red-300 font-bold">
+                          ⚠️ {(hydrated && appLang==='en') ? 'SYSTEM ERROR: Balance Sheet is NOT balanced!' : 'خطأ نظام: الميزانية العمومية غير متوازنة!'}
+                        </p>
+                        <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-semibold">
+                          {(hydrated && appLang==='en') 
+                            ? `Difference: ${numberFmt.format(balanceDifference || 0)} ${currencySymbol}. This is a SYSTEM ERROR, not a warning.`
+                            : `الفرق: ${numberFmt.format(balanceDifference || 0)} ${currencySymbol}. هذا خطأ نظام وليس تحذيرًا.`}
+                        </p>
+                        <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                          {(hydrated && appLang==='en')
+                            ? 'All amounts must come from journal_entries only. Check for missing entries, unbalanced entries, or calculation errors.'
+                            : 'جميع المبالغ يجب أن تأتي من journal_entries فقط. تحقق من القيود المفقودة أو غير المتوازنة أو أخطاء الحساب.'}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>

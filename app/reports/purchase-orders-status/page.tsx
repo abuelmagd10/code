@@ -56,6 +56,11 @@ export default function PurchaseOrdersStatusReport() {
 
   useEffect(() => { loadData() }, [])
 
+  /**
+   * ✅ تحميل بيانات حالة أوامر الشراء
+   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من purchase_orders و bills مباشرة)
+   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   */
   const loadData = async () => {
     try {
       setIsLoading(true)
@@ -63,20 +68,23 @@ export default function PurchaseOrdersStatusReport() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      // Load all purchase orders
+      // ✅ جلب أوامر الشراء (تقرير تشغيلي - من purchase_orders مباشرة)
+      // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
       const { data: poData } = await supabase
         .from("purchase_orders")
         .select("id, po_number, po_date, due_date, supplier_id, suppliers(name), status, total_amount, currency")
         .eq("company_id", companyId)
+        .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الأوامر المحذوفة
         .order("po_date", { ascending: false })
 
       setPurchaseOrders(poData || [])
 
-      // Load billed amounts for each PO
+      // ✅ جلب الفواتير المرتبطة (تقرير تشغيلي - من bills مباشرة)
       const { data: billsData } = await supabase
         .from("bills")
         .select("purchase_order_id, total_amount")
         .eq("company_id", companyId)
+        .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
         .not("purchase_order_id", "is", null)
 
       const billedMap: Record<string, BilledData> = {}
