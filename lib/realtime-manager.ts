@@ -737,11 +737,34 @@ class RealtimeManager {
       // ✅ هذا يضمن أن جميع المستخدمين يستقبلون الأحداث، لكن handleGovernanceEvent يفلترها حسب user_id
       const companyMembersFilter = `company_id=eq.${companyId}` // جميع التغييرات في الشركة - الفلترة في handleGovernanceEvent
       
+      // ⚠️ Validation: التأكد من أن الفلتر صحيح (لا يحتوي على user_id filter)
+      if (companyMembersFilter.includes(`user_id=eq.${userId}`)) {
+        console.error('❌ [RealtimeManager] CRITICAL: companyMembersFilter contains user_id filter! This will prevent receiving events for other users.', {
+          filter: companyMembersFilter,
+          expectedFilter: `company_id=eq.${companyId}`,
+        })
+      }
+      
+      const isFilterValid = !companyMembersFilter.includes(`user_id=eq.${userId}`)
+      if (!isFilterValid) {
+        console.error('❌❌❌ [RealtimeManager] CRITICAL ERROR: Invalid filter detected!', {
+          actualFilter: companyMembersFilter,
+          expectedFilter: `company_id=eq.${companyId}`,
+          reason: 'Filter contains user_id which will prevent receiving events for other users',
+          action: 'Please hard refresh the browser (Ctrl+Shift+R) to load the latest code',
+        })
+      }
+      
       console.log('🔐 [RealtimeManager] Setting up company_members subscription', {
         companyId,
         userId,
         role,
         filter: companyMembersFilter,
+        filterValid: isFilterValid,
+        ...(isFilterValid ? {} : { 
+          ERROR: 'INVALID FILTER - Hard refresh required!',
+          expectedFilter: `company_id=eq.${companyId}` 
+        }),
       })
       
       channel
@@ -776,11 +799,34 @@ class RealtimeManager {
       // ✅ هذا ضروري لـ BLIND REFRESH mechanism عند تغيير allowed_branches
       const userBranchAccessFilter = `company_id=eq.${companyId}` // جميع التغييرات في الشركة - الفلترة في handleGovernanceEvent
       
+      // ⚠️ Validation: التأكد من أن الفلتر صحيح (لا يحتوي على user_id filter)
+      if (userBranchAccessFilter.includes(`user_id=eq.${userId}`)) {
+        console.error('❌ [RealtimeManager] CRITICAL: userBranchAccessFilter contains user_id filter! This will prevent receiving events for other users.', {
+          filter: userBranchAccessFilter,
+          expectedFilter: `company_id=eq.${companyId}`,
+        })
+      }
+      
+      const isUserBranchAccessFilterValid = !userBranchAccessFilter.includes(`user_id=eq.${userId}`)
+      if (!isUserBranchAccessFilterValid) {
+        console.error('❌❌❌ [RealtimeManager] CRITICAL ERROR: Invalid filter detected!', {
+          actualFilter: userBranchAccessFilter,
+          expectedFilter: `company_id=eq.${companyId}`,
+          reason: 'Filter contains user_id which will prevent receiving events for other users',
+          action: 'Please hard refresh the browser (Ctrl+Shift+R) to load the latest code',
+        })
+      }
+      
       console.log('🔐 [RealtimeManager] Subscribing to user_branch_access', {
         companyId,
         userId,
         role,
         filter: userBranchAccessFilter,
+        filterValid: isUserBranchAccessFilterValid,
+        ...(isUserBranchAccessFilterValid ? {} : { 
+          ERROR: 'INVALID FILTER - Hard refresh required!',
+          expectedFilter: `company_id=eq.${companyId}` 
+        }),
       })
       
       channel
