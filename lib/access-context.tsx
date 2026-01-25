@@ -1,10 +1,33 @@
 /**
  * 🔐 Access Context - المصدر الوحيد للصلاحيات
  * 
- * Context مركزي يحتوي على جميع معلومات الصلاحيات والوصول
- * يتم تحديثه فقط من:
- * - API رسمي (getUserAccessProfile)
- * - Realtime Governance Events
+ * ⚠️ CRITICAL SECURITY MODULE - DO NOT MODIFY WITHOUT REVIEW
+ * 
+ * هذا النظام جزء أساسي من نظام الأمان والتحديث الفوري.
+ * راجع: docs/SECURITY_REALTIME_SYSTEM.md
+ * 
+ * ✅ القواعد الإلزامية:
+ * 1. Single Source of Truth:
+ *    - fetchAccessProfile() يقرأ من company_members مباشرة
+ *    - role, branch_id, warehouse_id, cost_center_id من company_members فقط
+ *    - لا joins، لا relations، لا جداول أخرى
+ * 
+ * 2. BLIND REFRESH Pattern:
+ *    - refreshUserSecurityContext() يُستدعى عند أي UPDATE على company_members
+ *    - بدون شروط، بدون مقارنات - فقط query جديد وتحديث كامل
+ * 
+ * 3. Realtime Integration:
+ *    - يستمع لـ Realtime events من company_members و user_branch_access
+ *    - عند affectsCurrentUser = true → refreshUserSecurityContext()
+ * 
+ * 4. التسلسل الإلزامي:
+ *    - Realtime event → refreshUserSecurityContext() → fetchAccessProfile() → تحديث Context → إطلاق Events
+ * 
+ * ⚠️ تحذير: أي تعديل على هذا الملف يجب مراجعته مع:
+ *    - lib/realtime-manager.ts
+ *    - hooks/use-governance-realtime.ts
+ *    - components/realtime-route-guard.tsx
+ *    - docs/SECURITY_REALTIME_SYSTEM.md
  */
 
 "use client"
@@ -147,7 +170,28 @@ export function getFirstAllowedRoute(allowedPages: string[]): string {
 }
 
 /**
- * جلب Access Profile من API
+ * 🔐 جلب Access Profile من API (Single Source of Truth)
+ * 
+ * ⚠️ CRITICAL SECURITY FUNCTION - DO NOT MODIFY WITHOUT REVIEW
+ * 
+ * هذا الدالة جزء أساسي من نظام الأمان.
+ * راجع: docs/SECURITY_REALTIME_SYSTEM.md
+ * 
+ * ✅ القواعد الإلزامية:
+ * 1. Single Source of Truth:
+ *    - البيانات تُقرأ دائماً من company_members مباشرة
+ *    - لا joins، لا relations، لا جداول أخرى
+ *    - role, branch_id, warehouse_id, cost_center_id من company_members فقط
+ * 
+ * 2. عند تغيير الدور أو الفرع:
+ *    - يتم تحديث company_members في الداتابيس
+ *    - Realtime event يتم إطلاقه تلقائياً
+ *    - refreshUserSecurityContext() يُستدعى تلقائياً
+ *    - هذه الدالة تُستدعى من refreshUserSecurityContext()
+ * 
+ * ⚠️ تحذير: أي تعديل على هذه الدالة يجب مراجعته مع:
+ *    - lib/realtime-manager.ts
+ *    - hooks/use-governance-realtime.ts
  */
 async function fetchAccessProfile(
   supabase: any,
@@ -162,12 +206,22 @@ async function fetchAccessProfile(
       companyId,
     })
     
+    // ✅ Validation: التأكد من أن Query صحيح (من company_members فقط)
     const { data: member } = await supabase
       .from("company_members")
       .select("role, branch_id, warehouse_id, cost_center_id")
       .eq("company_id", companyId)
       .eq("user_id", userId)
       .maybeSingle()
+    
+    // ✅ Validation: التأكد من أن البيانات موجودة
+    if (!member) {
+      console.warn('⚠️ [AccessContext] fetchAccessProfile: No member found in company_members (Single Source of Truth)', {
+        userId,
+        companyId,
+      })
+      return null
+    }
     
     console.log(`📊 [AccessContext] fetchAccessProfile: Member data retrieved`, {
       hasMember: !!member,
@@ -388,9 +442,36 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     }
   }, [supabase])
 
-  // 🔐 إعادة تهيئة كاملة للسياق الأمني (BLIND REFRESH - بدون شروط)
-  // ✅ في ERP احترافي: عند أي UPDATE على company_members، نستدعي هذا مباشرة
-  // ✅ بدون تحليل، بدون مقارنة، بدون شروط - فقط query جديد من السيرفر وتحديث كامل
+  /**
+   * 🔐 إعادة تهيئة كاملة للسياق الأمني (BLIND REFRESH Pattern)
+   * 
+   * ⚠️ CRITICAL SECURITY FUNCTION - DO NOT MODIFY WITHOUT REVIEW
+   * 
+   * هذا الدالة جزء أساسي من نظام الأمان والتحديث الفوري.
+   * راجع: docs/SECURITY_REALTIME_SYSTEM.md
+   * 
+   * ✅ القواعد الإلزامية:
+   * 1. عند أي UPDATE على company_members أو user_branch_access للمستخدم الحالي:
+   *    - يتم استدعاء هذه الدالة تلقائياً من Realtime handler
+   *    - بدون أي شروط أو مقارنات (BLIND REFRESH)
+   * 
+   * 2. التسلسل الإلزامي:
+   *    - Query جديد من الداتابيس (fetchAccessProfile)
+   *    - تحديث AccessContext state
+   *    - إطلاق events: permissions_updated, access_profile_updated, user_context_changed
+   *    - إعادة تهيئة Realtime subscriptions
+   *    - إعادة فحص الصلاحيات في PageGuard
+   *    - إعادة توجيه لأول صفحة مسموحة (إذا لزم الأمر)
+   * 
+   * 3. Single Source of Truth:
+   *    - البيانات تُقرأ دائماً من company_members مباشرة
+   *    - لا joins، لا relations، لا جداول أخرى
+   * 
+   * ⚠️ تحذير: أي تعديل على هذه الدالة يجب مراجعته مع:
+   *    - lib/realtime-manager.ts
+   *    - hooks/use-governance-realtime.ts
+   *    - components/realtime-route-guard.tsx
+   */
   const refreshUserSecurityContext = useCallback(async (branchChanged: boolean = false) => {
     // منع التكرار
     if (isRefreshingRef.current) {

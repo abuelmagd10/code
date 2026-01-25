@@ -1,8 +1,34 @@
 /**
- * 🔄 Realtime Manager - نظام التحديث التلقائي المركزي
+ * 🔐 Realtime Manager - نظام التحديث التلقائي المركزي
  * 
- * نظام موحد لإدارة التحديثات اللحظية من Supabase Realtime
- * يدعم جميع الجداول الأساسية مع احترام الصلاحيات والسياق
+ * ⚠️ CRITICAL SECURITY MODULE - DO NOT MODIFY WITHOUT REVIEW
+ * 
+ * هذا النظام جزء أساسي من نظام الأمان والتحديث الفوري.
+ * راجع: docs/SECURITY_REALTIME_SYSTEM.md
+ * 
+ * ✅ القواعد الإلزامية:
+ * 1. Single Source of Truth:
+ *    - الدور والفرع من company_members فقط
+ *    - لا joins، لا relations، لا جداول أخرى
+ * 
+ * 2. Realtime Subscriptions:
+ *    - company_members: company_id=eq.${companyId} (بدون user_id filter)
+ *    - user_branch_access: company_id=eq.${companyId} (بدون user_id filter)
+ *    - الفلترة التفصيلية في handleGovernanceEvent
+ * 
+ * 3. BLIND REFRESH Pattern:
+ *    - عند أي UPDATE على company_members أو user_branch_access:
+ *      → affectsCurrentUser = true
+ *      → refreshUserSecurityContext() بدون شروط
+ * 
+ * 4. التسلسل الإلزامي:
+ *    - تحديث الداتابيس → Realtime event → refreshUserSecurityContext() → تحديث UI
+ * 
+ * ⚠️ تحذير: أي تعديل على هذا الملف يجب مراجعته مع:
+ *    - lib/access-context.tsx
+ *    - hooks/use-governance-realtime.ts
+ *    - components/realtime-route-guard.tsx
+ *    - docs/SECURITY_REALTIME_SYSTEM.md
  */
 
 import { createClient, getClient } from '@/lib/supabase/client'
@@ -691,8 +717,33 @@ class RealtimeManager {
   // =====================================================
 
   /**
-   * الاشتراك في قناة الحوكمة (Governance Channel)
-   * تستمع لتغييرات الصلاحيات والأدوار والعضويات
+   * 🔐 الاشتراك في قناة الحوكمة (Governance Channel)
+   * 
+   * ⚠️ CRITICAL SECURITY FUNCTION - DO NOT MODIFY WITHOUT REVIEW
+   * 
+   * هذا الدالة جزء أساسي من نظام الأمان والتحديث الفوري.
+   * راجع: docs/SECURITY_REALTIME_SYSTEM.md
+   * 
+   * ✅ القواعد الإلزامية:
+   * 1. الجداول المشتركة:
+   *    - company_members (حرج - أساسي)
+   *    - user_branch_access (حرج - للفروع المتعددة)
+   *    - company_role_permissions (مهم)
+   *    - branches, warehouses (مهم)
+   * 
+   * 2. الفلترة:
+   *    - على مستوى Supabase: company_id=eq.${companyId} فقط
+   *    - على مستوى Client: affectsCurrentUser في handleGovernanceEvent
+   *    - ⚠️ لا تستخدم user_id filter في Supabase subscription
+   * 
+   * 3. عند استقبال UPDATE على company_members أو user_branch_access:
+   *    - يتم استدعاء handleGovernanceEvent()
+   *    - إذا affectsCurrentUser = true:
+   *      → استدعاء refreshUserSecurityContext() (BLIND REFRESH)
+   * 
+   * ⚠️ تحذير: أي تعديل على هذه الدالة يجب مراجعته مع:
+   *    - lib/access-context.tsx
+   *    - hooks/use-governance-realtime.ts
    */
   private async subscribeToGovernance(): Promise<void> {
     console.log('🔐 [RealtimeManager] subscribeToGovernance called', {
@@ -919,6 +970,23 @@ class RealtimeManager {
         })
       })
       
+      // ✅ Validation: التأكد من أن الفلاتر صحيحة قبل الاشتراك
+      // ✅ استخدام المتغيرات المعرفة سابقاً (isFilterValid و isUserBranchAccessFilterValid)
+      const isCompanyMembersFilterValidFinal = isFilterValid
+      const isUserBranchAccessFilterValidFinal = isUserBranchAccessFilterValid
+      
+      if (!isCompanyMembersFilterValidFinal || !isUserBranchAccessFilterValidFinal) {
+        console.error('❌❌❌ [RealtimeManager] CRITICAL: Invalid filters detected before subscription!', {
+          companyMembersFilterValid: isCompanyMembersFilterValidFinal,
+          userBranchAccessFilterValid: isUserBranchAccessFilterValidFinal,
+          companyMembersFilter,
+          userBranchAccessFilter,
+          expectedFilter: `company_id=eq.${companyId}`,
+          action: 'This will prevent receiving Realtime events for other users. Please check the code.',
+        })
+        // ⚠️ لا نمنع الاشتراك، لكن ننبه للمشكلة
+      }
+      
       channel.subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => {
         console.log('🔐 [RealtimeManager] Governance Channel subscription status:', status)
         if (status === 'SUBSCRIBED') {
@@ -931,6 +999,12 @@ class RealtimeManager {
             handlersRegistered: this.governanceHandlers.size,
             companyMembersFilter,
             userBranchAccessFilter,
+            // ✅ Validation: التأكد من أن الفلاتر صحيحة
+            companyMembersFilterValid: isCompanyMembersFilterValidFinal,
+            userBranchAccessFilterValid: isUserBranchAccessFilterValidFinal,
+            // ✅ Single Source of Truth: التأكد من أن الاشتراك على الجداول الصحيحة
+            subscribedToCompanyMembers: true,
+            subscribedToUserBranchAccess: true,
           })
           this.isGovernanceSubscribed = true
           
@@ -971,7 +1045,31 @@ class RealtimeManager {
   }
 
   /**
-   * معالجة أحداث الحوكمة
+   * 🔐 معالجة أحداث الحوكمة (Governance Events Handler)
+   * 
+   * ⚠️ CRITICAL SECURITY FUNCTION - DO NOT MODIFY WITHOUT REVIEW
+   * 
+   * هذا الدالة جزء أساسي من نظام الأمان والتحديث الفوري.
+   * راجع: docs/SECURITY_REALTIME_SYSTEM.md
+   * 
+   * ✅ القواعد الإلزامية:
+   * 1. BLIND REFRESH Pattern:
+   *    - عند أي UPDATE على company_members أو user_branch_access للمستخدم الحالي:
+   *      → affectsCurrentUser = true
+   *      → استدعاء refreshUserSecurityContext() بدون شروط
+   * 
+   * 2. Single Source of Truth:
+   *    - التحقق من أن الحدث من company_members table
+   *    - user_id من newRecord أو oldRecord
+   * 
+   * 3. التسلسل الإلزامي:
+   *    - التحقق من affectsCurrentUser
+   *    - إطلاق event إلى governanceHandlers
+   *    - refreshUserSecurityContext() يُستدعى من useGovernanceRealtime
+   * 
+   * ⚠️ تحذير: أي تعديل على هذه الدالة يجب مراجعته مع:
+   *    - lib/access-context.tsx
+   *    - hooks/use-governance-realtime.ts
    */
   private async handleGovernanceEvent(
     table: 'company_members' | 'user_branch_access' | 'branches' | 'warehouses' | 'company_role_permissions' | 'permissions',

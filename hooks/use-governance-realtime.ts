@@ -1,8 +1,29 @@
 /**
  * 🔐 Governance Realtime Hook
  * 
- * Hook لربط نظام Realtime للحوكمة مع UserContext و PermissionsContext
- * يحدث الصلاحيات والسياق تلقائياً عند أي تغيير في الحوكمة
+ * ⚠️ CRITICAL SECURITY HOOK - DO NOT MODIFY WITHOUT REVIEW
+ * 
+ * هذا Hook جزء أساسي من نظام الأمان والتحديث الفوري.
+ * راجع: docs/SECURITY_REALTIME_SYSTEM.md
+ * 
+ * ✅ القواعد الإلزامية:
+ * 1. يربط Realtime events مع React components
+ * 2. عند استقبال UPDATE على company_members أو user_branch_access:
+ *    - إذا affectsCurrentUser = true:
+ *      → استدعاء onPermissionsChanged() / onRoleChanged() / onBranchOrWarehouseChanged()
+ *      → استدعاء refreshUserSecurityContext() (BLIND REFRESH)
+ * 
+ * 3. التسلسل الإلزامي:
+ *    - Realtime event من Supabase
+ *    - handleGovernanceEvent() في realtime-manager.ts
+ *    - هذا Hook (useGovernanceRealtime)
+ *    - refreshUserSecurityContext() في access-context.tsx
+ *    - تحديث UI وإعادة توجيه
+ * 
+ * ⚠️ تحذير: أي تعديل على هذا Hook يجب مراجعته مع:
+ *    - lib/realtime-manager.ts
+ *    - lib/access-context.tsx
+ *    - components/realtime-route-guard.tsx
  */
 
 "use client"
