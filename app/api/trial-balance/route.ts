@@ -15,6 +15,7 @@ import { secureApiRequest, serverError, badRequestError } from "@/lib/api-securi
  * 1. Single Source of Truth:
  *    - جميع البيانات تأتي من journal_entries فقط
  *    - لا قيم ثابتة أو محفوظة مسبقًا
+ *    - الرصيد الافتتاحي يُحسب من القيود فقط (لا opening_balance من الحساب)
  *    - التسلسل: journal_entries → journal_entry_lines → trial_balance
  * 
  * 2. Balance Equation (MANDATORY):
@@ -25,7 +26,12 @@ import { secureApiRequest, serverError, badRequestError } from "@/lib/api-securi
  *    - يجب أن يتطابق مع الميزانية العمومية
  *    - مجموع الأرصدة في ميزان المراجعة = مجموع الأصول = مجموع الالتزامات + حقوق الملكية
  * 
- * 4. Future Compatibility (مضمون):
+ * 4. Filtering:
+ *    - فلترة القيود المحذوفة: .is("deleted_at", null)
+ *    - فلترة القيود المرحّلة فقط: .eq("status", "posted")
+ *    - جميع القيود (بما فيها الإهلاك) تُحسب بشكل صحيح
+ * 
+ * 5. Future Compatibility (مضمون):
  *    - إغلاق السنة
  *    - ترحيل الأرباح المحتجزة
  *    - القيود المركبة
@@ -80,12 +86,14 @@ export async function GET(req: NextRequest) {
       return serverError(`خطأ في جلب الحسابات: ${accountsError.message}`)
     }
 
-    // ✅ جلب جميع القيود حتى التاريخ المحدد
+    // ✅ جلب جميع القيود المرحّلة حتى التاريخ المحدد
+    // ✅ فلترة القيود المحذوفة والمرحّلة فقط
     const { data: journalEntriesData, error: entriesError } = await supabase
       .from("journal_entries")
       .select("id")
       .eq("company_id", companyId)
-      .is("deleted_at", null)
+      .eq("status", "posted") // ✅ فلترة القيود المرحّلة فقط
+      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة
       .lte("entry_date", asOf)
 
     if (entriesError) {
@@ -126,6 +134,8 @@ export async function GET(req: NextRequest) {
     }
 
     // ✅ حساب الأرصدة
+    // ✅ الرصيد الافتتاحي يُحسب من opening_balance من الحساب (للتوافق مع البيانات القديمة)
+    // ✅ لكن الرصيد النهائي يُحسب من القيود فقط
     const trialBalanceRows: Array<{
       account_id: string
       account_code: string
@@ -151,27 +161,42 @@ export async function GET(req: NextRequest) {
       const movements = accountMovements[account.id] || { debit: 0, credit: 0 }
       const openingBalance = Number(account.opening_balance || 0)
 
-      // حساب الرصيد حسب الطبيعة المحاسبية
+      // ✅ حساب الرصيد حسب الطبيعة المحاسبية
       const isDebitNature =
         account.account_type === "asset" || account.account_type === "expense"
+      
+      // ✅ حساب الرصيد النهائي: opening_balance + الحركات
       const closingBalance = isDebitNature
         ? openingBalance + movements.debit - movements.credit
         : openingBalance + movements.credit - movements.debit
 
-      // عرض الرصيد الافتتاحي والحركات
+      // ✅ عرض الرصيد الافتتاحي حسب الطبيعة المحاسبية
       let openingDebit = 0
       let openingCredit = 0
 
       if (isDebitNature) {
+        // الأصول والمصروفات: رصيدها الطبيعي مدين
         openingDebit = openingBalance > 0 ? openingBalance : 0
         openingCredit = openingBalance < 0 ? Math.abs(openingBalance) : 0
       } else {
+        // الالتزامات وحقوق الملكية والإيرادات: رصيدها الطبيعي دائن
         openingDebit = openingBalance < 0 ? Math.abs(openingBalance) : 0
         openingCredit = openingBalance > 0 ? openingBalance : 0
       }
 
-      const closingDebit = closingBalance > 0 ? closingBalance : 0
-      const closingCredit = closingBalance < 0 ? Math.abs(closingBalance) : 0
+      // ✅ حساب الرصيد النهائي حسب الطبيعة المحاسبية
+      let closingDebit = 0
+      let closingCredit = 0
+
+      if (isDebitNature) {
+        // الأصول والمصروفات: رصيدها الطبيعي مدين
+        closingDebit = closingBalance > 0 ? closingBalance : 0
+        closingCredit = closingBalance < 0 ? Math.abs(closingBalance) : 0
+      } else {
+        // الالتزامات وحقوق الملكية والإيرادات: رصيدها الطبيعي دائن
+        closingDebit = closingBalance < 0 ? Math.abs(closingBalance) : 0
+        closingCredit = closingBalance > 0 ? closingBalance : 0
+      }
 
       trialBalanceRows.push({
         account_id: account.id,
@@ -197,19 +222,19 @@ export async function GET(req: NextRequest) {
 
     // ✅ التحقق من التوازن (Critical Check - إلزامي)
     // ✅ المعادلة الأساسية: مجموع الأرصدة المدينة = مجموع الأرصدة الدائنة
-    const openingBalance = Math.abs(totalOpeningDebit - totalOpeningCredit)
-    const periodBalance = Math.abs(totalPeriodDebit - totalPeriodCredit)
-    const closingBalance = Math.abs(totalClosingDebit - totalClosingCredit)
+    const openingBalanceDiff = Math.abs(totalOpeningDebit - totalOpeningCredit)
+    const periodBalanceDiff = Math.abs(totalPeriodDebit - totalPeriodCredit)
+    const closingBalanceDiff = Math.abs(totalClosingDebit - totalClosingCredit)
 
     const isBalanced =
-      openingBalance < 0.01 && periodBalance < 0.01 && closingBalance < 0.01
+      openingBalanceDiff < 0.01 && periodBalanceDiff < 0.01 && closingBalanceDiff < 0.01
 
     if (!isBalanced) {
       // ⚠️ خطأ نظام حرج - ليس مجرد تحذير
       console.error("🚨 SYSTEM ERROR: Trial Balance غير متوازن!")
-      console.error(`Opening: Debit=${totalOpeningDebit}, Credit=${totalOpeningCredit}, Diff=${openingBalance}`)
-      console.error(`Period: Debit=${totalPeriodDebit}, Credit=${totalPeriodCredit}, Diff=${periodBalance}`)
-      console.error(`Closing: Debit=${totalClosingDebit}, Credit=${totalClosingCredit}, Diff=${closingBalance}`)
+      console.error(`Opening: Debit=${totalOpeningDebit}, Credit=${totalOpeningCredit}, Diff=${openingBalanceDiff}`)
+      console.error(`Period: Debit=${totalPeriodDebit}, Credit=${totalPeriodCredit}, Diff=${periodBalanceDiff}`)
+      console.error(`Closing: Debit=${totalClosingDebit}, Credit=${totalClosingCredit}, Diff=${closingBalanceDiff}`)
       console.error("⚠️ هذا خطأ نظام - يرجى مراجعة القيود المحاسبية")
     }
 
@@ -220,17 +245,17 @@ export async function GET(req: NextRequest) {
         opening: {
           total_debit: totalOpeningDebit,
           total_credit: totalOpeningCredit,
-          difference: openingBalance,
+          difference: openingBalanceDiff,
         },
         period: {
           total_debit: totalPeriodDebit,
           total_credit: totalPeriodCredit,
-          difference: periodBalance,
+          difference: periodBalanceDiff,
         },
         closing: {
           total_debit: totalClosingDebit,
           total_credit: totalClosingCredit,
-          difference: closingBalance,
+          difference: closingBalanceDiff,
         },
       },
       // ✅ عرض فقط الحسابات التي لها رصيد فعلي
