@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const from = String(searchParams.get("from") || "0001-01-01")
     const to = String(searchParams.get("to") || "9999-12-31")
-    const itemType = String(searchParams.get("item_type") || "all")
+    const itemTypeFilter = String(searchParams.get("item_type") || "all")
     const statusFilter = String(searchParams.get("status") || "all")
     const sortBy = String(searchParams.get("sort_by") || "revenue") // revenue or quantity
     const limit = parseInt(searchParams.get("limit") || "10")
@@ -113,10 +113,10 @@ export async function GET(req: NextRequest) {
       const itemType = prod?.item_type || 'product'
       
       // تطبيق فلتر نوع العنصر
-      if (itemType !== 'all') {
-        if (itemType === 'product' && itemType !== 'product') {
+      if (itemTypeFilter !== 'all') {
+        if (itemTypeFilter === 'product' && itemType !== 'product') {
           continue
-        } else if (itemType === 'service' && itemType !== 'service') {
+        } else if (itemTypeFilter === 'service' && itemType !== 'service') {
           continue
         }
       }

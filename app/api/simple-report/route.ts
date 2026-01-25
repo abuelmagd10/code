@@ -1,22 +1,37 @@
 /**
  * 🔐 Simple Financial Summary API - تقرير ملخص النشاط المالي
  * 
- * ⚠️ OPERATIONAL REPORT (NOT ACCOUNTING REPORT)
+ * ⚠️ ACCOUNTING REPORT - يعتمد بالكامل على journal_entries فقط
  * 
- * ✅ هذا تقرير مبسط لغير المحاسبين - ليس تقرير محاسبي رسمي
- * ✅ يمكنه القراءة من مصادر متعددة (invoices, bills) لتوضيح بسيط
+ * ✅ هذا التقرير مبسط لغير المحاسبين لكنه يعتمد على المصدر المحاسبي الرسمي
+ * ✅ جميع البيانات تأتي من journal_entries → journal_entry_lines فقط
+ * ✅ لا قيم ثابتة أو محفوظة مسبقًا
+ * ✅ مطابق لمنهجية التقارير المحاسبية الأساسية (Balance Sheet, Income Statement)
  * 
- * ⚠️ ملاحظة مهمة:
- * - هذا التقرير مبسط وليس محاسبي رسمي
- * - التقارير المحاسبية الرسمية (Balance Sheet, Income Statement) تعتمد على journal_entries فقط
- * - هذا التقرير يستخدم invoices و bills لتوضيح بسيط لغير المحاسبين
+ * ✅ القواعد الإلزامية:
+ * 1. Single Source of Truth:
+ *    - جميع البيانات تأتي من journal_entries فقط
+ *    - لا invoices أو bills مباشرة
+ *    - التسلسل: journal_entries → journal_entry_lines → simple_report
  * 
- * ✅ القواعد:
- * 1. رأس المال: من journal_entries (محاسبي)
- * 2. المشتريات: من bills (تشغيلي - للتوضيح فقط)
- * 3. المصروفات: من journal_entry_lines (محاسبي)
- * 4. المبيعات: من invoices (تشغيلي - للتوضيح فقط)
- * 5. COGS: من cogs_transactions (محاسبي)
+ * 2. Data Source:
+ *    - رأس المال: من حسابات equity في journal_entries
+ *    - المبيعات: من حسابات income (sub_type = 'sales_revenue' أو account_code = '4100')
+ *    - المشتريات: من حسابات expense (sub_type = 'purchases' أو account_code = '5110')
+ *    - COGS: من حسابات expense (sub_type = 'cogs' أو account_code = '5000')
+ *    - المصروفات: من حسابات expense (باستثناء COGS والمشتريات)
+ *    - الإهلاك: من حسابات expense (account_code = '5500')
+ * 
+ * 3. Calculations:
+ *    - مجمل الربح = المبيعات - تكلفة البضاعة المباعة (COGS)
+ *    - صافي الربح = مجمل الربح - المصروفات التشغيلية
+ * 
+ * 4. Filtering:
+ *    - فلترة القيود المحذوفة: .is("deleted_at", null)
+ *    - فلترة القيود المرحّلة فقط: .eq("status", "posted")
+ *    - استثناء الحسابات صفرية الرصيد
+ * 
+ * ⚠️ DO NOT MODIFY WITHOUT ACCOUNTING REVIEW
  * 
  * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
  */
@@ -38,7 +53,7 @@ export async function GET(request: NextRequest) {
       requireCompany: true,
       requireBranch: false,
       requirePermission: { resource: "reports", action: "read" },
-      supabase: authSupabase // ✅ تمرير supabase client
+      supabase: authSupabase
     })
 
     if (error) return error
@@ -55,190 +70,239 @@ export async function GET(request: NextRequest) {
         }
       }
     )
-    // ✅ لا نحتاج التحقق من branchId لأن التقرير يعرض بيانات الشركة كاملة
 
     const { searchParams } = new URL(request.url)
     const fromDate = searchParams.get("from") || "2000-01-01"
     const toDate = searchParams.get("to") || new Date().toISOString().split("T")[0]
 
-    const { data: capitalData } = await supabase
-      .from("journal_entry_lines")
-      .select(`
-        credit_amount,
-        journal_entries!inner(company_id, entry_date),
-        chart_of_accounts!inner(account_type, account_code)
-      `)
-      .eq("journal_entries.company_id", companyId)
-      .eq("chart_of_accounts.account_type", "equity")
-      .lte("journal_entries.entry_date", toDate)
-
-    const totalCapital = (capitalData || []).reduce((sum, item) => sum + (item.credit_amount || 0), 0)
-
-    // ✅ المشتريات: من bills (تقرير تشغيلي - للتوضيح فقط)
-    // ⚠️ ملاحظة: هذا تقرير مبسط وليس محاسبي رسمي
-    // التقارير المحاسبية الرسمية تعتمد على journal_entries فقط
-    const { data: purchasesData } = await supabase
-      .from("bills")
-      .select("total_amount, status, bill_date")
+    // ✅ جلب القيود المرحّلة (مصدر البيانات الوحيد)
+    // ✅ فلترة القيود المحذوفة والمرحّلة فقط
+    // ✅ رأس المال: جميع القيود حتى toDate (بغض النظر عن fromDate)
+    const { data: journalEntriesData, error: entriesError } = await supabase
+      .from("journal_entries")
+      .select("id")
       .eq("company_id", companyId)
-      .gte("bill_date", fromDate)
-      .lte("bill_date", toDate)
-      .in("status", ["sent", "partially_paid", "paid"])
+      .eq("status", "posted")
+      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة
+      .lte("entry_date", toDate) // ✅ رأس المال: جميع القيود حتى toDate
 
-    const totalPurchases = (purchasesData || []).reduce((sum, item) => sum + (item.total_amount || 0), 0)
+    if (entriesError) {
+      return serverError(`خطأ في جلب القيود: ${entriesError.message}`)
+    }
 
-    // ✅ استثناء COGS من المصروفات التشغيلية
-    // COGS يُحسب بشكل منفصل ولا يجب أن يظهر ضمن المصروفات
-    const { data: expensesData } = await supabase
+    const journalEntryIds = (journalEntriesData || []).map((je: any) => je.id)
+
+    if (journalEntryIds.length === 0) {
+      return apiSuccess({
+        capital: { total: 0 },
+        purchases: { total: 0, count: 0 },
+        expenses: { total: 0, items: [] },
+        depreciation: { total: 0 },
+        sales: { total: 0, count: 0, pending: 0 },
+        cogs: { total: 0 },
+        profit: { gross: 0, net: 0 },
+        period: { from: fromDate, to: toDate }
+      })
+    }
+
+    // ✅ جلب سطور القيود مع معلومات الحسابات
+    const { data: journalLinesData, error: linesError } = await supabase
       .from("journal_entry_lines")
       .select(`
+        account_id,
         debit_amount,
         credit_amount,
-        chart_of_accounts!inner(account_type, account_code, account_name, sub_type),
-        journal_entries!inner(company_id, entry_date, reference_type)
+        journal_entry_id,
+        journal_entries!inner(entry_date, company_id, status, deleted_at),
+        chart_of_accounts!inner(account_type, account_code, account_name, sub_type)
       `)
+      .in("journal_entry_id", journalEntryIds)
       .eq("journal_entries.company_id", companyId)
-      .eq("chart_of_accounts.account_type", "expense")
-      .gte("journal_entries.entry_date", fromDate)
-      .lte("journal_entries.entry_date", toDate)
+      .eq("journal_entries.status", "posted")
+      .is("journal_entries.deleted_at", null) // ✅ فلترة القيود المحذوفة
 
+    if (linesError) {
+      return serverError(`خطأ في جلب سطور القيود: ${linesError.message}`)
+    }
+
+    // ✅ فلترة سطور القيود حسب الفترة (للمبيعات والمشتريات والمصروفات)
+    const periodLines = (journalLinesData || []).filter((line: any) => {
+      const entryDate = line.journal_entries?.entry_date
+      if (!entryDate) return false
+      return entryDate >= fromDate && entryDate <= toDate
+    })
+
+    // ✅ حساب رأس المال (من جميع القيود حتى toDate)
+    let totalCapital = 0
+    const capitalLines = (journalLinesData || []).filter((line: any) => {
+      const coa = Array.isArray(line.chart_of_accounts) ? line.chart_of_accounts[0] : line.chart_of_accounts
+      return coa?.account_type === "equity"
+    })
+    for (const line of capitalLines) {
+      const credit = Number(line.credit_amount || 0)
+      const debit = Number(line.debit_amount || 0)
+      // حقوق الملكية تزيد بالدائن
+      totalCapital += credit - debit
+    }
+
+    // ✅ حساب المبيعات (من journal_entries فقط)
+    let totalSales = 0
+    let salesCount = 0
+    const salesLines = periodLines.filter((line: any) => {
+      const coa = line.chart_of_accounts
+      return coa?.account_type === "income" && 
+             (coa?.sub_type === "sales_revenue" || coa?.account_code === "4100")
+    })
+    const salesEntryIds = new Set<string>()
+    for (const line of salesLines) {
+      const credit = Number(line.credit_amount || 0)
+      const debit = Number(line.debit_amount || 0)
+      // الإيرادات تزيد بالدائن
+      const amount = credit - debit
+      if (amount > 0) {
+        totalSales += amount
+        salesEntryIds.add(line.journal_entry_id)
+      }
+    }
+    salesCount = salesEntryIds.size
+
+    // ✅ حساب المشتريات (من journal_entries فقط)
+    // ✅ المشتريات: حساب expense مع sub_type = 'purchases' أو account_code = '5110'
+    // ✅ مردودات المشتريات: حساب expense مع sub_type = 'purchase_returns' أو account_code = '5120'
+    let totalPurchases = 0
+    let purchasesCount = 0
+    const purchasesLines = periodLines.filter((line: any) => {
+      const coa = line.chart_of_accounts
+      return coa?.account_type === "expense" && 
+             (coa?.sub_type === "purchases" || coa?.account_code === "5110")
+    })
+    const purchaseReturnsLines = periodLines.filter((line: any) => {
+      const coa = line.chart_of_accounts
+      return coa?.account_type === "expense" && 
+             (coa?.sub_type === "purchase_returns" || coa?.account_code === "5120")
+    })
+    const purchasesEntryIds = new Set<string>()
+    
+    // المشتريات تزيد بالمدين
+    for (const line of purchasesLines) {
+      const debit = Number(line.debit_amount || 0)
+      const credit = Number(line.credit_amount || 0)
+      const amount = debit - credit
+      if (amount > 0.01) {
+        totalPurchases += amount
+        purchasesEntryIds.add(line.journal_entry_id)
+      }
+    }
+    
+    // مردودات المشتريات تزيد بالدائن (نطرحها من المشتريات)
+    for (const line of purchaseReturnsLines) {
+      const debit = Number(line.debit_amount || 0)
+      const credit = Number(line.credit_amount || 0)
+      const amount = credit - debit // مردودات تزيد بالدائن
+      if (amount > 0.01) {
+        totalPurchases = Math.max(0, totalPurchases - amount) // طرح مردودات المشتريات
+      }
+    }
+    
+    purchasesCount = purchasesEntryIds.size
+
+    // ✅ حساب COGS (من journal_entries فقط)
+    let totalCOGS = 0
+    const cogsLines = periodLines.filter((line: any) => {
+      const coa = Array.isArray(line.chart_of_accounts) ? line.chart_of_accounts[0] : line.chart_of_accounts
+      return coa?.account_type === "expense" && 
+             (coa?.sub_type === "cogs" || coa?.sub_type === "cost_of_goods_sold" || coa?.account_code === "5000")
+    })
+    for (const line of cogsLines) {
+      const debit = Number(line.debit_amount || 0)
+      const credit = Number(line.credit_amount || 0)
+      // COGS تزيد بالمدين
+      totalCOGS += debit - credit
+    }
+
+    // ✅ حساب المصروفات التشغيلية (من journal_entries فقط)
+    // ✅ استثناء COGS والمشتريات والإهلاك
     const expensesByAccount: { [key: string]: { name: string; amount: number } } = {}
-      ; (expensesData || []).forEach((item: any) => {
-        const coa = item.chart_of_accounts
-        const subType = coa?.sub_type || ""
+    const expensesLines = periodLines.filter((line: any) => {
+      const coa = line.chart_of_accounts
+      if (coa?.account_type !== "expense") return false
+      const subType = coa?.sub_type || ""
+      const accountCode = coa?.account_code || ""
+      // استثناء COGS والمشتريات والإهلاك
+      if (subType === "cogs" || subType === "cost_of_goods_sold" || accountCode === "5000") return false
+      if (subType === "purchases" || accountCode === "5110") return false
+      if (subType === "purchase_returns" || accountCode === "5120") return false
+      if (accountCode === "5500") return false // ✅ استثناء حساب الإهلاك (يُحسب بشكل منفصل)
+      return true
+    })
 
-        // ✅ استثناء COGS (account_code = 5000 أو sub_type = cogs/cost_of_goods_sold)
-        // COGS يُحسب بشكل منفصل في قسم تكلفة البضاعة المباعة
-        if (coa?.account_code === "5000" || subType === "cogs" || subType === "cost_of_goods_sold") {
-          return // تجاهل COGS
-        }
+    for (const line of expensesLines) {
+      const coaRaw = line.chart_of_accounts as any
+      const coa = Array.isArray(coaRaw) ? coaRaw[0] : coaRaw
+      const accountName = coa?.account_name || "أخرى"
+      const accountCode = coa?.account_code || "0000"
+      const debit = Number(line.debit_amount || 0)
+      const credit = Number(line.credit_amount || 0)
+      // المصروفات تزيد بالمدين
+      const amount = debit - credit
 
-        const accountName = coa?.account_name || "أخرى"
-        const accountCode = coa?.account_code || "0000"
-        const key = accountCode
-        if (!expensesByAccount[key]) {
-          expensesByAccount[key] = { name: accountName, amount: 0 }
-        }
-        expensesByAccount[key].amount += (item.debit_amount || 0) - (item.credit_amount || 0)
-      })
+      if (Math.abs(amount) < 0.01) continue // استثناء الحسابات صفرية الرصيد
+
+      if (!expensesByAccount[accountCode]) {
+        expensesByAccount[accountCode] = { name: accountName, amount: 0 }
+      }
+      expensesByAccount[accountCode].amount += amount
+    }
 
     const expensesList = Object.values(expensesByAccount).filter(e => e.amount > 0)
     const totalExpenses = expensesList.reduce((sum, e) => sum + e.amount, 0)
 
-    const { data: depreciationData } = await supabase
-      .from("journal_entry_lines")
-      .select(`
-        debit_amount,
-        journal_entries!inner(company_id, entry_date),
-        chart_of_accounts!inner(account_code)
-      `)
-      .eq("journal_entries.company_id", companyId)
-      .eq("chart_of_accounts.account_code", "5500")
-      .gte("journal_entries.entry_date", fromDate)
-      .lte("journal_entries.entry_date", toDate)
-
-    const totalDepreciation = (depreciationData || []).reduce((sum, item) => sum + (item.debit_amount || 0), 0)
-
-    // ✅ المبيعات: من invoices (تقرير تشغيلي - للتوضيح فقط)
-    // ⚠️ ملاحظة: هذا تقرير مبسط وليس محاسبي رسمي
-    // التقارير المحاسبية الرسمية (Income Statement) تعتمد على journal_entries فقط
-    const { data: salesData } = await supabase
-      .from("invoices")
-      .select("total_amount, status, invoice_date")
-      .eq("company_id", companyId)
-      .or("is_deleted.is.null,is_deleted.eq.false")
-      .gte("invoice_date", fromDate)
-      .lte("invoice_date", toDate)
-      .in("status", ["paid", "partially_paid"])
-
-    const totalSales = (salesData || []).reduce((sum, item) => sum + (item.total_amount || 0), 0)
-
-    // ✅ ERP Professional: حساب COGS من cogs_transactions (المصدر الوحيد للحقيقة)
-    // 📌 يمنع استخدام products.cost_price أو journal_entry_lines في التقارير الرسمية
-    // 📌 FIFO Engine هو الجهة الوحيدة المخولة بتحديد unit_cost
-    // 📌 COGS = SUM(total_cost) FROM cogs_transactions WHERE source_type = 'invoice'
-    let totalCOGS = 0
-
-    try {
-      const { calculateCOGSTotal } = await import("@/lib/cogs-transactions")
-      totalCOGS = await calculateCOGSTotal(supabase, {
-        companyId,
-        fromDate,
-        toDate,
-        sourceType: 'invoice'
-      })
-      
-      // Fallback: إذا لم توجد سجلات COGS (للتوافق مع البيانات القديمة)
-      if (totalCOGS === 0) {
-        console.warn("⚠️ No COGS transactions found in simple-report, falling back to journal_entry_lines (deprecated)")
-        const { data: cogsData } = await supabase
-          .from("journal_entry_lines")
-          .select(`
-            debit_amount,
-            credit_amount,
-            journal_entries!inner(company_id, entry_date),
-            chart_of_accounts!inner(account_code, sub_type)
-          `)
-          .eq("journal_entries.company_id", companyId)
-          .gte("journal_entries.entry_date", fromDate)
-          .lte("journal_entries.entry_date", toDate)
-
-        totalCOGS = (cogsData || [])
-          .filter((item: any) => {
-            const coa = item.chart_of_accounts
-            return coa?.account_code === "5000" || coa?.sub_type === "cost_of_goods_sold" || coa?.sub_type === "cogs"
-          })
-          .reduce((sum, item) => sum + (item.debit_amount || 0) - (item.credit_amount || 0), 0)
-      }
-    } catch (error: any) {
-      console.error("Error calculating COGS in simple-report:", error)
-      // Fallback to journal_entry_lines in case of error
-      const { data: cogsData } = await supabase
-        .from("journal_entry_lines")
-        .select(`
-          debit_amount,
-          credit_amount,
-          journal_entries!inner(company_id, entry_date),
-          chart_of_accounts!inner(account_code, sub_type)
-        `)
-        .eq("journal_entries.company_id", companyId)
-        .gte("journal_entries.entry_date", fromDate)
-        .lte("journal_entries.entry_date", toDate)
-
-      totalCOGS = (cogsData || [])
-        .filter((item: any) => {
-          const coa = item.chart_of_accounts
-          return coa?.account_code === "5000" || coa?.sub_type === "cost_of_goods_sold" || coa?.sub_type === "cogs"
-        })
-        .reduce((sum, item) => sum + (item.debit_amount || 0) - (item.credit_amount || 0), 0)
+    // ✅ حساب الإهلاك (من journal_entries فقط)
+    let totalDepreciation = 0
+    const depreciationLines = periodLines.filter((line: any) => {
+      const coa = line.chart_of_accounts
+      return coa?.account_code === "5500"
+    })
+    for (const line of depreciationLines) {
+      const debit = Number(line.debit_amount || 0)
+      const credit = Number(line.credit_amount || 0)
+      totalDepreciation += debit - credit
     }
 
+    // ✅ حساب المبيعات المعلقة (من invoices - للتوضيح فقط، لا تدخل في الحسابات)
+    let pendingSales = 0
+    try {
+      const { data: pendingSalesData } = await supabase
+        .from("invoices")
+        .select("total_amount")
+        .eq("company_id", companyId)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .eq("status", "sent")
+        .gte("invoice_date", fromDate)
+        .lte("invoice_date", toDate)
+
+      pendingSales = (pendingSalesData || []).reduce((sum, item) => sum + (item.total_amount || 0), 0)
+    } catch (error) {
+      console.warn("Could not fetch pending sales:", error)
+      pendingSales = 0
+    }
+
+    // ✅ حساب مجمل الربح وصافي الربح
     const grossProfit = totalSales - totalCOGS
     const netProfit = grossProfit - totalExpenses
 
-    const { data: pendingSalesData } = await supabase
-      .from("invoices")
-      .select("total_amount")
-      .eq("company_id", companyId)
-      .or("is_deleted.is.null,is_deleted.eq.false")
-      .eq("status", "sent")
-      .gte("invoice_date", fromDate)
-      .lte("invoice_date", toDate)
-
-    const pendingSales = (pendingSalesData || []).reduce((sum, item) => sum + (item.total_amount || 0), 0)
-
     return apiSuccess({
-      capital: { total: totalCapital },
-      purchases: { total: totalPurchases, count: purchasesData?.length || 0 },
+      capital: { total: Math.max(0, totalCapital) },
+      purchases: { total: totalPurchases, count: purchasesCount },
       expenses: { total: totalExpenses, items: expensesList },
       depreciation: { total: totalDepreciation },
-      sales: { total: totalSales, count: salesData?.length || 0, pending: pendingSales },
+      sales: { total: totalSales, count: salesCount, pending: pendingSales },
       cogs: { total: totalCOGS },
       profit: { gross: grossProfit, net: netProfit },
       period: { from: fromDate, to: toDate }
     })
   } catch (error: any) {
     console.error("Simple report error:", error)
-    return serverError(`حدث خطأ أثناء إنشاء التقرير: ${error?.message}`)
+    return serverError(`حدث خطأ أثناء إنشاء التقرير: ${error?.message || "unknown_error"}`)
   }
 }

@@ -214,8 +214,7 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    // ✅ فلترة الحسابات التي لها حركات أو أرصدة
-    // ✅ عرض فقط الحسابات التي لها رصيد فعلي
+    // فلترة الحسابات التي لها حركات أو أرصدة
     const filteredAccounts = accountsData.filter(acc =>
       acc.transactionCount > 0 ||
       Math.abs(acc.openingBalance) >= 0.01 ||

@@ -213,8 +213,10 @@ export default function FixedAssetsReportsPage() {
       loadAssetsReport()
     } else if (reportType === 'depreciation_schedule' || reportType === 'depreciation_by_period') {
       loadDepreciationReport()
+    } else if (['monthly_depreciation', 'asset_value_before_after', 'remaining_useful_life', 'assets_revaluation', 'annual_depreciation_schedule'].includes(reportType)) {
+      loadEnhancedReport()
     }
-  }, [reportType, loadAssetsReport, loadDepreciationReport])
+  }, [reportType, loadAssetsReport, loadDepreciationReport, loadEnhancedReport])
 
   useEffect(() => {
     loadReport()

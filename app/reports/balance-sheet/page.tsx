@@ -145,7 +145,34 @@ export default function BalanceSheetPage() {
   const netIncomeDisplay = Math.abs(netIncomeSigned)
   const equityTotalDisplay = Math.abs(equityTotalSigned)
   const totalLiabilitiesAndEquityAbs = Math.abs(totalLiabilitiesAndEquitySigned)
-  const liabilitiesDisplay = Math.abs(liabilities)
+  
+  // ✅ حساب الإجماليات من الحسابات المفلترة (التي لها رصيد فعلي >= 0.01)
+  // ✅ هذا يضمن أن الإجمالي المعروض يطابق مجموع الصفوف المعروضة في الجدول
+  
+  // حساب إجمالي الأصول من الحسابات المفلترة
+  const filteredAssets = balances.filter((b) => 
+    b.account_type === "asset" && Math.abs(b.balance) >= 0.01
+  )
+  const assetsDisplay = Math.abs(filteredAssets.reduce((sum, b) => sum + b.balance, 0))
+  
+  // حساب إجمالي الالتزامات من الحسابات المفلترة
+  const filteredLiabilities = balances.filter((b) => {
+    if (b.account_type !== "liability") return false
+    return Math.abs(b.balance) >= 0.01
+  })
+  const liabilitiesDisplay = Math.abs(filteredLiabilities.reduce((sum, b) => sum + b.balance, 0))
+  
+  // حساب إجمالي حقوق الملكية من الحسابات المفلترة + الربح/الخسارة الجارية
+  const filteredEquity = balances.filter((b) => {
+    if (b.account_type !== "equity") return false
+    return Math.abs(b.balance) >= 0.01
+  })
+  const equityDisplay = Math.abs(filteredEquity.reduce((sum, b) => sum + b.balance, 0) + netIncomeSigned)
+  
+  // ✅ حساب التوازن من القيم المفلترة (لضمان الاتساق مع العرض)
+  // ✅ هذا يضمن أن رسالة التوازن تطابق الأرقام المعروضة
+  const filteredBalanceDifference = Math.abs(assetsDisplay - (liabilitiesDisplay + equityDisplay))
+  const isFilteredBalanced = filteredBalanceDifference < 0.01
 
   const handlePrint = () => {
     window.print()
@@ -239,7 +266,7 @@ export default function BalanceSheetPage() {
                     <CardContent>
                       <ResponsiveContainer width="100%" height={260}>
                         <PieChart>
-                          <Pie data={[{ name: (hydrated && appLang==='en') ? 'Assets' : 'الأصول', value: assets }, { name: (hydrated && appLang==='en') ? 'Liabilities + Equity' : 'الالتزامات + حقوق الملكية', value: totalLiabilitiesAndEquityAbs }]} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                          <Pie data={[{ name: (hydrated && appLang==='en') ? 'Assets' : 'الأصول', value: assetsDisplay }, { name: (hydrated && appLang==='en') ? 'Liabilities + Equity' : 'الالتزامات + حقوق الملكية', value: liabilitiesDisplay + equityDisplay }]} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
                             {[
                               { color: '#3b82f6' },
                               { color: '#ef4444' },
@@ -256,7 +283,7 @@ export default function BalanceSheetPage() {
                   <Card>
                     <CardContent>
                       <ResponsiveContainer width="100%" height={260}>
-                        <BarChart data={[{ name: (hydrated && appLang==='en') ? 'Totals' : 'الإجماليات', assets, liabilities, equity: equityTotalDisplay }]}>
+                        <BarChart data={[{ name: (hydrated && appLang==='en') ? 'Totals' : 'الإجماليات', assets: assetsDisplay, liabilities: liabilitiesDisplay, equity: equityDisplay }]}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="name" />
                           <YAxis />
@@ -291,7 +318,7 @@ export default function BalanceSheetPage() {
                     </div>
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Assets:' : 'إجمالي الأصول:'}</span>
-                      <span>{numberFmt.format(assets)} {currencySymbol}</span>
+                      <span>{numberFmt.format(assetsDisplay)} {currencySymbol}</span>
                     </div>
                   </div>
 
@@ -301,7 +328,12 @@ export default function BalanceSheetPage() {
                     <table className="min-w-[560px] w-full text-sm mb-4">
                       <tbody>
                         {balances
-                          .filter((b) => b.account_type === "liability")
+                          .filter((b) => {
+                            // ✅ عرض فقط حسابات الالتزامات التي لها رصيد فعلي
+                            if (b.account_type !== "liability") return false
+                            // ✅ إزالة الحسابات التي رصيدها = 0
+                            return Math.abs(b.balance) >= 0.01
+                          })
                           .map((item, idx) => (
                             <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                               <td className="px-4 py-2">
@@ -316,7 +348,7 @@ export default function BalanceSheetPage() {
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Liabilities:' : 'إجمالي الالتزامات:'}</span>
                       <span>{numberFmt.format(liabilitiesDisplay)} {currencySymbol}</span>
-                      {liabilities < 0 && (
+                      {filteredLiabilities.reduce((sum, b) => sum + b.balance, 0) < 0 && (
                         <span className="text-xs text-gray-500 ml-2" suppressHydrationWarning>
                           {(hydrated && appLang==='en') ? '(Supplier Advances)' : '(سلف موردين)'}
                         </span>
@@ -353,7 +385,7 @@ export default function BalanceSheetPage() {
                     </div>
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Equity:' : 'إجمالي حقوق الملكية:'}</span>
-                      <span>{numberFmt.format(equityTotalDisplay)} {currencySymbol}</span>
+                      <span>{numberFmt.format(equityDisplay)} {currencySymbol}</span>
                     </div>
                   </div>
 
@@ -362,15 +394,16 @@ export default function BalanceSheetPage() {
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Liabilities + Equity:' : 'إجمالي الالتزامات + حقوق الملكية:'}</span>
                       <span
                         className={
-                          isBalanced ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                          isFilteredBalanced ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
                         }
                       >
-                        {numberFmt.format(totalLiabilitiesAndEquityAbs)} {currencySymbol}
+                        {numberFmt.format(liabilitiesDisplay + equityDisplay)} {currencySymbol}
                       </span>
                     </div>
                     {/* ✅ التحقق التلقائي من المعادلة الإلزامية: الأصول = الالتزامات + حقوق الملكية */}
+                    {/* ✅ يستخدم القيم المفلترة لضمان الاتساق مع العرض */}
                     {/* ⚠️ أي فرق يعتبر خطأ نظام وليس مجرد تحذير شكلي */}
-                    {isBalanced ? (
+                    {isFilteredBalanced ? (
                       <p className="text-sm text-green-600 dark:text-green-400 mt-2 font-medium">
                         ✓ {(hydrated && appLang==='en') ? 'Balance Sheet is balanced' : 'الميزانية العمومية متوازنة'}
                       </p>
@@ -381,8 +414,8 @@ export default function BalanceSheetPage() {
                         </p>
                         <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-semibold">
                           {(hydrated && appLang==='en') 
-                            ? `Difference: ${numberFmt.format(balanceDifference || 0)} ${currencySymbol}. This is a SYSTEM ERROR, not a warning.`
-                            : `الفرق: ${numberFmt.format(balanceDifference || 0)} ${currencySymbol}. هذا خطأ نظام وليس تحذيرًا.`}
+                            ? `Difference: ${numberFmt.format(filteredBalanceDifference || 0)} ${currencySymbol}. This is a SYSTEM ERROR, not a warning.`
+                            : `الفرق: ${numberFmt.format(filteredBalanceDifference || 0)} ${currencySymbol}. هذا خطأ نظام وليس تحذيرًا.`}
                         </p>
                         <p className="text-xs text-red-600 dark:text-red-400 mt-1">
                           {(hydrated && appLang==='en')
