@@ -245,6 +245,8 @@ export function computeBalanceSheetTotalsFromBalances(
     .reduce((s, b) => s + b.balance, 0)
 
   // ✅ 6. حساب الإيرادات والمصروفات من journal_entries فقط
+  // ✅ الإيرادات: رصيدها الطبيعي دائن (credit - debit) → يجب أن تكون موجبة أو صفر
+  // ✅ المصروفات: رصيدها الطبيعي مدين (debit - credit) → يجب أن تكون موجبة أو صفر
   const income = balances
     .filter((b) => b.account_type === "income")
     .reduce((s, b) => s + b.balance, 0)
@@ -255,7 +257,22 @@ export function computeBalanceSheetTotalsFromBalances(
   
   // ✅ 7. صافي الربح/الخسارة الجارية يأتي فقط من قائمة الدخل
   // ✅ قاعدة أساسية: الربح/الخسارة الجارية = الإيرادات - المصروفات (من journal_entries)
+  // ✅ إذا كان netIncomeSigned > 0 = ربح (يظهر بعلامة +)
+  // ✅ إذا كان netIncomeSigned < 0 = خسارة (يظهر بعلامة -)
+  // ✅ إذا كان netIncomeSigned = 0 = لا ربح ولا خسارة
   const netIncomeSigned = income - expense
+  
+  // ✅ التحقق التلقائي: إذا كانت المصروفات سالبة، فهذا خطأ في حساب الأرصدة
+  if (expense < 0) {
+    console.error("⚠️ SYSTEM WARNING: Expense balance is negative! This indicates an error in balance calculation.")
+    console.error(`Expense total: ${expense}, Income total: ${income}, Net Income: ${netIncomeSigned}`)
+  }
+  
+  // ✅ التحقق التلقائي: إذا كانت الإيرادات سالبة، فهذا خطأ في حساب الأرصدة
+  if (income < 0) {
+    console.error("⚠️ SYSTEM WARNING: Income balance is negative! This indicates an error in balance calculation.")
+    console.error(`Income total: ${income}, Expense total: ${expense}, Net Income: ${netIncomeSigned}`)
+  }
   
   // ✅ 8. إجمالي حقوق الملكية = رأس المال + الأرباح المحتجزة + صافي ربح/خسارة الفترة الحالية
   // إذا كان هناك رصيد في Income Summary (من قيد إقفال سابق)، نستخدمه

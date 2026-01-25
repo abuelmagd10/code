@@ -73,11 +73,12 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url)
     const asOf = searchParams.get("asOf") || new Date().toISOString().split("T")[0]
+    const fromDate = searchParams.get("from") || `${new Date(asOf).getFullYear()}-01-01` // ✅ بداية السنة كتاريخ افتراضي للرصيد الافتتاحي
 
     // ✅ جلب جميع الحسابات النشطة
     const { data: accountsData, error: accountsError } = await supabase
       .from("chart_of_accounts")
-      .select("id, account_code, account_name, account_type, normal_balance, opening_balance")
+      .select("id, account_code, account_name, account_type, normal_balance")
       .eq("company_id", companyId)
       .eq("is_active", true)
       .order("account_code")
@@ -86,56 +87,92 @@ export async function GET(req: NextRequest) {
       return serverError(`خطأ في جلب الحسابات: ${accountsError.message}`)
     }
 
-    // ✅ جلب جميع القيود المرحّلة حتى التاريخ المحدد
-    // ✅ فلترة القيود المحذوفة والمرحّلة فقط
-    const { data: journalEntriesData, error: entriesError } = await supabase
+    // ✅ جلب جميع القيود المرحّلة حتى تاريخ الرصيد الافتتاحي (للرصيد الافتتاحي)
+    const { data: openingEntriesData, error: openingEntriesError } = await supabase
       .from("journal_entries")
       .select("id")
       .eq("company_id", companyId)
-      .eq("status", "posted") // ✅ فلترة القيود المرحّلة فقط
-      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة
-      .lte("entry_date", asOf)
+      .eq("status", "posted")
+      .is("deleted_at", null)
+      .lt("entry_date", fromDate) // ✅ القيود قبل تاريخ بداية الفترة
 
-    if (entriesError) {
-      return serverError(`خطأ في جلب القيود: ${entriesError.message}`)
+    if (openingEntriesError) {
+      return serverError(`خطأ في جلب القيود الافتتاحية: ${openingEntriesError.message}`)
     }
 
-    const journalEntryIds = (journalEntriesData || []).map((je: any) => je.id)
+    const openingEntryIds = (openingEntriesData || []).map((je: any) => je.id)
 
-    // ✅ جلب سطور القيود
-    let journalLinesData: any[] = []
-    if (journalEntryIds.length > 0) {
+    // ✅ جلب جميع القيود المرحّلة في الفترة (للحركات)
+    const { data: periodEntriesData, error: periodEntriesError } = await supabase
+      .from("journal_entries")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("status", "posted")
+      .is("deleted_at", null)
+      .gte("entry_date", fromDate)
+      .lte("entry_date", asOf)
+
+    if (periodEntriesError) {
+      return serverError(`خطأ في جلب قيود الفترة: ${periodEntriesError.message}`)
+    }
+
+    const periodEntryIds = (periodEntriesData || []).map((je: any) => je.id)
+
+    // ✅ جلب سطور القيود الافتتاحية
+    let openingLinesData: any[] = []
+    if (openingEntryIds.length > 0) {
       const { data: linesData, error: linesError } = await supabase
         .from("journal_entry_lines")
         .select("account_id, debit_amount, credit_amount")
-        .in("journal_entry_id", journalEntryIds)
+        .in("journal_entry_id", openingEntryIds)
 
       if (linesError) {
-        return serverError(`خطأ في جلب سطور القيود: ${linesError.message}`)
+        return serverError(`خطأ في جلب سطور القيود الافتتاحية: ${linesError.message}`)
       }
 
-      journalLinesData = linesData || []
+      openingLinesData = linesData || []
     }
 
-    // ✅ تجميع الحركات حسب الحساب
-    const accountMovements: Record<
-      string,
-      { debit: number; credit: number }
-    > = {}
+    // ✅ جلب سطور قيود الفترة
+    let periodLinesData: any[] = []
+    if (periodEntryIds.length > 0) {
+      const { data: linesData, error: linesError } = await supabase
+        .from("journal_entry_lines")
+        .select("account_id, debit_amount, credit_amount")
+        .in("journal_entry_id", periodEntryIds)
 
-    for (const row of journalLinesData) {
-      const accountId = String(row.account_id || "")
-      if (!accountMovements[accountId]) {
-        accountMovements[accountId] = { debit: 0, credit: 0 }
+      if (linesError) {
+        return serverError(`خطأ في جلب سطور قيود الفترة: ${linesError.message}`)
       }
 
-      accountMovements[accountId].debit += Number(row.debit_amount || 0)
-      accountMovements[accountId].credit += Number(row.credit_amount || 0)
+      periodLinesData = linesData || []
+    }
+
+    // ✅ حساب الرصيد الافتتاحي من القيود فقط (Single Source of Truth)
+    const openingMovements: Record<string, { debit: number; credit: number }> = {}
+    for (const row of openingLinesData) {
+      const accountId = String(row.account_id || "")
+      if (!openingMovements[accountId]) {
+        openingMovements[accountId] = { debit: 0, credit: 0 }
+      }
+      openingMovements[accountId].debit += Number(row.debit_amount || 0)
+      openingMovements[accountId].credit += Number(row.credit_amount || 0)
+    }
+
+    // ✅ تجميع حركات الفترة حسب الحساب
+    const periodMovements: Record<string, { debit: number; credit: number }> = {}
+    for (const row of periodLinesData) {
+      const accountId = String(row.account_id || "")
+      if (!periodMovements[accountId]) {
+        periodMovements[accountId] = { debit: 0, credit: 0 }
+      }
+      periodMovements[accountId].debit += Number(row.debit_amount || 0)
+      periodMovements[accountId].credit += Number(row.credit_amount || 0)
     }
 
     // ✅ حساب الأرصدة
-    // ✅ الرصيد الافتتاحي يُحسب من opening_balance من الحساب (للتوافق مع البيانات القديمة)
-    // ✅ لكن الرصيد النهائي يُحسب من القيود فقط
+    // ✅ الرصيد الافتتاحي يُحسب من القيود فقط (Single Source of Truth)
+    // ✅ الرصيد النهائي = الرصيد الافتتاحي + حركات الفترة
     const trialBalanceRows: Array<{
       account_id: string
       account_code: string
@@ -158,17 +195,22 @@ export async function GET(req: NextRequest) {
     let totalClosingCredit = 0
 
     for (const account of accountsData || []) {
-      const movements = accountMovements[account.id] || { debit: 0, credit: 0 }
-      const openingBalance = Number(account.opening_balance || 0)
+      const openingMovs = openingMovements[account.id] || { debit: 0, credit: 0 }
+      const periodMovs = periodMovements[account.id] || { debit: 0, credit: 0 }
 
       // ✅ حساب الرصيد حسب الطبيعة المحاسبية
       const isDebitNature =
         account.account_type === "asset" || account.account_type === "expense"
       
-      // ✅ حساب الرصيد النهائي: opening_balance + الحركات
+      // ✅ حساب الرصيد الافتتاحي من القيود فقط (Single Source of Truth)
+      const openingBalance = isDebitNature
+        ? openingMovs.debit - openingMovs.credit
+        : openingMovs.credit - openingMovs.debit
+      
+      // ✅ حساب الرصيد النهائي: الرصيد الافتتاحي + حركات الفترة
       const closingBalance = isDebitNature
-        ? openingBalance + movements.debit - movements.credit
-        : openingBalance + movements.credit - movements.debit
+        ? openingBalance + periodMovs.debit - periodMovs.credit
+        : openingBalance + periodMovs.credit - periodMovs.debit
 
       // ✅ عرض الرصيد الافتتاحي حسب الطبيعة المحاسبية
       let openingDebit = 0
@@ -205,8 +247,8 @@ export async function GET(req: NextRequest) {
         account_type: account.account_type || "",
         opening_debit: openingDebit,
         opening_credit: openingCredit,
-        period_debit: movements.debit,
-        period_credit: movements.credit,
+        period_debit: periodMovs.debit,
+        period_credit: periodMovs.credit,
         closing_debit: closingDebit,
         closing_credit: closingCredit,
         closing_balance: closingBalance,
@@ -214,8 +256,8 @@ export async function GET(req: NextRequest) {
 
       totalOpeningDebit += openingDebit
       totalOpeningCredit += openingCredit
-      totalPeriodDebit += movements.debit
-      totalPeriodCredit += movements.credit
+      totalPeriodDebit += periodMovs.debit
+      totalPeriodCredit += periodMovs.credit
       totalClosingDebit += closingDebit
       totalClosingCredit += closingCredit
     }

@@ -142,7 +142,10 @@ export default function BalanceSheetPage() {
     isBalanced, // ✅ التحقق من المعادلة: الأصول = الالتزامات + حقوق الملكية
     balanceDifference
   } = computeBalanceSheetTotalsFromBalances(balances)
-  const netIncomeDisplay = Math.abs(netIncomeSigned)
+  // ✅ عرض صافي الربح/الخسارة مع الإشارة الصحيحة (لا Math.abs)
+  // ✅ إذا كان netIncomeSigned سالباً = خسارة (يظهر بعلامة -)
+  // ✅ إذا كان netIncomeSigned موجباً = ربح (يظهر بعلامة +)
+  const netIncomeDisplay = netIncomeSigned // ✅ عرض القيمة مع الإشارة الصحيحة
   const equityTotalDisplay = Math.abs(equityTotalSigned)
   const totalLiabilitiesAndEquityAbs = Math.abs(totalLiabilitiesAndEquitySigned)
   
@@ -378,7 +381,9 @@ export default function BalanceSheetPage() {
                           ))}
                         <tr className="border-b bg-gray-50 dark:bg-slate-900">
                           <td className="px-4 py-2 font-medium" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Current period profit/loss' : 'الأرباح/الخسائر الجارية'}</td>
-                          <td className="px-4 py-2 font-medium">{numberFmt.format(netIncomeDisplay)}</td>
+                          <td className={`px-4 py-2 font-medium ${netIncomeSigned >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {netIncomeSigned >= 0 ? '+' : ''}{numberFmt.format(netIncomeDisplay)} {currencySymbol}
+                          </td>
                         </tr>
                       </tbody>
                     </table>
