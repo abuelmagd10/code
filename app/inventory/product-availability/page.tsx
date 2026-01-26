@@ -1,0 +1,349 @@
+"use client"
+
+import { useState, useEffect, useCallback } from "react"
+import { Sidebar } from "@/components/sidebar"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useSupabase } from "@/lib/supabase/hooks"
+import { useToast } from "@/hooks/use-toast"
+import { ProductSearchSelect, type ProductOption } from "@/components/ProductSearchSelect"
+import { Search, Package, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+
+interface ProductAvailabilityResult {
+  branch_id: string
+  branch_name: string
+  warehouse_id: string
+  warehouse_name: string
+  cost_center_id: string | null
+  cost_center_name: string | null
+  available_quantity: number
+}
+
+export default function ProductAvailabilityPage() {
+  const supabase = useSupabase()
+  const { toast } = useToast()
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [products, setProducts] = useState<ProductOption[]>([])
+  const [selectedProductId, setSelectedProductId] = useState<string>("")
+  const [selectedProduct, setSelectedProduct] = useState<ProductOption | null>(null)
+  const [availabilityData, setAvailabilityData] = useState<ProductAvailabilityResult[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [isSearching, setIsSearching] = useState(false)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const docLang = document.documentElement?.lang
+    if (docLang === 'en') {
+      setAppLang('en')
+    } else {
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+      setAppLang(v === 'en' ? 'en' : 'ar')
+    }
+  }, [])
+
+  // جلب المنتجات
+  useEffect(() => {
+    const loadProducts = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+
+        const { data: memberData } = await supabase
+          .from("company_members")
+          .select("company_id")
+          .eq("user_id", user.id)
+          .maybeSingle()
+
+        if (!memberData?.company_id) return
+
+        setCompanyId(memberData.company_id)
+
+        const { data: productsData, error } = await supabase
+          .from("products")
+          .select("id, name, sku, item_type, unit_price")
+          .eq("company_id", memberData.company_id)
+          .eq("is_active", true)
+          .order("name")
+
+        if (error) {
+          console.error("Error loading products:", error)
+          return
+        }
+
+        setProducts(
+          (productsData || []).map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            sku: p.sku,
+            item_type: p.item_type || 'product',
+            unit_price: p.unit_price || 0
+          }))
+        )
+      } catch (error) {
+        console.error("Error in loadProducts:", error)
+      }
+    }
+
+    loadProducts()
+  }, [supabase])
+
+  // البحث عن توفر المنتج
+  const searchAvailability = useCallback(async () => {
+    if (!selectedProductId || !companyId) {
+      toast({
+        variant: "destructive",
+        title: appLang === 'en' ? "Missing Information" : "بيانات ناقصة",
+        description: appLang === 'en' 
+          ? "Please select a product first"
+          : "يرجى اختيار منتج أولاً"
+      })
+      return
+    }
+
+    setIsSearching(true)
+    setAvailabilityData([])
+
+    try {
+      const response = await fetch(
+        `/api/inventory/product-availability?product_id=${selectedProductId}&company_id=${companyId}`
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error_ar || errorData.error || "Failed to fetch availability")
+      }
+
+      const result = await response.json()
+      setAvailabilityData(result.data || [])
+
+      if (result.data && result.data.length === 0) {
+        toast({
+          variant: "default",
+          title: appLang === 'en' ? "No Results" : "لا توجد نتائج",
+          description: appLang === 'en'
+            ? "No inventory found for this product in any branch"
+            : "لم يتم العثور على مخزون لهذا المنتج في أي فرع"
+        })
+      }
+    } catch (error: any) {
+      console.error("Error searching availability:", error)
+      toast({
+        variant: "destructive",
+        title: appLang === 'en' ? "Error" : "خطأ",
+        description: error.message || (appLang === 'en' ? "Failed to search availability" : "فشل البحث عن التوفر")
+      })
+    } finally {
+      setIsSearching(false)
+    }
+  }, [selectedProductId, companyId, toast, appLang])
+
+  // عند تغيير المنتج المحدد
+  useEffect(() => {
+    if (selectedProductId) {
+      const product = products.find(p => p.id === selectedProductId)
+      setSelectedProduct(product || null)
+    } else {
+      setSelectedProduct(null)
+      setAvailabilityData([])
+    }
+  }, [selectedProductId, products])
+
+  const isAr = appLang === 'ar'
+
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <div className="flex-1 p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">
+              {isAr ? "البحث في مخزون الفروع" : "Branch Inventory Search"}
+            </h1>
+            <p className="text-muted-foreground mt-2">
+              {isAr 
+                ? "ابحث عن توفر المنتجات في جميع الفروع والمخازن (للاطلاع فقط)"
+                : "Search for product availability across all branches and warehouses (Read-only)"}
+            </p>
+          </div>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5" />
+              {isAr ? "بحث عن منتج" : "Search for Product"}
+            </CardTitle>
+            <CardDescription>
+              {isAr
+                ? "اختر منتجاً للبحث عن توفر المخزون في جميع الفروع والمخازن"
+                : "Select a product to search for inventory availability across all branches and warehouses"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>{isAr ? "المنتج" : "Product"}</Label>
+              <ProductSearchSelect
+                products={products}
+                value={selectedProductId}
+                onValueChange={setSelectedProductId}
+                placeholder={isAr ? "اختر منتجاً..." : "Select a product..."}
+                searchPlaceholder={isAr ? "ابحث بالاسم أو الرمز..." : "Search by name or SKU..."}
+                lang={appLang}
+                productsOnly={true}
+              />
+            </div>
+
+            {selectedProduct && (
+              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                <Package className="h-4 w-4" />
+                <span className="font-medium">{selectedProduct.name}</span>
+                {selectedProduct.sku && (
+                  <Badge variant="outline" className="ml-2">
+                    {isAr ? "الرمز:" : "SKU:"} {selectedProduct.sku}
+                  </Badge>
+                )}
+              </div>
+            )}
+
+            <Button
+              onClick={searchAvailability}
+              disabled={!selectedProductId || isSearching}
+              className="w-full"
+            >
+              {isSearching ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {isAr ? "جاري البحث..." : "Searching..."}
+                </>
+              ) : (
+                <>
+                  <Search className="mr-2 h-4 w-4" />
+                  {isAr ? "بحث عن التوفر" : "Search Availability"}
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {availabilityData.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                {isAr ? "نتائج البحث" : "Search Results"}
+              </CardTitle>
+              <CardDescription>
+                {isAr
+                  ? `تم العثور على ${availabilityData.length} ${isAr ? "مخزن" : "warehouse"} يحتوي على هذا المنتج`
+                  : `Found ${availabilityData.length} ${isAr ? "مخزن" : "warehouse(s)"} containing this product`}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className={isAr ? "text-right" : "text-left"}>
+                        {isAr ? "الفرع" : "Branch"}
+                      </TableHead>
+                      <TableHead className={isAr ? "text-right" : "text-left"}>
+                        {isAr ? "المخزن" : "Warehouse"}
+                      </TableHead>
+                      <TableHead className={isAr ? "text-right" : "text-left"}>
+                        {isAr ? "مركز التكلفة" : "Cost Center"}
+                      </TableHead>
+                      <TableHead className={isAr ? "text-right" : "text-left"}>
+                        {isAr ? "الكمية المتاحة" : "Available Quantity"}
+                      </TableHead>
+                      <TableHead className={isAr ? "text-right" : "text-left"}>
+                        {isAr ? "الحالة" : "Status"}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {availabilityData.map((item, index) => {
+                      const hasStock = item.available_quantity > 0
+                      return (
+                        <TableRow key={`${item.branch_id}-${item.warehouse_id}-${index}`}>
+                          <TableCell className={isAr ? "text-right" : "text-left"}>
+                            <div className="font-medium">{item.branch_name}</div>
+                          </TableCell>
+                          <TableCell className={isAr ? "text-right" : "text-left"}>
+                            <div>{item.warehouse_name}</div>
+                          </TableCell>
+                          <TableCell className={isAr ? "text-right" : "text-left"}>
+                            <div className="text-sm text-muted-foreground">
+                              {item.cost_center_name || (isAr ? "غير محدد" : "Not specified")}
+                            </div>
+                          </TableCell>
+                          <TableCell className={isAr ? "text-right" : "text-left"}>
+                            <div className={`font-semibold ${hasStock ? "text-green-600 dark:text-green-400" : "text-gray-500"}`}>
+                              {item.available_quantity.toLocaleString()}
+                            </div>
+                          </TableCell>
+                          <TableCell className={isAr ? "text-right" : "text-left"}>
+                            {hasStock ? (
+                              <Badge variant="default" className="bg-green-500 hover:bg-green-600">
+                                <CheckCircle2 className="mr-1 h-3 w-3" />
+                                {isAr ? "متوفر" : "Available"}
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary">
+                                <AlertCircle className="mr-1 h-3 w-3" />
+                                {isAr ? "غير متوفر" : "Out of Stock"}
+                              </Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* ملخص سريع */}
+              <div className="mt-4 p-4 bg-muted rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {isAr ? "إجمالي الكمية المتاحة:" : "Total Available Quantity:"}
+                    </p>
+                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                      {availabilityData.reduce((sum, item) => sum + item.available_quantity, 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium">
+                      {isAr ? "عدد المخازن المتوفرة:" : "Available Warehouses:"}
+                    </p>
+                    <p className="text-2xl font-bold">
+                      {availabilityData.filter(item => item.available_quantity > 0).length}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {availabilityData.length === 0 && !isSearching && selectedProductId && (
+          <Card>
+            <CardContent className="py-8 text-center">
+              <AlertCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">
+                {isAr
+                  ? "لم يتم العثور على مخزون لهذا المنتج في أي فرع"
+                  : "No inventory found for this product in any branch"}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
+  )
+}

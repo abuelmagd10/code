@@ -21,6 +21,7 @@ import {
   Truck,
   ArrowLeftRight,
   Bell,
+  Search,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -1021,6 +1022,7 @@ export function Sidebar() {
                   key: 'inventory', icon: Package, label: (lang === 'en' ? 'Inventory' : 'المخزون'), items: [
                     { label: (lang === 'en' ? 'Products & Services' : 'المنتجات والخدمات'), href: `/products${q}`, icon: Package },
                     { label: (lang === 'en' ? 'Inventory' : 'المخزون'), href: `/inventory${q}`, icon: DollarSign },
+                    { label: (lang === 'en' ? 'Product Availability' : 'توفر المنتجات في الفروع'), href: `/inventory/product-availability${q}`, icon: Search },
                     { label: (lang === 'en' ? 'Inventory Transfers' : 'نقل المخزون'), href: `/inventory-transfers${q}`, icon: ArrowLeftRight },
                     { label: (lang === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
                     { label: (lang === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
