@@ -2359,10 +2359,13 @@ export default function WriteOffsPage() {
 
     setSaving(true)
     try {
-      const { data: user } = await supabase.auth.getUser()
+      const { data: authData, error: authError } = await supabase.auth.getUser()
+      if (authError || !authData?.user) {
+        throw new Error(isAr ? "فشل في جلب بيانات المستخدم" : "Failed to get user data")
+      }
       const { data: result, error } = await supabase.rpc("cancel_approved_write_off", {
         p_write_off_id: selectedWriteOff.id,
-        p_cancelled_by: user?.user?.id,
+        p_cancelled_by: authData.user.id,
         p_cancellation_reason: cancellationReason,
       })
 
