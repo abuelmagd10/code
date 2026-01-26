@@ -6,9 +6,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { createClient } from "@/lib/supabase/server"
+import { cookies } from "next/headers"
 import { enforceGovernance } from "@/lib/governance-middleware"
-import { getAccessFilter } from "@/lib/authz"
 
 export interface ProductAvailabilityResult {
   branch_id: string
@@ -58,44 +58,17 @@ export async function GET(request: NextRequest) {
       )
     }
     
-    // 3️⃣ التحقق من صلاحيات المستخدم على الفروع
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json(
-        { error: "Unauthorized", error_ar: "غير مصرح" },
-        { status: 401 }
-      )
-    }
-    
-    // جلب صلاحيات المستخدم على الفروع
-    const { data: memberData } = await supabase
-      .from("company_members")
-      .select("role, branch_id, allowed_branches")
-      .eq("company_id", companyId)
-      .eq("user_id", user.id)
-      .maybeSingle()
-    
-    if (!memberData) {
-      return NextResponse.json(
-        { error: "User not found in company", error_ar: "المستخدم غير موجود في الشركة" },
-        { status: 403 }
-      )
-    }
-    
-    // 4️⃣ تحديد الفروع المسموح للمستخدم بالاطلاع عليها
-    const accessFilter = getAccessFilter(memberData.role, memberData.branch_id, memberData.allowed_branches)
+    // 3️⃣ تحديد الفروع المسموح للمستخدم بالاطلاع عليها
+    // governance.branchIds يحتوي على قائمة الفروع المسموحة للمستخدم
     let allowedBranchIds: string[] | null = null
     
-    if (accessFilter.branchId) {
-      // المستخدم مقيد بفرع واحد
-      allowedBranchIds = [accessFilter.branchId]
-    } else if (accessFilter.allowedBranchIds && accessFilter.allowedBranchIds.length > 0) {
-      // المستخدم لديه قائمة فروع مسموحة
-      allowedBranchIds = accessFilter.allowedBranchIds
+    if (governance.branchIds && governance.branchIds.length > 0) {
+      // المستخدم مقيد بفروع معينة
+      allowedBranchIds = governance.branchIds
     }
-    // إذا كان null، يعني يمكنه رؤية جميع الفروع (owner/admin)
+    // إذا كان فارغاً، يعني يمكنه رؤية جميع الفروع (owner/admin)
     
-    // 5️⃣ جلب جميع الفروع والمخازن في الشركة
+    // 4️⃣ جلب جميع الفروع والمخازن في الشركة
     let branchesQuery = supabase
       .from("branches")
       .select("id, name, branch_name")
@@ -125,7 +98,7 @@ export async function GET(request: NextRequest) {
     
     const branchIds = branches.map(b => b.id)
     
-    // 6️⃣ جلب جميع المخازن في الفروع المسموحة
+    // 5️⃣ جلب جميع المخازن في الفروع المسموحة
     let warehousesQuery = supabase
       .from("warehouses")
       .select("id, name, branch_id, cost_center_id")
@@ -150,10 +123,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ data: [] })
     }
     
-    // 7️⃣ جلب مراكز التكلفة
+    // 6️⃣ جلب مراكز التكلفة
     const costCenterIds = warehouses
-      .map(w => w.cost_center_id)
-      .filter((id): id is string => id !== null)
+      .map((w: any) => w.cost_center_id)
+      .filter((id: any): id is string => id !== null)
     
     let costCentersMap = new Map<string, string>()
     if (costCenterIds.length > 0) {
@@ -169,11 +142,11 @@ export async function GET(request: NextRequest) {
       }
     }
     
-    // 8️⃣ حساب الكمية المتاحة لكل مخزن
+    // 7️⃣ حساب الكمية المتاحة لكل مخزن
     const results: ProductAvailabilityResult[] = []
     
     for (const warehouse of warehouses) {
-      const branch = branches.find(b => b.id === warehouse.branch_id)
+      const branch = branches.find((b: any) => b.id === warehouse.branch_id)
       if (!branch) continue
       
       // استخدام دالة SQL لحساب الكمية المتاحة
@@ -210,7 +183,7 @@ export async function GET(request: NextRequest) {
       })
     }
     
-    // 9️⃣ ترتيب النتائج حسب الكمية (من الأكبر للأصغر)
+    // 8️⃣ ترتيب النتائج حسب الكمية (من الأكبر للأصغر)
     results.sort((a, b) => b.available_quantity - a.available_quantity)
     
     return NextResponse.json({ 
