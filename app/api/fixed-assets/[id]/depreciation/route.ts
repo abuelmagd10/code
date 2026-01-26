@@ -392,17 +392,28 @@ export async function POST(
           Number(asset.book_value || 0) + totalCancelledDepreciation
         )
 
+        // ✅ تحديث accumulated_depreciation و book_value فقط
+        // ⚠️ لا نعدل status التشغيلية (suspended, sold, disposed) - فقط active/fully_depreciated
+        const updateData: any = {
+          accumulated_depreciation: newAccumulatedDepreciation,
+          book_value: newBookValue,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id
+        }
+        
+        // ✅ تحديث status فقط إذا كانت الحالة الحالية active أو fully_depreciated
+        // منع الكتابة على الحالات التشغيلية (suspended, sold, disposed)
+        const currentStatus = asset.status
+        if (currentStatus === 'active' || currentStatus === 'fully_depreciated') {
+          updateData.status = newBookValue <= Number(asset.salvage_value || 0) 
+            ? 'fully_depreciated' 
+            : 'active'
+        }
+        // إذا كانت الحالة suspended, sold, disposed → نحتفظ بها كما هي
+
         const { error: assetUpdateError } = await supabase
           .from('fixed_assets')
-          .update({
-            accumulated_depreciation: newAccumulatedDepreciation,
-            book_value: newBookValue,
-            status: newBookValue <= Number(asset.salvage_value || 0) 
-              ? 'fully_depreciated' 
-              : 'active',
-            updated_at: new Date().toISOString(),
-            updated_by: user.id
-          })
+          .update(updateData)
           .eq('id', id)
 
         if (assetUpdateError) {

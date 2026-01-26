@@ -420,16 +420,25 @@ export default function FixedAssetDetailsPage() {
       
       // ✅ تحديث فوري لـ accumulated_depreciation و book_value من response API
       // لضمان التزامن الفوري قبل إعادة تحميل البيانات الكاملة
+      // ⚠️ لا نعدل status التشغيلية (suspended, sold, disposed) - فقط active/fully_depreciated
       if (result.new_accumulated_depreciation !== undefined && result.new_book_value !== undefined && asset) {
-        setAsset({
+        const updateData: any = {
           ...asset,
           accumulated_depreciation: result.new_accumulated_depreciation,
-          book_value: result.new_book_value,
-          // تحديث status إذا لزم الأمر
-          status: result.new_book_value <= Number(asset.salvage_value || 0) 
+          book_value: result.new_book_value
+        }
+        
+        // ✅ تحديث status فقط إذا كانت الحالة الحالية active أو fully_depreciated
+        // منع الكتابة على الحالات التشغيلية (suspended, sold, disposed)
+        const currentStatus = asset.status
+        if (currentStatus === 'active' || currentStatus === 'fully_depreciated') {
+          updateData.status = result.new_book_value <= Number(asset.salvage_value || 0) 
             ? 'fully_depreciated' 
             : 'active'
-        })
+        }
+        // إذا كانت الحالة suspended, sold, disposed → نحتفظ بها كما هي
+        
+        setAsset(updateData)
       }
       
       toast({ 

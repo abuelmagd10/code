@@ -26,6 +26,10 @@ CREATE TABLE IF NOT EXISTS inventory_write_offs (
   warehouse_id UUID,
   warehouse_name TEXT,
   
+  -- ✅ حقول الحوكمة (Governance) - مطلوبة للقيود المحاسبية
+  branch_id UUID REFERENCES branches(id) ON DELETE SET NULL,
+  cost_center_id UUID REFERENCES cost_centers(id) ON DELETE SET NULL,
+  
   -- القيم المالية
   total_cost DECIMAL(15, 2) NOT NULL DEFAULT 0,
   
@@ -85,6 +89,10 @@ CREATE TABLE IF NOT EXISTS inventory_write_off_items (
 CREATE INDEX IF NOT EXISTS idx_write_offs_company ON inventory_write_offs(company_id);
 CREATE INDEX IF NOT EXISTS idx_write_offs_status ON inventory_write_offs(company_id, status);
 CREATE INDEX IF NOT EXISTS idx_write_offs_date ON inventory_write_offs(company_id, write_off_date);
+-- ✅ فهارس حقول الحوكمة
+CREATE INDEX IF NOT EXISTS idx_write_offs_branch ON inventory_write_offs(branch_id);
+CREATE INDEX IF NOT EXISTS idx_write_offs_cost_center ON inventory_write_offs(cost_center_id);
+CREATE INDEX IF NOT EXISTS idx_write_offs_warehouse ON inventory_write_offs(warehouse_id);
 CREATE INDEX IF NOT EXISTS idx_write_off_items_product ON inventory_write_off_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_write_off_items_write_off ON inventory_write_off_items(write_off_id);
 
