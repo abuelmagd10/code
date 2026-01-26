@@ -59,13 +59,16 @@ export async function GET(request: NextRequest) {
     }
     
     // 3️⃣ تحديد الفروع المسموح للمستخدم بالاطلاع عليها
-    // governance.branchIds يحتوي على قائمة الفروع المسموحة للمستخدم
+    // 📋 استثناء: صفحة توفر المنتجات متاحة لجميع الأعضاء في الشركة
+    // الهدف: تمكين الموظفين من إبلاغ العملاء بتوفر المنتج في فروع أخرى
+    // لذلك نسمح برؤية جميع الفروع في الشركة بغض النظر عن صلاحيات المستخدم
     let allowedBranchIds: string[] | null = null
     
-    if (governance.branchIds && governance.branchIds.length > 0) {
-      // المستخدم مقيد بفروع معينة
-      allowedBranchIds = governance.branchIds
-    }
+    // ملاحظة: يمكن إزالة هذا التعليق إذا أردنا السماح لجميع الأعضاء برؤية جميع الفروع
+    // if (governance.branchIds && governance.branchIds.length > 0) {
+    //   // المستخدم مقيد بفروع معينة
+    //   allowedBranchIds = governance.branchIds
+    // }
     // إذا كان فارغاً، يعني يمكنه رؤية جميع الفروع (owner/admin)
     
     // 4️⃣ جلب جميع الفروع والمخازن في الشركة
@@ -146,7 +149,7 @@ export async function GET(request: NextRequest) {
     const results: ProductAvailabilityResult[] = []
     
     for (const warehouse of warehouses) {
-      const branch = branches.find((b: any) => b.id === warehouse.branch_id)
+      const branch = branches.find(b => b.id === warehouse.branch_id)
       if (!branch) continue
       
       // استخدام دالة SQL لحساب الكمية المتاحة
