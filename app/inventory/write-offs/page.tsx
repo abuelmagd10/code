@@ -2326,18 +2326,58 @@ export default function WriteOffsPage() {
 
     setSaving(true)
     try {
-      const { data: user } = await supabase.auth.getUser()
+      const { data: authData, error: authError } = await supabase.auth.getUser()
+      if (authError || !authData?.user) {
+        throw new Error(isAr ? "فشل في جلب بيانات المستخدم" : "Failed to get user data")
+      }
+
+      // ✅ جلب اسم من قام بالرفض
+      let rejectedByName: string | undefined
+      try {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('display_name, username')
+          .eq('user_id', authData.user.id)
+          .maybeSingle()
+        
+        rejectedByName = profile?.display_name || profile?.username || authData.user.email?.split('@')[0] || undefined
+      } catch (profileError) {
+        console.warn('Could not fetch rejecter name:', profileError)
+        rejectedByName = authData.user.email?.split('@')[0] || undefined
+      }
+
       const { error } = await supabase
         .from("inventory_write_offs")
         .update({
           status: "rejected",
-          rejected_by: user?.user?.id,
+          rejected_by: authData.user.id,
           rejected_at: new Date().toISOString(),
           rejection_reason: rejectionReason,
         })
         .eq("id", selectedWriteOff.id)
 
       if (error) throw error
+
+      // 🔔 إرسال إشعار للمنشئ الأصلي
+      try {
+        const { notifyWriteOffRejected } = await import('@/lib/notification-helpers')
+        await notifyWriteOffRejected({
+          companyId: selectedWriteOff.company_id || '',
+          writeOffId: selectedWriteOff.id,
+          writeOffNumber: selectedWriteOff.write_off_number,
+          createdBy: selectedWriteOff.created_by || authData.user.id,
+          rejectedBy: authData.user.id,
+          rejectedByName,
+          rejectionReason,
+          branchId: selectedWriteOff.branch_id || undefined,
+          warehouseId: selectedWriteOff.warehouse_id || undefined,
+          costCenterId: selectedWriteOff.cost_center_id || undefined,
+          appLang: isAr ? 'ar' : 'en'
+        })
+      } catch (notificationError) {
+        console.error('Error sending write-off rejection notification:', notificationError)
+        // لا نوقف العملية إذا فشل الإشعار
+      }
 
       toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم رفض الإهلاك" : "Write-off rejected" })
       setShowRejectDialog(false)
@@ -2363,6 +2403,22 @@ export default function WriteOffsPage() {
       if (authError || !authData?.user) {
         throw new Error(isAr ? "فشل في جلب بيانات المستخدم" : "Failed to get user data")
       }
+
+      // ✅ جلب اسم من قام بالإلغاء
+      let cancelledByName: string | undefined
+      try {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('display_name, username')
+          .eq('user_id', authData.user.id)
+          .maybeSingle()
+        
+        cancelledByName = profile?.display_name || profile?.username || authData.user.email?.split('@')[0] || undefined
+      } catch (profileError) {
+        console.warn('Could not fetch canceller name:', profileError)
+        cancelledByName = authData.user.email?.split('@')[0] || undefined
+      }
+
       const { data: result, error } = await supabase.rpc("cancel_approved_write_off", {
         p_write_off_id: selectedWriteOff.id,
         p_cancelled_by: authData.user.id,
@@ -2371,6 +2427,27 @@ export default function WriteOffsPage() {
 
       if (error) throw error
       if (!result?.success) throw new Error(result?.error || "Unknown error")
+
+      // 🔔 إرسال إشعار للمنشئ الأصلي
+      try {
+        const { notifyWriteOffCancelled } = await import('@/lib/notification-helpers')
+        await notifyWriteOffCancelled({
+          companyId: selectedWriteOff.company_id || '',
+          writeOffId: selectedWriteOff.id,
+          writeOffNumber: selectedWriteOff.write_off_number,
+          createdBy: selectedWriteOff.created_by || authData.user.id,
+          cancelledBy: authData.user.id,
+          cancelledByName,
+          cancellationReason,
+          branchId: selectedWriteOff.branch_id || undefined,
+          warehouseId: selectedWriteOff.warehouse_id || undefined,
+          costCenterId: selectedWriteOff.cost_center_id || undefined,
+          appLang: isAr ? 'ar' : 'en'
+        })
+      } catch (notificationError) {
+        console.error('Error sending write-off cancellation notification:', notificationError)
+        // لا نوقف العملية إذا فشل الإشعار
+      }
 
       toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم إلغاء الإهلاك" : "Write-off cancelled" })
       setShowCancelDialog(false)

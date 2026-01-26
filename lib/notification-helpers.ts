@@ -606,7 +606,7 @@ export async function notifyWriteOffModified(params: {
 
 /**
  * إنشاء إشعار عند اعتماد الإهلاك
- * يتم إرسال الإشعار للمنشئ فقط
+ * ✅ يتم إرسال الإشعار للمنشئ الأصلي فقط
  */
 export async function notifyWriteOffApproved(params: {
   companyId: string
@@ -614,17 +614,25 @@ export async function notifyWriteOffApproved(params: {
   writeOffNumber: string
   createdBy: string // المنشئ الأصلي
   approvedBy: string
+  approvedByName?: string // اسم من قام بالاعتماد (اختياري)
+  branchId?: string
+  warehouseId?: string
+  costCenterId?: string
   appLang?: 'ar' | 'en'
 }) {
-  const { companyId, writeOffId, writeOffNumber, createdBy, approvedBy, appLang = 'ar' } = params
+  const { companyId, writeOffId, writeOffNumber, createdBy, approvedBy, approvedByName, branchId, warehouseId, costCenterId, appLang = 'ar' } = params
 
   const title = appLang === 'en'
     ? 'Write-Off Approved'
     : 'تم اعتماد الإهلاك'
   
+  const approvedByText = approvedByName 
+    ? (appLang === 'en' ? ` by ${approvedByName}` : ` بواسطة ${approvedByName}`)
+    : ''
+  
   const message = appLang === 'en'
-    ? `Write-off ${writeOffNumber} has been approved successfully`
-    : `تم اعتماد الإهلاك رقم ${writeOffNumber} بنجاح`
+    ? `Write-off ${writeOffNumber} has been approved successfully${approvedByText}`
+    : `تم اعتماد الإهلاك رقم ${writeOffNumber} بنجاح${approvedByText}`
 
   // إشعار للمنشئ فقط
   await createNotification({
@@ -634,6 +642,9 @@ export async function notifyWriteOffApproved(params: {
     title,
     message,
     createdBy: approvedBy,
+    branchId,
+    warehouseId,
+    costCenterId,
     assignedToUser: createdBy, // إرسال للمنشئ الأصلي
     priority: 'normal' as NotificationPriority,
     eventKey: `write_off:${writeOffId}:approved`,
@@ -672,7 +683,8 @@ export async function archiveWriteOffApprovalNotifications(params: {
 }
 
 /**
- * إنشاء إشعار عند رفض الإهلاك (مستقبلاً)
+ * إنشاء إشعار عند رفض الإهلاك
+ * ✅ يتم إرسال الإشعار للمنشئ الأصلي فقط
  */
 export async function notifyWriteOffRejected(params: {
   companyId: string
@@ -680,10 +692,14 @@ export async function notifyWriteOffRejected(params: {
   writeOffNumber: string
   createdBy: string // المنشئ الأصلي
   rejectedBy: string
+  rejectedByName?: string // اسم من قام بالرفض (اختياري)
   rejectionReason?: string
+  branchId?: string
+  warehouseId?: string
+  costCenterId?: string
   appLang?: 'ar' | 'en'
 }) {
-  const { companyId, writeOffId, writeOffNumber, createdBy, rejectedBy, rejectionReason, appLang = 'ar' } = params
+  const { companyId, writeOffId, writeOffNumber, createdBy, rejectedBy, rejectedByName, rejectionReason, branchId, warehouseId, costCenterId, appLang = 'ar' } = params
 
   const title = appLang === 'en'
     ? 'Write-Off Rejected'
@@ -693,9 +709,13 @@ export async function notifyWriteOffRejected(params: {
     ? (appLang === 'en' ? ` Reason: ${rejectionReason}` : ` السبب: ${rejectionReason}`)
     : ''
   
+  const rejectedByText = rejectedByName 
+    ? (appLang === 'en' ? ` by ${rejectedByName}` : ` بواسطة ${rejectedByName}`)
+    : ''
+  
   const message = appLang === 'en'
-    ? `Write-off ${writeOffNumber} has been rejected. Please review the data and resubmit for approval.${reasonText}`
-    : `تم رفض الإهلاك رقم ${writeOffNumber}. يرجى مراجعة البيانات وإعادة الإرسال للاعتماد.${reasonText}`
+    ? `Write-off ${writeOffNumber} has been rejected${rejectedByText}. Please review the data and resubmit for approval.${reasonText}`
+    : `تم رفض الإهلاك رقم ${writeOffNumber}${rejectedByText}. يرجى مراجعة البيانات وإعادة الإرسال للاعتماد.${reasonText}`
 
   // إشعار للمنشئ فقط
   await createNotification({
@@ -705,10 +725,67 @@ export async function notifyWriteOffRejected(params: {
     title,
     message,
     createdBy: rejectedBy,
+    branchId,
+    warehouseId,
+    costCenterId,
     assignedToUser: createdBy, // إرسال للمنشئ الأصلي
     priority: 'high' as NotificationPriority,
     eventKey: `write_off:${writeOffId}:rejected`,
     severity: 'error',
+    category: 'inventory'
+  })
+}
+
+/**
+ * إنشاء إشعار عند إلغاء الإهلاك المعتمد
+ * ✅ يتم إرسال الإشعار للمنشئ الأصلي فقط
+ */
+export async function notifyWriteOffCancelled(params: {
+  companyId: string
+  writeOffId: string
+  writeOffNumber: string
+  createdBy: string // المنشئ الأصلي
+  cancelledBy: string
+  cancelledByName?: string // اسم من قام بالإلغاء (اختياري)
+  cancellationReason?: string
+  branchId?: string
+  warehouseId?: string
+  costCenterId?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, writeOffId, writeOffNumber, createdBy, cancelledBy, cancelledByName, cancellationReason, branchId, warehouseId, costCenterId, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? 'Write-Off Cancelled'
+    : 'تم إلغاء الإهلاك'
+  
+  const reasonText = cancellationReason 
+    ? (appLang === 'en' ? ` Reason: ${cancellationReason}` : ` السبب: ${cancellationReason}`)
+    : ''
+  
+  const cancelledByText = cancelledByName 
+    ? (appLang === 'en' ? ` by ${cancelledByName}` : ` بواسطة ${cancelledByName}`)
+    : ''
+  
+  const message = appLang === 'en'
+    ? `Write-off ${writeOffNumber} has been cancelled${cancelledByText}. A reversal entry has been created to restore inventory.${reasonText}`
+    : `تم إلغاء الإهلاك رقم ${writeOffNumber}${cancelledByText}. تم إنشاء قيد عكسي لاستعادة المخزون.${reasonText}`
+
+  // إشعار للمنشئ فقط
+  await createNotification({
+    companyId,
+    referenceType: 'inventory_write_off',
+    referenceId: writeOffId,
+    title,
+    message,
+    createdBy: cancelledBy,
+    branchId,
+    warehouseId,
+    costCenterId,
+    assignedToUser: createdBy, // إرسال للمنشئ الأصلي
+    priority: 'high' as NotificationPriority,
+    eventKey: `write_off:${writeOffId}:cancelled`,
+    severity: 'warning',
     category: 'inventory'
   })
 }

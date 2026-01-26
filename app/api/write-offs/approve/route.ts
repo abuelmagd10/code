@@ -330,6 +330,21 @@ export async function POST(request: NextRequest) {
         archiveWriteOffApprovalNotifications 
       } = await import('@/lib/notification-helpers')
 
+      // ✅ جلب اسم من قام بالاعتماد (من user_profiles أو email)
+      let approvedByName: string | undefined
+      try {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('display_name, username')
+          .eq('user_id', user.id)
+          .maybeSingle()
+        
+        approvedByName = profile?.display_name || profile?.username || user.email?.split('@')[0] || undefined
+      } catch (profileError) {
+        console.warn('Could not fetch approver name:', profileError)
+        approvedByName = user.email?.split('@')[0] || undefined
+      }
+
       // إرسال إشعار للمنشئ
       await notifyWriteOffApproved({
         companyId,
@@ -337,6 +352,10 @@ export async function POST(request: NextRequest) {
         writeOffNumber: writeOff.write_off_number,
         createdBy: writeOff.created_by || user.id, // المنشئ الأصلي
         approvedBy: user.id,
+        approvedByName, // ✅ اسم من قام بالاعتماد
+        branchId: writeOff.branch_id,
+        warehouseId: writeOff.warehouse_id,
+        costCenterId: writeOff.cost_center_id,
         appLang: 'ar' // يمكن جعله ديناميكي لاحقاً
       })
 
