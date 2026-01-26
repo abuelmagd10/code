@@ -109,9 +109,12 @@ export default function FixedAssetDetailsPage() {
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([])
   const [userRole, setUserRole] = useState<string>('viewer')
 
-  // التحقق من الصلاحيات
+  // التحقق من الصلاحيات والدور
   useEffect(() => {
     const checkPerms = async () => {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
       const [update, postDep, approveDep] = await Promise.all([
         canAction(supabase, "fixed_assets", "update"),
         canAdvancedAction(supabase, "fixed_assets", "post_depreciation"),
@@ -120,6 +123,26 @@ export default function FixedAssetDetailsPage() {
       setPermUpdate(update)
       setPermPostDepreciation(postDep)
       setPermApproveDepreciation(approveDep)
+
+      // ✅ جلب دور المستخدم (لإلغاء الإهلاك)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: memberData } = await supabase
+          .from("company_members")
+          .select("role")
+          .eq("company_id", companyId)
+          .eq("user_id", user.id)
+          .maybeSingle()
+
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("user_id")
+          .eq("id", companyId)
+          .single()
+
+        const isOwner = companyData?.user_id === user.id
+        setUserRole(isOwner ? "owner" : (memberData?.role || "viewer"))
+      }
     }
     checkPerms()
     

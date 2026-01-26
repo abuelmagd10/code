@@ -177,7 +177,7 @@ export async function POST(
       }
 
       // إلغاء الجداول المعتمدة فقط
-      const { error } = await supabase
+      const { data: updatedSchedules, error } = await supabase
         .from('depreciation_schedules')
         .update({
           status: 'cancelled',
@@ -190,12 +190,17 @@ export async function POST(
         .eq('asset_id', id)
         .in('id', schedule_ids)
         .in('status', ['approved']) // فقط المعتمدة
+        .select('id') // ✅ جلب السجلات المحدثة فعلياً
 
       if (error) throw error
 
+      // ✅ إرجاع العدد الفعلي للسجلات المحدثة
+      const actualCancelledCount = updatedSchedules?.length || 0
+
       return NextResponse.json({ 
         success: true,
-        cancelled_count: schedule_ids.length
+        cancelled_count: actualCancelledCount,
+        requested_count: schedule_ids.length
       })
     }
 
@@ -288,102 +293,160 @@ export async function POST(
         }, { status: 400 })
       }
 
+      // ✅ استخدام RPC function لضمان transaction integrity
+      // بدلاً من loop بدون transaction، سنستخدم دالة SQL واحدة
+      // أو نستخدم try-catch مع rollback manual
+      
       // إنشاء قيد عكسي لكل جدول إهلاك
       const reversalEntryIds: string[] = []
       let totalCancelledDepreciation = 0
+      const processedScheduleIds: string[] = []
 
-      for (const schedule of schedules) {
-        // 1. إنشاء قيد عكسي
-        const { data: reversalEntry, error: reversalError } = await supabase
-          .from('journal_entries')
-          .insert({
-            company_id: companyId,
-            entry_date: new Date().toISOString().split('T')[0],
-            description: `إلغاء إهلاك: ${asset.name} - فترة ${schedule.period_number}`,
-            reference_type: 'depreciation_reversal',
-            reference_id: id
-          })
-          .select()
-          .single()
+      try {
+        for (const schedule of schedules) {
+          // 1. إنشاء قيد عكسي
+          const { data: reversalEntry, error: reversalError } = await supabase
+            .from('journal_entries')
+            .insert({
+              company_id: companyId,
+              entry_date: new Date().toISOString().split('T')[0],
+              description: `إلغاء إهلاك: ${asset.name} - فترة ${schedule.period_number}`,
+              reference_type: 'depreciation_reversal',
+              reference_id: id
+            })
+            .select()
+            .single()
 
-        if (reversalError) throw reversalError
+          if (reversalError) throw reversalError
 
-        reversalEntryIds.push(reversalEntry.id)
+          reversalEntryIds.push(reversalEntry.id)
 
-        // 2. إنشاء سطور القيد العكسي
-        // من حساب مجمع الإهلاك (مدين) - لإرجاع الإهلاك
-        const { error: line1Error } = await supabase
-          .from('journal_entry_lines')
-          .insert({
-            journal_entry_id: reversalEntry.id,
-            account_id: asset.accumulated_depreciation_account_id,
-            description: `إلغاء مجمع إهلاك: ${asset.name}`,
-            debit_amount: schedule.depreciation_amount,
-            credit_amount: 0
-          })
+          // 2. إنشاء سطور القيد العكسي
+          // من حساب مجمع الإهلاك (مدين) - لإرجاع الإهلاك
+          const { error: line1Error } = await supabase
+            .from('journal_entry_lines')
+            .insert({
+              journal_entry_id: reversalEntry.id,
+              account_id: asset.accumulated_depreciation_account_id,
+              description: `إلغاء مجمع إهلاك: ${asset.name}`,
+              debit_amount: schedule.depreciation_amount,
+              credit_amount: 0
+            })
 
-        if (line1Error) throw line1Error
+          if (line1Error) {
+            // ✅ Rollback: حذف القيد الذي تم إنشاؤه
+            await supabase.from('journal_entries').delete().eq('id', reversalEntry.id)
+            throw line1Error
+          }
 
-        // إلى حساب مصروف الإهلاك (دائن) - لإرجاع المصروف
-        const { error: line2Error } = await supabase
-          .from('journal_entry_lines')
-          .insert({
-            journal_entry_id: reversalEntry.id,
-            account_id: asset.depreciation_expense_account_id,
-            description: `إلغاء مصروف إهلاك: ${asset.name}`,
-            debit_amount: 0,
-            credit_amount: schedule.depreciation_amount
-          })
+          // إلى حساب مصروف الإهلاك (دائن) - لإرجاع المصروف
+          const { error: line2Error } = await supabase
+            .from('journal_entry_lines')
+            .insert({
+              journal_entry_id: reversalEntry.id,
+              account_id: asset.depreciation_expense_account_id,
+              description: `إلغاء مصروف إهلاك: ${asset.name}`,
+              debit_amount: 0,
+              credit_amount: schedule.depreciation_amount
+            })
 
-        if (line2Error) throw line2Error
+          if (line2Error) {
+            // ✅ Rollback: حذف القيد وسطوره
+            await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', reversalEntry.id)
+            await supabase.from('journal_entries').delete().eq('id', reversalEntry.id)
+            throw line2Error
+          }
 
-        // 3. تحديث جدول الإهلاك
-        const { error: updateError } = await supabase
-          .from('depreciation_schedules')
+          // 3. تحديث جدول الإهلاك
+          const { error: updateError } = await supabase
+            .from('depreciation_schedules')
+            .update({
+              status: 'cancelled',
+              reversal_journal_entry_id: reversalEntry.id,
+              cancelled_by: user.id,
+              cancelled_at: new Date().toISOString()
+            })
+            .eq('id', schedule.id)
+
+          if (updateError) {
+            // ✅ Rollback: حذف القيد وسطوره
+            await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', reversalEntry.id)
+            await supabase.from('journal_entries').delete().eq('id', reversalEntry.id)
+            throw updateError
+          }
+
+          processedScheduleIds.push(schedule.id)
+          totalCancelledDepreciation += Number(schedule.depreciation_amount || 0)
+        }
+
+        // 4. إعادة حساب accumulated_depreciation و book_value للأصل
+        // ✅ إصلاح: book_value يجب أن يكون book_value + totalCancelledDepreciation فقط
+        // (لا حاجة لـ Math.min لأن book_value لا يمكن أن يتجاوز purchase_cost إذا كانت الحسابات الأصلية صحيحة)
+        const newAccumulatedDepreciation = Math.max(0, 
+          Number(asset.accumulated_depreciation || 0) - totalCancelledDepreciation
+        )
+        const newBookValue = Number(asset.book_value || 0) + totalCancelledDepreciation
+
+        const { error: assetUpdateError } = await supabase
+          .from('fixed_assets')
           .update({
-            status: 'cancelled',
-            reversal_journal_entry_id: reversalEntry.id,
-            cancelled_by: user.id,
-            cancelled_at: new Date().toISOString()
+            accumulated_depreciation: newAccumulatedDepreciation,
+            book_value: newBookValue,
+            status: newBookValue <= Number(asset.salvage_value || 0) 
+              ? 'fully_depreciated' 
+              : 'active',
+            updated_at: new Date().toISOString(),
+            updated_by: user.id
           })
-          .eq('id', schedule.id)
+          .eq('id', id)
 
-        if (updateError) throw updateError
+        if (assetUpdateError) {
+          // ✅ Rollback: إعادة جميع الجداول إلى posted وإلغاء القيود العكسية
+          for (const entryId of reversalEntryIds) {
+            await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', entryId)
+            await supabase.from('journal_entries').delete().eq('id', entryId)
+          }
+          // إعادة الجداول إلى posted
+          await supabase
+            .from('depreciation_schedules')
+            .update({
+              status: 'posted',
+              reversal_journal_entry_id: null,
+              cancelled_by: null,
+              cancelled_at: null
+            })
+            .in('id', processedScheduleIds)
+          throw assetUpdateError
+        }
 
-        totalCancelledDepreciation += Number(schedule.depreciation_amount || 0)
-      }
-
-      // 4. إعادة حساب accumulated_depreciation و book_value للأصل
-      const newAccumulatedDepreciation = Math.max(0, 
-        Number(asset.accumulated_depreciation || 0) - totalCancelledDepreciation
-      )
-      const newBookValue = Math.min(
-        Number(asset.purchase_cost || 0),
-        Number(asset.book_value || 0) + totalCancelledDepreciation
-      )
-
-      const { error: assetUpdateError } = await supabase
-        .from('fixed_assets')
-        .update({
-          accumulated_depreciation: newAccumulatedDepreciation,
-          book_value: newBookValue,
-          status: newBookValue <= Number(asset.salvage_value || 0) 
-            ? 'fully_depreciated' 
-            : 'active',
-          updated_at: new Date().toISOString(),
-          updated_by: user.id
+        return NextResponse.json({ 
+          success: true,
+          cancelled_count: processedScheduleIds.length,
+          reversal_entry_ids: reversalEntryIds,
+          new_accumulated_depreciation: newAccumulatedDepreciation,
+          new_book_value: newBookValue
         })
-        .eq('id', id)
-
-      if (assetUpdateError) throw assetUpdateError
-
-      return NextResponse.json({ 
-        success: true,
-        cancelled_count: schedules.length,
-        reversal_entry_ids: reversalEntryIds,
-        new_accumulated_depreciation: newAccumulatedDepreciation,
-        new_book_value: newBookValue
-      })
+      } catch (error) {
+        // ✅ في حالة حدوث خطأ، تم عمل rollback في الأماكن المناسبة
+        // لكن إذا حدث خطأ بعد معالجة بعض الجداول، يجب إعادة كل شيء
+        if (processedScheduleIds.length > 0 && processedScheduleIds.length < schedules.length) {
+          // Rollback جزئي: إعادة الجداول المعالجة
+          for (const entryId of reversalEntryIds) {
+            await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', entryId)
+            await supabase.from('journal_entries').delete().eq('id', entryId)
+          }
+          await supabase
+            .from('depreciation_schedules')
+            .update({
+              status: 'posted',
+              reversal_journal_entry_id: null,
+              cancelled_by: null,
+              cancelled_at: null
+            })
+            .in('id', processedScheduleIds)
+        }
+        throw error
+      }
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
