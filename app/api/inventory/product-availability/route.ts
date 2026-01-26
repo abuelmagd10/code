@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { enforceGovernance } from "@/lib/governance-layer"
+import { enforceGovernance } from "@/lib/governance-middleware"
 import { getAccessFilter } from "@/lib/authz"
 
 export interface ProductAvailabilityResult {
