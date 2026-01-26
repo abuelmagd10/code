@@ -125,7 +125,12 @@ export default function FixedAssetDetailsPage() {
       setPermApproveDepreciation(approveDep)
 
       // ✅ جلب دور المستخدم (لإلغاء الإهلاك)
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: authData, error: authError } = await supabase.auth.getUser()
+      if (authError) {
+        console.error('Error getting user:', authError)
+        return
+      }
+      const user = authData?.user
       if (user) {
         const { data: memberData } = await supabase
           .from("company_members")
@@ -146,10 +151,21 @@ export default function FixedAssetDetailsPage() {
     }
     checkPerms()
     
-    // الاستماع لتحديثات الصلاحيات
+    // الاستماع لتحديثات الصلاحيات وتغيير الشركة
     const handler = () => { checkPerms() }
-    if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
-    return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
+    const companyChangeHandler = () => { checkPerms() }
+    
+    if (typeof window !== 'undefined') {
+      window.addEventListener('permissions_updated', handler)
+      window.addEventListener('company-changed', companyChangeHandler)
+    }
+    
+    return () => { 
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('permissions_updated', handler)
+        window.removeEventListener('company-changed', companyChangeHandler)
+      }
+    }
   }, [supabase])
   const [schedules, setSchedules] = useState<DepreciationSchedule[]>([])
   const [currency, setCurrency] = useState('SAR')

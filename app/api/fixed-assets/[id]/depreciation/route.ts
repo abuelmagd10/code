@@ -369,9 +369,12 @@ export async function POST(
             .eq('id', schedule.id)
 
           if (updateError) {
-            // ✅ Rollback: حذف القيد وسطوره
+            // ✅ Rollback: حذف القيد وسطوره (حتى لو processedScheduleIds فارغ)
             await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', reversalEntry.id)
             await supabase.from('journal_entries').delete().eq('id', reversalEntry.id)
+            // إزالة القيد من reversalEntryIds لأنه تم حذفه
+            const index = reversalEntryIds.indexOf(reversalEntry.id)
+            if (index > -1) reversalEntryIds.splice(index, 1)
             throw updateError
           }
 
@@ -380,12 +383,14 @@ export async function POST(
         }
 
         // 4. إعادة حساب accumulated_depreciation و book_value للأصل
-        // ✅ إصلاح: book_value يجب أن يكون book_value + totalCancelledDepreciation فقط
-        // (لا حاجة لـ Math.min لأن book_value لا يمكن أن يتجاوز purchase_cost إذا كانت الحسابات الأصلية صحيحة)
+        // ✅ book_value يجب ألا يتجاوز purchase_cost (مبدأ محاسبي أساسي)
         const newAccumulatedDepreciation = Math.max(0, 
           Number(asset.accumulated_depreciation || 0) - totalCancelledDepreciation
         )
-        const newBookValue = Number(asset.book_value || 0) + totalCancelledDepreciation
+        const newBookValue = Math.min(
+          Number(asset.purchase_cost || 0),
+          Number(asset.book_value || 0) + totalCancelledDepreciation
+        )
 
         const { error: assetUpdateError } = await supabase
           .from('fixed_assets')
@@ -427,14 +432,18 @@ export async function POST(
           new_book_value: newBookValue
         })
       } catch (error) {
-        // ✅ في حالة حدوث خطأ، تم عمل rollback في الأماكن المناسبة
-        // لكن إذا حدث خطأ بعد معالجة بعض الجداول، يجب إعادة كل شيء
-        if (processedScheduleIds.length > 0 && processedScheduleIds.length < schedules.length) {
-          // Rollback جزئي: إعادة الجداول المعالجة
+        // ✅ Rollback شامل: تنظيف جميع القيود العكسية والجداول المعالجة
+        // يغطي جميع الحالات: فشل جزئي، فشل كامل، أو فشل بعد نجاح كل الجداول
+        if (reversalEntryIds.length > 0) {
+          // حذف جميع القيود العكسية التي تم إنشاؤها
           for (const entryId of reversalEntryIds) {
             await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', entryId)
             await supabase.from('journal_entries').delete().eq('id', entryId)
           }
+        }
+        
+        // إعادة الجداول المعالجة إلى posted (حتى لو كان عددها 0، لن يحدث ضرر)
+        if (processedScheduleIds.length > 0) {
           await supabase
             .from('depreciation_schedules')
             .update({
@@ -445,6 +454,7 @@ export async function POST(
             })
             .in('id', processedScheduleIds)
         }
+        
         throw error
       }
     }
