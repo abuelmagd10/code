@@ -67,6 +67,9 @@ ON CONFLICT (role_name, permission_action) DO NOTHING;
 -- ملاحظة: هذا السكريبت يضيف الصلاحيات للشركات الموجودة
 -- باستخدام دالة copy_default_permissions_for_company
 
+-- ⚠️ تعطيل الـ trigger مؤقتاً لتجنب إرسال events كثيرة أثناء الإدراج الجماعي
+ALTER TABLE company_role_permissions DISABLE TRIGGER trigger_company_role_permissions_changed;
+
 DO $$
 DECLARE
   v_company_id UUID;
@@ -80,11 +83,17 @@ BEGIN
   RAISE NOTICE '✅ تم تطبيق صلاحيات product_availability على جميع الشركات';
 END $$;
 
+-- ✅ إعادة تفعيل الـ trigger بعد الانتهاء من copy_default_permissions_for_company
+ALTER TABLE company_role_permissions ENABLE TRIGGER trigger_company_role_permissions_changed;
+
 -- =====================================
 -- 4. إضافة الصلاحيات مباشرة في company_role_permissions
 -- =====================================
 -- هذا يضمن أن الشركات الموجودة تحصل على الصلاحيات فوراً
 -- حتى لو لم تعمل دالة copy_default_permissions_for_company
+
+-- ⚠️ تعطيل الـ trigger مؤقتاً لتجنب إرسال events كثيرة أثناء الإدراج الجماعي
+ALTER TABLE company_role_permissions DISABLE TRIGGER trigger_company_role_permissions_changed;
 
 INSERT INTO company_role_permissions (
   company_id, 
@@ -116,6 +125,9 @@ ON CONFLICT (company_id, role, resource) DO UPDATE SET
   can_read = TRUE,
   can_access = TRUE,
   allowed_actions = ARRAY['product_availability:access', 'product_availability:read']::TEXT[];
+
+-- ✅ إعادة تفعيل الـ trigger
+ALTER TABLE company_role_permissions ENABLE TRIGGER trigger_company_role_permissions_changed;
 
 -- رسالة تأكيد
 DO $$
