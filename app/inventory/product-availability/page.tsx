@@ -14,6 +14,7 @@ import { Search, Package, Loader2, AlertCircle, CheckCircle2 } from "lucide-reac
 import { Badge } from "@/components/ui/badge"
 import { usePermissions } from "@/lib/permissions-context"
 import { useRouter } from "next/navigation"
+import { getActiveCompanyId } from "@/lib/company"
 
 interface ProductAvailabilityResult {
   branch_id: string
@@ -61,24 +62,23 @@ export default function ProductAvailabilityPage() {
           return
         }
 
-        // جلب company_id من company_members
-        const { data: memberData, error: memberError } = await supabase
-          .from("company_members")
-          .select("company_id")
-          .eq("user_id", user.id)
-          .maybeSingle()
+        // ✅ استخدام getActiveCompanyId للتعامل مع المستخدمين في عدة شركات
+        // هذه الدالة تجلب الشركة النشطة من الكوكيز أو localStorage
+        const activeCompanyId = await getActiveCompanyId(supabase)
 
-        if (memberError) {
-          console.error("Error loading company member:", memberError)
+        if (!activeCompanyId) {
+          console.warn("No active company found for user")
+          toast({
+            variant: "destructive",
+            title: appLang === 'en' ? "Error" : "خطأ",
+            description: appLang === 'en' 
+              ? "No active company found. Please select a company."
+              : "لم يتم العثور على شركة نشطة. يرجى اختيار شركة."
+          })
           return
         }
 
-        if (!memberData?.company_id) {
-          console.warn("User is not a company member")
-          return
-        }
-
-        setCompanyId(memberData.company_id)
+        setCompanyId(activeCompanyId)
 
         // 📋 جلب جميع المنتجات في الشركة - بدون فلترة بناءً على الفرع أو الصلاحيات
         // الهدف: تمكين جميع الأعضاء من البحث عن توفر المنتج في جميع الفروع
@@ -101,7 +101,7 @@ export default function ProductAvailabilityPage() {
           return
         }
 
-        console.log(`✅ Loaded ${productsData?.length || 0} products for company ${memberData.company_id}`)
+        console.log(`✅ Loaded ${productsData?.length || 0} products for company ${activeCompanyId}`)
 
         setProducts(
           (productsData || []).map((p: any) => ({
