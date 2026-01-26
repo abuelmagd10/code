@@ -457,7 +457,13 @@ export default function InventoryPage() {
         } else if (type === 'sale') {
           soldAgg[pid] = (soldAgg[pid] || 0) + Math.abs(q)
         } else if (type === 'write_off' || type === 'adjustment') {
+          // ✅ حساب الإهلاك: فقط write_off (استبعاد write_off_reversal)
           writeOffsAgg[pid] = (writeOffsAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'write_off_reversal') {
+          // ✅ عند إلغاء الإهلاك: نطرح من writeOffsAgg لأن write_off_reversal يعيد الكمية
+          // ⚠️ quantity_change في write_off_reversal يكون موجب (إضافة للمخزون)
+          // لكن في writeOffsAgg نريد طرحه لأن الإهلاك تم إلغاؤه
+          writeOffsAgg[pid] = Math.max(0, (writeOffsAgg[pid] || 0) - Math.abs(q))
         } else if (type === 'sale_return' || type === 'return') {
           saleReturnsAgg[pid] = (saleReturnsAgg[pid] || 0) + Math.abs(q)
         } else if (type === 'purchase_return' || type === 'purchase_reversal') {
