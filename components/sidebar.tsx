@@ -211,13 +211,6 @@ export function Sidebar() {
     const res = getResourceFromHref(href)
     if (res === 'profile' || res === 'no_permissions') return true
     
-    // 📋 صفحة "توفر المنتجات في الفروع" متاحة لجميع الأدوار في الشركة
-    // الهدف: تمكين الموظفين من إبلاغ العملاء بتوفر المنتج في فروع أخرى
-    if (res === 'product_availability') {
-      // إذا كان المستخدم عضو في الشركة، يمكنه الوصول
-      return accessReady && profile !== null || permissionsReady
-    }
-    
     // 🔐 استخدام AccessContext إذا كان جاهزاً
     if (accessReady && profile) {
       return canAccessPage(res)

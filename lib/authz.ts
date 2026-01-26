@@ -106,16 +106,6 @@ export async function canAccessPage(
     return true
   }
   
-  // 📋 صفحة "توفر المنتجات في الفروع" متاحة لجميع الأدوار في الشركة
-  // الهدف: تمكين الموظفين من إبلاغ العملاء بتوفر المنتج في فروع أخرى
-  if (resource === "product_availability") {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return false
-    const cid = await getActiveCompanyId(supabase)
-    // إذا كان المستخدم عضو في الشركة، يمكنه الوصول
-    return cid !== null
-  }
-  
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false
 
