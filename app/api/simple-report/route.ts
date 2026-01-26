@@ -17,7 +17,10 @@
  * 2. Data Source:
  *    - رأس المال: من حسابات equity في journal_entries
  *    - المبيعات: من حسابات income (sub_type = 'sales_revenue' أو account_code = '4100')
- *    - المشتريات: من حسابات expense (sub_type = 'purchases' أو account_code = '5110')
+ *    - المشتريات:
+ *        - محاسبيًا: من حسابات expense (sub_type = 'purchases' أو account_code = '5110') إن وُجدت
+ *        - تشغيليًا (للتبسيط ولضمان الدقة): من فواتير الشراء (bills) خلال الفترة
+ *      ✅ الهدف في التقرير المبسط: عدم إخفاء أي مشتريات تمت فعليًا حتى لو كانت المعالجة المحاسبية عبر المخزون (inventory asset)
  *    - COGS: من حسابات expense (sub_type = 'cogs' أو account_code = '5000')
  *    - المصروفات: من حسابات expense (باستثناء COGS والمشتريات)
  *    - الإهلاك: من حسابات expense (account_code = '5500')
@@ -166,11 +169,14 @@ export async function GET(request: NextRequest) {
     }
     salesCount = salesEntryIds.size
 
-    // ✅ حساب المشتريات (من journal_entries فقط)
-    // ✅ المشتريات: حساب expense مع sub_type = 'purchases' أو account_code = '5110'
-    // ✅ مردودات المشتريات: حساب expense مع sub_type = 'purchase_returns' أو account_code = '5120'
-    let totalPurchases = 0
-    let purchasesCount = 0
+    // ✅ حساب المشتريات
+    // ✅ المستوى المحاسبي: من حسابات expense مع sub_type = 'purchases' أو account_code = '5110' (إن وُجدت)
+    // ✅ المستوى التشغيلي (للتقرير المبسط): من فواتير الشراء (bills) خلال الفترة
+    // 🎯 الهدف: عدم إظهار مشتريات = 0 إذا كانت هناك مشتريات فعلية (فواتير شراء أو قيود شراء)
+
+    // 1) مشتريات من القيود المحاسبية (حسابات المشتريات التقليدية إن وُجدت)
+    let journalPurchasesTotal = 0
+    let journalPurchasesCount = 0
     const purchasesLines = periodLines.filter((line: any) => {
       const coa = line.chart_of_accounts
       return coa?.account_type === "expense" && 
@@ -189,7 +195,7 @@ export async function GET(request: NextRequest) {
       const credit = Number(line.credit_amount || 0)
       const amount = debit - credit
       if (amount > 0.01) {
-        totalPurchases += amount
+        journalPurchasesTotal += amount
         purchasesEntryIds.add(line.journal_entry_id)
       }
     }
@@ -200,11 +206,55 @@ export async function GET(request: NextRequest) {
       const credit = Number(line.credit_amount || 0)
       const amount = credit - debit // مردودات تزيد بالدائن
       if (amount > 0.01) {
-        totalPurchases = Math.max(0, totalPurchases - amount) // طرح مردودات المشتريات
+        journalPurchasesTotal = Math.max(0, journalPurchasesTotal - amount) // طرح مردودات المشتريات
       }
     }
     
-    purchasesCount = purchasesEntryIds.size
+    journalPurchasesCount = purchasesEntryIds.size
+
+    // 2) مشتريات من فواتير الشراء (bills) - مصدر تشغيلي موثوق للحركة الفعلية
+    let billsPurchasesTotal = 0
+    let billsPurchasesCount = 0
+    try {
+      const { data: purchasesBills, error: billsError } = await supabase
+        .from("bills")
+        .select("id, total_amount, status, bill_date, is_deleted")
+        .eq("company_id", companyId)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .gte("bill_date", fromDate)
+        .lte("bill_date", toDate)
+        .in("status", ["sent", "partially_paid", "paid"])
+
+      if (billsError) {
+        console.warn("Could not load purchase bills in simple-report:", billsError)
+      } else {
+        billsPurchasesTotal = (purchasesBills || []).reduce(
+          (sum, bill: any) => sum + Number(bill.total_amount || 0),
+          0
+        )
+        billsPurchasesCount = (purchasesBills || []).length
+      }
+    } catch (e: any) {
+      console.warn("Error loading purchase bills in simple-report:", e)
+    }
+
+    // 3) اختيار المصدر النهائي للمشتريات في التقرير المبسط
+    // ✅ إذا وُجدت مشتريات محاسبية (journalPurchasesTotal > 0) نستخدمها
+    // ✅ إذا لم توجد مشتريات محاسبية لكن توجد فواتير شراء (billsPurchasesTotal > 0) نستخدم فواتير الشراء
+    // ✅ لا يُسمح بعرض مشتريات = 0 إذا وُجدت فواتير شراء فعلية داخل الفترة
+    let totalPurchases = journalPurchasesTotal
+    let purchasesCount = journalPurchasesCount
+
+    if (totalPurchases < 0.01 && billsPurchasesTotal > 0.01) {
+      totalPurchases = billsPurchasesTotal
+      purchasesCount = billsPurchasesCount
+    }
+
+    // تحقق إضافي: إذا وُجدت فواتير شراء لكن النتيجة لا تزال 0 → تحذير نظام
+    if (billsPurchasesCount > 0 && totalPurchases < 0.01) {
+      console.error("🚨 SYSTEM ERROR: Purchases bills exist but simple-report shows purchases = 0")
+      console.error(`BillsPurchasesTotal=${billsPurchasesTotal}, BillsCount=${billsPurchasesCount}, JournalPurchasesTotal=${journalPurchasesTotal}, JournalPurchasesCount=${journalPurchasesCount}`)
+    }
 
     // ✅ حساب COGS (من journal_entries فقط)
     let totalCOGS = 0
