@@ -223,7 +223,7 @@ export async function GET(request: NextRequest) {
         .or("is_deleted.is.null,is_deleted.eq.false")
         .gte("bill_date", fromDate)
         .lte("bill_date", toDate)
-        .in("status", ["sent", "partially_paid", "paid"])
+        .in("status", ["received", "partially_paid", "paid"]) // ✅ استخدام "received" للـ bills (ليس "sent" الذي هو للـ invoices)
 
       if (billsError) {
         console.warn("Could not load purchase bills in simple-report:", billsError)
@@ -240,12 +240,13 @@ export async function GET(request: NextRequest) {
 
     // 3) اختيار المصدر النهائي للمشتريات في التقرير المبسط
     // ✅ إذا وُجدت مشتريات محاسبية (journalPurchasesTotal > 0) نستخدمها
-    // ✅ إذا لم توجد مشتريات محاسبية لكن توجد فواتير شراء (billsPurchasesTotal > 0) نستخدم فواتير الشراء
-    // ✅ لا يُسمح بعرض مشتريات = 0 إذا وُجدت فواتير شراء فعلية داخل الفترة
+    // ✅ إذا لم توجد مشتريات محاسبية لكن توجد فواتير شراء (billsPurchasesCount > 0) نستخدم فواتير الشراء
+    // ✅ لا يُسمح بعرض مشتريات = 0 إذا وُجدت فواتير شراء فعلية داخل الفترة (حتى لو كانت المبالغ صغيرة)
     let totalPurchases = journalPurchasesTotal
     let purchasesCount = journalPurchasesCount
 
-    if (totalPurchases < 0.01 && billsPurchasesTotal > 0.01) {
+    if (totalPurchases < 0.01 && billsPurchasesCount > 0) {
+      // ✅ استخدام فواتير الشراء إذا وُجدت (حتى لو كانت المبالغ صغيرة < 0.01)
       totalPurchases = billsPurchasesTotal
       purchasesCount = billsPurchasesCount
     }
