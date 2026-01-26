@@ -240,20 +240,21 @@ export async function GET(request: NextRequest) {
 
     // 3) اختيار المصدر النهائي للمشتريات في التقرير المبسط
     // ✅ إذا وُجدت مشتريات محاسبية (journalPurchasesTotal > 0) نستخدمها
-    // ✅ إذا لم توجد مشتريات محاسبية لكن توجد فواتير شراء (billsPurchasesCount > 0) نستخدم فواتير الشراء
-    // ✅ لا يُسمح بعرض مشتريات = 0 إذا وُجدت فواتير شراء فعلية داخل الفترة (حتى لو كانت المبالغ صغيرة)
+    // ✅ إذا لم توجد مشتريات محاسبية لكن توجد فواتير شراء بمبلغ فعلي (billsPurchasesTotal >= 0.01) نستخدم فواتير الشراء
+    // ✅ لا يُسمح بعرض مشتريات = 0 إذا وُجدت فواتير شراء فعلية بمبلغ فعلي داخل الفترة
     let totalPurchases = journalPurchasesTotal
     let purchasesCount = journalPurchasesCount
 
-    if (totalPurchases < 0.01 && billsPurchasesCount > 0) {
-      // ✅ استخدام فواتير الشراء إذا وُجدت (حتى لو كانت المبالغ صغيرة < 0.01)
+    if (totalPurchases < 0.01 && billsPurchasesTotal >= 0.01) {
+      // ✅ استخدام فواتير الشراء إذا وُجدت بمبلغ فعلي (>= 0.01)
       totalPurchases = billsPurchasesTotal
       purchasesCount = billsPurchasesCount
     }
 
-    // تحقق إضافي: إذا وُجدت فواتير شراء لكن النتيجة لا تزال 0 → تحذير نظام
-    if (billsPurchasesCount > 0 && totalPurchases < 0.01) {
-      console.error("🚨 SYSTEM ERROR: Purchases bills exist but simple-report shows purchases = 0")
+    // تحقق إضافي: إذا وُجدت فواتير شراء بمبلغ فعلي لكن النتيجة لا تزال 0 → تحذير نظام
+    // ✅ هذا يعني أن هناك مشكلة في المنطق (مثلاً: فواتير بمبلغ لكن لم تُستخدم)
+    if (billsPurchasesTotal >= 0.01 && totalPurchases < 0.01) {
+      console.error("🚨 SYSTEM ERROR: Purchases bills with actual amounts exist but simple-report shows purchases = 0")
       console.error(`BillsPurchasesTotal=${billsPurchasesTotal}, BillsCount=${billsPurchasesCount}, JournalPurchasesTotal=${journalPurchasesTotal}, JournalPurchasesCount=${journalPurchasesCount}`)
     }
 
