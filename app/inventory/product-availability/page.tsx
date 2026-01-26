@@ -12,6 +12,8 @@ import { useToast } from "@/hooks/use-toast"
 import { ProductSearchSelect, type ProductOption } from "@/components/ProductSearchSelect"
 import { Search, Package, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { usePermissions } from "@/lib/permissions-context"
+import { useRouter } from "next/navigation"
 
 interface ProductAvailabilityResult {
   branch_id: string

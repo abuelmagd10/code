@@ -162,6 +162,7 @@ const PATH_TO_RESOURCE: Record<string, string> = {
   '/products': 'products',
   '/inventory': 'inventory',
   '/inventory/third-party': 'third_party_inventory',
+  '/inventory/product-availability': 'product_availability',
   '/inventory/write-offs': 'write_offs',
   '/inventory-transfers': 'inventory_transfers',
   
