@@ -51,34 +51,57 @@ export default function ProductAvailabilityPage() {
     return () => window.removeEventListener('app_language_changed', handler)
   }, [])
 
-  // جلب المنتجات
+  // جلب المنتجات - متاح لجميع الأعضاء في الشركة
   useEffect(() => {
     const loadProducts = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
+        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        if (userError || !user) {
+          console.error("Error getting user:", userError)
+          return
+        }
 
-        const { data: memberData } = await supabase
+        // جلب company_id من company_members
+        const { data: memberData, error: memberError } = await supabase
           .from("company_members")
           .select("company_id")
           .eq("user_id", user.id)
           .maybeSingle()
 
-        if (!memberData?.company_id) return
+        if (memberError) {
+          console.error("Error loading company member:", memberError)
+          return
+        }
+
+        if (!memberData?.company_id) {
+          console.warn("User is not a company member")
+          return
+        }
 
         setCompanyId(memberData.company_id)
 
-        const { data: productsData, error } = await supabase
+        // 📋 جلب جميع المنتجات في الشركة - بدون فلترة بناءً على الفرع أو الصلاحيات
+        // الهدف: تمكين جميع الأعضاء من البحث عن توفر المنتج في جميع الفروع
+        const { data: productsData, error: productsError } = await supabase
           .from("products")
           .select("id, name, sku, item_type, unit_price")
           .eq("company_id", memberData.company_id)
           .eq("is_active", true)
           .order("name")
 
-        if (error) {
-          console.error("Error loading products:", error)
+        if (productsError) {
+          console.error("Error loading products:", productsError)
+          toast({
+            variant: "destructive",
+            title: appLang === 'en' ? "Error" : "خطأ",
+            description: appLang === 'en' 
+              ? "Failed to load products"
+              : "فشل تحميل المنتجات"
+          })
           return
         }
+
+        console.log(`✅ Loaded ${productsData?.length || 0} products for company ${memberData.company_id}`)
 
         setProducts(
           (productsData || []).map((p: any) => ({
@@ -91,11 +114,18 @@ export default function ProductAvailabilityPage() {
         )
       } catch (error) {
         console.error("Error in loadProducts:", error)
+        toast({
+          variant: "destructive",
+          title: appLang === 'en' ? "Error" : "خطأ",
+          description: appLang === 'en' 
+            ? "Failed to load products"
+            : "فشل تحميل المنتجات"
+        })
       }
     }
 
     loadProducts()
-  }, [supabase])
+  }, [supabase, toast, appLang])
 
   // البحث عن توفر المنتج
   const searchAvailability = useCallback(async () => {
