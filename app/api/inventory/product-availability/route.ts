@@ -58,31 +58,15 @@ export async function GET(request: NextRequest) {
       )
     }
     
-    // 3️⃣ تحديد الفروع المسموح للمستخدم بالاطلاع عليها
+    // 3️⃣ جلب جميع الفروع والمخازن في الشركة
     // 📋 استثناء: صفحة توفر المنتجات متاحة لجميع الأعضاء في الشركة
     // الهدف: تمكين الموظفين من إبلاغ العملاء بتوفر المنتج في فروع أخرى
     // لذلك نسمح برؤية جميع الفروع في الشركة بغض النظر عن صلاحيات المستخدم
-    let allowedBranchIds: string[] | null = null
-    
-    // ملاحظة: يمكن إزالة هذا التعليق إذا أردنا السماح لجميع الأعضاء برؤية جميع الفروع
-    // if (governance.branchIds && governance.branchIds.length > 0) {
-    //   // المستخدم مقيد بفروع معينة
-    //   allowedBranchIds = governance.branchIds
-    // }
-    // إذا كان فارغاً، يعني يمكنه رؤية جميع الفروع (owner/admin)
-    
-    // 4️⃣ جلب جميع الفروع والمخازن في الشركة
-    let branchesQuery = supabase
+    const { data: branches, error: branchesError } = await supabase
       .from("branches")
       .select("id, name, branch_name")
       .eq("company_id", companyId)
       .eq("is_active", true)
-    
-    if (allowedBranchIds) {
-      branchesQuery = branchesQuery.in("id", allowedBranchIds)
-    }
-    
-    const { data: branches, error: branchesError } = await branchesQuery
     
     if (branchesError) {
       console.error("Error fetching branches:", branchesError)
