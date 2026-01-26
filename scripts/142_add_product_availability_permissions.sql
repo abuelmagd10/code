@@ -117,4 +117,9 @@ ON CONFLICT (company_id, role, resource) DO UPDATE SET
   can_access = TRUE,
   allowed_actions = ARRAY['product_availability:access', 'product_availability:read']::TEXT[];
 
-RAISE NOTICE '✅ تم إضافة صلاحيات product_availability بنجاح';
+-- رسالة تأكيد
+DO $$
+BEGIN
+  RAISE NOTICE '✅ تم إضافة صلاحيات product_availability بنجاح';
+  RAISE NOTICE '✅ جميع الأدوار الآن لديها صلاحية الوصول لصفحة توفر المنتجات في الفروع';
+END $$;
