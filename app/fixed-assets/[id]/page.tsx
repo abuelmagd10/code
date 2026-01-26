@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
-import { canAction } from "@/lib/authz"
+import { canAction, canAdvancedAction } from "@/lib/authz"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 
 // Utility function for number formatting
@@ -18,10 +18,20 @@ const formatNumber = (num: number) => {
   return num.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 import {
-  ArrowLeft, Edit2, Calculator, CheckCircle, Play,
+  ArrowLeft, Edit2, Calculator, CheckCircle, Play, X,
   Building2, Package, TrendingDown, DollarSign,
   Car, Monitor, Sofa, Home, MapPin, Wrench
 } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface FixedAsset {
   id: string
@@ -92,14 +102,20 @@ export default function FixedAssetDetailsPage() {
   const [permUpdate, setPermUpdate] = useState(false)
   const [permPostDepreciation, setPermPostDepreciation] = useState(false)
   const [permApproveDepreciation, setPermApproveDepreciation] = useState(false)
+  
+  // === حالة الإلغاء ===
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [cancelType, setCancelType] = useState<'approved' | 'posted'>('approved')
+  const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([])
+  const [userRole, setUserRole] = useState<string>('viewer')
 
   // التحقق من الصلاحيات
   useEffect(() => {
     const checkPerms = async () => {
       const [update, postDep, approveDep] = await Promise.all([
         canAction(supabase, "fixed_assets", "update"),
-        canAction(supabase, "fixed_assets", "post_depreciation"),
-        canAction(supabase, "fixed_assets", "approve_depreciation"),
+        canAdvancedAction(supabase, "fixed_assets", "post_depreciation"),
+        canAdvancedAction(supabase, "fixed_assets", "approve_depreciation"),
       ])
       setPermUpdate(update)
       setPermPostDepreciation(postDep)
@@ -288,6 +304,82 @@ export default function FixedAssetDetailsPage() {
       toast({ 
         title: appLang === 'en' ? "Error posting depreciation" : "خطأ في ترحيل الإهلاك", 
         description: error.message || (appLang === 'en' ? 'Failed to post depreciation' : 'فشل ترحيل الإهلاك'),
+        variant: "destructive" 
+      })
+    }
+  }
+
+  // ✅ إلغاء إهلاك معتمد (Approved)
+  const handleCancelApproved = (scheduleIds: string[]) => {
+    const canCancel = userRole === 'owner' || userRole === 'admin'
+    if (!canCancel) {
+      toast({
+        title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
+        description: appLang === 'en' 
+          ? 'Only Owner and Admin can cancel approved depreciation' 
+          : 'فقط المالك والمدير العام يمكنهم إلغاء الإهلاك المعتمد',
+        variant: "destructive"
+      })
+      return
+    }
+    setCancelType('approved')
+    setSelectedScheduleIds(scheduleIds)
+    setCancelDialogOpen(true)
+  }
+
+  // ✅ إلغاء إهلاك مرحل (Posted) - مع قيد عكسي
+  const handleCancelPosted = (scheduleIds: string[]) => {
+    const canCancel = userRole === 'owner' || userRole === 'admin'
+    if (!canCancel) {
+      toast({
+        title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
+        description: appLang === 'en' 
+          ? 'Only Owner and Admin can cancel posted depreciation' 
+          : 'فقط المالك والمدير العام يمكنهم إلغاء الإهلاك المرحل',
+        variant: "destructive"
+      })
+      return
+    }
+    setCancelType('posted')
+    setSelectedScheduleIds(scheduleIds)
+    setCancelDialogOpen(true)
+  }
+
+  // تنفيذ الإلغاء بعد التأكيد
+  const confirmCancel = async () => {
+    try {
+      const action = cancelType === 'approved' ? 'cancel' : 'cancel_posted'
+      
+      const response = await fetch(`/api/fixed-assets/${params.id}/depreciation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          schedule_ids: selectedScheduleIds,
+          user_id: (await supabase.auth.getUser()).data.user?.id
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error_ar || errorData.error || 'Failed to cancel depreciation')
+      }
+
+      const result = await response.json()
+      toast({ 
+        title: appLang === 'en' ? "Depreciation Cancelled" : "تم إلغاء الإهلاك",
+        description: appLang === 'en'
+          ? `Cancelled ${result.cancelled_count || selectedScheduleIds.length} schedule(s)`
+          : `تم إلغاء ${result.cancelled_count || selectedScheduleIds.length} فترة`
+      })
+      
+      setCancelDialogOpen(false)
+      loadData()
+    } catch (error: any) {
+      console.error('Error cancelling depreciation:', error)
+      toast({ 
+        title: appLang === 'en' ? "Error cancelling depreciation" : "خطأ في إلغاء الإهلاك", 
+        description: error.message || (appLang === 'en' ? 'Failed to cancel depreciation' : 'فشل إلغاء الإهلاك'),
         variant: "destructive" 
       })
     }
@@ -494,6 +586,9 @@ export default function FixedAssetDetailsPage() {
                   <TableHead>{appLang === 'en' ? 'Accumulated' : 'المجمع'}</TableHead>
                   <TableHead>{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</TableHead>
                   <TableHead>{appLang === 'en' ? 'Status' : 'الحالة'}</TableHead>
+                  {(userRole === 'owner' || userRole === 'admin') && (
+                    <TableHead>{appLang === 'en' ? 'Actions' : 'الإجراءات'}</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -514,6 +609,32 @@ export default function FixedAssetDetailsPage() {
                         }[schedule.status] || schedule.status}
                       </Badge>
                     </TableCell>
+                    {(userRole === 'owner' || userRole === 'admin') && (
+                      <TableCell>
+                        {schedule.status === 'approved' && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleCancelApproved([schedule.id])}
+                            className="ml-2"
+                          >
+                            <X className="w-4 h-4 mr-1" />
+                            {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                          </Button>
+                        )}
+                        {schedule.status === 'posted' && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleCancelPosted([schedule.id])}
+                            className="ml-2"
+                          >
+                            <X className="w-4 h-4 mr-1" />
+                            {appLang === 'en' ? 'Cancel with Reversal' : 'إلغاء مع قيد عكسي'}
+                          </Button>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
                 {schedules.length === 0 && (
@@ -529,6 +650,40 @@ export default function FixedAssetDetailsPage() {
         </Card>
         </div>
         </ListErrorBoundary>
+
+        {/* Dialog تأكيد الإلغاء */}
+        <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {appLang === 'en' 
+                  ? cancelType === 'approved' 
+                    ? 'Cancel Approved Depreciation?' 
+                    : 'Cancel Posted Depreciation?'
+                  : cancelType === 'approved'
+                    ? 'إلغاء الإهلاك المعتمد؟'
+                    : 'إلغاء الإهلاك المرحل؟'}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {appLang === 'en' 
+                  ? cancelType === 'approved'
+                    ? 'This will cancel the approved depreciation schedule. The status will be changed to cancelled and approval information will be cleared.'
+                    : 'This will create a reversal journal entry to cancel the posted depreciation. The original journal entry will be kept for audit purposes. Are you sure you want to proceed?'
+                  : cancelType === 'approved'
+                    ? 'سيتم إلغاء جدول الإهلاك المعتمد. ستتغير الحالة إلى ملغي وسيتم مسح معلومات الاعتماد.'
+                    : 'سيتم إنشاء قيد عكسي لإلغاء الإهلاك المرحل. سيتم الاحتفاظ بالقيد الأصلي لأغراض التدقيق. هل أنت متأكد من المتابعة؟'}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>
+                {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={confirmCancel} className="bg-red-600 hover:bg-red-700">
+                {appLang === 'en' ? 'Confirm Cancellation' : 'تأكيد الإلغاء'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   )
