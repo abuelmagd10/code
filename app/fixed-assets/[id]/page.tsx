@@ -184,8 +184,9 @@ export default function FixedAssetDetailsPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      // Load asset details
-      const { data: assetData } = await supabase
+      // ✅ Load asset details - جلب البيانات الجديدة بدون cache
+      // تضمن أن accumulated_depreciation و book_value محدثة بعد الإلغاء
+      const { data: assetData, error: assetError } = await supabase
         .from('fixed_assets')
         .select(`
           *,
@@ -197,17 +198,28 @@ export default function FixedAssetDetailsPage() {
         .eq('id', params.id)
         .single()
 
+      if (assetError) {
+        console.error('Error loading asset:', assetError)
+        throw assetError
+      }
+
       if (assetData) {
+        // ✅ تحديث state مع البيانات الجديدة من قاعدة البيانات
         setAsset(assetData)
       }
 
-      // Load depreciation schedules
-      const { data: schedulesData } = await supabase
+      // ✅ Load depreciation schedules - جلب الجداول المحدثة
+      const { data: schedulesData, error: schedulesError } = await supabase
         .from('depreciation_schedules')
         .select('*')
         .eq('company_id', companyId)
         .eq('asset_id', params.id)
         .order('period_number')
+
+      if (schedulesError) {
+        console.error('Error loading schedules:', schedulesError)
+        throw schedulesError
+      }
 
       setSchedules(schedulesData || [])
     } catch (error) {
@@ -405,6 +417,21 @@ export default function FixedAssetDetailsPage() {
       }
 
       const result = await response.json()
+      
+      // ✅ تحديث فوري لـ accumulated_depreciation و book_value من response API
+      // لضمان التزامن الفوري قبل إعادة تحميل البيانات الكاملة
+      if (result.new_accumulated_depreciation !== undefined && result.new_book_value !== undefined && asset) {
+        setAsset({
+          ...asset,
+          accumulated_depreciation: result.new_accumulated_depreciation,
+          book_value: result.new_book_value,
+          // تحديث status إذا لزم الأمر
+          status: result.new_book_value <= Number(asset.salvage_value || 0) 
+            ? 'fully_depreciated' 
+            : 'active'
+        })
+      }
+      
       toast({ 
         title: appLang === 'en' ? "Depreciation Cancelled" : "تم إلغاء الإهلاك",
         description: appLang === 'en'
@@ -413,7 +440,8 @@ export default function FixedAssetDetailsPage() {
       })
       
       setCancelDialogOpen(false)
-      loadData()
+      // ✅ إعادة تحميل البيانات الكاملة لضمان التزامن مع قاعدة البيانات
+      await loadData()
     } catch (error: any) {
       console.error('Error cancelling depreciation:', error)
       toast({ 

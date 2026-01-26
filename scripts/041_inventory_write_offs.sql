@@ -292,14 +292,23 @@ BEGIN
   END IF;
 
   -- إنشاء قيد عكسي
+  -- ✅ إضافة branch_id و cost_center_id من inventory_write_offs لتجنب خطأ "Branch does not belong to company"
   INSERT INTO journal_entries (
-    company_id, reference_type, reference_id, entry_date, description
+    company_id, 
+    reference_type, 
+    reference_id, 
+    entry_date, 
+    description,
+    branch_id,
+    cost_center_id
   ) VALUES (
     v_write_off.company_id,
     'write_off_reversal',
     p_write_off_id,
     CURRENT_DATE,
-    'إلغاء إهلاك - ' || v_write_off.write_off_number
+    'إلغاء إهلاك - ' || v_write_off.write_off_number,
+    v_write_off.branch_id,
+    v_write_off.cost_center_id
   ) RETURNING id INTO v_reversal_journal_id;
 
   -- عكس القيود (نسخ عكسي)
@@ -316,10 +325,19 @@ BEGIN
   WHERE journal_entry_id = v_write_off.journal_entry_id;
 
   -- إرجاع الكميات للمخزون
+  -- ✅ إضافة branch_id و cost_center_id و warehouse_id من inventory_write_offs
   FOR v_item IN SELECT * FROM inventory_write_off_items WHERE write_off_id = p_write_off_id LOOP
     INSERT INTO inventory_transactions (
-      company_id, product_id, transaction_type, quantity_change,
-      reference_id, journal_entry_id, notes
+      company_id, 
+      product_id, 
+      transaction_type, 
+      quantity_change,
+      reference_id, 
+      journal_entry_id, 
+      notes,
+      branch_id,
+      cost_center_id,
+      warehouse_id
     ) VALUES (
       v_write_off.company_id,
       v_item.product_id,
@@ -327,7 +345,10 @@ BEGIN
       v_item.quantity, -- إضافة الكمية مرة أخرى
       p_write_off_id,
       v_reversal_journal_id,
-      'إلغاء إهلاك - ' || v_write_off.write_off_number
+      'إلغاء إهلاك - ' || v_write_off.write_off_number,
+      v_write_off.branch_id,
+      v_write_off.cost_center_id,
+      v_write_off.warehouse_id
     );
   END LOOP;
 
