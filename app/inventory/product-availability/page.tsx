@@ -85,7 +85,7 @@ export default function ProductAvailabilityPage() {
         const { data: productsData, error: productsError } = await supabase
           .from("products")
           .select("id, name, sku, item_type, unit_price")
-          .eq("company_id", memberData.company_id)
+          .eq("company_id", activeCompanyId)
           .eq("is_active", true)
           .order("name")
 
