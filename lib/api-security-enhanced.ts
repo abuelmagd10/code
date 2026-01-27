@@ -156,6 +156,7 @@ async function checkPermission(
     accountant: {
       invoices: ['read', 'write'],
       journal_entries: ['read', 'write'],
+      products: ['read'], // ✅ Accountants need to read products for bills and inventory
       reports: ['read']
     },
     store_manager: {
