@@ -177,8 +177,8 @@ export default function EditBillPage() {
       setExistingBill(billData as any)
       setFormData({
         supplier_id: billData.supplier_id,
-        bill_date: String(billData.bill_date).slice(0, 10),
-        due_date: String(billData.due_date).slice(0, 10),
+        bill_date: billData.bill_date ? String(billData.bill_date).slice(0, 10) : "",
+        due_date: billData.due_date ? String(billData.due_date).slice(0, 10) : "",
       })
       setTaxInclusive(Boolean(billData.tax_inclusive))
       setDiscountType(billData.discount_type === "percent" ? "percent" : "amount")
@@ -376,8 +376,8 @@ export default function EditBillPage() {
               variant: "destructive",
               title: appLang === 'en' ? "Cannot Save Changes" : "لا يمكن حفظ التغييرات",
               description: appLang === 'en'
-                ? `Reducing these quantities would result in negative inventory:\n${shortages.map(s => `• ${s.productName}: Need to deduct ${s.required}, Available ${s.available}`).join("\n")}`
-                : `تقليل هذه الكميات سيؤدي لمخزون سالب:\n${shortages.map(s => `• ${s.productName}: مطلوب خصم ${s.required}، متوفر ${s.available}`).join("\n")}`,
+                ? `Reducing these quantities would result in negative inventory:\n${shortages.map(s => `• ${s.product_name || s.product_id}: Need to deduct ${s.requested}, Available ${s.available}`).join("\n")}`
+                : `تقليل هذه الكميات سيؤدي لمخزون سالب:\n${shortages.map(s => `• ${s.product_name || s.product_id}: مطلوب خصم ${s.requested}، متوفر ${s.available}`).join("\n")}`,
               duration: 8000,
             })
             setIsSaving(false)
@@ -386,12 +386,20 @@ export default function EditBillPage() {
         }
       }
 
+      // ✅ تنظيف القيم: تحويل السلسلة "null" إلى null الفعلية
+      const cleanBillDate = formData.bill_date && formData.bill_date !== "null" && formData.bill_date.trim() !== "" 
+        ? formData.bill_date 
+        : null
+      const cleanDueDate = formData.due_date && formData.due_date !== "null" && formData.due_date.trim() !== "" 
+        ? formData.due_date 
+        : null
+
       const { error: billErr } = await supabase
         .from("bills")
         .update({
           supplier_id: formData.supplier_id,
-          bill_date: formData.bill_date,
-          due_date: formData.due_date,
+          bill_date: cleanBillDate,
+          due_date: cleanDueDate,
           subtotal: totals.subtotal,
           tax_amount: totals.tax,
           total_amount: totals.total,
