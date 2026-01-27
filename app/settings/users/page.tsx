@@ -838,6 +838,8 @@ export default function UsersSettingsPage() {
         { value: 'inventory_transfers', label: 'تحويلات المخزون' },
         { value: 'write_offs', label: 'إهلاك المخزون' },
         { value: 'third_party_inventory', label: 'مخزون الطرف الثالث' },
+        // صفحة توفر المنتجات في الفروع
+        { value: 'product_availability', label: 'توفر المنتجات في الفروع' },
       ]
     },
     finance: {
