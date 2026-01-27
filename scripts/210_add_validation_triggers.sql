@@ -94,16 +94,26 @@ CREATE OR REPLACE FUNCTION auto_create_bill_inventory_transaction()
 RETURNS TRIGGER AS $$
 DECLARE
   v_bill_status TEXT;
+  v_receipt_status TEXT;
   v_company_id UUID;
   v_journal_entry_id UUID;
+  v_branch_id UUID;
+  v_warehouse_id UUID;
+  v_cost_center_id UUID;
 BEGIN
-  -- Get bill status and company
-  SELECT status, company_id INTO v_bill_status, v_company_id
+  -- Get bill status, receipt_status, and company
+  SELECT status, receipt_status, company_id, branch_id, warehouse_id, cost_center_id 
+  INTO v_bill_status, v_receipt_status, v_company_id, v_branch_id, v_warehouse_id, v_cost_center_id
   FROM bills
   WHERE id = NEW.bill_id;
   
-  -- Only create transaction if bill is received or paid
+  -- ✅ Only create transaction if bill is received or paid AND not rejected
   IF v_bill_status NOT IN ('received', 'paid') THEN
+    RETURN NEW;
+  END IF;
+  
+  -- ✅ Do not create inventory transactions for rejected bills
+  IF v_receipt_status = 'rejected' THEN
     RETURN NEW;
   END IF;
   
@@ -116,28 +126,32 @@ BEGIN
   LIMIT 1;
   
   -- Create inventory transaction if it doesn't exist
+  -- ✅ استخدام reference_id بدلاً من bill_id
   IF NOT EXISTS (
     SELECT 1 FROM inventory_transactions
-    WHERE bill_id = NEW.bill_id
+    WHERE reference_id = NEW.bill_id
       AND product_id = NEW.product_id
+      AND transaction_type = 'purchase'
   ) THEN
     INSERT INTO inventory_transactions (
       company_id,
+      branch_id,
+      warehouse_id,
+      cost_center_id,
       product_id,
       transaction_type,
-      transaction_date,
       quantity_change,
-      unit_cost,
-      bill_id,
+      reference_id,
       journal_entry_id,
       notes
     ) VALUES (
       v_company_id,
+      v_branch_id,
+      v_warehouse_id,
+      v_cost_center_id,
       NEW.product_id,
       'purchase',
-      (SELECT bill_date FROM bills WHERE id = NEW.bill_id),
       NEW.quantity,
-      NEW.unit_price,
       NEW.bill_id,
       v_journal_entry_id,
       'Auto-created from bill_item'

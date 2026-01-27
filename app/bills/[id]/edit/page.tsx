@@ -43,6 +43,8 @@ interface Bill {
   shipping_tax_rate: number
   adjustment: number
   status: string
+  receipt_status?: string | null
+  receipt_rejection_reason?: string | null
 }
 
 export default function EditBillPage() {
@@ -172,7 +174,7 @@ export default function EditBillPage() {
       const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId)
       setSuppliers(supps || [])
 
-      const { data: billData } = await supabase.from("bills").select("*").eq("id", id).single()
+      const { data: billData } = await supabase.from("bills").select("*, receipt_status, receipt_rejection_reason").eq("id", id).single()
       if (!billData) { setExistingBill(null); return }
       setExistingBill(billData as any)
       setFormData({
@@ -650,14 +652,17 @@ export default function EditBillPage() {
       // sent/received = مخزون فقط - ❌ لا قيد محاسبي
       // paid/partially_paid = قيود مالية + مخزون (تم إضافته سابقاً)
       const billStatus = existingBill.status?.toLowerCase()
+      const receiptStatus = existingBill.receipt_status?.toLowerCase()
 
-      if (billStatus !== 'draft') {
+      // ✅ لا ننشئ حركات مخزون للفواتير المرفوضة (rejected)
+      if (billStatus !== 'draft' && receiptStatus !== 'rejected') {
         // عكس القيود السابقة أولاً (إن وجدت)
         await reversePreviousPosting()
 
-        if (billStatus === 'sent') {
+        if (billStatus === 'sent' || billStatus === 'received') {
           // ===== 📌 النمط المحاسبي الصارم =====
           // Sent/Received: زيادة المخزون فقط - ❌ لا قيد محاسبي
+          // ✅ لكن فقط إذا لم تكن الفاتورة مرفوضة
           const mapping = await findAccountIds()
           if (mapping) {
             // ✅ إنشاء حركات المخزون فقط (بدون قيد محاسبي)
