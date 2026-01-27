@@ -311,7 +311,7 @@ export default function GoodsReceiptPage() {
         const { data: billData, error } = await supabase
           .from("bills")
           .select(
-            "id, bill_number, bill_date, supplier_id, status, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, suppliers(name)"
+            "id, bill_number, bill_date, supplier_id, status, receipt_status, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, suppliers(name)"
           )
           .eq("id", billIdFromQuery)
           .eq("company_id", companyId)
@@ -320,6 +320,11 @@ export default function GoodsReceiptPage() {
 
         if (error) throw error
         if (!billData) return
+
+        // ✅ لا نفتح الـ dialog تلقائياً للفواتير المرفوضة أو المستلمة
+        if (billData.receipt_status === "rejected" || billData.receipt_status === "received") {
+          return
+        }
 
         // ✅ للأدوار الإدارية: تحديث selectedBranchId و selectedWarehouseId إذا كانت الفاتورة في فرع/مخزن مختلف
         const role = String(userContext.role || "").trim().toLowerCase()
@@ -517,6 +522,8 @@ export default function GoodsReceiptPage() {
         .eq("status", "approved")
         .eq("branch_id", branchId)
         .eq("warehouse_id", warehouseId)
+        // ✅ استبعاد الفواتير المرفوضة أو المستلمة - عرض فقط الفواتير التي بانتظار الاستلام
+        .or("receipt_status.is.null,receipt_status.eq.pending")
 
       q = applyDataVisibilityFilter(q, rules, "bills")
 
