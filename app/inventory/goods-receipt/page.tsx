@@ -898,7 +898,7 @@ export default function GoodsReceiptPage() {
 
       {/* Dialog لاستلام الكميات الفعلية */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {appLang === "en"
@@ -947,7 +947,7 @@ export default function GoodsReceiptPage() {
             )}
 
             <div className="overflow-x-auto border rounded-lg">
-                <table className="min-w-[600px] w-full text-xs sm:text-sm">
+                <table className="w-full text-xs sm:text-sm">
                   <thead className="bg-gray-50 dark:bg-slate-800">
                     <tr>
                       <th className="px-2 py-2 text-right">
