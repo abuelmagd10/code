@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { Package, CheckCircle, Warehouse, Building2, AlertCircle, Loader2 } from "lucide-react"
 import { createPurchaseInventoryJournal } from "@/lib/accrual-accounting-engine"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 type BillForReceipt = {
   id: string
@@ -50,6 +51,28 @@ type ReceiptItem = {
   receive_qty: number
   unit_price: number
   tax_rate: number
+}
+
+type NotificationRecord = {
+  id: string
+  company_id?: string
+  branch_id?: string | null
+  warehouse_id?: string | null
+  reference_type?: string | null
+  reference_id?: string | null
+  category?: string | null
+  event_key?: string | null
+  assigned_to_role?: string | null
+  assigned_to_user?: string | null
+}
+
+type InventoryTransactionRecord = {
+  id: string
+  company_id?: string
+  branch_id?: string | null
+  warehouse_id?: string | null
+  transaction_type?: string | null
+  reference_id?: string | null
 }
 
 export default function GoodsReceiptPage() {
@@ -199,6 +222,63 @@ export default function GoodsReceiptPage() {
       }
     }
   }
+
+  // 🔄 Realtime: تحديث قائمة الفواتير عند وصول إشعار اعتماد إداري جديد لمسؤول المخزن
+  useRealtimeTable<NotificationRecord>({
+    table: "notifications",
+    enabled: !!userContext?.company_id,
+    filter: (event) => {
+      const record = (event.new || event.old) as NotificationRecord | undefined
+      if (!record || !userContext) return false
+
+      // نفس الشركة
+      if (record.company_id && record.company_id !== userContext.company_id) return false
+
+      // موجه لهذا المستخدم أو لدوره
+      if (record.assigned_to_user && record.assigned_to_user !== userContext.user_id) return false
+      if (record.assigned_to_role && record.assigned_to_role !== userContext.role) return false
+
+      // نفس الفرع/المخزن إن وُجد
+      if (record.branch_id && userContext.branch_id && record.branch_id !== userContext.branch_id) return false
+      if (record.warehouse_id && userContext.warehouse_id && record.warehouse_id !== userContext.warehouse_id) return false
+
+      // إشعارات اعتماد لفواتير المشتريات بانتظار الاستلام
+      if (record.reference_type !== "bill") return false
+      if (record.category !== "approvals") return false
+      if (!record.event_key || !record.event_key.includes("approved_waiting_receipt")) return false
+
+      return true
+    },
+    onInsert: () => {
+      if (userContext) {
+        // إعادة تحميل قائمة الفواتير المعتمدة إدارياً فوراً
+        loadBills(userContext)
+      }
+    }
+  })
+
+  // 🔄 Realtime: عند تسجيل حركات مخزون شراء جديدة، نعيد تحميل القائمة لإخفاء الفواتير التي تم استلامها
+  useRealtimeTable<InventoryTransactionRecord>({
+    table: "inventory_transactions",
+    enabled: !!userContext?.company_id,
+    filter: (event) => {
+      const record = (event.new || event.old) as InventoryTransactionRecord | undefined
+      if (!record || !userContext) return false
+
+      if (record.company_id && record.company_id !== userContext.company_id) return false
+      if (record.transaction_type !== "purchase") return false
+
+      if (record.branch_id && userContext.branch_id && record.branch_id !== userContext.branch_id) return false
+      if (record.warehouse_id && userContext.warehouse_id && record.warehouse_id !== userContext.warehouse_id) return false
+
+      return true
+    },
+    onInsert: () => {
+      if (userContext) {
+        loadBills(userContext)
+      }
+    }
+  })
 
   const openReceiptDialog = async (bill: BillForReceipt) => {
     try {
