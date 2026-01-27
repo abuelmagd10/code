@@ -63,6 +63,8 @@ export default function GoodsReceiptPage() {
   const [selectedBill, setSelectedBill] = useState<BillForReceipt | null>(null)
   const [receiptItems, setReceiptItems] = useState<ReceiptItem[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [branchName, setBranchName] = useState<string | null>(null)
+  const [warehouseName, setWarehouseName] = useState<string | null>(null)
 
   useEffect(() => {
     try {
@@ -115,6 +117,39 @@ export default function GoodsReceiptPage() {
         setBills([])
         setLoading(false)
         return
+      }
+
+      // تحميل اسم الفرع والمخزن للعرض بدلاً من عرض المعرّفات الخام
+      try {
+        const { data: branchRow } = await supabase
+          .from("branches")
+          .select("id, name, branch_name")
+          .eq("company_id", companyId)
+          .eq("id", branchId)
+          .maybeSingle()
+        if (branchRow) {
+          const label = (branchRow as any).name || (branchRow as any).branch_name || null
+          setBranchName(label)
+        } else {
+          setBranchName(null)
+        }
+
+        const { data: whRow } = await supabase
+          .from("warehouses")
+          .select("id, name, code")
+          .eq("company_id", companyId)
+          .eq("id", warehouseId)
+          .maybeSingle()
+        if (whRow) {
+          const label = (whRow as any).name || (whRow as any).code || null
+          setWarehouseName(label)
+        } else {
+          setWarehouseName(null)
+        }
+      } catch {
+        // في حال فشل جلب الأسماء نكتفي بعرض المعرفات
+        setBranchName(null)
+        setWarehouseName(null)
       }
 
       // بناء قواعد الحوكمة الأساسية
@@ -319,11 +354,13 @@ export default function GoodsReceiptPage() {
                 <div className="flex flex-col text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                   <span className="flex items-center gap-1">
                     <Building2 className="w-4 h-4" />
-                    {appLang === "en" ? "Branch:" : "الفرع:"} {userContext.branch_id || "-"}
+                    {appLang === "en" ? "Branch:" : "الفرع:"}{" "}
+                    {branchName || userContext.branch_id || "-"}
                   </span>
                   <span className="flex items-center gap-1">
                     <Warehouse className="w-4 h-4" />
-                    {appLang === "en" ? "Warehouse:" : "المخزن:"} {userContext.warehouse_id || "-"}
+                    {appLang === "en" ? "Warehouse:" : "المخزن:"}{" "}
+                    {warehouseName || userContext.warehouse_id || "-"}
                   </span>
                 </div>
               )}

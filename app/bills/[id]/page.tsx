@@ -1971,8 +1971,12 @@ export default function BillViewPage() {
                 {/* فاصل */}
                 <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />
 
-                {/* أزرار المرتجعات */}
-                {bill.status !== "draft" && bill.status !== "voided" && bill.status !== "fully_returned" && items.some(it => (it.quantity - (it.returned_quantity || 0)) > 0) && (
+                {/* أزرار المرتجعات
+                    🛡️ مع دورة الاعتماد الجديدة لا نسمح بالمرتجع إلا بعد اعتماد الاستلام (received) أو بعد وجود مدفوعات على الفاتورة.
+                    لذا نسمح بالمرتجعات فقط للحالات: received / partially_paid / paid.
+                */}
+                {["received", "partially_paid", "paid"].includes(bill.status) &&
+                  items.some(it => (it.quantity - (it.returned_quantity || 0)) > 0) && (
                   <>
                     <Button variant="outline" size="sm" onClick={() => openReturnDialog('partial')} className="text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400">
                       <RotateCcw className="w-4 h-4 sm:mr-1" />
