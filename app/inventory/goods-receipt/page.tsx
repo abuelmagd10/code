@@ -105,7 +105,6 @@ export default function GoodsReceiptPage() {
         setBills([])
         setBranchName(null)
         setWarehouseName(null)
-        setLoading(false)
         return
       }
 
@@ -127,7 +126,6 @@ export default function GoodsReceiptPage() {
         setBills([])
         setBranchName(null)
         setWarehouseName(null)
-        setLoading(false)
         return
       }
 
@@ -195,7 +193,10 @@ export default function GoodsReceiptPage() {
         appLang
       )
     } finally {
-      setLoading(false)
+      // لا نطفئ مؤشر التحميل إلا إذا كان هذا هو آخر طلب فعّال
+      if (loadRequestRef.current === requestId) {
+        setLoading(false)
+      }
     }
   }
 
