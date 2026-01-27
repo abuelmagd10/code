@@ -657,6 +657,22 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     loadAccessProfile()
   }, [loadAccessProfile])
 
+  // 🔄 تحديث Access Profile عند تغيير الشركة النشطة من الواجهة (Sidebar أو غيره)
+  useEffect(() => {
+    const handleCompanyUpdated = () => {
+      console.log('🔄 [AccessContext] company_updated event received, refreshing security context...')
+      // ✅ BLIND REFRESH بناءً على الشركة الجديدة في getActiveCompanyId
+      refreshUserSecurityContext(false)
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('company_updated', handleCompanyUpdated)
+      return () => {
+        window.removeEventListener('company_updated', handleCompanyUpdated)
+      }
+    }
+  }, [refreshUserSecurityContext])
+
   // 🔐 الاستماع لـ user_context_changed event
   useEffect(() => {
     const handleUserContextChanged = () => {

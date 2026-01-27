@@ -108,7 +108,7 @@ export function Sidebar() {
   const supabaseHook = useSupabase()
 
   // 🔐 استخدام AccessContext كمصدر وحيد للصلاحيات
-  const { isReady: accessReady, canAccessPage, profile, getFirstAllowedPage } = useAccess()
+  const { isReady: accessReady, canAccessPage, profile, getFirstAllowedPage, refreshAccess } = useAccess()
   
   // 🔐 استخدام role من AccessContext
   const myRole = profile?.role || ""
@@ -828,16 +828,15 @@ export function Sidebar() {
                         }))
                         window.dispatchEvent(new Event('permissions_updated'))
 
-                        // ✅ الحصول على أول صفحة مسموح بها والتوجيه إليها
+                        // ✅ تحديث AccessContext للشركة الجديدة قبل التوجيه
                         try {
-                          // 🔐 استخدام getFirstAllowedPage من AccessContext
+                          await refreshAccess()
                           const targetPath = getFirstAllowedPage()
                           router.push(targetPath)
                         } catch (err) {
-                          console.error('❌ Error switching company:', err)
-                          // في حالة الخطأ، استخدام getFirstAllowedPage
-                          const fallbackPath = getFirstAllowedPage()
-                          router.push(fallbackPath)
+                          console.error('❌ Error switching company (access refresh):', err)
+                          // في حالة الخطأ، نوجه للوحة التحكم كخيار افتراضي
+                          router.push('/dashboard')
                         }
                         setShowCompanySwitcher(false)
                       } catch (err) {
@@ -949,17 +948,16 @@ export function Sidebar() {
                           }))
                           window.dispatchEvent(new Event('permissions_updated'))
 
-                          // ✅ الحصول على أول صفحة مسموح بها والتوجيه إليها
+                          // ✅ تحديث AccessContext للشركة الجديدة قبل التوجيه
                           try {
-                            // 🔐 استخدام getFirstAllowedPage من AccessContext
+                            await refreshAccess()
                             const targetPath = getFirstAllowedPage()
                             console.log('✅ Redirecting to first allowed page:', targetPath)
                             router.push(targetPath)
                           } catch (err) {
-                            console.error('❌ Error switching company:', err)
-                            // في حالة الخطأ، استخدام getFirstAllowedPage
-                            const fallbackPath = getFirstAllowedPage()
-                            router.push(fallbackPath)
+                            console.error('❌ Error switching company (access refresh):', err)
+                            // في حالة الخطأ، نوجه للوحة التحكم كخيار افتراضي
+                            router.push('/dashboard')
                           }
                           setShowCompanySwitcher(false)
                         } catch (err) {
