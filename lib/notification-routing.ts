@@ -27,7 +27,7 @@ export type ReferenceType =
 /**
  * خريطة reference_type إلى route
  */
-const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string) => string> = {
+const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, category?: string) => string> = {
   // المخزون
   'write_off': (id) => `/inventory/write-offs?highlight=${id}`,
   'inventory_write_off': (id) => `/inventory/write-offs?highlight=${id}`,
@@ -41,7 +41,14 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string) => string> = {
   'customer_voucher': (id) => `/payments?highlight=${id}`,
   
   // المشتريات
-  'bill': (id) => `/bills/${id}`,
+  'bill': (id, eventKey, category) => {
+    // ✅ إذا كان الإشعار خاص باعتماد الاستلام (approved_waiting_receipt)، نوجه إلى صفحة اعتماد الاستلام
+    if (eventKey && eventKey.includes('approved_waiting_receipt')) {
+      return `/inventory/goods-receipt`
+    }
+    // وإلا نوجه إلى صفحة الفاتورة العادية
+    return `/bills/${id}`
+  },
   'purchase_order': (id) => `/purchase-orders/${id}`,
   'vendor_credit': (id) => `/vendor-credits?highlight=${id}`,
   'supplier_debit_receipt': (id) => `/suppliers?highlight=receipt-${id}`,
@@ -65,13 +72,18 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string) => string> = {
 /**
  * الحصول على route للإشعار
  */
-export function getNotificationRoute(referenceType: string, referenceId: string): string | null {
+export function getNotificationRoute(
+  referenceType: string, 
+  referenceId: string, 
+  eventKey?: string, 
+  category?: string
+): string | null {
   const routeBuilder = REFERENCE_TYPE_TO_ROUTE[referenceType]
   if (!routeBuilder) {
     console.warn(`⚠️ [NotificationRouting] Unknown reference_type: ${referenceType}`)
     return null
   }
-  return routeBuilder(referenceId)
+  return routeBuilder(referenceId, eventKey, category)
 }
 
 /**

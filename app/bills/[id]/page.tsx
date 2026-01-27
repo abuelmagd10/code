@@ -1924,6 +1924,7 @@ export default function BillViewPage() {
                             createdBy: user.id,
                             branchId: bill.branch_id || undefined,
                             costCenterId: bill.cost_center_id || undefined,
+                            warehouseId: bill.warehouse_id || undefined, // ✅ إضافة warehouse_id للإشعار
                             assignedToRole: "store_manager",
                             priority: "high",
                             eventKey: `bill:${bill.id}:approved_waiting_receipt`,

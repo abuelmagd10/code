@@ -528,7 +528,12 @@ export function NotificationCenter({
     }
 
     // 🔗 Deep Link to reference
-    const route = getNotificationRoute(notification.reference_type, notification.reference_id)
+    const route = getNotificationRoute(
+      notification.reference_type, 
+      notification.reference_id,
+      notification.event_key || undefined,
+      notification.category || undefined
+    )
     if (route) {
       onOpenChange(false) // Close notification center
       router.push(route)
@@ -1089,7 +1094,12 @@ export function NotificationCenter({
                               className="h-8 text-xs"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                const route = getNotificationRoute(notification.reference_type, notification.reference_id)
+                                const route = getNotificationRoute(
+                                  notification.reference_type, 
+                                  notification.reference_id,
+                                  notification.event_key || undefined,
+                                  notification.category || undefined
+                                )
                                 if (route) {
                                   onOpenChange(false)
                                   router.push(route)
