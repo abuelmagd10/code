@@ -8,7 +8,7 @@
 
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { useAccess } from "@/lib/access-context"
+import { useAccess, getFirstAllowedRoute } from "@/lib/access-context"
 import { ShieldAlert, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -29,8 +29,9 @@ export default function NoAccessPage() {
 
   // إعادة تحميل الصلاحيات
   const handleRefresh = async () => {
-    await refreshAccess()
-    const firstPage = getFirstAllowedPage()
+    const freshProfile = await refreshAccess()
+    const allowedPages = freshProfile?.allowed_pages || profile?.allowed_pages || []
+    const firstPage = getFirstAllowedRoute(allowedPages)
     if (firstPage !== "/no-access") {
       router.replace(firstPage)
     }

@@ -30,7 +30,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getCachedPermissions, clearPermissionsCache, getResourceFromPath } from "@/lib/permissions-context"
-import { useAccess } from "@/lib/access-context"
+import { useAccess, getFirstAllowedRoute } from "@/lib/access-context"
 import { NotificationCenter } from "@/components/NotificationCenter"
 import { getUnreadNotificationCount } from "@/lib/governance-layer"
 
@@ -830,8 +830,9 @@ export function Sidebar() {
 
                         // ✅ تحديث AccessContext للشركة الجديدة قبل التوجيه
                         try {
-                          await refreshAccess()
-                          const targetPath = getFirstAllowedPage()
+                          const freshProfile = await refreshAccess()
+                          const allowedPages = freshProfile?.allowed_pages || []
+                          const targetPath = getFirstAllowedRoute(allowedPages)
                           router.push(targetPath)
                         } catch (err) {
                           console.error('❌ Error switching company (access refresh):', err)
@@ -950,8 +951,9 @@ export function Sidebar() {
 
                           // ✅ تحديث AccessContext للشركة الجديدة قبل التوجيه
                           try {
-                            await refreshAccess()
-                            const targetPath = getFirstAllowedPage()
+                            const freshProfile = await refreshAccess()
+                            const allowedPages = freshProfile?.allowed_pages || []
+                            const targetPath = getFirstAllowedRoute(allowedPages)
                             console.log('✅ Redirecting to first allowed page:', targetPath)
                             router.push(targetPath)
                           } catch (err) {

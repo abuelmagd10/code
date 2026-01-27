@@ -93,8 +93,8 @@ export interface AccessContextType {
   canAccessBranch: (branchId: string) => boolean
   canAccessWarehouse: (warehouseId: string) => boolean
   
-  // إعادة تحميل الصلاحيات
-  refreshAccess: () => Promise<void>
+  // إعادة تحميل الصلاحيات، وترجيع AccessProfile المحدّث
+  refreshAccess: () => Promise<AccessProfile | null>
   
   // الحصول على أول صفحة مسموحة
   getFirstAllowedPage: () => string
@@ -790,7 +790,9 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     canAccessBranch,
     canAccessWarehouse,
     refreshAccess: async () => {
-      await loadAccessProfile()
+      // نستخدم نتيجة loadAccessProfile مباشرة بدلاً من الاعتماد على state في نفس الدورة
+      const freshProfile = await loadAccessProfile()
+      return freshProfile
     },
     getFirstAllowedPage,
   }), [isLoading, isReady, isBootstrapComplete, profile, canAccessPage, canAction, canAccessBranch, canAccessWarehouse, loadAccessProfile, getFirstAllowedPage])
