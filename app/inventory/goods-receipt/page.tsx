@@ -898,7 +898,7 @@ export default function GoodsReceiptPage() {
 
       {/* Dialog لاستلام الكميات الفعلية */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
               {appLang === "en"
@@ -911,10 +911,11 @@ export default function GoodsReceiptPage() {
               e.preventDefault()
               handleConfirmReceipt()
             }}
-            className="space-y-4"
+            className="flex flex-col flex-1 min-h-0"
           >
-            {selectedBill && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-4">
+              {selectedBill && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg text-xs sm:text-sm text-gray-600 dark:text-gray-300">
                   <div>
                     <span className="block text-gray-400 mb-1">
                       {appLang === "en" ? "Bill Date" : "تاريخ الفاتورة"}
@@ -944,9 +945,9 @@ export default function GoodsReceiptPage() {
                     <span className="font-medium">{warehouseName || selectedBill.warehouse_id || "-"}</span>
                   </div>
                 </div>
-            )}
+              )}
 
-            <div className="overflow-x-auto border rounded-lg">
+              <div className="overflow-x-auto border rounded-lg">
                 <table className="w-full text-xs sm:text-sm">
                   <thead className="bg-gray-50 dark:bg-slate-800">
                     <tr>
@@ -1005,11 +1006,12 @@ export default function GoodsReceiptPage() {
                             : "لا توجد بنود في هذه الفاتورة"}
                         </td>
                       </tr>
-                  )}
-                </tbody>
-              </table>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <DialogFooter className="mt-4">
+            <DialogFooter className="mt-4 flex-shrink-0">
               <Button
                 type="button"
                 variant="outline"
