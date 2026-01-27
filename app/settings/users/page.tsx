@@ -840,6 +840,8 @@ export default function UsersSettingsPage() {
         { value: 'third_party_inventory', label: 'مخزون الطرف الثالث' },
         // صفحة توفر المنتجات في الفروع
         { value: 'product_availability', label: 'توفر المنتجات في الفروع' },
+        // اعتماد استلام فواتير المشتريات من المخزن (workflow جديد)
+        { value: 'inventory_goods_receipt', label: 'اعتماد استلام فواتير المشتريات' },
       ]
     },
     finance: {

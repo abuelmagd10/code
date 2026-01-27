@@ -1,7 +1,7 @@
 // app/inventory/goods-receipt/page.tsx
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -65,6 +65,7 @@ export default function GoodsReceiptPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [branchName, setBranchName] = useState<string | null>(null)
   const [warehouseName, setWarehouseName] = useState<string | null>(null)
+  const loadRequestRef = useRef(0)
 
   useEffect(() => {
     try {
@@ -82,11 +83,16 @@ export default function GoodsReceiptPage() {
   }, [userContextLoading, userContext])
 
   const loadBills = async (context: UserContext) => {
+    const requestId = Date.now()
+    loadRequestRef.current = requestId
     try {
       setLoading(true)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId || !context) {
+        if (loadRequestRef.current !== requestId) return
         setBills([])
+        setBranchName(null)
+        setWarehouseName(null)
         return
       }
 
@@ -95,7 +101,10 @@ export default function GoodsReceiptPage() {
 
       // فقط أدوار store_manager / owner / admin / manager ترى شاشة اعتماد الاستلام
       if (!["store_manager", "owner", "admin", "manager"].includes(role)) {
+        if (loadRequestRef.current !== requestId) return
         setBills([])
+        setBranchName(null)
+        setWarehouseName(null)
         setLoading(false)
         return
       }
@@ -114,7 +123,10 @@ export default function GoodsReceiptPage() {
             : "مسؤول المخزن يجب أن يكون له فرع ومخزن محددان",
           appLang
         )
+        if (loadRequestRef.current !== requestId) return
         setBills([])
+        setBranchName(null)
+        setWarehouseName(null)
         setLoading(false)
         return
       }
@@ -171,6 +183,7 @@ export default function GoodsReceiptPage() {
       const { data, error } = await q.order("bill_date", { ascending: true })
       if (error) throw error
 
+      if (loadRequestRef.current !== requestId) return
       setBills((data || []) as BillForReceipt[])
     } catch (err) {
       console.error("Error loading bills for goods receipt:", err)
@@ -182,6 +195,7 @@ export default function GoodsReceiptPage() {
         appLang
       )
     } finally {
+      if (loadRequestRef.current !== requestId) return
       setLoading(false)
     }
   }
