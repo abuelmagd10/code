@@ -911,10 +911,10 @@ export default function GoodsReceiptPage() {
               e.preventDefault()
               handleConfirmReceipt()
             }}
+            className="space-y-4"
           >
-            <div className="space-y-4 px-1">
-              {selectedBill && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+            {selectedBill && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg text-xs sm:text-sm text-gray-600 dark:text-gray-300">
                   <div>
                     <span className="block text-gray-400 mb-1">
                       {appLang === "en" ? "Bill Date" : "تاريخ الفاتورة"}
@@ -944,9 +944,9 @@ export default function GoodsReceiptPage() {
                     <span className="font-medium">{warehouseName || selectedBill.warehouse_id || "-"}</span>
                   </div>
                 </div>
-              )}
+            )}
 
-              <div className="overflow-x-auto border rounded-lg">
+            <div className="overflow-x-auto border rounded-lg">
                 <table className="min-w-[600px] w-full text-xs sm:text-sm">
                   <thead className="bg-gray-50 dark:bg-slate-800">
                     <tr>
@@ -972,20 +972,22 @@ export default function GoodsReceiptPage() {
                         </td>
                         <td className="px-2 py-2 text-center">{it.max_qty}</td>
                         <td className="px-2 py-2 text-center">
-                          <NumericInput
-                            min={0}
-                            max={it.max_qty}
-                            value={it.receive_qty}
-                            onChange={(val) => {
-                              const v = Math.max(0, Math.min(Math.round(val), it.max_qty))
-                              setReceiptItems((prev) =>
-                                prev.map((row, i) =>
-                                  i === idx ? { ...row, receive_qty: v } : row
+                          <div className="flex justify-center">
+                            <NumericInput
+                              min={0}
+                              max={it.max_qty}
+                              value={it.receive_qty}
+                              onChange={(val) => {
+                                const v = Math.max(0, Math.min(Math.round(val), it.max_qty))
+                                setReceiptItems((prev) =>
+                                  prev.map((row, i) =>
+                                    i === idx ? { ...row, receive_qty: v } : row
+                                  )
                                 )
-                              )
-                            }}
-                            className="w-20 mx-auto"
-                          />
+                              }}
+                              className="w-20"
+                            />
+                          </div>
                         </td>
                         <td className="px-2 py-2 text-center">
                           {it.unit_price.toFixed(2)}
@@ -1003,10 +1005,9 @@ export default function GoodsReceiptPage() {
                             : "لا توجد بنود في هذه الفاتورة"}
                         </td>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                  )}
+                </tbody>
+              </table>
             </div>
             <DialogFooter className="mt-4">
               <Button
