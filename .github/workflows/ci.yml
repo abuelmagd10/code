@@ -113,7 +113,8 @@ jobs:
     needs: [test, security-check]
     runs-on: ubuntu-latest
     # ✅ نشر فقط عند push مباشرة على main (ليس على PR)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # ✅ ووجود VERCEL_TOKEN في Secrets حتى لا يفشل الـ CI قبل الإعداد
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.VERCEL_TOKEN != ''
 
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
