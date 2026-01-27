@@ -113,8 +113,8 @@ jobs:
     needs: [test, security-check]
     runs-on: ubuntu-latest
     # ✅ نشر فقط عند push مباشرة على main (ليس على PR)
-    # ✅ ووجود VERCEL_TOKEN في Secrets حتى لا يفشل الـ CI قبل الإعداد
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.VERCEL_TOKEN != ''
+    # ملاحظة: التحقق من وجود التوكن يتم داخل سكربت الـ shell لتقليل مشاكل الـ lint
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -134,15 +134,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 🔐 سحب إعدادات Vercel للبيئة الإنتاجية
-      - name: Pull Vercel environment
-        run: npx vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+      - name: Deploy to Vercel (if token configured)
+        run: |
+          if [ -z "${VERCEL_TOKEN}" ]; then
+            echo "⚠️ Skipping Vercel deploy - VERCEL_TOKEN is not configured in GitHub Secrets"
+            exit 0
+          fi
 
-      # 🏗️ بناء مسبق باستخدام Vercel
-      - name: Build project with Vercel
-        run: npx vercel build --prod --token=$VERCEL_TOKEN
+          # 🔐 سحب إعدادات Vercel للبيئة الإنتاجية
+          npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
-      # 🚀 نشر النسخة المبنية إلى الإنتاج
-      - name: Deploy prebuilt artifacts to production
-        run: npx vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+          # 🏗️ بناء مسبق باستخدام Vercel
+          npx vercel build --prod --token="$VERCEL_TOKEN"
+
+          # 🚀 نشر النسخة المبنية إلى الإنتاج
+          npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
 
