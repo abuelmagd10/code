@@ -875,119 +875,127 @@ export default function GoodsReceiptPage() {
                 : `اعتماد استلام فاتورة ${selectedBill?.bill_number || ""}`}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            {selectedBill && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-                <div>
-                  <span className="block text-gray-400">
-                    {appLang === "en" ? "Bill Date" : "تاريخ الفاتورة"}
-                  </span>
-                  <span>
-                    {new Date(selectedBill.bill_date).toLocaleDateString(
-                      appLang === "en" ? "en" : "ar"
-                    )}
-                  </span>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleConfirmReceipt()
+            }}
+          >
+            <div className="space-y-4">
+              {selectedBill && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                  <div>
+                    <span className="block text-gray-400">
+                      {appLang === "en" ? "Bill Date" : "تاريخ الفاتورة"}
+                    </span>
+                    <span>
+                      {new Date(selectedBill.bill_date).toLocaleDateString(
+                        appLang === "en" ? "en" : "ar"
+                      )}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="block text-gray-400">
+                      {appLang === "en" ? "Amount" : "المبلغ"}
+                    </span>
+                    <span>{Number(selectedBill.total_amount || 0).toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="block text-gray-400">
+                      {appLang === "en" ? "Branch" : "الفرع"}
+                    </span>
+                    <span>{selectedBill.branch_id || "-"}</span>
+                  </div>
+                  <div>
+                    <span className="block text-gray-400">
+                      {appLang === "en" ? "Warehouse" : "المخزن"}
+                    </span>
+                    <span>{selectedBill.warehouse_id || "-"}</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="block text-gray-400">
-                    {appLang === "en" ? "Amount" : "المبلغ"}
-                  </span>
-                  <span>{Number(selectedBill.total_amount || 0).toFixed(2)}</span>
-                </div>
-                <div>
-                  <span className="block text-gray-400">
-                    {appLang === "en" ? "Branch" : "الفرع"}
-                  </span>
-                  <span>{selectedBill.branch_id || "-"}</span>
-                </div>
-                <div>
-                  <span className="block text-gray-400">
-                    {appLang === "en" ? "Warehouse" : "المخزن"}
-                  </span>
-                  <span>{selectedBill.warehouse_id || "-"}</span>
-                </div>
-              </div>
-            )}
+              )}
 
-            <div className="overflow-x-auto border rounded-lg">
-              <table className="min-w-[600px] w-full text-xs sm:text-sm">
-                <thead className="bg-gray-50 dark:bg-slate-800">
-                  <tr>
-                    <th className="px-2 py-2 text-right">
-                      {appLang === "en" ? "Product" : "المنتج"}
-                    </th>
-                    <th className="px-2 py-2 text-center">
-                      {appLang === "en" ? "Qty (Bill)" : "كمية الفاتورة"}
-                    </th>
-                    <th className="px-2 py-2 text-center">
-                      {appLang === "en" ? "Receive Qty" : "الكمية المستلمة"}
-                    </th>
-                    <th className="px-2 py-2 text-center">
-                      {appLang === "en" ? "Unit Price" : "سعر الوحدة"}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                  {receiptItems.map((it, idx) => (
-                    <tr key={it.id}>
-                      <td className="px-2 py-2 text-right">
-                        <div className="font-medium">{it.product_name}</div>
-                      </td>
-                      <td className="px-2 py-2 text-center">{it.max_qty}</td>
-                      <td className="px-2 py-2 text-center">
-                        <NumericInput
-                          min={0}
-                          max={it.max_qty}
-                          value={it.receive_qty}
-                          onChange={(val) => {
-                            const v = Math.max(0, Math.min(Math.round(val), it.max_qty))
-                            setReceiptItems((prev) =>
-                              prev.map((row, i) =>
-                                i === idx ? { ...row, receive_qty: v } : row
-                              )
-                            )
-                          }}
-                          className="w-20 mx-auto"
-                        />
-                      </td>
-                      <td className="px-2 py-2 text-center">
-                        {it.unit_price.toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                  {receiptItems.length === 0 && (
+              <div className="overflow-x-auto border rounded-lg">
+                <table className="min-w-[600px] w-full text-xs sm:text-sm">
+                  <thead className="bg-gray-50 dark:bg-slate-800">
                     <tr>
-                      <td
-                        colSpan={4}
-                        className="px-3 py-4 text-center text-gray-500 dark:text-gray-400"
-                      >
-                        {appLang === "en"
-                          ? "No items on this bill"
-                          : "لا توجد بنود في هذه الفاتورة"}
-                      </td>
+                      <th className="px-2 py-2 text-right">
+                        {appLang === "en" ? "Product" : "المنتج"}
+                      </th>
+                      <th className="px-2 py-2 text-center">
+                        {appLang === "en" ? "Qty (Bill)" : "كمية الفاتورة"}
+                      </th>
+                      <th className="px-2 py-2 text-center">
+                        {appLang === "en" ? "Receive Qty" : "الكمية المستلمة"}
+                      </th>
+                      <th className="px-2 py-2 text-center">
+                        {appLang === "en" ? "Unit Price" : "سعر الوحدة"}
+                      </th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                    {receiptItems.map((it, idx) => (
+                      <tr key={it.id}>
+                        <td className="px-2 py-2 text-right">
+                          <div className="font-medium">{it.product_name}</div>
+                        </td>
+                        <td className="px-2 py-2 text-center">{it.max_qty}</td>
+                        <td className="px-2 py-2 text-center">
+                          <NumericInput
+                            min={0}
+                            max={it.max_qty}
+                            value={it.receive_qty}
+                            onChange={(val) => {
+                              const v = Math.max(0, Math.min(Math.round(val), it.max_qty))
+                              setReceiptItems((prev) =>
+                                prev.map((row, i) =>
+                                  i === idx ? { ...row, receive_qty: v } : row
+                                )
+                              )
+                            }}
+                            className="w-20 mx-auto"
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-center">
+                          {it.unit_price.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                    {receiptItems.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          className="px-3 py-4 text-center text-gray-500 dark:text-gray-400"
+                        >
+                          {appLang === "en"
+                            ? "No items on this bill"
+                            : "لا توجد بنود في هذه الفاتورة"}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-          <DialogFooter className="mt-4">
-            <Button
-              variant="outline"
-              onClick={() => setDialogOpen(false)}
-              disabled={processing}
-            >
-              {appLang === "en" ? "Cancel" : "إلغاء"}
-            </Button>
-            <Button
-              onClick={handleConfirmReceipt}
-              disabled={processing || receiptItems.every((it) => it.receive_qty <= 0)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              {processing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-              {appLang === "en" ? "Confirm Goods Receipt" : "تأكيد اعتماد الاستلام"}
-            </Button>
-          </DialogFooter>
+            <DialogFooter className="mt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+                disabled={processing}
+              >
+                {appLang === "en" ? "Cancel" : "إلغاء"}
+              </Button>
+              <Button
+                type="submit"
+                disabled={processing || receiptItems.every((it) => it.receive_qty <= 0)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {processing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+                {appLang === "en" ? "Confirm Goods Receipt" : "تأكيد اعتماد الاستلام"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
