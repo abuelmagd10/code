@@ -474,7 +474,7 @@ export async function createPurchaseInventoryJournal(
       .from("bills")
       .select(`
         id, bill_number, bill_date, status,
-        subtotal, tax_amount, total_amount,
+        subtotal, tax_amount, total_amount, shipping, adjustment,
         branch_id, cost_center_id, supplier_id
       `)
       .eq("id", billId)
@@ -508,9 +508,12 @@ export async function createPurchaseInventoryJournal(
     const mapping = await getAccrualAccountMapping(supabase, companyId)
 
     // حساب المبالغ
+    // ✅ total_amount = subtotal + tax_amount + shipping + adjustment
+    // حيث tax_amount يتضمن shippingTax بالفعل
     const netAmount = Number(bill.subtotal || 0)
     const vatAmount = Number(bill.tax_amount || 0)
-    const shippingAmount = 0 // ✅ shipping_charge غير موجود في جدول bills
+    const shippingAmount = Number((bill as any).shipping || 0)
+    const adjustmentAmount = Number((bill as any).adjustment || 0)
     const totalAmount = Number(bill.total_amount || 0)
 
     // إنشاء قيد الشراء
@@ -562,7 +565,23 @@ export async function createPurchaseInventoryJournal(
       })
     }
 
+    // مدين: التعديلات (إذا وجدت)
+    if (adjustmentAmount !== 0) {
+      journalEntry.lines.push({
+        account_id: mapping.inventory, // أو حساب منفصل للتعديلات
+        debit_amount: adjustmentAmount > 0 ? adjustmentAmount : 0,
+        credit_amount: adjustmentAmount < 0 ? Math.abs(adjustmentAmount) : 0,
+        description: adjustmentAmount > 0 ? 'تعديل إضافي' : 'تعديل خصم',
+        branch_id: bill.branch_id,
+        cost_center_id: bill.cost_center_id
+      })
+    }
+
     // دائن: الموردين (Accounts Payable) - إجمالي المبلغ
+    // ✅ total_amount = subtotal + tax_amount + shipping + adjustment
+    // الجانب المدين: subtotal + tax_amount + shipping + adjustment = total_amount
+    // الجانب الدائن: total_amount
+    // القيد متوازن ✅
     journalEntry.lines.push({
       account_id: mapping.accounts_payable,
       debit_amount: 0,
