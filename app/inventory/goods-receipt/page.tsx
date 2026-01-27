@@ -129,6 +129,8 @@ export default function GoodsReceiptPage() {
     try {
       setSelectedBill(bill)
       setProcessing(true)
+      
+      // ✅ جلب بنود الفاتورة
       const { data: itemsData, error } = await supabase
         .from("bill_items")
         .select("id, product_id, quantity, unit_price, tax_rate, products(name, sku)")
@@ -149,6 +151,35 @@ export default function GoodsReceiptPage() {
         }))
 
       setReceiptItems(rows)
+      
+      // ✅ جلب أسماء الفرع والمخزن
+      const companyId = await getActiveCompanyId(supabase)
+      if (companyId) {
+        if (bill.branch_id) {
+          const { data: branchData } = await supabase
+            .from("branches")
+            .select("id, name")
+            .eq("id", bill.branch_id)
+            .eq("company_id", companyId)
+            .maybeSingle()
+          setBranchName(branchData?.name || null)
+        } else {
+          setBranchName(null)
+        }
+        
+        if (bill.warehouse_id) {
+          const { data: warehouseData } = await supabase
+            .from("warehouses")
+            .select("id, name")
+            .eq("id", bill.warehouse_id)
+            .eq("company_id", companyId)
+            .maybeSingle()
+          setWarehouseName(warehouseData?.name || null)
+        } else {
+          setWarehouseName(null)
+        }
+      }
+      
       setDialogOpen(true)
     } catch (err) {
       console.error("Error loading bill items for receipt:", err)
@@ -881,36 +912,36 @@ export default function GoodsReceiptPage() {
               handleConfirmReceipt()
             }}
           >
-            <div className="space-y-4">
+            <div className="space-y-4 px-1">
               {selectedBill && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg text-xs sm:text-sm text-gray-600 dark:text-gray-300">
                   <div>
-                    <span className="block text-gray-400">
+                    <span className="block text-gray-400 mb-1">
                       {appLang === "en" ? "Bill Date" : "تاريخ الفاتورة"}
                     </span>
-                    <span>
+                    <span className="font-medium">
                       {new Date(selectedBill.bill_date).toLocaleDateString(
                         appLang === "en" ? "en" : "ar"
                       )}
                     </span>
                   </div>
                   <div>
-                    <span className="block text-gray-400">
+                    <span className="block text-gray-400 mb-1">
                       {appLang === "en" ? "Amount" : "المبلغ"}
                     </span>
-                    <span>{Number(selectedBill.total_amount || 0).toFixed(2)}</span>
+                    <span className="font-medium">{Number(selectedBill.total_amount || 0).toFixed(2)}</span>
                   </div>
                   <div>
-                    <span className="block text-gray-400">
+                    <span className="block text-gray-400 mb-1">
                       {appLang === "en" ? "Branch" : "الفرع"}
                     </span>
-                    <span>{selectedBill.branch_id || "-"}</span>
+                    <span className="font-medium">{branchName || selectedBill.branch_id || "-"}</span>
                   </div>
                   <div>
-                    <span className="block text-gray-400">
+                    <span className="block text-gray-400 mb-1">
                       {appLang === "en" ? "Warehouse" : "المخزن"}
                     </span>
-                    <span>{selectedBill.warehouse_id || "-"}</span>
+                    <span className="font-medium">{warehouseName || selectedBill.warehouse_id || "-"}</span>
                   </div>
                 </div>
               )}
