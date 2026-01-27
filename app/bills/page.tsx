@@ -51,6 +51,8 @@ type Bill = {
   returned_amount?: number
   return_status?: string
   status: string
+  receipt_status?: string | null
+  receipt_rejection_reason?: string | null
   currency_code?: string
   original_currency?: string
   original_total?: number
@@ -338,7 +340,7 @@ export default function BillsPage() {
       
       let billsQuery = supabase
         .from("bills")
-        .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, display_currency, display_total, original_currency, original_total, suppliers(name, phone)")
+        .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, receipt_status, receipt_rejection_reason, display_currency, display_total, original_currency, original_total, suppliers(name, phone)")
         .eq("company_id", visibilityRules.companyId)
         .neq("status", "voided")
 
@@ -810,6 +812,36 @@ export default function BillsPage() {
           )}
         </div>
       )
+    },
+    {
+      key: 'receipt_status',
+      header: appLang === 'en' ? 'Receipt Status' : 'حالة الاستلام',
+      type: 'status',
+      align: 'center',
+      hidden: 'lg',
+      format: (_, row) => {
+        if (!row.receipt_status) return <span className="text-gray-400">-</span>
+        return (
+          <div className="flex flex-col items-center gap-1">
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+              row.receipt_status === 'received' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
+              row.receipt_status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+              row.receipt_status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+              'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+            }`}>
+              {row.receipt_status === 'received' ? (appLang === 'en' ? 'Received' : 'تم الاستلام') :
+                row.receipt_status === 'rejected' ? (appLang === 'en' ? 'Rejected' : 'مرفوض') :
+                  row.receipt_status === 'pending' ? (appLang === 'en' ? 'Pending' : 'بانتظار') :
+                    row.receipt_status}
+            </span>
+            {row.receipt_status === 'rejected' && row.receipt_rejection_reason && (
+              <span className="text-xs text-red-600 dark:text-red-400 max-w-[150px] truncate" title={row.receipt_rejection_reason}>
+                {row.receipt_rejection_reason}
+              </span>
+            )}
+          </div>
+        )
+      }
     },
     {
       key: 'id',

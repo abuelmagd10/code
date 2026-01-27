@@ -20,6 +20,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Package, CheckCircle, Warehouse, Building2, AlertCircle, Loader2 } from "lucide-react"
 import { createPurchaseInventoryJournal } from "@/lib/accrual-accounting-engine"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { createNotification } from "@/lib/governance-layer"
+import { Textarea } from "@/components/ui/textarea"
 
 type BillForReceipt = {
   id: string
@@ -27,6 +29,8 @@ type BillForReceipt = {
   bill_date: string
   supplier_id: string
   status: string
+  receipt_status?: string | null
+  receipt_rejection_reason?: string | null
   branch_id: string | null
   warehouse_id: string | null
   cost_center_id: string | null
@@ -91,6 +95,8 @@ export default function GoodsReceiptPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [branchName, setBranchName] = useState<string | null>(null)
   const [warehouseName, setWarehouseName] = useState<string | null>(null)
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
+  const [rejectionReason, setRejectionReason] = useState("")
   const loadRequestRef = useRef(0)
   const billIdFromQuery = searchParams.get("billId")
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([])
@@ -505,7 +511,7 @@ export default function GoodsReceiptPage() {
       let q = supabase
         .from("bills")
         .select(
-          "id, bill_number, bill_date, supplier_id, status, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, suppliers(name)"
+          "id, bill_number, bill_date, supplier_id, status, receipt_status, receipt_rejection_reason, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, suppliers(name)"
         )
         .eq("company_id", companyId)
         .eq("status", "approved")
@@ -623,9 +629,23 @@ export default function GoodsReceiptPage() {
         return
       }
 
-      // إنشاء حركات المخزون من الكميات الفعلية المستلمة
+      // ✅ إنشاء قيد المشتريات الرسمي أولاً (مطلوب لربط حركات المخزون)
+      // هذا يضمن وجود journal_entry قبل إنشاء inventory_transactions
+      // createPurchaseInventoryJournal ترجع journal_entry_id إذا كان موجوداً أو أنشأته
+      const journalEntryId = await createPurchaseInventoryJournal(supabase, selectedBill.id, companyId)
+      
+      if (!journalEntryId) {
+        throw new Error(
+          appLang === "en"
+            ? "Failed to create or find purchase journal entry"
+            : "فشل إنشاء أو العثور على قيد المشتريات"
+        )
+      }
+
+      // ✅ إنشاء حركات المخزون من كميات الفاتورة المعتمدة (لا تعديل)
+      // trigger auto_link_inventory_to_journal() سيربطها تلقائياً بـ journal_entry
       const invRows = receiptItems
-        .filter((it) => it.receive_qty > 0)
+        .filter((it) => it.max_qty > 0) // ✅ استخدام max_qty (كمية الفاتورة)
         .map((it) => ({
           company_id: companyId,
           branch_id: branchId,
@@ -633,7 +653,7 @@ export default function GoodsReceiptPage() {
           cost_center_id: costCenterId,
           product_id: it.product_id,
           transaction_type: "purchase",
-          quantity_change: it.receive_qty,
+          quantity_change: it.max_qty, // ✅ دائماً = كمية الفاتورة
           reference_id: selectedBill.id,
           notes:
             appLang === "en"
@@ -646,22 +666,66 @@ export default function GoodsReceiptPage() {
         if (invErr) throw invErr
       }
 
-      // إنشاء قيد المشتريات الرسمي عبر محرك الاستحقاق (إن لم يكن موجوداً)
-      await createPurchaseInventoryJournal(supabase, selectedBill.id, companyId)
-
       // تحديث حالة الفاتورة إلى received وتسجيل من اعتمد الاستلام
       const now = new Date().toISOString()
       const { error: updErr } = await supabase
         .from("bills")
         .update({
           status: "received",
+          receipt_status: "received",
           received_by: user.id,
-          received_at: now
+          received_at: now,
+          receipt_rejection_reason: null // ✅ مسح سبب الرفض عند الاستلام
         })
         .eq("id", selectedBill.id)
         .eq("company_id", companyId)
 
       if (updErr) throw updErr
+
+      // ✅ إرسال إشعارات إلى accountant و manager
+      try {
+        await createNotification({
+          companyId,
+          referenceType: "bill",
+          referenceId: selectedBill.id,
+          title: appLang === "en"
+            ? "Purchase bill goods receipt confirmed"
+            : "تم اعتماد استلام فاتورة مشتريات",
+          message: appLang === "en"
+            ? `Purchase bill ${selectedBill.bill_number} has been received and confirmed by warehouse manager`
+            : `تم اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن`,
+          createdBy: user.id,
+          branchId: branchId || undefined,
+          costCenterId: costCenterId || undefined,
+          assignedToRole: "accountant",
+          priority: "normal",
+          eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed`,
+          severity: "info",
+          category: "approvals"
+        })
+
+        await createNotification({
+          companyId,
+          referenceType: "bill",
+          referenceId: selectedBill.id,
+          title: appLang === "en"
+            ? "Purchase bill goods receipt confirmed"
+            : "تم اعتماد استلام فاتورة مشتريات",
+          message: appLang === "en"
+            ? `Purchase bill ${selectedBill.bill_number} has been received and confirmed by warehouse manager`
+            : `تم اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن`,
+          createdBy: user.id,
+          branchId: branchId || undefined,
+          costCenterId: costCenterId || undefined,
+          assignedToRole: "general_manager",
+          priority: "normal",
+          eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed`,
+          severity: "info",
+          category: "approvals"
+        })
+      } catch (notifErr) {
+        console.warn("Failed to send receipt confirmation notifications:", notifErr)
+      }
 
       toastActionSuccess(
         toast,
@@ -681,6 +745,106 @@ export default function GoodsReceiptPage() {
         appLang === "en" ? "Receipt" : "الاستلام",
         appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
         appLang === "en" ? "Failed to confirm goods receipt" : "تعذر اعتماد استلام الفاتورة",
+        appLang
+      )
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  // ✅ رفض اعتماد الاستلام
+  const handleRejectReceipt = async () => {
+    if (!selectedBill || !rejectionReason.trim() || !userContext) {
+      return
+    }
+    try {
+      setProcessing(true)
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const branchId = selectedBill.branch_id
+      const costCenterId = selectedBill.cost_center_id
+
+      // تحديث حالة الفاتورة إلى rejected مع سبب الرفض
+      const { error: updErr } = await supabase
+        .from("bills")
+        .update({
+          receipt_status: "rejected",
+          receipt_rejection_reason: rejectionReason.trim()
+        })
+        .eq("id", selectedBill.id)
+        .eq("company_id", companyId)
+
+      if (updErr) throw updErr
+
+      // ✅ إرسال إشعارات إلى accountant و manager
+      try {
+        await createNotification({
+          companyId,
+          referenceType: "bill",
+          referenceId: selectedBill.id,
+          title: appLang === "en"
+            ? "Purchase bill goods receipt rejected"
+            : "تم رفض اعتماد استلام فاتورة مشتريات",
+          message: appLang === "en"
+            ? `Purchase bill ${selectedBill.bill_number} goods receipt was rejected by warehouse manager. Reason: ${rejectionReason.trim()}`
+            : `تم رفض اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن. السبب: ${rejectionReason.trim()}`,
+          createdBy: user.id,
+          branchId: branchId || undefined,
+          costCenterId: costCenterId || undefined,
+          assignedToRole: "accountant",
+          priority: "high",
+          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected`,
+          severity: "warning",
+          category: "approvals"
+        })
+
+        await createNotification({
+          companyId,
+          referenceType: "bill",
+          referenceId: selectedBill.id,
+          title: appLang === "en"
+            ? "Purchase bill goods receipt rejected"
+            : "تم رفض اعتماد استلام فاتورة مشتريات",
+          message: appLang === "en"
+            ? `Purchase bill ${selectedBill.bill_number} goods receipt was rejected by warehouse manager. Reason: ${rejectionReason.trim()}`
+            : `تم رفض اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن. السبب: ${rejectionReason.trim()}`,
+          createdBy: user.id,
+          branchId: branchId || undefined,
+          costCenterId: costCenterId || undefined,
+          assignedToRole: "general_manager",
+          priority: "high",
+          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected`,
+          severity: "warning",
+          category: "approvals"
+        })
+      } catch (notifErr) {
+        console.warn("Failed to send rejection notifications:", notifErr)
+      }
+
+      toastActionSuccess(
+        toast,
+        appLang === "en" ? "Rejection" : "الرفض",
+        appLang === "en" ? "Goods receipt rejected" : "تم رفض اعتماد الاستلام",
+        appLang
+      )
+
+      setRejectDialogOpen(false)
+      setRejectionReason("")
+      setDialogOpen(false)
+      setSelectedBill(null)
+      setReceiptItems([])
+      await loadBills(userContext)
+    } catch (err) {
+      console.error("Error rejecting goods receipt:", err)
+      toastActionError(
+        toast,
+        appLang === "en" ? "Rejection" : "الرفض",
+        appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
+        appLang === "en" ? "Failed to reject goods receipt" : "تعذر رفض اعتماد الاستلام",
         appLang
       )
     } finally {
@@ -955,10 +1119,7 @@ export default function GoodsReceiptPage() {
                         {appLang === "en" ? "Product" : "المنتج"}
                       </th>
                       <th className="px-2 py-2 text-center">
-                        {appLang === "en" ? "Qty (Bill)" : "كمية الفاتورة"}
-                      </th>
-                      <th className="px-2 py-2 text-center">
-                        {appLang === "en" ? "Receive Qty" : "الكمية المستلمة"}
+                        {appLang === "en" ? "Quantity" : "الكمية"}
                       </th>
                       <th className="px-2 py-2 text-center">
                         {appLang === "en" ? "Unit Price" : "سعر الوحدة"}
@@ -971,25 +1132,7 @@ export default function GoodsReceiptPage() {
                         <td className="px-2 py-2 text-right">
                           <div className="font-medium">{it.product_name}</div>
                         </td>
-                        <td className="px-2 py-2 text-center">{it.max_qty}</td>
-                        <td className="px-2 py-2 text-center">
-                          <div className="flex justify-center">
-                            <NumericInput
-                              min={0}
-                              max={it.max_qty}
-                              value={it.receive_qty}
-                              onChange={(val) => {
-                                const v = Math.max(0, Math.min(Math.round(val), it.max_qty))
-                                setReceiptItems((prev) =>
-                                  prev.map((row, i) =>
-                                    i === idx ? { ...row, receive_qty: v } : row
-                                  )
-                                )
-                              }}
-                              className="w-20"
-                            />
-                          </div>
-                        </td>
+                        <td className="px-2 py-2 text-center font-medium">{it.max_qty}</td>
                         <td className="px-2 py-2 text-center">
                           {it.unit_price.toFixed(2)}
                         </td>
@@ -998,7 +1141,7 @@ export default function GoodsReceiptPage() {
                     {receiptItems.length === 0 && (
                       <tr>
                         <td
-                          colSpan={4}
+                          colSpan={3}
                           className="px-3 py-4 text-center text-gray-500 dark:text-gray-400"
                         >
                           {appLang === "en"
@@ -1011,7 +1154,19 @@ export default function GoodsReceiptPage() {
                 </table>
               </div>
             </div>
-            <DialogFooter className="mt-4 flex-shrink-0">
+            <DialogFooter className="mt-4 flex-shrink-0 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setRejectDialogOpen(true)
+                }}
+                disabled={processing}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+              >
+                <AlertCircle className="w-4 h-4 mr-1" />
+                {appLang === "en" ? "Reject Receipt" : "رفض الاستلام"}
+              </Button>
               <Button
                 type="button"
                 variant="outline"
@@ -1022,7 +1177,7 @@ export default function GoodsReceiptPage() {
               </Button>
               <Button
                 type="submit"
-                disabled={processing || receiptItems.every((it) => it.receive_qty <= 0)}
+                disabled={processing || receiptItems.length === 0}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white"
               >
                 {processing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
@@ -1030,6 +1185,56 @@ export default function GoodsReceiptPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog رفض الاستلام */}
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {appLang === "en"
+                ? `Reject goods receipt for bill ${selectedBill?.bill_number || ""}`
+                : `رفض اعتماد استلام فاتورة ${selectedBill?.bill_number || ""}`}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                {appLang === "en" ? "Rejection Reason" : "سبب الرفض"} <span className="text-red-500">*</span>
+              </label>
+              <Textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder={appLang === "en" ? "Please provide a reason for rejection..." : "يرجى كتابة سبب الرفض..."}
+                rows={4}
+                className="w-full"
+                required
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setRejectDialogOpen(false)
+                setRejectionReason("")
+              }}
+              disabled={processing}
+            >
+              {appLang === "en" ? "Cancel" : "إلغاء"}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleRejectReceipt}
+              disabled={processing || !rejectionReason.trim()}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {processing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              {appLang === "en" ? "Confirm Rejection" : "تأكيد الرفض"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

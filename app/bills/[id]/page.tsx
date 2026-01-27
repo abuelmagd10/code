@@ -69,6 +69,11 @@ type Bill = {
   shipping_tax_rate: number
   adjustment: number
   status: string
+  // Receipt status fields
+  receipt_status?: string | null
+  receipt_rejection_reason?: string | null
+  received_by?: string | null
+  received_at?: string | null
   // Multi-currency fields
   currency_code?: string
   exchange_rate?: number
@@ -272,7 +277,7 @@ export default function BillViewPage() {
       setLoading(true)
       const { data: billData } = await supabase
         .from("bills")
-        .select("*, shipping_providers(provider_name)")
+        .select("*, shipping_providers(provider_name), receipt_status, receipt_rejection_reason, received_by, received_at")
         .eq("id", id)
         .single()
       setBill(billData as any)
@@ -1729,6 +1734,20 @@ export default function BillViewPage() {
                               bill.status === 'voided' ? (appLang === 'en' ? 'Voided' : 'ملغاة') :
                                 bill.status}
                     </span>
+                    {/* ✅ شارة حالة الاستلام */}
+                    {bill.receipt_status && (
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                        bill.receipt_status === 'received' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
+                        bill.receipt_status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                        bill.receipt_status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                        'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                      }`}>
+                        {bill.receipt_status === 'received' ? (appLang === 'en' ? 'Received' : 'تم الاستلام') :
+                          bill.receipt_status === 'rejected' ? (appLang === 'en' ? 'Rejected' : 'مرفوض') :
+                            bill.receipt_status === 'pending' ? (appLang === 'en' ? 'Pending Receipt' : 'بانتظار الاستلام') :
+                              bill.receipt_status}
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                     {appLang === 'en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}
@@ -2197,6 +2216,47 @@ export default function BillViewPage() {
                       )}
                     </CardContent>
                   </Card>
+                  
+                  {/* ✅ عرض حالة الاستلام وسبب الرفض */}
+                  {bill.receipt_status && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">{appLang === 'en' ? 'Goods Receipt Status' : 'حالة اعتماد الاستلام'}</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Status' : 'الحالة'}</span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            bill.receipt_status === 'received' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
+                            bill.receipt_status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                            bill.receipt_status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                            'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                          }`}>
+                            {bill.receipt_status === 'received' ? (appLang === 'en' ? 'Received' : 'تم الاستلام') :
+                              bill.receipt_status === 'rejected' ? (appLang === 'en' ? 'Rejected' : 'مرفوض') :
+                                bill.receipt_status === 'pending' ? (appLang === 'en' ? 'Pending Receipt' : 'بانتظار الاستلام') :
+                                  bill.receipt_status}
+                          </span>
+                        </div>
+                        {bill.receipt_status === 'rejected' && bill.receipt_rejection_reason && (
+                          <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <div className="text-xs font-medium text-red-800 dark:text-red-200 mb-1">
+                              {appLang === 'en' ? 'Rejection Reason' : 'سبب الرفض'}
+                            </div>
+                            <div className="text-sm text-red-700 dark:text-red-300">
+                              {bill.receipt_rejection_reason}
+                            </div>
+                          </div>
+                        )}
+                        {bill.received_at && (
+                          <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                            <span>{appLang === 'en' ? 'Received At' : 'تاريخ الاستلام'}</span>
+                            <span>{new Date(bill.received_at).toLocaleString(appLang === 'en' ? 'en' : 'ar')}</span>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
 
                   <Card>
                     <CardHeader>
