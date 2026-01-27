@@ -48,6 +48,8 @@ import {
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
 import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-reversal"
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
+import { createNotification } from "@/lib/governance-layer"
+import { getActiveCompanyId } from "@/lib/company"
 
 type Bill = {
   id: string
@@ -177,12 +179,43 @@ export default function BillViewPage() {
   // Linked Purchase Order
   const [linkedPurchaseOrder, setLinkedPurchaseOrder] = useState<{ id: string; po_number: string } | null>(null)
 
+  // Admin approval context
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
+  const [canSubmitForApproval, setCanSubmitForApproval] = useState(false)
+  const [canApproveAdmin, setCanApproveAdmin] = useState(false)
+
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // 🔍 دوال مساعدة على مستوى المكوّن لحالة العرض (تتضمن الحالات الجديدة)
+  const getBillStatusLabel = (status: string | undefined | null) => {
+    const s = String(status || "").toLowerCase()
+    if (appLang === "en") {
+      if (s === "draft") return "Draft"
+      if (s === "pending_approval") return "Pending Approval"
+      if (s === "approved") return "Approved"
+      if (s === "received") return "Received"
+      if (s === "partially_paid") return "Partially Paid"
+      if (s === "paid") return "Paid"
+      if (s === "fully_returned") return "Fully Returned"
+      if (s === "cancelled") return "Cancelled"
+      return status || "-"
+    } else {
+      if (s === "draft") return "مسودة"
+      if (s === "pending_approval") return "بانتظار الاعتماد"
+      if (s === "approved") return "معتمدة إداريًا"
+      if (s === "received") return "تم الاستلام"
+      if (s === "partially_paid") return "مدفوعة جزئيًا"
+      if (s === "paid") return "مدفوعة"
+      if (s === "fully_returned") return "مرتجعة بالكامل"
+      if (s === "cancelled") return "ملغاة"
+      return status || "-"
+    }
+  }
 
   useEffect(() => {
     loadData()
@@ -192,6 +225,28 @@ export default function BillViewPage() {
           setPermDelete(await canAction(supabase, 'bills', 'delete'))
           const payView = await canAction(supabase, 'payments', 'read')
           setPermPayView(!!payView)
+
+          // 🔐 تحميل دور المستخدم الحالي داخل الشركة لتحديد صلاحيات الاعتماد
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user) {
+            const companyId = await getActiveCompanyId(supabase)
+            if (companyId) {
+              const { data: member } = await supabase
+                .from("company_members")
+                .select("role")
+                .eq("company_id", companyId)
+                .eq("user_id", user.id)
+                .maybeSingle()
+              const role = String(member?.role || "")
+              setCurrentUserRole(role)
+
+              // من يمكنه طلب الاعتماد الإداري؟
+              setCanSubmitForApproval(role.length > 0) // أي مستخدم له دور في الشركة يمكنه طلب الاعتماد
+
+              // من يمكنه الاعتماد الإداري؟
+              setCanApproveAdmin(["owner", "admin", "general_manager"].includes(role))
+            }
+          }
         } catch { }
       })()
     const langHandler = () => {
@@ -215,7 +270,11 @@ export default function BillViewPage() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const { data: billData } = await supabase.from("bills").select("*, shipping_providers(provider_name)").eq("id", id).single()
+      const { data: billData } = await supabase
+        .from("bills")
+        .select("*, shipping_providers(provider_name)")
+        .eq("id", id)
+        .single()
       setBill(billData as any)
       if (!billData) return
 
@@ -1720,12 +1779,194 @@ export default function BillViewPage() {
                   </Link>
                 )}
 
-                {bill.status === "draft" && (
-                  <Button onClick={() => changeStatus("sent")} disabled={posting} size="sm" className="bg-green-600 hover:bg-green-700">
+                {/* دورة الاعتماد الإداري لفاتورة الشراء */}
+                {bill.status === "draft" && canSubmitForApproval && (
+                  <Button
+                    onClick={async () => {
+                      try {
+                        setPosting(true)
+                        const companyId = await getActiveCompanyId(supabase)
+                        const { data: { user } } = await supabase.auth.getUser()
+                        if (!companyId || !user) {
+                          setPosting(false)
+                          return
+                        }
+
+                        const { error } = await supabase
+                          .from("bills")
+                          .update({
+                            status: "pending_approval",
+                            approval_status: "pending",
+                            approved_by: null,
+                            approved_at: null
+                          })
+                          .eq("id", bill.id)
+                          .eq("company_id", companyId)
+
+                        if (error) throw error
+
+                        // إشعارات للمالك والمدير العام داخل نفس الشركة فقط
+                        try {
+                          await createNotification({
+                            companyId,
+                            referenceType: "bill",
+                            referenceId: bill.id,
+                            title: appLang === "en"
+                              ? "Purchase bill pending approval"
+                              : "فاتورة مشتريات بانتظار الاعتماد الإداري",
+                            message: appLang === "en"
+                              ? `Purchase bill ${bill.bill_number} is pending admin approval`
+                              : `فاتورة مشتريات رقم ${bill.bill_number} في انتظار الاعتماد الإداري`,
+                            createdBy: user.id,
+                            branchId: bill.branch_id || undefined,
+                            costCenterId: bill.cost_center_id || undefined,
+                            assignedToRole: "owner",
+                            priority: "high",
+                            eventKey: `bill:${bill.id}:pending_approval_owner`,
+                            severity: "warning",
+                            category: "approvals"
+                          })
+
+                          await createNotification({
+                            companyId,
+                            referenceType: "bill",
+                            referenceId: bill.id,
+                            title: appLang === "en"
+                              ? "Purchase bill pending approval"
+                              : "فاتورة مشتريات بانتظار الاعتماد الإداري",
+                            message: appLang === "en"
+                              ? `Purchase bill ${bill.bill_number} is pending admin approval`
+                              : `فاتورة مشتريات رقم ${bill.bill_number} في انتظار الاعتماد الإداري`,
+                            createdBy: user.id,
+                            branchId: bill.branch_id || undefined,
+                            costCenterId: bill.cost_center_id || undefined,
+                            assignedToRole: "general_manager",
+                            priority: "high",
+                            eventKey: `bill:${bill.id}:pending_approval_gm`,
+                            severity: "warning",
+                            category: "approvals"
+                          })
+                        } catch (notifErr) {
+                          console.warn("Bill approval notifications failed:", notifErr)
+                        }
+
+                        toastActionSuccess(
+                          toast,
+                          appLang === "en" ? "Submit" : "إرسال",
+                          appLang === "en" ? "Purchase Bill for approval" : "فاتورة المشتريات للاعتماد",
+                          appLang
+                        )
+                        await loadData()
+                      } catch (err) {
+                        console.error("Error submitting bill for approval:", err)
+                        toastActionError(
+                          toast,
+                          appLang === "en" ? "Submit" : "الإرسال",
+                          appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
+                          appLang === "en" ? "Failed to submit for approval" : "تعذر إرسال الفاتورة للاعتماد",
+                          appLang
+                        )
+                      } finally {
+                        setPosting(false)
+                      }
+                    }}
+                    disabled={posting}
+                    size="sm"
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
                     <CheckCircle className="w-4 h-4 sm:mr-1" />
-                    <span className="hidden sm:inline">{posting ? "..." : (appLang === 'en' ? 'Mark as Sent' : 'تحديد كمرسل')}</span>
+                    <span className="hidden sm:inline">
+                      {posting ? "..." : (appLang === 'en' ? 'Submit for Approval' : 'إرسال للاعتماد الإداري')}
+                    </span>
                   </Button>
                 )}
+
+                {/* اعتماد إداري من المالك / المدير العام */}
+                {bill.status === "pending_approval" && canApproveAdmin && (
+                  <Button
+                    onClick={async () => {
+                      try {
+                        setPosting(true)
+                        const companyId = await getActiveCompanyId(supabase)
+                        const { data: { user } } = await supabase.auth.getUser()
+                        if (!companyId || !user) {
+                          setPosting(false)
+                          return
+                        }
+
+                        const now = new Date().toISOString()
+
+                        const { error } = await supabase
+                          .from("bills")
+                          .update({
+                            status: "approved",
+                            approval_status: "approved",
+                            approved_by: user.id,
+                            approved_at: now
+                          })
+                          .eq("id", bill.id)
+                          .eq("company_id", companyId)
+
+                        if (error) throw error
+
+                        // إشعار لمسؤول المخزن في نفس الشركة / الفرع / المخزن
+                        try {
+                          await createNotification({
+                            companyId,
+                            referenceType: "bill",
+                            referenceId: bill.id,
+                            title: appLang === "en"
+                              ? "Purchase bill approved and waiting for goods receipt"
+                              : "فاتورة مشتريات معتمدة وبانتظار اعتماد الاستلام",
+                            message: appLang === "en"
+                              ? `Purchase bill ${bill.bill_number} has been approved and is waiting for goods receipt in warehouse`
+                              : `فاتورة مشتريات رقم ${bill.bill_number} معتمدة إداريًا وبانتظار اعتماد الاستلام في مخزن الفرع`,
+                            createdBy: user.id,
+                            branchId: bill.branch_id || undefined,
+                            costCenterId: bill.cost_center_id || undefined,
+                            assignedToRole: "store_manager",
+                            priority: "high",
+                            eventKey: `bill:${bill.id}:approved_waiting_receipt`,
+                            severity: "info",
+                            category: "approvals"
+                          })
+                        } catch (notifErr) {
+                          console.warn("Warehouse notification failed:", notifErr)
+                        }
+
+                        toastActionSuccess(
+                          toast,
+                          appLang === "en" ? "Approval" : "الاعتماد",
+                          appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
+                          appLang
+                        )
+                        await loadData()
+                      } catch (err) {
+                        console.error("Error approving bill:", err)
+                        toastActionError(
+                          toast,
+                          appLang === "en" ? "Approval" : "الاعتماد",
+                          appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
+                          appLang === "en" ? "Failed to approve bill" : "تعذر اعتماد الفاتورة",
+                          appLang
+                        )
+                      } finally {
+                        setPosting(false)
+                      }
+                    }}
+                    disabled={posting}
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    <CheckCircle className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">
+                      {posting ? "..." : (appLang === 'en' ? 'Admin Approve' : 'اعتماد إداري')}
+                    </span>
+                  </Button>
+                )}
+
+                {/* فاصل */}
+                <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />
 
                 {/* فاصل */}
                 <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />

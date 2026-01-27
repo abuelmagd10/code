@@ -22,6 +22,7 @@ import {
   ArrowLeftRight,
   Bell,
   Search,
+  CheckCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -152,6 +153,7 @@ export function Sidebar() {
     if (href.includes('/inventory-transfers')) return 'inventory_transfers'
     if (href.includes('/inventory/third-party')) return 'third_party_inventory'
     if (href.includes('/inventory/write-offs')) return 'write_offs'
+    if (href.includes('/inventory/goods-receipt')) return 'inventory_goods_receipt'
     if (href.includes('/inventory')) return 'inventory'
     // الموارد البشرية
     if (href.includes('/hr/employees')) return 'employees'
@@ -1026,6 +1028,7 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Inventory Transfers' : 'نقل المخزون'), href: `/inventory-transfers${q}`, icon: ArrowLeftRight },
                     { label: (lang === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
                     { label: (lang === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
+                    { label: (lang === 'en' ? 'Purchase Goods Receipt' : 'اعتماد استلام المشتريات'), href: `/inventory/goods-receipt${q}`, icon: CheckCircle },
                   ]
                 },
                 {

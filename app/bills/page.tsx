@@ -130,8 +130,13 @@ export default function BillsPage() {
   const [pageSize, setPageSize] = useState<number>(10)
 
   // Status options for multi-select - قائمة ثابتة بجميع الحالات الممكنة
+  // تشمل دورة الاعتماد الجديدة لفواتير الشراء:
+  // draft -> pending_approval -> approved -> received -> partially_paid / paid
   const allStatusOptions = useMemo(() => [
     { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
+    { value: "pending_approval", label: appLang === 'en' ? "Pending Approval" : "بانتظار الاعتماد" },
+    { value: "approved", label: appLang === 'en' ? "Approved" : "معتمدة إداريًا" },
+    { value: "received", label: appLang === 'en' ? "Received" : "تم الاستلام" },
     { value: "sent", label: appLang === 'en' ? "Sent" : "مُرسل" },
     { value: "paid", label: appLang === 'en' ? "Paid" : "مدفوع" },
     { value: "partially_paid", label: appLang === 'en' ? "Partially Paid" : "مدفوع جزئياً" },
