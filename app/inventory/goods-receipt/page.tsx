@@ -99,6 +99,17 @@ export default function GoodsReceiptPage() {
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null)
   const autoOpenDialogRef = useRef(false) // ✅ تتبع ما إذا كان الـ dialog قد تم فتحه بالفعل لتجنب الـ duplicate calls
   const pendingBillDataRef = useRef<BillForReceipt | null>(null) // ✅ تخزين بيانات الفاتورة المؤقتة لفتحها بعد تحديث الفرع/المخزن
+  const selectedBranchIdRef = useRef<string | null>(null) // ✅ تتبع القيمة الحالية للفرع لتجنب stale closure
+  const selectedWarehouseIdRef = useRef<string | null>(null) // ✅ تتبع القيمة الحالية للمخزن لتجنب stale closure
+
+  // ✅ تحديث refs عند تغيير selectedBranchId و selectedWarehouseId
+  useEffect(() => {
+    selectedBranchIdRef.current = selectedBranchId
+  }, [selectedBranchId])
+
+  useEffect(() => {
+    selectedWarehouseIdRef.current = selectedWarehouseId
+  }, [selectedWarehouseId])
 
   const isOwnerAdmin = useMemo(() => {
     const role = String(userContext?.role || "").trim().toLowerCase()
@@ -180,6 +191,7 @@ export default function GoodsReceiptPage() {
           const initialBranchId = (mainBranch?.id as string) || userContext.branch_id || null
           if (initialBranchId) {
             setSelectedBranchId(initialBranchId)
+            selectedBranchIdRef.current = initialBranchId
           }
         }
       } catch (err) {
@@ -193,12 +205,11 @@ export default function GoodsReceiptPage() {
   // تحميل المخازن للفرع المحدد (للأدوار الإدارية)
   useEffect(() => {
     const loadBranchWarehouses = async () => {
+      // ✅ مسح المخازن عند عدم توفر userContext أو أثناء التحميل لمنع تسريب البيانات بين المستخدمين
       if (!userContext || userContextLoading || !isOwnerAdmin || !selectedBranchId) {
-        // ✅ إذا لم يكن هناك فرع محدد، نمسح المخازن والمخزن المحدد
-        if (!selectedBranchId) {
-          setWarehouses([])
-          setSelectedWarehouseId(null)
-        }
+        setWarehouses([])
+        setSelectedWarehouseId(null)
+        selectedWarehouseIdRef.current = null
         return
       }
       try {
@@ -229,9 +240,11 @@ export default function GoodsReceiptPage() {
           const autoSelectedWhId = (mainWh?.id as string) || ws[0].id
           // ✅ تحديث المخزن المحدد تلقائياً حتى لو كان محدداً مسبقاً (لضمان التزامن مع الفرع)
           setSelectedWarehouseId(autoSelectedWhId)
+          selectedWarehouseIdRef.current = autoSelectedWhId
         } else {
           // ✅ إذا لم يكن هناك مخازن، نمسح الاختيار
           setSelectedWarehouseId(null)
+          selectedWarehouseIdRef.current = null
         }
       } catch (err) {
         console.error("Error loading warehouses for goods receipt:", err)
@@ -275,8 +288,8 @@ export default function GoodsReceiptPage() {
         const role = String(userContext.role || "").trim().toLowerCase()
         if ((role === "owner" || role === "admin") && billData.branch_id && billData.warehouse_id) {
           // ✅ استخدام refs للتحقق من القيم الحالية بدلاً من dependencies لتجنب re-runs
-          const currentBranchId = selectedBranchId
-          const currentWarehouseId = selectedWarehouseId
+          const currentBranchId = selectedBranchIdRef.current
+          const currentWarehouseId = selectedWarehouseIdRef.current
           
           if (billData.branch_id !== currentBranchId || billData.warehouse_id !== currentWarehouseId) {
             // ✅ حفظ بيانات الفاتورة في ref وتمييز أننا بحاجة لفتح الـ dialog بعد التحديث
@@ -286,9 +299,11 @@ export default function GoodsReceiptPage() {
             // ✅ تحديث الفرع والمخزن
             if (billData.branch_id !== currentBranchId) {
               setSelectedBranchId(billData.branch_id)
+              selectedBranchIdRef.current = billData.branch_id
             }
             if (billData.warehouse_id !== currentWarehouseId) {
               setSelectedWarehouseId(billData.warehouse_id)
+              selectedWarehouseIdRef.current = billData.warehouse_id
             }
             // ✅ سيتم فتح الـ dialog في effect منفصل بعد تحديث selectedBranchId و selectedWarehouseId
           } else {
@@ -672,8 +687,10 @@ export default function GoodsReceiptPage() {
                           value={selectedBranchId || ""}
                           onValueChange={(val) => {
                             setSelectedBranchId(val)
+                            selectedBranchIdRef.current = val
                             // ✅ مسح المخزن المحدد عند تغيير الفرع (سيتم تحديده تلقائياً في useEffect)
                             setSelectedWarehouseId(null)
+                            selectedWarehouseIdRef.current = null
                           }}
                         >
                           <SelectTrigger className="h-7 w-40 text-xs">
@@ -699,8 +716,10 @@ export default function GoodsReceiptPage() {
                             // ✅ لا نسمح بإلغاء الاختيار - إذا حاول المستخدم اختيار قيمة فارغة، نستخدم أول مخزن متاح
                             if (!val && warehouses.length > 0) {
                               setSelectedWarehouseId(warehouses[0].id)
+                              selectedWarehouseIdRef.current = warehouses[0].id
                             } else {
                               setSelectedWarehouseId(val)
+                              selectedWarehouseIdRef.current = val
                             }
                           }}
                           disabled={!selectedBranchId || warehouses.length === 0}
