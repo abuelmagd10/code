@@ -457,7 +457,18 @@ export default function GoodsReceiptPage() {
       }
 
       // بناء قواعد الحوكمة الأساسية
-      const rules = buildDataVisibilityFilter(context)
+      // ✅ store_manager يجب أن يرى جميع الفواتير المعتمدة في مخزنه بغض النظر عن من أنشأها
+      let rules = buildDataVisibilityFilter(context)
+      if (role === "store_manager") {
+        // ✅ تعديل القواعد لـ store_manager: يرى جميع الفواتير في فرعه ومخزنه بدون فلترة على created_by
+        rules = {
+          ...rules,
+          filterByCreatedBy: false,
+          createdByUserId: null,
+          filterByCostCenter: false,
+          costCenterId: null,
+        }
+      }
 
       // نقيّد الاستعلام يدوياً على الفرع والمخزن
       let q = supabase
