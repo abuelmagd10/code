@@ -195,7 +195,6 @@ export default function GoodsReceiptPage() {
         appLang
       )
     } finally {
-      if (loadRequestRef.current !== requestId) return
       setLoading(false)
     }
   }
