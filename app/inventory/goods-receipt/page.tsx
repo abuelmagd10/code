@@ -1,7 +1,8 @@
 // app/inventory/goods-receipt/page.tsx
 "use client"
 
-import { useEffect, useMemo, useState, useRef } from "react"
+import { useEffect, useMemo, useState, useRef, useCallback } from "react"
+import { useSearchParams } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -15,6 +16,7 @@ import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Package, CheckCircle, Warehouse, Building2, AlertCircle, Loader2 } from "lucide-react"
 import { createPurchaseInventoryJournal } from "@/lib/accrual-accounting-engine"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
@@ -79,6 +81,7 @@ export default function GoodsReceiptPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
   const { userContext, loading: userContextLoading } = useUserContext()
+  const searchParams = useSearchParams()
   const [appLang, setAppLang] = useState<"ar" | "en">("ar")
   const [bills, setBills] = useState<BillForReceipt[]>([])
   const [loading, setLoading] = useState(true)
@@ -89,6 +92,16 @@ export default function GoodsReceiptPage() {
   const [branchName, setBranchName] = useState<string | null>(null)
   const [warehouseName, setWarehouseName] = useState<string | null>(null)
   const loadRequestRef = useRef(0)
+  const billIdFromQuery = searchParams.get("billId")
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([])
+  const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string; branch_id: string }>>([])
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null)
+
+  const isOwnerAdmin = useMemo(() => {
+    const role = String(userContext?.role || "").trim().toLowerCase()
+    return role === "owner" || role === "admin"
+  }, [userContext])
 
   useEffect(() => {
     try {
@@ -99,11 +112,139 @@ export default function GoodsReceiptPage() {
     }
   }, [])
 
+  const openReceiptDialog = useCallback(async (bill: BillForReceipt) => {
+    try {
+      setSelectedBill(bill)
+      setProcessing(true)
+      const { data: itemsData, error } = await supabase
+        .from("bill_items")
+        .select("id, product_id, quantity, unit_price, tax_rate, products(name, sku)")
+        .eq("bill_id", bill.id)
+
+      if (error) throw error
+
+      const rows: ReceiptItem[] = (itemsData || [])
+        .filter((it: BillItemRow) => !!it.product_id)
+        .map((it: BillItemRow) => ({
+          id: it.id,
+          product_id: it.product_id as string,
+          product_name: it.products?.name || it.product_id || "",
+          max_qty: Number(it.quantity || 0),
+          receive_qty: Number(it.quantity || 0), // افتراضياً استلام كامل
+          unit_price: Number(it.unit_price || 0),
+          tax_rate: Number(it.tax_rate || 0)
+        }))
+
+      setReceiptItems(rows)
+      setDialogOpen(true)
+    } catch (err) {
+      console.error("Error loading bill items for receipt:", err)
+      toastActionError(
+        toast,
+        appLang === "en" ? "Load" : "التحميل",
+        appLang === "en" ? "Items" : "البنود",
+        appLang === "en" ? "Failed to load bill items" : "تعذر تحميل بنود الفاتورة",
+        appLang
+      )
+    } finally {
+      setProcessing(false)
+    }
+  }, [supabase, toast, appLang])
+
+  // تحميل الفروع للأدوار الإدارية (مالك / مدير عام) لتمكين التبديل
+  useEffect(() => {
+    const loadBranches = async () => {
+      if (!userContext || userContextLoading || !isOwnerAdmin) return
+      try {
+        const companyId = await getActiveCompanyId(supabase)
+        if (!companyId) return
+
+        const { data: branchData } = await supabase
+          .from("branches")
+          .select("id, name, is_active, is_main")
+          .eq("company_id", companyId)
+          .eq("is_active", true)
+          .order("is_main", { ascending: false })
+
+        const activeBranches =
+          (branchData || [])
+            .filter((b: any) => b.is_active !== false)
+            .map((b: any) => ({ id: String(b.id), name: String(b.name || "فرع") }))
+
+        setBranches(activeBranches)
+
+        if (!selectedBranchId) {
+          const mainBranch = (branchData || []).find((b: any) => b.is_main) || (branchData || [])[0]
+          const initialBranchId = (mainBranch?.id as string) || userContext.branch_id || null
+          if (initialBranchId) {
+            setSelectedBranchId(initialBranchId)
+          }
+        }
+      } catch (err) {
+        console.error("Error loading branches for goods receipt:", err)
+      }
+    }
+
+    loadBranches()
+  }, [userContext, userContextLoading, isOwnerAdmin, selectedBranchId, supabase])
+
+  // تحميل المخازن للفرع المحدد (للأدوار الإدارية)
+  useEffect(() => {
+    const loadBranchWarehouses = async () => {
+      if (!userContext || userContextLoading || !isOwnerAdmin || !selectedBranchId) return
+      try {
+        const companyId = await getActiveCompanyId(supabase)
+        if (!companyId) return
+
+        const { data: warehouseData } = await supabase
+          .from("warehouses")
+          .select("id, name, branch_id, is_active, is_main")
+          .eq("company_id", companyId)
+          .eq("branch_id", selectedBranchId)
+          .eq("is_active", true)
+
+        const ws =
+          (warehouseData || [])
+            .filter((w: any) => w.is_active !== false)
+            .map((w: any) => ({
+              id: String(w.id),
+              name: String(w.name || "مخزن"),
+              branch_id: String(w.branch_id),
+            }))
+
+        setWarehouses(ws)
+
+        if (!selectedWarehouseId && ws.length > 0) {
+          const mainWh = (warehouseData || []).find((w: any) => w.is_main) || warehouseData?.[0]
+          const initialWhId = (mainWh?.id as string) || ws[0].id
+          setSelectedWarehouseId(initialWhId)
+        }
+      } catch (err) {
+        console.error("Error loading warehouses for goods receipt:", err)
+      }
+    }
+
+    loadBranchWarehouses()
+  }, [userContext, userContextLoading, isOwnerAdmin, selectedBranchId, selectedWarehouseId, supabase])
+
   useEffect(() => {
     if (!userContextLoading && userContext) {
       loadBills(userContext)
     }
-  }, [userContextLoading, userContext])
+  }, [userContextLoading, userContext, selectedBranchId, selectedWarehouseId])
+
+  // ✅ فتح dialog الاستلام تلقائياً عند وجود billId في query string
+  useEffect(() => {
+    if (billIdFromQuery && bills.length > 0 && !dialogOpen && !loading) {
+      const targetBill = bills.find(b => b.id === billIdFromQuery)
+      if (targetBill) {
+        // تأخير بسيط لضمان أن الصفحة قد تم تحميلها بالكامل
+        setTimeout(() => {
+          openReceiptDialog(targetBill)
+        }, 300)
+      }
+    }
+  }, [billIdFromQuery, bills, dialogOpen, loading, openReceiptDialog])
 
   const loadBills = async (context: UserContext) => {
     const requestId = Date.now()
@@ -131,11 +272,18 @@ export default function GoodsReceiptPage() {
         return
       }
 
-      // يجب أن يكون لدى مسؤول المخزن فرع ومخزن محدد
-      const branchId = context.branch_id
-      const warehouseId = context.warehouse_id
+      // فرع ومخزن العمل الفعلي (للأدوار الإدارية يمكن التبديل)
+      const effectiveBranchId =
+        (role === "owner" || role === "admin") && selectedBranchId
+          ? selectedBranchId
+          : context.branch_id
+      const effectiveWarehouseId =
+        (role === "owner" || role === "admin") && selectedWarehouseId
+          ? selectedWarehouseId
+          : context.warehouse_id
 
-      if (!branchId || !warehouseId) {
+      // يجب أن يكون لدى مسؤول المخزن فرع ومخزن محدد
+      if (!effectiveBranchId || !effectiveWarehouseId) {
         toastActionError(
           toast,
           appLang === "en" ? "Access" : "الوصول",
@@ -151,6 +299,9 @@ export default function GoodsReceiptPage() {
         setWarehouseName(null)
         return
       }
+
+      const branchId = effectiveBranchId
+      const warehouseId = effectiveWarehouseId
 
       // تحميل اسم الفرع والمخزن للعرض بدلاً من عرض المعرّفات الخام
       try {
@@ -280,45 +431,6 @@ export default function GoodsReceiptPage() {
     }
   })
 
-  const openReceiptDialog = async (bill: BillForReceipt) => {
-    try {
-      setSelectedBill(bill)
-      setProcessing(true)
-      const { data: itemsData, error } = await supabase
-        .from("bill_items")
-        .select("id, product_id, quantity, unit_price, tax_rate, products(name, sku)")
-        .eq("bill_id", bill.id)
-
-      if (error) throw error
-
-      const rows: ReceiptItem[] = (itemsData || [])
-        .filter((it: BillItemRow) => !!it.product_id)
-        .map((it: BillItemRow) => ({
-          id: it.id,
-          product_id: it.product_id as string,
-          product_name: it.products?.name || it.product_id || "",
-          max_qty: Number(it.quantity || 0),
-          receive_qty: Number(it.quantity || 0), // افتراضياً استلام كامل
-          unit_price: Number(it.unit_price || 0),
-          tax_rate: Number(it.tax_rate || 0)
-        }))
-
-      setReceiptItems(rows)
-      setDialogOpen(true)
-    } catch (err) {
-      console.error("Error loading bill items for receipt:", err)
-      toastActionError(
-        toast,
-        appLang === "en" ? "Load" : "التحميل",
-        appLang === "en" ? "Items" : "البنود",
-        appLang === "en" ? "Failed to load bill items" : "تعذر تحميل بنود الفاتورة",
-        appLang
-      )
-    } finally {
-      setProcessing(false)
-    }
-  }
-
   const handleConfirmReceipt = async () => {
     if (!selectedBill || receiptItems.length === 0 || !userContext) {
       return
@@ -446,16 +558,73 @@ export default function GoodsReceiptPage() {
               </div>
               {userContext && (
                 <div className="flex flex-col text-xs sm:text-sm text-gray-600 dark:text-gray-400">
-                  <span className="flex items-center gap-1">
-                    <Building2 className="w-4 h-4" />
-                    {appLang === "en" ? "Branch:" : "الفرع:"}{" "}
-                    {branchName || userContext.branch_id || "-"}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Warehouse className="w-4 h-4" />
-                    {appLang === "en" ? "Warehouse:" : "المخزن:"}{" "}
-                    {warehouseName || userContext.warehouse_id || "-"}
-                  </span>
+                  {isOwnerAdmin ? (
+                    <>
+                      <span className="flex items-center gap-1">
+                        <Building2 className="w-4 h-4" />
+                        {appLang === "en" ? "Branch:" : "الفرع:"}{" "}
+                        <Select
+                          value={selectedBranchId || ""}
+                          onValueChange={(val) => {
+                            setSelectedBranchId(val)
+                            setSelectedWarehouseId(null)
+                          }}
+                        >
+                          <SelectTrigger className="h-7 w-40 text-xs">
+                            <SelectValue
+                              placeholder={appLang === "en" ? "Select branch" : "اختر الفرع"}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {branches.map((b) => (
+                              <SelectItem key={b.id} value={b.id}>
+                                {b.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </span>
+                      <span className="flex items-center gap-1 mt-1">
+                        <Warehouse className="w-4 h-4" />
+                        {appLang === "en" ? "Warehouse:" : "المخزن:"}{" "}
+                        <Select
+                          value={selectedWarehouseId || ""}
+                          onValueChange={(val) => setSelectedWarehouseId(val)}
+                          disabled={!selectedBranchId}
+                        >
+                          <SelectTrigger className="h-7 w-44 text-xs">
+                            <SelectValue
+                              placeholder={
+                                appLang === "en"
+                                  ? "Select warehouse"
+                                  : "اختر المخزن"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {warehouses.map((w) => (
+                              <SelectItem key={w.id} value={w.id}>
+                                {w.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex items-center gap-1">
+                        <Building2 className="w-4 h-4" />
+                        {appLang === "en" ? "Branch:" : "الفرع:"}{" "}
+                        {branchName || userContext.branch_id || "-"}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Warehouse className="w-4 h-4" />
+                        {appLang === "en" ? "Warehouse:" : "المخزن:"}{" "}
+                        {warehouseName || userContext.warehouse_id || "-"}
+                      </span>
+                    </>
+                  )}
                 </div>
               )}
             </CardHeader>
