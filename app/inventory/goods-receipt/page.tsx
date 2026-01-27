@@ -898,8 +898,8 @@ export default function GoodsReceiptPage() {
 
       {/* Dialog لاستلام الكميات الفعلية */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-3xl h-[90vh] max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>
               {appLang === "en"
                 ? `Goods receipt for bill ${selectedBill?.bill_number || ""}`
@@ -911,7 +911,7 @@ export default function GoodsReceiptPage() {
               e.preventDefault()
               handleConfirmReceipt()
             }}
-            className="flex flex-col flex-1 min-h-0"
+            className="flex flex-col flex-1 min-h-0 overflow-hidden"
           >
             <div className="flex-1 overflow-y-auto min-h-0 space-y-4">
               {selectedBill && (

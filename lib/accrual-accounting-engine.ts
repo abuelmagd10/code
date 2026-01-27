@@ -474,7 +474,7 @@ export async function createPurchaseInventoryJournal(
       .from("bills")
       .select(`
         id, bill_number, bill_date, status,
-        subtotal, tax_amount, total_amount, shipping_charge,
+        subtotal, tax_amount, total_amount,
         branch_id, cost_center_id, supplier_id
       `)
       .eq("id", billId)
@@ -510,7 +510,7 @@ export async function createPurchaseInventoryJournal(
     // حساب المبالغ
     const netAmount = Number(bill.subtotal || 0)
     const vatAmount = Number(bill.tax_amount || 0)
-    const shippingAmount = Number(bill.shipping_charge || 0)
+    const shippingAmount = 0 // ✅ shipping_charge غير موجود في جدول bills
     const totalAmount = Number(bill.total_amount || 0)
 
     // إنشاء قيد الشراء
