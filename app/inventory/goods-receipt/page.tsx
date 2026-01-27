@@ -97,6 +97,8 @@ export default function GoodsReceiptPage() {
   const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string; branch_id: string }>>([])
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null)
+  const autoOpenDialogRef = useRef(false) // ✅ تتبع ما إذا كان الـ dialog قد تم فتحه بالفعل لتجنب الـ duplicate calls
+  const pendingBillDataRef = useRef<BillForReceipt | null>(null) // ✅ تخزين بيانات الفاتورة المؤقتة لفتحها بعد تحديث الفرع/المخزن
 
   const isOwnerAdmin = useMemo(() => {
     const role = String(userContext?.role || "").trim().toLowerCase()
@@ -149,7 +151,7 @@ export default function GoodsReceiptPage() {
     } finally {
       setProcessing(false)
     }
-  }, [supabase, toast, appLang])
+  }, [supabase, toast, appLang]) // ✅ إضافة appLang إلى dependencies لضمان استخدام القيمة الحالية
 
   // تحميل الفروع للأدوار الإدارية (مالك / مدير عام) لتمكين التبديل
   useEffect(() => {
@@ -191,7 +193,14 @@ export default function GoodsReceiptPage() {
   // تحميل المخازن للفرع المحدد (للأدوار الإدارية)
   useEffect(() => {
     const loadBranchWarehouses = async () => {
-      if (!userContext || userContextLoading || !isOwnerAdmin || !selectedBranchId) return
+      if (!userContext || userContextLoading || !isOwnerAdmin || !selectedBranchId) {
+        // ✅ إذا لم يكن هناك فرع محدد، نمسح المخازن والمخزن المحدد
+        if (!selectedBranchId) {
+          setWarehouses([])
+          setSelectedWarehouseId(null)
+        }
+        return
+      }
       try {
         const companyId = await getActiveCompanyId(supabase)
         if (!companyId) return
@@ -214,10 +223,15 @@ export default function GoodsReceiptPage() {
 
         setWarehouses(ws)
 
-        if (!selectedWarehouseId && ws.length > 0) {
+        // ✅ دائماً نحدد المخزن تلقائياً عند تحميل المخازن (المخزن الرئيسي أو الأول)
+        if (ws.length > 0) {
           const mainWh = (warehouseData || []).find((w: any) => w.is_main) || warehouseData?.[0]
-          const initialWhId = (mainWh?.id as string) || ws[0].id
-          setSelectedWarehouseId(initialWhId)
+          const autoSelectedWhId = (mainWh?.id as string) || ws[0].id
+          // ✅ تحديث المخزن المحدد تلقائياً حتى لو كان محدداً مسبقاً (لضمان التزامن مع الفرع)
+          setSelectedWarehouseId(autoSelectedWhId)
+        } else {
+          // ✅ إذا لم يكن هناك مخازن، نمسح الاختيار
+          setSelectedWarehouseId(null)
         }
       } catch (err) {
         console.error("Error loading warehouses for goods receipt:", err)
@@ -225,7 +239,7 @@ export default function GoodsReceiptPage() {
     }
 
     loadBranchWarehouses()
-  }, [userContext, userContextLoading, isOwnerAdmin, selectedBranchId, selectedWarehouseId, supabase])
+  }, [userContext, userContextLoading, isOwnerAdmin, selectedBranchId, supabase])
 
   useEffect(() => {
     if (!userContextLoading && userContext) {
@@ -235,16 +249,107 @@ export default function GoodsReceiptPage() {
 
   // ✅ فتح dialog الاستلام تلقائياً عند وجود billId في query string
   useEffect(() => {
-    if (billIdFromQuery && bills.length > 0 && !dialogOpen && !loading) {
-      const targetBill = bills.find(b => b.id === billIdFromQuery)
-      if (targetBill) {
-        // تأخير بسيط لضمان أن الصفحة قد تم تحميلها بالكامل
-        setTimeout(() => {
-          openReceiptDialog(targetBill)
-        }, 300)
+    if (!billIdFromQuery || dialogOpen || loading || !userContext || autoOpenDialogRef.current) return
+
+    const autoOpenBill = async () => {
+      try {
+        // ✅ جلب الفاتورة مباشرة من قاعدة البيانات بدلاً من البحث في القائمة المفلترة
+        // هذا يضمن أننا نجد الفاتورة حتى لو كانت في فرع/مخزن مختلف (للأدوار الإدارية)
+        const companyId = await getActiveCompanyId(supabase)
+        if (!companyId) return
+
+        const { data: billData, error } = await supabase
+          .from("bills")
+          .select(
+            "id, bill_number, bill_date, supplier_id, status, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, suppliers(name)"
+          )
+          .eq("id", billIdFromQuery)
+          .eq("company_id", companyId)
+          .eq("status", "approved")
+          .maybeSingle()
+
+        if (error) throw error
+        if (!billData) return
+
+        // ✅ للأدوار الإدارية: تحديث selectedBranchId و selectedWarehouseId إذا كانت الفاتورة في فرع/مخزن مختلف
+        const role = String(userContext.role || "").trim().toLowerCase()
+        if ((role === "owner" || role === "admin") && billData.branch_id && billData.warehouse_id) {
+          // ✅ استخدام refs للتحقق من القيم الحالية بدلاً من dependencies لتجنب re-runs
+          const currentBranchId = selectedBranchId
+          const currentWarehouseId = selectedWarehouseId
+          
+          if (billData.branch_id !== currentBranchId || billData.warehouse_id !== currentWarehouseId) {
+            // ✅ حفظ بيانات الفاتورة في ref وتمييز أننا بحاجة لفتح الـ dialog بعد التحديث
+            pendingBillDataRef.current = billData as BillForReceipt
+            autoOpenDialogRef.current = true
+            
+            // ✅ تحديث الفرع والمخزن
+            if (billData.branch_id !== currentBranchId) {
+              setSelectedBranchId(billData.branch_id)
+            }
+            if (billData.warehouse_id !== currentWarehouseId) {
+              setSelectedWarehouseId(billData.warehouse_id)
+            }
+            // ✅ سيتم فتح الـ dialog في effect منفصل بعد تحديث selectedBranchId و selectedWarehouseId
+          } else {
+            // ✅ إذا كان الفرع والمخزن متطابقين بالفعل، افتح الـ dialog مباشرة
+            autoOpenDialogRef.current = true
+            openReceiptDialog(billData as BillForReceipt)
+          }
+        } else {
+          // ✅ للمستخدمين الآخرين: فتح dialog مباشرة إذا كانت الفاتورة في فرعهم/مخزنهم
+          if (
+            billData.branch_id === userContext.branch_id &&
+            billData.warehouse_id === userContext.warehouse_id
+          ) {
+            autoOpenDialogRef.current = true
+            openReceiptDialog(billData as BillForReceipt)
+          }
+        }
+      } catch (err) {
+        console.error("Error loading bill for auto-open:", err)
+        autoOpenDialogRef.current = false // ✅ إعادة تعيين في حالة الخطأ
+        pendingBillDataRef.current = null
       }
     }
-  }, [billIdFromQuery, bills, dialogOpen, loading, openReceiptDialog])
+
+    autoOpenBill()
+  }, [billIdFromQuery, dialogOpen, loading, userContext, supabase, openReceiptDialog]) // ✅ إزالة selectedBranchId و selectedWarehouseId من dependencies
+
+  // ✅ فتح الـ dialog بعد تحديث الفرع والمخزن (للأدوار الإدارية فقط)
+  useEffect(() => {
+    if (
+      !isOwnerAdmin ||
+      !autoOpenDialogRef.current ||
+      !pendingBillDataRef.current ||
+      dialogOpen ||
+      loading ||
+      !selectedBranchId ||
+      !selectedWarehouseId
+    ) {
+      return
+    }
+
+    // ✅ التحقق من أن الفرع والمخزن المحددين يطابقان الفاتورة المؤقتة
+    const pendingBill = pendingBillDataRef.current
+    if (
+      pendingBill.branch_id === selectedBranchId &&
+      pendingBill.warehouse_id === selectedWarehouseId
+    ) {
+      // ✅ فتح الـ dialog ومسح البيانات المؤقتة
+      const billToOpen = pendingBillDataRef.current
+      pendingBillDataRef.current = null
+      openReceiptDialog(billToOpen)
+    }
+  }, [isOwnerAdmin, selectedBranchId, selectedWarehouseId, dialogOpen, loading, openReceiptDialog])
+
+  // ✅ إعادة تعيين autoOpenDialogRef عند إغلاق الـ dialog
+  useEffect(() => {
+    if (!dialogOpen) {
+      autoOpenDialogRef.current = false
+      pendingBillDataRef.current = null
+    }
+  }, [dialogOpen])
 
   const loadBills = async (context: UserContext) => {
     const requestId = Date.now()
@@ -567,6 +672,7 @@ export default function GoodsReceiptPage() {
                           value={selectedBranchId || ""}
                           onValueChange={(val) => {
                             setSelectedBranchId(val)
+                            // ✅ مسح المخزن المحدد عند تغيير الفرع (سيتم تحديده تلقائياً في useEffect)
                             setSelectedWarehouseId(null)
                           }}
                         >
@@ -589,15 +695,25 @@ export default function GoodsReceiptPage() {
                         {appLang === "en" ? "Warehouse:" : "المخزن:"}{" "}
                         <Select
                           value={selectedWarehouseId || ""}
-                          onValueChange={(val) => setSelectedWarehouseId(val)}
-                          disabled={!selectedBranchId}
+                          onValueChange={(val) => {
+                            // ✅ لا نسمح بإلغاء الاختيار - إذا حاول المستخدم اختيار قيمة فارغة، نستخدم أول مخزن متاح
+                            if (!val && warehouses.length > 0) {
+                              setSelectedWarehouseId(warehouses[0].id)
+                            } else {
+                              setSelectedWarehouseId(val)
+                            }
+                          }}
+                          disabled={!selectedBranchId || warehouses.length === 0}
                         >
                           <SelectTrigger className="h-7 w-44 text-xs">
                             <SelectValue
                               placeholder={
-                                appLang === "en"
-                                  ? "Select warehouse"
-                                  : "اختر المخزن"
+                                selectedWarehouseId
+                                  ? warehouses.find((w) => w.id === selectedWarehouseId)?.name ||
+                                    (appLang === "en" ? "Select warehouse" : "اختر المخزن")
+                                  : appLang === "en"
+                                    ? "Select warehouse"
+                                    : "اختر المخزن"
                               }
                             />
                           </SelectTrigger>
