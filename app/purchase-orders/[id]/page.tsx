@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Sidebar } from "@/components/sidebar"
@@ -14,6 +14,7 @@ import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
 import { Pencil, ArrowRight, ArrowLeft, Loader2, Mail, Send, FileText, CreditCard, RotateCcw, DollarSign, Package, Receipt, ShoppingCart, Plus, CheckCircle, Clock, AlertCircle, Ban } from "lucide-react"
 import { type UserContext, validatePurchaseOrderAction, canViewPurchasePrices } from "@/lib/validation"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface Supplier { id: string; name: string; email?: string; address?: string; phone?: string }
 interface POItem {
@@ -306,6 +307,30 @@ export default function PurchaseOrderDetailPage() {
       setIsLoading(false)
     }
   }
+
+  // 🔄 Realtime: تحديث تفاصيل أمر الشراء تلقائياً عند أي تغيير
+  const loadRef = useRef(load)
+  loadRef.current = load
+
+  const handlePORealtimeEvent = useCallback((record: any) => {
+    // فقط إذا كان التحديث لهذا الأمر
+    if (record?.id === poId) {
+      console.log('🔄 [PO Detail] Realtime event received, refreshing PO data...')
+      loadRef.current()
+    }
+  }, [poId])
+
+  useRealtimeTable({
+    table: 'purchase_orders',
+    enabled: !!poId,
+    onUpdate: handlePORealtimeEvent,
+    onDelete: (record: any) => {
+      if (record?.id === poId) {
+        console.log('🗑️ [PO Detail] PO deleted, redirecting...')
+        router.push('/purchase-orders')
+      }
+    },
+  })
 
   // ✅ تحديث بيانات الفواتير المرتبطة تلقائياً عند أي تغيير
   useEffect(() => {

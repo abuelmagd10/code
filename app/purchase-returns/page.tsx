@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo, useTransition } from "react"
+import { useEffect, useState, useMemo, useTransition, useCallback, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,6 +12,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 type PurchaseReturn = {
   id: string
@@ -89,6 +90,23 @@ export default function PurchaseReturnsPage() {
       setIsLoading(false)
     }
   }
+
+  // 🔄 Realtime: تحديث قائمة مرتجعات المشتريات تلقائياً عند أي تغيير
+  const loadReturnsRef = useRef(loadReturns)
+  loadReturnsRef.current = loadReturns
+
+  const handleReturnsRealtimeEvent = useCallback(() => {
+    console.log('🔄 [PurchaseReturns] Realtime event received, refreshing returns list...')
+    loadReturnsRef.current()
+  }, [])
+
+  useRealtimeTable({
+    table: 'purchase_returns',
+    enabled: true,
+    onInsert: handleReturnsRealtimeEvent,
+    onUpdate: handleReturnsRealtimeEvent,
+    onDelete: handleReturnsRealtimeEvent,
+  })
 
   const filteredReturns = returns.filter(r =>
     r.return_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||

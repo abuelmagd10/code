@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,7 @@ import { useRouter, useParams } from "next/navigation"
 import { ShoppingCart, ArrowLeft, ArrowRight, Pencil, FileText, Printer, Receipt, CreditCard, RotateCcw, Package, TrendingUp, DollarSign, AlertCircle, CheckCircle, Clock, Ban } from "lucide-react"
 import { canAction } from "@/lib/authz"
 import Link from "next/link"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface SalesOrder {
   id: string
@@ -140,77 +141,103 @@ export default function SalesOrderDetailPage() {
     checkPerms()
   }, [supabase])
 
-  useEffect(() => {
-    const loadOrder = async () => {
-      setIsLoading(true)
-      try {
-        // Load sales order with customer and shipping provider
-        const { data: orderData, error: orderError } = await supabase
-          .from("sales_orders")
-          .select(`*, customer:customers(id, name, email, phone, address), shipping_providers(provider_name)`)
-          .eq("id", orderId)
-          .single()
+  const loadOrder = useCallback(async () => {
+    if (!orderId) return
+    setIsLoading(true)
+    try {
+      // Load sales order with customer and shipping provider
+      const { data: orderData, error: orderError } = await supabase
+        .from("sales_orders")
+        .select(`*, customer:customers(id, name, email, phone, address), shipping_providers(provider_name)`)
+        .eq("id", orderId)
+        .single()
 
-        if (orderError) throw orderError
-        setOrder(orderData)
+      if (orderError) throw orderError
+      setOrder(orderData)
 
-        // Load order items
-        const { data: itemsData } = await supabase
-          .from("sales_order_items")
-          .select(`*, product:products(name, sku)`)
-          .eq("sales_order_id", orderId)
-        setItems(itemsData || [])
+      // Load order items
+      const { data: itemsData } = await supabase
+        .from("sales_order_items")
+        .select(`*, product:products(name, sku)`)
+        .eq("sales_order_id", orderId)
+      setItems(itemsData || [])
 
-        // Load linked invoices (via sales_order_id or invoice_id)
-        const invoiceIds: string[] = []
+      // Load linked invoices (via sales_order_id or invoice_id)
+      const invoiceIds: string[] = []
 
-        // First check if there's a direct invoice_id link
-        if (orderData.invoice_id) {
-          invoiceIds.push(orderData.invoice_id)
-        }
-
-        // Also check for invoices that reference this sales order
-        const { data: invoicesData } = await supabase
-          .from("invoices")
-          .select("id, invoice_number, invoice_date, due_date, total_amount, status, paid_amount, returned_amount, return_status")
-          .or(`sales_order_id.eq.${orderId}${orderData.invoice_id ? `,id.eq.${orderData.invoice_id}` : ''}`)
-
-        const uniqueInvoices = invoicesData || []
-        setLinkedInvoices(uniqueInvoices)
-
-        // Load payments for all linked invoices
-        if (uniqueInvoices.length > 0) {
-          const invIds = uniqueInvoices.map((inv: any) => inv.id)
-          const { data: paymentsData } = await supabase
-            .from("payments")
-            .select("id, reference_number, payment_date, amount, payment_method, notes, invoice_id")
-            .in("invoice_id", invIds)
-            .order("payment_date", { ascending: false })
-          setLinkedPayments(paymentsData || [])
-
-          // Load sales returns for all linked invoices
-          const { data: returnsData } = await supabase
-            .from("sales_returns")
-            .select(`
-              id, return_number, return_date, total_amount, status, reason, invoice_id,
-              items:sales_return_items(id, quantity, unit_price, line_total, product:products(name))
-            `)
-            .in("invoice_id", invIds)
-            .order("return_date", { ascending: false })
-          setLinkedReturns(returnsData || [])
-        } else {
-          setLinkedPayments([])
-          setLinkedReturns([])
-        }
-
-      } catch (error) {
-        console.error("Error loading order:", error)
-      } finally {
-        setIsLoading(false)
+      // First check if there's a direct invoice_id link
+      if (orderData.invoice_id) {
+        invoiceIds.push(orderData.invoice_id)
       }
+
+      // Also check for invoices that reference this sales order
+      const { data: invoicesData } = await supabase
+        .from("invoices")
+        .select("id, invoice_number, invoice_date, due_date, total_amount, status, paid_amount, returned_amount, return_status")
+        .or(`sales_order_id.eq.${orderId}${orderData.invoice_id ? `,id.eq.${orderData.invoice_id}` : ''}`)
+
+      const uniqueInvoices = invoicesData || []
+      setLinkedInvoices(uniqueInvoices)
+
+      // Load payments for all linked invoices
+      if (uniqueInvoices.length > 0) {
+        const invIds = uniqueInvoices.map((inv: any) => inv.id)
+        const { data: paymentsData } = await supabase
+          .from("payments")
+          .select("id, reference_number, payment_date, amount, payment_method, notes, invoice_id")
+          .in("invoice_id", invIds)
+          .order("payment_date", { ascending: false })
+        setLinkedPayments(paymentsData || [])
+
+        // Load sales returns for all linked invoices
+        const { data: returnsData } = await supabase
+          .from("sales_returns")
+          .select(`
+            id, return_number, return_date, total_amount, status, reason, invoice_id,
+            items:sales_return_items(id, quantity, unit_price, line_total, product:products(name))
+          `)
+          .in("invoice_id", invIds)
+          .order("return_date", { ascending: false })
+        setLinkedReturns(returnsData || [])
+      } else {
+        setLinkedPayments([])
+        setLinkedReturns([])
+      }
+
+    } catch (error) {
+      console.error("Error loading order:", error)
+    } finally {
+      setIsLoading(false)
     }
-    if (orderId) loadOrder()
   }, [supabase, orderId])
+
+  useEffect(() => {
+    loadOrder()
+  }, [loadOrder])
+
+  // 🔄 Realtime: تحديث تفاصيل أمر البيع تلقائياً عند أي تغيير
+  const loadOrderRef = useRef(loadOrder)
+  loadOrderRef.current = loadOrder
+
+  const handleSORealtimeEvent = useCallback((record: any) => {
+    // فقط إذا كان التحديث لهذا الأمر
+    if (record?.id === orderId) {
+      console.log('🔄 [SO Detail] Realtime event received, refreshing SO data...')
+      loadOrderRef.current()
+    }
+  }, [orderId])
+
+  useRealtimeTable({
+    table: 'sales_orders',
+    enabled: !!orderId,
+    onUpdate: handleSORealtimeEvent,
+    onDelete: (record: any) => {
+      if (record?.id === orderId) {
+        console.log('🗑️ [SO Detail] SO deleted, redirecting...')
+        router.push('/sales-orders')
+      }
+    },
+  })
 
 
 

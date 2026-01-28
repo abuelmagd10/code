@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useMemo, useTransition } from "react"
+import { useState, useEffect, useMemo, useTransition, useCallback, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -27,6 +27,7 @@ import { CustomerFormDialog } from "@/components/customers/customer-form-dialog"
 import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordModification } from "@/lib/validation"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { CurrencyCell, StatusBadge } from "@/components/DataTableFormatters"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 // نوع بيانات الموظف للفلترة
 interface Employee {
@@ -594,6 +595,23 @@ export default function CustomersPage() {
       setIsLoading(false)
     }
   }
+
+  // 🔄 Realtime: تحديث قائمة العملاء تلقائياً عند أي تغيير
+  const loadCustomersRef = useRef(loadCustomers)
+  loadCustomersRef.current = loadCustomers
+
+  const handleCustomersRealtimeEvent = useCallback(() => {
+    console.log('🔄 [Customers] Realtime event received, refreshing customers list...')
+    loadCustomersRef.current()
+  }, [])
+
+  useRealtimeTable({
+    table: 'customers',
+    enabled: true,
+    onInsert: handleCustomersRealtimeEvent,
+    onUpdate: handleCustomersRealtimeEvent,
+    onDelete: handleCustomersRealtimeEvent,
+  })
 
   // Update refund exchange rate when currency changes
   useEffect(() => {

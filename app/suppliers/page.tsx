@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useTransition } from "react"
+import { useState, useEffect, useTransition, useCallback, useRef, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,8 +19,8 @@ import { TableSkeleton } from "@/components/ui/skeleton"
 import { SupplierReceiptDialog } from "@/components/suppliers/supplier-receipt-dialog"
 import { getExchangeRate, getActiveCurrencies, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
-import { useMemo } from "react"
 import { useRouter } from "next/navigation"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface Supplier {
   id: string
@@ -240,6 +240,23 @@ export default function SuppliersPage() {
       setIsLoading(false)
     }
   }
+
+  // 🔄 Realtime: تحديث قائمة الموردين تلقائياً عند أي تغيير
+  const loadSuppliersRef = useRef(loadSuppliers)
+  loadSuppliersRef.current = loadSuppliers
+
+  const handleSuppliersRealtimeEvent = useCallback(() => {
+    console.log('🔄 [Suppliers] Realtime event received, refreshing suppliers list...')
+    loadSuppliersRef.current()
+  }, [])
+
+  useRealtimeTable({
+    table: 'suppliers',
+    enabled: true,
+    onInsert: handleSuppliersRealtimeEvent,
+    onUpdate: handleSuppliersRealtimeEvent,
+    onDelete: handleSuppliersRealtimeEvent,
+  })
 
   // دالة تحميل أرصدة الموردين
   const loadSupplierBalances = async (companyId: string, suppliersList: Supplier[]) => {

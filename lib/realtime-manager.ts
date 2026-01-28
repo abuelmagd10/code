@@ -52,6 +52,17 @@ export type RealtimeTable =
   | 'bills' // ✅ فواتير المشتريات
   | 'approvals'
   | 'inventory_transfers' // ✅ النقل بين المخازن
+  // 🔄 جداول البيانات الأساسية (Master Data)
+  | 'customers' // ✅ العملاء
+  | 'suppliers' // ✅ الموردين
+  | 'products' // ✅ المنتجات
+  // 🔄 جداول المعاملات المالية
+  | 'payments' // ✅ المدفوعات
+  | 'journal_entries' // ✅ القيود المحاسبية
+  | 'purchase_returns' // ✅ مرتجعات المشتريات
+  | 'sales_returns' // ✅ مرتجعات المبيعات
+  | 'vendor_credits' // ✅ أرصدة الموردين
+  | 'customer_debit_notes' // ✅ إشعارات مدين العملاء
   // 🔐 جداول الحوكمة (Governance)
   | 'company_members'
   | 'user_branch_access' // ✅ الفروع المسموحة للمستخدم (دعم فروع متعددة)
@@ -286,6 +297,17 @@ class RealtimeManager {
       'bills': 'bills', // ✅ فواتير المشتريات
       'approvals': 'approval_workflows', // قد يكون اسم مختلف
       'inventory_transfers': 'inventory_transfers', // ✅ النقل بين المخازن
+      // 🔄 جداول البيانات الأساسية
+      'customers': 'customers',
+      'suppliers': 'suppliers',
+      'products': 'products',
+      // 🔄 جداول المعاملات المالية
+      'payments': 'payments',
+      'journal_entries': 'journal_entries',
+      'purchase_returns': 'purchase_returns',
+      'sales_returns': 'sales_returns',
+      'vendor_credits': 'vendor_credits',
+      'customer_debit_notes': 'customer_debit_notes',
       // 🔐 جداول الحوكمة
       'company_members': 'company_members',
       'user_branch_access': 'user_branch_access',

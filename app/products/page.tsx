@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useMemo, useTransition } from "react"
+import { useState, useEffect, useMemo, useTransition, useCallback, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -26,6 +26,7 @@ import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { validatePrice, getValidationError, validateField } from "@/lib/validation"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface Product {
   id: string
@@ -341,6 +342,23 @@ export default function ProductsPage() {
       setIsLoading(false)
     }
   }
+
+  // 🔄 Realtime: تحديث قائمة المنتجات تلقائياً عند أي تغيير
+  const loadProductsRef = useRef(loadProducts)
+  loadProductsRef.current = loadProducts
+
+  const handleProductsRealtimeEvent = useCallback(() => {
+    console.log('🔄 [Products] Realtime event received, refreshing products list...')
+    loadProductsRef.current()
+  }, [])
+
+  useRealtimeTable({
+    table: 'products',
+    enabled: true,
+    onInsert: handleProductsRealtimeEvent,
+    onUpdate: handleProductsRealtimeEvent,
+    onDelete: handleProductsRealtimeEvent,
+  })
 
   const [isSaving, setIsSaving] = useState(false)
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import Link from "next/link"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,6 +20,7 @@ import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { type UserContext, getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
 import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 // نوع بيانات الموظف للفلترة
 interface Employee {
@@ -262,6 +263,23 @@ export default function CustomerDebitNotesPage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // 🔄 Realtime: تحديث قائمة إشعارات مدين العملاء تلقائياً عند أي تغيير
+  const loadDataRef = useRef(loadData)
+  loadDataRef.current = loadData
+
+  const handleDebitNotesRealtimeEvent = useCallback(() => {
+    console.log('🔄 [CustomerDebitNotes] Realtime event received, refreshing notes list...')
+    loadDataRef.current()
+  }, [])
+
+  useRealtimeTable({
+    table: 'customer_debit_notes',
+    enabled: true,
+    onInsert: handleDebitNotesRealtimeEvent,
+    onUpdate: handleDebitNotesRealtimeEvent,
+    onDelete: handleDebitNotesRealtimeEvent,
+  })
 
   // Filtered debit notes
   const filteredNotes = useMemo(() => {

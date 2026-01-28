@@ -23,7 +23,7 @@
 
 "use client"
 
-import { useState, useEffect, useRef, useMemo, useTransition } from "react"
+import { useState, useEffect, useRef, useMemo, useTransition, useCallback } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -47,6 +47,7 @@ import {
   validateShippingProvider
 } from "@/lib/third-party-inventory"
 import { consumeFIFOLotsWithCOGS } from "@/lib/fifo-engine"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface Invoice {
   id: string
@@ -385,6 +386,30 @@ export default function InvoiceDetailPage() {
       setIsLoading(false)
     }
   }
+
+  // 🔄 Realtime: تحديث تفاصيل الفاتورة تلقائياً عند أي تغيير
+  const loadInvoiceRef = useRef(loadInvoice)
+  loadInvoiceRef.current = loadInvoice
+
+  const handleInvoiceRealtimeEvent = useCallback((record: any) => {
+    // فقط إذا كان التحديث لهذه الفاتورة
+    if (record?.id === invoiceId) {
+      console.log('🔄 [Invoice Detail] Realtime event received, refreshing invoice data...')
+      loadInvoiceRef.current()
+    }
+  }, [invoiceId])
+
+  useRealtimeTable({
+    table: 'invoices',
+    enabled: !!invoiceId,
+    onUpdate: handleInvoiceRealtimeEvent,
+    onDelete: (record: any) => {
+      if (record?.id === invoiceId) {
+        console.log('🗑️ [Invoice Detail] Invoice deleted, redirecting...')
+        router.push('/invoices')
+      }
+    },
+  })
 
   useEffect(() => {
     (async () => {

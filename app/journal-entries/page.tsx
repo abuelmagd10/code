@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useTransition } from "react"
+import { useState, useEffect, useTransition, useCallback, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,6 +17,7 @@ import { canAction } from "@/lib/authz"
 import { Plus, Eye, BookOpen, Filter, Calendar, FileText, Hash, Search, X, ChevronDown, ChevronUp, RotateCcw, Lock } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 // ✅ Force dynamic rendering to avoid SSR hydration issues with useSearchParams
 export const dynamic = 'force-dynamic'
@@ -248,6 +249,23 @@ export default function JournalEntriesPage() {
       setIsLoading(false)
     }
   }
+
+  // 🔄 Realtime: تحديث قائمة القيود المحاسبية تلقائياً عند أي تغيير
+  const loadEntriesRef = useRef(loadEntries)
+  loadEntriesRef.current = loadEntries
+
+  const handleEntriesRealtimeEvent = useCallback(() => {
+    console.log('🔄 [JournalEntries] Realtime event received, refreshing entries list...')
+    loadEntriesRef.current()
+  }, [])
+
+  useRealtimeTable({
+    table: 'journal_entries',
+    enabled: true,
+    onInsert: handleEntriesRealtimeEvent,
+    onUpdate: handleEntriesRealtimeEvent,
+    onDelete: handleEntriesRealtimeEvent,
+  })
 
   const filteredEntries = entries.filter((e) => {
     const dOk = (!dateFrom || String(e.entry_date || '').slice(0, 10) >= dateFrom) && (!dateTo || String(e.entry_date || '').slice(0, 10) <= dateTo)

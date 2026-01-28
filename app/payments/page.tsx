@@ -20,7 +20,7 @@
 
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useState, useTransition, useCallback, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -40,6 +40,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { computeLeafAccountBalancesAsOf } from "@/lib/ledger"
 import { canAction } from "@/lib/authz"
 import { validateBankAccountAccess, type UserContext, getAccessFilter } from "@/lib/validation"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface Customer { 
   id: string; 
@@ -458,6 +459,24 @@ export default function PaymentsPage() {
     window.addEventListener('company_updated', handleCompanyChange);
     return () => window.removeEventListener('company_updated', handleCompanyChange);
   }, []);
+
+  // 🔄 Realtime: تحديث قائمة المدفوعات تلقائياً عند أي تغيير
+  const reloadPaymentsRef = useRef<() => void>(() => {
+    window.location.reload()
+  })
+
+  const handlePaymentsRealtimeEvent = useCallback(() => {
+    console.log('🔄 [Payments] Realtime event received, refreshing payments list...')
+    reloadPaymentsRef.current()
+  }, [])
+
+  useRealtimeTable({
+    table: 'payments',
+    enabled: true,
+    onInsert: handlePaymentsRealtimeEvent,
+    onUpdate: handlePaymentsRealtimeEvent,
+    onDelete: handlePaymentsRealtimeEvent,
+  })
 
   // Load invoice numbers for displayed customer payments
   useEffect(() => {

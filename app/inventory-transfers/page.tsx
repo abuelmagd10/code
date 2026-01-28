@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import { usePermissions } from "@/lib/permissions-context"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeftRight, Plus, Package, Warehouse, Calendar, User, CheckCircle2, Clock, XCircle, Truck, Eye, Loader2 } from "lucide-react"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface Transfer {
   id: string
@@ -213,6 +214,23 @@ export default function InventoryTransfersPage() {
       setIsLoading(false)
     }
   }
+
+  // 🔄 Realtime: تحديث قائمة التحويلات تلقائياً عند أي تغيير
+  const loadDataRef = useRef(loadData)
+  loadDataRef.current = loadData
+
+  const handleTransfersRealtimeEvent = useCallback(() => {
+    console.log('🔄 [Transfers] Realtime event received, refreshing transfers list...')
+    loadDataRef.current()
+  }, [])
+
+  useRealtimeTable({
+    table: 'inventory_transfers',
+    enabled: true,
+    onInsert: handleTransfersRealtimeEvent,
+    onUpdate: handleTransfersRealtimeEvent,
+    onDelete: handleTransfersRealtimeEvent,
+  })
 
   // 🔒 صلاحية إنشاء طلبات النقل: Owner/Admin/Manager فقط + التحقق من الصلاحيات
   // ❌ مسؤول المخزن لا يمكنه إنشاء طلبات نقل

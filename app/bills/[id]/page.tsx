@@ -16,7 +16,7 @@
 
 "use client"
 
-import { useEffect, useMemo, useState, useRef } from "react"
+import { useEffect, useMemo, useState, useRef, useCallback } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
@@ -50,6 +50,7 @@ import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-re
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
 import { createNotification } from "@/lib/governance-layer"
 import { getActiveCompanyId } from "@/lib/company"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 type Bill = {
   id: string
@@ -430,6 +431,30 @@ export default function BillViewPage() {
       } catch { }
     } finally { setLoading(false) }
   }
+
+  // 🔄 Realtime: تحديث تفاصيل الفاتورة تلقائياً عند أي تغيير
+  const loadDataRef = useRef(loadData)
+  loadDataRef.current = loadData
+
+  const handleBillRealtimeEvent = useCallback((record: any) => {
+    // فقط إذا كان التحديث لهذه الفاتورة
+    if (record?.id === id) {
+      console.log('🔄 [Bill Detail] Realtime event received, refreshing bill data...')
+      loadDataRef.current()
+    }
+  }, [id])
+
+  useRealtimeTable({
+    table: 'bills',
+    enabled: !!id,
+    onUpdate: handleBillRealtimeEvent,
+    onDelete: (record: any) => {
+      if (record?.id === id) {
+        console.log('🗑️ [Bill Detail] Bill deleted, redirecting...')
+        router.push('/bills')
+      }
+    },
+  })
 
   // Update return exchange rate when currency changes
   useEffect(() => {

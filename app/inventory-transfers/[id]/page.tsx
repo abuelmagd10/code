@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, use } from "react"
+import { useState, useEffect, use, useCallback, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeftRight, Warehouse, Package, CheckCircle2, Clock, XCircle, Truck, ArrowLeft, User, Calendar, FileText, Send, PackageCheck, X, Trash2 } from "lucide-react"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface TransferData {
   id: string
@@ -184,6 +185,30 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       setIsLoading(false)
     }
   }
+
+  // 🔄 Realtime: تحديث تفاصيل التحويل تلقائياً عند أي تغيير
+  const loadDataRef = useRef(loadData)
+  loadDataRef.current = loadData
+
+  const handleTransferRealtimeEvent = useCallback((record: any) => {
+    // فقط إذا كان التحديث لهذا التحويل
+    if (record?.id === resolvedParams.id) {
+      console.log('🔄 [Transfer Detail] Realtime event received, refreshing transfer data...')
+      loadDataRef.current()
+    }
+  }, [resolvedParams.id])
+
+  useRealtimeTable({
+    table: 'inventory_transfers',
+    enabled: !!resolvedParams.id,
+    onUpdate: handleTransferRealtimeEvent,
+    onDelete: (record: any) => {
+      if (record?.id === resolvedParams.id) {
+        console.log('🗑️ [Transfer Detail] Transfer deleted, redirecting...')
+        router.push('/inventory-transfers')
+      }
+    },
+  })
 
   // 🔒 صلاحيات النقل
   // بدء النقل: Owner/Admin/Manager فقط

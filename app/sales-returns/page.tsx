@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo, useTransition } from "react"
+import { useEffect, useState, useMemo, useTransition, useCallback, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,6 +18,7 @@ import { CompanyHeader } from "@/components/company-header"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 type SalesReturnEntry = {
   id: string
@@ -198,6 +199,24 @@ export default function SalesReturnsPage() {
       }
     })()
   }, [supabase])
+
+  // 🔄 Realtime: تحديث قائمة مرتجعات المبيعات تلقائياً عند أي تغيير
+  const reloadReturnsRef = useRef<() => void>(() => {
+    window.location.reload()
+  })
+
+  const handleSalesReturnsRealtimeEvent = useCallback(() => {
+    console.log('🔄 [SalesReturns] Realtime event received, refreshing returns list...')
+    reloadReturnsRef.current()
+  }, [])
+
+  useRealtimeTable({
+    table: 'sales_returns',
+    enabled: true,
+    onInsert: handleSalesReturnsRealtimeEvent,
+    onUpdate: handleSalesReturnsRealtimeEvent,
+    onDelete: handleSalesReturnsRealtimeEvent,
+  })
 
   // Filtered returns
   const filteredReturns = useMemo(() => {

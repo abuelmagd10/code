@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo, useTransition } from "react"
+import { useEffect, useState, useMemo, useTransition, useCallback, useRef } from "react"
 import Link from "next/link"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
@@ -15,6 +15,7 @@ import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { type UserContext, getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
 import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 type VendorCredit = {
   id: string
@@ -225,6 +226,23 @@ export default function VendorCreditsPage() {
 
     setLoading(false)
   }
+
+  // 🔄 Realtime: تحديث قائمة أرصدة الموردين تلقائياً عند أي تغيير
+  const loadDataRef = useRef(loadData)
+  loadDataRef.current = loadData
+
+  const handleCreditsRealtimeEvent = useCallback(() => {
+    console.log('🔄 [VendorCredits] Realtime event received, refreshing credits list...')
+    loadDataRef.current()
+  }, [])
+
+  useRealtimeTable({
+    table: 'vendor_credits',
+    enabled: true,
+    onInsert: handleCreditsRealtimeEvent,
+    onUpdate: handleCreditsRealtimeEvent,
+    onDelete: handleCreditsRealtimeEvent,
+  })
 
   const getSupplierName = (id: string) => suppliers[id]?.name || "—"
   const remaining = (vc: VendorCredit) => Number(vc.total_amount || 0) - Number(vc.applied_amount || 0)
