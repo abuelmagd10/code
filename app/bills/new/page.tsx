@@ -868,28 +868,12 @@ function NewBillPageContent() {
       // المخزون يُضاف فقط عند تحويل الحالة إلى "sent" في صفحة التفاصيل
       // هذا يتوافق مع نمط ERP القياسي: draft = لا قيود، sent = مخزون فقط، paid = قيود مالية
 
-      // ✅ إرسال إشعارات للمدير والمحاسب
+      // ✅ إرسال إشعار للمحاسب فقط عند إنشاء الفاتورة (draft)
+      // ملاحظة: إشعارات الاعتماد الإداري (owner/general_manager) تُرسل عند طلب الاعتماد وليس عند الإنشاء
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {
-          // إشعار للمدير (للموافقة)
-          await createNotification({
-            companyId: companyId,
-            referenceType: 'bill',
-            referenceId: bill.id,
-            title: 'فاتورة مشتريات جديدة',
-            message: `تم إنشاء فاتورة ${bill.bill_number} وتحتاج إلى موافقة`,
-            createdBy: user.id,
-            branchId: branchId || undefined,
-            costCenterId: costCenterId || undefined,
-            assignedToRole: 'manager',
-            priority: 'high',
-            eventKey: `bill:${bill.id}:created:manager`,
-            severity: 'warning',
-            category: 'approvals'
-          })
-
-          // إشعار للمحاسب
+          // إشعار للمحاسب فقط
           await createNotification({
             companyId: companyId,
             referenceType: 'bill',

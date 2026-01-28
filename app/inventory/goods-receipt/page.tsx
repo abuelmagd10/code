@@ -724,9 +724,9 @@ export default function GoodsReceiptPage() {
           createdBy: user.id,
           branchId: branchId || undefined,
           costCenterId: costCenterId || undefined,
-          assignedToRole: "general_manager",
+          assignedToRole: "manager",
           priority: "normal",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed`,
+          eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed_manager`,
           severity: "info",
           category: "approvals"
         })
@@ -822,9 +822,9 @@ export default function GoodsReceiptPage() {
           createdBy: user.id,
           branchId: branchId || undefined,
           costCenterId: costCenterId || undefined,
-          assignedToRole: "general_manager",
+          assignedToRole: "manager",
           priority: "high",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected`,
+          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_manager`,
           severity: "warning",
           category: "approvals"
         })
