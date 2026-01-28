@@ -2048,9 +2048,9 @@ export default function BillViewPage() {
                 </Button>
 
                 {/* زر الحذف - في النهاية */}
-                {/* 🔒 الحذف متاح فقط للفواتير في حالة draft (المسودة) */}
-                {/* بعد طلب الاعتماد أو الاعتماد أو الاستلام لا يمكن الحذف */}
-                {permDelete && bill.status === 'draft' && (
+                {/* 🔒 الحذف متاح فقط للفواتير في حالة draft (المسودة) وبدون مدفوعات */}
+                {/* canHardDelete = draft + no payments → حذف نهائي فقط */}
+                {permDelete && canHardDelete && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="destructive" size="sm" className="mr-auto sm:mr-0">
