@@ -308,20 +308,6 @@ export default function BillsPage() {
     return () => window.removeEventListener('company_updated', handleCompanyChange);
   }, []);
 
-  // 🔄 Realtime: تحديث قائمة الفواتير تلقائياً عند أي تغيير
-  const handleBillsRealtimeEvent = useCallback(() => {
-    console.log('🔄 [Bills Page] Realtime event received, refreshing bills list...')
-    loadData()
-  }, [])
-
-  useRealtimeTable({
-    table: 'bills',
-    enabled: true,
-    onInsert: handleBillsRealtimeEvent,
-    onUpdate: handleBillsRealtimeEvent,
-    onDelete: handleBillsRealtimeEvent,
-  })
-
   const loadData = async () => {
     try {
       setLoading(true)
@@ -507,6 +493,20 @@ export default function BillsPage() {
       setLoading(false)
     }
   }
+
+  // 🔄 Realtime: تحديث قائمة الفواتير تلقائياً عند أي تغيير
+  const handleBillsRealtimeEvent = useCallback(() => {
+    console.log('🔄 [Bills Page] Realtime event received, refreshing bills list...')
+    loadData()
+  }, [supabase])
+
+  useRealtimeTable({
+    table: 'bills',
+    enabled: true,
+    onInsert: handleBillsRealtimeEvent,
+    onUpdate: handleBillsRealtimeEvent,
+    onDelete: handleBillsRealtimeEvent,
+  })
 
   // دالة للحصول على ملخص المنتجات لفاتورة معينة مع الكميات المرتجعة
   const getProductsSummary = (billId: string): ProductSummary[] => {
