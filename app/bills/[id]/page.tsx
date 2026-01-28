@@ -1985,17 +1985,55 @@ export default function BillViewPage() {
 
                         if (error) throw error
 
-                        // إشعار لمسؤول المخزن في نفس الشركة / الفرع / المخزن
-                        // ✅ استخدام timestamp في event_key لضمان إنشاء إشعار جديد عند كل اعتماد
+                        // ✅ إرسال الإشعارات عند الموافقة الإدارية
+                        // استخدام timestamp في event_key لضمان إنشاء إشعار جديد عند كل اعتماد
                         // (الإشعارات القديمة قد تكون مؤرشفة بعد الرفض وإعادة الاعتماد)
                         try {
                           const approvalTimestamp = Date.now()
-                          console.log('📤 Sending store_manager notification:', {
-                            billId: bill.id,
-                            branchId: bill.branch_id,
-                            warehouseId: bill.warehouse_id,
-                            eventKey: `bill:${bill.id}:approved_waiting_receipt:${approvalTimestamp}`
+                          const approvalTitle = appLang === "en"
+                            ? "Purchase bill approved"
+                            : "تم اعتماد فاتورة المشتريات"
+                          const approvalMessage = appLang === "en"
+                            ? `Purchase bill ${bill.bill_number} has been approved and is waiting for goods receipt`
+                            : `تم اعتماد فاتورة المشتريات رقم ${bill.bill_number} وهي بانتظار اعتماد الاستلام`
+
+                          // 1️⃣ إشعار لمنشئ الفاتورة
+                          if (bill.created_by) {
+                            await createNotification({
+                              companyId,
+                              referenceType: "bill",
+                              referenceId: bill.id,
+                              title: approvalTitle,
+                              message: approvalMessage,
+                              createdBy: user.id,
+                              branchId: bill.branch_id || undefined,
+                              costCenterId: bill.cost_center_id || undefined,
+                              assignedToUser: bill.created_by,
+                              priority: "normal",
+                              eventKey: `bill:${bill.id}:approved:creator:${approvalTimestamp}`,
+                              severity: "info",
+                              category: "approvals"
+                            })
+                          }
+
+                          // 2️⃣ إشعار لمحاسب الفرع
+                          await createNotification({
+                            companyId,
+                            referenceType: "bill",
+                            referenceId: bill.id,
+                            title: approvalTitle,
+                            message: approvalMessage,
+                            createdBy: user.id,
+                            branchId: bill.branch_id || undefined,
+                            costCenterId: bill.cost_center_id || undefined,
+                            assignedToRole: "accountant",
+                            priority: "normal",
+                            eventKey: `bill:${bill.id}:approved:accountant:${approvalTimestamp}`,
+                            severity: "info",
+                            category: "approvals"
                           })
+
+                          // 3️⃣ إشعار لمسؤول المخزن (للاستلام)
                           await createNotification({
                             companyId,
                             referenceType: "bill",
@@ -2014,10 +2052,10 @@ export default function BillViewPage() {
                             priority: "high",
                             eventKey: `bill:${bill.id}:approved_waiting_receipt:${approvalTimestamp}`,
                             severity: "info",
-                            category: "approvals"
+                            category: "inventory"
                           })
                         } catch (notifErr) {
-                          console.warn("Warehouse notification failed:", notifErr)
+                          console.warn("Approval notifications failed:", notifErr)
                         }
 
                         toastActionSuccess(
@@ -2066,9 +2104,6 @@ export default function BillViewPage() {
                     </span>
                   </Button>
                 )}
-
-                {/* فاصل */}
-                <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />
 
                 {/* فاصل */}
                 <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />
