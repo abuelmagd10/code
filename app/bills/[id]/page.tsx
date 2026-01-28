@@ -84,6 +84,11 @@ type Bill = {
   warehouse_id?: string | null
   // Linked Purchase Order
   purchase_order_id?: string | null
+  // Creator and approval fields
+  created_by?: string | null
+  rejection_reason?: string | null
+  rejected_by?: string | null
+  rejected_at?: string | null
 }
 
 type Supplier = { id: string; name: string }
@@ -189,6 +194,10 @@ export default function BillViewPage() {
   const [canSubmitForApproval, setCanSubmitForApproval] = useState(false)
   const [canApproveAdmin, setCanApproveAdmin] = useState(false)
 
+  // Admin rejection dialog state
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
+  const [rejectionReason, setRejectionReason] = useState("")
+
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -203,6 +212,7 @@ export default function BillViewPage() {
       if (s === "draft") return "Draft"
       if (s === "pending_approval") return "Pending Approval"
       if (s === "approved") return "Approved"
+      if (s === "rejected") return "Rejected"
       if (s === "received") return "Received"
       if (s === "partially_paid") return "Partially Paid"
       if (s === "paid") return "Paid"
@@ -213,6 +223,7 @@ export default function BillViewPage() {
       if (s === "draft") return "مسودة"
       if (s === "pending_approval") return "بانتظار الاعتماد"
       if (s === "approved") return "معتمدة إداريًا"
+      if (s === "rejected") return "مرفوضة"
       if (s === "received") return "تم الاستلام"
       if (s === "partially_paid") return "مدفوعة جزئيًا"
       if (s === "paid") return "مدفوعة"
@@ -277,7 +288,7 @@ export default function BillViewPage() {
       setLoading(true)
       const { data: billData } = await supabase
         .from("bills")
-        .select("*, shipping_providers(provider_name), receipt_status, receipt_rejection_reason, received_by, received_at")
+        .select("*, shipping_providers(provider_name), receipt_status, receipt_rejection_reason, received_by, received_at, created_by, rejection_reason, rejected_by, rejected_at")
         .eq("id", id)
         .single()
       setBill(billData as any)
@@ -1730,19 +1741,28 @@ export default function BillViewPage() {
                       {appLang === 'en' ? `Bill #${bill.bill_number}` : `فاتورة #${bill.bill_number}`}
                     </h1>
                     {/* شارة الحالة */}
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${bill.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                      bill.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                       bill.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                        bill.status === 'sent' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                          bill.status === 'draft' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' :
-                            bill.status === 'voided' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                              'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                      }`}>
+                      bill.status === 'sent' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                      bill.status === 'draft' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' :
+                      bill.status === 'voided' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                      bill.status === 'pending_approval' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' :
+                      bill.status === 'approved' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
+                      bill.status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                      bill.status === 'received' ? 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200' :
+                      'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                    }`}>
                       {bill.status === 'paid' ? (appLang === 'en' ? 'Paid' : 'مدفوعة') :
                         bill.status === 'partially_paid' ? (appLang === 'en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
-                          bill.status === 'sent' ? (appLang === 'en' ? 'Sent' : 'مرسلة') :
-                            bill.status === 'draft' ? (appLang === 'en' ? 'Draft' : 'مسودة') :
-                              bill.status === 'voided' ? (appLang === 'en' ? 'Voided' : 'ملغاة') :
-                                bill.status}
+                        bill.status === 'sent' ? (appLang === 'en' ? 'Sent' : 'مرسلة') :
+                        bill.status === 'draft' ? (appLang === 'en' ? 'Draft' : 'مسودة') :
+                        bill.status === 'voided' ? (appLang === 'en' ? 'Voided' : 'ملغاة') :
+                        bill.status === 'pending_approval' ? (appLang === 'en' ? 'Pending Approval' : 'بانتظار الاعتماد') :
+                        bill.status === 'approved' ? (appLang === 'en' ? 'Approved' : 'معتمدة') :
+                        bill.status === 'rejected' ? (appLang === 'en' ? 'Rejected' : 'مرفوضة') :
+                        bill.status === 'received' ? (appLang === 'en' ? 'Received' : 'تم الاستلام') :
+                        bill.status}
                     </span>
                     {/* ✅ شارة حالة الاستلام */}
                     {bill.receipt_status && (
@@ -1762,6 +1782,15 @@ export default function BillViewPage() {
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                     {appLang === 'en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}
                   </p>
+                  {/* 🔴 عرض سبب الرفض الإداري */}
+                  {bill.status === 'rejected' && bill.rejection_reason && (
+                    <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                      <p className="text-xs font-medium text-red-800 dark:text-red-200">
+                        {appLang === 'en' ? 'Rejection Reason:' : 'سبب الرفض:'}
+                      </p>
+                      <p className="text-sm text-red-700 dark:text-red-300">{bill.rejection_reason}</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* أزرار التنقل */}
@@ -1811,7 +1840,9 @@ export default function BillViewPage() {
                 {/* دورة الاعتماد الإداري لفاتورة الشراء */}
                 {((bill.status === "draft") ||
                   // ✅ السماح بإعادة إرسال الفاتورة إذا كان اعتماد الاستلام مرفوضاً
-                  (bill.status === "approved" && (bill as any).receipt_status === "rejected")) &&
+                  (bill.status === "approved" && (bill as any).receipt_status === "rejected") ||
+                  // ✅ السماح بإعادة إرسال الفاتورة إذا تم رفضها إدارياً
+                  (bill.status === "rejected")) &&
                   canSubmitForApproval && (
                   <Button
                     onClick={async () => {
@@ -1834,6 +1865,10 @@ export default function BillViewPage() {
                             // ✅ عند إعادة الإرسال نعيد ضبط حالة الاستلام وسبب الرفض
                             receipt_status: null,
                             receipt_rejection_reason: null,
+                            // ✅ مسح بيانات الرفض السابق
+                            rejection_reason: null,
+                            rejected_by: null,
+                            rejected_at: null,
                           })
                           .eq("id", bill.id)
                           .eq("company_id", companyId)
@@ -2006,6 +2041,22 @@ export default function BillViewPage() {
                     <CheckCircle className="w-4 h-4 sm:mr-1" />
                     <span className="hidden sm:inline">
                       {posting ? "..." : (appLang === 'en' ? 'Admin Approve' : 'اعتماد إداري')}
+                    </span>
+                  </Button>
+                )}
+
+                {/* 🔴 زر رفض الاعتماد الإداري */}
+                {bill.status === "pending_approval" && canApproveAdmin && (
+                  <Button
+                    onClick={() => setRejectDialogOpen(true)}
+                    disabled={posting}
+                    size="sm"
+                    variant="outline"
+                    className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400"
+                  >
+                    <AlertCircle className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">
+                      {appLang === 'en' ? 'Reject' : 'رفض'}
                     </span>
                   </Button>
                 )}
@@ -2846,6 +2897,152 @@ export default function BillViewPage() {
               className="bg-orange-600 hover:bg-orange-700"
             >
               {returnProcessing ? '...' : (appLang === 'en' ? 'Process Return' : 'تنفيذ المرتجع')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 🔴 Dialog رفض الاعتماد الإداري */}
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">
+              {appLang === 'en' ? 'Reject Purchase Bill' : 'رفض فاتورة المشتريات'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-sm text-red-700 dark:text-red-300">
+                {appLang === 'en'
+                  ? `You are about to reject bill ${bill?.bill_number}. The bill creator and branch accountant will be notified.`
+                  : `أنت على وشك رفض الفاتورة ${bill?.bill_number}. سيتم إشعار منشئ الفاتورة ومحاسب الفرع.`}
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="rejection-reason">
+                {appLang === 'en' ? 'Rejection Reason *' : 'سبب الرفض *'}
+              </Label>
+              <textarea
+                id="rejection-reason"
+                className="w-full mt-1 p-2 border rounded-md dark:bg-slate-800 dark:border-slate-700 min-h-[100px]"
+                placeholder={appLang === 'en' ? 'Enter the reason for rejection...' : 'أدخل سبب الرفض...'}
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setRejectDialogOpen(false)
+                setRejectionReason("")
+              }}
+              disabled={posting}
+            >
+              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (!bill || !rejectionReason.trim()) return
+                try {
+                  setPosting(true)
+                  const companyId = await getActiveCompanyId(supabase)
+                  const { data: { user } } = await supabase.auth.getUser()
+                  if (!companyId || !user) {
+                    setPosting(false)
+                    return
+                  }
+
+                  // تحديث حالة الفاتورة إلى rejected
+                  const { error } = await supabase
+                    .from("bills")
+                    .update({
+                      status: "rejected",
+                      approval_status: "rejected",
+                      rejection_reason: rejectionReason.trim(),
+                      rejected_by: user.id,
+                      rejected_at: new Date().toISOString()
+                    })
+                    .eq("id", bill.id)
+                    .eq("company_id", companyId)
+
+                  if (error) throw error
+
+                  // إرسال الإشعارات
+                  const rejectionTitle = appLang === 'en'
+                    ? 'Purchase Bill Rejected'
+                    : 'تم رفض فاتورة المشتريات'
+                  const rejectionMessage = appLang === 'en'
+                    ? `Purchase bill ${bill.bill_number} has been rejected. Reason: ${rejectionReason.trim()}`
+                    : `تم رفض فاتورة المشتريات رقم ${bill.bill_number}. السبب: ${rejectionReason.trim()}`
+
+                  try {
+                    // 1️⃣ إشعار لمنشئ الفاتورة
+                    if (bill.created_by) {
+                      await createNotification({
+                        companyId,
+                        referenceType: "bill",
+                        referenceId: bill.id,
+                        title: rejectionTitle,
+                        message: rejectionMessage,
+                        createdBy: user.id,
+                        branchId: bill.branch_id || undefined,
+                        costCenterId: bill.cost_center_id || undefined,
+                        assignedToUser: bill.created_by,
+                        priority: "high",
+                        eventKey: `bill:${bill.id}:admin_rejected:creator:${Date.now()}`,
+                        severity: "error",
+                        category: "approvals"
+                      })
+                    }
+
+                    // 2️⃣ إشعار لمحاسب الفرع
+                    await createNotification({
+                      companyId,
+                      referenceType: "bill",
+                      referenceId: bill.id,
+                      title: rejectionTitle,
+                      message: rejectionMessage,
+                      createdBy: user.id,
+                      branchId: bill.branch_id || undefined,
+                      costCenterId: bill.cost_center_id || undefined,
+                      assignedToRole: "accountant",
+                      priority: "high",
+                      eventKey: `bill:${bill.id}:admin_rejected:accountant:${Date.now()}`,
+                      severity: "error",
+                      category: "approvals"
+                    })
+                  } catch (notifErr) {
+                    console.warn("Failed to send rejection notifications:", notifErr)
+                  }
+
+                  toastActionSuccess(
+                    toast,
+                    appLang === "en" ? "Rejection" : "الرفض",
+                    appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
+                    appLang
+                  )
+                  setRejectDialogOpen(false)
+                  setRejectionReason("")
+                  await loadData()
+                } catch (err) {
+                  console.error("Error rejecting bill:", err)
+                  toastActionError(
+                    toast,
+                    appLang === "en" ? "Rejection" : "الرفض",
+                    appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
+                    appLang === "en" ? "Failed to reject bill" : "تعذر رفض الفاتورة",
+                    appLang
+                  )
+                } finally {
+                  setPosting(false)
+                }
+              }}
+              disabled={posting || !rejectionReason.trim()}
+            >
+              {posting ? '...' : (appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض')}
             </Button>
           </DialogFooter>
         </DialogContent>
