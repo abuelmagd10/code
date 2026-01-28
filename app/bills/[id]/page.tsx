@@ -1818,7 +1818,7 @@ export default function BillViewPage() {
                           .from("bills")
                           .update({
                             status: "pending_approval",
-                            approval_status: "pending",
+                            approval_status: "pending_approval",
                             approved_by: null,
                             approved_at: null,
                             // ✅ عند إعادة الإرسال نعيد ضبط حالة الاستلام وسبب الرفض

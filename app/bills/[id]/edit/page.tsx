@@ -424,7 +424,7 @@ export default function EditBillPage() {
           ...(wasRejectedReceipt
             ? {
                 status: "pending_approval",
-                approval_status: "pending",
+                approval_status: "pending_approval",
                 approved_by: null,
                 approved_at: null,
                 receipt_status: null,
