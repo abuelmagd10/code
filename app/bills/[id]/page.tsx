@@ -1945,7 +1945,16 @@ export default function BillViewPage() {
                         if (error) throw error
 
                         // إشعار لمسؤول المخزن في نفس الشركة / الفرع / المخزن
+                        // ✅ استخدام timestamp في event_key لضمان إنشاء إشعار جديد عند كل اعتماد
+                        // (الإشعارات القديمة قد تكون مؤرشفة بعد الرفض وإعادة الاعتماد)
                         try {
+                          const approvalTimestamp = Date.now()
+                          console.log('📤 Sending store_manager notification:', {
+                            billId: bill.id,
+                            branchId: bill.branch_id,
+                            warehouseId: bill.warehouse_id,
+                            eventKey: `bill:${bill.id}:approved_waiting_receipt:${approvalTimestamp}`
+                          })
                           await createNotification({
                             companyId,
                             referenceType: "bill",
@@ -1959,10 +1968,10 @@ export default function BillViewPage() {
                             createdBy: user.id,
                             branchId: bill.branch_id || undefined,
                             costCenterId: bill.cost_center_id || undefined,
-                            warehouseId: bill.warehouse_id || undefined, // ✅ إضافة warehouse_id للإشعار
+                            warehouseId: bill.warehouse_id || undefined,
                             assignedToRole: "store_manager",
                             priority: "high",
-                            eventKey: `bill:${bill.id}:approved_waiting_receipt`,
+                            eventKey: `bill:${bill.id}:approved_waiting_receipt:${approvalTimestamp}`,
                             severity: "info",
                             category: "approvals"
                           })

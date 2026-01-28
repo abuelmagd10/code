@@ -148,8 +148,12 @@ export async function createNotification(params: {
     companyId: params.companyId,
     referenceType: params.referenceType,
     referenceId: params.referenceId,
+    branchId: params.branchId,
+    warehouseId: params.warehouseId,
+    costCenterId: params.costCenterId,
     assignedToRole: params.assignedToRole,
-    assignedToUser: params.assignedToUser
+    assignedToUser: params.assignedToUser,
+    eventKey: params.eventKey
   })
 
   const { data, error } = await supabase.rpc('create_notification', {
