@@ -82,6 +82,15 @@ type InventoryTransactionRecord = {
   reference_id?: string | null
 }
 
+type BillRecord = {
+  id: string
+  company_id?: string
+  branch_id?: string | null
+  warehouse_id?: string | null
+  status?: string | null
+  receipt_status?: string | null
+}
+
 export default function GoodsReceiptPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
@@ -601,6 +610,49 @@ export default function GoodsReceiptPage() {
       return true
     },
     onInsert: () => {
+      if (userContext) {
+        loadBills(userContext)
+      }
+    }
+  })
+
+  // 🔄 Realtime: تحديث قائمة الفواتير تلقائياً عند أي تغيير في جدول bills
+  // يشمل: تغيير الحالة، الاعتماد الإداري، الاستلام، الرفض، إلخ
+  useRealtimeTable<BillRecord>({
+    table: "bills",
+    enabled: !!userContext?.company_id,
+    filter: (event) => {
+      const record = (event.new || event.old) as BillRecord | undefined
+      if (!record || !userContext) return false
+
+      // نفس الشركة
+      if (record.company_id && record.company_id !== userContext.company_id) return false
+
+      // للأدوار غير الإدارية: نفس الفرع والمخزن
+      if (!isOwnerAdmin) {
+        if (record.branch_id && userContext.branch_id && record.branch_id !== userContext.branch_id) return false
+        if (record.warehouse_id && userContext.warehouse_id && record.warehouse_id !== userContext.warehouse_id) return false
+      } else {
+        // للأدوار الإدارية: نفس الفرع والمخزن المحددين حالياً
+        const currentBranchId = selectedBranchIdRef.current
+        const currentWarehouseId = selectedWarehouseIdRef.current
+        if (currentBranchId && record.branch_id && record.branch_id !== currentBranchId) return false
+        if (currentWarehouseId && record.warehouse_id && record.warehouse_id !== currentWarehouseId) return false
+      }
+
+      return true
+    },
+    onInsert: () => {
+      if (userContext) {
+        loadBills(userContext)
+      }
+    },
+    onUpdate: () => {
+      if (userContext) {
+        loadBills(userContext)
+      }
+    },
+    onDelete: () => {
       if (userContext) {
         loadBills(userContext)
       }

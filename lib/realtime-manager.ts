@@ -41,7 +41,7 @@ import { getUserAccessInfo, buildAccessFilter, canAccessRecord, type UserAccessI
 // =====================================================
 
 export type RealtimeEventType = 'INSERT' | 'UPDATE' | 'DELETE'
-export type RealtimeTable = 
+export type RealtimeTable =
   | 'notifications'
   | 'depreciation'
   | 'inventory_write_offs' // جدول الإهلاك الفعلي
@@ -49,6 +49,7 @@ export type RealtimeTable =
   | 'purchase_orders'
   | 'sales_orders'
   | 'invoices'
+  | 'bills' // ✅ فواتير المشتريات
   | 'approvals'
   | 'inventory_transfers' // ✅ النقل بين المخازن
   // 🔐 جداول الحوكمة (Governance)
@@ -282,6 +283,7 @@ class RealtimeManager {
       'purchase_orders': 'purchase_orders',
       'sales_orders': 'sales_orders',
       'invoices': 'invoices',
+      'bills': 'bills', // ✅ فواتير المشتريات
       'approvals': 'approval_workflows', // قد يكون اسم مختلف
       'inventory_transfers': 'inventory_transfers', // ✅ النقل بين المخازن
       // 🔐 جداول الحوكمة
