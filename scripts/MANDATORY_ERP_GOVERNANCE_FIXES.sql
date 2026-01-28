@@ -267,6 +267,13 @@ ALTER TABLE customers ALTER COLUMN created_by_user_id SET NOT NULL;
 -- Trigger function to enforce governance on INSERT
 CREATE OR REPLACE FUNCTION enforce_governance_on_insert()
 RETURNS TRIGGER AS $$
+DECLARE
+  v_old_status TEXT;
+  v_new_status TEXT;
+  v_old_receipt_status TEXT;
+  v_is_closed BOOLEAN;
+  v_content_changed BOOLEAN;
+  v_creator UUID;
 BEGIN
   -- Ensure company_id is not null
   IF NEW.company_id IS NULL THEN
@@ -293,7 +300,113 @@ BEGIN
       RAISE EXCEPTION 'warehouse_id cannot be NULL for % - ERP governance violation', TG_TABLE_NAME;
     END IF;
   END IF;
-  
+
+  -- ===========================================================
+  -- 📌 Purchase Bills Mandatory Approval Governance (Backend)
+  -- ===========================================================
+  IF TG_TABLE_NAME = 'bills' AND TG_OP = 'UPDATE' THEN
+    -- حالات الفاتورة قبل وبعد التعديل
+    v_old_status := lower(coalesce(OLD.status, ''));
+    v_new_status := lower(coalesce(NEW.status, ''));
+    v_old_receipt_status := lower(coalesce(OLD.receipt_status, ''));
+
+    -- الحالات المغلقة محاسبيًا
+    v_is_closed := v_old_status IN ('paid', 'partially_paid', 'cancelled', 'voided', 'fully_returned');
+
+    -- ✅ تحديد ما إذا كان هناك تعديل "مؤثر" (محاسبيًا / مخزنيًا / حوكمة)
+    v_content_changed :=
+      OLD.supplier_id        IS DISTINCT FROM NEW.supplier_id        OR
+      OLD.bill_date          IS DISTINCT FROM NEW.bill_date          OR
+      OLD.due_date           IS DISTINCT FROM NEW.due_date           OR
+      OLD.subtotal           IS DISTINCT FROM NEW.subtotal           OR
+      OLD.tax_amount         IS DISTINCT FROM NEW.tax_amount         OR
+      OLD.total_amount       IS DISTINCT FROM NEW.total_amount       OR
+      OLD.discount_type      IS DISTINCT FROM NEW.discount_type      OR
+      OLD.discount_value     IS DISTINCT FROM NEW.discount_value     OR
+      OLD.discount_position  IS DISTINCT FROM NEW.discount_position  OR
+      OLD.tax_inclusive      IS DISTINCT FROM NEW.tax_inclusive      OR
+      OLD.shipping           IS DISTINCT FROM NEW.shipping           OR
+      OLD.shipping_tax_rate  IS DISTINCT FROM NEW.shipping_tax_rate  OR
+      OLD.adjustment         IS DISTINCT FROM NEW.adjustment         OR
+      OLD.branch_id          IS DISTINCT FROM NEW.branch_id          OR
+      OLD.warehouse_id       IS DISTINCT FROM NEW.warehouse_id       OR
+      OLD.cost_center_id     IS DISTINCT FROM NEW.cost_center_id;
+
+    -- ✅ 1) قاعدة: أي تعديل مؤثر على فاتورة في دورة اعتماد (وليست draft/مغلقة)
+    IF v_content_changed
+       AND NOT v_is_closed
+       AND (v_old_status <> 'draft' OR v_old_receipt_status = 'rejected')
+    THEN
+      -- إعادة دورة الاعتماد بالكامل من البداية
+      NEW.status := 'pending_approval';
+      NEW.approval_status := 'pending_approval';
+      NEW.approved_by := NULL;
+      NEW.approved_at := NULL;
+      NEW.receipt_status := NULL;
+      NEW.receipt_rejection_reason := NULL;
+
+      -- تحديد المستخدم الذي يُسجَّل كمنشئ للإشعار (created_by لا يمكن أن يكون NULL)
+      v_creator := COALESCE(NEW.created_by_user_id, OLD.created_by_user_id);
+      IF v_creator IS NULL THEN
+        SELECT cm.user_id
+        INTO v_creator
+        FROM company_members cm
+        WHERE cm.company_id = NEW.company_id
+          AND cm.role IN ('owner', 'admin')
+        LIMIT 1;
+      END IF;
+      IF v_creator IS NULL THEN
+        RAISE EXCEPTION 'No creator user found for bill % in company % - cannot create governance notifications', NEW.id, NEW.company_id;
+      END IF;
+
+      -- إرسال إشعارين للمالك والمدير العام عبر دالة create_notification (idempotent بالـ event_key)
+      PERFORM create_notification(
+        NEW.company_id,
+        'bill',
+        NEW.id,
+        'فاتورة مشتريات بانتظار الاعتماد الإداري',
+        format('تم تعديل فاتورة مشتريات رقم %s وتحتاج إلى إعادة اعتماد إداري.', NEW.bill_number),
+        v_creator,
+        NEW.branch_id,
+        NEW.cost_center_id,
+        NEW.warehouse_id,
+        'owner',
+        NULL,
+        'high',
+        format('bill:%s:pending_approval_owner_after_edit', NEW.id),
+        'warning',
+        'approvals'
+      );
+
+      PERFORM create_notification(
+        NEW.company_id,
+        'bill',
+        NEW.id,
+        'فاتورة مشتريات بانتظار الاعتماد الإداري',
+        format('تم تعديل فاتورة مشتريات رقم %s وتحتاج إلى إعادة اعتماد إداري.', NEW.bill_number),
+        v_creator,
+        NEW.branch_id,
+        NEW.cost_center_id,
+        NEW.warehouse_id,
+        'general_manager',
+        NULL,
+        'high',
+        format('bill:%s:pending_approval_gm_after_edit', NEW.id),
+        'warning',
+        'approvals'
+      );
+    END IF;
+
+    -- ✅ 2) قاعدة: أي Void يمسح كل آثار الاعتماد والاستلام
+    IF v_new_status = 'voided' AND v_old_status <> 'voided' THEN
+      NEW.approval_status := NULL;
+      NEW.approved_by := NULL;
+      NEW.approved_at := NULL;
+      NEW.receipt_status := NULL;
+      NEW.receipt_rejection_reason := NULL;
+    END IF;
+  END IF;
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
