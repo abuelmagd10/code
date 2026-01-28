@@ -1876,23 +1876,33 @@ export default function BillViewPage() {
                         if (error) throw error
 
                         // إشعارات للمالك والمدير العام داخل نفس الشركة فقط
+                        // ✅ إضافة timestamp للـ event_key لضمان إرسال إشعار جديد عند إعادة الإرسال بعد الرفض
+                        const isResubmission = bill.status === "rejected" || (bill.status === "approved" && (bill as any).receipt_status === "rejected")
+                        const eventKeySuffix = isResubmission ? `:resubmit:${Date.now()}` : ""
+                        const notificationTitle = isResubmission
+                          ? (appLang === "en" ? "Purchase bill resubmitted for approval" : "تم إعادة إرسال فاتورة المشتريات للاعتماد")
+                          : (appLang === "en" ? "Purchase bill pending approval" : "فاتورة مشتريات بانتظار الاعتماد الإداري")
+                        const notificationMessage = isResubmission
+                          ? (appLang === "en"
+                              ? `Purchase bill ${bill.bill_number} has been resubmitted for admin approval after rejection`
+                              : `تم إعادة إرسال فاتورة المشتريات رقم ${bill.bill_number} للاعتماد الإداري بعد الرفض`)
+                          : (appLang === "en"
+                              ? `Purchase bill ${bill.bill_number} is pending admin approval`
+                              : `فاتورة مشتريات رقم ${bill.bill_number} في انتظار الاعتماد الإداري`)
+
                         try {
                           await createNotification({
                             companyId,
                             referenceType: "bill",
                             referenceId: bill.id,
-                            title: appLang === "en"
-                              ? "Purchase bill pending approval"
-                              : "فاتورة مشتريات بانتظار الاعتماد الإداري",
-                            message: appLang === "en"
-                              ? `Purchase bill ${bill.bill_number} is pending admin approval`
-                              : `فاتورة مشتريات رقم ${bill.bill_number} في انتظار الاعتماد الإداري`,
+                            title: notificationTitle,
+                            message: notificationMessage,
                             createdBy: user.id,
                             branchId: bill.branch_id || undefined,
                             costCenterId: bill.cost_center_id || undefined,
                             assignedToRole: "owner",
                             priority: "high",
-                            eventKey: `bill:${bill.id}:pending_approval_owner`,
+                            eventKey: `bill:${bill.id}:pending_approval_owner${eventKeySuffix}`,
                             severity: "warning",
                             category: "approvals"
                           })
@@ -1901,18 +1911,14 @@ export default function BillViewPage() {
                             companyId,
                             referenceType: "bill",
                             referenceId: bill.id,
-                            title: appLang === "en"
-                              ? "Purchase bill pending approval"
-                              : "فاتورة مشتريات بانتظار الاعتماد الإداري",
-                            message: appLang === "en"
-                              ? `Purchase bill ${bill.bill_number} is pending admin approval`
-                              : `فاتورة مشتريات رقم ${bill.bill_number} في انتظار الاعتماد الإداري`,
+                            title: notificationTitle,
+                            message: notificationMessage,
                             createdBy: user.id,
                             branchId: bill.branch_id || undefined,
                             costCenterId: bill.cost_center_id || undefined,
                             assignedToRole: "general_manager",
                             priority: "high",
-                            eventKey: `bill:${bill.id}:pending_approval_gm`,
+                            eventKey: `bill:${bill.id}:pending_approval_gm${eventKeySuffix}`,
                             severity: "warning",
                             category: "approvals"
                           })
