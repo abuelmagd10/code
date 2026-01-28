@@ -435,8 +435,8 @@ export default function GoodsReceiptPage() {
       // دور المستخدم الحالي
       const role = String(context.role || "").trim().toLowerCase()
 
-      // فقط أدوار store_manager / owner / admin / manager ترى شاشة اعتماد الاستلام
-      if (!["store_manager", "owner", "admin", "manager"].includes(role)) {
+      // فقط أدوار store_manager / owner / admin / general_manager / manager ترى شاشة اعتماد الاستلام
+      if (!["store_manager", "owner", "admin", "general_manager", "manager"].includes(role)) {
         if (loadRequestRef.current !== requestId) return
         setBills([])
         setBranchName(null)
