@@ -704,6 +704,7 @@ export default function GoodsReceiptPage() {
             : `تم اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن`,
           createdBy: user.id,
           branchId: branchId || undefined,
+          warehouseId: warehouseId || undefined,
           costCenterId: costCenterId || undefined,
           assignedToRole: "accountant",
           priority: "normal",
@@ -724,6 +725,7 @@ export default function GoodsReceiptPage() {
             : `تم اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن`,
           createdBy: user.id,
           branchId: branchId || undefined,
+          warehouseId: warehouseId || undefined,
           costCenterId: costCenterId || undefined,
           assignedToRole: "manager",
           priority: "normal",
@@ -774,6 +776,7 @@ export default function GoodsReceiptPage() {
       if (!user) return
 
       const branchId = selectedBill.branch_id
+      const warehouseId = selectedBill.warehouse_id
       const costCenterId = selectedBill.cost_center_id
 
       // تحديث حالة الفاتورة إلى rejected مع سبب الرفض
@@ -788,7 +791,7 @@ export default function GoodsReceiptPage() {
 
       if (updErr) throw updErr
 
-      // ✅ إرسال إشعارات رفض الاستلام إلى: منشئ الفاتورة + owner + general_manager
+      // ✅ إرسال إشعارات رفض الاستلام إلى: منشئ الفاتورة + owner + general_manager + accountant + manager
       try {
         const rejectionTitle = appLang === "en"
           ? "Purchase bill goods receipt rejected"
@@ -807,6 +810,7 @@ export default function GoodsReceiptPage() {
             message: rejectionMessage,
             createdBy: user.id,
             branchId: branchId || undefined,
+            warehouseId: warehouseId || undefined,
             costCenterId: costCenterId || undefined,
             assignedToUser: selectedBill.created_by_user_id,
             priority: "high",
@@ -825,6 +829,7 @@ export default function GoodsReceiptPage() {
           message: rejectionMessage,
           createdBy: user.id,
           branchId: branchId || undefined,
+          warehouseId: warehouseId || undefined,
           costCenterId: costCenterId || undefined,
           assignedToRole: "owner",
           priority: "high",
@@ -842,10 +847,47 @@ export default function GoodsReceiptPage() {
           message: rejectionMessage,
           createdBy: user.id,
           branchId: branchId || undefined,
+          warehouseId: warehouseId || undefined,
           costCenterId: costCenterId || undefined,
           assignedToRole: "general_manager",
           priority: "high",
           eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_gm`,
+          severity: "warning",
+          category: "approvals"
+        })
+
+        // 4️⃣ إشعار للـ accountant (للتناسق مع إشعارات الاستلام الناجح)
+        await createNotification({
+          companyId,
+          referenceType: "bill",
+          referenceId: selectedBill.id,
+          title: rejectionTitle,
+          message: rejectionMessage,
+          createdBy: user.id,
+          branchId: branchId || undefined,
+          warehouseId: warehouseId || undefined,
+          costCenterId: costCenterId || undefined,
+          assignedToRole: "accountant",
+          priority: "high",
+          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_accountant`,
+          severity: "warning",
+          category: "approvals"
+        })
+
+        // 5️⃣ إشعار للـ manager (للتناسق مع إشعارات الاستلام الناجح)
+        await createNotification({
+          companyId,
+          referenceType: "bill",
+          referenceId: selectedBill.id,
+          title: rejectionTitle,
+          message: rejectionMessage,
+          createdBy: user.id,
+          branchId: branchId || undefined,
+          warehouseId: warehouseId || undefined,
+          costCenterId: costCenterId || undefined,
+          assignedToRole: "manager",
+          priority: "high",
+          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_manager`,
           severity: "warning",
           category: "approvals"
         })
