@@ -38,6 +38,7 @@ type BillForReceipt = {
   tax_amount: number
   total_amount: number
   suppliers?: { name: string }
+  created_by_user_id?: string | null  // منشئ الفاتورة
 }
 
 type BillItemRow = {
@@ -311,7 +312,7 @@ export default function GoodsReceiptPage() {
         const { data: billData, error } = await supabase
           .from("bills")
           .select(
-            "id, bill_number, bill_date, supplier_id, status, receipt_status, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, suppliers(name)"
+            "id, bill_number, bill_date, supplier_id, status, receipt_status, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, created_by_user_id, suppliers(name)"
           )
           .eq("id", billIdFromQuery)
           .eq("company_id", companyId)
@@ -516,7 +517,7 @@ export default function GoodsReceiptPage() {
       let q = supabase
         .from("bills")
         .select(
-          "id, bill_number, bill_date, supplier_id, status, receipt_status, receipt_rejection_reason, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, suppliers(name)"
+          "id, bill_number, bill_date, supplier_id, status, receipt_status, receipt_rejection_reason, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, created_by_user_id, suppliers(name)"
         )
         .eq("company_id", companyId)
         .eq("status", "approved")
@@ -787,44 +788,64 @@ export default function GoodsReceiptPage() {
 
       if (updErr) throw updErr
 
-      // ✅ إرسال إشعارات إلى accountant و manager
+      // ✅ إرسال إشعارات رفض الاستلام إلى: منشئ الفاتورة + owner + general_manager
       try {
+        const rejectionTitle = appLang === "en"
+          ? "Purchase bill goods receipt rejected"
+          : "تم رفض اعتماد استلام فاتورة مشتريات"
+        const rejectionMessage = appLang === "en"
+          ? `Purchase bill ${selectedBill.bill_number} goods receipt was rejected by warehouse manager. Reason: ${rejectionReason.trim()}`
+          : `تم رفض اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن. السبب: ${rejectionReason.trim()}`
+
+        // 1️⃣ إشعار لمنشئ الفاتورة (created_by_user_id)
+        if (selectedBill.created_by_user_id) {
+          await createNotification({
+            companyId,
+            referenceType: "bill",
+            referenceId: selectedBill.id,
+            title: rejectionTitle,
+            message: rejectionMessage,
+            createdBy: user.id,
+            branchId: branchId || undefined,
+            costCenterId: costCenterId || undefined,
+            assignedToUser: selectedBill.created_by_user_id,
+            priority: "high",
+            eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_creator`,
+            severity: "warning",
+            category: "approvals"
+          })
+        }
+
+        // 2️⃣ إشعار للـ owner
         await createNotification({
           companyId,
           referenceType: "bill",
           referenceId: selectedBill.id,
-          title: appLang === "en"
-            ? "Purchase bill goods receipt rejected"
-            : "تم رفض اعتماد استلام فاتورة مشتريات",
-          message: appLang === "en"
-            ? `Purchase bill ${selectedBill.bill_number} goods receipt was rejected by warehouse manager. Reason: ${rejectionReason.trim()}`
-            : `تم رفض اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن. السبب: ${rejectionReason.trim()}`,
+          title: rejectionTitle,
+          message: rejectionMessage,
           createdBy: user.id,
           branchId: branchId || undefined,
           costCenterId: costCenterId || undefined,
-          assignedToRole: "accountant",
+          assignedToRole: "owner",
           priority: "high",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected`,
+          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_owner`,
           severity: "warning",
           category: "approvals"
         })
 
+        // 3️⃣ إشعار للـ general_manager
         await createNotification({
           companyId,
           referenceType: "bill",
           referenceId: selectedBill.id,
-          title: appLang === "en"
-            ? "Purchase bill goods receipt rejected"
-            : "تم رفض اعتماد استلام فاتورة مشتريات",
-          message: appLang === "en"
-            ? `Purchase bill ${selectedBill.bill_number} goods receipt was rejected by warehouse manager. Reason: ${rejectionReason.trim()}`
-            : `تم رفض اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن. السبب: ${rejectionReason.trim()}`,
+          title: rejectionTitle,
+          message: rejectionMessage,
           createdBy: user.id,
           branchId: branchId || undefined,
           costCenterId: costCenterId || undefined,
-          assignedToRole: "manager",
+          assignedToRole: "general_manager",
           priority: "high",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_manager`,
+          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_gm`,
           severity: "warning",
           category: "approvals"
         })
