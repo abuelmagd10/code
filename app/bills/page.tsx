@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition, useCallback } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FilterContainer } from "@/components/ui/filter-container"
@@ -40,6 +40,7 @@ import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-reversal"
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 type Bill = {
   id: string
@@ -306,6 +307,20 @@ export default function BillsPage() {
     window.addEventListener('company_updated', handleCompanyChange);
     return () => window.removeEventListener('company_updated', handleCompanyChange);
   }, []);
+
+  // 🔄 Realtime: تحديث قائمة الفواتير تلقائياً عند أي تغيير
+  const handleBillsRealtimeEvent = useCallback(() => {
+    console.log('🔄 [Bills Page] Realtime event received, refreshing bills list...')
+    loadData()
+  }, [])
+
+  useRealtimeTable({
+    table: 'bills',
+    enabled: true,
+    onInsert: handleBillsRealtimeEvent,
+    onUpdate: handleBillsRealtimeEvent,
+    onDelete: handleBillsRealtimeEvent,
+  })
 
   const loadData = async () => {
     try {
