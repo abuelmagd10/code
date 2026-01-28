@@ -531,7 +531,7 @@ class RealtimeManager {
       }
 
       // ✅ التحقق من الصلاحيات
-      if (!this.shouldProcessEvent(record)) {
+      if (!this.shouldProcessEvent(table, record)) {
         return
       }
 
@@ -573,7 +573,7 @@ class RealtimeManager {
 
   /**
    * التحقق من صلاحية معالجة الحدث (ERP Standard - Multi-layer Security)
-   * 
+   *
    * طبقات الأمان:
    * 1. التحقق من company_id (إجباري)
    * 2. التحقق من branch_id (حسب الصلاحيات)
@@ -582,7 +582,7 @@ class RealtimeManager {
    * 5. التحقق من created_by_user_id (للموظفين)
    * 6. استخدام canAccessRecord من نظام الصلاحيات
    */
-  private shouldProcessEvent(record: any): boolean {
+  private shouldProcessEvent(table: RealtimeTable, record: any): boolean {
     if (!this.context || !record || !this.context.accessInfo || !this.context.accessFilter) {
       return false
     }
@@ -659,29 +659,43 @@ class RealtimeManager {
     // ✅ طبقة 3: فحوصات إضافية حسب نوع الجدول
     // ✅ فحوصات خاصة بكل جدول (للجداول التي تحتاج منطق خاص)
 
-    // ✅ notifications: التحقق من assigned_to_user أو assigned_to_role
+    // ✅ notifications/approvals: التحقق من assigned_to_user أو assigned_to_role
+    // ⚠️ مهم: هذا فحص إضافي للسماح بالوصول، وليس للرفض
+    // إذا كان السجل موجه للمستخدم/الدور الحالي، نسمح بالوصول
     if (record.assigned_to_user || record.assigned_to_role) {
       if (record.assigned_to_user === userId || record.assigned_to_role === role) {
+        console.log(`✅ [RealtimeManager] Event approved: assigned to current user/role`, {
+          recordId: record.id,
+          assignedToUser: record.assigned_to_user,
+          assignedToRole: record.assigned_to_role,
+          currentUserId: userId,
+          currentRole: role,
+        })
         return true
       }
-      // إذا كان السجل له assigned_to ولكن ليس للمستخدم الحالي، نرفض
-      console.warn(`🚫 [RealtimeManager] Event rejected: notification/approval not assigned to user`, {
+      // ⚠️ لا نرفض هنا - نترك canAccessRecord يقرر
+      // لأن المستخدم قد يكون له صلاحية أخرى (مثل manager في نفس الفرع)
+    }
+
+    // ✅ جداول البيانات الأساسية (Master Data) - مرئية لجميع المستخدمين في الشركة
+    // هذه الجداول لا تحتاج فحص created_by_user_id لأنها بيانات مشتركة
+    const masterDataTables: RealtimeTable[] = ['customers', 'suppliers', 'products']
+    if (masterDataTables.includes(table)) {
+      console.log(`✅ [RealtimeManager] Event approved: master data table (${table}) visible to all`, {
         recordId: record.id,
-        assignedToUser: record.assigned_to_user,
-        assignedToRole: record.assigned_to_role,
-        currentUserId: userId,
-        currentRole: role,
+        userRole: accessInfo.role,
       })
-      return false
+      return true
     }
 
     // ✅ استخدام canAccessRecord للتحقق الشامل
-    // ⚠️ مهم: canAccessRecord الآن يرفض الوصول للموظف إذا كان created_by_user_id غير موجود
+    // ⚠️ مهم: canAccessRecord يرفض الوصول للموظف إذا كان created_by_user_id غير موجود أو لا يتطابق
     const hasAccess = canAccessRecord(accessInfo, recordForCheck)
 
     if (!hasAccess) {
       console.warn(`🚫 [RealtimeManager] Event rejected: access denied by canAccessRecord`, {
         recordId: record.id,
+        table,
         companyId: record.company_id,
         branchId: record.branch_id,
         createdBy: recordForCheck.created_by_user_id,
@@ -695,6 +709,7 @@ class RealtimeManager {
     // ✅ إذا وصلنا هنا، canAccessRecord أعطى الموافقة
     console.log(`✅ [RealtimeManager] Event approved by canAccessRecord:`, {
       recordId: record.id,
+      table,
       userRole: accessInfo.role,
       userId: accessInfo.userId,
     })
