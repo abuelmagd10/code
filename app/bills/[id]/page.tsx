@@ -1799,7 +1799,10 @@ export default function BillViewPage() {
                 )}
 
                 {/* دورة الاعتماد الإداري لفاتورة الشراء */}
-                {bill.status === "draft" && canSubmitForApproval && (
+                {((bill.status === "draft") ||
+                  // ✅ السماح بإعادة إرسال الفاتورة إذا كان اعتماد الاستلام مرفوضاً
+                  (bill.status === "approved" && (bill as any).receipt_status === "rejected")) &&
+                  canSubmitForApproval && (
                   <Button
                     onClick={async () => {
                       try {
@@ -1817,7 +1820,10 @@ export default function BillViewPage() {
                             status: "pending_approval",
                             approval_status: "pending",
                             approved_by: null,
-                            approved_at: null
+                            approved_at: null,
+                            // ✅ عند إعادة الإرسال نعيد ضبط حالة الاستلام وسبب الرفض
+                            receipt_status: null,
+                            receipt_rejection_reason: null,
                           })
                           .eq("id", bill.id)
                           .eq("company_id", companyId)

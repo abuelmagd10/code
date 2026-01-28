@@ -326,6 +326,7 @@ export default function EditBillPage() {
     try {
       setIsSaving(true)
       const totals = calculateTotals()
+      const wasRejectedReceipt = (existingBill as any).receipt_status === "rejected"
 
       // التحقق من توفر المخزون عند تعديل فاتورة مشتريات مرسلة
       // إذا تم تقليل الكميات، يجب التأكد من توفر المخزون للخصم
@@ -417,27 +418,41 @@ export default function EditBillPage() {
           branch_id: branchId || null,
           cost_center_id: costCenterId || null,
           warehouse_id: warehouseId || null,
+          // ✅ إذا كان اعتماد الاستلام مرفوضاً، نعيد الفاتورة إلى draft ونصفر الاعتماد والاستلام
+          ...(wasRejectedReceipt
+            ? {
+                status: "draft",
+                approval_status: null,
+                approved_by: null,
+                approved_at: null,
+                receipt_status: null,
+                receipt_rejection_reason: null,
+              }
+            : {}),
         })
         .eq("id", existingBill.id)
       if (billErr) throw billErr
 
       // أعِد حساب حالة الفاتورة بناءً على المدفوعات الحالية بعد تعديل الإجمالي
-      try {
-        const { data: billFresh } = await supabase
-          .from("bills")
-          .select("id, paid_amount, status")
-          .eq("id", existingBill.id)
-          .single()
-        const paid = Number(billFresh?.paid_amount ?? existingBill.paid_amount ?? 0)
-        const newStatus = paid >= Number(totals.total || 0)
-          ? "paid"
-          : paid > 0
-            ? "partially_paid"
-            : (String(billFresh?.status || existingBill.status || "sent").toLowerCase() === "draft" ? "draft" : "sent")
-        // لا نعدّل paid_amount هنا؛ فقط الحالة وفق المجموع الجديد
-        await supabase.from("bills").update({ status: newStatus }).eq("id", existingBill.id)
-      } catch (statusErr) {
-        console.warn("Failed to recompute bill payment status after edit", statusErr)
+      // ✅ إذا كانت الفاتورة مرفوضة استلاماً، نتركها كـ draft لتبدأ دورة اعتماد جديدة
+      if (!wasRejectedReceipt) {
+        try {
+          const { data: billFresh } = await supabase
+            .from("bills")
+            .select("id, paid_amount, status")
+            .eq("id", existingBill.id)
+            .single()
+          const paid = Number(billFresh?.paid_amount ?? existingBill.paid_amount ?? 0)
+          const newStatus = paid >= Number(totals.total || 0)
+            ? "paid"
+            : paid > 0
+              ? "partially_paid"
+              : (String(billFresh?.status || existingBill.status || "sent").toLowerCase() === "draft" ? "draft" : "sent")
+          // لا نعدّل paid_amount هنا؛ فقط الحالة وفق المجموع الجديد
+          await supabase.from("bills").update({ status: newStatus }).eq("id", existingBill.id)
+        } catch (statusErr) {
+          console.warn("Failed to recompute bill payment status after edit", statusErr)
+        }
       }
 
       // Replace items: delete then insert
