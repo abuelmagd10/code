@@ -674,66 +674,70 @@ export default function EditBillPage() {
       // draft = لا قيود ولا مخزون
       // sent/received = مخزون فقط - ❌ لا قيد محاسبي
       // paid/partially_paid = قيود مالية + مخزون (تم إضافته سابقاً)
-      // ملاحظة: نعيد استخدام billStatus / receiptStatus المحسوبة أعلاه لتمييز حالة الفاتورة
+      //
+      // ✅ مع القاعدة الجديدة (Mandatory Re-Approval):
+      // إذا كانت الفاتورة ضمن دورة اعتماد يجب إعادة تشغيلها (needsApprovalRestart)،
+      // لا نقوم بأي إعادة نشر تلقائي للمخزون أو القيود عند التعديل.
+      if (!needsApprovalRestart) {
+        // ✅ لا ننشئ حركات مخزون للفواتير المرفوضة (rejected)
+        if (billStatus !== 'draft' && receiptStatus !== 'rejected') {
+          // عكس القيود السابقة أولاً (إن وجدت)
+          await reversePreviousPosting()
 
-      // ✅ لا ننشئ حركات مخزون للفواتير المرفوضة (rejected)
-      if (billStatus !== 'draft' && receiptStatus !== 'rejected') {
-        // عكس القيود السابقة أولاً (إن وجدت)
-        await reversePreviousPosting()
+          if (billStatus === 'sent' || billStatus === 'received') {
+            // ===== 📌 النمط المحاسبي الصارم =====
+            // Sent/Received: زيادة المخزون فقط - ❌ لا قيد محاسبي
+            // ✅ لكن فقط إذا لم تكن الفاتورة مرفوضة
+            const mapping = await findAccountIds()
+            if (mapping) {
+              // ✅ الحصول على المستخدم الحالي لضبط created_by_user_id
+              const { data: { user } } = await supabase.auth.getUser()
+              if (!user) {
+                console.warn("Cannot create inventory_transactions: no authenticated user")
+                return
+              }
 
-        if (billStatus === 'sent' || billStatus === 'received') {
-          // ===== 📌 النمط المحاسبي الصارم =====
-          // Sent/Received: زيادة المخزون فقط - ❌ لا قيد محاسبي
-          // ✅ لكن فقط إذا لم تكن الفاتورة مرفوضة
-          const mapping = await findAccountIds()
-          if (mapping) {
-            // ✅ الحصول على المستخدم الحالي لضبط created_by_user_id
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) {
-              console.warn("Cannot create inventory_transactions: no authenticated user")
-              return
+              // ✅ إنشاء حركات المخزون فقط (بدون قيد محاسبي)
+              const productIds = items.map((it: any) => it.product_id).filter(Boolean)
+              const { data: productsInfo } = await supabase
+                .from("products")
+                .select("id, item_type")
+                .in("id", productIds)
+
+              const productItems = items.filter((it: any) => {
+                const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
+                return it.product_id && (!prod || prod.item_type !== "service")
+              })
+
+              const effectiveBranchId = branchId || userContext?.branch_id || null
+              const effectiveWarehouseId = warehouseId || userContext?.warehouse_id || null
+              const effectiveCostCenterId = costCenterId || userContext?.cost_center_id || null
+
+              const invTx = productItems.map((it: any) => ({
+                company_id: mapping.companyId,
+                branch_id: effectiveBranchId,
+                warehouse_id: effectiveWarehouseId,
+                cost_center_id: effectiveCostCenterId,
+                product_id: it.product_id,
+                transaction_type: "purchase",
+                quantity_change: it.quantity,
+                reference_id: existingBill.id,
+                created_by_user_id: user.id,
+                notes: `فاتورة شراء ${existingBill.bill_number} (مرسلة)`,
+              }))
+
+              if (invTx.length > 0) {
+                await supabase.from("inventory_transactions").insert(invTx)
+              }
+              console.log(`✅ BILL Edit Sent: تم إضافة المخزون فقط - لا قيد محاسبي (حسب النمط المحاسبي)`)
             }
-
-            // ✅ إنشاء حركات المخزون فقط (بدون قيد محاسبي)
-            const productIds = items.map((it: any) => it.product_id).filter(Boolean)
-            const { data: productsInfo } = await supabase
-              .from("products")
-              .select("id, item_type")
-              .in("id", productIds)
-
-            const productItems = items.filter((it: any) => {
-              const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
-              return it.product_id && (!prod || prod.item_type !== "service")
-            })
-
-            const effectiveBranchId = branchId || userContext?.branch_id || null
-            const effectiveWarehouseId = warehouseId || userContext?.warehouse_id || null
-            const effectiveCostCenterId = costCenterId || userContext?.cost_center_id || null
-
-            const invTx = productItems.map((it: any) => ({
-              company_id: mapping.companyId,
-              branch_id: effectiveBranchId,
-              warehouse_id: effectiveWarehouseId,
-              cost_center_id: effectiveCostCenterId,
-              product_id: it.product_id,
-              transaction_type: "purchase",
-              quantity_change: it.quantity,
-              reference_id: existingBill.id,
-              created_by_user_id: user.id,
-              notes: `فاتورة شراء ${existingBill.bill_number} (مرسلة)`,
-            }))
-
-            if (invTx.length > 0) {
-              await supabase.from("inventory_transactions").insert(invTx)
-            }
-            console.log(`✅ BILL Edit Sent: تم إضافة المخزون فقط - لا قيد محاسبي (حسب النمط المحاسبي)`)
+          } else if (billStatus === 'paid' || billStatus === 'partially_paid') {
+            // قيود مالية كاملة + مخزون
+            await postBillJournalAndInventory()
           }
-        } else if (billStatus === 'paid' || billStatus === 'partially_paid') {
-          // قيود مالية كاملة + مخزون
-          await postBillJournalAndInventory()
         }
+        // إذا كانت draft: لا نفعل شيء - لا قيود ولا مخزون
       }
-      // إذا كانت draft: لا نفعل شيء - لا قيود ولا مخزون
 
       // === مزامنة أمر الشراء المرتبط تلقائياً ===
       const syncLinkedPurchaseOrder = async () => {
