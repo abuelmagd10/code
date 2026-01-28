@@ -41,6 +41,7 @@ import { StatusBadge } from "@/components/DataTableFormatters"
 import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-reversal"
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { filterCashBankAccounts } from "@/lib/accounts"
 
 type Bill = {
   id: string
@@ -969,12 +970,17 @@ export default function BillsPage() {
       }).filter((r: any) => r.maxQty > 0)
       setReturnItems(rows)
 
-      // Load accounts for refund selection
+      // Load accounts for refund selection - استخدام filterCashBankAccounts لضمان التوافق مع صفحة الأعمال المصرفية
       const { data: accs } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, sub_type")
+        .select("id, account_code, account_name, account_type, sub_type, parent_id")
         .eq("company_id", companyId)
-      setReturnAccounts((accs || []).filter((a: any) => ['cash', 'bank', 'accounts_payable'].includes(String(a.sub_type || '').toLowerCase())))
+        .eq("is_active", true)
+      // ✅ استخدام filterCashBankAccounts للحصول على حسابات النقد والبنك (نفس المنطق في صفحة الأعمال المصرفية)
+      // ✅ إضافة حسابات الذمم الدائنة (accounts_payable) للمرتجعات
+      const cashBankAccounts = filterCashBankAccounts(accs || [], true)
+      const apAccounts = (accs || []).filter((a: any) => String(a.sub_type || '').toLowerCase() === 'accounts_payable')
+      setReturnAccounts([...cashBankAccounts, ...apAccounts] as any)
 
       // Load currencies
       const curr = await getActiveCurrencies(supabase, companyId)
