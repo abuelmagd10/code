@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition, useCallback } from "react"
+import { useEffect, useMemo, useState, useTransition, useCallback, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FilterContainer } from "@/components/ui/filter-container"
@@ -495,10 +495,14 @@ export default function BillsPage() {
   }
 
   // 🔄 Realtime: تحديث قائمة الفواتير تلقائياً عند أي تغيير
+  // استخدام useRef للحفاظ على reference ثابت لـ loadData
+  const loadDataRef = useRef(loadData)
+  loadDataRef.current = loadData
+
   const handleBillsRealtimeEvent = useCallback(() => {
     console.log('🔄 [Bills Page] Realtime event received, refreshing bills list...')
-    loadData()
-  }, [supabase])
+    loadDataRef.current()
+  }, [])
 
   useRealtimeTable({
     table: 'bills',
