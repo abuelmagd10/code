@@ -21,6 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { validateFinancialTransaction, type UserContext } from "@/lib/validation"
+import { createNotification } from "@/lib/governance-layer"
+import { getActiveCompanyId } from "@/lib/company"
 
 interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service' }
@@ -418,11 +420,11 @@ export default function EditBillPage() {
           branch_id: branchId || null,
           cost_center_id: costCenterId || null,
           warehouse_id: warehouseId || null,
-          // ✅ إذا كان اعتماد الاستلام مرفوضاً، نعيد الفاتورة إلى draft ونصفر الاعتماد والاستلام
+          // ✅ إذا كان اعتماد الاستلام مرفوضاً، نعيد تشغيل دورة الاعتماد فوراً
           ...(wasRejectedReceipt
             ? {
-                status: "draft",
-                approval_status: null,
+                status: "pending_approval",
+                approval_status: "pending",
                 approved_by: null,
                 approved_at: null,
                 receipt_status: null,
@@ -434,7 +436,7 @@ export default function EditBillPage() {
       if (billErr) throw billErr
 
       // أعِد حساب حالة الفاتورة بناءً على المدفوعات الحالية بعد تعديل الإجمالي
-      // ✅ إذا كانت الفاتورة مرفوضة استلاماً، نتركها كـ draft لتبدأ دورة اعتماد جديدة
+      // ✅ إذا كانت الفاتورة مرفوضة استلاماً، نُبقيها pending_approval ولا نعيد حساب الحالة هنا
       if (!wasRejectedReceipt) {
         try {
           const { data: billFresh } = await supabase
@@ -842,6 +844,57 @@ export default function EditBillPage() {
       }
 
       await syncLinkedPurchaseOrder()
+
+      // ✅ إذا كانت الفاتورة مرفوضة استلاماً قبل التعديل، نرسل إشعارات اعتماد جديدة للمالك والمدير العام
+      if (wasRejectedReceipt) {
+        try {
+          const companyId = await getActiveCompanyId(supabase)
+          const { data: { user } } = await supabase.auth.getUser()
+          if (companyId && user && existingBill) {
+            await createNotification({
+              companyId,
+              referenceType: "bill",
+              referenceId: existingBill.id,
+              title: appLang === "en"
+                ? "Purchase bill pending approval"
+                : "فاتورة مشتريات بانتظار الاعتماد الإداري",
+              message: appLang === "en"
+                ? `Purchase bill ${existingBill.bill_number} is pending admin approval after goods receipt rejection correction`
+                : `فاتورة مشتريات رقم ${existingBill.bill_number} عادت للاعتماد الإداري بعد تصحيح سبب رفض الاستلام`,
+              createdBy: user.id,
+              branchId: branchId || undefined,
+              costCenterId: costCenterId || undefined,
+              assignedToRole: "owner",
+              priority: "high",
+              eventKey: `bill:${existingBill.id}:pending_approval_owner_after_reject`,
+              severity: "warning",
+              category: "approvals",
+            })
+
+            await createNotification({
+              companyId,
+              referenceType: "bill",
+              referenceId: existingBill.id,
+              title: appLang === "en"
+                ? "Purchase bill pending approval"
+                : "فاتورة مشتريات بانتظار الاعتماد الإداري",
+              message: appLang === "en"
+                ? `Purchase bill ${existingBill.bill_number} is pending admin approval after goods receipt rejection correction`
+                : `فاتورة مشتريات رقم ${existingBill.bill_number} عادت للاعتماد الإداري بعد تصحيح سبب رفض الاستلام`,
+              createdBy: user.id,
+              branchId: branchId || undefined,
+              costCenterId: costCenterId || undefined,
+              assignedToRole: "general_manager",
+              priority: "high",
+              eventKey: `bill:${existingBill.id}:pending_approval_gm_after_reject`,
+              severity: "warning",
+              category: "approvals",
+            })
+          }
+        } catch (notifErr) {
+          console.warn("Failed to send re-approval notifications after goods receipt rejection fix:", notifErr)
+        }
+      }
 
       toastActionSuccess(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Bill" : "الفاتورة")
       router.push(`/bills/${existingBill.id}`)
