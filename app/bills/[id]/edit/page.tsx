@@ -682,6 +682,13 @@ export default function EditBillPage() {
           // ✅ لكن فقط إذا لم تكن الفاتورة مرفوضة
           const mapping = await findAccountIds()
           if (mapping) {
+            // ✅ الحصول على المستخدم الحالي لضبط created_by_user_id
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) {
+              console.warn("Cannot create inventory_transactions: no authenticated user")
+              return
+            }
+
             // ✅ إنشاء حركات المخزون فقط (بدون قيد محاسبي)
             const productIds = items.map((it: any) => it.product_id).filter(Boolean)
             const { data: productsInfo } = await supabase
@@ -694,12 +701,20 @@ export default function EditBillPage() {
               return it.product_id && (!prod || prod.item_type !== "service")
             })
 
+            const effectiveBranchId = branchId || userContext?.branch_id || null
+            const effectiveWarehouseId = warehouseId || userContext?.warehouse_id || null
+            const effectiveCostCenterId = costCenterId || userContext?.cost_center_id || null
+
             const invTx = productItems.map((it: any) => ({
               company_id: mapping.companyId,
+              branch_id: effectiveBranchId,
+              warehouse_id: effectiveWarehouseId,
+              cost_center_id: effectiveCostCenterId,
               product_id: it.product_id,
               transaction_type: "purchase",
               quantity_change: it.quantity,
               reference_id: existingBill.id,
+              created_by_user_id: user.id,
               notes: `فاتورة شراء ${existingBill.bill_number} (مرسلة)`,
             }))
 
