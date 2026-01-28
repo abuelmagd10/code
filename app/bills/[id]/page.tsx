@@ -2048,8 +2048,9 @@ export default function BillViewPage() {
                 </Button>
 
                 {/* زر الحذف - في النهاية */}
-                {/* 🔒 منع الحذف للفواتير المرسلة أو المدفوعة جزئياً أو كلياً */}
-                {permDelete && bill.status !== 'sent' && bill.status !== 'partially_paid' && bill.status !== 'paid' && (
+                {/* 🔒 الحذف متاح فقط للفواتير في حالة draft (المسودة) */}
+                {/* بعد طلب الاعتماد أو الاعتماد أو الاستلام لا يمكن الحذف */}
+                {permDelete && bill.status === 'draft' && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="destructive" size="sm" className="mr-auto sm:mr-0">
@@ -2059,16 +2060,16 @@ export default function BillViewPage() {
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>{appLang === 'en' ? `Confirm ${canHardDelete ? 'Delete' : 'Void'} Bill` : `تأكيد ${canHardDelete ? 'حذف' : 'إلغاء'} الفاتورة`}</AlertDialogTitle>
+                        <AlertDialogTitle>{appLang === 'en' ? 'Confirm Delete Bill' : 'تأكيد حذف الفاتورة'}</AlertDialogTitle>
                         <AlertDialogDescription>
-                          {canHardDelete
-                            ? (appLang === 'en' ? 'The bill will be permanently deleted if it is a draft with no payments.' : 'سيتم حذف الفاتورة نهائياً إن كانت مسودة ولا تحتوي على مدفوعات.')
-                            : (appLang === 'en' ? 'The bill is not a draft or has payments; it will be voided while preserving history.' : 'الفاتورة ليست مسودة أو لديها مدفوعات؛ سيتم إلغاء الفاتورة (void) مع الحفاظ على السجل.')}
+                          {appLang === 'en'
+                            ? 'The draft bill will be permanently deleted. This action cannot be undone.'
+                            : 'سيتم حذف فاتورة المسودة نهائياً. لا يمكن التراجع عن هذا الإجراء.'}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>{appLang === 'en' ? 'Cancel' : 'تراجع'}</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete}>{canHardDelete ? (appLang === 'en' ? 'Delete' : 'حذف') : (appLang === 'en' ? 'Void' : 'إلغاء')}</AlertDialogAction>
+                        <AlertDialogAction onClick={handleDelete}>{appLang === 'en' ? 'Delete' : 'حذف'}</AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
