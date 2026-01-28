@@ -656,37 +656,48 @@ class RealtimeManager {
       return true
     }
 
-    // ✅ استخدام canAccessRecord للتحقق الشامل
-    const hasAccess = canAccessRecord(accessInfo, recordForCheck)
-    
-    if (!hasAccess) {
-      console.warn(`🚫 [RealtimeManager] Event rejected: access denied`, {
-        recordId: record.id,
-        companyId: record.company_id,
-        branchId: record.branch_id,
-        userRole: accessInfo.role,
-        userBranchId: accessInfo.branchId,
-      })
-      return false
-    }
-
     // ✅ طبقة 3: فحوصات إضافية حسب نوع الجدول
     // ✅ فحوصات خاصة بكل جدول (للجداول التي تحتاج منطق خاص)
-    
+
     // ✅ notifications: التحقق من assigned_to_user أو assigned_to_role
     if (record.assigned_to_user || record.assigned_to_role) {
       if (record.assigned_to_user === userId || record.assigned_to_role === role) {
         return true
       }
+      // إذا كان السجل له assigned_to ولكن ليس للمستخدم الحالي، نرفض
+      console.warn(`🚫 [RealtimeManager] Event rejected: notification/approval not assigned to user`, {
+        recordId: record.id,
+        assignedToUser: record.assigned_to_user,
+        assignedToRole: record.assigned_to_role,
+        currentUserId: userId,
+        currentRole: role,
+      })
+      return false
     }
 
-    // ✅ approvals: التحقق من assigned_to_user أو assigned_to_role
-    if (record.assigned_to_user || record.assigned_to_role) {
-      if (record.assigned_to_user === userId || record.assigned_to_role === role) {
-        return true
-      }
+    // ✅ استخدام canAccessRecord للتحقق الشامل
+    // ⚠️ مهم: canAccessRecord الآن يرفض الوصول للموظف إذا كان created_by_user_id غير موجود
+    const hasAccess = canAccessRecord(accessInfo, recordForCheck)
+
+    if (!hasAccess) {
+      console.warn(`🚫 [RealtimeManager] Event rejected: access denied by canAccessRecord`, {
+        recordId: record.id,
+        companyId: record.company_id,
+        branchId: record.branch_id,
+        createdBy: recordForCheck.created_by_user_id,
+        userRole: accessInfo.role,
+        userId: accessInfo.userId,
+        userBranchId: accessInfo.branchId,
+      })
+      return false
     }
 
+    // ✅ إذا وصلنا هنا، canAccessRecord أعطى الموافقة
+    console.log(`✅ [RealtimeManager] Event approved by canAccessRecord:`, {
+      recordId: record.id,
+      userRole: accessInfo.role,
+      userId: accessInfo.userId,
+    })
     return true
   }
 

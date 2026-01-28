@@ -244,7 +244,9 @@ export function canAccessRecord(
   }
 
   // الموظف: يجب أن يكون هو المنشئ
-  if (record.created_by_user_id && record.created_by_user_id !== accessInfo.userId) {
+  // ⚠️ مهم: إذا كان created_by_user_id غير موجود (null/undefined)، نرفض الوصول للموظف
+  // لأن الموظف يجب أن يرى فقط السجلات التي أنشأها هو
+  if (!record.created_by_user_id || record.created_by_user_id !== accessInfo.userId) {
     return false
   }
 
