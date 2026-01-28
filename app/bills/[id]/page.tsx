@@ -1672,8 +1672,18 @@ export default function BillViewPage() {
         }
       }
 
-      // أخيرًا: إلغاء الفاتورة (void)
-      const { error: voidErr } = await supabase.from("bills").update({ status: "voided" }).eq("id", bill.id)
+      // أخيرًا: إلغاء الفاتورة (void) مع تصفير كل حالات الاعتماد والاستلام
+      const { error: voidErr } = await supabase
+        .from("bills")
+        .update({
+          status: "voided",
+          approval_status: null,
+          approved_by: null,
+          approved_at: null,
+          receipt_status: null,
+          receipt_rejection_reason: null,
+        })
+        .eq("id", bill.id)
       if (voidErr) throw voidErr
       toastActionSuccess(toast, "الإلغاء", "الفاتورة")
       await loadData()

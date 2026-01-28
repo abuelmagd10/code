@@ -328,7 +328,13 @@ export default function EditBillPage() {
     try {
       setIsSaving(true)
       const totals = calculateTotals()
-      const wasRejectedReceipt = (existingBill as any).receipt_status === "rejected"
+      const billStatus = String(existingBill.status || "").toLowerCase()
+      const receiptStatus = String((existingBill as any).receipt_status || "").toLowerCase()
+      const isClosed = ["paid", "partially_paid", "cancelled", "voided", "fully_returned"].includes(billStatus)
+      // ✅ أي فاتورة غير مغلقة محاسبيًا وتم بدء دورة اعتماد لها يجب إعادة الدورة عند التعديل
+      const needsApprovalRestart =
+        !isClosed &&
+        (billStatus !== "draft" || receiptStatus === "rejected")
 
       // التحقق من توفر المخزون عند تعديل فاتورة مشتريات مرسلة
       // إذا تم تقليل الكميات، يجب التأكد من توفر المخزون للخصم
@@ -420,8 +426,8 @@ export default function EditBillPage() {
           branch_id: branchId || null,
           cost_center_id: costCenterId || null,
           warehouse_id: warehouseId || null,
-          // ✅ إذا كان اعتماد الاستلام مرفوضاً، نعيد تشغيل دورة الاعتماد فوراً
-          ...(wasRejectedReceipt
+          // ✅ إذا كانت الفاتورة ضمن دورة اعتماد، نعيد تشغيل دورة الاعتماد فوراً
+          ...(needsApprovalRestart
             ? {
                 status: "pending_approval",
                 approval_status: "pending_approval",
@@ -436,8 +442,8 @@ export default function EditBillPage() {
       if (billErr) throw billErr
 
       // أعِد حساب حالة الفاتورة بناءً على المدفوعات الحالية بعد تعديل الإجمالي
-      // ✅ إذا كانت الفاتورة مرفوضة استلاماً، نُبقيها pending_approval ولا نعيد حساب الحالة هنا
-      if (!wasRejectedReceipt) {
+      // ✅ إذا كانت الفاتورة ضمن دورة اعتماد يجب إعادة تشغيلها (needsApprovalRestart)، لا نعيد حساب الحالة هنا
+      if (!needsApprovalRestart) {
         try {
           const { data: billFresh } = await supabase
             .from("bills")
@@ -668,8 +674,7 @@ export default function EditBillPage() {
       // draft = لا قيود ولا مخزون
       // sent/received = مخزون فقط - ❌ لا قيد محاسبي
       // paid/partially_paid = قيود مالية + مخزون (تم إضافته سابقاً)
-      const billStatus = existingBill.status?.toLowerCase()
-      const receiptStatus = existingBill.receipt_status?.toLowerCase()
+      // ملاحظة: نعيد استخدام billStatus / receiptStatus المحسوبة أعلاه لتمييز حالة الفاتورة
 
       // ✅ لا ننشئ حركات مخزون للفواتير المرفوضة (rejected)
       if (billStatus !== 'draft' && receiptStatus !== 'rejected') {
@@ -860,8 +865,8 @@ export default function EditBillPage() {
 
       await syncLinkedPurchaseOrder()
 
-      // ✅ إذا كانت الفاتورة مرفوضة استلاماً قبل التعديل، نرسل إشعارات اعتماد جديدة للمالك والمدير العام
-      if (wasRejectedReceipt) {
+      // ✅ إذا كانت الفاتورة في دورة اعتماد تم البدء فيها (وليست مسودة/مغلقة)، نرسل إشعارات اعتماد جديدة للمالك والمدير العام
+      if (needsApprovalRestart) {
         try {
           const companyId = await getActiveCompanyId(supabase)
           const { data: { user } } = await supabase.auth.getUser()
