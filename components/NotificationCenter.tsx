@@ -293,13 +293,13 @@ export function NotificationCenter({
       // 🔹 Client-side filtering
       let filtered = data || []
       
-      // Filter by branch (if not owner/admin)
-      if (filterBranch !== "all" && branchId && userRole !== 'owner' && userRole !== 'admin') {
+      // ✅ Filter by branch - يعمل لجميع المستخدمين إذا اختاروا فرع معين
+      if (filterBranch !== "all") {
         filtered = filtered.filter(n => !n.branch_id || n.branch_id === filterBranch)
       }
 
-      // Filter by warehouse (if not owner/admin)
-      if (filterWarehouse !== "all" && warehouseId && userRole !== 'owner' && userRole !== 'admin') {
+      // ✅ Filter by warehouse - يعمل لجميع المستخدمين إذا اختاروا مخزن معين
+      if (filterWarehouse !== "all") {
         filtered = filtered.filter(n => !n.warehouse_id || n.warehouse_id === filterWarehouse)
       }
 
@@ -1080,7 +1080,22 @@ export function NotificationCenter({
                                   className="h-8 text-xs text-red-600 hover:text-red-700"
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    // TODO: Implement reject action
+                                    // ✅ الانتقال للصفحة المرتبطة لاتخاذ إجراء الرفض
+                                    const route = getNotificationRoute(
+                                      notification.reference_type,
+                                      notification.reference_id,
+                                      notification.event_key || undefined,
+                                      notification.category || undefined
+                                    )
+                                    if (route) {
+                                      onOpenChange(false)
+                                      router.push(route)
+                                    } else {
+                                      toast({
+                                        title: appLang === 'en' ? 'Info' : 'معلومات',
+                                        description: appLang === 'en' ? 'Please navigate to the item page to reject' : 'الرجاء الانتقال لصفحة العنصر للرفض',
+                                      })
+                                    }
                                   }}
                                 >
                                   <X className="w-3 h-3 ml-1" />

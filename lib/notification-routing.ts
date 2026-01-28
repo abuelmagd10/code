@@ -4,9 +4,7 @@
  * يحول reference_type و reference_id إلى مسار الصفحة الصحيحة
  */
 
-import { useRouter } from "next/navigation"
-
-export type ReferenceType = 
+export type ReferenceType =
   | 'write_off'
   | 'invoice'
   | 'bill'
@@ -32,16 +30,17 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'write_off': (id) => `/inventory/write-offs?highlight=${id}`,
   'inventory_write_off': (id) => `/inventory/write-offs?highlight=${id}`,
   'inventory_transfer': (id) => `/inventory-transfers/${id}`,
-  
+  'stock_transfer': (id) => `/inventory-transfers/${id}`, // ✅ إضافة alias
+
   // المبيعات
   'invoice': (id) => `/invoices/${id}`,
   'sales_order': (id) => `/sales-orders/${id}`,
   'customer_debit_note': (id) => `/customer-debit-notes?highlight=${id}`,
   'customer_credit_refund': (id) => `/customers?highlight=refund-${id}`,
   'customer_voucher': (id) => `/payments?highlight=${id}`,
-  
+
   // المشتريات
-  'bill': (id, eventKey, category) => {
+  'bill': (id, eventKey, _category) => {
     // ✅ إذا كان الإشعار خاص باعتماد الاستلام (approved_waiting_receipt)، نوجه إلى صفحة اعتماد الاستلام مع معرف الفاتورة
     if (eventKey && eventKey.includes('approved_waiting_receipt')) {
       return `/inventory/goods-receipt?billId=${id}`
@@ -50,18 +49,19 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
     return `/bills/${id}`
   },
   'purchase_order': (id) => `/purchase-orders/${id}`,
+  'purchase_approval': (id) => `/bills/${id}`, // ✅ إضافة route لموافقات المشتريات
   'vendor_credit': (id) => `/vendor-credits?highlight=${id}`,
   'supplier_debit_receipt': (id) => `/suppliers?highlight=receipt-${id}`,
-  
+
   // المالية
   'payment': (id) => `/payments?highlight=${id}`,
   'journal_entry': (id) => `/journal-entries/${id}`,
   'depreciation': (id) => `/fixed-assets?highlight=depreciation-${id}`,
-  
+
   // الموافقات
   'approval_request': (id) => `/approvals?highlight=${id}`,
   'refund_request': (id) => `/payments?highlight=refund-${id}`,
-  
+
   // الحوكمة والإعدادات
   'user_branch_change': (id) => `/settings/users?highlight=${id}`,
   'user_warehouse_change': (id) => `/settings/users?highlight=${id}`,
