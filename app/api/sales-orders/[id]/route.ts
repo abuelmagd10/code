@@ -173,7 +173,7 @@ export async function DELETE(
     console.error("❌ [DELETE] Unexpected error:", error)
     return NextResponse.json(
       { error: error.message, error_ar: "حدث خطأ غير متوقع" },
-      { status: error.message.includes("Unauthorized") ? 401 : 403 }
+      { status: error.message.includes("Violation") ? 403 : 500 }
     )
   }
 }
