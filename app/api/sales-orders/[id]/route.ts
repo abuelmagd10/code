@@ -92,11 +92,15 @@ export async function DELETE(
     const governance = await enforceGovernance(request)
     const supabase = await createClient()
 
-    let findQuery = supabase.from("sales_orders").select("id").eq("id", params.id)
+    console.log("🗑️ [DELETE /api/sales-orders/[id]] Starting deletion for order:", params.id)
+
+    // 1️⃣ التحقق من وجود أمر البيع
+    let findQuery = supabase.from("sales_orders").select("id, invoice_id").eq("id", params.id)
     findQuery = applyGovernanceFilters(findQuery, governance)
     const { data: existing, error: findError } = await findQuery.maybeSingle()
 
     if (findError) {
+      console.error("❌ [DELETE] Error finding sales order:", findError)
       return NextResponse.json(
         { error: findError.message, error_ar: "تعذر جلب أمر البيع" },
         { status: 500 }
@@ -104,12 +108,46 @@ export async function DELETE(
     }
 
     if (!existing) {
+      console.warn("⚠️ [DELETE] Sales order not found or no access:", params.id)
       return NextResponse.json(
         { error: "Not found", error_ar: "أمر البيع غير موجود أو لا تملك صلاحية الوصول" },
         { status: 404 }
       )
     }
 
+    // 2️⃣ التحقق من عدم وجود فاتورة مرتبطة
+    if (existing.invoice_id) {
+      console.warn("⚠️ [DELETE] Cannot delete - sales order has linked invoice:", existing.invoice_id)
+      return NextResponse.json(
+        {
+          error: "Cannot delete sales order with linked invoice",
+          error_ar: "لا يمكن حذف أمر البيع المرتبط بفاتورة. احذف الفاتورة أولاً"
+        },
+        { status: 400 }
+      )
+    }
+
+    console.log("✅ [DELETE] Sales order found and can be deleted")
+
+    // 3️⃣ حذف بنود أمر البيع أولاً (Foreign Key Constraint)
+    console.log("🗑️ [DELETE] Deleting sales order items...")
+    const { error: itemsError } = await supabase
+      .from("sales_order_items")
+      .delete()
+      .eq("sales_order_id", params.id)
+
+    if (itemsError) {
+      console.error("❌ [DELETE] Error deleting sales order items:", itemsError)
+      return NextResponse.json(
+        { error: itemsError.message, error_ar: "فشل في حذف بنود أمر البيع" },
+        { status: 500 }
+      )
+    }
+
+    console.log("✅ [DELETE] Sales order items deleted successfully")
+
+    // 4️⃣ حذف أمر البيع
+    console.log("🗑️ [DELETE] Deleting sales order...")
     const { error: delError } = await supabase
       .from("sales_orders")
       .delete()
@@ -117,11 +155,14 @@ export async function DELETE(
       .eq("company_id", governance.companyId)
 
     if (delError) {
+      console.error("❌ [DELETE] Error deleting sales order:", delError)
       return NextResponse.json(
         { error: delError.message, error_ar: "فشل في حذف أمر البيع" },
         { status: 500 }
       )
     }
+
+    console.log("✅ [DELETE] Sales order deleted successfully:", params.id)
 
     return NextResponse.json({
       success: true,
@@ -129,6 +170,7 @@ export async function DELETE(
       message_ar: "تم حذف أمر البيع بنجاح",
     })
   } catch (error: any) {
+    console.error("❌ [DELETE] Unexpected error:", error)
     return NextResponse.json(
       { error: error.message, error_ar: "حدث خطأ غير متوقع" },
       { status: error.message.includes("Unauthorized") ? 401 : 403 }
