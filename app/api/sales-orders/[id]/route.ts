@@ -131,34 +131,65 @@ export async function DELETE(
 
     // 3️⃣ حذف بنود أمر البيع أولاً (Foreign Key Constraint)
     console.log("🗑️ [DELETE] Deleting sales order items...")
-    const { error: itemsError } = await supabase
+    const { data: deletedItems, error: itemsError, count: itemsCount } = await supabase
       .from("sales_order_items")
-      .delete()
+      .delete({ count: 'exact' })
       .eq("sales_order_id", params.id)
 
     if (itemsError) {
-      console.error("❌ [DELETE] Error deleting sales order items:", itemsError)
+      console.error("❌ [DELETE] Error deleting sales order items:", {
+        message: itemsError.message,
+        details: itemsError.details,
+        hint: itemsError.hint,
+        code: itemsError.code
+      })
       return NextResponse.json(
-        { error: itemsError.message, error_ar: "فشل في حذف بنود أمر البيع" },
+        {
+          error: itemsError.message,
+          error_ar: `فشل في حذف بنود أمر البيع: ${itemsError.message}`,
+          details: itemsError.details,
+          hint: itemsError.hint
+        },
         { status: 500 }
       )
     }
 
-    console.log("✅ [DELETE] Sales order items deleted successfully")
+    console.log(`✅ [DELETE] Sales order items deleted successfully. Count: ${itemsCount}`)
 
     // 4️⃣ حذف أمر البيع
     console.log("🗑️ [DELETE] Deleting sales order...")
-    const { error: delError } = await supabase
+    const { data: deletedOrder, error: delError, count: orderCount } = await supabase
       .from("sales_orders")
-      .delete()
+      .delete({ count: 'exact' })
       .eq("id", params.id)
       .eq("company_id", governance.companyId)
 
     if (delError) {
-      console.error("❌ [DELETE] Error deleting sales order:", delError)
+      console.error("❌ [DELETE] Error deleting sales order:", {
+        message: delError.message,
+        details: delError.details,
+        hint: delError.hint,
+        code: delError.code
+      })
       return NextResponse.json(
-        { error: delError.message, error_ar: "فشل في حذف أمر البيع" },
+        {
+          error: delError.message,
+          error_ar: `فشل في حذف أمر البيع: ${delError.message}`,
+          details: delError.details,
+          hint: delError.hint
+        },
         { status: 500 }
+      )
+    }
+
+    if (orderCount === 0) {
+      console.warn("⚠️ [DELETE] No sales order was deleted. Possible RLS restriction.")
+      return NextResponse.json(
+        {
+          error: "Sales order not deleted",
+          error_ar: "لم يتم حذف أمر البيع. قد تكون هناك قيود على الصلاحيات"
+        },
+        { status: 403 }
       )
     }
 
