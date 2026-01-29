@@ -1346,12 +1346,12 @@ export default function InvoicesPage() {
 
       // حذف الفاتورة
       console.log("🗑️ Deleting invoice:", id)
-      const { error, data: deletedData } = await supabase.from("invoices").delete().eq("id", id).select()
+      const { error } = await supabase.from("invoices").delete().eq("id", id)
       if (error) {
         console.error("❌ Error deleting invoice:", error)
         throw error
       }
-      console.log("✅ Invoice deleted successfully:", deletedData)
+      console.log("✅ Invoice deleted successfully")
 
       // تحديث أمر البيع المرتبط (إن وجد)
       if (linkedSalesOrderId) {
