@@ -1175,7 +1175,8 @@ export default function InvoicesPage() {
                 </Button>
               </>
             )}
-            {permDelete && (
+            {/* ✅ إظهار زر الحذف فقط للفواتير المسودة (بناءً على الحالة المحسوبة) */}
+            {permDelete && actualStatus === 'draft' && (
               <Button
                 variant="outline"
                 size="sm"
