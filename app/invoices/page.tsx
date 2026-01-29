@@ -1107,67 +1107,94 @@ export default function InvoicesPage() {
       header: appLang === 'en' ? 'Actions' : 'الإجراءات',
       type: 'actions',
       align: 'center',
-      format: (_, row) => (
-        <div className="flex gap-2 flex-wrap justify-center">
-          {permView && (
-            <Link href={`/invoices/${row.id}`}>
-              <Button variant="outline" size="sm">
-                <Eye className="w-4 h-4" />
-              </Button>
-            </Link>
-          )}
-          {permEdit && (
-            <Link href={`/invoices/${row.id}/edit`}>
-              <Button variant="outline" size="sm">
-                <Pencil className="w-4 h-4" />
-              </Button>
-            </Link>
-          )}
-          {row.status !== 'draft' && row.status !== 'voided' && row.status !== 'fully_returned' && row.status !== 'cancelled' && (
-            <>
+      format: (_, row) => {
+        // ✅ حساب الحالة الفعلية المعروضة (نفس المنطق المستخدم في عمود الحالة)
+        const paidAmount = Number(row.paid_amount || 0)
+        const returnedAmount = Number(row.returned_amount || 0)
+        const originalTotal = Number(row.original_total || row.total_amount || 0)
+        const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
+
+        let actualStatus: string
+        if (row.status === 'draft' || row.status === 'invoiced') {
+          actualStatus = 'draft'
+        } else if (row.status === 'cancelled') {
+          actualStatus = 'cancelled'
+        } else if (isFullyReturned) {
+          actualStatus = 'fully_returned'
+        } else if (returnedAmount > 0 && returnedAmount < originalTotal && originalTotal > 0) {
+          actualStatus = 'partially_returned'
+        } else if (originalTotal > 0 && paidAmount >= originalTotal) {
+          actualStatus = 'paid'
+        } else if (originalTotal > 0 && paidAmount > 0 && paidAmount < originalTotal) {
+          actualStatus = 'partially_paid'
+        } else if (originalTotal > 0 && paidAmount === 0 && returnedAmount === 0) {
+          actualStatus = 'sent'
+        } else {
+          actualStatus = row.status || 'draft'
+        }
+
+        return (
+          <div className="flex gap-2 flex-wrap justify-center">
+            {permView && (
+              <Link href={`/invoices/${row.id}`}>
+                <Button variant="outline" size="sm">
+                  <Eye className="w-4 h-4" />
+                </Button>
+              </Link>
+            )}
+            {permEdit && (
+              <Link href={`/invoices/${row.id}/edit`}>
+                <Button variant="outline" size="sm">
+                  <Pencil className="w-4 h-4" />
+                </Button>
+              </Link>
+            )}
+            {row.status !== 'draft' && row.status !== 'voided' && row.status !== 'fully_returned' && row.status !== 'cancelled' && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="whitespace-nowrap"
+                  onClick={() => {
+                    console.log("🔘 Partial Return button clicked for:", row.invoice_number, "Status:", row.status)
+                    openSalesReturn(row, "partial")
+                  }}
+                >
+                  {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="whitespace-nowrap"
+                  onClick={() => {
+                    console.log("🔘 Full Return button clicked for:", row.invoice_number, "Status:", row.status)
+                    openSalesReturn(row, "full")
+                  }}
+                >
+                  {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
+                </Button>
+              </>
+            )}
+            {permDelete && (
               <Button
                 variant="outline"
                 size="sm"
-                className="whitespace-nowrap"
-                onClick={() => {
-                  console.log("🔘 Partial Return button clicked for:", row.invoice_number, "Status:", row.status)
-                  openSalesReturn(row, "partial")
-                }}
+                className="text-red-600 hover:text-red-700 bg-transparent"
+                onClick={() => requestDelete(row.id, actualStatus)}
               >
-                {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
+                <Trash2 className="w-4 h-4" />
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="whitespace-nowrap"
-                onClick={() => {
-                  console.log("🔘 Full Return button clicked for:", row.invoice_number, "Status:", row.status)
-                  openSalesReturn(row, "full")
-                }}
-              >
-                {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
-              </Button>
-            </>
-          )}
-          {permDelete && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-red-600 hover:text-red-700 bg-transparent"
-              onClick={() => requestDelete(row.id, row.status)}
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          )}
-          {row.sales_order_id && (
-            <Link href={`/sales-orders/${row.sales_order_id}`}>
-              <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Linked SO' : 'أمر البيع المرتبط'}>
-                <ShoppingCart className="w-4 h-4 text-orange-500" />
-              </Button>
-            </Link>
-          )}
-        </div>
-      )
+            )}
+            {row.sales_order_id && (
+              <Link href={`/sales-orders/${row.sales_order_id}`}>
+                <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Linked SO' : 'أمر البيع المرتبط'}>
+                  <ShoppingCart className="w-4 h-4 text-orange-500" />
+                </Button>
+              </Link>
+            )}
+          </div>
+        )
+      }
     }
   ], [appLang, currencySymbol, currencySymbols, appCurrency, shippingProviders, permView, permEdit, permDelete]);
 
