@@ -1161,10 +1161,11 @@ export function validateInventoryTransaction(
  * 6️⃣ الحسابات المصرفية والصندوق (Bank & Cash Accounts)
  * التحقق من صلاحية استخدام حساب بنكي أو صندوق نقدي
  *
- * كل حساب بنكي أو صندوق نقدي مرتبط بفرع ومركز تكلفة
- * المستخدم لا يستطيع استخدام حساب:
- * ❌ من فرع آخر
- * ❌ من مركز تكلفة غير مصرح له
+ * ✅ حسابات النقد والبنك هي حسابات مشتركة على مستوى الشركة
+ * ✅ جميع المستخدمين في الشركة يمكنهم استخدام أي حساب نقد/بنك للدفع
+ *
+ * ملاحظة: تم تعديل هذه الدالة لتسمح بالوصول لجميع حسابات النقد والبنك
+ * لأنها حسابات دفع مشتركة ويجب أن تكون متاحة لجميع المستخدمين
  */
 export function validateBankAccountAccess(
   userContext: UserContext,
@@ -1172,34 +1173,9 @@ export function validateBankAccountAccess(
   accountCostCenterId: string | null,
   lang: 'ar' | 'en' = 'ar'
 ): ValidationResult {
-  // التحقق من أن الحساب يتبع فرع المستخدم
-  if (userContext.branch_id && accountBranchId && accountBranchId !== userContext.branch_id) {
-    return {
-      isValid: false,
-      error: {
-        title: lang === 'en' ? 'Account Access Denied' : 'لا صلاحية للحساب',
-        description: lang === 'en'
-          ? 'You cannot use bank accounts from another branch'
-          : 'لا يمكنك استخدام حسابات بنكية من فرع آخر',
-        code: 'BANK_ACCOUNT_BRANCH_RESTRICTED'
-      }
-    };
-  }
-
-  // التحقق من أن الحساب يتبع مركز تكلفة المستخدم
-  if (userContext.cost_center_id && accountCostCenterId && accountCostCenterId !== userContext.cost_center_id) {
-    return {
-      isValid: false,
-      error: {
-        title: lang === 'en' ? 'Account Access Denied' : 'لا صلاحية للحساب',
-        description: lang === 'en'
-          ? 'You cannot use bank accounts from another cost center'
-          : 'لا يمكنك استخدام حسابات بنكية من مركز تكلفة آخر',
-        code: 'BANK_ACCOUNT_COST_CENTER_RESTRICTED'
-      }
-    };
-  }
-
+  // ✅ حسابات النقد والبنك مشتركة على مستوى الشركة
+  // جميع المستخدمين يمكنهم استخدام أي حساب نقد/بنك للدفع
+  // لا نطبق قيود الفرع أو مركز التكلفة على حسابات الدفع
   return { isValid: true };
 }
 
