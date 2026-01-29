@@ -11,14 +11,15 @@ import { enforceGovernance, applyGovernanceFilters } from "@/lib/governance-midd
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const governance = await enforceGovernance(request)
     const supabase = await createClient()
     const body = await request.json()
 
-    let findQuery = supabase.from("sales_orders").select("*").eq("id", params.id)
+    let findQuery = supabase.from("sales_orders").select("*").eq("id", id)
     findQuery = applyGovernanceFilters(findQuery, governance)
     const { data: existing, error: findError } = await findQuery.maybeSingle()
 
@@ -49,7 +50,7 @@ export async function PATCH(
     const { data: updated, error: updateError } = await supabase
       .from("sales_orders")
       .update(finalData)
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", enhancedContext.companyId)
       .select()
       .single()
@@ -86,9 +87,10 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  console.log("🚀 [DELETE /api/sales-orders/[id]] Handler called for order:", params.id)
+  const { id } = await params
+  console.log("🚀 [DELETE /api/sales-orders/[id]] Handler called for order:", id)
 
   try {
     console.log("🔐 [DELETE] Enforcing governance...")
@@ -98,10 +100,10 @@ export async function DELETE(
     const supabase = await createClient()
     console.log("✅ [DELETE] Supabase client created")
 
-    console.log("🗑️ [DELETE /api/sales-orders/[id]] Starting deletion for order:", params.id)
+    console.log("🗑️ [DELETE /api/sales-orders/[id]] Starting deletion for order:", id)
 
     // 1️⃣ التحقق من وجود أمر البيع
-    let findQuery = supabase.from("sales_orders").select("id, invoice_id").eq("id", params.id)
+    let findQuery = supabase.from("sales_orders").select("id, invoice_id").eq("id", id)
     findQuery = applyGovernanceFilters(findQuery, governance)
     const { data: existing, error: findError } = await findQuery.maybeSingle()
 
@@ -114,7 +116,7 @@ export async function DELETE(
     }
 
     if (!existing) {
-      console.warn("⚠️ [DELETE] Sales order not found or no access:", params.id)
+      console.warn("⚠️ [DELETE] Sales order not found or no access:", id)
       return NextResponse.json(
         { error: "Not found", error_ar: "أمر البيع غير موجود أو لا تملك صلاحية الوصول" },
         { status: 404 }
@@ -140,7 +142,7 @@ export async function DELETE(
     const { data: deletedItems, error: itemsError, count: itemsCount } = await supabase
       .from("sales_order_items")
       .delete({ count: 'exact' })
-      .eq("sales_order_id", params.id)
+      .eq("sales_order_id", id)
 
     if (itemsError) {
       console.error("❌ [DELETE] Error deleting sales order items:", {
@@ -167,7 +169,7 @@ export async function DELETE(
     const { data: deletedOrder, error: delError, count: orderCount } = await supabase
       .from("sales_orders")
       .delete({ count: 'exact' })
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", governance.companyId)
 
     if (delError) {
@@ -199,7 +201,7 @@ export async function DELETE(
       )
     }
 
-    console.log("✅ [DELETE] Sales order deleted successfully:", params.id)
+    console.log("✅ [DELETE] Sales order deleted successfully:", id)
 
     return NextResponse.json({
       success: true,
