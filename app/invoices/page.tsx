@@ -1336,14 +1336,26 @@ export default function InvoicesPage() {
       // ✅ الفاتورة مسودة بدون حركات - يمكن حذفها
       // ===============================
       // حذف بنود الفاتورة
-      await supabase.from("invoice_items").delete().eq("invoice_id", id)
+      console.log("🗑️ Deleting invoice items for invoice:", id)
+      const { error: itemsError } = await supabase.from("invoice_items").delete().eq("invoice_id", id)
+      if (itemsError) {
+        console.error("❌ Error deleting invoice items:", itemsError)
+        throw itemsError
+      }
+      console.log("✅ Invoice items deleted successfully")
 
       // حذف الفاتورة
-      const { error } = await supabase.from("invoices").delete().eq("id", id)
-      if (error) throw error
+      console.log("🗑️ Deleting invoice:", id)
+      const { error, data: deletedData } = await supabase.from("invoices").delete().eq("id", id).select()
+      if (error) {
+        console.error("❌ Error deleting invoice:", error)
+        throw error
+      }
+      console.log("✅ Invoice deleted successfully:", deletedData)
 
       // تحديث أمر البيع المرتبط (إن وجد)
       if (linkedSalesOrderId) {
+        console.log("🔄 Updating linked sales order:", linkedSalesOrderId)
         await supabase
           .from("sales_orders")
           .update({
@@ -1354,7 +1366,9 @@ export default function InvoicesPage() {
         console.log("✅ Reset linked sales order status:", linkedSalesOrderId)
       }
 
+      console.log("🔄 Reloading invoices...")
       await loadInvoices()
+      console.log("✅ Invoices reloaded")
       toastDeleteSuccess(toast, appLang === 'en' ? "Invoice deleted" : "تم حذف الفاتورة")
     } catch (error) {
       console.error("Error deleting invoice:", error)
