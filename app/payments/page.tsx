@@ -382,41 +382,23 @@ export default function PaymentsPage() {
         // 🔐 ERP Access Control - جلب الحسابات مع تصفية حسب سياق المستخدم
         let accountsQuery = supabase
           .from("chart_of_accounts")
-          .select("id, account_code, account_name, account_type, branch_id, cost_center_id")
+          .select("id, account_code, account_name, account_type, sub_type, branch_id, cost_center_id, parent_id")
           .eq("company_id", activeCompanyId)
+          .eq("is_active", true)
 
         const { data: accs, error: accsErr } = await accountsQuery
         if (accsErr) {
           toastActionError(toast, "الجلب", "شجرة الحسابات", "تعذر جلب الحسابات")
         }
-        // نرشّح الحسابات ذات النوع أصل (مثل النقد والبنك)
-        // مع تصفية حسب الفرع ومركز التكلفة للمستخدم
-        const assetAccounts = (accs || []).filter((a: any) => (a.account_type || "").toLowerCase() === "asset")
 
-        // تصفية الحسابات حسب سياق المستخدم (للأدوار غير المديرة)
-        const { data: memberData2 } = await supabase
-          .from("company_members")
-          .select("role, branch_id, cost_center_id")
-          .eq("company_id", activeCompanyId)
-          .eq("user_id", user?.id || "")
-          .maybeSingle()
+        // ✅ استخدام filterCashBankAccounts للحصول على حسابات النقد والبنك (نفس المنطق في صفحة الأعمال المصرفية)
+        // هذا يضمن ظهور نفس الحسابات في جميع الصفحات
+        const { filterCashBankAccounts } = await import("@/lib/accounts")
+        const cashBankAccounts = filterCashBankAccounts(accs || [], true)
 
-        const userRole = memberData2?.role || "staff"
-        const canOverrideAccounts = ["owner", "admin", "manager"].includes(userRole)
-
-        const filteredAccounts = canOverrideAccounts ? assetAccounts : assetAccounts.filter((a: any) => {
-          // إذا الحساب ليس له فرع محدد، يمكن للجميع استخدامه
-          if (!a.branch_id) return true
-          // إذا المستخدم ليس له فرع محدد، يمكنه رؤية كل الحسابات
-          if (!memberData2?.branch_id) return true
-          // تحقق من تطابق الفرع
-          if (a.branch_id !== memberData2.branch_id) return false
-          // تحقق من مركز التكلفة إذا كان محدداً
-          if (a.cost_center_id && memberData2?.cost_center_id && a.cost_center_id !== memberData2.cost_center_id) return false
-          return true
-        })
-
-        setAccounts(filteredAccounts)
+        // ✅ حسابات النقد والبنك مرئية لجميع المستخدمين في الشركة (حسابات دفع مشتركة)
+        // لا نطبق فلتر الفرع/مركز التكلفة على حسابات النقد والبنك
+        setAccounts(cashBankAccounts as any)
 
         const { data: custPays, error: custPaysErr } = await supabase
           .from("payments")
