@@ -1176,16 +1176,24 @@ export default function InvoicesPage() {
               </>
             )}
             {/* ✅ إظهار زر الحذف فقط للفواتير المسودة (بناءً على الحالة المحسوبة) */}
-            {permDelete && actualStatus === 'draft' && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-red-600 hover:text-red-700 bg-transparent"
-                onClick={() => requestDelete(row.id, actualStatus)}
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            )}
+            {/* 🔐 قاعدة الحوكمة: فقط مدير الفرع، المالك، والمدير العام */}
+            {permDelete && actualStatus === 'draft' && (() => {
+              const canDeleteInvoice =
+                currentUserRole === 'owner' ||
+                currentUserRole === 'general_manager' ||
+                (currentUserRole === 'manager' && userContext?.branch_id === (row as any).branch_id)
+
+              return canDeleteInvoice ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600 hover:text-red-700 bg-transparent"
+                  onClick={() => requestDelete(row.id, actualStatus)}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              ) : null
+            })()}
             {row.sales_order_id && (
               <Link href={`/sales-orders/${row.sales_order_id}`}>
                 <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Linked SO' : 'أمر البيع المرتبط'}>
@@ -1197,7 +1205,7 @@ export default function InvoicesPage() {
         )
       }
     }
-  ], [appLang, currencySymbol, currencySymbols, appCurrency, shippingProviders, permView, permEdit, permDelete]);
+  ], [appLang, currencySymbol, currencySymbols, appCurrency, shippingProviders, permView, permEdit, permDelete, currentUserRole, userContext]);
 
   // إحصائيات الفواتير - تعمل مع الفلترة - استخدام getDisplayAmount للتعامل مع تحويل العملات
   const stats = useMemo(() => {
@@ -1376,7 +1384,7 @@ export default function InvoicesPage() {
     }
   }
 
-  const requestDelete = (id: string, status?: string) => {
+  const requestDelete = async (id: string, status?: string) => {
     // 🔒 النمط المحاسبي الصارم: لا يمكن حذف الفواتير المرسلة أو المدفوعة
     // فقط الفواتير المسودة (draft) يمكن حذفها
     if (status && status !== 'draft') {
@@ -1389,6 +1397,37 @@ export default function InvoicesPage() {
       })
       return
     }
+
+    // 🔐 قاعدة الحوكمة: التحقق من صلاحية حذف الفاتورة المسودة
+    // فقط: مدير الفرع، المالك، والمدير العام
+    const invoice = invoices.find(inv => inv.id === id)
+    if (!invoice) {
+      toast({
+        title: appLang === 'en' ? "Invoice Not Found" : "الفاتورة غير موجودة",
+        description: appLang === 'en' ? "Cannot find the invoice to delete" : "لا يمكن العثور على الفاتورة للحذف",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // التحقق من صلاحية الحذف بناءً على الدور
+    const canDeleteInvoice =
+      currentUserRole === 'owner' ||
+      currentUserRole === 'general_manager' ||
+      (currentUserRole === 'manager' && userContext?.branch_id === (invoice as any).branch_id)
+
+    if (!canDeleteInvoice) {
+      toast({
+        title: appLang === 'en' ? "Delete Permission Denied" : "لا تملك صلاحية الحذف",
+        description: appLang === 'en'
+          ? "Only the branch manager, owner, or general manager can delete draft invoices. Please contact them to perform the deletion."
+          : "فقط مدير الفرع، المالك، أو المدير العام يمكنهم حذف الفواتير المسودة. يُرجى التواصل معهم لتنفيذ الحذف.",
+        variant: "destructive",
+        duration: 7000,
+      })
+      return
+    }
+
     setPendingDeleteId(id)
     setConfirmOpen(true)
   }
