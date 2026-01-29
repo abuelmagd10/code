@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
       // تحسين رسالة الخطأ من قاعدة البيانات
       let errorMessage = insertError.message
       let errorAr = "فشل في إنشاء أمر البيع"
-      
+
       if (insertError.message.includes('governance violation')) {
         if (insertError.message.includes('cannot be NULL')) {
           errorMessage = "Missing required governance fields"
@@ -177,12 +177,85 @@ export async function POST(request: NextRequest) {
           errorAr = "مركز التكلفة المحدد لا ينتمي للفرع المختار"
         }
       }
-      
-      return NextResponse.json({ 
-        error: errorMessage, 
+
+      return NextResponse.json({
+        error: errorMessage,
         error_ar: errorAr,
         details: insertError.message
       }, { status: 400 })
+    }
+
+    // 8️⃣ إرسال الإشعارات بعد إنشاء أمر البيع بنجاح
+    try {
+      const { createNotification } = await import('@/lib/governance-layer')
+
+      // جلب اسم الفرع للإشعارات
+      let branchName = 'غير محدد'
+      if (enhancedContext.branchId) {
+        const { data: branchData } = await supabase
+          .from('branches')
+          .select('name, branch_name')
+          .eq('id', enhancedContext.branchId)
+          .maybeSingle()
+        branchName = branchData?.name || branchData?.branch_name || 'غير محدد'
+      }
+
+      const soNumber = newSalesOrder.so_number || 'غير محدد'
+
+      // 1️⃣ إشعار لمحاسب الفرع (نفس الشركة + نفس الفرع)
+      await createNotification({
+        companyId: enhancedContext.companyId,
+        referenceType: 'sales_order',
+        referenceId: newSalesOrder.id,
+        title: 'أمر بيع جديد في فرعكم',
+        message: `تم إنشاء أمر بيع جديد في فرعكم رقم (${soNumber}) وبانتظار المتابعة`,
+        createdBy: enhancedContext.userId,
+        branchId: enhancedContext.branchId,
+        costCenterId: enhancedContext.costCenterId,
+        warehouseId: enhancedContext.warehouseId,
+        assignedToRole: 'accountant',
+        priority: 'normal',
+        eventKey: `sales_order:${newSalesOrder.id}:created:accountant`,
+        severity: 'info',
+        category: 'finance'
+      })
+
+      // 2️⃣ إشعار لمالك الشركة (نفس الشركة فقط - جميع الفروع)
+      await createNotification({
+        companyId: enhancedContext.companyId,
+        referenceType: 'sales_order',
+        referenceId: newSalesOrder.id,
+        title: 'أمر بيع جديد',
+        message: `تم إنشاء أمر بيع جديد رقم (${soNumber}) في فرع (${branchName})`,
+        createdBy: enhancedContext.userId,
+        // ✅ لا نحدد branchId هنا لأن المالك يرى جميع الفروع
+        assignedToRole: 'owner',
+        priority: 'normal',
+        eventKey: `sales_order:${newSalesOrder.id}:created:owner`,
+        severity: 'info',
+        category: 'sales'
+      })
+
+      // 3️⃣ إشعار للمدير العام (نفس الشركة فقط - جميع الفروع)
+      await createNotification({
+        companyId: enhancedContext.companyId,
+        referenceType: 'sales_order',
+        referenceId: newSalesOrder.id,
+        title: 'أمر بيع جديد',
+        message: `تم إنشاء أمر بيع جديد رقم (${soNumber}) في فرع (${branchName})`,
+        createdBy: enhancedContext.userId,
+        // ✅ لا نحدد branchId هنا لأن المدير العام يرى جميع الفروع
+        assignedToRole: 'general_manager',
+        priority: 'normal',
+        eventKey: `sales_order:${newSalesOrder.id}:created:general_manager`,
+        severity: 'info',
+        category: 'sales'
+      })
+
+      console.log('✅ [SALES_ORDER] Notifications sent successfully for SO:', soNumber)
+    } catch (notifError: any) {
+      // ✅ لا نفشل العملية إذا فشلت الإشعارات - نسجل الخطأ فقط
+      console.error('⚠️ [SALES_ORDER] Failed to send notifications:', notifError)
     }
 
     return NextResponse.json({
