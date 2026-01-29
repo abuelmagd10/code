@@ -51,7 +51,7 @@ import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credi
 import { createNotification } from "@/lib/governance-layer"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
-import { filterCashBankAccounts } from "@/lib/accounts"
+import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
 
 type Bill = {
   id: string
@@ -421,9 +421,12 @@ export default function BillViewPage() {
             .eq("company_id", companyId)
             .eq("is_active", true)
           // ✅ استخدام filterCashBankAccounts للحصول على حسابات النقد والبنك (نفس المنطق في صفحة الأعمال المصرفية)
-          // ✅ إضافة حسابات الذمم الدائنة (accounts_payable) للمرتجعات
+          // ✅ إضافة حسابات الذمم الدائنة (accounts_payable) للمرتجعات - مع فلترة leaf accounts فقط للاتساق
           const cashBankAccounts = filterCashBankAccounts(accs || [], true)
-          const apAccounts = (accs || []).filter((a: any) => String(a.sub_type || '').toLowerCase() === 'accounts_payable')
+          const leafIds = getLeafAccountIds(accs || [])
+          const apAccounts = (accs || []).filter((a: any) =>
+            String(a.sub_type || '').toLowerCase() === 'accounts_payable' && leafIds.has(a.id)
+          )
           setAccounts([...cashBankAccounts, ...apAccounts] as any)
 
           // Load currencies
