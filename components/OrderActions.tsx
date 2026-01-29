@@ -47,10 +47,10 @@ export const OrderActions = ({
     const checkPermissions = async () => {
       setLoading(true)
       try {
-        const orderPermissions = orderType === 'sales' 
+        const orderPermissions = orderType === 'sales'
           ? await checkSalesOrderPermissions(orderId)
           : await checkPurchaseOrderPermissions(orderId)
-        
+
         setCanEdit(orderPermissions.canEdit)
         setCanDelete(orderPermissions.canDelete)
       } catch (error) {
@@ -63,7 +63,7 @@ export const OrderActions = ({
     }
 
     checkPermissions()
-  }, [orderId, orderType, orderStatus, invoiceStatus, hasPayments])
+  }, [orderId, orderType, orderStatus, invoiceId, invoiceStatus, hasPayments])
 
   if (loading) {
     return <div className="flex gap-1 animate-pulse">
