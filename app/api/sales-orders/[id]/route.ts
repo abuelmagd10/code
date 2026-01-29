@@ -88,9 +88,15 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  console.log("🚀 [DELETE /api/sales-orders/[id]] Handler called for order:", params.id)
+
   try {
+    console.log("🔐 [DELETE] Enforcing governance...")
     const governance = await enforceGovernance(request)
+    console.log("✅ [DELETE] Governance enforced:", { companyId: governance.companyId, role: governance.role })
+
     const supabase = await createClient()
+    console.log("✅ [DELETE] Supabase client created")
 
     console.log("🗑️ [DELETE /api/sales-orders/[id]] Starting deletion for order:", params.id)
 
