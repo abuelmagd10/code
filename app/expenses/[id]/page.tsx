@@ -76,6 +76,7 @@ export default function ExpenseDetailPage() {
         setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
       } catch { }
     }
+    handler() // ✅ Call immediately to sync language from storage/cookies
     window.addEventListener('app_language_changed', handler)
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
