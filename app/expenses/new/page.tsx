@@ -165,7 +165,8 @@ export default function NewExpensePage() {
   }
 
   // 🔐 Enterprise Governance: Handle branch change and auto-update cost center
-  const handleBranchChange = async (newBranchId: string | null) => {
+  // Note: This must be synchronous to match the onBranchChange prop type
+  const handleBranchChange = (newBranchId: string | null) => {
     setBranchId(newBranchId)
 
     if (!newBranchId) {
@@ -174,22 +175,29 @@ export default function NewExpensePage() {
       return
     }
 
-    try {
-      const { getBranchDefaults } = await import('@/lib/governance-branch-defaults')
-      const branchDefaults = await getBranchDefaults(supabase, newBranchId)
+    // Load branch defaults asynchronously in the background
+    // This prevents race conditions with the selector component
+    const loadBranchDefaults = async () => {
+      try {
+        const { getBranchDefaults } = await import('@/lib/governance-branch-defaults')
+        const branchDefaults = await getBranchDefaults(supabase, newBranchId)
 
-      // Auto-set cost center to branch default
-      setCostCenterId(branchDefaults.default_cost_center_id || null)
-      setWarehouseId(branchDefaults.default_warehouse_id || null)
+        // Auto-set cost center to branch default
+        setCostCenterId(branchDefaults.default_cost_center_id || null)
+        setWarehouseId(branchDefaults.default_warehouse_id || null)
 
-      console.log('[NewExpense] Branch changed, defaults updated:', {
-        branchId: newBranchId,
-        costCenterId: branchDefaults.default_cost_center_id,
-        warehouseId: branchDefaults.default_warehouse_id
-      })
-    } catch (error) {
-      console.error('[NewExpense] Error loading branch defaults on change:', error)
+        console.log('[NewExpense] Branch changed, defaults updated:', {
+          branchId: newBranchId,
+          costCenterId: branchDefaults.default_cost_center_id,
+          warehouseId: branchDefaults.default_warehouse_id
+        })
+      } catch (error) {
+        console.error('[NewExpense] Error loading branch defaults on change:', error)
+      }
     }
+
+    // Execute async operation without blocking
+    loadBranchDefaults()
   }
 
   const handleSave = async () => {
