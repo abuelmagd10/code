@@ -268,6 +268,10 @@ export default function SimpleSummaryReport() {
                         💡 {t('These products were purchased for resale to customers.',
                              'هذه المنتجات تم شراؤها لإعادة بيعها للعملاء.')}
                       </p>
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 bg-blue-50 dark:bg-blue-950/30 p-2 rounded">
+                        ℹ️ {t('Purchases are calculated from accounting entries, or from purchase bills if no entries exist.',
+                             'المشتريات محسوبة من القيود المحاسبية، أو من فواتير الشراء إذا لم توجد قيود.')}
+                      </p>
                     </div>
                   </div>
                 </CardContent>
@@ -351,6 +355,10 @@ export default function SimpleSummaryReport() {
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                       ⚠️ {t('Inventory depreciation is a loss from expired or damaged products.',
                            'إهلاك المخزون هو جزء من الخسارة الناتجة عن انتهاء صلاحية منتجات أو تلفها.')}
+                    </p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 bg-amber-50 dark:bg-amber-950/30 p-2 rounded">
+                      ℹ️ {t('Note: Depreciation is shown separately and not deducted from net profit in this simplified report.',
+                           'ملاحظة: الإهلاك يُعرض منفصلاً ولا يُطرح من صافي الربح في هذا التقرير المبسط.')}
                     </p>
                   </CardContent>
                 </Card>

@@ -153,8 +153,8 @@ export async function GET(request: NextRequest) {
     let salesCount = 0
     const salesLines = periodLines.filter((line: any) => {
       const coa = line.chart_of_accounts
-      return coa?.account_type === "income" && 
-             (coa?.sub_type === "sales_revenue" || coa?.account_code === "4100")
+      return coa?.account_type === "income" &&
+             (coa?.sub_type === "sales_revenue" || coa?.account_code === "4000") // ✅ تصحيح: 4000 = المبيعات (ليس 4100)
     })
     const salesEntryIds = new Set<string>()
     for (const line of salesLines) {
@@ -341,6 +341,9 @@ export async function GET(request: NextRequest) {
 
     // ✅ حساب مجمل الربح وصافي الربح
     const grossProfit = totalSales - totalCOGS
+    // ⚠️ ملاحظة: الإهلاك يُعرض منفصلاً ولا يُطرح من صافي الربح في هذا التقرير المبسط
+    // ⚠️ في التقارير المحاسبية الكاملة، يجب طرح الإهلاك من صافي الربح
+    // ⚠️ إذا أردت طرح الإهلاك: const netProfit = grossProfit - totalExpenses - totalDepreciation
     const netProfit = grossProfit - totalExpenses
 
     return apiSuccess({
