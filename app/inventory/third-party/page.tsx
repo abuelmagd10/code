@@ -264,7 +264,7 @@ export default function ThirdPartyInventoryPage() {
       // (البضائع تبقى لدى الغير حتى يتم استلام كامل المبلغ أو إرجاع كامل البضاعة)
 
       // 🔐 تطبيق قاعدة الحوكمة (Governance Rules)
-      const currentRole = memberData?.role || "staff"
+      // استخدام currentRole المعرف مسبقاً في السطر 226
       const currentBranchId = memberData?.branch_id || null
 
       let invoicesQuery = supabase
