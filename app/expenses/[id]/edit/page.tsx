@@ -16,7 +16,7 @@ import { ArrowLeft, Save } from "lucide-react"
 import { CompanyHeader } from "@/components/company-header"
 import { useToast } from "@/hooks/use-toast"
 import { NumericInput } from "@/components/ui/numeric-input"
-import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector-enhanced"
+import { BranchCostCenterSelectorEnhanced } from "@/components/branch-cost-center-selector-enhanced"
 
 type Account = {
   id: string
@@ -279,7 +279,7 @@ export default function EditExpensePage() {
             <CardTitle>معلومات المصروف</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <BranchCostCenterSelector
+            <BranchCostCenterSelectorEnhanced
               branchId={branchId}
               costCenterId={costCenterId}
               warehouseId={warehouseId}
