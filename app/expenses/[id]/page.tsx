@@ -176,48 +176,40 @@ export default function ExpenseDetailPage() {
 
       if (error) throw error
 
-      // Send notifications to Owner and General Manager
+      // Send notifications to approvers (Owner and General Manager)
       try {
-        // ✅ استخدام timestamp واحد لكلا الإشعارين لضمان الاتساق
         const timestamp = Date.now()
 
-        // إشعار للـ Owner
-        await createNotification({
-          companyId,
-          referenceType: "expense",
-          referenceId: expense.id,
-          title: "طلب اعتماد مصروف",
-          message: `مصروف ${expense.expense_number} بمبلغ ${expense.amount} ${expense.currency_code || "EGP"} يحتاج إلى اعتمادك`,
-          createdBy: userId,
-          branchId: expense.branch_id,
-          costCenterId: expense.cost_center_id,
-          warehouseId: expense.warehouse_id,
-          assignedToRole: "owner",
-          priority: "high",
-          eventKey: `expense:${expense.id}:pending_approval:owner:${timestamp}`,
-          severity: "warning",
-          category: "approvals"
-        })
+        // ✅ Get all approvers (Owner and General Manager)
+        const { data: approvers } = await supabase
+          .from("company_members")
+          .select("user_id, role")
+          .eq("company_id", companyId)
+          .in("role", ["owner", "general_manager", "gm", "generalmanager"])
 
-        // إشعار للـ Admin
-        await createNotification({
-          companyId,
-          referenceType: "expense",
-          referenceId: expense.id,
-          title: "طلب اعتماد مصروف",
-          message: `مصروف ${expense.expense_number} بمبلغ ${expense.amount} ${expense.currency_code || "EGP"} يحتاج إلى اعتمادك`,
-          createdBy: userId,
-          branchId: expense.branch_id,
-          costCenterId: expense.cost_center_id,
-          warehouseId: expense.warehouse_id,
-          assignedToRole: "admin",
-          priority: "high",
-          eventKey: `expense:${expense.id}:pending_approval:admin:${timestamp}`,
-          severity: "warning",
-          category: "approvals"
-        })
+        if (approvers && approvers.length > 0) {
+          // ✅ إرسال إشعار منفصل لكل مستخدم (مرة واحدة للمالك ومرة واحدة للمدير العام)
+          for (const approver of approvers) {
+            await createNotification({
+              companyId,
+              referenceType: "expense",
+              referenceId: expense.id,
+              title: "طلب اعتماد مصروف",
+              message: `مصروف ${expense.expense_number} بمبلغ ${expense.amount} ${expense.currency_code || "EGP"} يحتاج إلى اعتمادك`,
+              createdBy: userId,
+              branchId: expense.branch_id,
+              costCenterId: expense.cost_center_id,
+              warehouseId: expense.warehouse_id,
+              assignedToUser: approver.user_id, // ✅ إرسال لمستخدم محدد
+              priority: "high",
+              eventKey: `expense:${expense.id}:pending_approval:${approver.user_id}:${timestamp}`, // ✅ eventKey فريد لكل مستخدم
+              severity: "warning",
+              category: "approvals"
+            })
+          }
+        }
       } catch (notifErr) {
-        console.warn("Failed to send notifications:", notifErr)
+        console.warn("Failed to send notification:", notifErr)
       }
 
       toast({
