@@ -26,6 +26,8 @@ type Expense = {
   currency_code?: string
   expense_category?: string
   payment_method?: string
+  expense_account_id?: string
+  payment_account_id?: string
   status: string
   approval_status?: string
   created_by?: string
@@ -43,6 +45,12 @@ type Expense = {
   created_at: string
 }
 
+type Account = {
+  id: string
+  account_code: string
+  account_name: string
+}
+
 export default function ExpenseDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -50,6 +58,8 @@ export default function ExpenseDetailPage() {
   const { toast } = useToast()
   const [loading, setLoading] = useState(true)
   const [expense, setExpense] = useState<Expense | null>(null)
+  const [expenseAccount, setExpenseAccount] = useState<Account | null>(null)
+  const [paymentAccount, setPaymentAccount] = useState<Account | null>(null)
   const [userRole, setUserRole] = useState<string>("")
   const [userId, setUserId] = useState<string>("")
   const [posting, setPosting] = useState(false)
@@ -113,6 +123,28 @@ export default function ExpenseDetailPage() {
 
       if (error) throw error
       setExpense(data)
+
+      // Load expense account details if available
+      if (data.expense_account_id) {
+        const { data: expAccount } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_name")
+          .eq("id", data.expense_account_id)
+          .maybeSingle()
+
+        if (expAccount) setExpenseAccount(expAccount)
+      }
+
+      // Load payment account details if available
+      if (data.payment_account_id) {
+        const { data: payAccount } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_name")
+          .eq("id", data.payment_account_id)
+          .maybeSingle()
+
+        if (payAccount) setPaymentAccount(payAccount)
+      }
     } catch (error: any) {
       console.error("Error loading expense:", error)
       toast({
@@ -551,6 +583,26 @@ export default function ExpenseDetailPage() {
                       {appLang === 'en' ? 'Payment Method' : 'طريقة الدفع'}
                     </Label>
                     <p className="font-medium text-gray-900 dark:text-white">{expense.payment_method}</p>
+                  </div>
+                )}
+                {expenseAccount && (
+                  <div>
+                    <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                      {appLang === 'en' ? 'Expense Account' : 'حساب المصروف'}
+                    </Label>
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {expenseAccount.account_code} - {expenseAccount.account_name}
+                    </p>
+                  </div>
+                )}
+                {paymentAccount && (
+                  <div>
+                    <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                      {appLang === 'en' ? 'Payment Account' : 'حساب الدفع'}
+                    </Label>
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {paymentAccount.account_code} - {paymentAccount.account_name}
+                    </p>
                   </div>
                 )}
               </div>
