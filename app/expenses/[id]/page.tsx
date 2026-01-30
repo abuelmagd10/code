@@ -126,6 +126,10 @@ export default function ExpenseDetailPage() {
 
       // Send notifications to Owner and General Manager
       try {
+        // ✅ استخدام timestamp واحد لكلا الإشعارين لضمان الاتساق
+        const timestamp = Date.now()
+
+        // إشعار للـ Owner
         await createNotification({
           companyId,
           referenceType: "expense",
@@ -138,11 +142,12 @@ export default function ExpenseDetailPage() {
           warehouseId: expense.warehouse_id,
           assignedToRole: "owner",
           priority: "high",
-          eventKey: `expense:${expense.id}:pending_approval:${Date.now()}`,
+          eventKey: `expense:${expense.id}:pending_approval:owner:${timestamp}`,
           severity: "warning",
           category: "approvals"
         })
 
+        // إشعار للـ Admin
         await createNotification({
           companyId,
           referenceType: "expense",
@@ -155,7 +160,7 @@ export default function ExpenseDetailPage() {
           warehouseId: expense.warehouse_id,
           assignedToRole: "admin",
           priority: "high",
-          eventKey: `expense:${expense.id}:pending_approval:${Date.now()}`,
+          eventKey: `expense:${expense.id}:pending_approval:admin:${timestamp}`,
           severity: "warning",
           category: "approvals"
         })
