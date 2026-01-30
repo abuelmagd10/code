@@ -356,9 +356,9 @@ export default function SimpleSummaryReport() {
                       ⚠️ {t('Inventory depreciation is a loss from expired or damaged products.',
                            'إهلاك المخزون هو جزء من الخسارة الناتجة عن انتهاء صلاحية منتجات أو تلفها.')}
                     </p>
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 bg-amber-50 dark:bg-amber-950/30 p-2 rounded">
-                      ℹ️ {t('Note: Depreciation is shown separately and not deducted from net profit in this simplified report.',
-                           'ملاحظة: الإهلاك يُعرض منفصلاً ولا يُطرح من صافي الربح في هذا التقرير المبسط.')}
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1 bg-green-50 dark:bg-green-950/30 p-2 rounded">
+                      ✅ {t('Note: Depreciation is deducted from net profit to calculate the actual profit.',
+                           'ملاحظة: الإهلاك يُخصم من صافي الربح لحساب الربح الفعلي.')}
                     </p>
                   </CardContent>
                 </Card>
