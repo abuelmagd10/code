@@ -74,7 +74,8 @@ export default function ExpenseDetailPage() {
   })
   const [hydrated, setHydrated] = useState(false)
 
-  const canApprove = ["owner", "admin"].includes(userRole)
+  // ✅ Synchronized with RLS policy and notification system
+  const canApprove = ["owner", "admin", "general_manager", "gm", "generalmanager"].includes(userRole)
   const canEdit = expense?.status === "draft" || expense?.status === "rejected"
   const canSubmitForApproval = expense?.status === "draft" || expense?.status === "rejected"
 
@@ -176,19 +177,19 @@ export default function ExpenseDetailPage() {
 
       if (error) throw error
 
-      // Send notifications to approvers (Owner and General Manager)
+      // Send notifications to approvers (Owner, Admin, and General Manager)
       try {
         const timestamp = Date.now()
 
-        // ✅ Get all approvers (Owner and General Manager)
+        // ✅ Get all approvers (Owner, Admin, and General Manager) - synchronized with canApprove and RLS policy
         const { data: approvers } = await supabase
           .from("company_members")
           .select("user_id, role")
           .eq("company_id", companyId)
-          .in("role", ["owner", "general_manager", "gm", "generalmanager"])
+          .in("role", ["owner", "admin", "general_manager", "gm", "generalmanager"])
 
         if (approvers && approvers.length > 0) {
-          // ✅ إرسال إشعار منفصل لكل مستخدم (مرة واحدة للمالك ومرة واحدة للمدير العام)
+          // ✅ إرسال إشعار منفصل لكل مستخدم (مرة واحدة لكل معتمد)
           for (const approver of approvers) {
             await createNotification({
               companyId,
