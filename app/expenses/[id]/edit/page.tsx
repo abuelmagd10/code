@@ -13,7 +13,6 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { ArrowLeft, Save } from "lucide-react"
-import { CompanyHeader } from "@/components/company-header"
 import { useToast } from "@/hooks/use-toast"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { BranchCostCenterSelectorEnhanced } from "@/components/branch-cost-center-selector-enhanced"
@@ -47,11 +46,13 @@ export default function EditExpensePage() {
   const router = useRouter()
   const supabase = useSupabase()
   const { toast } = useToast()
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [hydrated, setHydrated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [companyId, setCompanyId] = useState<string>("")
   const [expense, setExpense] = useState<Expense | null>(null)
-  
+
   // Form fields
   const [expenseDate, setExpenseDate] = useState("")
   const [description, setDescription] = useState("")
@@ -62,15 +63,29 @@ export default function EditExpensePage() {
   const [paymentMethod, setPaymentMethod] = useState("")
   const [expenseAccountId, setExpenseAccountId] = useState("")
   const [paymentAccountId, setPaymentAccountId] = useState("")
-  
+
   // Branch, Cost Center, Warehouse
   const [branchId, setBranchId] = useState<string>("")
   const [costCenterId, setCostCenterId] = useState<string>("")
   const [warehouseId, setWarehouseId] = useState<string>("")
-  
+  const [isAdmin, setIsAdmin] = useState<boolean>(false)
+
   // Accounts
   const [expenseAccounts, setExpenseAccounts] = useState<Account[]>([])
   const [paymentAccounts, setPaymentAccounts] = useState<Account[]>([])
+
+  useEffect(() => {
+    setHydrated(true)
+    const handler = () => {
+      try {
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+      } catch { }
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => { window.removeEventListener('app_language_changed', handler) }
+  }, [])
 
   useEffect(() => {
     loadExpense()
@@ -83,6 +98,22 @@ export default function EditExpensePage() {
       if (!cid) return
       setCompanyId(cid)
 
+      // Get user info and role
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role")
+        .eq("company_id", cid)
+        .eq("user_id", user.id)
+        .maybeSingle()
+
+      const userRole = member?.role || 'employee'
+      const normalizedRole = String(userRole || '').trim().toLowerCase().replace(/\s+/g, '_')
+      const adminCheck = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
+      setIsAdmin(adminCheck)
+
       const { data, error } = await supabase
         .from("expenses")
         .select("*")
@@ -94,8 +125,8 @@ export default function EditExpensePage() {
 
       if (data.status !== "draft" && data.status !== "rejected") {
         toast({
-          title: "خطأ",
-          description: "لا يمكن تعديل مصروف معتمد أو مدفوع",
+          title: appLang === 'en' ? "Error" : "خطأ",
+          description: appLang === 'en' ? "Cannot edit approved or paid expense" : "لا يمكن تعديل مصروف معتمد أو مدفوع",
           variant: "destructive"
         })
         router.push(`/expenses/${params.id}`)
@@ -139,8 +170,8 @@ export default function EditExpensePage() {
     } catch (error: any) {
       console.error("Error loading expense:", error)
       toast({
-        title: "خطأ",
-        description: "فشل تحميل المصروف",
+        title: appLang === 'en' ? "Error" : "خطأ",
+        description: appLang === 'en' ? "Failed to load expense" : "فشل تحميل المصروف",
         variant: "destructive"
       })
     } finally {
@@ -151,8 +182,8 @@ export default function EditExpensePage() {
   const handleSave = async () => {
     if (!description.trim()) {
       toast({
-        title: "خطأ",
-        description: "الرجاء إدخال وصف المصروف",
+        title: appLang === 'en' ? "Error" : "خطأ",
+        description: appLang === 'en' ? "Please enter expense description" : "الرجاء إدخال وصف المصروف",
         variant: "destructive"
       })
       return
@@ -160,8 +191,8 @@ export default function EditExpensePage() {
 
     if (amount <= 0) {
       toast({
-        title: "خطأ",
-        description: "الرجاء إدخال مبلغ صحيح",
+        title: appLang === 'en' ? "Error" : "خطأ",
+        description: appLang === 'en' ? "Please enter a valid amount" : "الرجاء إدخال مبلغ صحيح",
         variant: "destructive"
       })
       return
@@ -195,16 +226,16 @@ export default function EditExpensePage() {
       if (error) throw error
 
       toast({
-        title: "تم الحفظ",
-        description: "تم تحديث المصروف بنجاح"
+        title: appLang === 'en' ? "Saved" : "تم الحفظ",
+        description: appLang === 'en' ? "Expense updated successfully" : "تم تحديث المصروف بنجاح"
       })
 
       router.push(`/expenses/${params.id}`)
     } catch (error: any) {
       console.error("Error updating expense:", error)
       toast({
-        title: "خطأ",
-        description: "فشل تحديث المصروف",
+        title: appLang === 'en' ? "Error" : "خطأ",
+        description: appLang === 'en' ? "Failed to update expense" : "فشل تحديث المصروف",
         variant: "destructive"
       })
     } finally {
@@ -226,116 +257,147 @@ export default function EditExpensePage() {
   ]
 
   const paymentMethods = [
-    { value: "cash", label: "نقدي" },
-    { value: "bank_transfer", label: "تحويل بنكي" },
-    { value: "check", label: "شيك" },
-    { value: "credit_card", label: "بطاقة ائتمان" }
+    { value: "cash", label: appLang === 'en' ? "Cash" : "نقدي" },
+    { value: "bank_transfer", label: appLang === 'en' ? "Bank Transfer" : "تحويل بنكي" },
+    { value: "check", label: appLang === 'en' ? "Check" : "شيك" },
+    { value: "credit_card", label: appLang === 'en' ? "Credit Card" : "بطاقة ائتمان" }
   ]
+
+  if (!hydrated) return null
 
   if (loading) {
     return (
-      <div className="flex min-h-screen bg-gray-50" dir="rtl">
+      <div className={`flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
         <Sidebar />
-        <div className="flex-1 p-8">
-          <div className="text-center py-8">جاري التحميل...</div>
-        </div>
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="text-center py-8 text-gray-900 dark:text-white" suppressHydrationWarning>
+            {appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}
+          </div>
+        </main>
       </div>
     )
   }
 
   if (!expense) {
     return (
-      <div className="flex min-h-screen bg-gray-50" dir="rtl">
+      <div className={`flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
         <Sidebar />
-        <div className="flex-1 p-8">
-          <div className="text-center py-8">المصروف غير موجود</div>
-        </div>
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="text-center py-8 text-gray-900 dark:text-white" suppressHydrationWarning>
+            {appLang === 'en' ? 'Expense not found' : 'المصروف غير موجود'}
+          </div>
+        </main>
       </div>
     )
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50" dir="rtl">
+    <div className={`flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
       <Sidebar />
-      <div className="flex-1 p-8">
-        <CompanyHeader />
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-6 max-w-full">
+          {/* Page Header */}
+          <div className="min-w-0">
+            <div className="mb-4">
+              <Link href={`/expenses/${params.id}`}>
+                <Button variant="ghost" size="sm" className="dark:text-gray-300 dark:hover:bg-slate-800">
+                  <ArrowLeft className="h-4 w-4 ml-2" />
+                  <span suppressHydrationWarning>
+                    {appLang === 'en' ? 'Back to Expense' : 'العودة للمصروف'}
+                  </span>
+                </Button>
+              </Link>
+            </div>
+            <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>
+              {appLang === 'en' ? 'Edit Expense' : 'تعديل المصروف'}
+            </h1>
+            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2">
+              {expense.expense_number}
+            </p>
+          </div>
 
-        <div className="mb-6">
-          <Link href={`/expenses/${params.id}`}>
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="h-4 w-4 ml-2" />
-              العودة للمصروف
-            </Button>
-          </Link>
-        </div>
+          <Card className="dark:bg-slate-900 dark:border-slate-800">
+            <CardHeader>
+              <CardTitle className="dark:text-white" suppressHydrationWarning>
+                {appLang === 'en' ? 'Expense Information' : 'معلومات المصروف'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <BranchCostCenterSelectorEnhanced
+                branchId={branchId}
+                costCenterId={costCenterId}
+                warehouseId={warehouseId}
+                onBranchChange={(id) => setBranchId(id || "")}
+                onCostCenterChange={(id) => setCostCenterId(id || "")}
+                onWarehouseChange={(id) => setWarehouseId(id || "")}
+                disabled={!isAdmin}
+                required={true}
+                lang={appLang}
+                showLabels={true}
+                showWarehouse={false}
+              />
 
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">تعديل المصروف</h1>
-          <p className="text-gray-600 mt-1">{expense.expense_number}</p>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>معلومات المصروف</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <BranchCostCenterSelectorEnhanced
-              branchId={branchId}
-              costCenterId={costCenterId}
-              warehouseId={warehouseId}
-              onBranchChange={setBranchId}
-              onCostCenterChange={setCostCenterId}
-              onWarehouseChange={setWarehouseId}
-            />
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>تاريخ المصروف *</Label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                  {appLang === 'en' ? 'Expense Date *' : 'تاريخ المصروف *'}
+                </Label>
                 <Input
                   type="date"
                   value={expenseDate}
                   onChange={(e) => setExpenseDate(e.target.value)}
+                  className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
                 />
               </div>
-              <div>
-                <Label>العملة</Label>
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                  {appLang === 'en' ? 'Currency' : 'العملة'}
+                </Label>
                 <Select value={currencyCode} onValueChange={setCurrencyCode}>
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="EGP">جنيه مصري (EGP)</SelectItem>
-                    <SelectItem value="USD">دولار أمريكي (USD)</SelectItem>
-                    <SelectItem value="EUR">يورو (EUR)</SelectItem>
-                    <SelectItem value="SAR">ريال سعودي (SAR)</SelectItem>
+                    <SelectItem value="EGP">{appLang === 'en' ? 'Egyptian Pound (EGP)' : 'جنيه مصري (EGP)'}</SelectItem>
+                    <SelectItem value="USD">{appLang === 'en' ? 'US Dollar (USD)' : 'دولار أمريكي (USD)'}</SelectItem>
+                    <SelectItem value="EUR">{appLang === 'en' ? 'Euro (EUR)' : 'يورو (EUR)'}</SelectItem>
+                    <SelectItem value="SAR">{appLang === 'en' ? 'Saudi Riyal (SAR)' : 'ريال سعودي (SAR)'}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div>
-              <Label>الوصف *</Label>
+            <div className="space-y-2">
+              <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                {appLang === 'en' ? 'Description *' : 'الوصف *'}
+              </Label>
               <Input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="وصف المصروف..."
+                placeholder={appLang === 'en' ? 'Expense description...' : 'وصف المصروف...'}
+                className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>المبلغ *</Label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                  {appLang === 'en' ? 'Amount *' : 'المبلغ *'}
+                </Label>
                 <NumericInput
                   value={amount}
                   onChange={setAmount}
                   placeholder="0.00"
+                  className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
                 />
               </div>
-              <div>
-                <Label>التصنيف</Label>
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                  {appLang === 'en' ? 'Category' : 'التصنيف'}
+                </Label>
                 <Select value={expenseCategory} onValueChange={setExpenseCategory}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="اختر التصنيف" />
+                  <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
+                    <SelectValue placeholder={appLang === 'en' ? 'Select category' : 'اختر التصنيف'} />
                   </SelectTrigger>
                   <SelectContent>
                     {expenseCategories.map((cat) => (
@@ -348,12 +410,14 @@ export default function EditExpensePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>طريقة الدفع</Label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                  {appLang === 'en' ? 'Payment Method' : 'طريقة الدفع'}
+                </Label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="اختر طريقة الدفع" />
+                  <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
+                    <SelectValue placeholder={appLang === 'en' ? 'Select payment method' : 'اختر طريقة الدفع'} />
                   </SelectTrigger>
                   <SelectContent>
                     {paymentMethods.map((method) => (
@@ -364,11 +428,13 @@ export default function EditExpensePage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>حساب المصروف</Label>
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                  {appLang === 'en' ? 'Expense Account' : 'حساب المصروف'}
+                </Label>
                 <Select value={expenseAccountId} onValueChange={setExpenseAccountId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="اختر الحساب" />
+                  <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
+                    <SelectValue placeholder={appLang === 'en' ? 'Select account' : 'اختر الحساب'} />
                   </SelectTrigger>
                   <SelectContent>
                     {expenseAccounts.map((acc) => (
@@ -381,11 +447,13 @@ export default function EditExpensePage() {
               </div>
             </div>
 
-            <div>
-              <Label>حساب الدفع (نقدية/بنك)</Label>
+            <div className="space-y-2">
+              <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                {appLang === 'en' ? 'Payment Account (Cash/Bank)' : 'حساب الدفع (نقدية/بنك)'}
+              </Label>
               <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر الحساب" />
+                <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
+                  <SelectValue placeholder={appLang === 'en' ? 'Select account' : 'اختر الحساب'} />
                 </SelectTrigger>
                 <SelectContent>
                   {paymentAccounts.map((acc) => (
@@ -397,30 +465,38 @@ export default function EditExpensePage() {
               </Select>
             </div>
 
-            <div>
-              <Label>ملاحظات</Label>
+            <div className="space-y-2">
+              <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                {appLang === 'en' ? 'Notes' : 'ملاحظات'}
+              </Label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="ملاحظات إضافية..."
+                placeholder={appLang === 'en' ? 'Additional notes...' : 'ملاحظات إضافية...'}
                 rows={4}
+                className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
               />
             </div>
 
             <div className="flex gap-2 justify-end">
               <Link href={`/expenses/${params.id}`}>
-                <Button variant="outline" disabled={saving}>
-                  إلغاء
+                <Button variant="outline" disabled={saving} className="dark:border-slate-600 dark:text-gray-300 dark:hover:bg-slate-800">
+                  <span suppressHydrationWarning>
+                    {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                  </span>
                 </Button>
               </Link>
-              <Button onClick={handleSave} disabled={saving}>
+              <Button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
                 <Save className="h-4 w-4 ml-2" />
-                {saving ? "جاري الحفظ..." : "حفظ التعديلات"}
+                <span suppressHydrationWarning>
+                  {saving ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save Changes' : 'حفظ التعديلات')}
+                </span>
               </Button>
             </div>
           </CardContent>
         </Card>
-      </div>
+        </div>
+      </main>
     </div>
   )
 }
