@@ -12,8 +12,7 @@ import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { ArrowLeft, Pencil, Send, CheckCircle, XCircle } from "lucide-react"
-import { CompanyHeader } from "@/components/company-header"
+import { ArrowLeft, ArrowRight, Pencil, Send, CheckCircle, XCircle, Receipt, DollarSign, Calendar, FileText, AlertCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createNotification } from "@/lib/governance-layer"
 
@@ -56,10 +55,30 @@ export default function ExpenseDetailPage() {
   const [posting, setPosting] = useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [rejectionReason, setRejectionReason] = useState("")
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try {
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      return (fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar'
+    } catch { return 'ar' }
+  })
+  const [hydrated, setHydrated] = useState(false)
 
   const canApprove = ["owner", "admin"].includes(userRole)
   const canEdit = expense?.status === "draft" || expense?.status === "rejected"
   const canSubmitForApproval = expense?.status === "draft" || expense?.status === "rejected"
+
+  useEffect(() => {
+    setHydrated(true)
+    const handler = () => {
+      try {
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+      } catch { }
+    }
+    window.addEventListener('app_language_changed', handler)
+    return () => { window.removeEventListener('app_language_changed', handler) }
+  }, [])
 
   useEffect(() => {
     loadExpense()
@@ -318,176 +337,295 @@ export default function ExpenseDetailPage() {
   }
 
   const getStatusBadge = (status: string) => {
-    const statusMap: Record<string, { label: string; variant: any }> = {
-      draft: { label: "مسودة", variant: "secondary" },
-      pending_approval: { label: "بانتظار الاعتماد", variant: "warning" },
-      approved: { label: "معتمد", variant: "success" },
-      rejected: { label: "مرفوض", variant: "destructive" },
-      paid: { label: "مدفوع", variant: "default" },
-      cancelled: { label: "ملغي", variant: "outline" }
+    const statusConfig: Record<string, { bg: string; text: string; icon: any; label: { ar: string; en: string } }> = {
+      draft: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-700 dark:text-gray-300', icon: FileText, label: { ar: 'مسودة', en: 'Draft' } },
+      pending_approval: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', icon: AlertCircle, label: { ar: 'بانتظار الاعتماد', en: 'Pending Approval' } },
+      approved: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-300', icon: CheckCircle, label: { ar: 'معتمد', en: 'Approved' } },
+      rejected: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', icon: XCircle, label: { ar: 'مرفوض', en: 'Rejected' } },
+      paid: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', icon: DollarSign, label: { ar: 'مدفوع', en: 'Paid' } },
+      cancelled: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-700 dark:text-gray-300', icon: XCircle, label: { ar: 'ملغي', en: 'Cancelled' } }
     }
-    const config = statusMap[status] || { label: status, variant: "secondary" }
-    return <Badge variant={config.variant}>{config.label}</Badge>
+    const c = statusConfig[status] || statusConfig.draft
+    const Icon = c.icon
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>
+        <Icon className="h-3 w-3" />
+        {appLang === 'en' ? c.label.en : c.label.ar}
+      </span>
+    )
   }
+
+  if (!hydrated) return null
 
   if (loading) {
     return (
-      <div className="flex min-h-screen bg-gray-50" dir="rtl">
+      <div className={`flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
         <Sidebar />
-        <div className="flex-1 p-8">
-          <div className="text-center py-8">جاري التحميل...</div>
-        </div>
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="flex justify-center items-center h-64">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        </main>
       </div>
     )
   }
 
   if (!expense) {
     return (
-      <div className="flex min-h-screen bg-gray-50" dir="rtl">
+      <div className={`flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
         <Sidebar />
-        <div className="flex-1 p-8">
-          <div className="text-center py-8">المصروف غير موجود</div>
-        </div>
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="text-center py-8 text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+            {appLang === 'en' ? 'Expense not found' : 'المصروف غير موجود'}
+          </div>
+        </main>
       </div>
     )
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50" dir="rtl">
+    <div className={`flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
       <Sidebar />
-      <div className="flex-1 p-8">
-        <CompanyHeader />
-
-        <div className="mb-6">
-          <Link href="/expenses">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="h-4 w-4 ml-2" />
-              العودة للمصروفات
-            </Button>
-          </Link>
-        </div>
-
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">{expense.expense_number}</h1>
-            <p className="text-gray-600 mt-1">تفاصيل المصروف</p>
-          </div>
-          <div className="flex gap-2">
-            {canEdit && (
-              <Link href={`/expenses/${expense.id}/edit`}>
-                <Button variant="outline">
-                  <Pencil className="h-4 w-4 ml-2" />
-                  تعديل
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-6 max-w-full">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <Link href="/expenses">
+                <Button variant="ghost" size="icon" className="flex-shrink-0">
+                  {appLang === 'ar' ? <ArrowRight className="h-5 w-5" /> : <ArrowLeft className="h-5 w-5" />}
                 </Button>
               </Link>
-            )}
-            {canSubmitForApproval && (
-              <Button onClick={handleSubmitForApproval} disabled={posting}>
-                <Send className="h-4 w-4 ml-2" />
-                إرسال للاعتماد
-              </Button>
-            )}
-            {canApprove && expense.status === "pending_approval" && (
-              <>
-                <Button onClick={handleApprove} disabled={posting} variant="default">
-                  <CheckCircle className="h-4 w-4 ml-2" />
-                  اعتماد
-                </Button>
-                <Button onClick={() => setRejectDialogOpen(true)} disabled={posting} variant="destructive">
-                  <XCircle className="h-4 w-4 ml-2" />
-                  رفض
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Continue with expense details card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>معلومات المصروف</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-gray-600">رقم المصروف</Label>
-                <p className="font-medium">{expense.expense_number}</p>
-              </div>
-              <div>
-                <Label className="text-gray-600">التاريخ</Label>
-                <p className="font-medium">{new Date(expense.expense_date).toLocaleDateString("ar-EG")}</p>
-              </div>
-              <div>
-                <Label className="text-gray-600">المبلغ</Label>
-                <p className="font-medium text-lg">{expense.amount.toLocaleString("ar-EG")} {expense.currency_code || "EGP"}</p>
-              </div>
-              <div>
-                <Label className="text-gray-600">الحالة</Label>
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2 truncate" suppressHydrationWarning>
+                  <Receipt className="h-5 w-5 sm:h-6 sm:w-6 flex-shrink-0" />
+                  {expense.expense_number}
+                </h1>
                 <div className="mt-1">{getStatusBadge(expense.status)}</div>
               </div>
-              {expense.expense_category && (
-                <div>
-                  <Label className="text-gray-600">التصنيف</Label>
-                  <p className="font-medium">{expense.expense_category}</p>
-                </div>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              {canEdit && (
+                <Link href={`/expenses/${expense.id}/edit`}>
+                  <Button variant="outline" className="dark:border-gray-600 dark:text-gray-300">
+                    <Pencil className="h-4 w-4 mr-2" />
+                    <span suppressHydrationWarning>{appLang === 'en' ? 'Edit' : 'تعديل'}</span>
+                  </Button>
+                </Link>
               )}
-              {expense.payment_method && (
-                <div>
-                  <Label className="text-gray-600">طريقة الدفع</Label>
-                  <p className="font-medium">{expense.payment_method}</p>
-                </div>
+              {canSubmitForApproval && (
+                <Button onClick={handleSubmitForApproval} disabled={posting} className="bg-blue-600 hover:bg-blue-700 text-white">
+                  <Send className="h-4 w-4 mr-2" />
+                  <span suppressHydrationWarning>{appLang === 'en' ? 'Submit for Approval' : 'إرسال للاعتماد'}</span>
+                </Button>
+              )}
+              {canApprove && expense.status === "pending_approval" && (
+                <>
+                  <Button onClick={handleApprove} disabled={posting} className="bg-green-600 hover:bg-green-700 text-white">
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    <span suppressHydrationWarning>{appLang === 'en' ? 'Approve' : 'اعتماد'}</span>
+                  </Button>
+                  <Button onClick={() => setRejectDialogOpen(true)} disabled={posting} variant="destructive">
+                    <XCircle className="h-4 w-4 mr-2" />
+                    <span suppressHydrationWarning>{appLang === 'en' ? 'Reject' : 'رفض'}</span>
+                  </Button>
+                </>
               )}
             </div>
+          </div>
 
-            <div>
-              <Label className="text-gray-600">الوصف</Label>
-              <p className="font-medium">{expense.description}</p>
-            </div>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                  <Receipt className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Expense Number' : 'رقم المصروف'}
+                  </p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                    {expense.expense_number}
+                  </p>
+                </div>
+              </div>
+            </Card>
 
-            {expense.notes && (
+            <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                  <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Amount' : 'المبلغ'}
+                  </p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {expense.amount.toLocaleString(appLang === 'en' ? 'en-US' : 'ar-EG')} {expense.currency_code || "EGP"}
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                  <Calendar className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Date' : 'التاريخ'}
+                  </p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {new Date(expense.expense_date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                  <FileText className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Status' : 'الحالة'}
+                  </p>
+                  <div className="mt-1">{getStatusBadge(expense.status)}</div>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Expense Details Card */}
+          <Card className="dark:bg-gray-800 dark:border-gray-700">
+            <CardHeader>
+              <CardTitle className="text-gray-900 dark:text-white" suppressHydrationWarning>
+                {appLang === 'en' ? 'Expense Information' : 'معلومات المصروف'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Expense Number' : 'رقم المصروف'}
+                  </Label>
+                  <p className="font-medium text-gray-900 dark:text-white">{expense.expense_number}</p>
+                </div>
+                <div>
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Date' : 'التاريخ'}
+                  </Label>
+                  <p className="font-medium text-gray-900 dark:text-white">
+                    {new Date(expense.expense_date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Amount' : 'المبلغ'}
+                  </Label>
+                  <p className="font-medium text-lg text-gray-900 dark:text-white">
+                    {expense.amount.toLocaleString(appLang === 'en' ? 'en-US' : 'ar-EG')} {expense.currency_code || "EGP"}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Status' : 'الحالة'}
+                  </Label>
+                  <div className="mt-1">{getStatusBadge(expense.status)}</div>
+                </div>
+                {expense.expense_category && (
+                  <div>
+                    <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                      {appLang === 'en' ? 'Category' : 'التصنيف'}
+                    </Label>
+                    <p className="font-medium text-gray-900 dark:text-white">{expense.expense_category}</p>
+                  </div>
+                )}
+                {expense.payment_method && (
+                  <div>
+                    <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                      {appLang === 'en' ? 'Payment Method' : 'طريقة الدفع'}
+                    </Label>
+                    <p className="font-medium text-gray-900 dark:text-white">{expense.payment_method}</p>
+                  </div>
+                )}
+              </div>
+
               <div>
-                <Label className="text-gray-600">ملاحظات</Label>
-                <p className="text-gray-700">{expense.notes}</p>
+                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                  {appLang === 'en' ? 'Description' : 'الوصف'}
+                </Label>
+                <p className="font-medium text-gray-900 dark:text-white">{expense.description}</p>
               </div>
-            )}
 
-            {expense.rejection_reason && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <Label className="text-red-800 font-semibold">سبب الرفض</Label>
-                <p className="text-red-700 mt-1">{expense.rejection_reason}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              {expense.notes && (
+                <div>
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Notes' : 'ملاحظات'}
+                  </Label>
+                  <p className="text-gray-700 dark:text-gray-300">{expense.notes}</p>
+                </div>
+              )}
+
+              {expense.rejection_reason && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                  <Label className="text-red-800 dark:text-red-400 font-semibold" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Rejection Reason' : 'سبب الرفض'}
+                  </Label>
+                  <p className="text-red-700 dark:text-red-300 mt-1">{expense.rejection_reason}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Rejection Dialog */}
         <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-          <DialogContent>
+          <DialogContent className="dark:bg-gray-800 dark:border-gray-700">
             <DialogHeader>
-              <DialogTitle>رفض المصروف</DialogTitle>
+              <DialogTitle className="text-gray-900 dark:text-white" suppressHydrationWarning>
+                {appLang === 'en' ? 'Reject Expense' : 'رفض المصروف'}
+              </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>سبب الرفض *</Label>
+                <Label className="text-gray-700 dark:text-gray-300" suppressHydrationWarning>
+                  {appLang === 'en' ? 'Rejection Reason *' : 'سبب الرفض *'}
+                </Label>
                 <Textarea
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
-                  placeholder="اكتب سبب رفض المصروف..."
+                  placeholder={appLang === 'en' ? 'Enter rejection reason...' : 'اكتب سبب رفض المصروف...'}
                   rows={4}
+                  className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setRejectDialogOpen(false)} disabled={posting}>
-                إلغاء
+              <Button
+                variant="outline"
+                onClick={() => setRejectDialogOpen(false)}
+                disabled={posting}
+                className="dark:border-gray-600 dark:text-gray-300"
+                suppressHydrationWarning
+              >
+                {appLang === 'en' ? 'Cancel' : 'إلغاء'}
               </Button>
-              <Button variant="destructive" onClick={handleReject} disabled={posting || !rejectionReason.trim()}>
-                رفض المصروف
+              <Button
+                variant="destructive"
+                onClick={handleReject}
+                disabled={posting || !rejectionReason.trim()}
+                suppressHydrationWarning
+              >
+                {appLang === 'en' ? 'Reject Expense' : 'رفض المصروف'}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+      </main>
     </div>
   )
 }
