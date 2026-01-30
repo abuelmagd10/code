@@ -16,18 +16,20 @@
  * 
  * 2. Data Source:
  *    - رأس المال: من حسابات equity في journal_entries
- *    - المبيعات: من حسابات income (sub_type = 'sales_revenue' أو account_code = '4100')
+ *    - المبيعات: من حسابات income (sub_type = 'sales_revenue' أو account_code = '4000')
  *    - المشتريات:
  *        - محاسبيًا: من حسابات expense (sub_type = 'purchases' أو account_code = '5110') إن وُجدت
  *        - تشغيليًا (للتبسيط ولضمان الدقة): من فواتير الشراء (bills) خلال الفترة
  *      ✅ الهدف في التقرير المبسط: عدم إخفاء أي مشتريات تمت فعليًا حتى لو كانت المعالجة المحاسبية عبر المخزون (inventory asset)
  *    - COGS: من حسابات expense (sub_type = 'cogs' أو account_code = '5000')
- *    - المصروفات: من حسابات expense (باستثناء COGS والمشتريات)
+ *    - المصروفات: من حسابات expense (باستثناء COGS والمشتريات والإهلاك)
  *    - الإهلاك: من حسابات expense (account_code = '5500')
- * 
+ *
  * 3. Calculations:
  *    - مجمل الربح = المبيعات - تكلفة البضاعة المباعة (COGS)
- *    - صافي الربح = مجمل الربح - المصروفات التشغيلية
+ *    - صافي الربح = مجمل الربح - المصروفات التشغيلية - الإهلاك
+ *    - Gross Profit = Sales - COGS
+ *    - Net Profit = Gross Profit - Operating Expenses - Depreciation
  * 
  * 4. Filtering:
  *    - فلترة القيود المحذوفة: .is("deleted_at", null)
@@ -341,10 +343,9 @@ export async function GET(request: NextRequest) {
 
     // ✅ حساب مجمل الربح وصافي الربح
     const grossProfit = totalSales - totalCOGS
-    // ⚠️ ملاحظة: الإهلاك يُعرض منفصلاً ولا يُطرح من صافي الربح في هذا التقرير المبسط
-    // ⚠️ في التقارير المحاسبية الكاملة، يجب طرح الإهلاك من صافي الربح
-    // ⚠️ إذا أردت طرح الإهلاك: const netProfit = grossProfit - totalExpenses - totalDepreciation
-    const netProfit = grossProfit - totalExpenses
+    // ✅ صافي الربح = مجمل الربح - المصروفات التشغيلية - الإهلاك
+    // Net Profit = Gross Profit - Operating Expenses - Depreciation
+    const netProfit = grossProfit - totalExpenses - totalDepreciation
 
     return apiSuccess({
       capital: { total: Math.max(0, totalCapital) },
