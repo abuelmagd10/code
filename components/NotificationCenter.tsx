@@ -707,6 +707,7 @@ export function NotificationCenter({
       'depreciation': { ar: 'إهلاك', en: 'Depreciation' },
       'journal_entry': { ar: 'قيد يومي', en: 'Journal Entry' },
       'payment': { ar: 'دفعة', en: 'Payment' },
+      'expense': { ar: 'مصروف', en: 'Expense' },
     }
     return labels[type]?.[appLang] || type
   }

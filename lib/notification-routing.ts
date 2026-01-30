@@ -21,6 +21,7 @@ export type ReferenceType =
   | 'customer_credit_refund'
   | 'supplier_debit_receipt'
   | 'customer_voucher'
+  | 'expense'
 
 /**
  * خريطة reference_type إلى route
@@ -57,6 +58,7 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'payment': (id) => `/payments?highlight=${id}`,
   'journal_entry': (id) => `/journal-entries/${id}`,
   'depreciation': (id) => `/fixed-assets?highlight=depreciation-${id}`,
+  'expense': (id) => `/expenses/${id}`, // ✅ إضافة route للمصروفات
 
   // الموافقات
   'approval_request': (id) => `/approvals?highlight=${id}`,
