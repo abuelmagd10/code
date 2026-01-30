@@ -46,6 +46,7 @@ function buildMenuItems(lang: string) {
     invoices: "فواتير المبيعات",
     bills: "فواتير المشتريات",
     payments: "المدفوعات",
+    expenses: "المصروفات",
     journal: "القيود اليومية",
     banking: "الأعمال المصرفية",
     reports: "التقارير",
@@ -64,6 +65,7 @@ function buildMenuItems(lang: string) {
     invoices: "Sales Invoices",
     bills: "Purchase Bills",
     payments: "Payments",
+    expenses: "Expenses",
     journal: "Journal Entries",
     banking: "Banking",
     reports: "Reports",
@@ -84,6 +86,7 @@ function buildMenuItems(lang: string) {
     { label: L.invoices, href: `/invoices${q}`, icon: FileText },
     { label: L.bills, href: `/bills${q}`, icon: FileText },
     { label: L.payments, href: `/payments${q}`, icon: DollarSign },
+    { label: L.expenses, href: `/expenses${q}`, icon: DollarSign },
     { label: L.journal, href: `/journal-entries${q}`, icon: FileText },
     { label: L.banking, href: `/banking${q}`, icon: DollarSign },
     { label: L.reports, href: `/reports${q}`, icon: BarChart3 },
@@ -126,7 +129,7 @@ export function Sidebar() {
       // حساب deniedResources من allowed_pages
       const allResources = [
         "dashboard", "products", "inventory", "customers", "suppliers",
-        "sales_orders", "purchase_orders", "invoices", "bills", "payments",
+        "sales_orders", "purchase_orders", "invoices", "bills", "payments", "expenses",
         "journal_entries", "banking", "reports", "chart_of_accounts",
         "shareholders", "settings", "users", "taxes", "branches", "warehouses"
       ]
@@ -199,6 +202,7 @@ export function Sidebar() {
     if (href.includes('/journal-entries')) return 'journal_entries'
     if (href.includes('/chart-of-accounts')) return 'chart_of_accounts'
     if (href.includes('/payments')) return 'payments'
+    if (href.includes('/expenses')) return 'expenses'
     if (href.includes('/banking')) return 'banking'
     if (href.includes('/shareholders')) return 'shareholders'
     // أخرى
@@ -1034,6 +1038,7 @@ export function Sidebar() {
                 {
                   key: 'accounting', icon: BookOpen, label: (lang === 'en' ? 'Accounting' : 'الحسابات'), items: [
                     { label: (lang === 'en' ? 'Payments' : 'المدفوعات'), href: `/payments${q}`, icon: DollarSign },
+                    { label: (lang === 'en' ? 'Expenses' : 'المصروفات'), href: `/expenses${q}`, icon: DollarSign },
                     { label: (lang === 'en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
                     { label: (lang === 'en' ? 'Chart of Accounts' : 'الشجرة المحاسبية'), href: `/chart-of-accounts${q}`, icon: BookOpen },
