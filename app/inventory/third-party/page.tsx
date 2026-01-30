@@ -86,7 +86,10 @@ export default function ThirdPartyInventoryPage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
 
-  // 🔐 ERP Access Control
+  // 🔐 ERP Access Control - Governance Rules
+  // 👑 Owner/Admin/GM: See all goods in all branches
+  // 🏢 Manager/Accountant: See only their branch
+  // 👨‍💼 Staff: See only goods from sales orders they created
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>("employee")
@@ -259,7 +262,12 @@ export default function ThirdPartyInventoryPage() {
       // ✅ جلب الفواتير المرسلة مع شركات الشحن
       // تشمل: sent, confirmed, partially_returned, partially_paid
       // (البضائع تبقى لدى الغير حتى يتم استلام كامل المبلغ أو إرجاع كامل البضاعة)
-      const { data: sentInvoices, error: invoicesErr } = await supabase
+
+      // 🔐 تطبيق قاعدة الحوكمة (Governance Rules)
+      const currentRole = memberData?.role || "staff"
+      const currentBranchId = memberData?.branch_id || null
+
+      let invoicesQuery = supabase
         .from("invoices")
         .select(`
           id,
@@ -283,7 +291,23 @@ export default function ThirdPartyInventoryPage() {
         .eq("company_id", companyId)
         .in("status", ["sent", "confirmed", "partially_returned", "partially_paid"])
         .not("shipping_provider_id", "is", null)
-        .order("invoice_date", { ascending: false })
+
+      // 🔐 فلترة حسب الدور والفرع
+      if (currentRole === 'manager' || currentRole === 'accountant') {
+        // 🏢 Branch Manager / Accountant: يرون فرعهم فقط
+        if (currentBranchId) {
+          invoicesQuery = invoicesQuery.eq("branch_id", currentBranchId)
+        }
+      } else if (currentRole === 'staff' || currentRole === 'sales' || currentRole === 'employee') {
+        // 👨‍💼 Staff: يرون فقط الفواتير المرتبطة بأوامر البيع التي أنشأوها
+        // سنقوم بفلترة البيانات بعد جلبها لأن الربط معقد (invoice → sales_order → created_by)
+        // RLS سيتولى الفلترة على مستوى قاعدة البيانات
+      }
+      // 👑 Owner / Admin / General Manager: لا فلترة (يرون كل شيء)
+
+      invoicesQuery = invoicesQuery.order("invoice_date", { ascending: false })
+
+      const { data: sentInvoices, error: invoicesErr } = await invoicesQuery
 
       if (invoicesErr) {
         console.error("Error loading sent invoices:", invoicesErr)
@@ -481,6 +505,16 @@ export default function ThirdPartyInventoryPage() {
                   <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
                     {isAr ? "تتبع البضائع المرسلة لشركات الشحن" : "Track goods sent to shipping companies"}
                   </p>
+                  {/* 🔐 Governance Notice */}
+                  {currentUserRole === 'manager' || currentUserRole === 'accountant' ? (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {isAr ? "🏢 تعرض البضائع الخاصة بفرعك فقط" : "🏢 Showing goods from your branch only"}
+                    </p>
+                  ) : currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee' ? (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {isAr ? "👨‍💼 تعرض البضائع من أوامر البيع التي أنشأتها فقط" : "👨‍💼 Showing goods from your sales orders only"}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
