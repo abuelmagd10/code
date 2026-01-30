@@ -15,7 +15,7 @@
 ### ✅ Approval Workflow (دورة الاعتماد)
 - **Draft** (مسودة): Initial creation
 - **Pending Approval** (بانتظار الاعتماد): Submitted for approval
-- **Approved** (معتمد): Approved by Owner/General Manager
+- **Approved** (معتمد): Approved by Owner/Admin
 - **Rejected** (مرفوض): Rejected with reason
 - **Paid** (مدفوع): Payment executed
 
@@ -24,16 +24,17 @@
 | Role | Create | Edit | Delete | Approve | View |
 |------|--------|------|--------|---------|------|
 | Owner | ✅ | ✅ | ✅ | ✅ | All |
-| General Manager | ✅ | ✅ | ✅ | ✅ | All |
+| Admin | ✅ | ✅ | ✅ | ✅ | All |
+| Manager | ✅ | ✅ (draft/rejected) | ❌ | ❌ | Branch |
 | Accountant | ✅ | ✅ (draft/rejected) | ❌ | ❌ | Branch |
-| Branch Manager | ✅ | ✅ (draft/rejected) | ❌ | ❌ | Branch |
+| Staff | ✅ | ✅ (draft/rejected) | ❌ | ❌ | Branch |
 | Viewer | ❌ | ❌ | ❌ | ❌ | Branch |
 
 ### ✅ Governance Rules (قواعد الحوكمة)
 1. Only **draft** or **rejected** expenses can be edited
 2. Only **draft** or **rejected** expenses can be deleted
 3. Any edit after rejection resets status to **draft**
-4. Only **Owner** and **General Manager** can approve/reject
+4. Only **Owner** and **Admin** can approve/reject
 5. Rejection requires a reason
 6. Notifications sent at each workflow stage
 
@@ -161,10 +162,10 @@ psql -f scripts/502_expenses_permissions.sql
 ### Submitting for Approval
 1. Open the expense
 2. Click "إرسال للاعتماد" (Submit for Approval)
-3. Notifications sent to Owner and General Manager
+3. Notifications sent to Owner and Admin
 
 ### Approving/Rejecting
-1. Owner or General Manager opens the expense
+1. Owner or Admin opens the expense
 2. Click "اعتماد" (Approve) or "رفض" (Reject)
 3. If rejecting, provide a reason
 4. Notification sent to creator

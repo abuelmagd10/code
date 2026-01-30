@@ -78,9 +78,10 @@ Expected result: Should show permissions for different roles
 | Role | Create | Edit | Delete | Approve | View |
 |------|--------|------|--------|---------|------|
 | Owner | ✅ | ✅ | ✅ | ✅ | All branches |
-| General Manager | ✅ | ✅ | ✅ | ✅ | All branches |
+| Admin | ✅ | ✅ | ✅ | ✅ | All branches |
+| Manager | ✅ | ✅ (draft/rejected) | ❌ | ❌ | Own branch |
 | Accountant | ✅ | ✅ (draft/rejected) | ❌ | ❌ | Own branch |
-| Branch Manager | ✅ | ✅ (draft/rejected) | ❌ | ❌ | Own branch |
+| Staff | ✅ | ✅ (draft/rejected) | ❌ | ❌ | Own branch |
 | Viewer | ❌ | ❌ | ❌ | ❌ | Own branch (read-only) |
 
 ## 📊 Workflow States (حالات دورة العمل)
@@ -95,14 +96,14 @@ Expected result: Should show permissions for different roles
 
 The module automatically sends notifications at these stages:
 
-1. **Submit for Approval** → Notifies Owner and General Manager
+1. **Submit for Approval** → Notifies Owner and Admin
 2. **Approval** → Notifies creator
 3. **Rejection** → Notifies creator with reason
 
 ## 🧪 Testing the Module (اختبار الوحدة)
 
 ### Test 1: Create an Expense
-1. Login as Accountant or Branch Manager
+1. Login as Accountant, Manager, or Staff
 2. Go to `/expenses`
 3. Click "مصروف جديد"
 4. Fill in the form:
@@ -117,11 +118,11 @@ The module automatically sends notifications at these stages:
 1. Open the expense you created
 2. Click "إرسال للاعتماد"
 3. Verify status changes to "بانتظار الاعتماد"
-4. Login as Owner or General Manager
+4. Login as Owner or Admin
 5. Check notifications - should see approval request
 
 ### Test 3: Approve Expense
-1. Login as Owner or General Manager
+1. Login as Owner or Admin
 2. Go to `/expenses`
 3. Open the pending expense
 4. Click "اعتماد"
@@ -131,7 +132,7 @@ The module automatically sends notifications at these stages:
 
 ### Test 4: Reject Expense
 1. Create another expense and submit for approval
-2. Login as Owner or General Manager
+2. Login as Owner or Admin
 3. Open the pending expense
 4. Click "رفض"
 5. Enter rejection reason: "Missing receipt"
@@ -165,9 +166,9 @@ AND r.company_id = '<your-company-id>';
 ```
 
 ### Problem: Cannot approve expense
-**Solution**: Only Owner and General Manager can approve. Check your role:
+**Solution**: Only Owner and Admin can approve. Check your role:
 ```sql
-SELECT role FROM company_members 
+SELECT role FROM company_members
 WHERE user_id = auth.uid() 
 AND company_id = '<your-company-id>';
 ```

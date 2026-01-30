@@ -57,7 +57,7 @@ export default function ExpenseDetailPage() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [rejectionReason, setRejectionReason] = useState("")
 
-  const canApprove = ["owner", "general_manager"].includes(userRole)
+  const canApprove = ["owner", "admin"].includes(userRole)
   const canEdit = expense?.status === "draft" || expense?.status === "rejected"
   const canSubmitForApproval = expense?.status === "draft" || expense?.status === "rejected"
 
@@ -153,9 +153,9 @@ export default function ExpenseDetailPage() {
           branchId: expense.branch_id,
           costCenterId: expense.cost_center_id,
           warehouseId: expense.warehouse_id,
-          assignedToRole: "general_manager",
+          assignedToRole: "admin",
           priority: "high",
-          eventKey: `expense:${expense.id}:pending_approval_gm:${Date.now()}`,
+          eventKey: `expense:${expense.id}:pending_approval:${Date.now()}`,
           severity: "warning",
           category: "approvals"
         })

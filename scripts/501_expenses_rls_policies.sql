@@ -11,9 +11,9 @@ ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 -- =====================================
 -- 1️⃣ سياسة SELECT (العرض)
 -- =====================================
--- Owner / General Manager: يرى جميع المصروفات في الشركة
--- Accountant / Branch Manager: يرى فقط مصروفات فرعه
--- باقي الأدوار: يرى فقط مصروفات فرعه (عرض فقط)
+-- Owner / Admin: يرى جميع المصروفات في الشركة
+-- Manager / Accountant / Staff: يرى فقط مصروفات فرعه
+-- Viewer: يرى فقط مصروفات فرعه (عرض فقط)
 -- =====================================
 DROP POLICY IF EXISTS "expenses_select_policy" ON expenses;
 CREATE POLICY "expenses_select_policy" ON expenses
@@ -21,32 +21,32 @@ CREATE POLICY "expenses_select_policy" ON expenses
   TO authenticated
   USING (
     company_id IN (
-      SELECT cm.company_id 
-      FROM company_members cm 
+      SELECT cm.company_id
+      FROM company_members cm
       WHERE cm.user_id = auth.uid()
     )
     AND (
       -- Owner: يرى كل شيء
       EXISTS (
-        SELECT 1 FROM companies c 
-        WHERE c.id = expenses.company_id 
+        SELECT 1 FROM companies c
+        WHERE c.id = expenses.company_id
         AND c.user_id = auth.uid()
       )
       OR
-      -- General Manager: يرى كل شيء في الشركة
+      -- Admin: يرى كل شيء في الشركة
       EXISTS (
         SELECT 1 FROM company_members cm
         WHERE cm.company_id = expenses.company_id
         AND cm.user_id = auth.uid()
-        AND cm.role = 'general_manager'
+        AND cm.role = 'admin'
       )
       OR
-      -- Accountant / Branch Manager / Admin: يرى فقط فرعه
+      -- Manager / Accountant / Staff: يرى فقط فرعه
       EXISTS (
         SELECT 1 FROM company_members cm
         WHERE cm.company_id = expenses.company_id
         AND cm.user_id = auth.uid()
-        AND cm.role IN ('admin', 'accountant', 'branch_manager')
+        AND cm.role IN ('manager', 'accountant', 'staff')
         AND (
           expenses.branch_id = cm.branch_id
           OR expenses.branch_id IS NULL
@@ -90,12 +90,12 @@ CREATE POLICY "expenses_insert_policy" ON expenses
         AND c.user_id = auth.uid()
       )
       OR
-      -- General Manager, Accountant, Branch Manager
+      -- Admin, Manager, Accountant, Staff
       EXISTS (
         SELECT 1 FROM company_members cm
         WHERE cm.company_id = expenses.company_id
         AND cm.user_id = auth.uid()
-        AND cm.role IN ('general_manager', 'accountant', 'branch_manager')
+        AND cm.role IN ('admin', 'manager', 'accountant', 'staff')
       )
     )
   );
@@ -105,7 +105,7 @@ CREATE POLICY "expenses_insert_policy" ON expenses
 -- =====================================
 -- يمكن التعديل فقط إذا:
 -- - المصروف في حالة draft أو rejected
--- - المستخدم هو منشئ المصروف أو Owner/General Manager
+-- - المستخدم هو منشئ المصروف أو Owner/Admin
 -- =====================================
 DROP POLICY IF EXISTS "expenses_update_policy" ON expenses;
 CREATE POLICY "expenses_update_policy" ON expenses
@@ -113,24 +113,24 @@ CREATE POLICY "expenses_update_policy" ON expenses
   TO authenticated
   USING (
     company_id IN (
-      SELECT cm.company_id 
-      FROM company_members cm 
+      SELECT cm.company_id
+      FROM company_members cm
       WHERE cm.user_id = auth.uid()
     )
     AND (
       -- Owner: يمكنه تعديل أي شيء
       EXISTS (
-        SELECT 1 FROM companies c 
-        WHERE c.id = expenses.company_id 
+        SELECT 1 FROM companies c
+        WHERE c.id = expenses.company_id
         AND c.user_id = auth.uid()
       )
       OR
-      -- General Manager: يمكنه تعديل أي شيء
+      -- Admin: يمكنه تعديل أي شيء
       EXISTS (
         SELECT 1 FROM company_members cm
         WHERE cm.company_id = expenses.company_id
         AND cm.user_id = auth.uid()
-        AND cm.role = 'general_manager'
+        AND cm.role = 'admin'
       )
       OR
       -- منشئ المصروف: يمكنه التعديل فقط إذا كان draft أو rejected
@@ -146,7 +146,7 @@ CREATE POLICY "expenses_update_policy" ON expenses
 -- =====================================
 -- يمكن الحذف فقط إذا:
 -- - المصروف في حالة draft أو rejected
--- - المستخدم هو منشئ المصروف أو Owner/General Manager
+-- - المستخدم هو منشئ المصروف أو Owner/Admin
 -- =====================================
 DROP POLICY IF EXISTS "expenses_delete_policy" ON expenses;
 CREATE POLICY "expenses_delete_policy" ON expenses
@@ -154,25 +154,25 @@ CREATE POLICY "expenses_delete_policy" ON expenses
   TO authenticated
   USING (
     company_id IN (
-      SELECT cm.company_id 
-      FROM company_members cm 
+      SELECT cm.company_id
+      FROM company_members cm
       WHERE cm.user_id = auth.uid()
     )
     AND status IN ('draft', 'rejected')
     AND (
       -- Owner
       EXISTS (
-        SELECT 1 FROM companies c 
-        WHERE c.id = expenses.company_id 
+        SELECT 1 FROM companies c
+        WHERE c.id = expenses.company_id
         AND c.user_id = auth.uid()
       )
       OR
-      -- General Manager
+      -- Admin
       EXISTS (
         SELECT 1 FROM company_members cm
         WHERE cm.company_id = expenses.company_id
         AND cm.user_id = auth.uid()
-        AND cm.role = 'general_manager'
+        AND cm.role = 'admin'
       )
       OR
       -- منشئ المصروف
