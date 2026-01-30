@@ -1,39 +1,30 @@
--- =====================================================
--- 🔐 Row Level Security Policies للمصروفات
--- =====================================================
--- Created: 2026-01-30
--- Purpose: تطبيق سياسات الحوكمة على جدول المصروفات
--- =====================================================
+-- =============================================
+-- RLS Policies for Expenses (المصروفات)
+-- =============================================
 
--- تفعيل RLS
+-- Enable RLS
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 
--- =====================================
--- 1️⃣ سياسة SELECT (العرض)
--- =====================================
--- Owner / Admin: يرى جميع المصروفات في الشركة
--- Manager / Accountant / Staff: يرى فقط مصروفات فرعه
--- Viewer: يرى فقط مصروفات فرعه (عرض فقط)
--- =====================================
-DROP POLICY IF EXISTS "expenses_select_policy" ON expenses;
-CREATE POLICY "expenses_select_policy" ON expenses
-  FOR SELECT
-  TO authenticated
-  USING (
+-- SELECT Policy
+-- Owner/Admin: see all expenses in company
+-- Manager/Accountant/Staff: see only their branch expenses
+-- Viewer: see only their branch expenses (read-only)
+CREATE POLICY expenses_select ON expenses
+  FOR SELECT USING (
     company_id IN (
       SELECT cm.company_id
       FROM company_members cm
       WHERE cm.user_id = auth.uid()
     )
     AND (
-      -- Owner: يرى كل شيء
+      -- Owner: see everything
       EXISTS (
         SELECT 1 FROM companies c
         WHERE c.id = expenses.company_id
         AND c.user_id = auth.uid()
       )
       OR
-      -- Admin: يرى كل شيء في الشركة
+      -- Admin: see everything in company
       EXISTS (
         SELECT 1 FROM company_members cm
         WHERE cm.company_id = expenses.company_id
@@ -41,7 +32,7 @@ CREATE POLICY "expenses_select_policy" ON expenses
         AND cm.role = 'admin'
       )
       OR
-      -- Manager / Accountant / Staff: يرى فقط فرعه
+      -- Manager/Accountant/Staff: see only their branch
       EXISTS (
         SELECT 1 FROM company_members cm
         WHERE cm.company_id = expenses.company_id
@@ -53,7 +44,7 @@ CREATE POLICY "expenses_select_policy" ON expenses
         )
       )
       OR
-      -- باقي الأدوار: يرى فقط فرعه (عرض فقط)
+      -- Other roles: see only their branch (read-only)
       EXISTS (
         SELECT 1 FROM company_members cm
         WHERE cm.company_id = expenses.company_id
@@ -66,27 +57,21 @@ CREATE POLICY "expenses_select_policy" ON expenses
     )
   );
 
--- =====================================
--- 2️⃣ سياسة INSERT (الإنشاء)
--- =====================================
--- فقط: Accountant, Branch Manager, General Manager, Owner
--- =====================================
-DROP POLICY IF EXISTS "expenses_insert_policy" ON expenses;
-CREATE POLICY "expenses_insert_policy" ON expenses
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
+-- INSERT Policy
+-- Only: Admin, Manager, Accountant, Staff, Owner
+CREATE POLICY expenses_insert ON expenses
+  FOR INSERT WITH CHECK (
     company_id IN (
-      SELECT cm.company_id 
-      FROM company_members cm 
+      SELECT cm.company_id
+      FROM company_members cm
       WHERE cm.user_id = auth.uid()
     )
     AND created_by = auth.uid()
     AND (
       -- Owner
       EXISTS (
-        SELECT 1 FROM companies c 
-        WHERE c.id = expenses.company_id 
+        SELECT 1 FROM companies c
+        WHERE c.id = expenses.company_id
         AND c.user_id = auth.uid()
       )
       OR
@@ -100,32 +85,26 @@ CREATE POLICY "expenses_insert_policy" ON expenses
     )
   );
 
--- =====================================
--- 3️⃣ سياسة UPDATE (التعديل)
--- =====================================
--- يمكن التعديل فقط إذا:
--- - المصروف في حالة draft أو rejected
--- - المستخدم هو منشئ المصروف أو Owner/Admin
--- =====================================
-DROP POLICY IF EXISTS "expenses_update_policy" ON expenses;
-CREATE POLICY "expenses_update_policy" ON expenses
-  FOR UPDATE
-  TO authenticated
-  USING (
+-- UPDATE Policy
+-- Can update only if:
+-- - Expense is in draft or rejected status
+-- - User is creator or Owner/Admin
+CREATE POLICY expenses_update ON expenses
+  FOR UPDATE USING (
     company_id IN (
       SELECT cm.company_id
       FROM company_members cm
       WHERE cm.user_id = auth.uid()
     )
     AND (
-      -- Owner: يمكنه تعديل أي شيء
+      -- Owner: can update anything
       EXISTS (
         SELECT 1 FROM companies c
         WHERE c.id = expenses.company_id
         AND c.user_id = auth.uid()
       )
       OR
-      -- Admin: يمكنه تعديل أي شيء
+      -- Admin: can update anything
       EXISTS (
         SELECT 1 FROM company_members cm
         WHERE cm.company_id = expenses.company_id
@@ -133,26 +112,26 @@ CREATE POLICY "expenses_update_policy" ON expenses
         AND cm.role = 'admin'
       )
       OR
-      -- منشئ المصروف: يمكنه التعديل فقط إذا كان draft أو rejected
+      -- Creator: can update only if draft or rejected
       (
         created_by = auth.uid()
         AND status IN ('draft', 'rejected')
       )
     )
+  ) WITH CHECK (
+    company_id IN (
+      SELECT cm.company_id
+      FROM company_members cm
+      WHERE cm.user_id = auth.uid()
+    )
   );
 
--- =====================================
--- 4️⃣ سياسة DELETE (الحذف)
--- =====================================
--- يمكن الحذف فقط إذا:
--- - المصروف في حالة draft أو rejected
--- - المستخدم هو منشئ المصروف أو Owner/Admin
--- =====================================
-DROP POLICY IF EXISTS "expenses_delete_policy" ON expenses;
-CREATE POLICY "expenses_delete_policy" ON expenses
-  FOR DELETE
-  TO authenticated
-  USING (
+-- DELETE Policy
+-- Can delete only if:
+-- - Expense is in draft or rejected status
+-- - User is creator or Owner/Admin
+CREATE POLICY expenses_delete ON expenses
+  FOR DELETE USING (
     company_id IN (
       SELECT cm.company_id
       FROM company_members cm
@@ -175,12 +154,7 @@ CREATE POLICY "expenses_delete_policy" ON expenses
         AND cm.role = 'admin'
       )
       OR
-      -- منشئ المصروف
+      -- Creator
       created_by = auth.uid()
     )
   );
-
--- =====================================================
--- ✅ اكتملت سياسات RLS للمصروفات
--- =====================================================
-
