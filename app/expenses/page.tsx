@@ -17,12 +17,11 @@ import { buildDataVisibilityFilter } from "@/lib/data-visibility-control"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
-import { PageHeaderList } from "@/components/PageHeaderList"
-import { FilterContainer } from "@/components/FilterContainer"
-import { LoadingState } from "@/components/LoadingState"
-import { EmptyState } from "@/components/EmptyState"
+import { PageHeaderList } from "@/components/PageHeader"
+import { FilterContainer } from "@/components/ui/filter-container"
+import { LoadingState } from "@/components/ui/loading-state"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useLanguage } from "@/contexts/LanguageContext"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,7 +51,7 @@ type Expense = {
 export default function ExpensesPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
-  const { language: appLang } = useLanguage()
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [hydrated, setHydrated] = useState(false)
   const [loading, setLoading] = useState<boolean>(true)
   const [expenses, setExpenses] = useState<Expense[]>([])
@@ -68,6 +67,15 @@ export default function ExpensesPage() {
 
   useEffect(() => {
     setHydrated(true)
+    const handler = () => {
+      try {
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+      } catch { }
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
   // Realtime subscription
