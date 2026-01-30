@@ -82,7 +82,7 @@ export function BranchCostCenterSelectorEnhanced({
     const loadData = async () => {
       try {
         setLoading(true)
-        const activeCompanyId = await getActiveCompanyId()
+        const activeCompanyId = await getActiveCompanyId(supabase)
         if (!activeCompanyId) return
 
         setCompanyId(activeCompanyId)
