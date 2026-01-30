@@ -223,9 +223,9 @@ export default function ExpensesPage() {
   const tableColumns: DataTableColumn<Expense>[] = [
     {
       key: "expense_number",
-      label: appLang === 'en' ? "Number" : "رقم المصروف",
+      header: appLang === 'en' ? "Number" : "رقم المصروف",
       sortable: true,
-      render: (expense) => (
+      format: (value, expense) => (
         <Link href={`/expenses/${expense.id}`} className="text-blue-600 dark:text-blue-400 hover:underline font-medium">
           {expense.expense_number}
         </Link>
@@ -233,37 +233,37 @@ export default function ExpensesPage() {
     },
     {
       key: "expense_date",
-      label: appLang === 'en' ? "Date" : "التاريخ",
+      header: appLang === 'en' ? "Date" : "التاريخ",
       sortable: true,
-      render: (expense) => new Date(expense.expense_date).toLocaleDateString(appLang === 'en' ? "en-US" : "ar-EG")
+      format: (value, expense) => new Date(expense.expense_date).toLocaleDateString(appLang === 'en' ? "en-US" : "ar-EG")
     },
     {
       key: "description",
-      label: appLang === 'en' ? "Description" : "الوصف",
+      header: appLang === 'en' ? "Description" : "الوصف",
       sortable: true
     },
     {
       key: "expense_category",
-      label: appLang === 'en' ? "Category" : "التصنيف",
+      header: appLang === 'en' ? "Category" : "التصنيف",
       sortable: true,
-      render: (expense) => expense.expense_category || "-"
+      format: (value, expense) => expense.expense_category || "-"
     },
     {
       key: "amount",
-      label: appLang === 'en' ? "Amount" : "المبلغ",
+      header: appLang === 'en' ? "Amount" : "المبلغ",
       sortable: true,
-      render: (expense) => `${expense.amount.toLocaleString(appLang === 'en' ? "en-US" : "ar-EG")} ${expense.currency_code || "EGP"}`
+      format: (value, expense) => `${expense.amount.toLocaleString(appLang === 'en' ? "en-US" : "ar-EG")} ${expense.currency_code || "EGP"}`
     },
     {
       key: "status",
-      label: appLang === 'en' ? "Status" : "الحالة",
+      header: appLang === 'en' ? "Status" : "الحالة",
       sortable: true,
-      render: (expense) => <StatusBadge status={expense.status} lang={appLang} />
+      format: (value, expense) => <StatusBadge status={expense.status} lang={appLang} />
     },
     {
       key: "actions",
-      label: appLang === 'en' ? "Actions" : "الإجراءات",
-      render: (expense) => (
+      header: appLang === 'en' ? "Actions" : "الإجراءات",
+      format: (value, expense) => (
         <div className="flex gap-2">
           <Link href={`/expenses/${expense.id}`}>
             <Button variant="ghost" size="sm" title={appLang === 'en' ? "View" : "عرض"}>
@@ -281,7 +281,8 @@ export default function ExpensesPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation()
                 setExpenseToDelete(expense)
                 setDeleteDialogOpen(true)
               }}
