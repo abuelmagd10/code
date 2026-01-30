@@ -46,9 +46,10 @@ export default function NewExpensePage() {
   const [paymentAccountId, setPaymentAccountId] = useState("")
 
   // Branch, Cost Center, Warehouse
-  const [branchId, setBranchId] = useState<string>("")
-  const [costCenterId, setCostCenterId] = useState<string>("")
-  const [warehouseId, setWarehouseId] = useState<string>("")
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
+  const [warehouseId, setWarehouseId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState<boolean>(false) // 🔐 Governance: Admin role state
 
   // Accounts
   const [expenseAccounts, setExpenseAccounts] = useState<Account[]>([])
@@ -81,18 +82,60 @@ export default function NewExpensePage() {
       if (!user) return
       setUserId(user.id)
 
-      // Load member defaults
+      // 🔐 Enterprise Governance: Load member data with role
       const { data: member } = await supabase
         .from("company_members")
-        .select("branch_id, cost_center_id, warehouse_id")
+        .select("role, branch_id")
         .eq("company_id", cid)
         .eq("user_id", user.id)
         .maybeSingle()
 
-      if (member) {
-        setBranchId(member.branch_id || "")
-        setCostCenterId(member.cost_center_id || "")
-        setWarehouseId(member.warehouse_id || "")
+      const userRole = member?.role || 'employee'
+      const userBranchId = member?.branch_id || null
+
+      // 🔐 Enterprise Governance: Check if user is Admin or GeneralManager
+      const normalizedRole = String(userRole || '').trim().toLowerCase().replace(/\s+/g, '_')
+      const adminCheck = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
+      setIsAdmin(adminCheck)
+
+      console.log('[NewExpense] Governance:', { userRole, normalizedRole, isAdmin: adminCheck, userBranchId })
+
+      // 🔐 Enterprise Pattern: User → Branch → (Default Cost Center, Default Warehouse)
+      if (userBranchId) {
+        // Fetch branch defaults instead of user assignments
+        const { getBranchDefaults } = await import('@/lib/governance-branch-defaults')
+
+        try {
+          const branchDefaults = await getBranchDefaults(supabase, userBranchId)
+
+          // Validate branch has required defaults
+          if (!branchDefaults.default_cost_center_id) {
+            console.warn(
+              `[NewExpense] Branch missing required defaults. ` +
+              `Cost Center: ${branchDefaults.default_cost_center_id || 'NULL'}`
+            )
+          }
+
+          // Set branch and defaults
+          setBranchId(userBranchId)
+          setCostCenterId(branchDefaults.default_cost_center_id || null)
+          setWarehouseId(branchDefaults.default_warehouse_id || null)
+
+          console.log('[NewExpense] Branch defaults applied:', {
+            branchId: userBranchId,
+            costCenterId: branchDefaults.default_cost_center_id,
+            warehouseId: branchDefaults.default_warehouse_id
+          })
+        } catch (error) {
+          console.error('[NewExpense] Error loading branch defaults:', error)
+          toast({
+            title: appLang === 'en' ? 'Configuration Error' : 'خطأ في الإعدادات',
+            description: appLang === 'en'
+              ? 'Branch configuration is incomplete. Please contact your administrator.'
+              : 'إعدادات الفرع غير مكتملة. يرجى الاتصال بالمسؤول.',
+            variant: 'destructive'
+          })
+        }
       }
 
       // Load expense accounts (type = 'expense')
@@ -121,11 +164,40 @@ export default function NewExpensePage() {
     }
   }
 
+  // 🔐 Enterprise Governance: Handle branch change and auto-update cost center
+  const handleBranchChange = async (newBranchId: string | null) => {
+    setBranchId(newBranchId)
+
+    if (!newBranchId) {
+      setCostCenterId(null)
+      setWarehouseId(null)
+      return
+    }
+
+    try {
+      const { getBranchDefaults } = await import('@/lib/governance-branch-defaults')
+      const branchDefaults = await getBranchDefaults(supabase, newBranchId)
+
+      // Auto-set cost center to branch default
+      setCostCenterId(branchDefaults.default_cost_center_id || null)
+      setWarehouseId(branchDefaults.default_warehouse_id || null)
+
+      console.log('[NewExpense] Branch changed, defaults updated:', {
+        branchId: newBranchId,
+        costCenterId: branchDefaults.default_cost_center_id,
+        warehouseId: branchDefaults.default_warehouse_id
+      })
+    } catch (error) {
+      console.error('[NewExpense] Error loading branch defaults on change:', error)
+    }
+  }
+
   const handleSave = async () => {
+    // 🔐 Enterprise Governance: Validate required fields
     if (!description.trim()) {
       toast({
-        title: "خطأ",
-        description: "الرجاء إدخال وصف المصروف",
+        title: appLang === 'en' ? 'Error' : 'خطأ',
+        description: appLang === 'en' ? 'Please enter expense description' : 'الرجاء إدخال وصف المصروف',
         variant: "destructive"
       })
       return
@@ -133,8 +205,27 @@ export default function NewExpensePage() {
 
     if (amount <= 0) {
       toast({
-        title: "خطأ",
-        description: "الرجاء إدخال مبلغ صحيح",
+        title: appLang === 'en' ? 'Error' : 'خطأ',
+        description: appLang === 'en' ? 'Please enter a valid amount' : 'الرجاء إدخال مبلغ صحيح',
+        variant: "destructive"
+      })
+      return
+    }
+
+    // 🔐 Enterprise Governance: Validate branch and cost center
+    if (!branchId) {
+      toast({
+        title: appLang === 'en' ? 'Error' : 'خطأ',
+        description: appLang === 'en' ? 'Branch is required' : 'الفرع مطلوب',
+        variant: "destructive"
+      })
+      return
+    }
+
+    if (!costCenterId) {
+      toast({
+        title: appLang === 'en' ? 'Error' : 'خطأ',
+        description: appLang === 'en' ? 'Cost center is required' : 'مركز التكلفة مطلوب',
         variant: "destructive"
       })
       return
@@ -150,12 +241,13 @@ export default function NewExpensePage() {
 
       const expenseNumber = nextNumberData || `EXP-${Date.now()}`
 
+      // 🔐 Enterprise Governance: Insert with validated branch and cost center
       const { data, error } = await supabase
         .from("expenses")
         .insert({
           company_id: companyId,
-          branch_id: branchId || null,
-          cost_center_id: costCenterId || null,
+          branch_id: branchId, // Required and validated
+          cost_center_id: costCenterId, // Required and validated
           warehouse_id: warehouseId || null,
           expense_number: expenseNumber,
           expense_date: expenseDate,
@@ -251,9 +343,14 @@ export default function NewExpensePage() {
               branchId={branchId}
               costCenterId={costCenterId}
               warehouseId={warehouseId}
-              onBranchChange={setBranchId}
+              onBranchChange={handleBranchChange}
               onCostCenterChange={setCostCenterId}
               onWarehouseChange={setWarehouseId}
+              disabled={!isAdmin} // 🔐 Governance: Only Admin/GeneralManager can change these fields
+              required={true}
+              lang={appLang}
+              showLabels={true}
+              showWarehouse={false}
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
