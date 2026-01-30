@@ -1,8 +1,8 @@
 ﻿"use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
-import { Card } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -10,7 +10,7 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Plus, Eye, Trash2, Pencil, Search, X, Receipt, DollarSign, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react"
+import { Plus, Eye, Trash2, Pencil, Search, X, Receipt, DollarSign, Clock, CheckCircle, XCircle, AlertCircle, Building2, FileText } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
 import { buildDataVisibilityFilter } from "@/lib/data-visibility-control"
@@ -22,6 +22,10 @@ import { FilterContainer } from "@/components/ui/filter-container"
 import { LoadingState } from "@/components/ui/loading-state"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { MultiSelect } from "@/components/ui/multi-select"
+import { usePagination } from "@/lib/pagination"
+import { DataPagination } from "@/components/data-pagination"
+import { getRoleAccessLevel } from "@/lib/validation"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +52,11 @@ type Expense = {
   cost_center_id?: string
 }
 
+type Branch = {
+  id: string
+  name: string
+}
+
 export default function ExpensesPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
@@ -55,15 +64,18 @@ export default function ExpensesPage() {
   const [hydrated, setHydrated] = useState(false)
   const [loading, setLoading] = useState<boolean>(true)
   const [expenses, setExpenses] = useState<Expense[]>([])
-  const [filteredExpenses, setFilteredExpenses] = useState<Expense[]>([])
   const [searchTerm, setSearchTerm] = useState<string>("")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [canCreate, setCanCreate] = useState<boolean>(false)
   const [canUpdate, setCanUpdate] = useState<boolean>(false)
   const [canDelete, setCanDelete] = useState<boolean>(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false)
   const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null)
   const [userContext, setUserContext] = useState<any>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<string>("viewer")
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [filterBranchId, setFilterBranchId] = useState<string>("all")
+  const [pageSize, setPageSize] = useState(20)
 
   useEffect(() => {
     setHydrated(true)
@@ -105,15 +117,32 @@ export default function ExpensesPage() {
         .eq("user_id", user.id)
         .maybeSingle()
 
+      const role = member?.role || "viewer"
+      setCurrentUserRole(role)
+
       const context = {
         company_id: companyId,
         user_id: user.id,
-        role: member?.role || "viewer",
+        role: role,
         branch_id: member?.branch_id || null,
         cost_center_id: member?.cost_center_id || null,
         warehouse_id: member?.warehouse_id || null
       }
       setUserContext(context)
+
+      // Load branches for admin/owner filtering
+      const accessLevel = getRoleAccessLevel(role)
+      const canViewAllBranches = accessLevel === 'all' || accessLevel === 'company'
+
+      if (canViewAllBranches) {
+        const { data: branchesData } = await supabase
+          .from("branches")
+          .select("id, name")
+          .eq("company_id", companyId)
+          .order("name")
+
+        setBranches(branchesData || [])
+      }
 
       const visibilityRules = buildDataVisibilityFilter(context)
 
@@ -132,7 +161,6 @@ export default function ExpensesPage() {
       if (error) throw error
 
       setExpenses(data || [])
-      setFilteredExpenses(data || [])
     } catch (error: any) {
       console.error("Error loading expenses:", error)
       toast({
@@ -172,10 +200,16 @@ export default function ExpensesPage() {
     totalAmount: expenses.reduce((sum, e) => sum + (e.amount || 0), 0)
   }
 
-  // Filters
-  useEffect(() => {
+  // Filters with useMemo
+  const filteredExpenses = useMemo(() => {
     let filtered = expenses
 
+    // Branch filter (for admin/owner)
+    if (filterBranchId && filterBranchId !== "all") {
+      filtered = filtered.filter(e => e.branch_id === filterBranchId)
+    }
+
+    // Search filter
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase()
       filtered = filtered.filter(exp =>
@@ -185,19 +219,49 @@ export default function ExpensesPage() {
       )
     }
 
-    if (statusFilter && statusFilter !== "all") {
-      filtered = filtered.filter(e => e.status === statusFilter)
+    // Status filter (multi-select)
+    if (statusFilter.length > 0) {
+      filtered = filtered.filter(e => statusFilter.includes(e.status))
     }
 
-    setFilteredExpenses(filtered)
-  }, [searchTerm, statusFilter, expenses])
+    return filtered
+  }, [expenses, searchTerm, statusFilter, filterBranchId])
 
-  const activeFilterCount = (statusFilter && statusFilter !== "all" ? 1 : 0)
+  const activeFilterCount = statusFilter.length + (filterBranchId !== "all" ? 1 : 0)
 
   const clearFilters = () => {
-    setStatusFilter("all")
+    setStatusFilter([])
     setSearchTerm("")
+    setFilterBranchId("all")
   }
+
+  // Pagination
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedExpenses,
+    hasNext,
+    hasPrevious,
+    goToPage,
+    nextPage,
+    previousPage,
+    setPageSize: updatePageSize
+  } = usePagination(filteredExpenses, { pageSize })
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    updatePageSize(newSize)
+  }
+
+  // Status options for multi-select
+  const statusOptions = [
+    { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
+    { value: "pending_approval", label: appLang === 'en' ? "Pending Approval" : "بانتظار الاعتماد" },
+    { value: "approved", label: appLang === 'en' ? "Approved" : "معتمد" },
+    { value: "rejected", label: appLang === 'en' ? "Rejected" : "مرفوض" },
+    { value: "paid", label: appLang === 'en' ? "Paid" : "مدفوع" }
+  ]
 
   const handleDelete = async () => {
     if (!expenseToDelete) return
@@ -371,81 +435,136 @@ export default function ExpensesPage() {
           onClear={clearFilters}
           defaultOpen={false}
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Status Filter */}
-            <div>
-              <label className="text-sm font-medium mb-2 block dark:text-gray-200">
-                {appLang === 'en' ? 'Status' : 'الحالة'}
-              </label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{appLang === 'en' ? 'All' : 'الكل'}</SelectItem>
-                  <SelectItem value="draft">{appLang === 'en' ? 'Draft' : 'مسودة'}</SelectItem>
-                  <SelectItem value="pending_approval">{appLang === 'en' ? 'Pending Approval' : 'بانتظار الاعتماد'}</SelectItem>
-                  <SelectItem value="approved">{appLang === 'en' ? 'Approved' : 'معتمد'}</SelectItem>
-                  <SelectItem value="paid">{appLang === 'en' ? 'Paid' : 'مدفوع'}</SelectItem>
-                  <SelectItem value="rejected">{appLang === 'en' ? 'Rejected' : 'مرفوض'}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Search */}
-            <div>
-              <label className="text-sm font-medium mb-2 block dark:text-gray-200">
-                {appLang === 'en' ? 'Search' : 'بحث'}
-              </label>
-              <div className="relative">
-                <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder={appLang === 'en' ? 'Search...' : 'بحث...'}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pr-10 dark:bg-slate-800 dark:border-slate-700"
-                />
-                {searchTerm && (
-                  <button onClick={() => setSearchTerm("")} className="absolute left-3 top-1/2 transform -translate-y-1/2">
-                    <X className="h-4 w-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" />
-                  </button>
+          <div className="space-y-4">
+            {/* Branch Filter - Only for admin/owner */}
+            {branches.length > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                  {appLang === 'en' ? 'Filter by Branch:' : 'فلترة حسب الفرع:'}
+                </span>
+                <Select value={filterBranchId} onValueChange={setFilterBranchId}>
+                  <SelectTrigger className="w-[220px] h-9 bg-white dark:bg-slate-800">
+                    <SelectValue placeholder={appLang === 'en' ? 'All Branches' : 'جميع الفروع'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      {appLang === 'en' ? '🏢 All Branches' : '🏢 جميع الفروع'}
+                    </SelectItem>
+                    {branches.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        🏢 {branch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {filterBranchId !== "all" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFilterBranchId("all")}
+                    className="h-8 px-3 text-blue-600 hover:text-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30"
+                  >
+                    <X className="w-4 h-4 mr-1" />
+                    {appLang === 'en' ? 'Clear' : 'مسح'}
+                  </Button>
                 )}
               </div>
+            )}
+
+            {/* Search and Filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Search */}
+              <div className="sm:col-span-2">
+                <div className="relative">
+                  <Input
+                    type="text"
+                    placeholder={appLang === 'en' ? 'Search by expense #, description, or category...' : 'بحث برقم المصروف، الوصف، أو التصنيف...'}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pr-10 dark:bg-slate-800 dark:border-slate-700"
+                  />
+                  {searchTerm && (
+                    <button onClick={() => setSearchTerm("")} className="absolute left-3 top-1/2 transform -translate-y-1/2">
+                      <X className="h-4 w-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Status Filter - Multi-select */}
+              <MultiSelect
+                options={statusOptions}
+                selected={statusFilter}
+                onChange={setStatusFilter}
+                placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
+                label={appLang === 'en' ? 'Status' : 'الحالة'}
+              />
             </div>
           </div>
         </FilterContainer>
 
         {/* Table */}
-        <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
-          {loading ? (
-            <LoadingState type="table" rows={8} />
-          ) : expenses.length === 0 ? (
-            <EmptyState
-              icon={Receipt}
-              title={appLang === 'en' ? 'No expenses yet' : 'لا توجد مصروفات بعد'}
-              description={appLang === 'en' ? 'Create your first expense to get started' : 'أنشئ أول مصروف للبدء'}
-              action={canCreate ? {
-                label: appLang === 'en' ? 'Create Expense' : 'إنشاء مصروف',
-                onClick: () => window.location.href = '/expenses/new',
-                icon: Plus
-              } : undefined}
-            />
-          ) : filteredExpenses.length === 0 ? (
-            <EmptyState
-              icon={AlertCircle}
-              title={appLang === 'en' ? 'No results found' : 'لا توجد نتائج'}
-              description={appLang === 'en' ? 'Try adjusting your filters' : 'جرب تعديل الفلاتر'}
-            />
-          ) : (
-            <DataTable
-              columns={tableColumns}
-              data={filteredExpenses}
-              keyField="id"
-              lang={appLang}
-              minWidth="min-w-[640px]"
-              emptyMessage={appLang === 'en' ? 'No expenses found' : 'لا توجد مصروفات'}
-            />
-          )}
+        <Card className="dark:bg-slate-900 dark:border-slate-800">
+          <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+            <CardTitle className="dark:text-white">
+              {appLang === 'en' ? 'Expenses List' : 'قائمة المصروفات'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <LoadingState type="table" rows={8} />
+            ) : expenses.length === 0 ? (
+              <EmptyState
+                icon={Receipt}
+                title={appLang === 'en' ? 'No expenses yet' : 'لا توجد مصروفات بعد'}
+                description={appLang === 'en' ? 'Create your first expense to get started' : 'أنشئ أول مصروف للبدء'}
+                action={canCreate ? {
+                  label: appLang === 'en' ? 'Create Expense' : 'إنشاء مصروف',
+                  onClick: () => window.location.href = '/expenses/new',
+                  icon: Plus
+                } : undefined}
+              />
+            ) : filteredExpenses.length === 0 ? (
+              <EmptyState
+                icon={AlertCircle}
+                title={appLang === 'en' ? 'No results found' : 'لا توجد نتائج'}
+                description={appLang === 'en' ? 'Try adjusting your filters' : 'جرب تعديل الفلاتر'}
+                action={{
+                  label: appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر',
+                  onClick: clearFilters
+                }}
+              />
+            ) : (
+              <>
+                <DataTable
+                  columns={tableColumns}
+                  data={paginatedExpenses}
+                  keyField="id"
+                  lang={appLang}
+                  minWidth="min-w-[640px]"
+                  emptyMessage={appLang === 'en' ? 'No expenses found' : 'لا توجد مصروفات'}
+                />
+
+                {/* Pagination */}
+                <div className="mt-4">
+                  <DataPagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    totalItems={totalItems}
+                    pageSize={pageSize}
+                    onPageChange={goToPage}
+                    onPageSizeChange={handlePageSizeChange}
+                    hasNext={hasNext}
+                    hasPrevious={hasPrevious}
+                    onNext={nextPage}
+                    onPrevious={previousPage}
+                    lang={appLang}
+                  />
+                </div>
+              </>
+            )}
+          </CardContent>
         </Card>
 
         {/* Delete Dialog */}
