@@ -63,6 +63,7 @@ export type RealtimeTable =
   | 'sales_returns' // ✅ مرتجعات المبيعات
   | 'vendor_credits' // ✅ أرصدة الموردين
   | 'customer_debit_notes' // ✅ إشعارات مدين العملاء
+  | 'expenses' // ✅ المصروفات
   // 🔐 جداول الحوكمة (Governance)
   | 'company_members'
   | 'user_branch_access' // ✅ الفروع المسموحة للمستخدم (دعم فروع متعددة)
@@ -308,6 +309,7 @@ class RealtimeManager {
       'sales_returns': 'sales_returns',
       'vendor_credits': 'vendor_credits',
       'customer_debit_notes': 'customer_debit_notes',
+      'expenses': 'expenses',
       // 🔐 جداول الحوكمة
       'company_members': 'company_members',
       'user_branch_access': 'user_branch_access',
@@ -481,6 +483,7 @@ class RealtimeManager {
       case 'sales_returns':
       case 'vendor_credits':
       case 'customer_debit_notes':
+      case 'expenses':
         // ✅ استخدام company_id فقط - الفلترة التفصيلية في shouldProcessEvent
         return filter
 
