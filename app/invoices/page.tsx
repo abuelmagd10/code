@@ -1612,12 +1612,15 @@ export default function InvoicesPage() {
       // ===== تحقق مهم: التأكد من وجود قيود محاسبية أصلية للفواتير المدفوعة فقط =====
       // الفواتير المرسلة (sent) لا تحتوي على قيود مالية - فقط حركات مخزون
       if (requiresJournalEntries(invoiceCheck?.status)) {
+        // ✅ FIX: استخدام limit(1).maybeSingle() بدلاً من single()
+        // لأنه قد يكون هناك أكثر من قيد محاسبي للفاتورة الواحدة
         const { data: existingInvoiceEntry } = await supabase
           .from("journal_entries")
           .select("id")
           .eq("reference_id", returnInvoiceId)
           .eq("reference_type", "invoice")
-          .single()
+          .limit(1)
+          .maybeSingle()
 
         if (!existingInvoiceEntry) {
           toast({
@@ -1806,6 +1809,7 @@ export default function InvoicesPage() {
       console.log(`📌 فاتورة مرسلة (Sent) - سيتم تحديث AR بعد تحديث الفاتورة`)
 
       // البحث عن القيد المحاسبي الأصلي للفاتورة (إن وجد)
+      // ✅ FIX: استخدام maybeSingle() بدلاً من single() لتجنب خطأ 406
       const { data: originalEntry } = await supabase
         .from("journal_entries")
         .select("id")
@@ -1813,7 +1817,7 @@ export default function InvoicesPage() {
         .eq("reference_type", "invoice")
         .eq("reference_id", returnInvoiceId)
         .limit(1)
-        .single()
+        .maybeSingle()
 
       if (originalEntry && ar) {
         // جلب سطر AR فقط في القيد الأصلي
