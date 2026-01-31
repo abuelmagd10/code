@@ -1,7 +1,7 @@
 // 7ESAB ERP Service Worker - Secure Multi-Tenant Version
-// Version: 4.0.0 - 2025-01-XX
+// Version: 4.0.1 - 2025-01-31 - Force cache clear for expense number fix
 // ✅ Production Ready: No caching for dynamic/sensitive data
-const VERSION = '4.0.0';
+const VERSION = '4.0.1-' + Date.now(); // Force unique version on each deployment
 const BUILD_DATE = new Date().toISOString().split('T')[0];
 const STATIC_CACHE = `7esab-static-v${VERSION}`;
 
@@ -34,7 +34,14 @@ const NEVER_CACHE_PATTERNS = [
   '/products',
   '/inventory',
   '/stock',
-  
+
+  // Financial Transactions (CRITICAL - Never cache!)
+  '/expenses',
+  '/invoices',
+  '/bills',
+  '/sales-orders',
+  '/purchase-orders',
+
   // Reports
   '/reports/',
   '/report-',
