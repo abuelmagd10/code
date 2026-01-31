@@ -75,9 +75,35 @@ interface Payment {
 }
 
 interface Branch { id: string; name: string }
-interface InvoiceRow { id: string; invoice_number: string; invoice_date?: string; total_amount: number; paid_amount: number; status: string }
-interface PORow { id: string; po_number: string; total_amount: number; received_amount: number; status: string }
-interface BillRow { id: string; bill_number: string; bill_date?: string; total_amount: number; paid_amount: number; status: string }
+interface InvoiceRow {
+  id: string;
+  invoice_number: string;
+  invoice_date?: string;
+  total_amount: number;
+  paid_amount: number;
+  status: string;
+  branch_id?: string | null;
+  branches?: { name: string } | null;
+}
+interface PORow {
+  id: string;
+  po_number: string;
+  total_amount: number;
+  received_amount: number;
+  status: string;
+  branch_id?: string | null;
+  branches?: { name: string } | null;
+}
+interface BillRow {
+  id: string;
+  bill_number: string;
+  bill_date?: string;
+  total_amount: number;
+  paid_amount: number;
+  status: string;
+  branch_id?: string | null;
+  branches?: { name: string } | null;
+}
 interface Account { id: string; account_code: string; account_name: string; account_type: string }
 interface AccountMapping {
   companyId: string;
@@ -595,46 +621,61 @@ export default function PaymentsPage() {
   }, [supplierPayments, supabase])
 
   // جلب فواتير العميل غير المسددة بالكامل عند اختيار عميل في نموذج إنشاء دفعة
+  // 🔐 ERP Governance: فلترة حسب الفرع للمستخدمين غير المميزين
   useEffect(() => {
     ; (async () => {
       try {
         setSelectedFormInvoiceId("")
         if (!newCustPayment.customer_id) { setFormCustomerInvoices([]); return }
-        const { data: invs } = await supabase
+
+        let query = supabase
           .from("invoices")
-          .select("id, invoice_number, invoice_date, total_amount, paid_amount, status")
+          .select("id, invoice_number, invoice_date, total_amount, paid_amount, status, branch_id, branches(name)")
           .eq("customer_id", newCustPayment.customer_id)
           .in("status", ["sent", "partially_paid", "partially_returned"]) // غير مسددة بالكامل (بما فيها المرتجعة جزئياً)
-          .order("invoice_date", { ascending: false })
+
+        // 🔐 ERP Governance: فلترة حسب الفرع للمستخدمين غير المميزين
+        if (userContext && !canOverrideContext && userContext.branch_id) {
+          query = query.eq("branch_id", userContext.branch_id)
+        }
+
+        const { data: invs } = await query.order("invoice_date", { ascending: false })
         setFormCustomerInvoices(invs || [])
       } catch (e) { /* ignore */ }
     })()
-  }, [newCustPayment.customer_id])
+  }, [newCustPayment.customer_id, userContext, canOverrideContext])
 
   // جلب فواتير المورد غير المسددة بالكامل عند اختيار مورد في نموذج إنشاء دفعة
+  // 🔐 ERP Governance: فلترة حسب الفرع للمستخدمين غير المميزين
   useEffect(() => {
     ; (async () => {
       try {
         setSelectedFormBillId("")
         if (!newSuppPayment.supplier_id) { setFormSupplierBills([]); return }
         if (!companyId) return
-        
+
         // ✅ جلب جميع الفواتير غير المدفوعة بالكامل (بما فيها Draft)
         // نستبعد فقط: paid, cancelled, fully_returned
-        const { data: bills } = await supabase
+        let query = supabase
           .from("bills")
-          .select("id, bill_number, bill_date, total_amount, paid_amount, status")
+          .select("id, bill_number, bill_date, total_amount, paid_amount, status, branch_id, branches(name)")
           .eq("supplier_id", newSuppPayment.supplier_id)
           .eq("company_id", companyId)
           .in("status", ["draft", "sent", "received", "partially_paid", "partially_returned"]) // ✅ شامل Draft
-          .order("bill_date", { ascending: false })
+
+        // 🔐 ERP Governance: فلترة حسب الفرع للمستخدمين غير المميزين
+        if (userContext && !canOverrideContext && userContext.branch_id) {
+          query = query.eq("branch_id", userContext.branch_id)
+        }
+
+        const { data: bills } = await query.order("bill_date", { ascending: false })
         setFormSupplierBills(bills || [])
-      } catch (e) { 
+      } catch (e) {
         console.error("Error loading supplier bills:", e)
         setFormSupplierBills([])
       }
     })()
-  }, [newSuppPayment.supplier_id, companyId, supabase])
+  }, [newSuppPayment.supplier_id, companyId, supabase, userContext, canOverrideContext])
 
   // 🔍 دالة للتحقق من كفاية رصيد الحساب البنكي/الخزنة
   const checkAccountBalance = async (accountId: string | null, amount: number, paymentDate: string): Promise<{ sufficient: boolean; currentBalance: number; accountName?: string }> => {
@@ -2332,6 +2373,7 @@ export default function PaymentsPage() {
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Invoice No.' : 'رقم الفاتورة'}</th>
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Total' : 'المبلغ'}</th>
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Paid' : 'المدفوع'}</th>
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
@@ -2346,6 +2388,11 @@ export default function PaymentsPage() {
                         <tr key={inv.id} className="border-b">
                           <td className="px-2 py-2">{inv.invoice_number}</td>
                           <td className="px-2 py-2">{inv.invoice_date || "-"}</td>
+                          <td className="px-2 py-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                              {inv.branches?.name || (inv.branch_id ? branchNames[inv.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
+                            </span>
+                          </td>
                           <td className="px-2 py-2">{Number(inv.total_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
                           <td className="px-2 py-2">{Number(inv.paid_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
                           <td className="px-2 py-2 font-semibold">{outstanding.toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
@@ -2359,7 +2406,7 @@ export default function PaymentsPage() {
                       )
                     })}
                     {formCustomerInvoices.length === 0 && (
-                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No unpaid invoices for this customer' : 'لا توجد فواتير غير مسددة بالكامل لهذا العميل'}</td></tr>
+                      <tr><td colSpan={7} className="px-2 py-2 text-center text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No unpaid invoices for this customer' : 'لا توجد فواتير غير مسددة بالكامل لهذا العميل'}</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -2546,6 +2593,7 @@ export default function PaymentsPage() {
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Total' : 'المبلغ'}</th>
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Paid' : 'المدفوع'}</th>
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
@@ -2560,6 +2608,11 @@ export default function PaymentsPage() {
                         <tr key={b.id} className="border-b">
                           <td className="px-2 py-2">{b.bill_number}</td>
                           <td className="px-2 py-2">{b.bill_date || "-"}</td>
+                          <td className="px-2 py-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+                              {b.branches?.name || (b.branch_id ? branchNames[b.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
+                            </span>
+                          </td>
                           <td className="px-2 py-2">{Number(b.total_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
                           <td className="px-2 py-2">{Number(b.paid_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
                           <td className="px-2 py-2 font-semibold">{remaining.toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
@@ -2573,7 +2626,7 @@ export default function PaymentsPage() {
                       )
                     })}
                     {formSupplierBills.length === 0 && (
-                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No unpaid bills for this supplier' : 'لا توجد فواتير غير مسددة بالكامل لهذا المورد'}</td></tr>
+                      <tr><td colSpan={7} className="px-2 py-2 text-center text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No unpaid bills for this supplier' : 'لا توجد فواتير غير مسددة بالكامل لهذا المورد'}</td></tr>
                     )}
                   </tbody>
                 </table>
