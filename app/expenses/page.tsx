@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import { useEffect, useState, useCallback, useMemo } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -90,11 +90,6 @@ export default function ExpensesPage() {
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
-  // Realtime subscription
-  useRealtimeTable("expenses", () => {
-    loadExpenses()
-  })
-
   const loadExpenses = useCallback(async () => {
     try {
       setLoading(true)
@@ -176,6 +171,23 @@ export default function ExpensesPage() {
   useEffect(() => {
     loadExpenses()
   }, [loadExpenses])
+
+  // 🔄 Realtime: تحديث قائمة المصروفات تلقائياً عند أي تغيير
+  const loadExpensesRef = useRef(loadExpenses)
+  loadExpensesRef.current = loadExpenses
+
+  const handleExpensesRealtimeEvent = useCallback(() => {
+    console.log('🔄 [Expenses] Realtime event received, refreshing expenses list...')
+    loadExpensesRef.current()
+  }, [])
+
+  useRealtimeTable({
+    table: 'expenses',
+    enabled: true,
+    onInsert: handleExpensesRealtimeEvent,
+    onUpdate: handleExpensesRealtimeEvent,
+    onDelete: handleExpensesRealtimeEvent,
+  })
 
   useEffect(() => {
     async function checkPermissions() {
