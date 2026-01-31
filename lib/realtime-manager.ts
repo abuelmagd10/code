@@ -1387,8 +1387,15 @@ class RealtimeManager {
         'purchase_orders',
         'sales_orders',
         'invoices',
+        'bills',
         'approvals',
         'inventory_transfers',
+        'expenses', // ✅ المصروفات
+        'payments',
+        'journal_entries',
+        'customers',
+        'suppliers',
+        'products',
       ]
 
       for (const table of tablesToResubscribe) {
