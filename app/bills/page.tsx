@@ -342,7 +342,7 @@ export default function BillsPage() {
       
       let billsQuery = supabase
         .from("bills")
-        .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, receipt_status, receipt_rejection_reason, display_currency, display_total, original_currency, original_total, suppliers(name, phone)")
+        .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, receipt_status, receipt_rejection_reason, display_currency, display_total, original_currency, original_total, branch_id, suppliers(name, phone), branches(name)")
         .eq("company_id", visibilityRules.companyId)
         .neq("status", "voided")
 
@@ -709,6 +709,23 @@ export default function BillsPage() {
       type: 'text',
       align: 'left',
       format: (_, row) => (row as any).suppliers?.name || suppliers[row.supplier_id]?.name || row.supplier_id
+    },
+    {
+      key: 'branch_id',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'text',
+      align: 'center',
+      hidden: 'md',
+      format: (_, row) => {
+        const branchName = (row as any).branches?.name
+        return branchName ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+            {branchName}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+        )
+      }
     },
     {
       key: 'id',

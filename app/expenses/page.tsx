@@ -50,6 +50,10 @@ type Expense = {
   created_by?: string
   branch_id?: string
   cost_center_id?: string
+  branch?: {
+    id: string
+    name: string
+  } | null
 }
 
 type Branch = {
@@ -143,7 +147,7 @@ export default function ExpensesPage() {
 
       let expensesQuery = supabase
         .from("expenses")
-        .select("*")
+        .select("*, branches(name)")
         .eq("company_id", visibilityRules.companyId)
         .neq("status", "cancelled")
         .order("expense_date", { ascending: false })
@@ -312,6 +316,21 @@ export default function ExpensesPage() {
       header: appLang === 'en' ? "Date" : "التاريخ",
       sortable: true,
       format: (value, expense) => new Date(expense.expense_date).toLocaleDateString(appLang === 'en' ? "en-US" : "ar-EG")
+    },
+    {
+      key: "branch_id",
+      header: appLang === 'en' ? "Branch" : "الفرع",
+      sortable: true,
+      format: (value, expense) => {
+        const branchName = (expense as any).branches?.name
+        return branchName ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+            {branchName}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+        )
+      }
     },
     {
       key: "description",

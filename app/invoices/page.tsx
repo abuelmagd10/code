@@ -898,6 +898,23 @@ export default function InvoicesPage() {
       format: (_, row) => (row as any).customers?.name || '-'
     },
     {
+      key: 'branch_id',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'text',
+      align: 'center',
+      hidden: 'md',
+      format: (_, row) => {
+        const branchName = (row as any).branches?.name
+        return branchName ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+            {branchName}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+        )
+      }
+    },
+    {
       key: 'id',
       header: appLang === 'en' ? 'Products' : 'المنتجات',
       type: 'custom',

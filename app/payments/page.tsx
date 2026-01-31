@@ -69,7 +69,12 @@ interface Payment {
   currency_code?: string;
   exchange_rate_used?: number;
   exchange_rate?: number;
+  branch_id?: string | null;
+  cost_center_id?: string | null;
+  branches?: { name: string } | null;
 }
+
+interface Branch { id: string; name: string }
 interface InvoiceRow { id: string; invoice_number: string; invoice_date?: string; total_amount: number; paid_amount: number; status: string }
 interface PORow { id: string; po_number: string; total_amount: number; received_amount: number; status: string }
 interface BillRow { id: string; bill_number: string; bill_date?: string; total_amount: number; paid_amount: number; status: string }
@@ -106,6 +111,8 @@ export default function PaymentsPage() {
   const [poNumbers, setPoNumbers] = useState<Record<string, string>>({})
   const [billToPoMap, setBillToPoMap] = useState<Record<string, string>>({})
   const [accountNames, setAccountNames] = useState<Record<string, string>>({}) // Map bill_id -> purchase_order_id
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [branchNames, setBranchNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
 
   // Currency support - using CurrencyService
@@ -177,6 +184,28 @@ export default function PaymentsPage() {
   // 🔐 ERP Access Control - سياق المستخدم
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [canOverrideContext, setCanOverrideContext] = useState(false)
+
+  // 🔐 ERP Governance: التحقق من صلاحية الدفع على فاتورة/فاتورة مورد
+  // Owner/Admin/General Manager: يمكنهم الدفع على أي فاتورة
+  // باقي المستخدمين: يمكنهم الدفع فقط على فواتير فرعهم
+  const canPayOnDocument = useCallback((documentBranchId: string | null): boolean => {
+    if (!userContext) return false
+
+    // Owner, Admin, General Manager يمكنهم الدفع على أي فاتورة
+    const privilegedRoles = ['owner', 'admin', 'general_manager']
+    if (userContext.role && privilegedRoles.includes(userContext.role)) {
+      return true
+    }
+
+    // باقي المستخدمين: يجب أن تكون الفاتورة من نفس الفرع
+    // إذا لم يكن للمستخدم فرع محدد، يمكنه الدفع على الفواتير بدون فرع فقط
+    if (!userContext.branch_id) {
+      return !documentBranchId // يمكنه الدفع فقط على الفواتير بدون فرع
+    }
+
+    // إذا كان للمستخدم فرع، يجب أن تكون الفاتورة من نفس الفرع أو بدون فرع
+    return !documentBranchId || documentBranchId === userContext.branch_id
+  }, [userContext])
 
   // التحقق من الصلاحيات
   // تهيئة القيم بعد hydration
@@ -400,27 +429,70 @@ export default function PaymentsPage() {
         // لا نطبق فلتر الفرع/مركز التكلفة على حسابات النقد والبنك
         setAccounts(cashBankAccounts as any)
 
-        const { data: custPays, error: custPaysErr } = await supabase
+        // 🔐 ERP Access Control - جلب المدفوعات مع تطبيق الصلاحيات
+        // Owner/Admin/General Manager: يرون جميع المدفوعات
+        // باقي المستخدمين: يرون فقط مدفوعات فرعهم
+        const { buildDataVisibilityFilter, applyDataVisibilityFilter } = await import("@/lib/data-visibility-control")
+        const context: UserContext = {
+          user_id: user?.id || '',
+          company_id: activeCompanyId,
+          branch_id: currentBranchId,
+          cost_center_id: currentCostCenterId,
+          warehouse_id: currentWarehouseId,
+          role: currentRole,
+        }
+        const visibilityRules = buildDataVisibilityFilter(context)
+
+        // جلب مدفوعات العملاء مع فلترة الفرع
+        let custPaysQuery = supabase
           .from("payments")
-          .select("*")
+          .select("*, branches(name)")
           .eq("company_id", activeCompanyId)
           .not("customer_id", "is", null)
+
+        // تطبيق فلتر الفرع للمستخدمين غير المالكين/المدراء العامين
+        if (visibilityRules.filterByBranch && visibilityRules.branchId) {
+          custPaysQuery = custPaysQuery.eq("branch_id", visibilityRules.branchId)
+        }
+
+        const { data: custPays, error: custPaysErr } = await custPaysQuery
           .order("payment_date", { ascending: false })
         if (custPaysErr) {
           toastActionError(toast, "الجلب", "مدفوعات العملاء", "تعذر جلب مدفوعات العملاء")
         }
         setCustomerPayments(custPays || [])
 
-        const { data: suppPays, error: suppPaysErr } = await supabase
+        // جلب مدفوعات الموردين مع فلترة الفرع
+        let suppPaysQuery = supabase
           .from("payments")
-          .select("*")
+          .select("*, branches(name)")
           .eq("company_id", activeCompanyId)
           .not("supplier_id", "is", null)
+
+        // تطبيق فلتر الفرع للمستخدمين غير المالكين/المدراء العامين
+        if (visibilityRules.filterByBranch && visibilityRules.branchId) {
+          suppPaysQuery = suppPaysQuery.eq("branch_id", visibilityRules.branchId)
+        }
+
+        const { data: suppPays, error: suppPaysErr } = await suppPaysQuery
           .order("payment_date", { ascending: false })
         if (suppPaysErr) {
           toastActionError(toast, "الجلب", "مدفوعات الموردين", "تعذر جلب مدفوعات الموردين")
         }
         setSupplierPayments(suppPays || [])
+
+        // 🔐 جلب قائمة الفروع للعرض في الجداول
+        const { data: branchesData } = await supabase
+          .from("branches")
+          .select("id, name")
+          .eq("company_id", activeCompanyId)
+          .order("name")
+        setBranches(branchesData || [])
+
+        // إنشاء خريطة أسماء الفروع للوصول السريع
+        const branchNameMap: Record<string, string> = {}
+        ;(branchesData || []).forEach((b: Branch) => { branchNameMap[b.id] = b.name })
+        setBranchNames(branchNameMap)
       } finally {
         setLoading(false)
       }
@@ -1170,6 +1242,19 @@ export default function PaymentsPage() {
       if (!mapping || !mapping.ar) return
       const { data: inv } = await supabase.from("invoices").select("*").eq("id", invoiceId).single()
       if (!inv) return
+
+      // 🔐 ERP Governance: التحقق من صلاحية الدفع على هذه الفاتورة
+      if (!canPayOnDocument(inv.branch_id)) {
+        toast({
+          title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
+          description: appLang === 'en'
+            ? 'You cannot make payments on invoices from other branches. Please contact your administrator.'
+            : 'لا يمكنك إجراء دفعات على فواتير من فروع أخرى. يرجى التواصل مع المسؤول.',
+          variant: 'destructive'
+        })
+        setSaving(false)
+        return
+      }
       const remaining = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
       const amount = Math.min(rawAmount, remaining)
 
@@ -1510,6 +1595,21 @@ export default function PaymentsPage() {
         // Load invoice to compute remaining
         const { data: inv } = await supabase.from("invoices").select("*").eq("id", applyDocId).single()
         if (!inv) return
+
+        // 🔐 ERP Governance: التحقق من صلاحية الدفع على هذه الفاتورة
+        if (!canPayOnDocument(inv.branch_id)) {
+          toast({
+            title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
+            description: appLang === 'en'
+              ? 'You cannot make payments on invoices from other branches. Please contact your administrator.'
+              : 'لا يمكنك إجراء دفعات على فواتير من فروع أخرى. يرجى التواصل مع المسؤول.',
+            variant: 'destructive'
+          })
+          startTransition(() => {
+            setSaving(false)
+          })
+          return
+        }
         const remaining = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
         const amount = Math.min(applyAmount, remaining)
 
@@ -1672,6 +1772,20 @@ export default function PaymentsPage() {
       if (!mapping || !mapping.ap) return
       const { data: bill } = await supabase.from("bills").select("*").eq("id", applyDocId).single()
       if (!bill) return
+
+      // 🔐 ERP Governance: التحقق من صلاحية الدفع على هذه الفاتورة
+      if (!canPayOnDocument(bill.branch_id)) {
+        toast({
+          title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
+          description: appLang === 'en'
+            ? 'You cannot make payments on bills from other branches. Please contact your administrator.'
+            : 'لا يمكنك إجراء دفعات على فواتير من فروع أخرى. يرجى التواصل مع المسؤول.',
+          variant: 'destructive'
+        })
+        setSaving(false)
+        return
+      }
+
       const remaining = Math.max(Number(bill.total_amount || 0) - Number(bill.paid_amount || 0), 0)
       const amount = Math.min(applyAmount, remaining)
 
@@ -1941,6 +2055,19 @@ export default function PaymentsPage() {
       if (!mapping || !mapping.ap || !mapping.cash) return
       const { data: bill } = await supabase.from("bills").select("*").eq("id", billId).single()
       if (!bill) return
+
+      // 🔐 ERP Governance: التحقق من صلاحية الدفع على هذه الفاتورة
+      if (!canPayOnDocument(bill.branch_id)) {
+        toast({
+          title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
+          description: appLang === 'en'
+            ? 'You cannot make payments on bills from other branches. Please contact your administrator.'
+            : 'لا يمكنك إجراء دفعات على فواتير من فروع أخرى. يرجى التواصل مع المسؤول.',
+          variant: 'destructive'
+        })
+        setSaving(false)
+        return
+      }
       const remaining = Math.max(Number(bill.total_amount || 0) - Number(bill.paid_amount || 0), 0)
       const amount = Math.min(rawAmount, remaining)
 
@@ -2247,6 +2374,7 @@ export default function PaymentsPage() {
                 <thead>
                   <tr className="border-b bg-gray-50 dark:bg-slate-900">
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Reference' : 'مرجع'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Invoice' : 'الفاتورة المرتبطة'}</th>
@@ -2257,6 +2385,11 @@ export default function PaymentsPage() {
                   {customerPayments.map((p) => (
                     <tr key={p.id} className="border-b">
                       <td className="px-2 py-2">{p.payment_date}</td>
+                      <td className="px-2 py-2">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                          {p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
+                        </span>
+                      </td>
                       <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
                       <td className="px-2 py-2">
@@ -2455,6 +2588,7 @@ export default function PaymentsPage() {
                 <thead>
                   <tr className="border-b bg-gray-50 dark:bg-slate-900">
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Reference' : 'مرجع'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</th>
@@ -2467,6 +2601,11 @@ export default function PaymentsPage() {
                   {supplierPayments.map((p) => (
                     <tr key={p.id} className="border-b">
                       <td className="px-2 py-2">{p.payment_date}</td>
+                      <td className="px-2 py-2">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+                          {p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
+                        </span>
+                      </td>
                       <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
                       <td className="px-2 py-2">{p.account_id ? (accountNames[p.account_id] || "-") : "-"}</td>
@@ -2879,7 +3018,7 @@ export default function PaymentsPage() {
                         // إنشاء بنود القيد الجديد
                         if (isCustomer && mapping.ar) {
                           // قيد سداد فاتورة عميل: Dr. Cash/Bank / Cr. AR
-                        await supabase.from("journal_entry_lines").insert([
+                          await supabase.from("journal_entry_lines").insert([
                             {
                               journal_entry_id: newEntry.id,
                               account_id: newCashId,

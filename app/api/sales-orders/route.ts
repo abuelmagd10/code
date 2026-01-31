@@ -30,7 +30,8 @@ export async function GET(request: NextRequest) {
       .from("sales_orders")
       .select(`
         *,
-        customers:customer_id (id, name, phone, city)
+        customers:customer_id (id, name, phone, city),
+        branches:branch_id (name)
       `)
     
     // تطبيق الفلاتر

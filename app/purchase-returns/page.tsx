@@ -64,7 +64,7 @@ export default function PurchaseReturnsPage() {
       // ===== 🔧 إصلاح: جلب المرتجعات من الفواتير مباشرة =====
       const { data, error } = await supabase
         .from("bills")
-        .select("id, bill_number, bill_date, returned_amount, return_status, supplier_id, suppliers(name)")
+        .select("id, bill_number, bill_date, returned_amount, return_status, supplier_id, branch_id, suppliers(name), branches(name)")
         .eq("company_id", companyId)
         .not("return_status", "is", null)
         .gt("returned_amount", 0)
@@ -160,6 +160,23 @@ export default function PurchaseReturnsPage() {
       width: 'w-32',
       hidden: 'sm',
       format: (value) => value?.bill_number || '—'
+    },
+    {
+      key: 'branch_id',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'text',
+      align: 'center',
+      hidden: 'md',
+      format: (_, row) => {
+        const branchName = (row as any).branches?.name
+        return branchName ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+            {branchName}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+        )
+      }
     },
     {
       key: 'return_date',

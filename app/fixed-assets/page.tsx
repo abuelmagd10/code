@@ -671,6 +671,7 @@ export default function FixedAssetsPage() {
                             <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Category' : 'الفئة'}</th>
                             <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Cost' : 'التكلفة'}</th>
                             <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
                             <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
                             <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
                           </tr>
@@ -690,6 +691,15 @@ export default function FixedAssetsPage() {
                                 <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{asset.asset_categories?.name}</td>
                                 <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden md:table-cell">{formatNumber(asset.purchase_cost)}</td>
                                 <td className="px-3 py-3 font-bold text-gray-900 dark:text-white hidden lg:table-cell">{formatNumber(asset.book_value)}</td>
+                                <td className="px-3 py-3 text-center hidden md:table-cell">
+                                  {(asset as any).branches?.name ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                                      {(asset as any).branches.name}
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+                                  )}
+                                </td>
                                 <td className="px-3 py-3">
                                   <Badge className={statusColors[asset.status] || statusColors.draft}>
                                     {statusLabels[asset.status]?.[appLang === 'en' ? 'en' : 'ar'] || asset.status}

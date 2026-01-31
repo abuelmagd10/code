@@ -15,6 +15,8 @@ interface AdvancedDashboardChartsProps {
   appLang: string
   fromDate?: string
   toDate?: string
+  /** 🔐 Dashboard Governance: فلترة حسب الفرع */
+  branchId?: string | null
 }
 
 interface InvoiceStatusData {
@@ -49,7 +51,8 @@ export default function AdvancedDashboardCharts({
   defaultCurrency,
   appLang,
   fromDate,
-  toDate
+  toDate,
+  branchId
 }: AdvancedDashboardChartsProps) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
@@ -106,7 +109,7 @@ export default function AdvancedDashboardCharts({
 
   useEffect(() => {
     loadAllData()
-  }, [companyId, fromDate, toDate])
+  }, [companyId, fromDate, toDate, branchId])
 
   const loadAllData = async () => {
     if (!companyId) return
@@ -130,9 +133,11 @@ export default function AdvancedDashboardCharts({
   const loadInvoiceStatus = async () => {
     let query = supabase
       .from('invoices')
-      .select('status, invoice_date')
+      .select('status, invoice_date, branch_id')
       .eq('company_id', companyId)
 
+    // 🔐 Dashboard Governance: فلترة حسب الفرع
+    if (branchId) query = query.eq('branch_id', branchId)
     if (fromDate) query = query.gte('invoice_date', fromDate)
     if (toDate) query = query.lte('invoice_date', toDate)
 
@@ -155,10 +160,12 @@ export default function AdvancedDashboardCharts({
   const loadTopCustomers = async () => {
     let query = supabase
       .from('invoices')
-      .select('customer_id, total_amount, invoice_date, customers(name)')
+      .select('customer_id, total_amount, invoice_date, branch_id, customers(name)')
       .eq('company_id', companyId)
       .in('status', ['sent', 'partially_paid', 'paid'])
 
+    // 🔐 Dashboard Governance: فلترة حسب الفرع
+    if (branchId) query = query.eq('branch_id', branchId)
     if (fromDate) query = query.gte('invoice_date', fromDate)
     if (toDate) query = query.lte('invoice_date', toDate)
 
@@ -189,11 +196,13 @@ export default function AdvancedDashboardCharts({
       .select(`
         quantity, line_total, product_id, description,
         products(name, item_type),
-        invoices!inner(company_id, status, invoice_date)
+        invoices!inner(company_id, status, invoice_date, branch_id)
       `)
       .eq('invoices.company_id', companyId)
       .in('invoices.status', ['sent', 'partially_paid', 'paid'])
 
+    // 🔐 Dashboard Governance: فلترة حسب الفرع
+    if (branchId) query = query.eq('invoices.branch_id', branchId)
     if (fromDate) query = query.gte('invoices.invoice_date', fromDate)
     if (toDate) query = query.lte('invoices.invoice_date', toDate)
 
@@ -222,10 +231,12 @@ export default function AdvancedDashboardCharts({
   const loadCollections = async () => {
     let query = supabase
       .from('invoices')
-      .select('total_amount, paid_amount, invoice_date')
+      .select('total_amount, paid_amount, invoice_date, branch_id')
       .eq('company_id', companyId)
       .in('status', ['sent', 'partially_paid', 'paid'])
 
+    // 🔐 Dashboard Governance: فلترة حسب الفرع
+    if (branchId) query = query.eq('branch_id', branchId)
     if (fromDate) query = query.gte('invoice_date', fromDate)
     if (toDate) query = query.lte('invoice_date', toDate)
 
@@ -244,10 +255,12 @@ export default function AdvancedDashboardCharts({
   const loadShippingExpense = async () => {
     let query = supabase
       .from('invoices')
-      .select('shipping, invoice_date')
+      .select('shipping, invoice_date, branch_id')
       .eq('company_id', companyId)
       .in('status', ['sent', 'partially_paid', 'paid'])
 
+    // 🔐 Dashboard Governance: فلترة حسب الفرع
+    if (branchId) query = query.eq('branch_id', branchId)
     if (fromDate) query = query.gte('invoice_date', fromDate)
     if (toDate) query = query.lte('invoice_date', toDate)
 

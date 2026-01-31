@@ -194,7 +194,7 @@ export default function VendorCreditsPage() {
     
     let creditsQuery = supabase
       .from("vendor_credits")
-      .select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status, created_by, approval_status")
+      .select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status, created_by, approval_status, branch_id, branches(name)")
       .eq("company_id", visibilityRules.companyId)
 
     // ✅ تطبيق قواعد الرؤية الموحدة
@@ -532,6 +532,7 @@ export default function VendorCreditsPage() {
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Applied' : 'المطبّق'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
+                        <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
                         <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'إجراءات'}</th>
                       </tr>
@@ -545,6 +546,15 @@ export default function VendorCreditsPage() {
                           <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{currencySymbol}{Number(vc.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                           <td className="px-3 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{currencySymbol}{Number(vc.applied_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                           <td className={`px-3 py-3 hidden md:table-cell ${remaining(vc) > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{currencySymbol}{remaining(vc).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                          <td className="px-3 py-3 text-center hidden md:table-cell">
+                            {(vc as any).branches?.name ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300">
+                                {(vc as any).branches.name}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+                            )}
+                          </td>
                           <td className="px-3 py-3 text-center">{getStatusBadge(vc.status)}</td>
                           <td className="px-3 py-3">
                             <Link href={`/vendor-credits/${vc.id}`}>

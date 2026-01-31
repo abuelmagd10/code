@@ -136,9 +136,10 @@ export default function InventoryTransfersPage() {
         .from("inventory_transfers")
         .select(`
           id, transfer_number, status, transfer_date, expected_arrival_date, received_date, notes, created_by, received_by,
-          source_warehouse_id, destination_warehouse_id, source_branch_id, destination_branch_id,
+          source_warehouse_id, destination_warehouse_id, source_branch_id, destination_branch_id, branch_id,
           source_warehouses:warehouses!inventory_transfers_source_warehouse_id_fkey(id, name, branch_id),
-          destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name, branch_id)
+          destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name, branch_id),
+          branches(name)
         `)
         .eq("company_id", companyId)
         .is("deleted_at", null)
@@ -416,6 +417,7 @@ export default function InventoryTransfersPage() {
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Items' : 'الأصناف'}</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Quantity' : 'الكمية المنقولة'}</th>
                         <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Products' : 'أسماء الأصناف'}</th>
+                        <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
@@ -453,6 +455,15 @@ export default function InventoryTransfersPage() {
                                 {transfer.product_names || '-'}
                               </span>
                             </div>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {(transfer as any).branches?.name ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
+                                {(transfer as any).branches.name}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-center">
                             {getStatusBadge(transfer.status)}

@@ -222,7 +222,9 @@ export default function CustomerDebitNotesPage() {
         approval_status,
         reference_type,
         created_by,
-        customers (name)
+        branch_id,
+        customers (name),
+        branches (name)
       `)
       .eq('company_id', visibilityRules.companyId)
 
@@ -355,6 +357,23 @@ export default function CustomerDebitNotesPage() {
       type: 'text',
       align: 'left',
       width: 'flex-1'
+    },
+    {
+      key: 'branch_id',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'text',
+      align: 'center',
+      hidden: 'md',
+      format: (_, row) => {
+        const branchName = (row as any).branches?.name
+        return branchName ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300">
+            {branchName}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+        )
+      }
     },
     {
       key: 'reference_type',

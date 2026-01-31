@@ -13,6 +13,8 @@ interface InventoryStatsProps {
   appLang: string
   fromDate?: string
   toDate?: string
+  /** 🔐 Dashboard Governance: فلترة حسب الفرع */
+  branchId?: string | null
 }
 
 interface Product {
@@ -27,7 +29,8 @@ export default function DashboardInventoryStats({
   defaultCurrency,
   appLang,
   fromDate,
-  toDate
+  toDate,
+  branchId
 }: InventoryStatsProps) {
   const supabase = useSupabase()
   const { userContext } = useUserContext()
@@ -57,28 +60,30 @@ export default function DashboardInventoryStats({
 
   useEffect(() => {
     loadStats()
-  }, [companyId, fromDate, toDate])
+  }, [companyId, fromDate, toDate, branchId])
 
   const loadStats = async () => {
     if (!companyId) return
     setLoading(true)
     try {
       if (!userContext || userContext.company_id !== companyId) return
-      const branchId = String(userContext.branch_id || "")
+
+      // 🔐 Dashboard Governance: استخدام branchId من props إذا وُجد، وإلا من userContext
+      const effectiveBranchId = branchId || String(userContext.branch_id || "")
       const warehouseId = String(userContext.warehouse_id || "")
       const costCenterId = String(userContext.cost_center_id || "")
-      if (!branchId || !warehouseId || !costCenterId) return
+      if (!effectiveBranchId || !warehouseId || !costCenterId) return
 
       // ✅ ERP Professional: حساب قيمة المخزون من FIFO Lots (المصدر الوحيد للحقيقة)
       // 📌 يمنع استخدام products.cost_price في التقارير الرسمية
       // 📌 FIFO Engine هو الجهة الوحيدة المخولة بتحديد unit_cost
-      
+
       // 1. حساب الكميات من inventory_transactions
       let transactionsQuery = supabase
         .from('inventory_transactions')
         .select('product_id, quantity_change')
         .eq('company_id', companyId)
-        .eq('branch_id', branchId)
+        .eq('branch_id', effectiveBranchId)
         .eq('warehouse_id', warehouseId)
         .eq('cost_center_id', costCenterId)
         .or('is_deleted.is.null,is_deleted.eq.false')

@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     
     let query = supabase
       .from("invoices")
-      .select("*, customers(name, phone)")
+      .select("*, customers(name, phone), branches(name)")
       .eq("company_id", companyId)
 
     if (accessLevel === 'own') {

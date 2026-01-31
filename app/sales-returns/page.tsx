@@ -80,134 +80,137 @@ export default function SalesReturnsPage() {
     checkPerms()
   }, [supabase])
 
-  useEffect(() => {
-    ; (async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) {
-          setLoading(false)
-          return
-        }
-
-        // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
-        const { getActiveCompanyId } = await import("@/lib/company")
-        const companyId = await getActiveCompanyId(supabase)
-        if (!companyId) {
-          setLoading(false)
-          return
-        }
-
-        // ===== 🔧 إصلاح: جلب المرتجعات من الفواتير مباشرة =====
-        // بدلاً من الاعتماد على journal_entries فقط، نجلب الفواتير التي بها مرتجعات
-        // 🔐 ERP Access Control - استخدام نظام Data Visibility الموحد
-        const { data: memberData } = await supabase
-          .from("company_members")
-          .select("role, branch_id, cost_center_id, warehouse_id")
-          .eq("company_id", companyId)
-          .eq("user_id", user.id)
-          .maybeSingle()
-        
-        const { data: companyData } = await supabase
-          .from("companies")
-          .select("user_id")
-          .eq("id", companyId)
-          .single()
-        
-        const isOwner = companyData?.user_id === user.id
-        const role = isOwner ? "owner" : (memberData?.role || "viewer")
-        
-        const userContext: UserContext = {
-          user_id: user.id,
-          company_id: companyId,
-          branch_id: memberData?.branch_id || null,
-          cost_center_id: memberData?.cost_center_id || null,
-          warehouse_id: memberData?.warehouse_id || null,
-          role: role
-        }
-        
-        const visibilityRules = buildDataVisibilityFilter(userContext)
-        
-        let invoicesQuery = supabase
-          .from("invoices")
-          .select("id, invoice_number, invoice_date, customer_id, returned_amount, return_status, customers(name)")
-          .eq("company_id", visibilityRules.companyId)
-          .not("return_status", "is", null)
-          .gt("returned_amount", 0)
-
-        // ✅ تطبيق قواعد الرؤية الموحدة
-        invoicesQuery = applyDataVisibilityFilter(invoicesQuery, visibilityRules, "invoices")
-        
-        const { data: invoicesWithReturns, error } = await invoicesQuery
-          .order("invoice_date", { ascending: false })
-
-        if (error) {
-          console.error("Error fetching sales returns:", error)
-          setLoading(false)
-          return
-        }
-
-        const invoices = invoicesWithReturns || []
-
-        // إذا لا توجد مرتجعات، انتهي
-        if (invoices.length === 0) {
-          setReturns([])
-          setLoading(false)
-          return
-        }
-
-        // 🔐 ERP Access Control - جلب العملاء مع تطبيق الصلاحيات (يستخدم userContext الذي تم إنشاؤه أعلاه)
-        const accessFilter = getAccessFilter(role, user.id, memberData?.branch_id || null, memberData?.cost_center_id || null);
-
-        let allCustomers: Customer[] = [];
-        if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-          const { data: ownCust } = await supabase.from("customers").select("id, name").eq("company_id", companyId).eq("created_by_user_id", accessFilter.createdByUserId);
-          allCustomers = ownCust || [];
-          const { data: sharedPerms } = await supabase.from("permission_sharing").select("grantor_user_id").eq("grantee_user_id", user.id).eq("company_id", companyId).eq("is_active", true).or("resource_type.eq.all,resource_type.eq.customers");
-          if (sharedPerms && sharedPerms.length > 0) {
-            const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id);
-            const { data: sharedCust } = await supabase.from("customers").select("id, name").eq("company_id", companyId).in("created_by_user_id", grantorIds);
-            const existingIds = new Set(allCustomers.map(c => c.id));
-            (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
-          }
-        } else if (accessFilter.filterByBranch && accessFilter.branchId) {
-          const { data: branchCust } = await supabase.from("customers").select("id, name").eq("company_id", companyId).eq("branch_id", accessFilter.branchId);
-          allCustomers = branchCust || [];
-        } else {
-          const { data: allCust } = await supabase.from("customers").select("id, name").eq("company_id", companyId);
-          allCustomers = allCust || [];
-        }
-        setCustomers(allCustomers)
-
-        // تنسيق البيانات
-        const formatted: SalesReturnEntry[] = invoices.map((inv: any) => ({
-          id: inv.id,
-          entry_date: inv.invoice_date,
-          description: `${inv.return_status === 'full' ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل') : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')} - ${appLang === 'en' ? 'Invoice' : 'فاتورة'} ${inv.invoice_number}`,
-          reference_id: inv.id,
-          reference_type: inv.return_status === 'full' ? 'full_return' : 'partial_return',
-          total_amount: Number(inv.returned_amount || 0),
-          invoice_number: inv.invoice_number || "",
-          customer_name: inv.customers?.name || "",
-          customer_id: inv.customer_id || ""
-        }))
-
-        setReturns(formatted)
+  // دالة تحميل البيانات - يمكن استدعاؤها من useEffect أو من realtime
+  const loadReturnsData = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
         setLoading(false)
-      } catch (err) {
-        console.error("Error in sales returns page:", err)
-        setLoading(false)
+        return
       }
-    })()
-  }, [supabase])
+
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) {
+        setLoading(false)
+        return
+      }
+
+      // ===== 🔧 إصلاح: جلب المرتجعات من الفواتير مباشرة =====
+      // بدلاً من الاعتماد على journal_entries فقط، نجلب الفواتير التي بها مرتجعات
+      // 🔐 ERP Access Control - استخدام نظام Data Visibility الموحد
+      const { data: memberData } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id, warehouse_id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .maybeSingle()
+
+      const { data: companyData } = await supabase
+        .from("companies")
+        .select("user_id")
+        .eq("id", companyId)
+        .single()
+
+      const isOwner = companyData?.user_id === user.id
+      const role = isOwner ? "owner" : (memberData?.role || "viewer")
+
+      const userContext: UserContext = {
+        user_id: user.id,
+        company_id: companyId,
+        branch_id: memberData?.branch_id || null,
+        cost_center_id: memberData?.cost_center_id || null,
+        warehouse_id: memberData?.warehouse_id || null,
+        role: role
+      }
+
+      const visibilityRules = buildDataVisibilityFilter(userContext)
+
+      let invoicesQuery = supabase
+        .from("invoices")
+        .select("id, invoice_number, invoice_date, customer_id, returned_amount, return_status, branch_id, customers(name), branches(name)")
+        .eq("company_id", visibilityRules.companyId)
+        .not("return_status", "is", null)
+        .gt("returned_amount", 0)
+
+      // ✅ تطبيق قواعد الرؤية الموحدة
+      invoicesQuery = applyDataVisibilityFilter(invoicesQuery, visibilityRules, "invoices")
+
+      const { data: invoicesWithReturns, error } = await invoicesQuery
+        .order("invoice_date", { ascending: false })
+
+      if (error) {
+        console.error("Error fetching sales returns:", error)
+        setLoading(false)
+        return
+      }
+
+      const invoices = invoicesWithReturns || []
+
+      // إذا لا توجد مرتجعات، انتهي
+      if (invoices.length === 0) {
+        setReturns([])
+        setLoading(false)
+        return
+      }
+
+      // 🔐 ERP Access Control - جلب العملاء مع تطبيق الصلاحيات (يستخدم userContext الذي تم إنشاؤه أعلاه)
+      const accessFilter = getAccessFilter(role, user.id, memberData?.branch_id || null, memberData?.cost_center_id || null);
+
+      let allCustomers: Customer[] = [];
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        const { data: ownCust } = await supabase.from("customers").select("id, name").eq("company_id", companyId).eq("created_by_user_id", accessFilter.createdByUserId);
+        allCustomers = ownCust || [];
+        const { data: sharedPerms } = await supabase.from("permission_sharing").select("grantor_user_id").eq("grantee_user_id", user.id).eq("company_id", companyId).eq("is_active", true).or("resource_type.eq.all,resource_type.eq.customers");
+        if (sharedPerms && sharedPerms.length > 0) {
+          const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id);
+          const { data: sharedCust } = await supabase.from("customers").select("id, name").eq("company_id", companyId).in("created_by_user_id", grantorIds);
+          const existingIds = new Set(allCustomers.map(c => c.id));
+          (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
+        }
+      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        const { data: branchCust } = await supabase.from("customers").select("id, name").eq("company_id", companyId).eq("branch_id", accessFilter.branchId);
+        allCustomers = branchCust || [];
+      } else {
+        const { data: allCust } = await supabase.from("customers").select("id, name").eq("company_id", companyId);
+        allCustomers = allCust || [];
+      }
+      setCustomers(allCustomers)
+
+      // تنسيق البيانات
+      const formatted: SalesReturnEntry[] = invoices.map((inv: any) => ({
+        id: inv.id,
+        entry_date: inv.invoice_date,
+        description: `${inv.return_status === 'full' ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل') : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')} - ${appLang === 'en' ? 'Invoice' : 'فاتورة'} ${inv.invoice_number}`,
+        reference_id: inv.id,
+        reference_type: inv.return_status === 'full' ? 'full_return' : 'partial_return',
+        total_amount: Number(inv.returned_amount || 0),
+        invoice_number: inv.invoice_number || "",
+        customer_name: inv.customers?.name || "",
+        customer_id: inv.customer_id || ""
+      }))
+
+      setReturns(formatted)
+      setLoading(false)
+    } catch (err) {
+      console.error("Error in sales returns page:", err)
+      setLoading(false)
+    }
+  }, [supabase, appLang])
+
+  // تحميل البيانات عند بدء الصفحة
+  useEffect(() => {
+    loadReturnsData()
+  }, [loadReturnsData])
 
   // 🔄 Realtime: تحديث قائمة مرتجعات المبيعات تلقائياً عند أي تغيير
-  const reloadReturnsRef = useRef<() => void>(() => {
-    window.location.reload()
-  })
+  const loadReturnsRef = useRef(loadReturnsData)
+  loadReturnsRef.current = loadReturnsData
 
   const handleSalesReturnsRealtimeEvent = useCallback(() => {
     console.log('🔄 [SalesReturns] Realtime event received, refreshing returns list...')
-    reloadReturnsRef.current()
+    loadReturnsRef.current()
   }, [])
 
   useRealtimeTable({
@@ -302,6 +305,23 @@ export default function SalesReturnsPage() {
       align: 'left',
       width: 'min-w-[150px]',
       format: (value) => value || '—'
+    },
+    {
+      key: 'branch_id',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'text',
+      align: 'center',
+      hidden: 'md',
+      format: (_, row) => {
+        const branchName = (row as any).branches?.name
+        return branchName ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
+            {branchName}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+        )
+      }
     },
     {
       key: 'invoice_number',

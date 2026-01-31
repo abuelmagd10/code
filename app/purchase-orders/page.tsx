@@ -282,7 +282,7 @@ export default function PurchaseOrdersPage() {
       
       let poQuery = supabase
         .from("purchase_orders")
-        .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, branch_id, cost_center_id, warehouse_id, suppliers(name, phone)")
+        .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, branch_id, cost_center_id, warehouse_id, suppliers(name, phone), branches(name)")
         .eq("company_id", visibilityRules.companyId);
 
       // ✅ تطبيق قواعد الرؤية الموحدة
@@ -469,7 +469,7 @@ export default function PurchaseOrdersPage() {
           // جلب أوامر الشراء فقط (بدون إعادة تحميل كل البيانات)
           let poQuery = supabase
             .from("purchase_orders")
-            .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, branch_id, cost_center_id, warehouse_id, suppliers(name, phone)")
+            .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, branch_id, cost_center_id, warehouse_id, suppliers(name, phone), branches(name)")
             .eq("company_id", companyId);
 
           if (!canOverride && member) {
@@ -606,6 +606,23 @@ export default function PurchaseOrdersPage() {
       type: 'text',
       align: 'left',
       format: (_, row) => (row as any).suppliers?.name || '-'
+    },
+    {
+      key: 'branch_id',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'text',
+      align: 'center',
+      hidden: 'md',
+      format: (_, row) => {
+        const branchName = (row as any).branches?.name
+        return branchName ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+            {branchName}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+        )
+      }
     },
     {
       key: 'id',

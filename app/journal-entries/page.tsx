@@ -169,7 +169,7 @@ export default function JournalEntriesPage() {
 
       let query = supabase
         .from("journal_entries")
-        .select("*, journal_entry_lines!inner(account_id)")
+        .select("*, journal_entry_lines!inner(account_id), branches(name)")
         .eq("company_id", companyId)
         .is("deleted_at", null)
         .order("entry_date", { ascending: false })
@@ -638,6 +638,7 @@ export default function JournalEntriesPage() {
                             <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
                             <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Description' : 'الوصف'}</th>
                             <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Type' : 'النوع'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
                             <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
                             <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
                           </tr>
@@ -653,6 +654,15 @@ export default function JournalEntriesPage() {
                                 <span className="px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded text-xs font-medium">
                                   {entry.reference_type}
                                 </span>
+                              </td>
+                              <td className="px-3 py-3 text-center hidden md:table-cell">
+                                {(entry as any).branches?.name ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300">
+                                    {(entry as any).branches.name}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+                                )}
                               </td>
                               <td className="px-3 py-3">
                                 {(() => {

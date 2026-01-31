@@ -12,6 +12,8 @@ interface ProductServiceStatsProps {
   appLang: string
   fromDate?: string
   toDate?: string
+  /** 🔐 Dashboard Governance: فلترة حسب الفرع */
+  branchId?: string | null
 }
 
 interface SalesData {
@@ -28,7 +30,8 @@ export default function DashboardProductServiceStats({
   defaultCurrency,
   appLang,
   fromDate,
-  toDate
+  toDate,
+  branchId
 }: ProductServiceStatsProps) {
   const supabase = useSupabase()
   const [appCurrency, setAppCurrency] = useState(defaultCurrency)
@@ -57,7 +60,7 @@ export default function DashboardProductServiceStats({
 
   useEffect(() => {
     loadSalesData()
-  }, [companyId, fromDate, toDate])
+  }, [companyId, fromDate, toDate, branchId])
 
   const loadSalesData = async () => {
     if (!companyId) return
@@ -72,10 +75,15 @@ export default function DashboardProductServiceStats({
           product_id,
           description,
           products(id, name, item_type),
-          invoices!inner(company_id, status, invoice_date)
+          invoices!inner(company_id, status, invoice_date, branch_id)
         `)
         .eq('invoices.company_id', companyId)
         .in('invoices.status', ['sent', 'partially_paid', 'paid'])
+
+      // 🔐 Dashboard Governance: فلترة حسب الفرع
+      if (branchId) {
+        query = query.eq('invoices.branch_id', branchId)
+      }
 
       // Apply date filters if provided
       if (fromDate) {

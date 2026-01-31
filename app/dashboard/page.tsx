@@ -4,7 +4,7 @@ import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { TrendingUp, LayoutDashboard, ArrowUpRight, Building2 } from "lucide-react"
+import { TrendingUp, LayoutDashboard, ArrowUpRight, Building2, GitBranch } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import DashboardStats from "@/components/DashboardStats"
 import DashboardSecondaryStats from "@/components/DashboardSecondaryStats"
@@ -16,6 +16,13 @@ import DashboardInventoryStats from "@/components/DashboardInventoryStats"
 import AdvancedDashboardCharts from "@/components/charts/AdvancedDashboardCharts"
 import { canAccessPage, getFirstAllowedPage } from "@/lib/authz"
 import { CurrencyMismatchAlert } from "@/components/CurrencyMismatchAlert"
+import DashboardScopeSwitcher from "@/components/DashboardScopeSwitcher"
+import {
+  buildDashboardVisibilityRules,
+  type DashboardScope,
+  type DashboardUserContext,
+  type DashboardVisibilityRules
+} from "@/lib/dashboard-visibility"
 export const dynamic = "force-dynamic"
 
 type BankAccount = { id: string; name: string; balance: number }
@@ -79,6 +86,63 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     }
   }
 
+  // 🔐 Dashboard Governance - جلب بيانات المستخدم والفرع
+  let userContext: DashboardUserContext | null = null
+  let visibilityRules: DashboardVisibilityRules | null = null
+  let currentBranchName: string | null = null
+  let allBranches: { id: string; name: string }[] = []
+
+  if (companyId && data.user) {
+    // جلب عضوية المستخدم في الشركة
+    const { data: member } = await supabase
+      .from("company_members")
+      .select("role, branch_id, cost_center_id, warehouse_id")
+      .eq("company_id", companyId)
+      .eq("user_id", data.user.id)
+      .maybeSingle()
+
+    const role = member?.role || "viewer"
+
+    userContext = {
+      user_id: data.user.id,
+      company_id: companyId,
+      role: role,
+      branch_id: member?.branch_id || null,
+      cost_center_id: member?.cost_center_id || null,
+      warehouse_id: member?.warehouse_id || null
+    }
+
+    // قراءة النطاق المحدد من URL
+    const scopeParam = readOne("scope") as DashboardScope | ""
+    const branchParam = readOne("branch")
+    const selectedScope = (scopeParam === 'company' || scopeParam === 'branch') ? scopeParam : undefined
+    const selectedBranchId = branchParam || undefined
+
+    // بناء قواعد الرؤية
+    visibilityRules = buildDashboardVisibilityRules(userContext, selectedScope, selectedBranchId)
+
+    // جلب اسم الفرع المحدد
+    if (visibilityRules.branchId) {
+      const { data: branchData } = await supabase
+        .from("branches")
+        .select("name")
+        .eq("id", visibilityRules.branchId)
+        .maybeSingle()
+      currentBranchName = branchData?.name || null
+    }
+
+    // جلب جميع الفروع للمستخدمين المميزين
+    if (visibilityRules.canSeeAllBranches) {
+      const { data: branchesData } = await supabase
+        .from("branches")
+        .select("id, name")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("name")
+      allBranches = branchesData || []
+    }
+  }
+
   // Default stats
   let hasData = false
 
@@ -138,12 +202,19 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   const hasGroupFilter = selectedGroups.length > 0
 
   if (company) {
+    // 🔐 Dashboard Governance: تطبيق فلترة الفرع على الفواتير
     // Sum invoices total_amount (exclude draft/cancelled) & count within date range
     let invQuery = supabase
       .from("invoices")
-      .select("id, customer_id, invoice_number, total_amount, paid_amount, invoice_date, status, shipping, tax_amount, display_total, display_currency, display_rate")
+      .select("id, customer_id, invoice_number, total_amount, paid_amount, invoice_date, status, shipping, tax_amount, display_total, display_currency, display_rate, branch_id")
       .eq("company_id", company.id)
       .in("status", ["sent", "partially_paid", "paid"])
+
+    // 🔐 فلترة حسب الفرع (إذا كان النطاق branch)
+    if (visibilityRules?.scope === 'branch' && visibilityRules.branchId) {
+      invQuery = invQuery.eq("branch_id", visibilityRules.branchId)
+    }
+
     if (fromDate) invQuery = invQuery.gte("invoice_date", fromDate)
     if (toDate) invQuery = invQuery.lte("invoice_date", toDate)
     const { data: invoices } = await invQuery
@@ -205,12 +276,19 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       }
     }
 
+    // 🔐 Dashboard Governance: تطبيق فلترة الفرع على فواتير الشراء
     // Bills data for dashboard (includes display fields for currency conversion)
     let billsQuery = supabase
       .from("bills")
-      .select("id, supplier_id, bill_number, total_amount, paid_amount, bill_date, status, display_total, display_currency, display_rate")
+      .select("id, supplier_id, bill_number, total_amount, paid_amount, bill_date, status, display_total, display_currency, display_rate, branch_id")
       .eq("company_id", company.id)
       .in("status", ["sent", "partially_paid", "paid"]) // exclude draft/cancelled/voided from dashboard metrics
+
+    // 🔐 فلترة حسب الفرع (إذا كان النطاق branch)
+    if (visibilityRules?.scope === 'branch' && visibilityRules.branchId) {
+      billsQuery = billsQuery.eq("branch_id", visibilityRules.branchId)
+    }
+
     if (fromDate) billsQuery = billsQuery.gte("bill_date", fromDate)
     if (toDate) billsQuery = billsQuery.lte("bill_date", toDate)
     const { data: bills } = await billsQuery
@@ -270,7 +348,9 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     const profitCur = incomeCur - expenseCur
     profitChangePct = profitPrev === 0 ? (profitCur > 0 ? 100 : 0) : ((profitCur - profitPrev) / Math.abs(profitPrev)) * 100
 
+    // 🔐 Dashboard Governance: النقد والبنك
     // Bank & cash balances: opening_balance + sum(debits - credits)
+    // ⚠️ ملاحظة: الحسابات على مستوى الشركة، لكن نفلتر الحركات حسب الفرع
     let allAccounts: any[] = []
     try {
       const headerStore = await headers()
@@ -304,25 +384,59 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     const accIds = (assetAccounts || []).map((a: any) => a.id)
     assetAccountsData = (assetAccounts || []).map((a: any) => ({ id: a.id, account_code: a.account_code, account_name: a.account_name, account_type: a.account_type, sub_type: a.sub_type }))
     const balanceMap = new Map<string, number>()
-    for (const a of assetAccounts || []) balanceMap.set(a.id, Number(a.opening_balance || 0))
+
+    // 🔐 في Company View: نبدأ من opening_balance
+    // 🔐 في Branch View: نبدأ من صفر (لأن opening_balance على مستوى الشركة)
+    if (visibilityRules?.scope === 'company') {
+      for (const a of assetAccounts || []) balanceMap.set(a.id, Number(a.opening_balance || 0))
+    } else {
+      for (const a of assetAccounts || []) balanceMap.set(a.id, 0)
+    }
+
     let filledViaService = false
     if (accIds.length > 0) {
-      try {
-        const headerStore = await headers()
-        const cookieHeader = headerStore.get('cookie') || ''
-        // استخدام التاريخ من الفلتر أو تاريخ ثابت لتجنب hydration mismatch
-        const asOf = toDate || new Date().toISOString().slice(0, 10)
-        const balRes = await fetch(`/api/account-balances?companyId=${encodeURIComponent(company.id)}&asOf=${encodeURIComponent(asOf)}`, { headers: { cookie: cookieHeader } })
-        if (balRes.ok) {
-          const balRows = await balRes.json()
-          for (const r of (Array.isArray(balRows) ? balRows : [])) {
-            const id = String((r as any).account_id)
-            const prev = balanceMap.get(id) || 0
-            balanceMap.set(id, prev + Number((r as any).balance || 0))
-          }
-          filledViaService = true
+      // 🔐 في Branch View: نستخدم الاستعلام المباشر مع فلترة الفرع
+      // لأن API لا يدعم فلترة الفرع حالياً
+      if (visibilityRules?.scope === 'branch' && visibilityRules.branchId) {
+        // استعلام مباشر مع فلترة الفرع ومركز التكلفة
+        let linesQuery = supabase
+          .from("journal_entry_lines")
+          .select("account_id, debit_amount, credit_amount, branch_id, cost_center_id, journal_entries!inner(entry_date, company_id)")
+          .in("account_id", accIds)
+          .eq("journal_entries.company_id", company.id)
+          .eq("branch_id", visibilityRules.branchId)
+
+        if (visibilityRules.costCenterId) {
+          linesQuery = linesQuery.eq("cost_center_id", visibilityRules.costCenterId)
         }
-      } catch { }
+        if (fromDate) linesQuery = linesQuery.gte("journal_entries.entry_date", fromDate)
+        if (toDate) linesQuery = linesQuery.lte("journal_entries.entry_date", toDate)
+
+        const { data: lines } = await linesQuery
+        for (const l of lines || []) {
+          const prev = balanceMap.get(l.account_id) || 0
+          balanceMap.set(l.account_id, prev + Number(l.debit_amount || 0) - Number(l.credit_amount || 0))
+        }
+        filledViaService = true
+      } else {
+        // Company View: استخدام API أو استعلام بدون فلترة فرع
+        try {
+          const headerStore = await headers()
+          const cookieHeader = headerStore.get('cookie') || ''
+          const asOf = toDate || new Date().toISOString().slice(0, 10)
+          const balRes = await fetch(`/api/account-balances?companyId=${encodeURIComponent(company.id)}&asOf=${encodeURIComponent(asOf)}`, { headers: { cookie: cookieHeader } })
+          if (balRes.ok) {
+            const balRows = await balRes.json()
+            for (const r of (Array.isArray(balRows) ? balRows : [])) {
+              const id = String((r as any).account_id)
+              const prev = balanceMap.get(id) || 0
+              balanceMap.set(id, prev + Number((r as any).balance || 0))
+            }
+            filledViaService = true
+          }
+        } catch { }
+      }
+
       if (!filledViaService) {
         let linesQuery = supabase
           .from("journal_entry_lines")
@@ -417,12 +531,33 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                   </p>
                 </div>
               </div>
-              {company && (
-                <Badge variant="outline" className="gap-2 px-3 py-1.5 bg-gray-50 dark:bg-slate-800 self-start sm:self-auto text-xs sm:text-sm">
-                  <Building2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                  {company.currency || 'EGP'}
-                </Badge>
-              )}
+              <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                {/* 🔐 Dashboard Scope Switcher */}
+                {visibilityRules && (
+                  <DashboardScopeSwitcher
+                    canSwitch={visibilityRules.canSwitchScope}
+                    currentScope={visibilityRules.scope}
+                    currentBranchId={visibilityRules.branchId}
+                    currentBranchName={currentBranchName}
+                    lang={appLang === 'en' ? 'en' : 'ar'}
+                  />
+                )}
+
+                {/* عرض الفرع للمستخدمين العاديين */}
+                {visibilityRules && !visibilityRules.canSwitchScope && currentBranchName && (
+                  <Badge variant="outline" className="gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300">
+                    <GitBranch className="w-3 h-3 sm:w-4 sm:h-4" />
+                    {currentBranchName}
+                  </Badge>
+                )}
+
+                {company && (
+                  <Badge variant="outline" className="gap-2 px-3 py-1.5 bg-gray-50 dark:bg-slate-800 text-xs sm:text-sm">
+                    <Building2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                    {company.currency || 'EGP'}
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
 
@@ -455,6 +590,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               appLang={appLang}
               fromDate={fromDate}
               toDate={toDate}
+              branchId={visibilityRules?.scope === 'branch' ? visibilityRules.branchId : undefined}
             />
           )}
           {/* الرسوم البيانية */}
@@ -491,6 +627,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               appLang={appLang}
               fromDate={fromDate}
               toDate={toDate}
+              branchId={visibilityRules?.scope === 'branch' ? visibilityRules.branchId : undefined}
             />
           )}
 
@@ -512,6 +649,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                   appLang={appLang}
                   fromDate={fromDate}
                   toDate={toDate}
+                  branchId={visibilityRules?.scope === 'branch' ? visibilityRules.branchId : undefined}
                 />
               </CardContent>
             </Card>
