@@ -48,6 +48,7 @@ INSERT INTO chart_of_accounts_template (
     ('2120', 'ضريبة القيمة المضافة - مخرجات', 'VAT Output', 'liability', 'credit', 'vat_output', '2100', 3),
     ('2130', 'الرواتب المستحقة', 'Accrued Salaries', 'liability', 'credit', NULL, '2100', 3),
     ('2140', 'إيرادات مقدمة', 'Unearned Revenue', 'liability', 'credit', NULL, '2100', 3),
+    ('2155', 'رصيد العملاء الدائن', 'Customer Credit Balance', 'liability', 'credit', 'customer_credit', '2100', 3),
     ('2200', 'الالتزامات طويلة الأجل', 'Long-term Liabilities', 'liability', 'credit', NULL, '2000', 2),
     ('2210', 'القروض طويلة الأجل', 'Long-term Loans', 'liability', 'credit', NULL, '2200', 3),
 

@@ -117,6 +117,7 @@ export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: '2140', account_name: 'إيرادات مقدمة (غير مكتسبة)', account_name_en: 'Unearned Revenue', account_type: 'liability', normal_balance: 'credit', sub_type: 'unearned_revenue', parent_code: '2100' },
   { account_code: '2145', account_name: 'سلف من العملاء', account_name_en: 'Customer Deposits', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
   { account_code: '2150', account_name: 'الأرباح الموزعة المستحقة', account_name_en: 'Dividends Payable', account_type: 'liability', normal_balance: 'credit', sub_type: 'dividends_payable', parent_code: '2100' },
+  { account_code: '2155', account_name: 'رصيد العملاء الدائن', account_name_en: 'Customer Credit Balance', account_type: 'liability', normal_balance: 'credit', sub_type: 'customer_credit', parent_code: '2100' },
   { account_code: '2160', account_name: 'مصروفات مستحقة أخرى', account_name_en: 'Other Accrued Expenses', account_type: 'liability', normal_balance: 'credit', sub_type: 'accruals', parent_code: '2100' },
   { account_code: '2170', account_name: 'قروض قصيرة الأجل', account_name_en: 'Short-term Loans', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
 
