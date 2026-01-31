@@ -105,26 +105,37 @@ CREATE TRIGGER expenses_updated_at_trigger
 -- =====================================
 -- 4️⃣ دالة توليد رقم المصروف التلقائي
 -- =====================================
+-- 🔒 استخدام Advisory Lock لمنع Race Conditions
 CREATE OR REPLACE FUNCTION generate_expense_number(p_company_id UUID)
 RETURNS TEXT AS $$
 DECLARE
-  v_count INTEGER;
+  v_lock_key BIGINT;
+  v_max_number INTEGER;
   v_number TEXT;
 BEGIN
-  -- عد المصروفات الموجودة
-  SELECT COUNT(*) INTO v_count
+  -- 🔒 إنشاء lock key فريد لكل شركة (استخدام hashtext للحصول على رقم من UUID)
+  v_lock_key := hashtext(p_company_id::TEXT);
+
+  -- 🔒 الحصول على قفل حصري لهذه الشركة (ينتظر حتى يتم تحرير القفل)
+  PERFORM pg_advisory_xact_lock(v_lock_key);
+
+  -- 🔍 الحصول على أكبر رقم موجود
+  SELECT COALESCE(
+    MAX(
+      CAST(
+        SUBSTRING(expense_number FROM 'EXP-([0-9]+)') AS INTEGER
+      )
+    ),
+    0
+  ) INTO v_max_number
   FROM expenses
-  WHERE company_id = p_company_id;
-  
-  -- توليد الرقم
-  v_number := 'EXP-' || LPAD((v_count + 1)::TEXT, 4, '0');
-  
-  -- التحقق من عدم التكرار
-  WHILE EXISTS (SELECT 1 FROM expenses WHERE company_id = p_company_id AND expense_number = v_number) LOOP
-    v_count := v_count + 1;
-    v_number := 'EXP-' || LPAD((v_count + 1)::TEXT, 4, '0');
-  END LOOP;
-  
+  WHERE company_id = p_company_id
+    AND expense_number ~ '^EXP-[0-9]+$'; -- فقط الأرقام التي تتبع النمط الصحيح
+
+  -- ✅ توليد الرقم التالي
+  v_number := 'EXP-' || LPAD((v_max_number + 1)::TEXT, 4, '0');
+
+  -- 🔓 القفل سيتم تحريره تلقائياً عند انتهاء Transaction
   RETURN v_number;
 END;
 $$ LANGUAGE plpgsql;
