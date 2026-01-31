@@ -276,7 +276,11 @@ export default function EstimatesPage() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">العروض السعرية</h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">عروض الأسعار للعملاء</p>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">إدارة عروض الأسعار للعملاء</p>
+                {/* 🔐 Governance Notice */}
+                <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                  👑 جميع العروض السعرية مرئية
+                </p>
               </div>
             </div>
             <Button onClick={onOpenNew} className="h-10 sm:h-11 text-sm sm:text-base">عرض جديد</Button>

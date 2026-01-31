@@ -912,7 +912,18 @@ export default function PurchaseOrdersPage() {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Purchase Orders' : 'أوامر الشراء'}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage purchase orders' : 'إدارة أوامر الشراء'}</p>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage supplier purchase orders and track deliveries' : 'إدارة أوامر شراء الموردين وتتبع التوريدات'}</p>
+                  {/* 🔐 Governance Notice */}
+                  {(userContext?.role === 'manager' || userContext?.role === 'accountant') && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {appLang === 'en' ? '🏢 Showing purchase orders from your branch only' : '🏢 تعرض أوامر الشراء الخاصة بفرعك فقط'}
+                    </p>
+                  )}
+                  {(userContext?.role === 'staff' || userContext?.role === 'sales' || userContext?.role === 'employee') && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {appLang === 'en' ? '👨‍💼 Showing purchase orders you created only' : '👨‍💼 تعرض أوامر الشراء التي أنشأتها فقط'}
+                    </p>
+                  )}
                 </div>
               </div>
               {permWrite && (

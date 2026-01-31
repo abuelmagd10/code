@@ -870,7 +870,11 @@ export default function ShareholdersPage() {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Shareholders' : 'المساهمون'}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Ownership & profit distribution' : 'الملكية وتوزيع الأرباح'}</p>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Manage ownership & profit distribution' : 'إدارة الملكية وتوزيع الأرباح'}</p>
+                  {/* 🔐 Governance Notice - Shareholders is admin-only */}
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-1" suppressHydrationWarning>
+                    {(hydrated && appLang === 'en') ? '👑 Admin access - All shareholders visible' : '👑 صلاحية إدارية - جميع المساهمين مرئيين'}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">

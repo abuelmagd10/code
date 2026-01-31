@@ -1488,13 +1488,16 @@ function SalesOrdersContent() {
         <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
           <PageHeaderList
             title={appLang === 'en' ? 'Sales Orders' : 'أوامر البيع'}
-            description={appLang === 'en' ? 'Manage customer sales orders' : 'إدارة أوامر بيع العملاء'}
+            description={appLang === 'en' ? 'Manage customer sales orders and track fulfillment' : 'إدارة أوامر بيع العملاء وتتبع التنفيذ'}
             icon={ShoppingCart}
             createHref={permWrite ? "/sales-orders/new" : undefined}
             createLabel={appLang === 'en' ? 'New Sales Order' : 'أمر بيع جديد'}
             createDisabled={!permWrite}
             createTitle={!permWrite ? (appLang === 'en' ? 'No permission to create sales orders' : 'لا توجد صلاحية لإنشاء أوامر بيع') : undefined}
             lang={appLang}
+            userRole={currentUserRole}
+            governanceType="branch_creator"
+            governanceEntityName={appLang === 'en' ? 'sales orders' : 'أوامر البيع'}
           />
         </div>
 

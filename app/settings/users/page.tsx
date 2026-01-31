@@ -931,12 +931,16 @@ export default function UsersSettingsPage() {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">المستخدمون</h1>
-                  <div className="flex items-center gap-2 mt-0.5 sm:mt-1 flex-wrap">
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1">إدارة أعضاء الشركة وصلاحياتهم</p>
+                  {/* 🔐 Governance Notice */}
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                    👑 صلاحية إدارية - جميع المستخدمين مرئيين
+                  </p>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-xs">
                       <Building2 className="w-3 h-3 ml-1" />
                       {companyName}
                     </Badge>
-                    <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">• إدارة الأعضاء</span>
                   </div>
                 </div>
               </div>

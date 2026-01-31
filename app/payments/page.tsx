@@ -2259,7 +2259,18 @@ export default function PaymentsPage() {
             </div>
             <div className="min-w-0">
               <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Payments' : 'المدفوعات'}</h1>
-              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Customer/supplier payments' : 'مدفوعات العملاء والموردين'}</p>
+              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage customer and supplier payments' : 'إدارة مدفوعات العملاء والموردين'}</p>
+              {/* 🔐 Governance Notice */}
+              {(userContext?.role === 'manager' || userContext?.role === 'accountant') && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  {appLang === 'en' ? '🏢 Showing payments from your branch only' : '🏢 تعرض المدفوعات الخاصة بفرعك فقط'}
+                </p>
+              )}
+              {(userContext?.role === 'staff' || userContext?.role === 'sales' || userContext?.role === 'employee') && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  {appLang === 'en' ? '👨‍💼 Showing payments you created only' : '👨‍💼 تعرض المدفوعات التي أنشأتها فقط'}
+                </p>
+              )}
             </div>
           </div>
           {!online && (

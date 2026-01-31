@@ -58,6 +58,7 @@ export default function JournalEntriesPage() {
   const [debitCreditById, setDebitCreditById] = useState<DebitCreditMap>({})
   const [isLoading, setIsLoading] = useState(true)
   const [accountName, setAccountName] = useState("")
+  const [currentUserRole, setCurrentUserRole] = useState<string>('viewer')
   const searchParams = useSearchParams()
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const numberFmt = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -155,6 +156,27 @@ export default function JournalEntriesPage() {
 
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
+
+      // 🔐 ERP Access Control - جلب دور المستخدم
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("user_id")
+          .eq("id", companyId)
+          .single()
+
+        const { data: memberData } = await supabase
+          .from("company_members")
+          .select("role")
+          .eq("company_id", companyId)
+          .eq("user_id", user.id)
+          .single()
+
+        const isOwner = companyData?.user_id === user.id
+        const role = isOwner ? "owner" : (memberData?.role || "viewer")
+        setCurrentUserRole(role)
+      }
 
       if (accountIdParam) {
         const { data: acc } = await supabase
@@ -367,7 +389,18 @@ export default function JournalEntriesPage() {
                     </div>
                     <div className="min-w-0">
                       <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Journal Entries' : 'قيود اليومية'}</h1>
-                      <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Accounting journal' : 'سجل القيود'}</p>
+                      <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage accounting journal entries' : 'إدارة القيود المحاسبية'}</p>
+                      {/* 🔐 Governance Notice */}
+                      {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
+                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                          {appLang === 'en' ? '🏢 Showing entries from your branch only' : '🏢 تعرض القيود الخاصة بفرعك فقط'}
+                        </p>
+                      )}
+                      {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
+                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                          {appLang === 'en' ? '👨‍💼 Showing entries you created only' : '👨‍💼 تعرض القيود التي أنشأتها فقط'}
+                        </p>
+                      )}
                       {(accountIdParam || fromParam || toParam) && (
                         <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                           <span>{appLang === 'en' ? 'Filter: ' : 'تصفية: '}</span>

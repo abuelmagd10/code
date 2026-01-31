@@ -527,8 +527,19 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                     )}
                   </h1>
                   <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                    {appLang === 'en' ? 'Overview of your business' : 'نظرة عامة على أعمالك'}
+                    {appLang === 'en' ? 'Overview of your business performance' : 'نظرة عامة على أداء أعمالك'}
                   </p>
+                  {/* 🔐 Governance Notice */}
+                  {visibilityRules && visibilityRules.scope === 'company' && (
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                      {appLang === 'en' ? '👑 Company-wide view - All branches data' : '👑 عرض على مستوى الشركة - بيانات جميع الفروع'}
+                    </p>
+                  )}
+                  {visibilityRules && visibilityRules.scope === 'branch' && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {appLang === 'en' ? '🏢 Branch view - Showing data from your branch only' : '🏢 عرض الفرع - تعرض بيانات فرعك فقط'}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">

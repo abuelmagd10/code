@@ -321,7 +321,11 @@ export default function BranchesPage() {
                     {t("Branches", "الفروع")}
                   </h1>
                   <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                    {t("Manage company branches", "إدارة فروع الشركة")}
+                    {t("Manage company branches and locations", "إدارة فروع الشركة ومواقعها")}
+                  </p>
+                  {/* 🔐 Governance Notice - Branches are admin-only */}
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                    {t("👑 Admin access - All branches visible", "👑 صلاحية إدارية - جميع الفروع مرئية")}
                   </p>
                 </div>
               </div>

@@ -298,7 +298,11 @@ export default function CostCentersPage() {
                     {t("Cost Centers", "مراكز التكلفة")}
                   </h1>
                   <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                    {t("Manage cost centers", "إدارة مراكز التكلفة")}
+                    {t("Manage cost centers for expense tracking", "إدارة مراكز التكلفة لتتبع المصروفات")}
+                  </p>
+                  {/* 🔐 Governance Notice - Cost Centers are admin-only */}
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                    {t("👑 Admin access - All cost centers visible", "👑 صلاحية إدارية - جميع مراكز التكلفة مرئية")}
                   </p>
                 </div>
               </div>

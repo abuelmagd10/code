@@ -425,8 +425,19 @@ export default function FixedAssetsPage() {
                       {appLang === 'en' ? 'Fixed Assets' : 'الأصول الثابتة'}
                     </h1>
                     <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                      {appLang === 'en' ? 'Manage your company fixed assets and depreciation' : 'إدارة الأصول الثابتة والإهلاك'}
+                      {appLang === 'en' ? 'Manage company fixed assets and depreciation' : 'إدارة الأصول الثابتة والإهلاك'}
                     </p>
+                    {/* 🔐 Governance Notice */}
+                    {(userContext?.role === 'manager' || userContext?.role === 'accountant') && (
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                        {appLang === 'en' ? '🏢 Showing assets from your branch only' : '🏢 تعرض الأصول الخاصة بفرعك فقط'}
+                      </p>
+                    )}
+                    {(userContext?.role === 'staff' || userContext?.role === 'sales' || userContext?.role === 'employee') && (
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                        {appLang === 'en' ? '👨‍💼 Showing assets you created only' : '👨‍💼 تعرض الأصول التي أنشأتها فقط'}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-2 flex-wrap">

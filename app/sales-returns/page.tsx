@@ -43,6 +43,7 @@ export default function SalesReturnsPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [currentUserRole, setCurrentUserRole] = useState<string>('viewer')
 
   // تهيئة اللغة بعد hydration
   useEffect(() => {
@@ -115,6 +116,7 @@ export default function SalesReturnsPage() {
 
       const isOwner = companyData?.user_id === user.id
       const role = isOwner ? "owner" : (memberData?.role || "viewer")
+      setCurrentUserRole(role)
 
       const userContext: UserContext = {
         user_id: user.id,
@@ -395,8 +397,19 @@ export default function SalesReturnsPage() {
                 <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6 text-red-600 dark:text-red-400" />
               </div>
               <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Sales Returns' : 'المرتجعات'}</h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Returns & refunds' : 'المرتجعات والمستردات'}</p>
+                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'}</h1>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage customer returns and refunds' : 'إدارة مرتجعات العملاء والمستردات'}</p>
+                {/* 🔐 Governance Notice */}
+                {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                    {appLang === 'en' ? '🏢 Showing returns from your branch only' : '🏢 تعرض المرتجعات الخاصة بفرعك فقط'}
+                  </p>
+                )}
+                {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                    {appLang === 'en' ? '👨‍💼 Showing returns you created only' : '👨‍💼 تعرض المرتجعات التي أنشأتها فقط'}
+                  </p>
+                )}
               </div>
             </div>
             {permWrite && (

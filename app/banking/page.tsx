@@ -345,7 +345,11 @@ export default function BankingPage() {
               <div className="min-w-0">
                 <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Banking' : 'البنوك'}</h1>
                 <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                  {appLang === 'en' ? 'Bank & cash accounts' : 'الحسابات البنكية والخزينة'}
+                  {appLang === 'en' ? 'Manage bank & cash accounts' : 'إدارة الحسابات البنكية والخزينة'}
+                </p>
+                {/* 🔐 Governance Notice - Banking is company-wide */}
+                <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                  {appLang === 'en' ? '👑 Company-wide accounts - All bank accounts visible' : '👑 حسابات على مستوى الشركة - جميع الحسابات البنكية مرئية'}
                 </p>
               </div>
             </div>

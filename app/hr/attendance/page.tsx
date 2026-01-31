@@ -53,7 +53,11 @@ export default function AttendancePage() {
           {/* رأس الصفحة - تحسين للهاتف */}
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
             <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white">{t('Attendance', 'الحضور والانصراف')}</h1>
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1">{t('Record employee attendance', 'تسجيل حضور الموظفين')}</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1">{t('Track and record employee attendance', 'تتبع وتسجيل حضور الموظفين')}</p>
+            {/* 🔐 Governance Notice - Attendance is admin-only */}
+            <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+              {t('👑 Admin access - All attendance records visible', '👑 صلاحية إدارية - جميع سجلات الحضور مرئية')}
+            </p>
           </div>
           <Card>
             <CardHeader><CardTitle>{t('Record Attendance', 'تسجيل حضور')}</CardTitle></CardHeader>

@@ -173,7 +173,11 @@ export default function PayrollPage() {
           {/* رأس الصفحة - تحسين للهاتف */}
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
             <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white">{t('Payroll', 'المرتبات')}</h1>
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1">{t('Manage salaries and payroll', 'إدارة المرتبات والرواتب')}</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1">{t('Process salaries and manage payroll', 'معالجة الرواتب وإدارة المرتبات')}</p>
+            {/* 🔐 Governance Notice - Payroll is admin-only */}
+            <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+              {t('👑 Admin access - All payroll data visible', '👑 صلاحية إدارية - جميع بيانات المرتبات مرئية')}
+            </p>
           </div>
           <Card>
             <CardHeader><CardTitle>{t('Run Payroll', 'تشغيل المرتبات')}</CardTitle></CardHeader>

@@ -29,6 +29,7 @@ export default function PurchaseReturnsPage() {
   const supabase = useSupabase()
   const router = useRouter()
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [currentUserRole, setCurrentUserRole] = useState<string>('viewer')
 
   const [returns, setReturns] = useState<PurchaseReturn[]>([])
 
@@ -60,6 +61,27 @@ export default function PurchaseReturnsPage() {
       setIsLoading(true)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
+
+      // 🔐 ERP Access Control - جلب دور المستخدم
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("user_id")
+          .eq("id", companyId)
+          .single()
+
+        const { data: memberData } = await supabase
+          .from("company_members")
+          .select("role")
+          .eq("company_id", companyId)
+          .eq("user_id", user.id)
+          .single()
+
+        const isOwner = companyData?.user_id === user.id
+        const role = isOwner ? "owner" : (memberData?.role || "viewer")
+        setCurrentUserRole(role)
+      }
 
       // ===== 🔧 إصلاح: جلب المرتجعات من الفواتير مباشرة =====
       const { data, error } = await supabase
@@ -249,8 +271,19 @@ export default function PurchaseReturnsPage() {
                     {appLang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'}
                   </h1>
                   <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                    {appLang === 'en' ? 'Manage purchase returns' : 'إدارة مرتجعات المشتريات'}
+                    {appLang === 'en' ? 'Manage supplier returns and refunds' : 'إدارة مرتجعات الموردين والمستردات'}
                   </p>
+                  {/* 🔐 Governance Notice */}
+                  {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {appLang === 'en' ? '🏢 Showing returns from your branch only' : '🏢 تعرض المرتجعات الخاصة بفرعك فقط'}
+                    </p>
+                  )}
+                  {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {appLang === 'en' ? '👨‍💼 Showing returns you created only' : '👨‍💼 تعرض المرتجعات التي أنشأتها فقط'}
+                    </p>
+                  )}
                 </div>
               </div>
               <Button onClick={() => router.push("/purchase-returns/new")} className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4">

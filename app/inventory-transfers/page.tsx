@@ -314,6 +314,17 @@ export default function InventoryTransfersPage() {
                   <p className="text-gray-500 dark:text-gray-400">
                     {appLang === 'en' ? 'Transfer products between warehouses' : 'نقل المنتجات بين المخازن'}
                   </p>
+                  {/* 🔐 Governance Notice */}
+                  {(userRole === 'manager' || userRole === 'accountant') && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {appLang === 'en' ? '🏢 Showing transfers from your branch only' : '🏢 تعرض التحويلات الخاصة بفرعك فقط'}
+                    </p>
+                  )}
+                  {(userRole === 'staff' || userRole === 'sales' || userRole === 'employee') && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {appLang === 'en' ? '👨‍💼 Showing transfers you created only' : '👨‍💼 تعرض التحويلات التي أنشأتها فقط'}
+                    </p>
+                  )}
                 </div>
               </div>
               {canCreate && (

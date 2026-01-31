@@ -273,7 +273,7 @@ export function PageHeaderDetail({
  * PageHeaderList - Specialized header for list pages
  * رأس صفحة مخصص لصفحات القوائم
  *
- * Includes: Icon, Title, Description, Create button
+ * Includes: Icon, Title, Description, Create button, Governance Notice
  */
 export interface PageHeaderListProps {
   title: string
@@ -294,6 +294,11 @@ export interface PageHeaderListProps {
 
   // Styling
   className?: string
+
+  // 🔐 ERP Governance Notice
+  userRole?: string
+  governanceType?: 'branch' | 'creator' | 'branch_creator' | 'none'
+  governanceEntityName?: string // e.g., "الفواتير", "invoices"
 }
 
 export function PageHeaderList({
@@ -307,6 +312,9 @@ export function PageHeaderList({
   additionalActions = [],
   lang = 'ar',
   className = "",
+  userRole,
+  governanceType = 'none',
+  governanceEntityName,
 }: PageHeaderListProps) {
   const actions: PageHeaderAction[] = []
 
@@ -327,6 +335,63 @@ export function PageHeaderList({
     })
   }
 
+  // 🔐 Generate Governance Notice based on role and type
+  const getGovernanceNotice = () => {
+    if (!userRole || governanceType === 'none') return null
+
+    const isPrivileged = ['owner', 'admin', 'general_manager'].includes(userRole)
+    const isManager = ['manager', 'accountant'].includes(userRole)
+    const isStaff = ['staff', 'sales', 'employee'].includes(userRole)
+
+    const entityName = governanceEntityName || (lang === 'en' ? 'data' : 'البيانات')
+
+    if (isPrivileged) {
+      // Owner/Admin/GM see all data - no notice needed
+      return null
+    }
+
+    if (governanceType === 'branch' && isManager) {
+      return {
+        icon: '🏢',
+        text: lang === 'en'
+          ? `Showing ${entityName} from your branch only`
+          : `تعرض ${entityName} الخاصة بفرعك فقط`
+      }
+    }
+
+    if (governanceType === 'creator' && isStaff) {
+      return {
+        icon: '👨‍💼',
+        text: lang === 'en'
+          ? `Showing ${entityName} you created only`
+          : `تعرض ${entityName} التي أنشأتها فقط`
+      }
+    }
+
+    if (governanceType === 'branch_creator') {
+      if (isManager) {
+        return {
+          icon: '🏢',
+          text: lang === 'en'
+            ? `Showing ${entityName} from your branch only`
+            : `تعرض ${entityName} الخاصة بفرعك فقط`
+        }
+      }
+      if (isStaff) {
+        return {
+          icon: '👨‍💼',
+          text: lang === 'en'
+            ? `Showing ${entityName} you created only`
+            : `تعرض ${entityName} التي أنشأتها فقط`
+        }
+      }
+    }
+
+    return null
+  }
+
+  const governanceNotice = getGovernanceNotice()
+
   return (
     <PageHeader
       title={title}
@@ -334,7 +399,13 @@ export function PageHeaderList({
       icon={icon}
       actions={actions}
       className={className}
-    />
+    >
+      {governanceNotice && (
+        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+          {governanceNotice.icon} {governanceNotice.text}
+        </p>
+      )}
+    </PageHeader>
   )
 }
 

@@ -83,6 +83,7 @@ export default function SuppliersPage() {
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
+  const [currentUserRole, setCurrentUserRole] = useState<string>("")
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -173,6 +174,27 @@ export default function SuppliersPage() {
       setIsLoading(true)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
+
+      // 🔐 ERP Access Control - جلب دور المستخدم
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("user_id")
+          .eq("id", companyId)
+          .single()
+
+        const { data: memberData } = await supabase
+          .from("company_members")
+          .select("role")
+          .eq("company_id", companyId)
+          .eq("user_id", user.id)
+          .single()
+
+        const isOwner = companyData?.user_id === user.id
+        const role = isOwner ? "owner" : (memberData?.role || "viewer")
+        setCurrentUserRole(role)
+      }
 
       // تحميل الموردين
       const { data, error } = await supabase.from("suppliers").select("*").eq("company_id", companyId)
@@ -579,7 +601,18 @@ export default function SuppliersPage() {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Suppliers' : 'الموردين'}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage suppliers' : 'إدارة الموردين'}</p>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage supplier accounts and contacts' : 'إدارة حسابات الموردين وبيانات التواصل'}</p>
+                  {/* 🔐 Governance Notice */}
+                  {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {appLang === 'en' ? '🏢 Showing suppliers from your branch only' : '🏢 تعرض الموردين الخاصين بفرعك فقط'}
+                    </p>
+                  )}
+                  {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {appLang === 'en' ? '👨‍💼 Showing suppliers you created only' : '👨‍💼 تعرض الموردين الذين أنشأتهم فقط'}
+                    </p>
+                  )}
                 </div>
               </div>
               {permWrite ? (

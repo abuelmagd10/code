@@ -28,7 +28,11 @@ export default function HRHome() {
           {/* رأس الصفحة - تحسين للهاتف */}
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
             <h1 className="text-lg sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">{t('HR & Payroll', 'الموظفين والمرتبات')}</h1>
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">{t('Manage employees and payroll', 'إدارة الموظفين والمرتبات')}</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">{t('Manage employees, attendance and payroll', 'إدارة الموظفين والحضور والمرتبات')}</p>
+            {/* 🔐 Governance Notice - HR is admin-only */}
+            <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+              {t('👑 Admin access - All HR data visible', '👑 صلاحية إدارية - جميع بيانات الموارد البشرية مرئية')}
+            </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             <Card className="rounded-xl sm:rounded-2xl">

@@ -308,15 +308,26 @@ export default function WarehousesPage() {
       <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Warehouse className="h-6 w-6" />
-              {appLang === 'en' ? 'Warehouses' : 'المخازن'}
-            </CardTitle>
-            <Button onClick={openCreateDialog} className="gap-2">
-              <Plus className="h-4 w-4" />
-              {appLang === 'en' ? 'Add Warehouse' : 'إضافة مخزن'}
-            </Button>
+          <CardHeader className="flex flex-col gap-2">
+            <div className="flex flex-row items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Warehouse className="h-6 w-6" />
+                {appLang === 'en' ? 'Warehouses' : 'المخازن'}
+              </CardTitle>
+              <Button onClick={openCreateDialog} className="gap-2">
+                <Plus className="h-4 w-4" />
+                {appLang === 'en' ? 'Add Warehouse' : 'إضافة مخزن'}
+              </Button>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {appLang === 'en' ? 'Manage storage locations and inventory points' : 'إدارة مواقع التخزين ونقاط المخزون'}
+            </p>
+            {/* 🔐 Governance Notice */}
+            {userContext && userContext.role && !['owner', 'admin', 'general_manager'].includes(userContext.role) && (
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                {appLang === 'en' ? '🏢 Showing warehouses from your branch only' : '🏢 تعرض المخازن الخاصة بفرعك فقط'}
+              </p>
+            )}
           </CardHeader>
           <CardContent>
             {userContextLoading || loading ? (

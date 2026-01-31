@@ -401,13 +401,16 @@ export default function ExpensesPage() {
         <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
           <PageHeaderList
             title={appLang === 'en' ? 'Expenses' : 'المصروفات'}
-            description={appLang === 'en' ? 'Manage company expenses' : 'إدارة مصروفات الشركة'}
+            description={appLang === 'en' ? 'Manage and track company expenses' : 'إدارة وتتبع مصروفات الشركة'}
             icon={Receipt}
             createHref={canCreate ? "/expenses/new" : undefined}
             createLabel={appLang === 'en' ? 'New Expense' : 'مصروف جديد'}
             createDisabled={!canCreate}
             createTitle={!canCreate ? (appLang === 'en' ? 'No permission to create expenses' : 'لا توجد صلاحية لإنشاء مصروفات') : undefined}
             lang={appLang}
+            userRole={currentUserRole}
+            governanceType="branch_creator"
+            governanceEntityName={appLang === 'en' ? 'expenses' : 'المصروفات'}
           />
         </div>
 

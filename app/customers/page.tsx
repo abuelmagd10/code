@@ -963,7 +963,18 @@ export default function CustomersPage() {
                   </div>
                   <div className="min-w-0">
                     <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Customers' : 'العملاء'}</h1>
-                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage customers' : 'إدارة العملاء'}</p>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage customer accounts and contacts' : 'إدارة حسابات العملاء وبيانات التواصل'}</p>
+                    {/* 🔐 Governance Notice */}
+                    {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                        {appLang === 'en' ? '🏢 Showing customers from your branch only' : '🏢 تعرض العملاء الخاصين بفرعك فقط'}
+                      </p>
+                    )}
+                    {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                        {appLang === 'en' ? '👨‍💼 Showing customers you created only' : '👨‍💼 تعرض العملاء الذين أنشأتهم فقط'}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <CustomerFormDialog

@@ -88,7 +88,11 @@ export default function EmployeesPage() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{t('Employees', 'الموظفين')}</h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{t('Manage employee data', 'إدارة بيانات الموظفين')}</p>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{t('Manage employee records and information', 'إدارة سجلات ومعلومات الموظفين')}</p>
+                {/* 🔐 Governance Notice - Employees is admin-only */}
+                <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                  {t('👑 Admin access - All employees visible', '👑 صلاحية إدارية - جميع الموظفين مرئيين')}
+                </p>
               </div>
             </div>
           </div>

@@ -1129,7 +1129,11 @@ export default function SettingsPage() {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{L.settings}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{language === 'en' ? 'App settings' : 'إعدادات التطبيق'}</p>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{language === 'en' ? 'Manage app and company settings' : 'إدارة إعدادات التطبيق والشركة'}</p>
+                  {/* 🔐 Governance Notice */}
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                    {language === 'en' ? '👑 Admin access - Full settings control' : '👑 صلاحية إدارية - تحكم كامل في الإعدادات'}
+                  </p>
                 </div>
               </div>
               <Badge variant="outline" className="hidden sm:flex items-center gap-1 px-3 py-1.5 border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-900/30 dark:text-violet-300">

@@ -988,7 +988,11 @@ function ChartOfAccountsPage() {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Chart of Accounts' : 'الشجرة المحاسبية'}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Accounting accounts' : 'الحسابات المحاسبية'}</p>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Manage accounting structure and accounts' : 'إدارة الهيكل المحاسبي والحسابات'}</p>
+                  {/* 🔐 Governance Notice - Chart of Accounts is company-wide */}
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-1" suppressHydrationWarning>
+                    {(hydrated && appLang === 'en') ? '👑 Company-wide accounts - All accounts visible' : '👑 حسابات على مستوى الشركة - جميع الحسابات مرئية'}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">

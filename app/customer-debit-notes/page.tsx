@@ -482,6 +482,17 @@ export default function CustomerDebitNotesPage() {
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                 {appLang === 'en' ? 'Manage additional charges to customers' : 'إدارة الرسوم الإضافية للعملاء'}
               </p>
+              {/* 🔐 Governance Notice */}
+              {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  {appLang === 'en' ? '🏢 Showing notes from your branch only' : '🏢 تعرض الإشعارات الخاصة بفرعك فقط'}
+                </p>
+              )}
+              {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  {appLang === 'en' ? '👨‍💼 Showing notes you created only' : '👨‍💼 تعرض الإشعارات التي أنشأتها فقط'}
+                </p>
+              )}
             </div>
             {permWrite && (
               <Link href="/customer-debit-notes/new">

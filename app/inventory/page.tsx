@@ -694,8 +694,14 @@ export default function InventoryPage() {
                     {appLang === 'en' ? 'Inventory' : 'المخزون'}
                   </h1>
                   <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                    {appLang === 'en' ? 'Track inventory movements' : 'تتبع حركات المخزون'}
+                    {appLang === 'en' ? 'Track inventory movements and stock levels' : 'تتبع حركات المخزون ومستويات المخزون'}
                   </p>
+                  {/* 🔐 Governance Notice */}
+                  {userContext && !isAdmin && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {appLang === 'en' ? '🏢 Showing inventory from your branch only' : '🏢 تعرض المخزون الخاص بفرعك فقط'}
+                    </p>
+                  )}
                 </div>
               </div>
 

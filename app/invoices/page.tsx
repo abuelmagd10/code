@@ -2243,14 +2243,17 @@ export default function InvoicesPage() {
               {/* ✅ Unified Page Header */}
               <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
                 <PageHeaderList
-                  title={appLang === 'en' ? 'Sales Invoices' : 'الفواتير'}
-                  description={appLang === 'en' ? 'Manage invoices' : 'إدارة فواتيرك'}
+                  title={appLang === 'en' ? 'Sales Invoices' : 'فواتير المبيعات'}
+                  description={appLang === 'en' ? 'Manage customer invoices and track payments' : 'إدارة فواتير العملاء وتتبع المدفوعات'}
                   icon={FileText}
                   createHref={permWrite ? "/invoices/new" : undefined}
                   createLabel={appLang === 'en' ? 'New' : 'جديدة'}
                   createDisabled={!permWrite}
                   createTitle={!permWrite ? (appLang === 'en' ? 'No permission to create invoices' : 'لا توجد صلاحية لإنشاء فواتير') : undefined}
                   lang={appLang}
+                  userRole={currentUserRole}
+                  governanceType="branch_creator"
+                  governanceEntityName={appLang === 'en' ? 'invoices' : 'الفواتير'}
                 />
               </div>
 

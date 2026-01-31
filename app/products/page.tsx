@@ -843,9 +843,15 @@ export default function ProductsPage() {
                     <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Products & Services' : 'المنتجات والخدمات'}</h1>
                     <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
                       {appLang === 'en'
-                        ? `${productsCount} Products · ${servicesCount} Services`
-                        : `${productsCount} منتج · ${servicesCount} خدمة`}
+                        ? `Manage products and services · ${productsCount} Products · ${servicesCount} Services`
+                        : `إدارة المنتجات والخدمات · ${productsCount} منتج · ${servicesCount} خدمة`}
                     </p>
+                    {/* 🔐 Governance Notice - Products are company-wide */}
+                    {(userRole === 'manager' || userRole === 'accountant') && (
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                        {appLang === 'en' ? '🏢 Showing products available for your branch' : '🏢 تعرض المنتجات المتاحة لفرعك'}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

@@ -341,8 +341,19 @@ export default function VendorCreditsPage() {
                 <FileCheck className="w-5 h-5 sm:w-6 sm:h-6 text-red-600 dark:text-red-400" />
               </div>
               <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Vendor Credits' : 'إشعارات الموردين'}</h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Credit notes' : 'إشعارات الدائن'}</p>
+                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Vendor Credits' : 'إشعارات دائنة للموردين'}</h1>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage supplier credit notes' : 'إدارة إشعارات الدائن للموردين'}</p>
+                {/* 🔐 Governance Notice */}
+                {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                    {appLang === 'en' ? '🏢 Showing credits from your branch only' : '🏢 تعرض الإشعارات الخاصة بفرعك فقط'}
+                  </p>
+                )}
+                {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                    {appLang === 'en' ? '👨‍💼 Showing credits you created only' : '👨‍💼 تعرض الإشعارات التي أنشأتها فقط'}
+                  </p>
+                )}
               </div>
             </div>
             <Link href="/vendor-credits/new"><Button className="h-10 sm:h-11 text-sm sm:text-base">{appLang === 'en' ? 'New' : 'جديد'}</Button></Link>

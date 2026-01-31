@@ -163,7 +163,11 @@ export default function ReportsPage() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{t('ERP Reports', 'التقارير')}</h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{t('Reports hub', 'مركز التقارير')}</p>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{t('Financial and operational reports hub', 'مركز التقارير المالية والتشغيلية')}</p>
+                {/* 🔐 Governance Notice */}
+                <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                  {t('👑 Reports show data based on your access level', '👑 التقارير تعرض البيانات حسب مستوى صلاحياتك')}
+                </p>
               </div>
             </div>
           </div>
