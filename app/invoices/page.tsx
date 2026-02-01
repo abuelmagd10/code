@@ -18,6 +18,8 @@ import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { type UserContext, getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
 import { canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control"
+import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { BranchFilter } from "@/components/BranchFilter"
 import { CompanyHeader } from "@/components/company-header"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
@@ -158,6 +160,9 @@ export default function InvoicesPage() {
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState<string>("")
   // خريطة لربط الفواتير بالموظف المنشئ لأمر البيع
   const [invoiceToEmployeeMap, setInvoiceToEmployeeMap] = useState<Record<string, string>>({})
+
+  // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
+  const branchFilter = useBranchFilter()
 
   // Status options for multi-select - قائمة ثابتة بجميع الحالات الممكنة
   const allStatusOptions = useMemo(() => [
@@ -326,7 +331,7 @@ export default function InvoicesPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
 
   // 🔄 الاستماع لتغيير الشركة وإعادة تحميل البيانات
   useEffect(() => {
@@ -545,7 +550,12 @@ export default function InvoicesPage() {
       setProducts(productsData || [])
 
       // 🔐 استخدام API endpoint للفواتير مع الحوكمة
-      const response = await fetch('/api/invoices')
+      // إرسال branch_id إذا كان المستخدم المميز اختار فرعاً معيناً
+      const branchIdParam = branchFilter.getFilteredBranchId()
+      const apiUrl = branchIdParam
+        ? `/api/invoices?branch_id=${branchIdParam}`
+        : '/api/invoices'
+      const response = await fetch(apiUrl)
       const result = await response.json()
       
       if (!result.success) {
@@ -2330,11 +2340,21 @@ export default function InvoicesPage() {
               {/* قسم الفلترة المتقدم */}
               <FilterContainer
                 title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
-                activeCount={activeFilterCount}
-                onClear={clearFilters}
+                activeCount={activeFilterCount + (branchFilter.selectedBranchId ? 1 : 0)}
+                onClear={() => {
+                  clearFilters()
+                  branchFilter.resetFilter()
+                }}
                 defaultOpen={false}
               >
                 <div className="space-y-4">
+                  {/* 🔐 فلتر الفروع - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+                  <BranchFilter
+                    lang={appLang as 'ar' | 'en'}
+                    externalHook={branchFilter}
+                    className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800"
+                  />
+
                   {/* فلتر الموظفين - صف منفصل أعلى الفلاتر - يظهر فقط للمديرين */}
                   {canViewAllInvoices && employees.length > 0 && (
                     <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">

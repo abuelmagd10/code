@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge"
 import { canAction } from "@/lib/authz"
 import { type UserContext, getAccessFilter } from "@/lib/validation"
 import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { BranchFilter } from "@/components/BranchFilter"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
@@ -61,6 +63,9 @@ export default function SalesReturnsPage() {
 
   // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
   const [isPending, startTransition] = useTransition()
+
+  // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
+  const branchFilter = useBranchFilter()
 
   // Currency
   const currencySymbols: Record<string, string> = {
@@ -129,6 +134,11 @@ export default function SalesReturnsPage() {
 
       const visibilityRules = buildDataVisibilityFilter(userContext)
 
+      // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
+      const selectedBranchId = branchFilter.getFilteredBranchId()
+
       let invoicesQuery = supabase
         .from("invoices")
         .select("id, invoice_number, invoice_date, customer_id, returned_amount, return_status, branch_id, customers(name), branches(name)")
@@ -136,8 +146,15 @@ export default function SalesReturnsPage() {
         .not("return_status", "is", null)
         .gt("returned_amount", 0)
 
-      // ✅ تطبيق قواعد الرؤية الموحدة
-      invoicesQuery = applyDataVisibilityFilter(invoicesQuery, visibilityRules, "invoices")
+      // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+      if (canFilterByBranch && selectedBranchId) {
+        // المستخدم المميز اختار فرعاً معيناً
+        invoicesQuery = invoicesQuery.eq("branch_id", selectedBranchId)
+      } else if (!canFilterByBranch) {
+        // ✅ تطبيق قواعد الرؤية الموحدة للمستخدمين العاديين
+        invoicesQuery = applyDataVisibilityFilter(invoicesQuery, visibilityRules, "invoices")
+      }
+      // else: المستخدم المميز بدون فلتر = جميع الفروع
 
       const { data: invoicesWithReturns, error } = await invoicesQuery
         .order("invoice_date", { ascending: false })
@@ -199,7 +216,7 @@ export default function SalesReturnsPage() {
       console.error("Error in sales returns page:", err)
       setLoading(false)
     }
-  }, [supabase, appLang])
+  }, [supabase, appLang, branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
 
   // تحميل البيانات عند بدء الصفحة
   useEffect(() => {
@@ -461,6 +478,13 @@ export default function SalesReturnsPage() {
           {/* Filters */}
           <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
             <div className="space-y-4">
+              {/* 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+              <BranchFilter
+                lang={appLang as 'ar' | 'en'}
+                externalHook={branchFilter}
+                className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800"
+              />
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 {/* Search */}
                 <div className="sm:col-span-2">

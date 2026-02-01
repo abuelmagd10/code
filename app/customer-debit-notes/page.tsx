@@ -20,6 +20,8 @@ import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { type UserContext, getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
 import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { BranchFilter } from "@/components/BranchFilter"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 // نوع بيانات الموظف للفلترة
@@ -67,6 +69,9 @@ export default function CustomerDebitNotesPage() {
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>('all')
   const [canAccessPageState, setCanAccessPageState] = useState<boolean>(true)
   const [permWrite, setPermWrite] = useState(false)
+
+  // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
+  const branchFilter = useBranchFilter()
 
   // ✅ إصلاح Hydration: تهيئة اللغة بعد hydration فقط
   useEffect(() => {
@@ -208,7 +213,12 @@ export default function CustomerDebitNotesPage() {
 
     // 🔐 ERP Access Control - تحميل الإشعارات مع تطبيق نظام Data Visibility الموحد
     const visibilityRules = buildDataVisibilityFilter(userContextValue)
-    
+
+    // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+    const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+    const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
+    const selectedBranchId = branchFilter.getFilteredBranchId()
+
     let notesQuery = supabase
       .from('customer_debit_notes')
       .select(`
@@ -228,8 +238,15 @@ export default function CustomerDebitNotesPage() {
       `)
       .eq('company_id', visibilityRules.companyId)
 
-    // ✅ تطبيق قواعد الرؤية الموحدة
-    notesQuery = applyDataVisibilityFilter(notesQuery, visibilityRules, "customer_debit_notes")
+    // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+    if (canFilterByBranch && selectedBranchId) {
+      // المستخدم المميز اختار فرعاً معيناً
+      notesQuery = notesQuery.eq("branch_id", selectedBranchId)
+    } else if (!canFilterByBranch) {
+      // المستخدم العادي - تطبيق قواعد الرؤية الموحدة
+      notesQuery = applyDataVisibilityFilter(notesQuery, visibilityRules, "customer_debit_notes")
+    }
+    // else: المستخدم المميز بدون فلتر = جميع الفروع
 
     const { data: notes } = await notesQuery.order('debit_note_date', { ascending: false })
     
@@ -264,7 +281,7 @@ export default function CustomerDebitNotesPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
 
   // 🔄 Realtime: تحديث قائمة إشعارات مدين العملاء تلقائياً عند أي تغيير
   const loadDataRef = useRef(loadData)
@@ -557,7 +574,14 @@ export default function CustomerDebitNotesPage() {
 
           {/* Search & Filters */}
           <Card className="mb-4 dark:bg-slate-900 dark:border-slate-800">
-            <CardContent className="pt-6">
+            <CardContent className="pt-6 space-y-4">
+              {/* 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+              <BranchFilter
+                lang={appLang}
+                externalHook={branchFilter}
+                className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800"
+              />
+
               <div className="flex flex-col sm:flex-row gap-4">
                 <Input
                   placeholder={appLang === 'en' ? 'Search by debit note number or customer...' : 'بحث برقم الإشعار أو العميل...'}

@@ -21,6 +21,8 @@ import { usePagination } from "@/lib/pagination";
 import { DataPagination } from "@/components/data-pagination";
 import { type UserContext, canViewPurchasePrices, getAccessFilter } from "@/lib/validation";
 import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control";
+import { useBranchFilter } from "@/hooks/use-branch-filter";
+import { BranchFilter } from "@/components/BranchFilter";
 import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { StatusBadge } from "@/components/DataTableFormatters";
 import { PageHeaderList } from "@/components/PageHeader";
@@ -116,6 +118,9 @@ export default function PurchaseOrdersPage() {
 
   // 🔐 ERP Access Control - سياق المستخدم
   const [userContext, setUserContext] = useState<UserContext | null>(null);
+
+  // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
+  const branchFilter = useBranchFilter();
   const [canViewPrices, setCanViewPrices] = useState(false);
   const [filterSuppliers, setFilterSuppliers] = useState<string[]>([]);
   const [dateFrom, setDateFrom] = useState<string>("");
@@ -279,17 +284,29 @@ export default function PurchaseOrdersPage() {
 
       // 🔐 ERP Access Control - تصفية أوامر الشراء باستخدام نظام Data Visibility الموحد
       const visibilityRules = buildDataVisibilityFilter(context)
-      
+
+      // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
+      const selectedBranchId = branchFilter.getFilteredBranchId()
+
       let poQuery = supabase
         .from("purchase_orders")
         .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, branch_id, cost_center_id, warehouse_id, suppliers(name, phone), branches(name)")
         .eq("company_id", visibilityRules.companyId);
 
-      // ✅ تطبيق قواعد الرؤية الموحدة
-      poQuery = applyDataVisibilityFilter(poQuery, visibilityRules, "purchase_orders")
+      // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+      if (canFilterByBranch && selectedBranchId) {
+        // المستخدم المميز اختار فرعاً معيناً
+        poQuery = poQuery.eq("branch_id", selectedBranchId)
+      } else if (!canFilterByBranch) {
+        // ✅ تطبيق قواعد الرؤية الموحدة للمستخدمين العاديين
+        poQuery = applyDataVisibilityFilter(poQuery, visibilityRules, "purchase_orders")
+      }
+      // else: المستخدم المميز بدون فلتر = جميع الفروع
 
       const { data: po } = await poQuery.order("created_at", { ascending: false });
-      
+
       // ✅ فلترة إضافية في JavaScript للحالات المعقدة
       let filteredOrders = po || []
       if (visibilityRules.filterByCostCenter && visibilityRules.costCenterId && po) {
@@ -381,7 +398,7 @@ export default function PurchaseOrdersPage() {
       setLoading(false);
     };
     load();
-  }, [supabase]);
+  }, [supabase, branchFilter.selectedBranchId]); // إعادة تحميل البيانات عند تغيير الفرع المحدد
 
   // ✅ Realtime: الاشتراك في تحديثات أوامر الشراء
   useRealtimeTable<PurchaseOrder>({
@@ -960,6 +977,13 @@ export default function PurchaseOrdersPage() {
           {/* Filters */}
           <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
             <div className="space-y-4">
+              {/* 🔐 فلتر الفروع - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+              <BranchFilter
+                lang={appLang as 'ar' | 'en'}
+                externalHook={branchFilter}
+                className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800"
+              />
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
                 {/* Search */}
                 <div className="sm:col-span-2 lg:col-span-2">

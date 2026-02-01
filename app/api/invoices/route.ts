@@ -3,10 +3,17 @@ import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 import { getRoleAccessLevel } from "@/lib/validation"
 
+// 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
-    
+
+    // 🔐 قراءة branch_id من query parameters (للأدوار المميزة فقط)
+    const { searchParams } = new URL(request.url)
+    const requestedBranchId = searchParams.get('branch_id')
+
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -29,13 +36,18 @@ export async function GET(request: NextRequest) {
     }
 
     const accessLevel = getRoleAccessLevel(member.role)
-    
+    const canFilterByBranch = PRIVILEGED_ROLES.includes(member.role.toLowerCase())
+
     let query = supabase
       .from("invoices")
       .select("*, customers(name, phone), branches(name)")
       .eq("company_id", companyId)
 
-    if (accessLevel === 'own') {
+    // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+    if (canFilterByBranch && requestedBranchId) {
+      // المستخدم المميز اختار فرعاً معيناً
+      query = query.eq("branch_id", requestedBranchId)
+    } else if (accessLevel === 'own') {
       if (member.branch_id) {
         query = query.eq("branch_id", member.branch_id)
         query = query.or(`created_by_user_id.eq.${user.id},created_by_user_id.is.null`)
@@ -45,6 +57,7 @@ export async function GET(request: NextRequest) {
     } else if (accessLevel === 'branch' && member.branch_id) {
       query = query.eq("branch_id", member.branch_id)
     }
+    // else: المستخدم المميز بدون فلتر = جميع الفروع
 
     query = query.order("invoice_date", { ascending: false })
 

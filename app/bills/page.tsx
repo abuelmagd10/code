@@ -36,6 +36,8 @@ import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { type UserContext, getAccessFilter } from "@/lib/validation"
 import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control"
+import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-reversal"
@@ -129,6 +131,9 @@ export default function BillsPage() {
 
   // 🔐 ERP Access Control - سياق المستخدم
   const [userContext, setUserContext] = useState<UserContext | null>(null)
+
+  // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
+  const branchFilter = useBranchFilter()
 
   // Pagination state
   const [pageSize, setPageSize] = useState<number>(10)
@@ -287,7 +292,7 @@ export default function BillsPage() {
     })()
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
   useEffect(() => {
     const reloadPerms = async () => {
       setPermView(await canAction(supabase, 'bills', 'read'))
@@ -339,18 +344,30 @@ export default function BillsPage() {
 
       // 🔐 ERP Access Control - تحميل الفواتير مع تطبيق نظام Data Visibility الموحد
       const visibilityRules = buildDataVisibilityFilter(context)
-      
+
+      // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
+      const selectedBranchId = branchFilter.getFilteredBranchId()
+
       let billsQuery = supabase
         .from("bills")
         .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, receipt_status, receipt_rejection_reason, display_currency, display_total, original_currency, original_total, branch_id, suppliers(name, phone), branches(name)")
         .eq("company_id", visibilityRules.companyId)
         .neq("status", "voided")
 
-      // ✅ تطبيق قواعد الرؤية الموحدة
-      billsQuery = applyDataVisibilityFilter(billsQuery, visibilityRules, "bills")
+      // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+      if (canFilterByBranch && selectedBranchId) {
+        // المستخدم المميز اختار فرعاً معيناً
+        billsQuery = billsQuery.eq("branch_id", selectedBranchId)
+      } else if (!canFilterByBranch) {
+        // ✅ تطبيق قواعد الرؤية الموحدة للمستخدمين العاديين
+        billsQuery = applyDataVisibilityFilter(billsQuery, visibilityRules, "bills")
+      }
+      // else: المستخدم المميز بدون فلتر = جميع الفروع
 
       const { data: billData } = await billsQuery.order("bill_date", { ascending: false })
-      
+
       // ✅ فلترة إضافية في JavaScript للحالات المعقدة (cost_center_id مع branch_id)
       let filteredBills = billData || []
       if (visibilityRules.filterByCostCenter && visibilityRules.costCenterId && billData) {
@@ -358,7 +375,7 @@ export default function BillsPage() {
           return !bill.cost_center_id || bill.cost_center_id === visibilityRules.costCenterId
         })
       }
-      
+
       setBills(filteredBills)
 
       // 🔐 جلب الصلاحيات المشتركة للمستخدم الحالي
@@ -1696,11 +1713,21 @@ export default function BillsPage() {
             {/* قسم الفلترة المتقدم */}
             <FilterContainer
               title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
-              activeCount={activeFilterCount}
-              onClear={clearFilters}
+              activeCount={activeFilterCount + (branchFilter.selectedBranchId ? 1 : 0)}
+              onClear={() => {
+                clearFilters()
+                branchFilter.resetFilter()
+              }}
               defaultOpen={false}
             >
               <div className="space-y-4">
+                {/* 🔐 فلتر الفروع - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+                <BranchFilter
+                  lang={appLang as 'ar' | 'en'}
+                  externalHook={branchFilter}
+                  className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800"
+                />
+
                 {/* Quick Search Bar */}
                 <div>
                   <div className="relative">

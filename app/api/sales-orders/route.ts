@@ -15,6 +15,9 @@ import {
   addGovernanceData
 } from "@/lib/governance-middleware"
 
+// 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+
 /**
  * GET /api/sales-orders
  * جلب أوامر البيع مع تطبيق فلاتر الحوكمة
@@ -23,7 +26,12 @@ export async function GET(request: NextRequest) {
   try {
     // 1️⃣ تطبيق الحوكمة (إلزامي)
     const governance = await enforceGovernance(request)
-    
+
+    // 🔐 قراءة branch_id من query parameters (للأدوار المميزة فقط)
+    const { searchParams } = new URL(request.url)
+    const requestedBranchId = searchParams.get('branch_id')
+    const canFilterByBranch = PRIVILEGED_ROLES.includes(governance.role.toLowerCase())
+
     // 2️⃣ بناء الاستعلام مع فلاتر الحوكمة
     const supabase = await createClient()
     let query = supabase
@@ -33,9 +41,16 @@ export async function GET(request: NextRequest) {
         customers:customer_id (id, name, phone, city),
         branches:branch_id (name)
       `)
-    
-    // تطبيق الفلاتر
-    query = applyGovernanceFilters(query, governance)
+
+    // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+    if (canFilterByBranch && requestedBranchId) {
+      // المستخدم المميز اختار فرعاً معيناً
+      query = query.eq('company_id', governance.companyId)
+      query = query.eq('branch_id', requestedBranchId)
+    } else {
+      // تطبيق الفلاتر العادية
+      query = applyGovernanceFilters(query, governance)
+    }
     query = query.order("created_at", { ascending: false })
 
     const { data: orders, error: dbError } = await query

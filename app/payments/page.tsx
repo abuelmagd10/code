@@ -40,6 +40,8 @@ import { getActiveCompanyId } from "@/lib/company"
 import { computeLeafAccountBalancesAsOf } from "@/lib/ledger"
 import { canAction } from "@/lib/authz"
 import { validateBankAccountAccess, type UserContext, getAccessFilter } from "@/lib/validation"
+import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { BranchFilter } from "@/components/BranchFilter"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface Customer { 
@@ -210,6 +212,9 @@ export default function PaymentsPage() {
   // 🔐 ERP Access Control - سياق المستخدم
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [canOverrideContext, setCanOverrideContext] = useState(false)
+
+  // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
+  const branchFilter = useBranchFilter()
 
   // 🔐 ERP Governance: التحقق من صلاحية الدفع على فاتورة/فاتورة مورد
   // Owner/Admin/General Manager: يمكنهم الدفع على أي فاتورة
@@ -469,6 +474,11 @@ export default function PaymentsPage() {
         }
         const visibilityRules = buildDataVisibilityFilter(context)
 
+        // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+        const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+        const canFilterByBranch = PRIVILEGED_ROLES.includes(currentRole.toLowerCase())
+        const selectedBranchId = branchFilter.getFilteredBranchId()
+
         // جلب مدفوعات العملاء مع فلترة الفرع
         let custPaysQuery = supabase
           .from("payments")
@@ -476,10 +486,15 @@ export default function PaymentsPage() {
           .eq("company_id", activeCompanyId)
           .not("customer_id", "is", null)
 
-        // تطبيق فلتر الفرع للمستخدمين غير المالكين/المدراء العامين
-        if (visibilityRules.filterByBranch && visibilityRules.branchId) {
+        // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+        if (canFilterByBranch && selectedBranchId) {
+          // المستخدم المميز اختار فرعاً معيناً
+          custPaysQuery = custPaysQuery.eq("branch_id", selectedBranchId)
+        } else if (!canFilterByBranch && visibilityRules.filterByBranch && visibilityRules.branchId) {
+          // المستخدم العادي - فلترة بفرعه فقط
           custPaysQuery = custPaysQuery.eq("branch_id", visibilityRules.branchId)
         }
+        // else: المستخدم المميز بدون فلتر = جميع الفروع
 
         const { data: custPays, error: custPaysErr } = await custPaysQuery
           .order("payment_date", { ascending: false })
@@ -495,10 +510,15 @@ export default function PaymentsPage() {
           .eq("company_id", activeCompanyId)
           .not("supplier_id", "is", null)
 
-        // تطبيق فلتر الفرع للمستخدمين غير المالكين/المدراء العامين
-        if (visibilityRules.filterByBranch && visibilityRules.branchId) {
+        // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+        if (canFilterByBranch && selectedBranchId) {
+          // المستخدم المميز اختار فرعاً معيناً
+          suppPaysQuery = suppPaysQuery.eq("branch_id", selectedBranchId)
+        } else if (!canFilterByBranch && visibilityRules.filterByBranch && visibilityRules.branchId) {
+          // المستخدم العادي - فلترة بفرعه فقط
           suppPaysQuery = suppPaysQuery.eq("branch_id", visibilityRules.branchId)
         }
+        // else: المستخدم المميز بدون فلتر = جميع الفروع
 
         const { data: suppPays, error: suppPaysErr } = await suppPaysQuery
           .order("payment_date", { ascending: false })
@@ -523,7 +543,7 @@ export default function PaymentsPage() {
         setLoading(false)
       }
     })()
-  }, [])
+  }, [branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
 
   // 🔄 الاستماع لتغيير الشركة وإعادة تحميل الصفحة
   useEffect(() => {
@@ -2279,6 +2299,17 @@ export default function PaymentsPage() {
             </div>
           )}
         </div>
+
+        {/* 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+        <Card>
+          <CardContent className="pt-6">
+            <BranchFilter
+              lang={appLang}
+              externalHook={branchFilter}
+              className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800"
+            />
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent className="pt-6 space-y-6">

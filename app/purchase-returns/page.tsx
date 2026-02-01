@@ -10,6 +10,9 @@ import { useRouter } from "next/navigation"
 import { Plus, Search, RotateCcw, Eye } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import { TableSkeleton } from "@/components/ui/skeleton"
+import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
@@ -43,6 +46,9 @@ export default function PurchaseReturnsPage() {
   // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
   const [isPending, startTransition] = useTransition()
 
+  // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
+  const branchFilter = useBranchFilter()
+
   const [appCurrency, setAppCurrency] = useState<string>(() => {
     if (typeof window === 'undefined') return 'EGP'
     try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
@@ -54,7 +60,7 @@ export default function PurchaseReturnsPage() {
 
   useEffect(() => {
     loadReturns()
-  }, [])
+  }, [branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
 
   const loadReturns = async () => {
     try {
@@ -64,6 +70,7 @@ export default function PurchaseReturnsPage() {
 
       // 🔐 ERP Access Control - جلب دور المستخدم
       const { data: { user } } = await supabase.auth.getUser()
+      let role = 'viewer'
       if (user) {
         const { data: companyData } = await supabase
           .from("companies")
@@ -73,38 +80,54 @@ export default function PurchaseReturnsPage() {
 
         const { data: memberData } = await supabase
           .from("company_members")
-          .select("role")
+          .select("role, branch_id, cost_center_id, warehouse_id")
           .eq("company_id", companyId)
           .eq("user_id", user.id)
           .single()
 
         const isOwner = companyData?.user_id === user.id
-        const role = isOwner ? "owner" : (memberData?.role || "viewer")
+        role = isOwner ? "owner" : (memberData?.role || "viewer")
         setCurrentUserRole(role)
-      }
 
-      // ===== 🔧 إصلاح: جلب المرتجعات من الفواتير مباشرة =====
-      const { data, error } = await supabase
-        .from("bills")
-        .select("id, bill_number, bill_date, returned_amount, return_status, supplier_id, branch_id, suppliers(name), branches(name)")
-        .eq("company_id", companyId)
-        .not("return_status", "is", null)
-        .gt("returned_amount", 0)
-        .order("bill_date", { ascending: false })
+        // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+        const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+        const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
+        const selectedBranchId = branchFilter.getFilteredBranchId()
 
-      if (!error && data) {
-        // تحويل البيانات إلى تنسيق PurchaseReturn
-        const formattedReturns: PurchaseReturn[] = data.map((bill: any) => ({
-          id: bill.id,
-          return_number: bill.bill_number,
-          return_date: bill.bill_date,
-          total_amount: Number(bill.returned_amount || 0),
-          status: 'completed', // المرتجعات المكتملة
-          reason: bill.return_status === 'full' ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل') : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'),
-          suppliers: bill.suppliers ? { name: bill.suppliers.name } : undefined,
-          bills: { bill_number: bill.bill_number }
-        }))
-        setReturns(formattedReturns)
+        // ===== 🔧 إصلاح: جلب المرتجعات من الفواتير مباشرة =====
+        let billsQuery = supabase
+          .from("bills")
+          .select("id, bill_number, bill_date, returned_amount, return_status, supplier_id, branch_id, suppliers(name), branches(name)")
+          .eq("company_id", companyId)
+          .not("return_status", "is", null)
+          .gt("returned_amount", 0)
+
+        // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+        if (canFilterByBranch && selectedBranchId) {
+          // المستخدم المميز اختار فرعاً معيناً
+          billsQuery = billsQuery.eq("branch_id", selectedBranchId)
+        } else if (!canFilterByBranch && memberData?.branch_id) {
+          // المستخدم العادي - فلترة بفرعه فقط
+          billsQuery = billsQuery.eq("branch_id", memberData.branch_id)
+        }
+        // else: المستخدم المميز بدون فلتر = جميع الفروع
+
+        const { data, error } = await billsQuery.order("bill_date", { ascending: false })
+
+        if (!error && data) {
+          // تحويل البيانات إلى تنسيق PurchaseReturn
+          const formattedReturns: PurchaseReturn[] = data.map((bill: any) => ({
+            id: bill.id,
+            return_number: bill.bill_number,
+            return_date: bill.bill_date,
+            total_amount: Number(bill.returned_amount || 0),
+            status: 'completed', // المرتجعات المكتملة
+            reason: bill.return_status === 'full' ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل') : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'),
+            suppliers: bill.suppliers ? { name: bill.suppliers.name } : undefined,
+            bills: { bill_number: bill.bill_number }
+          }))
+          setReturns(formattedReturns)
+        }
       }
     } catch (error) {
       console.error("Error loading purchase returns:", error)
@@ -293,9 +316,17 @@ export default function PurchaseReturnsPage() {
             </div>
           </div>
 
-          {/* Search */}
+          {/* Filters */}
           <Card>
-            <CardContent className="pt-6">
+            <CardContent className="pt-6 space-y-4">
+              {/* 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+              <BranchFilter
+                lang={appLang as 'ar' | 'en'}
+                externalHook={branchFilter}
+                className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800"
+              />
+
+              {/* Search */}
               <div className="flex items-center gap-2">
                 <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                 <Input

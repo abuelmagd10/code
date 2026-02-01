@@ -15,6 +15,8 @@ import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { type UserContext, getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
 import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { BranchFilter } from "@/components/BranchFilter"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 type VendorCredit = {
@@ -56,6 +58,9 @@ export default function VendorCreditsPage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>('all')
 
+  // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
+  const branchFilter = useBranchFilter()
+
   // تهيئة اللغة والعملة بعد hydration
   useEffect(() => {
     try {
@@ -95,7 +100,7 @@ export default function VendorCreditsPage() {
     { value: "closed", label: appLang === 'en' ? "Closed" : "مغلق" },
   ], [appLang])
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { loadData() }, [branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
 
   const loadData = async () => {
     setLoading(true)
@@ -191,14 +196,26 @@ export default function VendorCreditsPage() {
 
     // 🔐 ERP Access Control - تحميل الإشعارات مع تطبيق نظام Data Visibility الموحد
     const visibilityRules = buildDataVisibilityFilter(context)
-    
+
+    // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+    const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+    const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
+    const selectedBranchId = branchFilter.getFilteredBranchId()
+
     let creditsQuery = supabase
       .from("vendor_credits")
       .select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status, created_by, approval_status, branch_id, branches(name)")
       .eq("company_id", visibilityRules.companyId)
 
-    // ✅ تطبيق قواعد الرؤية الموحدة
-    creditsQuery = applyDataVisibilityFilter(creditsQuery, visibilityRules, "vendor_credits")
+    // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+    if (canFilterByBranch && selectedBranchId) {
+      // المستخدم المميز اختار فرعاً معيناً
+      creditsQuery = creditsQuery.eq("branch_id", selectedBranchId)
+    } else if (!canFilterByBranch) {
+      // المستخدم العادي - تطبيق قواعد الرؤية الموحدة
+      creditsQuery = applyDataVisibilityFilter(creditsQuery, visibilityRules, "vendor_credits")
+    }
+    // else: المستخدم المميز بدون فلتر = جميع الفروع
 
     const { data: list } = await creditsQuery.order("credit_date", { ascending: false })
     
@@ -434,6 +451,13 @@ export default function VendorCreditsPage() {
           {/* Filters */}
           <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
             <div className="space-y-4">
+              {/* 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+              <BranchFilter
+                lang={appLang}
+                externalHook={branchFilter}
+                className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800"
+              />
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
                 {/* Search */}
                 <div className="sm:col-span-2">

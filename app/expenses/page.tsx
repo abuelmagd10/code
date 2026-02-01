@@ -13,7 +13,9 @@ import { canAction } from "@/lib/authz"
 import { Plus, Eye, Trash2, Pencil, Search, X, Receipt, DollarSign, Clock, CheckCircle, XCircle, AlertCircle, Building2, FileText } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
-import { buildDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
@@ -81,6 +83,9 @@ export default function ExpensesPage() {
   const [filterBranchId, setFilterBranchId] = useState<string>("all")
   const [pageSize, setPageSize] = useState(20)
 
+  // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
+  const branchFilter = useBranchFilter()
+
   useEffect(() => {
     setHydrated(true)
     const handler = () => {
@@ -145,6 +150,11 @@ export default function ExpensesPage() {
 
       const visibilityRules = buildDataVisibilityFilter(context)
 
+      // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
+      const selectedBranchId = branchFilter.getFilteredBranchId()
+
       let expensesQuery = supabase
         .from("expenses")
         .select("*, branches(name)")
@@ -152,9 +162,15 @@ export default function ExpensesPage() {
         .neq("status", "cancelled")
         .order("expense_date", { ascending: false })
 
-      if (visibilityRules.filterByBranch && visibilityRules.branchId) {
+      // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+      if (canFilterByBranch && selectedBranchId) {
+        // المستخدم المميز اختار فرعاً معيناً
+        expensesQuery = expensesQuery.eq("branch_id", selectedBranchId)
+      } else if (!canFilterByBranch && visibilityRules.filterByBranch && visibilityRules.branchId) {
+        // المستخدم العادي - تطبيق قواعد الرؤية
         expensesQuery = expensesQuery.eq("branch_id", visibilityRules.branchId)
       }
+      // else: المستخدم المميز بدون فلتر = جميع الفروع
 
       const { data, error } = await expensesQuery
       if (error) throw error
@@ -170,7 +186,7 @@ export default function ExpensesPage() {
     } finally {
       setLoading(false)
     }
-  }, [supabase, toast, appLang])
+  }, [supabase, toast, appLang, branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
 
   useEffect(() => {
     loadExpenses()
@@ -470,41 +486,12 @@ export default function ExpensesPage() {
           defaultOpen={false}
         >
           <div className="space-y-4">
-            {/* Branch Filter - Only for admin/owner */}
-            {branches.length > 0 && (
-              <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-                  {appLang === 'en' ? 'Filter by Branch:' : 'فلترة حسب الفرع:'}
-                </span>
-                <Select value={filterBranchId} onValueChange={setFilterBranchId}>
-                  <SelectTrigger className="w-[220px] h-9 bg-white dark:bg-slate-800">
-                    <SelectValue placeholder={appLang === 'en' ? 'All Branches' : 'جميع الفروع'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
-                      {appLang === 'en' ? '🏢 All Branches' : '🏢 جميع الفروع'}
-                    </SelectItem>
-                    {branches.map((branch) => (
-                      <SelectItem key={branch.id} value={branch.id}>
-                        🏢 {branch.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {filterBranchId !== "all" && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setFilterBranchId("all")}
-                    className="h-8 px-3 text-blue-600 hover:text-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30"
-                  >
-                    <X className="w-4 h-4 mr-1" />
-                    {appLang === 'en' ? 'Clear' : 'مسح'}
-                  </Button>
-                )}
-              </div>
-            )}
+            {/* 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+            <BranchFilter
+              lang={appLang as 'ar' | 'en'}
+              externalHook={branchFilter}
+              className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800"
+            />
 
             {/* Search and Filters */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

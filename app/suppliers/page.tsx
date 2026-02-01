@@ -21,6 +21,8 @@ import { getExchangeRate, getActiveCurrencies, type Currency, DEFAULT_CURRENCIES
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { useRouter } from "next/navigation"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { BranchFilter } from "@/components/BranchFilter"
 
 interface Supplier {
   id: string
@@ -53,6 +55,9 @@ export default function SuppliersPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // 🔐 فلتر الفروع الموحد
+  const branchFilter = useBranchFilter()
 
   // تهيئة اللغة بعد hydration
   useEffect(() => {
@@ -118,7 +123,7 @@ export default function SuppliersPage() {
       setPermDelete(await canAction(supabase, 'suppliers', 'delete'))
     })()
     loadSuppliers()
-  }, [])
+  }, [branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
   useEffect(() => {
     const reloadPerms = async () => {
       setPermView(await canAction(supabase, 'suppliers', 'read'))
@@ -177,6 +182,9 @@ export default function SuppliersPage() {
 
       // 🔐 ERP Access Control - جلب دور المستخدم
       const { data: { user } } = await supabase.auth.getUser()
+      let userRole = "viewer"
+      let userBranchId: string | null = null
+
       if (user) {
         const { data: companyData } = await supabase
           .from("companies")
@@ -186,18 +194,36 @@ export default function SuppliersPage() {
 
         const { data: memberData } = await supabase
           .from("company_members")
-          .select("role")
+          .select("role, branch_id")
           .eq("company_id", companyId)
           .eq("user_id", user.id)
           .single()
 
         const isOwner = companyData?.user_id === user.id
-        const role = isOwner ? "owner" : (memberData?.role || "viewer")
-        setCurrentUserRole(role)
+        userRole = isOwner ? "owner" : (memberData?.role || "viewer")
+        userBranchId = memberData?.branch_id || null
+        setCurrentUserRole(userRole)
       }
 
+      // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      const canFilterByBranch = PRIVILEGED_ROLES.includes(userRole.toLowerCase())
+      const selectedBranchId = branchFilter.getFilteredBranchId()
+
       // تحميل الموردين
-      const { data, error } = await supabase.from("suppliers").select("*").eq("company_id", companyId)
+      let suppliersQuery = supabase.from("suppliers").select("*").eq("company_id", companyId)
+
+      // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+      if (canFilterByBranch && selectedBranchId) {
+        // المستخدم المميز اختار فرعاً معيناً
+        suppliersQuery = suppliersQuery.eq("branch_id", selectedBranchId)
+      } else if (!canFilterByBranch && userBranchId) {
+        // المستخدم العادي - فلترة بفرعه فقط
+        suppliersQuery = suppliersQuery.eq("branch_id", userBranchId)
+      }
+      // else: المستخدم المميز بدون فلتر = جميع الفروع
+
+      const { data, error } = await suppliersQuery
       if (error) {
         // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
         if (error.code === 'PGRST116' || error.code === 'PGRST205') {
@@ -703,7 +729,14 @@ export default function SuppliersPage() {
           </div>
 
           <Card>
-            <CardContent className="pt-6">
+            <CardContent className="pt-6 space-y-4">
+              {/* 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+              <BranchFilter
+                lang={appLang}
+                externalHook={branchFilter}
+                className="p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800"
+              />
+
               <div className="flex items-center gap-2">
                 <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                 <Input

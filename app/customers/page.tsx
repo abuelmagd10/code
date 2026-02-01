@@ -25,6 +25,9 @@ import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
 import { CustomerFormDialog } from "@/components/customers/customer-form-dialog"
 import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordModification } from "@/lib/validation"
+import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
+import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { CurrencyCell, StatusBadge } from "@/components/DataTableFormatters"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
@@ -98,6 +101,9 @@ export default function CustomersPage() {
 
   // 🔐 ERP Access Control - سياق المستخدم
   const [userContext, setUserContext] = useState<UserContext | null>(null)
+
+  // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
+  const branchFilter = useBranchFilter()
 
   // معلومات المستخدم الحالي للفلترة حسب المنشئ
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -265,7 +271,7 @@ export default function CustomersPage() {
     if (permissionsLoaded) {
       loadCustomers()
     }
-  }, [permissionsLoaded, canViewAllCustomers, currentUserId, filterEmployeeId, userContext])
+  }, [permissionsLoaded, canViewAllCustomers, currentUserId, filterEmployeeId, userContext, branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
 
   // 🔄 الاستماع لتغيير الشركة وإعادة تحميل البيانات
   useEffect(() => {
@@ -293,10 +299,20 @@ export default function CustomersPage() {
         filterEmployeeId !== 'all' ? filterEmployeeId : undefined
       )
 
+      // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      const canFilterByBranch = PRIVILEGED_ROLES.includes(currentUserRole.toLowerCase())
+      const selectedBranchId = branchFilter.getFilteredBranchId()
+
       // جلب العملاء - تصفية حسب صلاحيات المستخدم
       let allCustomers: Customer[] = [];
 
-      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+      // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+      if (canFilterByBranch && selectedBranchId) {
+        // المستخدم المميز اختار فرعاً معيناً
+        const { data: branchCust } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId).eq("branch_id", selectedBranchId);
+        allCustomers = branchCust || [];
+      } else if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
         // موظف عادي: يرى فقط العملاء الذين أنشأهم
         const { data: ownCust } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId).eq("created_by_user_id", accessFilter.createdByUserId);
         allCustomers = ownCust || [];
@@ -382,7 +398,7 @@ export default function CustomersPage() {
           creditMap[cid] = (creditMap[cid] || 0) + available
         })
 
-      const allIds = Array.from(new Set([...(data || []).map((c: any) => String(c.id || ""))]))
+      const allIds = Array.from(new Set([...(allCustomers || []).map((c: any) => String(c.id || ""))]))
       const out: Record<string, { advance: number; applied: number; available: number; credits: number }> = {}
       allIds.forEach((id) => {
         const adv = Number(advMap[id] || 0)
@@ -998,6 +1014,13 @@ export default function CustomersPage() {
               defaultOpen={false}
             >
               <div className="space-y-4">
+                {/* 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+                <BranchFilter
+                  lang={appLang}
+                  externalHook={branchFilter}
+                  className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800"
+                />
+
                 {/* Quick Search Bar */}
                 <div>
                   <div className="relative">

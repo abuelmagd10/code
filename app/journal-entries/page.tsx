@@ -26,6 +26,8 @@ import { CompanyHeader } from "@/components/company-header"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
+import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { BranchFilter } from "@/components/BranchFilter"
 
 interface Account {
   id: string
@@ -61,6 +63,9 @@ export default function JournalEntriesPage() {
   const [currentUserRole, setCurrentUserRole] = useState<string>('viewer')
   const searchParams = useSearchParams()
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // 🔐 فلتر الفروع الموحد
+  const branchFilter = useBranchFilter()
   const numberFmt = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   // تهيئة اللغة بعد hydration
@@ -134,7 +139,7 @@ export default function JournalEntriesPage() {
       setPermWrite(await canAction(supabase, 'journal', 'write'))
     })()
     loadEntries()
-  }, [accountIdParam, fromParam, toParam])
+  }, [accountIdParam, fromParam, toParam, branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
   useEffect(() => {
     const handler = async () => {
       setPermWrite(await canAction(supabase, 'journal', 'write'))
@@ -159,6 +164,9 @@ export default function JournalEntriesPage() {
 
       // 🔐 ERP Access Control - جلب دور المستخدم
       const { data: { user } } = await supabase.auth.getUser()
+      let userRole = "viewer"
+      let userBranchId: string | null = null
+
       if (user) {
         const { data: companyData } = await supabase
           .from("companies")
@@ -168,15 +176,21 @@ export default function JournalEntriesPage() {
 
         const { data: memberData } = await supabase
           .from("company_members")
-          .select("role")
+          .select("role, branch_id")
           .eq("company_id", companyId)
           .eq("user_id", user.id)
           .single()
 
         const isOwner = companyData?.user_id === user.id
-        const role = isOwner ? "owner" : (memberData?.role || "viewer")
-        setCurrentUserRole(role)
+        userRole = isOwner ? "owner" : (memberData?.role || "viewer")
+        userBranchId = memberData?.branch_id || null
+        setCurrentUserRole(userRole)
       }
+
+      // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
+      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      const canFilterByBranch = PRIVILEGED_ROLES.includes(userRole.toLowerCase())
+      const selectedBranchId = branchFilter.getFilteredBranchId()
 
       if (accountIdParam) {
         const { data: acc } = await supabase
@@ -193,6 +207,18 @@ export default function JournalEntriesPage() {
         .from("journal_entries")
         .select("*, journal_entry_lines!inner(account_id), branches(name)")
         .eq("company_id", companyId)
+
+      // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+      if (canFilterByBranch && selectedBranchId) {
+        // المستخدم المميز اختار فرعاً معيناً
+        query = query.eq("branch_id", selectedBranchId)
+      } else if (!canFilterByBranch && userBranchId) {
+        // المستخدم العادي - فلترة بفرعه فقط
+        query = query.eq("branch_id", userBranchId)
+      }
+      // else: المستخدم المميز بدون فلتر = جميع الفروع
+
+      query = query
         .is("deleted_at", null)
         .order("entry_date", { ascending: false })
 
@@ -461,6 +487,13 @@ export default function JournalEntriesPage() {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+              <BranchFilter
+                lang={appLang}
+                externalHook={branchFilter}
+                className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800"
+              />
 
               {/* Professional Filter Section */}
               <FilterContainer

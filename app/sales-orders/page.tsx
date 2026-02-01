@@ -28,6 +28,8 @@ import { OrderActions } from "@/components/OrderActions";
 import { getActiveCompanyId } from "@/lib/company";
 import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordModification } from "@/lib/validation";
 import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control";
+import { useBranchFilter } from "@/hooks/use-branch-filter";
+import { BranchFilter } from "@/components/BranchFilter";
 import { PageHeaderList } from "@/components/PageHeader";
 import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { StatusBadge } from "@/components/DataTableFormatters";
@@ -160,6 +162,9 @@ function SalesOrdersContent() {
 
   // 🔐 ERP Access Control - سياق المستخدم
   const [userContext, setUserContext] = useState<UserContext | null>(null);
+
+  // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
+  const branchFilter = useBranchFilter();
 
   // 🔐 قائمة المستخدمين الذين شاركوا صلاحياتهم (للتحقق من أوامر البيع المشتركة)
   const [sharedGrantorIds, setSharedGrantorIds] = useState<string[]>([]);
@@ -722,7 +727,12 @@ function SalesOrdersContent() {
     }
 
     // Load sales orders
-    const response = await fetch('/api/sales-orders');
+    // 🔐 إرسال branch_id إذا كان المستخدم المميز اختار فرعاً معيناً
+    const branchIdParam = branchFilter.getFilteredBranchId();
+    const apiUrl = branchIdParam
+      ? `/api/sales-orders?branch_id=${branchIdParam}`
+      : '/api/sales-orders';
+    const response = await fetch(apiUrl);
     const result = await response.json();
     const so = result.success ? result.data : [];
 
@@ -989,7 +999,7 @@ function SalesOrdersContent() {
 
   useEffect(() => {
     loadOrders();
-  }, [supabase]);
+  }, [supabase, branchFilter.selectedBranchId]); // إعادة تحميل البيانات عند تغيير الفرع المحدد
 
   // 🔄 الاستماع لتغيير الشركة وإعادة تحميل البيانات
   useEffect(() => {
@@ -1540,11 +1550,21 @@ function SalesOrdersContent() {
         {/* Filters Section */}
         <FilterContainer
           title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
-          activeCount={activeFilterCount}
-          onClear={clearFilters}
+          activeCount={activeFilterCount + (branchFilter.selectedBranchId ? 1 : 0)}
+          onClear={() => {
+            clearFilters();
+            branchFilter.resetFilter();
+          }}
           defaultOpen={false}
         >
           <div className="space-y-4">
+            {/* 🔐 فلتر الفروع - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
+            <BranchFilter
+              lang={appLang as 'ar' | 'en'}
+              externalHook={branchFilter}
+              className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800"
+            />
+
             {/* فلتر الموظفين - صف منفصل أعلى الفلاتر - يظهر فقط للمديرين */}
             {canViewAllOrders && employees.length > 0 && (
               <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
