@@ -4,9 +4,8 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
-import { 
-  enforceGovernance, 
+import {
+  enforceGovernance,
   applyGovernanceFilters,
   validateGovernanceData,
   addGovernanceData
@@ -16,7 +15,7 @@ import { RefundPolicyEngine } from "@/lib/refund-policy-engine"
 export async function GET(request: NextRequest) {
   try {
     const governance = await enforceGovernance()
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
     
     const { searchParams } = new URL(request.url)
     const status = searchParams.get("status") || undefined
@@ -66,7 +65,7 @@ export async function POST(request: NextRequest) {
   try {
     const governance = await enforceGovernance()
     const body = await request.json()
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
     
     const { 
       source_type, 

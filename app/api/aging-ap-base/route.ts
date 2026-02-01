@@ -23,7 +23,7 @@ import { createClient as createServerClient } from "@/lib/supabase/server"
 import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { buildBranchFilter } from "@/lib/branch-access-control"
-import { NextRequest } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 
 export async function GET(req: NextRequest) {
   try {

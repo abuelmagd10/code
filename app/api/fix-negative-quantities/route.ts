@@ -30,7 +30,11 @@ export async function POST(request: NextRequest) {
       .select("*")
       .eq("invoice_id", invoice.id)
 
-    const results = {
+    const results: {
+      invoice_number: string;
+      items_fixed: number;
+      steps: string[];
+    } = {
       invoice_number: invoice.invoice_number,
       items_fixed: 0,
       steps: []

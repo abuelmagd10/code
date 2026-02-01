@@ -27,13 +27,13 @@ const ERPWebsite = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const navigateToPage = (page) => {
+  const navigateToPage = (page: string) => {
     setCurrentPage(page);
     setIsMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const navigateToSection = (section) => {
+  const navigateToSection = (section: string) => {
     setIsMenuOpen(false);
     if (currentPage !== 'home') {
       setCurrentPage('home');
@@ -168,7 +168,7 @@ const ERPWebsite = () => {
   ];
 
   // FAQ Item Component
-  const FAQItem = ({ faq, index }) => {
+  const FAQItem = ({ faq, index }: { faq: { q: string; a: string }; index: number }) => {
     const [isOpen, setIsOpen] = useState(false);
     return (
       <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden hover:bg-white/10 transition-all">

@@ -785,6 +785,7 @@ function ChartOfAccountsPage() {
         opening_balance: 0,
         branch_id: "",
         cost_center_id: "",
+        normal_balance: "debit",
       })
       setFormErrors({})
       loadAccounts()

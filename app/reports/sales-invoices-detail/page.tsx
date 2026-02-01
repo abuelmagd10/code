@@ -102,7 +102,7 @@ export default function SalesInvoicesDetailReportPage() {
           .eq("resource_type", "customers")
           .eq("is_active", true)
 
-        const sharedUserIds = sharedCustomerIds?.map(s => s.grantor_user_id) || []
+        const sharedUserIds = sharedCustomerIds?.map((s: { grantor_user_id: string }) => s.grantor_user_id) || []
         const allUserIds = [accessFilter.createdByUserId, ...sharedUserIds]
 
         customersQuery = customersQuery.in("created_by_user_id", allUserIds)
@@ -114,7 +114,7 @@ export default function SalesInvoicesDetailReportPage() {
           .eq("company_id", companyId)
           .eq("branch_id", accessFilter.branchId)
 
-        const branchUserIds = branchUsers?.map(u => u.user_id) || []
+        const branchUserIds = branchUsers?.map((u: { user_id: string }) => u.user_id) || []
         if (branchUserIds.length > 0) {
           customersQuery = customersQuery.in("created_by_user_id", branchUserIds)
         }

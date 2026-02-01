@@ -53,7 +53,7 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
     return {
       companyId: userContext.company_id,
       filterByBranch: true,
-      branchId: userContext.branch_id,
+      branchId: userContext.branch_id || null,
       filterByCostCenter: false,
       costCenterId: null,
       filterByWarehouse: false,
@@ -63,13 +63,13 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
       canSeeAllInScope: false
     };
   }
-  
+
   // 3️⃣ Accountant - يرى كل بيانات الفرع (مع إمكانية فلترة حسب الموظف)
   if (role === 'accountant') {
     return {
       companyId: userContext.company_id,
       filterByBranch: true,
-      branchId: userContext.branch_id,
+      branchId: userContext.branch_id || null,
       filterByCostCenter: false,
       costCenterId: null,
       filterByWarehouse: false,
@@ -79,15 +79,15 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
       canSeeAllInScope: false
     };
   }
-  
+
   // 4️⃣ Supervisor - يرى بيانات مركز التكلفة
   if (role === 'supervisor') {
     return {
       companyId: userContext.company_id,
       filterByBranch: true,
-      branchId: userContext.branch_id,
+      branchId: userContext.branch_id || null,
       filterByCostCenter: true,
-      costCenterId: userContext.cost_center_id,
+      costCenterId: userContext.cost_center_id || null,
       filterByWarehouse: false,
       warehouseId: null,
       filterByCreatedBy: false,
@@ -95,16 +95,16 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
       canSeeAllInScope: false
     };
   }
-  
+
   // 5️⃣ Staff/Sales/Employee - يرى فقط ما أنشأه
   return {
     companyId: userContext.company_id,
     filterByBranch: true,
-    branchId: userContext.branch_id,
+    branchId: userContext.branch_id || null,
     filterByCostCenter: true,
-    costCenterId: userContext.cost_center_id,
+    costCenterId: userContext.cost_center_id || null,
     filterByWarehouse: true,
-    warehouseId: userContext.warehouse_id,
+    warehouseId: userContext.warehouse_id || null,
     filterByCreatedBy: true,
     createdByUserId: userContext.user_id,
     canSeeAllInScope: false

@@ -5,7 +5,7 @@
  * Backup & Restore Page
  */
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Download, Upload, AlertCircle, CheckCircle, Loader2, Shield } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -35,8 +35,16 @@ export default function BackupPage() {
   // استخراج البيانات من userContext
   const companyId = userContext?.company_id || null
   const role = userContext?.role || null
-  const language = 'ar' // يمكن جلبها من الإعدادات
+  const [language, setLanguage] = useState<'ar' | 'en'>('ar')
   const companyName = 'Company' // يمكن جلبها من الشركة
+
+  // تهيئة اللغة
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('app_language') || 'ar'
+      setLanguage(v === 'en' ? 'en' : 'ar')
+    } catch { }
+  }, [])
 
   const t = (en: string, ar: string) => (language === 'en' ? en : ar)
 

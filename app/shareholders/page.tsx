@@ -683,8 +683,8 @@ export default function ShareholdersPage() {
         .select("debit_amount, credit_amount")
         .eq("journal_entry_id", journalEntry.id)
 
-      const finalDebit = (linesCheck || []).reduce((sum, line) => sum + (line.debit_amount || 0), 0)
-      const finalCredit = (linesCheck || []).reduce((sum, line) => sum + (line.credit_amount || 0), 0)
+      const finalDebit = (linesCheck || []).reduce((sum: number, line: { debit_amount?: number; credit_amount?: number }) => sum + (line.debit_amount || 0), 0)
+      const finalCredit = (linesCheck || []).reduce((sum: number, line: { debit_amount?: number; credit_amount?: number }) => sum + (line.credit_amount || 0), 0)
 
       if (Math.abs(finalDebit - finalCredit) > 0.01) {
         // Rollback: حذف كل شيء إذا كان القيد غير متوازن

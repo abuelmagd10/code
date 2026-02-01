@@ -4,8 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
-import { 
+import {
   enforceGovernance,
   addGovernanceData,
   validateGovernanceData
@@ -16,7 +15,7 @@ export async function POST(request: NextRequest) {
   try {
     const governance = await enforceGovernance()
     const body = await request.json()
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
     
     const { refund_request_id, payment_method, notes } = body
     

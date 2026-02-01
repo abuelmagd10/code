@@ -18,7 +18,7 @@ export async function exportCompanyBackup(
   userId: string,
   companyName: string
 ): Promise<BackupData> {
-  const supabase = createClient()
+  const supabase = await createClient()
   const startTime = Date.now()
   
   const data: Record<string, any[]> = {}
@@ -50,7 +50,7 @@ export async function exportCompanyBackup(
 
       if (!error && tableData && tableData.length > 0) {
         // استبعاد الحقول الحساسة
-        const cleanedData = tableData.map(record => cleanSensitiveFields(record, tableName))
+        const cleanedData = tableData.map((record: Record<string, unknown>) => cleanSensitiveFields(record, tableName))
         data[tableName] = cleanedData
         totalRecords += cleanedData.length
       } else {
@@ -143,7 +143,7 @@ export async function canExportBackup(
   userId: string,
   companyId: string
 ): Promise<{ allowed: boolean; reason?: string }> {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   const { data: member, error } = await supabase
     .from('company_members')

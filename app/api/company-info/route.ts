@@ -57,7 +57,7 @@ interface ErrorResponse {
 // GET Handler
 // =====================================================
 
-export async function GET(req: NextRequest): Promise<NextResponse<CompanyInfoResponse | ErrorResponse>> {
+export async function GET(req: NextRequest) {
   try {
     // ✅ 1. Authentication Check
     const supabase = await createClient()

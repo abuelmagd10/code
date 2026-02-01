@@ -98,7 +98,9 @@ export default function BankTransactionsReport() {
 
       if (!entries || entries.length === 0) { setTransactions([]); return }
 
-      const entryIds = entries.map(e => e.id)
+      type JournalEntry = { id: string; entry_date: string; description: string | null; reference_type: string | null; branch_id: string | null; cost_center_id: string | null }
+      const typedEntries = entries as JournalEntry[]
+      const entryIds = typedEntries.map((e: JournalEntry) => e.id)
       const { data: lines } = await supabase
         .from("journal_entry_lines")
         .select("id, journal_entry_id, account_id, debit_amount, credit_amount")
@@ -106,7 +108,7 @@ export default function BankTransactionsReport() {
         .in("account_id", accountIds)
 
       const txns: Transaction[] = (lines || []).map((line: any) => {
-        const entry = entries.find(e => e.id === line.journal_entry_id)
+        const entry = typedEntries.find((e: JournalEntry) => e.id === line.journal_entry_id)
         return {
           id: line.id, entry_id: line.journal_entry_id, account_id: line.account_id,
           entry_date: entry?.entry_date || '', description: entry?.description || '',

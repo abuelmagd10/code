@@ -4,9 +4,8 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
-import { 
-  enforceGovernance, 
+import {
+  enforceGovernance,
   applyGovernanceFilters,
   addGovernanceData,
   validateGovernanceData
@@ -15,7 +14,7 @@ import {
 export async function GET(request: NextRequest) {
   try {
     const governance = await enforceGovernance()
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
     
     let query = supabase.from("suppliers").select("*")
     query = applyGovernanceFilters(query, governance)
@@ -48,7 +47,7 @@ export async function POST(request: NextRequest) {
     const data = addGovernanceData(body, governance)
     validateGovernanceData(data, governance)
     
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
     const { data: result, error } = await supabase
       .from("suppliers")
       .insert(data)

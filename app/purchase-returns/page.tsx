@@ -253,8 +253,7 @@ export default function PurchaseReturnsPage() {
       format: (value) => (
         <StatusBadge
           status={value === 'completed' ? 'completed' : value === 'pending' ? 'pending' : 'cancelled'}
-          label={value === 'completed' ? (appLang === 'en' ? 'Completed' : 'مكتمل') : value === 'pending' ? (appLang === 'en' ? 'Pending' : 'معلق') : (appLang === 'en' ? 'Cancelled' : 'ملغي')}
-          variant={value === 'completed' ? 'success' : value === 'pending' ? 'warning' : 'danger'}
+          lang={appLang}
         />
       )
     },

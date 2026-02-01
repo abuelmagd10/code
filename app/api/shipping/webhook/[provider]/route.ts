@@ -168,7 +168,7 @@ export async function POST(
 
 // تسجيل الـ Webhook
 async function logWebhook(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   requestId: string,
   companyId: string | null,
   providerId: string | null,

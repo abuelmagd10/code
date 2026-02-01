@@ -132,9 +132,9 @@ function validateChecksum(backupData: BackupData): boolean {
  */
 async function validateEmptyCompany(companyId: string): Promise<{
   isEmpty: boolean
-  details: any
+  details: { invoices: number; journal_entries: number }
 }> {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   // فحص الفواتير
   const { count: invoiceCount } = await supabase

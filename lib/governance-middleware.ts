@@ -21,7 +21,7 @@ export interface GovernanceOptions {
  * يجب استخدامه في كل API endpoint
  */
 export async function enforceGovernance(
-  req: NextRequest,
+  req?: NextRequest,
   options: GovernanceOptions = {}
 ): Promise<GovernanceContext> {
   const cookieStore = await cookies()

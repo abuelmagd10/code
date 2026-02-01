@@ -14,7 +14,12 @@ export async function POST(request: NextRequest) {
       return apiError(HTTP_STATUS.UNAUTHORIZED, "غير مصرح", "Unauthorized")
     }
 
-    const results = {
+    const results: {
+      functions_created: number
+      triggers_created: number
+      steps: string[]
+      errors: string[]
+    } = {
       functions_created: 0,
       triggers_created: 0,
       steps: [],

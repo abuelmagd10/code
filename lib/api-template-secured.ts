@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     if (!companyId) return badRequestError('معرف الشركة مطلوب')
     if (!branchId) return badRequestError('معرف الفرع مطلوب')
 
-    const supabase = createClient()
+    const supabase = await createClient()
     const branchFilter = buildBranchFilter(branchId!, member.role)
 
     // Your query here with branchFilter
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     if (!branchId) return badRequestError('معرف الفرع مطلوب')
 
     const body = await request.json()
-    const supabase = createClient()
+    const supabase = await createClient()
 
     // Add mandatory fields
     const dataToInsert = {
@@ -102,7 +102,7 @@ export async function PUT(request: NextRequest) {
 
     if (!id) return badRequestError('معرف السجل مطلوب')
 
-    const supabase = createClient()
+    const supabase = await createClient()
     const branchFilter = buildBranchFilter(branchId!, member.role)
 
     // Verify ownership
@@ -159,7 +159,7 @@ export async function DELETE(request: NextRequest) {
 
     if (!id) return badRequestError('معرف السجل مطلوب')
 
-    const supabase = createClient()
+    const supabase = await createClient()
     const branchFilter = buildBranchFilter(branchId!, member.role)
 
     // Verify ownership

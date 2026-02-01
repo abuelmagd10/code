@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     if (error) return error
     if (!companyId) return serverError('معرف الشركة مطلوب')
 
-    const supabase = createClient()
+    const supabase = await createClient()
     const { searchParams } = new URL(request.url)
     const checkType = searchParams.get('type') || 'comprehensive'
 

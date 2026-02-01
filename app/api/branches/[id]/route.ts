@@ -1,19 +1,22 @@
 import { createClient } from "@/lib/supabase/server"
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { getActiveCompanyId } from "@/lib/company"
+
+type RouteContext = { params: Promise<{ id: string }> }
 
 /**
  * GET /api/branches/[id]
  * جلب فرع محدد
  */
 export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: RouteContext
 ) {
   try {
+    const { id } = await context.params
     const supabase = await createClient()
     const companyId = await getActiveCompanyId(supabase)
-    
+
     if (!companyId) {
       return NextResponse.json({ error: "No company found" }, { status: 400 })
     }
@@ -21,7 +24,7 @@ export async function GET(
     const { data, error } = await supabase
       .from("branches")
       .select("*")
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", companyId)
       .single()
 
@@ -38,13 +41,14 @@ export async function GET(
  * تحديث فرع
  */
 export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: RouteContext
 ) {
   try {
+    const { id } = await context.params
     const supabase = await createClient()
     const companyId = await getActiveCompanyId(supabase)
-    
+
     if (!companyId) {
       return NextResponse.json({ error: "No company found" }, { status: 400 })
     }
@@ -71,7 +75,7 @@ export async function PATCH(
     const { data, error } = await supabase
       .from("branches")
       .update(updateData)
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", companyId)
       .select()
       .single()
@@ -89,13 +93,14 @@ export async function PATCH(
  * حذف فرع (لا يمكن حذف الفرع الرئيسي)
  */
 export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: RouteContext
 ) {
   try {
+    const { id } = await context.params
     const supabase = await createClient()
     const companyId = await getActiveCompanyId(supabase)
-    
+
     if (!companyId) {
       return NextResponse.json({ error: "No company found" }, { status: 400 })
     }
@@ -104,7 +109,7 @@ export async function DELETE(
     const { data: branch } = await supabase
       .from("branches")
       .select("is_main")
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", companyId)
       .single()
 
@@ -115,7 +120,7 @@ export async function DELETE(
     const { error } = await supabase
       .from("branches")
       .delete()
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", companyId)
 
     if (error) throw error

@@ -1,19 +1,22 @@
 import { createClient } from "@/lib/supabase/server"
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { getActiveCompanyId } from "@/lib/company"
+
+type RouteContext = { params: Promise<{ id: string }> }
 
 /**
  * GET /api/cost-centers/[id]
  * جلب مركز تكلفة محدد
  */
 export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: RouteContext
 ) {
   try {
+    const { id } = await context.params
     const supabase = await createClient()
     const companyId = await getActiveCompanyId(supabase)
-    
+
     if (!companyId) {
       return NextResponse.json({ error: "No company found" }, { status: 400 })
     }
@@ -21,7 +24,7 @@ export async function GET(
     const { data, error } = await supabase
       .from("cost_centers")
       .select("*, branches(id, name, code)")
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", companyId)
       .single()
 
@@ -38,13 +41,14 @@ export async function GET(
  * تحديث مركز تكلفة
  */
 export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: RouteContext
 ) {
   try {
+    const { id } = await context.params
     const supabase = await createClient()
     const companyId = await getActiveCompanyId(supabase)
-    
+
     if (!companyId) {
       return NextResponse.json({ error: "No company found" }, { status: 400 })
     }
@@ -76,7 +80,7 @@ export async function PATCH(
     const { data, error } = await supabase
       .from("cost_centers")
       .update(updateData)
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", companyId)
       .select("*, branches!cost_centers_branch_id_fkey(id, name, code)")
       .single()
@@ -94,13 +98,14 @@ export async function PATCH(
  * حذف مركز تكلفة
  */
 export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: RouteContext
 ) {
   try {
+    const { id } = await context.params
     const supabase = await createClient()
     const companyId = await getActiveCompanyId(supabase)
-    
+
     if (!companyId) {
       return NextResponse.json({ error: "No company found" }, { status: 400 })
     }
@@ -108,7 +113,7 @@ export async function DELETE(
     const { error } = await supabase
       .from("cost_centers")
       .delete()
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", companyId)
 
     if (error) throw error

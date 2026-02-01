@@ -1,13 +1,10 @@
 /**
- * 🏢 API لإدارة فرع الموظف (Single Branch - Mandatory)
+ * 🏢 API لإدارة وصول الفروع للموظفين
  * User Branch Access API
  *
- * 🎯 قرار معماري إلزامي: المستخدم الواحد يجب أن ينتمي إلى فرع واحد فقط
- * 
- * GET: جلب فرع الموظف
- * POST: تعيين فرع واحد للموظف (فرع واحد فقط - إلزامي)
- * PATCH: تحديث فرع الموظف
- * DELETE: إلغاء فرع الموظف
+ * GET: جلب وصول الفروع
+ * POST: إضافة وصول فرع جديد
+ * PATCH: تحديث وصول فرع
  */
 
 import { cookies } from "next/headers"
@@ -92,8 +89,8 @@ export async function POST(request: Request) {
     const {
       company_id,
       user_id,
-      branch_ids, // مصفوفة من الفروع
-      primary_branch_id, // الفرع الأساسي
+      branch_ids,
+      primary_branch_id,
       access_type,
       is_primary,
       can_view_customers,
@@ -101,7 +98,7 @@ export async function POST(request: Request) {
       can_view_invoices,
       can_view_inventory,
       can_view_prices,
-      replace_existing // حذف الفروع القديمة واستبدالها بالجديدة
+      replace_existing
     } = body
 
     if (!company_id || !user_id || !branch_ids?.length) {
@@ -116,26 +113,25 @@ export async function POST(request: Request) {
       .eq("user_id", user.id)
       .single()
 
-    // 🔐 السماح للأدوار الإدارية بإدارة وصول الفروع
     const allowedRoles = ["owner", "admin", "general_manager", "manager"]
     if (!member || !allowedRoles.includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح بهذه العملية" }, { status: 403 })
     }
 
-    // ✅ حذف جميع الفروع القديمة أولاً (ضمان فرع واحد فقط)
-    await supabase
-      .from("user_branch_access")
-      .update({ is_active: false })
-      .eq("company_id", company_id)
-      .eq("user_id", user_id)
+    if (replace_existing) {
+      await supabase
+        .from("user_branch_access")
+        .update({ is_active: false })
+        .eq("company_id", company_id)
+        .eq("user_id", user_id)
+    }
 
-    // ✅ إنشاء سجل وصول واحد فقط (فرع واحد)
-    const accessRecord = {
+    const accessRecords = branch_ids.map((branchId: string) => ({
       company_id,
       user_id,
-      branch_id: finalBranchId,
+      branch_id: branchId,
       access_type: access_type || "full",
-      is_primary: true, // ✅ دائماً أساسي (لأنه الفرع الوحيد)
+      is_primary: primary_branch_id ? branchId === primary_branch_id : (is_primary && branch_ids[0] === branchId),
       can_view_customers: can_view_customers !== false,
       can_view_orders: can_view_orders !== false,
       can_view_invoices: can_view_invoices !== false,
@@ -143,30 +139,22 @@ export async function POST(request: Request) {
       can_view_prices: can_view_prices || false,
       is_active: true,
       created_by: user.id
-    }
+    }))
 
     const { data, error } = await supabase
       .from("user_branch_access")
-      .upsert(accessRecord, { onConflict: "company_id,user_id,branch_id" })
+      .upsert(accessRecords, { onConflict: "company_id,user_id,branch_id" })
       .select()
 
     if (error) throw error
 
-    // ✅ تحديث company_members.branch_id (الفرع الواحد)
-    await supabase
-      .from("company_members")
-      .update({ branch_id: finalBranchId })
-      .eq("company_id", company_id)
-      .eq("user_id", user_id)
-
-    // تسجيل في Audit Log
     await supabase.from("audit_logs").insert({
       company_id,
       user_id: user.id,
-      action_type: "update",
+      action_type: replace_existing ? "update" : "create",
       resource_type: "user_branch_access",
-      description: `تعيين فرع واحد للموظف ${user_id}`,
-      new_data: { user_id, branch_id: finalBranchId }
+      description: `${replace_existing ? 'تحديث' : 'إضافة'} وصول ${branch_ids.length} فرع للموظف ${user_id}`,
+      new_data: { user_id, branch_ids, primary_branch_id }
     })
 
     return NextResponse.json({ success: true, data })
@@ -219,4 +207,3 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
-

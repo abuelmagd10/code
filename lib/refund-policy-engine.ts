@@ -146,7 +146,7 @@ export class RefundPolicyEngine {
       .eq('source_id', sourceId)
       .eq('status', 'disbursed')
     
-    const totalRefunded = previousRefunds?.reduce((sum, r) => sum + (r.approved_amount || 0), 0) || 0
+    const totalRefunded = previousRefunds?.reduce((sum: number, r: { approved_amount?: number | null }) => sum + (r.approved_amount || 0), 0) || 0
     const remainingAmount = maxAmount - totalRefunded
     
     if (requestedAmount > remainingAmount) {

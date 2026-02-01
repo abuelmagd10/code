@@ -46,7 +46,7 @@ export async function restoreBackup(
     }
 
     // 4. تنفيذ الاستعادة
-    const supabase = createClient()
+    const supabase = await createClient()
 
     // 5. حذف البيانات الحالية (إذا لزم الأمر)
     if (options.mode === 'restore_to_empty') {
@@ -129,7 +129,7 @@ export async function canRestoreBackup(
   userId: string,
   companyId: string
 ): Promise<{ allowed: boolean; reason?: string }> {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   const { data: member, error } = await supabase
     .from('company_members')
@@ -154,7 +154,7 @@ export async function canRestoreBackup(
  * حذف بيانات الشركة الحالية
  */
 async function clearCompanyData(companyId: string): Promise<void> {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   // حذف البيانات بترتيب عكسي (لتجنب مشاكل Foreign Keys)
   const reversedOrder = [...EXPORT_ORDER].reverse()
@@ -181,7 +181,7 @@ async function verifyRestoreIntegrity(
   backupData: BackupData
 ): Promise<{ valid: boolean; warnings: string[] }> {
   const warnings: string[] = []
-  const supabase = createClient()
+  const supabase = await createClient()
 
   // 1. التحقق من عدد السجلات
   for (const tableName of EXPORT_ORDER) {
@@ -216,8 +216,8 @@ async function verifyRestoreIntegrity(
         .eq('journal_entry_id', entry.id)
 
       if (lines) {
-        const totalDebit = lines.reduce((sum, l) => sum + Number(l.debit_amount || 0), 0)
-        const totalCredit = lines.reduce((sum, l) => sum + Number(l.credit_amount || 0), 0)
+        const totalDebit = lines.reduce((sum: number, l: { debit_amount?: number | null; credit_amount?: number | null }) => sum + Number(l.debit_amount || 0), 0)
+        const totalCredit = lines.reduce((sum: number, l: { debit_amount?: number | null; credit_amount?: number | null }) => sum + Number(l.credit_amount || 0), 0)
 
         if (Math.abs(totalDebit - totalCredit) > 0.01) {
           warnings.push(`قيد محاسبي غير متوازن: ${entry.id}`)

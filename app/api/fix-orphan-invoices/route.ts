@@ -19,11 +19,12 @@ export async function POST(request: NextRequest) {
     const security = await secureApiRequest(request, { requireAuth: true, requireCompany: true })
     if (security.error) return security.error
 
-    const { user, companyId, role } = security
+    const { user, companyId, member } = security
     if (!user || !companyId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const role = member?.role
     // التحقق من أن المستخدم owner أو admin
     if (role !== 'owner' && role !== 'admin') {
       return forbiddenError("هذه العملية متاحة فقط للمالك أو المدير")
@@ -240,11 +241,12 @@ export async function GET(request: NextRequest) {
     const security = await secureApiRequest(request, { requireAuth: true, requireCompany: true })
     if (security.error) return security.error
 
-    const { user, companyId, role } = security
+    const { user, companyId, member } = security
     if (!user || !companyId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const role = member?.role
     // التحقق من أن المستخدم owner أو admin
     if (role !== 'owner' && role !== 'admin') {
       return forbiddenError("هذه العملية متاحة فقط للمالك أو المدير")

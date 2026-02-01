@@ -88,7 +88,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
         .eq('company_id', companyId)
         .eq('is_active', true)
 
-      setPermissions(permissionsData?.map(p => ({
+      setPermissions(permissionsData?.map((p: any) => ({
         id: p.id,
         userId: p.user_id,
         userName: p.user_profiles?.display_name || 'Unknown',
@@ -122,7 +122,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
         .select('user_id, user_profiles!user_id(display_name)')
         .eq('company_id', companyId)
 
-      setUsers(usersData?.map(u => ({
+      setUsers(usersData?.map((u: any) => ({
         id: u.user_id,
         name: u.user_profiles?.display_name || 'Unknown'
       })) || [])

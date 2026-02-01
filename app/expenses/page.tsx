@@ -519,7 +519,6 @@ export default function ExpensesPage() {
                 selected={statusFilter}
                 onChange={setStatusFilter}
                 placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
-                label={appLang === 'en' ? 'Status' : 'الحالة'}
               />
             </div>
           </div>
@@ -576,10 +575,6 @@ export default function ExpensesPage() {
                     pageSize={pageSize}
                     onPageChange={goToPage}
                     onPageSizeChange={handlePageSizeChange}
-                    hasNext={hasNext}
-                    hasPrevious={hasPrevious}
-                    onNext={nextPage}
-                    onPrevious={previousPage}
                     lang={appLang}
                   />
                 </div>

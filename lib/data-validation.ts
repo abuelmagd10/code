@@ -60,7 +60,7 @@ export async function validateInventoryAvailability(
   items: any[],
   warehouseId: string
 ): Promise<ValidationResult> {
-  const supabase = createClient()
+  const supabase = await createClient()
   const errors: string[] = []
   const warnings: string[] = []
 
@@ -90,7 +90,7 @@ export async function validateInventoryAvailability(
       .eq('warehouse_id', warehouseId)
 
     if (inventory) {
-      const totalQuantity = inventory.reduce((sum, trans) => {
+      const totalQuantity = inventory.reduce((sum: number, trans: { quantity: number; transaction_type: string }) => {
         return trans.transaction_type === 'purchase' || trans.transaction_type === 'return'
           ? sum + trans.quantity
           : sum - trans.quantity
@@ -162,7 +162,7 @@ export async function validateAccountingPeriod(
   date: string,
   companyId: string
 ): Promise<ValidationResult> {
-  const supabase = createClient()
+  const supabase = await createClient()
   const errors: string[] = []
   const warnings: string[] = []
 

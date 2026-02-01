@@ -15,6 +15,10 @@ export async function POST(request: NextRequest) {
       .eq("invoice_number", "INV-0001")
       .single()
 
+    if (!invoice) {
+      return apiSuccess({ message: "Invoice not found" })
+    }
+
     // جلب بنود الفاتورة
     const { data: items } = await supabase
       .from("invoice_items")

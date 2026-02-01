@@ -113,7 +113,7 @@ export default function SentInvoiceReturnsPage() {
       setInvoiceItems(itemsData)
 
       // تهيئة بنود المرتجع
-      setReturnItems(itemsData.map(item => ({
+      setReturnItems(itemsData.map((item: { id: string }) => ({
         item_id: item.id,
         returned_quantity: 0
       })))

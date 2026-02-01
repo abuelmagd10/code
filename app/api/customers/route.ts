@@ -7,9 +7,8 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
-import { 
-  enforceGovernance, 
+import {
+  enforceGovernance,
   applyGovernanceFilters,
   validateGovernanceData,
   addGovernanceData
@@ -23,8 +22,8 @@ export async function GET(request: NextRequest) {
   try {
     // 1️⃣ تطبيق الحوكمة (إلزامي)
     const governance = await enforceGovernance()
-    
-    const supabase = createClient(cookies())
+
+    const supabase = await createClient()
     
     // 2️⃣ بناء الاستعلام مع فلاتر الحوكمة
     let query = supabase
@@ -88,8 +87,8 @@ export async function POST(request: NextRequest) {
     // 3️⃣ التحقق من صحة البيانات (إلزامي)
     validateGovernanceData(dataWithGovernance, governance)
     
-    const supabase = createClient(cookies())
-    
+    const supabase = await createClient()
+
     // 4️⃣ التحقق من تكرار رقم التليفون (إلزامي)
     if (dataWithGovernance.phone) {
       const { normalizePhone } = await import('@/lib/phone-utils')

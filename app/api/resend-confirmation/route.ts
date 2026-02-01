@@ -62,9 +62,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "البريد الإلكتروني مؤكد مسبقاً! يمكنك تسجيل الدخول.", confirmed: true }, { status: 400 })
     }
 
-    // Generate new confirmation link
+    // Generate new confirmation link using magiclink (doesn't require password)
     const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
-      type: "signup",
+      type: "magiclink",
       email: email,
       options: {
         redirectTo: `${base}/auth/callback?type=signup`

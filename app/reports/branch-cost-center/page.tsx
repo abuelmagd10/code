@@ -166,9 +166,9 @@ export default function BranchCostCenterReportPage() {
       const bills = billsRes.data || []
       const returns = returnsRes.data || []
 
-      const totalSales = invoices.reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0)
-      const totalPurchases = bills.reduce((sum, bill) => sum + Number(bill.total_amount || 0), 0)
-      const totalReturns = returns.reduce((sum, ret) => sum + Number(ret.total_amount || 0), 0)
+      const totalSales = invoices.reduce((sum: number, inv: { total_amount?: number }) => sum + Number(inv.total_amount || 0), 0)
+      const totalPurchases = bills.reduce((sum: number, bill: { total_amount?: number }) => sum + Number(bill.total_amount || 0), 0)
+      const totalReturns = returns.reduce((sum: number, ret: { total_amount?: number }) => sum + Number(ret.total_amount || 0), 0)
 
       setReportData({
         totalSales,

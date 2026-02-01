@@ -4,9 +4,8 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
-import { 
-  enforceGovernance, 
+import {
+  enforceGovernance,
   applyGovernanceFilters,
   validateGovernanceData,
   addGovernanceData
@@ -15,7 +14,7 @@ import {
 export async function GET(request: NextRequest) {
   try {
     const governance = await enforceGovernance()
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
     
     const { searchParams } = new URL(request.url)
     const status = searchParams.get("status") || undefined
@@ -70,8 +69,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const dataWithGovernance = addGovernanceData(body, governance)
     validateGovernanceData(dataWithGovernance, governance)
-    
-    const supabase = createClient(cookies())
+
+    const supabase = await createClient()
     const { data, error } = await supabase
       .from("customer_debit_notes")
       .insert(dataWithGovernance)

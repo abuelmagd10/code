@@ -1,8 +1,11 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+type RouteContext = { params: Promise<{ id: string }> }
+
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const { id } = await context.params
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -10,7 +13,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const { data: warehouse, error } = await supabase
       .from("warehouses")
       .select("*, branches(id, name, branch_name), cost_centers(id, cost_center_name)")
-      .eq("id", params.id)
+      .eq("id", id)
       .single()
 
     if (error) throw error
@@ -20,8 +23,9 @@ export async function GET(request: Request, { params }: { params: { id: string }
   }
 }
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
+    const { id } = await context.params
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -43,7 +47,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const { data: existing } = await supabase
       .from("warehouses")
       .select("is_main")
-      .eq("id", params.id)
+      .eq("id", id)
       .single()
 
     if (existing?.is_main && body.name && body.name !== "المخزن الرئيسي") {
@@ -65,7 +69,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
         notes: body.notes || null,
         updated_at: new Date().toISOString()
       })
-      .eq("id", params.id)
+      .eq("id", id)
       .select()
       .single()
 
@@ -76,8 +80,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
+    const { id } = await context.params
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -97,7 +102,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     const { data: warehouse } = await supabase
       .from("warehouses")
       .select("is_main")
-      .eq("id", params.id)
+      .eq("id", id)
       .single()
 
     if (warehouse?.is_main) {
@@ -107,7 +112,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     const { error } = await supabase
       .from("warehouses")
       .delete()
-      .eq("id", params.id)
+      .eq("id", id)
 
     if (error) throw error
     return NextResponse.json({ success: true })

@@ -182,12 +182,8 @@ export const statusConfigs: Record<string, {
     variant: 'secondary',
     className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
     label: { ar: 'مقفل', en: 'Locked' }
-  },
-  cancelled: {
-    variant: 'destructive',
-    className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-    label: { ar: 'ملغي', en: 'Cancelled' }
   }
+  // Note: 'cancelled' is already defined above
 }
 
 /**

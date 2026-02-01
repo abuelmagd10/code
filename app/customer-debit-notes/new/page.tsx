@@ -393,12 +393,11 @@ export default function NewCustomerDebitNotePage() {
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Branch & Cost Center Selector */}
               <BranchCostCenterSelector
-                companyId={companyId}
                 branchId={branchId}
                 costCenterId={costCenterId}
                 onBranchChange={setBranchId}
                 onCostCenterChange={setCostCenterId}
-                canOverride={canOverrideContext}
+                disabled={!canOverrideContext}
                 lang={appLang}
               />
 
@@ -411,7 +410,6 @@ export default function NewCustomerDebitNotePage() {
                     value={form.customer_id}
                     onValueChange={(v) => setForm({ ...form, customer_id: v, source_invoice_id: '' })}
                     placeholder={appLang === 'en' ? 'Select customer' : 'اختر العميل'}
-                    canCreate={permWriteCustomers}
                   />
                 </div>
 

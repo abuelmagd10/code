@@ -42,6 +42,23 @@ export default function JournalEntryDetailPage() {
   const router = useRouter()
   const entryId = params?.id as string
 
+  // Language state
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const docLang = document.documentElement?.lang
+        if (docLang === 'en') { setAppLang('en'); return }
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch { }
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
+
   const [entry, setEntry] = useState<JournalEntry | null>(null)
   const [lines, setLines] = useState<JournalLine[]>([])
   const [isLoading, setIsLoading] = useState(true)

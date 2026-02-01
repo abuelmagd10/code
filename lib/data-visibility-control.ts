@@ -43,7 +43,7 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
     return {
       companyId: userContext.company_id,
       filterByBranch: true,
-      branchId: userContext.branch_id,
+      branchId: userContext.branch_id || null,
       filterByCostCenter: false,
       costCenterId: null,
       filterByWarehouse: false,
@@ -53,16 +53,16 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
       canSeeAllInScope: false
     };
   }
-  
+
   // Staff - يرى فقط ما أنشأه
   return {
     companyId: userContext.company_id,
     filterByBranch: true,
-    branchId: userContext.branch_id,
+    branchId: userContext.branch_id || null,
     filterByCostCenter: true,
-    costCenterId: userContext.cost_center_id,
+    costCenterId: userContext.cost_center_id || null,
     filterByWarehouse: true,
-    warehouseId: userContext.warehouse_id,
+    warehouseId: userContext.warehouse_id || null,
     filterByCreatedBy: true,
     createdByUserId: userContext.user_id,
     canSeeAllInScope: false

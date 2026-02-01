@@ -4,7 +4,6 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
 import { enforceGovernance } from "@/lib/governance-middleware"
 import { RefundPolicyEngine } from "@/lib/refund-policy-engine"
 
@@ -12,7 +11,7 @@ export async function POST(request: NextRequest) {
   try {
     const governance = await enforceGovernance()
     const body = await request.json()
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
     
     const { refund_request_id, reason } = body
     
