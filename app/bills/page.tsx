@@ -1607,12 +1607,12 @@ export default function BillsPage() {
                     <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Purchase Bills' : 'فواتير المشتريات'}</h1>
                     <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage supplier bills and track payments' : 'إدارة فواتير الموردين وتتبع المدفوعات'}</p>
                     {/* 🔐 Governance Notice */}
-                    {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
+                    {userContext && (userContext.role === 'manager' || userContext.role === 'accountant') && (
                       <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                         {appLang === 'en' ? '🏢 Showing bills from your branch only' : '🏢 تعرض الفواتير الخاصة بفرعك فقط'}
                       </p>
                     )}
-                    {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
+                    {userContext && (userContext.role === 'staff' || userContext.role === 'sales' || userContext.role === 'employee') && (
                       <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                         {appLang === 'en' ? '👨‍💼 Showing bills you created only' : '👨‍💼 تعرض الفواتير التي أنشأتها فقط'}
                       </p>

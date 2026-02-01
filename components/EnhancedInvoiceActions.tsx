@@ -127,5 +127,183 @@ export const EnhancedInvoiceActions = (props: EnhancedInvoiceActionsProps) => {
   }
 
   return (
-    <div className=\"flex items-center gap-1 flex-wrap\">
-      {/* 👁️ عرض - متاح دائماً */}\n      {permissions.canView && (\n        <Link href={`/${invoiceType === 'sales' ? 'invoices' : 'bills'}/${invoiceId}`}>\n          <Button \n            variant=\"ghost\" \n            size=\"icon\" \n            className=\"h-8 w-8\" \n            title={lang === 'en' ? 'View' : 'عرض'}\n          >\n            <Eye className=\"h-4 w-4 text-gray-500\" />\n          </Button>\n        </Link>\n      )}\n\n      {/* ✏️ تعديل - حسب النمط المحاسبي */}\n      {permissions.canEdit && (\n        <div>\n          {canEditDirectly ? (\n            <Link href={`/${invoiceType === 'sales' ? 'invoices' : 'bills'}/${invoiceId}/edit`}>\n              <Button \n                variant=\"ghost\" \n                size=\"icon\" \n                className=\"h-8 w-8\" \n                title={lang === 'en' ? 'Edit' : 'تعديل'}\n              >\n                <Pencil className=\"h-4 w-4 text-blue-500\" />\n              </Button>\n            </Link>\n          ) : (\n            <Button \n              variant=\"ghost\" \n              size=\"icon\" \n              className=\"h-8 w-8 opacity-50 cursor-not-allowed\" \n              title={isLinkedToDraftOrder ? getActionTooltip('edit_linked') : getActionTooltip('edit_not_draft')}\n            >\n              <Pencil className=\"h-4 w-4 text-gray-400\" />\n            </Button>\n          )}\n        </div>\n      )}\n\n      {/* 🗑️ حذف - حسب النمط المحاسبي */}\n      {permissions.canDelete && (\n        <div>\n          {canDeleteDirectly ? (\n            <Button \n              variant=\"ghost\" \n              size=\"icon\" \n              className=\"h-8 w-8\" \n              onClick={onDelete}\n              title={lang === 'en' ? 'Delete' : 'حذف'}\n            >\n              <Trash2 className=\"h-4 w-4 text-red-500\" />\n            </Button>\n          ) : (\n            <Button \n              variant=\"ghost\" \n              size=\"icon\" \n              className=\"h-8 w-8 opacity-50 cursor-not-allowed\"\n              title={\n                isLinkedToDraftOrder ? getActionTooltip('delete_linked') :\n                hasPayments ? getActionTooltip('delete_has_payments') :\n                getActionTooltip('delete_not_draft')\n              }\n            >\n              <Trash2 className=\"h-4 w-4 text-gray-400\" />\n            </Button>\n          )}\n        </div>\n      )}\n\n      {/* 📤 إرسال - فقط للفواتير في حالة مسودة */}\n      {canSendInvoice && (\n        <Button \n          variant=\"ghost\" \n          size=\"icon\" \n          className=\"h-8 w-8\" \n          onClick={onSend}\n          disabled={loading}\n          title={lang === 'en' ? 'Send Invoice' : 'إرسال الفاتورة'}\n        >\n          <Send className=\"h-4 w-4 text-green-500\" />\n        </Button>\n      )}\n\n      {/* 💳 تسجيل دفعة - فقط للفواتير المرسلة */}\n      {canRecordPayment && (\n        <Button \n          variant=\"ghost\" \n          size=\"icon\" \n          className=\"h-8 w-8\" \n          onClick={onRecordPayment}\n          disabled={loading}\n          title={lang === 'en' ? 'Record Payment' : 'تسجيل دفعة'}\n        >\n          <CreditCard className=\"h-4 w-4 text-purple-500\" />\n        </Button>\n      )}\n\n      {/* 🔄 مرتجع جزئي */}\n      {canCreatePartialReturn && (\n        <Button \n          variant=\"ghost\" \n          size=\"sm\" \n          className=\"h-8 text-xs px-2\" \n          onClick={() => handleReturnClick('partial')}\n          disabled={loading}\n          title={lang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}\n        >\n          <RotateCcw className=\"h-3 w-3 mr-1\" />\n          {lang === 'en' ? 'P.Ret' : 'جزئي'}\n        </Button>\n      )}\n\n      {/* 🔄 مرتجع كامل */}\n      {canCreateFullReturn && (\n        <Button \n          variant=\"ghost\" \n          size=\"sm\" \n          className=\"h-8 text-xs px-2\" \n          onClick={() => handleReturnClick('full')}\n          disabled={loading}\n          title={lang === 'en' ? 'Full Return' : 'مرتجع كامل'}\n        >\n          <RotateCcw className=\"h-3 w-3 mr-1\" />\n          {lang === 'en' ? 'F.Ret' : 'كامل'}\n        </Button>\n      )}\n\n      {/* ❌ إلغاء - فقط للفواتير في حالة مسودة بدون مدفوعات */}\n      {canCancelInvoice && (\n        <Button \n          variant=\"ghost\" \n          size=\"icon\" \n          className=\"h-8 w-8\" \n          onClick={onCancel}\n          disabled={loading}\n          title={lang === 'en' ? 'Cancel Invoice' : 'إلغاء الفاتورة'}\n        >\n          <FileX className=\"h-4 w-4 text-red-500\" />\n        </Button>\n      )}\n\n      {/* 📄 عرض الأمر المرتبط */}\n      {(salesOrderId || purchaseOrderId) && (\n        <Link href={`/${salesOrderId ? 'sales-orders' : 'purchase-orders'}/${salesOrderId || purchaseOrderId}`}>\n          <Button \n            variant=\"ghost\" \n            size=\"icon\" \n            className=\"h-8 w-8\" \n            title={lang === 'en' ? 'View Linked Order' : 'عرض الأمر المرتبط'}\n          >\n            <Receipt className=\"h-4 w-4 text-blue-500\" />\n          </Button>\n        </Link>\n      )}\n\n      {/* 💰 مؤشر الرصيد الدائن */}\n      {hasCredit && (\n        <div className=\"flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/20 rounded text-xs\">\n          <CheckCircle className=\"h-3 w-3 text-blue-500\" />\n          <span className=\"text-blue-700 dark:text-blue-300 font-medium\">\n            {lang === 'en' ? 'Credit' : 'رصيد دائن'}\n          </span>\n        </div>\n      )}\n\n      {/* ⚠️ مؤشر المرتجعات */}\n      {returnedAmount > 0 && (\n        <div className=\"flex items-center gap-1 px-2 py-1 bg-orange-50 dark:bg-orange-900/20 rounded text-xs\">\n          <AlertTriangle className=\"h-3 w-3 text-orange-500\" />\n          <span className=\"text-orange-700 dark:text-orange-300 font-medium\">\n            {lang === 'en' ? 'Returned' : 'مرتجع'}\n          </span>\n        </div>\n      )}\n    </div>\n  )\n}
+    <div className="flex items-center gap-1 flex-wrap">
+      {/* 👁️ عرض - متاح دائماً */}
+      {permissions.canView && (
+        <Link href={`/${invoiceType === 'sales' ? 'invoices' : 'bills'}/${invoiceId}`}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title={lang === 'en' ? 'View' : 'عرض'}
+          >
+            <Eye className="h-4 w-4 text-gray-500" />
+          </Button>
+        </Link>
+      )}
+
+      {/* ✏️ تعديل - حسب النمط المحاسبي */}
+      {permissions.canEdit && (
+        <div>
+          {canEditDirectly ? (
+            <Link href={`/${invoiceType === 'sales' ? 'invoices' : 'bills'}/${invoiceId}/edit`}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                title={lang === 'en' ? 'Edit' : 'تعديل'}
+              >
+                <Pencil className="h-4 w-4 text-blue-500" />
+              </Button>
+            </Link>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 opacity-50 cursor-not-allowed"
+              title={isLinkedToDraftOrder ? getActionTooltip('edit_linked') : getActionTooltip('edit_not_draft')}
+            >
+              <Pencil className="h-4 w-4 text-gray-400" />
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* 🗑️ حذف - حسب النمط المحاسبي */}
+      {permissions.canDelete && (
+        <div>
+          {canDeleteDirectly ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={onDelete}
+              title={lang === 'en' ? 'Delete' : 'حذف'}
+            >
+              <Trash2 className="h-4 w-4 text-red-500" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 opacity-50 cursor-not-allowed"
+              title={
+                isLinkedToDraftOrder ? getActionTooltip('delete_linked') :
+                hasPayments ? getActionTooltip('delete_has_payments') :
+                getActionTooltip('delete_not_draft')
+              }
+            >
+              <Trash2 className="h-4 w-4 text-gray-400" />
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* 📤 إرسال - فقط للفواتير في حالة مسودة */}
+      {canSendInvoice && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={onSend}
+          disabled={loading}
+          title={lang === 'en' ? 'Send Invoice' : 'إرسال الفاتورة'}
+        >
+          <Send className="h-4 w-4 text-green-500" />
+        </Button>
+      )}
+
+      {/* 💳 تسجيل دفعة - فقط للفواتير المرسلة */}
+      {canRecordPayment && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={onRecordPayment}
+          disabled={loading}
+          title={lang === 'en' ? 'Record Payment' : 'تسجيل دفعة'}
+        >
+          <CreditCard className="h-4 w-4 text-purple-500" />
+        </Button>
+      )}
+
+      {/* 🔄 مرتجع جزئي */}
+      {canCreatePartialReturn && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 text-xs px-2"
+          onClick={() => handleReturnClick('partial')}
+          disabled={loading}
+          title={lang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
+        >
+          <RotateCcw className="h-3 w-3 mr-1" />
+          {lang === 'en' ? 'P.Ret' : 'جزئي'}
+        </Button>
+      )}
+
+      {/* 🔄 مرتجع كامل */}
+      {canCreateFullReturn && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 text-xs px-2"
+          onClick={() => handleReturnClick('full')}
+          disabled={loading}
+          title={lang === 'en' ? 'Full Return' : 'مرتجع كامل'}
+        >
+          <RotateCcw className="h-3 w-3 mr-1" />
+          {lang === 'en' ? 'F.Ret' : 'كامل'}
+        </Button>
+      )}
+
+      {/* ❌ إلغاء - فقط للفواتير في حالة مسودة بدون مدفوعات */}
+      {canCancelInvoice && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={onCancel}
+          disabled={loading}
+          title={lang === 'en' ? 'Cancel Invoice' : 'إلغاء الفاتورة'}
+        >
+          <FileX className="h-4 w-4 text-red-500" />
+        </Button>
+      )}
+
+      {/* 📄 عرض الأمر المرتبط */}
+      {(salesOrderId || purchaseOrderId) && (
+        <Link href={`/${salesOrderId ? 'sales-orders' : 'purchase-orders'}/${salesOrderId || purchaseOrderId}`}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title={lang === 'en' ? 'View Linked Order' : 'عرض الأمر المرتبط'}
+          >
+            <Receipt className="h-4 w-4 text-blue-500" />
+          </Button>
+        </Link>
+      )}
+
+      {/* 💰 مؤشر الرصيد الدائن */}
+      {hasCredit && (
+        <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/20 rounded text-xs">
+          <CheckCircle className="h-3 w-3 text-blue-500" />
+          <span className="text-blue-700 dark:text-blue-300 font-medium">
+            {lang === 'en' ? 'Credit' : 'رصيد دائن'}
+          </span>
+        </div>
+      )}
+
+      {/* ⚠️ مؤشر المرتجعات */}
+      {returnedAmount > 0 && (
+        <div className="flex items-center gap-1 px-2 py-1 bg-orange-50 dark:bg-orange-900/20 rounded text-xs">
+          <AlertTriangle className="h-3 w-3 text-orange-500" />
+          <span className="text-orange-700 dark:text-orange-300 font-medium">
+            {lang === 'en' ? 'Returned' : 'مرتجع'}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
