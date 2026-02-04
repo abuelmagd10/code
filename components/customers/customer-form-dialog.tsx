@@ -456,8 +456,21 @@ export function CustomerFormDialog({
         return
       }
 
-      // الحصول على معرف المستخدم الحالي لحفظه مع العميل الجديد
+      // الحصول على معرف المستخدم الحالي وفرعه لحفظهما مع العميل الجديد
       const { data: { user: currentUser } } = await supabase.auth.getUser()
+
+      // 🏢 جلب فرع الموظف من company_members
+      let userBranchId: string | null = null
+      if (currentUser && activeCompanyId) {
+        const { data: memberData } = await supabase
+          .from("company_members")
+          .select("branch_id")
+          .eq("company_id", activeCompanyId)
+          .eq("user_id", currentUser.id)
+          .maybeSingle()
+
+        userBranchId = memberData?.branch_id || null
+      }
 
       if (editingCustomer) {
         // تحديد البيانات المراد إرسالها
@@ -496,13 +509,14 @@ export function CustomerFormDialog({
 
         toastActionSuccess(toast, appLang === 'en' ? 'Update' : 'التحديث', appLang === 'en' ? 'Customer' : 'العميل')
       } else {
-        // إضافة عميل جديد مع ربطه بالمستخدم المنشئ
+        // إضافة عميل جديد مع ربطه بالمستخدم المنشئ وفرعه
         const { data: created, error } = await supabase
           .from("customers")
           .insert([{
             ...dataToSave,
             company_id: activeCompanyId,
-            created_by_user_id: currentUser?.id || null // ربط العميل بالموظف المنشئ
+            created_by_user_id: currentUser?.id || null, // ربط العميل بالموظف المنشئ
+            branch_id: userBranchId // 🏢 ربط العميل بفرع الموظف المنشئ
           }])
           .select("id")
           .single()
