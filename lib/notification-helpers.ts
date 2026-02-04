@@ -789,3 +789,169 @@ export async function notifyWriteOffCancelled(params: {
     category: 'inventory'
   })
 }
+
+// ============================================
+// 🔐 إشعارات دورة اعتماد نقل المخزون للمحاسب
+// ============================================
+
+/**
+ * إشعار طلب اعتماد نقل مخزون من المحاسب
+ * يُرسل إلى: Owner, Admin, General Manager
+ */
+export async function notifyTransferApprovalRequest(params: {
+  companyId: string
+  transferId: string
+  transferNumber: string
+  sourceBranchId?: string
+  destinationBranchId?: string
+  createdBy: string
+  createdByName?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, transferId, transferNumber, sourceBranchId, createdBy, createdByName, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? 'Transfer Request Pending Approval'
+    : 'طلب نقل مخزون يحتاج اعتماد'
+
+  const message = appLang === 'en'
+    ? `Transfer request ${transferNumber} created by ${createdByName || 'Accountant'} requires your approval`
+    : `طلب نقل ${transferNumber} من ${createdByName || 'المحاسب'} يحتاج إلى موافقتك`
+
+  const eventKey = `transfer_approval:${transferId}:requested`
+
+  // إشعار للمالك
+  await createNotification({
+    companyId,
+    referenceType: 'stock_transfer',
+    referenceId: transferId,
+    title,
+    message,
+    createdBy,
+    branchId: sourceBranchId,
+    assignedToRole: 'owner',
+    priority: 'high' as NotificationPriority,
+    eventKey: `${eventKey}:owner`,
+    severity: 'warning',
+    category: 'inventory'
+  })
+
+  // إشعار للأدمن
+  await createNotification({
+    companyId,
+    referenceType: 'stock_transfer',
+    referenceId: transferId,
+    title,
+    message,
+    createdBy,
+    branchId: sourceBranchId,
+    assignedToRole: 'admin',
+    priority: 'high' as NotificationPriority,
+    eventKey: `${eventKey}:admin`,
+    severity: 'warning',
+    category: 'inventory'
+  })
+
+  // إشعار للمدير العام
+  await createNotification({
+    companyId,
+    referenceType: 'stock_transfer',
+    referenceId: transferId,
+    title,
+    message,
+    createdBy,
+    branchId: sourceBranchId,
+    assignedToRole: 'general_manager',
+    priority: 'high' as NotificationPriority,
+    eventKey: `${eventKey}:general_manager`,
+    severity: 'warning',
+    category: 'inventory'
+  })
+}
+
+/**
+ * إشعار اعتماد طلب نقل المخزون
+ * يُرسل إلى: المحاسب المنشئ
+ */
+export async function notifyTransferApproved(params: {
+  companyId: string
+  transferId: string
+  transferNumber: string
+  branchId?: string
+  approvedBy: string
+  approvedByName?: string
+  createdBy: string // المحاسب المنشئ
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, transferId, transferNumber, branchId, approvedBy, approvedByName, createdBy, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? 'Transfer Request Approved'
+    : 'تم اعتماد طلب النقل'
+
+  const message = appLang === 'en'
+    ? `Your transfer request ${transferNumber} has been approved by ${approvedByName || 'Management'}`
+    : `تم اعتماد طلب النقل ${transferNumber} بواسطة ${approvedByName || 'الإدارة'}`
+
+  // إشعار للمحاسب المنشئ
+  await createNotification({
+    companyId,
+    referenceType: 'stock_transfer',
+    referenceId: transferId,
+    title,
+    message,
+    createdBy: approvedBy,
+    branchId,
+    assignedToUser: createdBy,
+    priority: 'normal' as NotificationPriority,
+    eventKey: `transfer_approval:${transferId}:approved`,
+    severity: 'info',
+    category: 'inventory'
+  })
+}
+
+/**
+ * إشعار رفض طلب نقل المخزون
+ * يُرسل إلى: المحاسب المنشئ
+ */
+export async function notifyTransferRejected(params: {
+  companyId: string
+  transferId: string
+  transferNumber: string
+  branchId?: string
+  rejectedBy: string
+  rejectedByName?: string
+  rejectionReason?: string
+  createdBy: string // المحاسب المنشئ
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, transferId, transferNumber, branchId, rejectedBy, rejectedByName, rejectionReason, createdBy, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? 'Transfer Request Rejected'
+    : 'تم رفض طلب النقل'
+
+  const reasonText = rejectionReason
+    ? (appLang === 'en' ? `\nReason: ${rejectionReason}` : `\nالسبب: ${rejectionReason}`)
+    : ''
+
+  const message = appLang === 'en'
+    ? `Your transfer request ${transferNumber} has been rejected by ${rejectedByName || 'Management'}${reasonText}`
+    : `تم رفض طلب النقل ${transferNumber} بواسطة ${rejectedByName || 'الإدارة'}${reasonText}`
+
+  // إشعار للمحاسب المنشئ
+  await createNotification({
+    companyId,
+    referenceType: 'stock_transfer',
+    referenceId: transferId,
+    title,
+    message,
+    createdBy: rejectedBy,
+    branchId,
+    assignedToUser: createdBy,
+    priority: 'high' as NotificationPriority,
+    eventKey: `transfer_approval:${transferId}:rejected`,
+    severity: 'error',
+    category: 'inventory'
+  })
+}

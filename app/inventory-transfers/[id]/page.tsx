@@ -13,8 +13,9 @@ import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeftRight, Warehouse, Package, CheckCircle2, Clock, XCircle, Truck, ArrowLeft, User, Calendar, FileText, Send, PackageCheck, X, Trash2 } from "lucide-react"
+import { ArrowLeftRight, Warehouse, Package, CheckCircle2, Clock, XCircle, Truck, ArrowLeft, User, Calendar, FileText, Send, PackageCheck, X, Trash2, ShieldCheck, ShieldX, AlertTriangle, Edit } from "lucide-react"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { notifyTransferApproved, notifyTransferRejected, notifyStockTransferRequest } from "@/lib/notification-helpers"
 
 interface TransferData {
   id: string
@@ -212,7 +213,17 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
   // 🔒 صلاحيات النقل
   // بدء النقل: Owner/Admin/Manager فقط
-  const canManage = ["owner", "admin", "manager"].includes(userRole)
+  const canManage = ["owner", "admin", "manager", "general_manager", "gm"].includes(userRole)
+
+  // 🔒 صلاحية الاعتماد/الرفض: Owner/Admin/General Manager فقط
+  // ✅ فقط للطلبات في حالة pending_approval
+  const canApproveOrReject = ["owner", "admin", "general_manager", "gm"].includes(userRole) && transfer?.status === 'pending_approval'
+
+  // 🔒 صلاحية المحاسب: تعديل/حذف/إعادة إرسال طلباته المرفوضة أو المسودة
+  const isAccountant = userRole === 'accountant'
+  const isCreator = transfer?.created_by === userId
+  const canAccountantEdit = isAccountant && isCreator && ['draft', 'rejected'].includes(transfer?.status || '')
+  const canAccountantResubmit = isAccountant && isCreator && ['draft', 'rejected'].includes(transfer?.status || '')
 
   // 🔒 صلاحية الاستلام: فقط مسؤول المخزن الوجهة
   // ❌ Owner/Admin/Manager لا يمكنهم الاستلام (فقط الإرسال)
@@ -229,8 +240,9 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   // ❌ مسؤول المخزن لا يمكنه تعديل الكمية، يستلم الكمية المرسلة كما هي
   const canEditReceivedQuantity = ["owner", "admin"].includes(userRole)
 
-  // 🔒 صلاحية الحذف: Owner/Admin/Manager فقط، وفقط في حالة pending
-  const canDelete = canManage && transfer?.status === 'pending'
+  // 🔒 صلاحية الحذف: Owner/Admin/Manager فقط، وفقط في حالة pending أو pending_approval أو draft
+  // ✅ المحاسب يمكنه حذف طلباته المرفوضة أو المسودة
+  const canDelete = (canManage && ['pending', 'pending_approval', 'draft'].includes(transfer?.status || '')) || canAccountantEdit
 
   // 🔒 صلاحية إلغاء النقل:
   // ✅ يُسمح بالإلغاء فقط في حالة "in_transit"
@@ -240,8 +252,12 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'pending_approval':
+        return <Badge className="gap-1 bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300"><AlertTriangle className="w-3 h-3" />{appLang === 'en' ? 'Pending Approval' : 'بانتظار الاعتماد'}</Badge>
+      case 'draft':
+        return <Badge className="gap-1 bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-800 dark:text-gray-400"><Edit className="w-3 h-3" />{appLang === 'en' ? 'Draft' : 'مسودة'}</Badge>
       case 'pending':
-        return <Badge className="gap-1 bg-yellow-100 text-yellow-800 border-yellow-300"><Clock className="w-3 h-3" />{appLang === 'en' ? 'Pending Approval' : 'قيد الانتظار'}</Badge>
+        return <Badge className="gap-1 bg-yellow-100 text-yellow-800 border-yellow-300"><Clock className="w-3 h-3" />{appLang === 'en' ? 'Pending Start' : 'قيد الانتظار'}</Badge>
       case 'in_transit':
         return <Badge className="gap-1 bg-blue-100 text-blue-800 border-blue-300"><Truck className="w-3 h-3" />{appLang === 'en' ? 'In Transit' : 'قيد النقل'}</Badge>
       case 'received':
@@ -384,10 +400,9 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       }
 
       toast({ title: appLang === 'en' ? 'Transfer started successfully' : 'تم بدء النقل بنجاح' })
-      
+
       // إنشاء إشعار لمسؤول المخزن الوجهة
       try {
-        const { notifyStockTransferRequest } = await import('@/lib/notification-helpers')
         await notifyStockTransferRequest({
           companyId,
           transferId: transfer.id,
@@ -401,11 +416,186 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
         console.error("Error creating notification:", notifError)
         // لا نوقف العملية إذا فشل إنشاء الإشعار
       }
-      
+
       loadData()
     } catch (error: any) {
       console.error("Error:", error)
       toast({ title: error?.message || (appLang === 'en' ? 'Error starting transfer' : 'خطأ في بدء النقل'), variant: 'destructive' })
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  // 🔐 اعتماد طلب النقل (للإدارة فقط)
+  const handleApproveTransfer = async () => {
+    if (!transfer) return
+    try {
+      setIsProcessing(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      // تحديث الحالة إلى pending
+      const { error: updateError } = await supabase
+        .from("inventory_transfers")
+        .update({
+          status: 'pending',
+          approved_by: user.id,
+          approved_at: new Date().toISOString()
+        })
+        .eq("id", transfer.id)
+
+      if (updateError) throw updateError
+
+      // تسجيل في Audit Log
+      await supabase.from("audit_logs").insert({
+        company_id: companyId,
+        user_id: user.id,
+        action: 'transfer_approved',
+        entity_type: 'stock_transfer',
+        entity_id: transfer.id,
+        old_values: { status: 'pending_approval' },
+        new_values: { status: 'pending', approved_by: user.id },
+        metadata: { transfer_number: transfer.transfer_number, approved_at: new Date().toISOString() }
+      })
+
+      // إرسال إشعار للمحاسب المنشئ
+      try {
+        await notifyTransferApproved({
+          companyId,
+          transferId: transfer.id,
+          transferNumber: transfer.transfer_number,
+          branchId: transfer.source_branch_id || undefined,
+          approvedBy: user.id,
+          createdBy: transfer.created_by,
+          appLang
+        })
+      } catch (notifError) {
+        console.error("Error sending approval notification:", notifError)
+      }
+
+      toast({ title: appLang === 'en' ? 'Transfer approved successfully' : 'تم اعتماد طلب النقل بنجاح' })
+      loadData()
+    } catch (error: any) {
+      console.error("Error approving transfer:", error)
+      toast({ title: appLang === 'en' ? 'Error approving transfer' : 'خطأ في اعتماد طلب النقل', variant: 'destructive' })
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  // 🔐 رفض طلب النقل (للإدارة فقط)
+  const handleRejectTransfer = async (reason?: string) => {
+    if (!transfer) return
+    try {
+      setIsProcessing(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      // تحديث الحالة إلى draft (يمكن للمحاسب التعديل وإعادة الإرسال)
+      const { error: updateError } = await supabase
+        .from("inventory_transfers")
+        .update({
+          status: 'draft',
+          rejected_by: user.id,
+          rejected_at: new Date().toISOString(),
+          rejection_reason: reason || null
+        })
+        .eq("id", transfer.id)
+
+      if (updateError) throw updateError
+
+      // تسجيل في Audit Log
+      await supabase.from("audit_logs").insert({
+        company_id: companyId,
+        user_id: user.id,
+        action: 'transfer_rejected',
+        entity_type: 'stock_transfer',
+        entity_id: transfer.id,
+        old_values: { status: 'pending_approval' },
+        new_values: { status: 'draft', rejected_by: user.id, rejection_reason: reason },
+        metadata: { transfer_number: transfer.transfer_number, rejected_at: new Date().toISOString() }
+      })
+
+      // إرسال إشعار للمحاسب المنشئ
+      try {
+        await notifyTransferRejected({
+          companyId,
+          transferId: transfer.id,
+          transferNumber: transfer.transfer_number,
+          branchId: transfer.source_branch_id || undefined,
+          rejectedBy: user.id,
+          rejectionReason: reason,
+          createdBy: transfer.created_by,
+          appLang
+        })
+      } catch (notifError) {
+        console.error("Error sending rejection notification:", notifError)
+      }
+
+      toast({ title: appLang === 'en' ? 'Transfer rejected' : 'تم رفض طلب النقل' })
+      loadData()
+    } catch (error: any) {
+      console.error("Error rejecting transfer:", error)
+      toast({ title: appLang === 'en' ? 'Error rejecting transfer' : 'خطأ في رفض طلب النقل', variant: 'destructive' })
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  // 🔐 إعادة إرسال طلب النقل للاعتماد (للمحاسب فقط)
+  const handleResubmitTransfer = async () => {
+    if (!transfer) return
+    try {
+      setIsProcessing(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      // تحديث الحالة إلى pending_approval
+      const { error: updateError } = await supabase
+        .from("inventory_transfers")
+        .update({
+          status: 'pending_approval',
+          rejected_by: null,
+          rejected_at: null,
+          rejection_reason: null
+        })
+        .eq("id", transfer.id)
+
+      if (updateError) throw updateError
+
+      // تسجيل في Audit Log
+      await supabase.from("audit_logs").insert({
+        company_id: companyId,
+        user_id: user.id,
+        action: 'transfer_resubmitted',
+        entity_type: 'stock_transfer',
+        entity_id: transfer.id,
+        old_values: { status: 'draft' },
+        new_values: { status: 'pending_approval' },
+        metadata: { transfer_number: transfer.transfer_number, resubmitted_at: new Date().toISOString() }
+      })
+
+      // إرسال إشعار للإدارة
+      try {
+        const { notifyTransferApprovalRequest } = await import('@/lib/notification-helpers')
+        await notifyTransferApprovalRequest({
+          companyId,
+          transferId: transfer.id,
+          transferNumber: transfer.transfer_number,
+          sourceBranchId: transfer.source_branch_id || undefined,
+          destinationBranchId: transfer.destination_branch_id || undefined,
+          createdBy: user.id,
+          appLang
+        })
+      } catch (notifError) {
+        console.error("Error sending resubmit notification:", notifError)
+      }
+
+      toast({ title: appLang === 'en' ? 'Transfer resubmitted for approval' : 'تم إعادة إرسال الطلب للاعتماد' })
+      loadData()
+    } catch (error: any) {
+      console.error("Error resubmitting transfer:", error)
+      toast({ title: appLang === 'en' ? 'Error resubmitting transfer' : 'خطأ في إعادة إرسال الطلب', variant: 'destructive' })
     } finally {
       setIsProcessing(false)
     }
@@ -852,6 +1042,28 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
               {/* Action Buttons */}
               <div className="flex gap-2 flex-wrap">
+                {/* 🔐 أزرار الاعتماد/الرفض - للإدارة فقط في حالة pending_approval */}
+                {canApproveOrReject && (
+                  <>
+                    <Button onClick={handleApproveTransfer} disabled={isProcessing} className="gap-2 bg-green-600 hover:bg-green-700">
+                      <ShieldCheck className="w-4 h-4" />
+                      {appLang === 'en' ? 'Approve' : 'اعتماد'}
+                    </Button>
+                    <Button variant="destructive" onClick={() => handleRejectTransfer()} disabled={isProcessing} className="gap-2">
+                      <ShieldX className="w-4 h-4" />
+                      {appLang === 'en' ? 'Reject' : 'رفض'}
+                    </Button>
+                  </>
+                )}
+
+                {/* 🔐 زر إعادة الإرسال - للمحاسب فقط في حالة draft أو rejected */}
+                {canAccountantResubmit && (
+                  <Button onClick={handleResubmitTransfer} disabled={isProcessing} className="gap-2 bg-amber-600 hover:bg-amber-700">
+                    <Send className="w-4 h-4" />
+                    {appLang === 'en' ? 'Resubmit for Approval' : 'إعادة إرسال للاعتماد'}
+                  </Button>
+                )}
+
                 {/* بدء النقل - فقط في حالة pending */}
                 {transfer.status === 'pending' && canManage && (
                   <Button onClick={handleStartTransfer} disabled={isProcessing} className="gap-2 bg-blue-600 hover:bg-blue-700">
@@ -860,7 +1072,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                   </Button>
                 )}
 
-                {/* 🗑️ حذف طلب النقل - فقط في حالة pending */}
+                {/* 🗑️ حذف طلب النقل - فقط في حالة pending أو pending_approval أو draft */}
                 {canDelete && (
                   <Button variant="destructive" onClick={handleDelete} disabled={isProcessing} className="gap-2">
                     <Trash2 className="w-4 h-4" />
@@ -888,6 +1100,48 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
               </div>
             </div>
           </div>
+
+          {/* 🔐 رسالة الحالة الخاصة */}
+          {transfer.status === 'pending_approval' && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-amber-800 dark:text-amber-300">
+                    {appLang === 'en' ? 'Awaiting Management Approval' : 'بانتظار اعتماد الإدارة'}
+                  </h3>
+                  <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                    {appLang === 'en'
+                      ? 'This transfer request was created by an accountant and requires approval from Owner, Admin, or General Manager before processing.'
+                      : 'تم إنشاء طلب النقل هذا بواسطة محاسب ويحتاج إلى موافقة المالك أو المدير أو المدير العام قبل المعالجة.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {transfer.status === 'draft' && (
+            <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <Edit className="w-5 h-5 text-gray-600 dark:text-gray-400 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-gray-800 dark:text-gray-300">
+                    {appLang === 'en' ? 'Transfer Rejected - Draft Mode' : 'طلب مرفوض - وضع المسودة'}
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    {appLang === 'en'
+                      ? 'This transfer was rejected by management. You can edit and resubmit it for approval.'
+                      : 'تم رفض طلب النقل هذا من الإدارة. يمكنك تعديله وإعادة إرساله للاعتماد.'}
+                  </p>
+                  {(transfer as any).rejection_reason && (
+                    <p className="text-sm text-red-600 dark:text-red-400 mt-2">
+                      <strong>{appLang === 'en' ? 'Rejection Reason:' : 'سبب الرفض:'}</strong> {(transfer as any).rejection_reason}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Warehouse Info */}
           <div className="grid md:grid-cols-2 gap-4">

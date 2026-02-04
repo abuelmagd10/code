@@ -12,8 +12,9 @@ import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
-import { ArrowLeftRight, Plus, Trash2, Warehouse, Package, Save, ArrowRight, AlertCircle } from "lucide-react"
-import { notifyStockTransferRequest } from "@/lib/notification-helpers"
+import { ArrowLeftRight, Plus, Trash2, Warehouse, Package, Save, ArrowRight, AlertCircle, Clock } from "lucide-react"
+import { notifyStockTransferRequest, notifyTransferApprovalRequest } from "@/lib/notification-helpers"
+import { Badge } from "@/components/ui/badge"
 
 interface Product {
   id: string
@@ -105,16 +106,20 @@ export default function NewTransferPage() {
         .eq("user_id", user.id)
         .single()
 
-      const role = member?.role || "staff"
+      const role = String(member?.role || "staff").trim().toLowerCase().replace(/\s+/g, "_")
       const userBranchId = member?.branch_id || null
       setUserRole(role)
 
-      // 🔒 صلاحية إنشاء طلبات النقل: Owner/Admin/Manager فقط
+      // 🔒 صلاحية إنشاء طلبات النقل:
+      // ✅ Owner/Admin/Manager: إنشاء مباشر (حالة pending)
+      // ✅ Accountant: إنشاء مع دورة اعتماد (حالة pending_approval)
       // ❌ مسؤول المخزن لا يمكنه إنشاء طلبات نقل، فقط استلامها
-      if (!["owner", "admin", "manager"].includes(role)) {
+      const canCreateTransfer = ["owner", "admin", "manager", "general_manager", "gm", "accountant"].includes(role)
+
+      if (!canCreateTransfer) {
         toast({
           title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
-          description: appLang === 'en' ? 'Only managers can create transfers' : 'فقط المدراء يمكنهم إنشاء طلبات النقل',
+          description: appLang === 'en' ? 'Only managers and accountants can create transfers' : 'فقط المدراء والمحاسبين يمكنهم إنشاء طلبات النقل',
           variant: 'destructive'
         })
         router.push("/inventory-transfers")
@@ -291,6 +296,12 @@ export default function NewTransferPage() {
       const srcWarehouse = warehouses.find(w => w.id === sourceWarehouseId)
       const destWarehouse = warehouses.find(w => w.id === destinationWarehouseId)
 
+      // 🔐 تحديد الحالة حسب دور المستخدم:
+      // - المحاسب: pending_approval (يحتاج اعتماد)
+      // - Owner/Admin/Manager: pending (مباشر)
+      const isAccountant = userRole === 'accountant'
+      const initialStatus = isAccountant ? 'pending_approval' : 'pending'
+
       // إنشاء طلب النقل
       const { data: transfer, error: transferError } = await supabase
         .from("inventory_transfers")
@@ -301,7 +312,7 @@ export default function NewTransferPage() {
           source_branch_id: srcWarehouse?.branch_id || null,
           destination_warehouse_id: destinationWarehouseId,
           destination_branch_id: destWarehouse?.branch_id || null,
-          status: 'pending',
+          status: initialStatus,
           expected_arrival_date: expectedArrivalDate || null,
           notes: notes || null,
           created_by: user.id
@@ -325,23 +336,42 @@ export default function NewTransferPage() {
 
       if (itemsError) throw itemsError
 
-      // ✅ إرسال إشعار لمسؤول المخزن الوجهة
+      // 🔔 إرسال الإشعارات حسب الحالة
       try {
-        await notifyStockTransferRequest({
-          companyId: companyId,
-          transferId: transfer.id,
-          sourceBranchId: srcWarehouse?.branch_id || undefined,
-          destinationBranchId: destWarehouse?.branch_id || undefined,
-          destinationWarehouseId: destinationWarehouseId || undefined,
-          createdBy: user.id,
-          appLang: appLang
-        })
+        if (isAccountant) {
+          // 🔐 المحاسب: إرسال طلب اعتماد للإدارة
+          await notifyTransferApprovalRequest({
+            companyId: companyId,
+            transferId: transfer.id,
+            transferNumber: transfer.transfer_number,
+            sourceBranchId: srcWarehouse?.branch_id || undefined,
+            destinationBranchId: destWarehouse?.branch_id || undefined,
+            createdBy: user.id,
+            appLang: appLang
+          })
+        } else {
+          // ✅ Owner/Admin/Manager: إشعار لمسؤول المخزن الوجهة
+          await notifyStockTransferRequest({
+            companyId: companyId,
+            transferId: transfer.id,
+            sourceBranchId: srcWarehouse?.branch_id || undefined,
+            destinationBranchId: destWarehouse?.branch_id || undefined,
+            destinationWarehouseId: destinationWarehouseId || undefined,
+            createdBy: user.id,
+            appLang: appLang
+          })
+        }
       } catch (notifError) {
         // لا نوقف العملية إذا فشل إرسال الإشعار
         console.error("Error sending notification:", notifError)
       }
 
-      toast({ title: appLang === 'en' ? 'Transfer created successfully' : 'تم إنشاء طلب النقل بنجاح' })
+      // 🔔 رسالة النجاح حسب الحالة
+      const successMessage = isAccountant
+        ? (appLang === 'en' ? 'Transfer request sent for approval' : 'تم إرسال طلب النقل للاعتماد')
+        : (appLang === 'en' ? 'Transfer created successfully' : 'تم إنشاء طلب النقل بنجاح')
+
+      toast({ title: successMessage })
       router.push(`/inventory-transfers/${transfer.id}`)
     } catch (error: any) {
       console.error("Error creating transfer:", error)
@@ -378,13 +408,30 @@ export default function NewTransferPage() {
               <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
                 <ArrowLeftRight className="w-8 h-8 text-white" />
               </div>
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
-                  {appLang === 'en' ? 'New Transfer Request' : 'طلب نقل جديد'}
-                </h1>
+              <div className="flex-1">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
+                    {appLang === 'en' ? 'New Transfer Request' : 'طلب نقل جديد'}
+                  </h1>
+                  {/* 🔐 Badge للمحاسب */}
+                  {userRole === 'accountant' && (
+                    <Badge className="bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300">
+                      <Clock className="w-3 h-3 mr-1" />
+                      {appLang === 'en' ? 'Requires Approval' : 'يتطلب اعتماد'}
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-gray-500 dark:text-gray-400">
                   {appLang === 'en' ? 'Transfer products from one warehouse to another' : 'نقل المنتجات من مخزن إلى آخر'}
                 </p>
+                {/* 🔐 رسالة توضيحية للمحاسب */}
+                {userRole === 'accountant' && (
+                  <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
+                    {appLang === 'en'
+                      ? '⚠️ Your transfer request will be sent for approval by management before processing'
+                      : '⚠️ سيتم إرسال طلب النقل للاعتماد من الإدارة قبل المعالجة'}
+                  </p>
+                )}
               </div>
             </div>
           </div>

@@ -13,7 +13,7 @@ import { canAccessPage, canAction } from "@/lib/authz"
 import { usePermissions } from "@/lib/permissions-context"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeftRight, Plus, Package, Warehouse, Calendar, User, CheckCircle2, Clock, XCircle, Truck, Eye, Loader2 } from "lucide-react"
+import { ArrowLeftRight, Plus, Package, Warehouse, CheckCircle2, Clock, XCircle, Truck, Eye, Loader2, AlertTriangle, Edit } from "lucide-react"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface Transfer {
@@ -150,11 +150,11 @@ export default function InventoryTransfersPage() {
         transfersQuery = transfersQuery
           .eq("destination_warehouse_id", userWarehouseId)
           .eq("destination_branch_id", userBranchId)
-      } else if (role === "manager" && userBranchId) {
-        // ❌ المدير: يرى فقط طلبات النقل الخاصة بفرعه (المصدر أو الوجهة)
+      } else if ((role === "manager" || role === "accountant") && userBranchId) {
+        // ❌ المدير/المحاسب: يرى فقط طلبات النقل الخاصة بفرعه (المصدر أو الوجهة)
         transfersQuery = transfersQuery.or(`source_branch_id.eq.${userBranchId},destination_branch_id.eq.${userBranchId}`)
       }
-      // ✅ Owner/Admin: لا فلترة (يرون الكل)
+      // ✅ Owner/Admin/General Manager: لا فلترة (يرون الكل)
 
       transfersQuery = transfersQuery.order("transfer_date", { ascending: false })
 
@@ -233,14 +233,19 @@ export default function InventoryTransfersPage() {
     onDelete: handleTransfersRealtimeEvent,
   })
 
-  // 🔒 صلاحية إنشاء طلبات النقل: Owner/Admin/Manager فقط + التحقق من الصلاحيات
+  // 🔒 صلاحية إنشاء طلبات النقل: Owner/Admin/Manager/Accountant + التحقق من الصلاحيات
+  // ✅ المحاسب يمكنه إنشاء طلبات نقل (تحتاج اعتماد)
   // ❌ مسؤول المخزن لا يمكنه إنشاء طلبات نقل
-  const canCreate = permWrite && ["owner", "admin", "manager"].includes(userRole)
+  const canCreate = permWrite && ["owner", "admin", "manager", "general_manager", "gm", "accountant"].includes(userRole)
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'pending_approval':
+        return <Badge variant="outline" className="gap-1 bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300"><AlertTriangle className="w-3 h-3" />{appLang === 'en' ? 'Pending Approval' : 'بانتظار الاعتماد'}</Badge>
+      case 'draft':
+        return <Badge variant="outline" className="gap-1 bg-gray-50 text-gray-600 border-gray-300 dark:bg-gray-800 dark:text-gray-400"><Edit className="w-3 h-3" />{appLang === 'en' ? 'Draft' : 'مسودة'}</Badge>
       case 'pending':
-        return <Badge variant="outline" className="gap-1 bg-yellow-50 text-yellow-700 border-yellow-300"><Clock className="w-3 h-3" />{appLang === 'en' ? 'Pending' : 'قيد الانتظار'}</Badge>
+        return <Badge variant="outline" className="gap-1 bg-yellow-50 text-yellow-700 border-yellow-300"><Clock className="w-3 h-3" />{appLang === 'en' ? 'Pending Start' : 'قيد الانتظار'}</Badge>
       case 'in_transit':
         return <Badge variant="outline" className="gap-1 bg-blue-50 text-blue-700 border-blue-300"><Truck className="w-3 h-3" />{appLang === 'en' ? 'In Transit' : 'قيد النقل'}</Badge>
       case 'received':
@@ -339,7 +344,7 @@ export default function InventoryTransfersPage() {
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
               onClick={() => setStatusFilter('all')}>
               <CardContent className="p-4">
@@ -352,12 +357,25 @@ export default function InventoryTransfersPage() {
                 </div>
               </CardContent>
             </Card>
+            {/* 🔐 بطاقة بانتظار الاعتماد */}
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => setStatusFilter('pending_approval')}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-amber-600">{appLang === 'en' ? 'Pending Approval' : 'بانتظار الاعتماد'}</p>
+                    <p className="text-2xl font-bold text-amber-600">{transfers.filter(t => t.status === 'pending_approval').length}</p>
+                  </div>
+                  <AlertTriangle className="w-8 h-8 text-amber-400" />
+                </div>
+              </CardContent>
+            </Card>
             <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
               onClick={() => setStatusFilter('pending')}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-yellow-600">{appLang === 'en' ? 'Pending' : 'قيد الانتظار'}</p>
+                    <p className="text-sm text-yellow-600">{appLang === 'en' ? 'Pending Start' : 'قيد الانتظار'}</p>
                     <p className="text-2xl font-bold text-yellow-600">{transfers.filter(t => t.status === 'pending').length}</p>
                   </div>
                   <Clock className="w-8 h-8 text-yellow-400" />
@@ -385,6 +403,19 @@ export default function InventoryTransfersPage() {
                     <p className="text-2xl font-bold text-green-600">{transfers.filter(t => t.status === 'received').length}</p>
                   </div>
                   <CheckCircle2 className="w-8 h-8 text-green-400" />
+                </div>
+              </CardContent>
+            </Card>
+            {/* 🔐 بطاقة المسودات */}
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => setStatusFilter('draft')}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-500">{appLang === 'en' ? 'Draft' : 'مسودة'}</p>
+                    <p className="text-2xl font-bold text-gray-500">{transfers.filter(t => t.status === 'draft').length}</p>
+                  </div>
+                  <Edit className="w-8 h-8 text-gray-400" />
                 </div>
               </CardContent>
             </Card>
