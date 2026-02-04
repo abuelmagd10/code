@@ -57,6 +57,8 @@ interface Customer {
   created_by_user_id?: string | null
   branch_id?: string | null
   cost_center_id?: string | null
+  // 🏢 Branch relation
+  branches?: { name: string } | null
 }
 
 interface InvoiceRow {
@@ -307,14 +309,17 @@ export default function CustomersPage() {
       // جلب العملاء - تصفية حسب صلاحيات المستخدم
       let allCustomers: Customer[] = [];
 
+      // 🏢 استعلام موحد يشمل بيانات الفرع
+      const customerSelectQuery = "*, branches(name)"
+
       // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
       if (canFilterByBranch && selectedBranchId) {
         // المستخدم المميز اختار فرعاً معيناً
-        const { data: branchCust } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId).eq("branch_id", selectedBranchId);
+        const { data: branchCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).eq("branch_id", selectedBranchId);
         allCustomers = branchCust || [];
       } else if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
         // موظف عادي: يرى فقط العملاء الذين أنشأهم
-        const { data: ownCust } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId).eq("created_by_user_id", accessFilter.createdByUserId);
+        const { data: ownCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).eq("created_by_user_id", accessFilter.createdByUserId);
         allCustomers = ownCust || [];
 
         // جلب العملاء المشتركين (permission_sharing)
@@ -329,22 +334,22 @@ export default function CustomersPage() {
 
           if (sharedPerms && sharedPerms.length > 0) {
             const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id);
-            const { data: sharedData } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId).in("created_by_user_id", grantorIds);
+            const { data: sharedData } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).in("created_by_user_id", grantorIds);
             const existingIds = new Set(allCustomers.map(c => c.id));
             (sharedData || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
           }
         }
       } else if (accessFilter.filterByBranch && accessFilter.branchId) {
         // مدير: يرى عملاء الفرع
-        const { data: branchCust } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId).eq("branch_id", accessFilter.branchId);
+        const { data: branchCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).eq("branch_id", accessFilter.branchId);
         allCustomers = branchCust || [];
       } else if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
         // مشرف: يرى عملاء مركز التكلفة
-        const { data: ccCust } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId).eq("cost_center_id", accessFilter.costCenterId);
+        const { data: ccCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).eq("cost_center_id", accessFilter.costCenterId);
         allCustomers = ccCust || [];
       } else {
         // owner/admin: جميع العملاء
-        const { data: allCust } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId);
+        const { data: allCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId);
         allCustomers = allCust || [];
       }
 
@@ -789,6 +794,23 @@ export default function CustomersPage() {
       format: (value) => (
         <span className="font-medium text-gray-900 dark:text-white">{value}</span>
       )
+    },
+    {
+      key: 'branch_id',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'text',
+      align: 'center',
+      hidden: 'md',
+      format: (_, row) => {
+        const branchName = row.branches?.name
+        return branchName ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+            {branchName}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+        )
+      }
     },
     {
       key: 'email',
