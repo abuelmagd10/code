@@ -8,6 +8,12 @@ const ADDRESS_FIELDS = ['address', 'governorate', 'city', 'country', 'detailed_a
 // الحالات التي تمنع تعديل البيانات الأساسية للعميل
 const BLOCKING_INVOICE_STATUSES = ['sent', 'partially_paid', 'paid']
 
+// 🔐 حقول الحوكمة المحمية - لا يمكن تغييرها إلا بواسطة المالك أو المدير العام
+const PROTECTED_GOVERNANCE_FIELDS = ['branch_id', 'cost_center_id', 'warehouse_id']
+
+// 🔐 الأدوار المسموح لها بتغيير حقول الحوكمة
+const GOVERNANCE_ADMIN_ROLES = ['owner', 'admin', 'general_manager', 'gm', 'generalmanager', 'super_admin', 'superadmin']
+
 export async function POST(request: NextRequest) {
   try {
     const { customerId, companyId, data } = await request.json()
@@ -82,6 +88,62 @@ export async function POST(request: NextRequest) {
     // هل التعديل يحتوي على حقول غير العنوان؟
     const nonAddressFields = requestedFields.filter(field => !ADDRESS_FIELDS.includes(field))
     const isAddressOnlyUpdate = nonAddressFields.length === 0
+
+    // ============================================
+    // 🔐 حماية حقول الحوكمة (branch_id, cost_center_id, warehouse_id)
+    // ============================================
+    const normalizedRole = String(member.role || 'staff').trim().toLowerCase().replace(/\s+/g, '_')
+    const isGovernanceAdmin = GOVERNANCE_ADMIN_ROLES.includes(normalizedRole)
+
+    // فحص إذا كان التعديل يحتوي على حقول حوكمة محمية
+    const governanceFieldsInRequest = requestedFields.filter(field => PROTECTED_GOVERNANCE_FIELDS.includes(field))
+
+    if (governanceFieldsInRequest.length > 0 && !isGovernanceAdmin) {
+      // 🚫 منع تغيير حقول الحوكمة للمستخدمين غير المصرح لهم
+      return NextResponse.json({
+        success: false,
+        error: `Cannot modify governance fields (${governanceFieldsInRequest.join(', ')}). Only Owner or General Manager can change branch assignment.`,
+        error_ar: `🔐 لا يمكن تغيير حقول الحوكمة (${governanceFieldsInRequest.join(', ')}). فقط المالك أو المدير العام يمكنه تغيير تعيين الفرع.`,
+        governance_violation: true,
+        protected_fields: governanceFieldsInRequest
+      }, { status: 403 })
+    }
+
+    // 🔐 إذا كان المستخدم مسموح له بتغيير الحوكمة، نسجل ذلك في Audit Log
+    if (governanceFieldsInRequest.length > 0 && isGovernanceAdmin) {
+      try {
+        await db.from("audit_logs").insert({
+          company_id: companyId,
+          user_id: user.id,
+          action: "customer_governance_changed",
+          entity_type: "customer",
+          entity_id: customerId,
+          old_values: {
+            customer_id: customerId,
+            customer_name: customer.name,
+            branch_id: customer.branch_id,
+            cost_center_id: customer.cost_center_id,
+            warehouse_id: customer.warehouse_id
+          },
+          new_values: {
+            customer_id: customerId,
+            customer_name: customer.name,
+            branch_id: updateData.branch_id ?? customer.branch_id,
+            cost_center_id: updateData.cost_center_id ?? customer.cost_center_id,
+            warehouse_id: updateData.warehouse_id ?? customer.warehouse_id
+          },
+          metadata: {
+            modified_by: user.id,
+            modified_at: new Date().toISOString(),
+            governance_fields_changed: governanceFieldsInRequest,
+            admin_role: normalizedRole,
+            reason: "Governance admin override"
+          }
+        })
+      } catch (auditError) {
+        console.error("Failed to log governance change to audit_logs:", auditError)
+      }
+    }
 
     // ============================================
     // 🔒 فحص الفواتير النشطة (إذا كان التعديل على بيانات أساسية)

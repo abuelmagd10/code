@@ -1031,11 +1031,14 @@ export default function NewInvoicePage() {
         }
       }
 
-      console.log("[NewInvoice] Creating customer:", { name, phone: normalizedPhone, country: newCustCountry, governorate: newCustGovernorate, city: newCustCity })
+      console.log("[NewInvoice] Creating customer via API:", { name, phone: normalizedPhone, country: newCustCountry, governorate: newCustGovernorate, city: newCustCity })
 
-      const { data: created, error } = await supabase
-        .from("customers")
-        .insert([{
+      // 🔐 استخدام API مع الحوكمة الإلزامية
+      // API يقوم تلقائياً بتعيين branch_id من فرع الموظف المنشئ
+      const response = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           name,
           company_id: custCompanyId,
           email: "",
@@ -1044,19 +1047,25 @@ export default function NewInvoicePage() {
           governorate: newCustGovernorate,
           city: newCustCity,
           detailed_address: newCustDetailedAddress.trim(),
-          address: newCustDetailedAddress.trim(), // للتوافق مع الحقل القديم
-          created_by_user_id: user.id, // 🔹 تعيين منشئ العميل للصلاحيات
-          branch_id: userContext?.branch_id || null // 🏢 ربط العميل بفرع الموظف المنشئ
-        }])
-        .select("id, name")
-        .single()
+          address: newCustDetailedAddress.trim()
+          // 🏢 branch_id يتم تعيينه تلقائياً من governance-middleware
+        })
+      })
 
-      if (error) {
-        console.error("[NewInvoice] Create customer error:", error)
-        throw error
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        console.error("[NewInvoice] Create customer API error:", result)
+        toast({
+          title: appLang === 'en' ? 'Error' : 'خطأ',
+          description: appLang === 'en' ? result.error : (result.error_ar || result.error),
+          variant: 'destructive'
+        })
+        return
       }
 
-      console.log("[NewInvoice] Customer created successfully:", created?.id)
+      const created = result.data
+      console.log("[NewInvoice] Customer created successfully via API:", created?.id)
       // Update local list and select the new customer
       setCustomers((prev) => [{ id: created.id, name: created.name }, ...prev])
       setFormData((prev) => ({ ...prev, customer_id: created.id }))
