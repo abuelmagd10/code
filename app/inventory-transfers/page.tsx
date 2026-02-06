@@ -26,6 +26,8 @@ interface Transfer {
   notes?: string
   source_warehouses?: { id: string; name: string }
   destination_warehouses?: { id: string; name: string }
+  source_branches?: { id: string; name: string }
+  destination_branches?: { id: string; name: string }
   created_by_user?: { email: string }
   received_by_user?: { email: string }
   items_count?: number
@@ -136,10 +138,11 @@ export default function InventoryTransfersPage() {
         .from("inventory_transfers")
         .select(`
           id, transfer_number, status, transfer_date, expected_arrival_date, received_date, notes, created_by, received_by,
-          source_warehouse_id, destination_warehouse_id, source_branch_id, destination_branch_id, branch_id,
+          source_warehouse_id, destination_warehouse_id, source_branch_id, destination_branch_id,
           source_warehouses:warehouses!inventory_transfers_source_warehouse_id_fkey(id, name, branch_id),
           destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name, branch_id),
-          branches(name)
+          source_branches:branches!inventory_transfers_source_branch_id_fkey(id, name),
+          destination_branches:branches!inventory_transfers_destination_branch_id_fkey(id, name)
         `)
         .eq("company_id", companyId)
         .is("deleted_at", null)
