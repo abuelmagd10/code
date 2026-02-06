@@ -45,6 +45,7 @@ interface ThirdPartyItem {
     paid_amount?: number | null
     subtotal?: number | null // المجموع قبل الخصم
     tax_amount?: number | null // مبلغ الضريبة
+    shipping?: number | null // مبلغ الشحن
     total_amount?: number | null // المجموع النهائي بعد الخصم
     original_total?: number | null
     return_status?: string | null
@@ -287,6 +288,7 @@ export default function ThirdPartyInventoryPage() {
           paid_amount,
           subtotal,
           tax_amount,
+          shipping,
           total_amount,
           original_total,
           return_status,
@@ -351,6 +353,14 @@ export default function ThirdPartyInventoryPage() {
         .select("invoice_id, product_id, unit_price, quantity, discount_percent, line_total")
         .in("invoice_id", invoiceIds)
 
+      // ✅ حساب مجموع line_totals لكل فاتورة (لأن subtotal قد يكون محفوظ بعد الخصم)
+      const invoiceLineTotalsSum: Record<string, number> = {}
+      ;(invoiceItemsData || []).forEach((item: any) => {
+        const invoiceId = item.invoice_id
+        const lineTotal = Number(item.line_total || 0)
+        invoiceLineTotalsSum[invoiceId] = (invoiceLineTotalsSum[invoiceId] || 0) + lineTotal
+      })
+
       // دمج البيانات: ربط third_party_inventory مع بيانات الفاتورة وسعر البيع
       const mergedItems = (thirdPartyData || []).map((tpi: any) => {
         const invoice = (sentInvoices || []).find((inv: any) => inv.id === tpi.invoice_id)
@@ -360,9 +370,12 @@ export default function ThirdPartyInventoryPage() {
         )
 
         // ✅ حساب القيمة الصافية للبند بعد جميع الخصومات
-        // 1. line_total = قيمة البند بعد خصم البند (quantity * unit_price * (1 - discount_percent/100))
-        // 2. نسبة خصم الفاتورة = (subtotal - total_amount + tax_amount) / subtotal
-        // 3. القيمة الصافية = line_total * (1 - نسبة خصم الفاتورة)
+        // المنطق الصحيح:
+        // 1. line_total = قيمة البند (quantity * unit_price * (1 - discount_percent/100))
+        // 2. sum_of_line_totals = مجموع قيم جميع بنود الفاتورة
+        // 3. total_amount = القيمة النهائية للفاتورة بعد جميع الخصومات والشحن والضريبة
+        // 4. نسبة البند من الفاتورة = line_total / sum_of_line_totals
+        // 5. القيمة الصافية للبند = (total_amount - tax_amount - shipping) * نسبة البند
 
         // استخدام line_total من الفاتورة، أو حساب القيمة من unit_price * quantity كـ fallback
         const unitPrice = Number(invoiceItem?.unit_price || tpi.unit_cost || 0)
@@ -374,22 +387,21 @@ export default function ThirdPartyInventoryPage() {
           ? Number(invoiceItem.line_total)
           : unitPrice * itemQty * (1 - itemDiscountPercent / 100)
 
-        const invoiceSubtotal = Number(invoice?.subtotal || 0)
+        // مجموع قيم بنود الفاتورة (قبل خصم الفاتورة)
+        const sumLineTotals = invoiceLineTotalsSum[tpi.invoice_id] || lineTotal
         const invoiceTotalAmount = Number(invoice?.total_amount || 0)
         const invoiceTaxAmount = Number(invoice?.tax_amount || 0)
+        const invoiceShipping = Number(invoice?.shipping || 0)
 
-        // حساب نسبة الخصم على مستوى الفاتورة
-        // صافي الفاتورة قبل الضريبة = total_amount - tax_amount
-        // نسبة الخصم = 1 - (صافي الفاتورة قبل الضريبة / subtotal)
-        let invoiceDiscountRatio = 0
-        if (invoiceSubtotal > 0) {
-          const netBeforeTax = invoiceTotalAmount - invoiceTaxAmount
-          invoiceDiscountRatio = 1 - (netBeforeTax / invoiceSubtotal)
-        }
+        // ✅ القيمة الصافية للبند = نسبة البند من صافي الفاتورة (بدون الشحن والضريبة)
+        // صافي الفاتورة (للبضائع فقط) = total_amount - tax_amount - shipping
+        const netInvoiceValue = invoiceTotalAmount - invoiceTaxAmount - invoiceShipping
 
-        // القيمة الصافية للبند = line_total * (1 - نسبة خصم الفاتورة)
-        // إذا كانت نسبة الخصم سالبة (بسبب shipping أو adjustment)، نستخدم 0
-        const netLineValue = lineTotal * (1 - Math.max(0, invoiceDiscountRatio))
+        // نسبة البند من الفاتورة
+        const itemRatio = sumLineTotals > 0 ? lineTotal / sumLineTotals : 1
+
+        // القيمة الصافية للبند
+        const netLineValue = netInvoiceValue * itemRatio
 
         return {
           ...tpi,
@@ -410,6 +422,7 @@ export default function ThirdPartyInventoryPage() {
             total_amount: invoice.total_amount,
             subtotal: invoice.subtotal,
             tax_amount: invoice.tax_amount,
+            shipping: invoice.shipping,
             original_total: invoice.original_total,
             return_status: invoice.return_status,
             returned_amount: invoice.returned_amount,
