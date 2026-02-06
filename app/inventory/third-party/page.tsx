@@ -364,7 +364,16 @@ export default function ThirdPartyInventoryPage() {
         // 2. نسبة خصم الفاتورة = (subtotal - total_amount + tax_amount) / subtotal
         // 3. القيمة الصافية = line_total * (1 - نسبة خصم الفاتورة)
 
-        const lineTotal = Number(invoiceItem?.line_total || 0)
+        // استخدام line_total من الفاتورة، أو حساب القيمة من unit_price * quantity كـ fallback
+        const unitPrice = Number(invoiceItem?.unit_price || tpi.unit_cost || 0)
+        const itemQty = Number(invoiceItem?.quantity || tpi.quantity || 0)
+        const itemDiscountPercent = Number(invoiceItem?.discount_percent || 0)
+
+        // line_total من الفاتورة أو حسابها يدوياً
+        const lineTotal = invoiceItem?.line_total
+          ? Number(invoiceItem.line_total)
+          : unitPrice * itemQty * (1 - itemDiscountPercent / 100)
+
         const invoiceSubtotal = Number(invoice?.subtotal || 0)
         const invoiceTotalAmount = Number(invoice?.total_amount || 0)
         const invoiceTaxAmount = Number(invoice?.tax_amount || 0)
@@ -379,6 +388,7 @@ export default function ThirdPartyInventoryPage() {
         }
 
         // القيمة الصافية للبند = line_total * (1 - نسبة خصم الفاتورة)
+        // إذا كانت نسبة الخصم سالبة (بسبب shipping أو adjustment)، نستخدم 0
         const netLineValue = lineTotal * (1 - Math.max(0, invoiceDiscountRatio))
 
         return {
