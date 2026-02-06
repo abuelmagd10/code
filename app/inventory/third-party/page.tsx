@@ -25,13 +25,16 @@ interface ThirdPartyItem {
   quantity: number
   unit_cost: number
   unit_price?: number // سعر البيع من الفاتورة
+  line_total?: number // قيمة البند بعد خصم البند
+  net_line_value?: number // ✅ القيمة الصافية بعد جميع الخصومات (خصم البند + خصم الفاتورة)
+  item_discount_percent?: number // نسبة خصم البند
   cleared_quantity: number
   returned_quantity: number
   status: string
   shipping_provider_id: string
   created_at: string
   created_by?: string
-  invoices?: { 
+  invoices?: {
     invoice_number: string
     customer_id: string
     invoice_date?: string
@@ -40,7 +43,9 @@ interface ThirdPartyItem {
     warehouse_id?: string | null
     sales_order_id?: string | null
     paid_amount?: number | null
-    total_amount?: number | null
+    subtotal?: number | null // المجموع قبل الخصم
+    tax_amount?: number | null // مبلغ الضريبة
+    total_amount?: number | null // المجموع النهائي بعد الخصم
     original_total?: number | null
     return_status?: string | null
     returned_amount?: number | null
@@ -280,6 +285,8 @@ export default function ThirdPartyInventoryPage() {
           warehouse_id,
           sales_order_id,
           paid_amount,
+          subtotal,
+          tax_amount,
           total_amount,
           original_total,
           return_status,
@@ -338,22 +345,48 @@ export default function ThirdPartyInventoryPage() {
         return
       }
 
-      // جلب بنود الفواتير للحصول على سعر البيع
+      // جلب بنود الفواتير للحصول على سعر البيع و line_total (بعد خصم البند)
       const { data: invoiceItemsData } = await supabase
         .from("invoice_items")
-        .select("invoice_id, product_id, unit_price")
+        .select("invoice_id, product_id, unit_price, quantity, discount_percent, line_total")
         .in("invoice_id", invoiceIds)
 
       // دمج البيانات: ربط third_party_inventory مع بيانات الفاتورة وسعر البيع
       const mergedItems = (thirdPartyData || []).map((tpi: any) => {
         const invoice = (sentInvoices || []).find((inv: any) => inv.id === tpi.invoice_id)
-        // جلب سعر البيع من بنود الفاتورة
+        // جلب بيانات البند من الفاتورة
         const invoiceItem = (invoiceItemsData || []).find(
           (item: any) => item.invoice_id === tpi.invoice_id && item.product_id === tpi.product_id
         )
+
+        // ✅ حساب القيمة الصافية للبند بعد جميع الخصومات
+        // 1. line_total = قيمة البند بعد خصم البند (quantity * unit_price * (1 - discount_percent/100))
+        // 2. نسبة خصم الفاتورة = (subtotal - total_amount + tax_amount) / subtotal
+        // 3. القيمة الصافية = line_total * (1 - نسبة خصم الفاتورة)
+
+        const lineTotal = Number(invoiceItem?.line_total || 0)
+        const invoiceSubtotal = Number(invoice?.subtotal || 0)
+        const invoiceTotalAmount = Number(invoice?.total_amount || 0)
+        const invoiceTaxAmount = Number(invoice?.tax_amount || 0)
+
+        // حساب نسبة الخصم على مستوى الفاتورة
+        // صافي الفاتورة قبل الضريبة = total_amount - tax_amount
+        // نسبة الخصم = 1 - (صافي الفاتورة قبل الضريبة / subtotal)
+        let invoiceDiscountRatio = 0
+        if (invoiceSubtotal > 0) {
+          const netBeforeTax = invoiceTotalAmount - invoiceTaxAmount
+          invoiceDiscountRatio = 1 - (netBeforeTax / invoiceSubtotal)
+        }
+
+        // القيمة الصافية للبند = line_total * (1 - نسبة خصم الفاتورة)
+        const netLineValue = lineTotal * (1 - Math.max(0, invoiceDiscountRatio))
+
         return {
           ...tpi,
-          unit_price: invoiceItem?.unit_price || tpi.unit_cost, // استخدام سعر البيع إن وجد، وإلا التكلفة
+          unit_price: invoiceItem?.unit_price || tpi.unit_cost,
+          line_total: lineTotal, // قيمة البند بعد خصم البند
+          net_line_value: netLineValue, // ✅ القيمة الصافية بعد جميع الخصومات
+          item_discount_percent: invoiceItem?.discount_percent || 0,
           invoices: invoice ? {
             invoice_number: invoice.invoice_number,
             customer_id: invoice.customer_id,
@@ -365,6 +398,8 @@ export default function ThirdPartyInventoryPage() {
             // ✅ إضافة الحقول المطلوبة لحساب الحالة الصحيحة
             paid_amount: invoice.paid_amount,
             total_amount: invoice.total_amount,
+            subtotal: invoice.subtotal,
+            tax_amount: invoice.tax_amount,
             original_total: invoice.original_total,
             return_status: invoice.return_status,
             returned_amount: invoice.returned_amount,
@@ -459,11 +494,22 @@ export default function ThirdPartyInventoryPage() {
     const getAvailable = (item: ThirdPartyItem) =>
       Number(item.quantity) - Number(item.cleared_quantity) - Number(item.returned_quantity)
 
+    // ✅ حساب القيمة الصافية للبند بناءً على الكمية المتاحة
+    const getNetValue = (item: ThirdPartyItem) => {
+      const availableQty = getAvailable(item)
+      const totalQty = Number(item.quantity) || 1
+      // نسبة الكمية المتاحة من إجمالي الكمية
+      const availableRatio = totalQty > 0 ? availableQty / totalQty : 0
+      // القيمة الصافية = net_line_value * نسبة الكمية المتاحة
+      const netLineValue = Number(item.net_line_value || 0)
+      return netLineValue * availableRatio
+    }
+
     return {
       totalItems: filteredItems.length,
       totalQuantity: filteredItems.reduce((sum, item) => sum + getAvailable(item), 0),
-      // استخدام سعر البيع (unit_price) بدلاً من التكلفة (unit_cost)
-      totalValue: filteredItems.reduce((sum, item) => sum + (getAvailable(item) * Number(item.unit_price || item.unit_cost)), 0),
+      // ✅ استخدام القيمة الصافية بعد جميع الخصومات (Invoice Net Total)
+      totalValue: filteredItems.reduce((sum, item) => sum + getNetValue(item), 0),
       uniqueInvoices: new Set(filteredItems.map(item => item.invoice_id)).size
     }
   }, [filteredItems])
@@ -801,17 +847,22 @@ export default function ThirdPartyInventoryPage() {
                     ) : (
                       filteredItems.map(item => {
                         const availableQty = getAvailableQty(item)
-                        // استخدام سعر البيع (unit_price) بدلاً من التكلفة (unit_cost)
-                        const value = availableQty * Number(item.unit_price || item.unit_cost)
-                        
+                        const totalQty = Number(item.quantity) || 1
+                        // ✅ حساب القيمة الصافية بعد جميع الخصومات (Invoice Net Total)
+                        // نسبة الكمية المتاحة من إجمالي الكمية
+                        const availableRatio = totalQty > 0 ? availableQty / totalQty : 0
+                        // القيمة الصافية = net_line_value * نسبة الكمية المتاحة
+                        const netLineValue = Number(item.net_line_value || 0)
+                        const value = netLineValue * availableRatio
+
                         // ✅ حساب حالة الدفع الأساسية (مستنتجة من المبالغ)
                         const paidAmount = Number(item.invoices?.paid_amount || 0)
                         const returnedAmount = Number(item.invoices?.returned_amount || 0)
                         const originalTotal = Number(item.invoices?.original_total || item.invoices?.total_amount || 0)
-                        
+
                         // ✅ تحديد ما إذا كان المرتجع كامل (بناءً على original_total)
                         const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
-                        
+
                         // تحديد حالة الدفع الأساسية
                         let paymentStatus: string
                         if (isFullyReturned) {
@@ -823,7 +874,7 @@ export default function ThirdPartyInventoryPage() {
                         } else {
                           paymentStatus = 'sent'
                         }
-                        
+
                         // تحديد ما إذا كان هناك مرتجع جزئي
                         const hasPartialReturn = returnedAmount > 0 && returnedAmount < originalTotal
                         return (
