@@ -248,13 +248,6 @@ export default function NewSalesOrderPage() {
     checkPerms()
   }, [supabase])
 
-  // 🔐 تحميل الكميات المتاحة عند تغيير الفرع أو المنتجات
-  useEffect(() => {
-    if (branchId && products.length > 0 && !isLoading) {
-      loadBranchStock(branchId, products)
-    }
-  }, [branchId, products, isLoading, loadBranchStock])
-
   const loadData = async () => {
     try {
       setIsLoading(true)
@@ -477,6 +470,12 @@ export default function NewSalesOrderPage() {
     }
   }, [supabase])
 
+  // 🔐 تحميل الكميات المتاحة عند تغيير الفرع أو المنتجات
+  useEffect(() => {
+    if (branchId && products.length > 0 && !isLoading) {
+      loadBranchStock(branchId, products)
+    }
+  }, [branchId, products, isLoading, loadBranchStock])
 
   const handleBranchChange = useCallback(async (newBranchId: string | null) => {
     if (!newBranchId) {
