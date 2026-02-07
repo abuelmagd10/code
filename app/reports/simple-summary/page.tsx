@@ -21,6 +21,7 @@ interface ReportData {
   sales: { total: number; count: number; pending: number }
   cogs: { total: number }
   profit: { gross: number; net: number }
+  assets?: { total: number; items: { name: string; code: string; amount: number }[] }
   period: { from: string; to: string }
 }
 
@@ -406,6 +407,62 @@ export default function SimpleSummaryReport() {
                 </CardContent>
               </Card>
 
+              {/* ==================== الأصول ==================== */}
+              {data.assets && data.assets.items.length > 0 && (
+                <Card className="border-r-4 border-r-cyan-500 bg-gradient-to-l from-cyan-50 to-white dark:from-cyan-950/20 dark:to-slate-900">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-cyan-100 dark:bg-cyan-900/50 rounded-xl">
+                        <Wallet className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-xl flex items-center gap-2">
+                          🏦 {t('Current Assets', 'الأصول الحالية')}
+                          <TooltipProvider>
+                            <UITooltip>
+                              <TooltipTrigger><HelpCircle className="w-4 h-4 text-gray-400" /></TooltipTrigger>
+                              <TooltipContent className="max-w-[300px]">
+                                <p>{t('Assets are what the company owns: cash, inventory, and receivables.',
+                                   'الأصول هي ما تملكه الشركة: النقد والمخزون والذمم المدينة.')}</p>
+                              </TooltipContent>
+                            </UITooltip>
+                          </TooltipProvider>
+                        </CardTitle>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-3xl font-bold text-cyan-600 dark:text-cyan-400 mb-4">
+                      {numberFmt.format(data.assets.total)} <span className="text-lg">{t('EGP', 'ج.م')}</span>
+                    </p>
+                    <div className="bg-white dark:bg-slate-800 rounded-lg p-4 border">
+                      <p className="font-semibold mb-3">{t('Asset Details:', 'تفصيل الأصول:')}</p>
+                      <div className="space-y-2">
+                        {data.assets.items.map((item, idx) => (
+                          <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-slate-700 last:border-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded">{item.code}</span>
+                              <span className="text-gray-700 dark:text-gray-300">{item.name}</span>
+                            </div>
+                            <span className={`font-medium ${item.amount >= 0 ? 'text-cyan-600' : 'text-red-600'}`}>
+                              {numberFmt.format(item.amount)} {t('EGP', 'ج.م')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
+                      💡 {t('Assets represent what the company owns. Inventory is an asset that will convert to profit when sold.',
+                           'الأصول تمثل ما تملكه الشركة. المخزون أصل سيتحول لربح عند بيعه.')}
+                    </p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 bg-blue-50 dark:bg-blue-950/30 p-2 rounded">
+                      ℹ️ {t('Note: Inventory value is not a loss - it will become profit when products are sold.',
+                           'ملاحظة: قيمة المخزون ليست خسارة - ستتحول لربح عند بيع المنتجات.')}
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* ==================== الأرباح ==================== */}
               <Card className="border-r-4 border-r-yellow-500 bg-gradient-to-l from-yellow-50 to-white dark:from-yellow-950/20 dark:to-slate-900">
                 <CardHeader className="pb-2">
@@ -531,10 +588,14 @@ export default function SimpleSummaryReport() {
                   <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                     📋 {t('Final Summary', 'ملخص نهائي')}
                   </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="bg-white/20 rounded-lg p-3 text-center">
                       <p className="text-sm opacity-80">{t('Capital', 'رأس المال')}</p>
                       <p className="text-xl font-bold">{numberFmt.format(data.capital.total)}</p>
+                    </div>
+                    <div className="bg-white/20 rounded-lg p-3 text-center">
+                      <p className="text-sm opacity-80">{t('Total Assets', 'إجمالي الأصول')}</p>
+                      <p className="text-xl font-bold">{numberFmt.format(data.assets?.total || 0)}</p>
                     </div>
                     <div className="bg-white/20 rounded-lg p-3 text-center">
                       <p className="text-sm opacity-80">{t('Total Sales', 'إجمالي المبيعات')}</p>
@@ -549,6 +610,17 @@ export default function SimpleSummaryReport() {
                       <p className="text-xl font-bold">{numberFmt.format(data.profit.net)}</p>
                     </div>
                   </div>
+                  {/* توضيح الفرق بين رأس المال والأصول */}
+                  {data.assets && data.assets.total > 0 && (
+                    <div className="mt-4 bg-white/10 rounded-lg p-3">
+                      <p className="text-sm">
+                        💡 {t(
+                          `Difference between Capital and Assets: ${numberFmt.format(data.assets.total - data.capital.total)} EGP (${data.assets.total >= data.capital.total ? 'Gain' : 'Loss'})`,
+                          `الفرق بين رأس المال والأصول: ${numberFmt.format(data.assets.total - data.capital.total)} ج.م (${data.assets.total >= data.capital.total ? 'ربح' : 'خسارة'})`
+                        )}
+                      </p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

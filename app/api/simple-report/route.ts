@@ -347,6 +347,36 @@ export async function GET(request: NextRequest) {
     // Net Profit = Gross Profit - Operating Expenses - Depreciation
     const netProfit = grossProfit - totalExpenses - totalDepreciation
 
+    // ✅ حساب الأصول (البنك + المخزون + العملاء)
+    const assetsByAccount: { [key: string]: { name: string; code: string; amount: number } } = {}
+    const assetLines = periodLines.filter((line: any) => {
+      const coa = Array.isArray(line.chart_of_accounts) ? line.chart_of_accounts[0] : line.chart_of_accounts
+      return coa?.account_type === "asset"
+    })
+
+    for (const line of assetLines) {
+      const coaRaw = line.chart_of_accounts as any
+      const coa = Array.isArray(coaRaw) ? coaRaw[0] : coaRaw
+      const accountName = coa?.account_name || "أخرى"
+      const accountCode = coa?.account_code || "0000"
+      const debit = Number(line.debit_amount || 0)
+      const credit = Number(line.credit_amount || 0)
+      // الأصول تزيد بالمدين وتنقص بالدائن
+      const amount = debit - credit
+
+      if (!assetsByAccount[accountCode]) {
+        assetsByAccount[accountCode] = { name: accountName, code: accountCode, amount: 0 }
+      }
+      assetsByAccount[accountCode].amount += amount
+    }
+
+    // ترتيب الأصول حسب الكود
+    const assetsList = Object.values(assetsByAccount)
+      .filter(a => Math.abs(a.amount) > 0.01)
+      .sort((a, b) => a.code.localeCompare(b.code))
+
+    const totalAssets = assetsList.reduce((sum, a) => sum + a.amount, 0)
+
     return apiSuccess({
       capital: { total: Math.max(0, totalCapital) },
       purchases: { total: totalPurchases, count: purchasesCount },
@@ -355,6 +385,7 @@ export async function GET(request: NextRequest) {
       sales: { total: totalSales, count: salesCount, pending: pendingSales },
       cogs: { total: totalCOGS },
       profit: { gross: grossProfit, net: netProfit },
+      assets: { total: totalAssets, items: assetsList },
       period: { from: fromDate, to: toDate }
     })
   } catch (error: any) {
