@@ -163,18 +163,23 @@ export default function BalanceSheetPage() {
     if (b.account_type !== "liability") return false
     return Math.abs(b.balance) >= 0.01
   })
-  const liabilitiesDisplay = Math.abs(filteredLiabilities.reduce((sum, b) => sum + b.balance, 0))
-  
+  // ✅ الالتزامات: القيمة الفعلية (قد تكون سالبة = سلف موردين)
+  const liabilitiesActual = filteredLiabilities.reduce((sum, b) => sum + b.balance, 0)
+  const liabilitiesDisplay = Math.abs(liabilitiesActual)
+
   // حساب إجمالي حقوق الملكية من الحسابات المفلترة + الربح/الخسارة الجارية
   const filteredEquity = balances.filter((b) => {
     if (b.account_type !== "equity") return false
     return Math.abs(b.balance) >= 0.01
   })
-  const equityDisplay = Math.abs(filteredEquity.reduce((sum, b) => sum + b.balance, 0) + netIncomeSigned)
-  
-  // ✅ حساب التوازن من القيم المفلترة (لضمان الاتساق مع العرض)
-  // ✅ هذا يضمن أن رسالة التوازن تطابق الأرقام المعروضة
-  const filteredBalanceDifference = Math.abs(assetsDisplay - (liabilitiesDisplay + equityDisplay))
+  // ✅ حقوق الملكية: القيمة الفعلية + صافي الربح/الخسارة
+  const equityActual = filteredEquity.reduce((sum, b) => sum + b.balance, 0) + netIncomeSigned
+  const equityDisplay = Math.abs(equityActual)
+
+  // ✅ حساب التوازن باستخدام القيم الفعلية (مع الإشارة)
+  // ✅ المعادلة: الأصول = الالتزامات + حقوق الملكية
+  // ✅ الالتزامات السالبة (سلف موردين) تُطرح من حقوق الملكية
+  const filteredBalanceDifference = Math.abs(assetsDisplay - (liabilitiesActual + equityActual))
   const isFilteredBalanced = filteredBalanceDifference < 0.01
 
   const handlePrint = () => {
@@ -402,7 +407,8 @@ export default function BalanceSheetPage() {
                           isFilteredBalanced ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
                         }
                       >
-                        {numberFmt.format(liabilitiesDisplay + equityDisplay)} {currencySymbol}
+                        {/* ✅ استخدام القيم الفعلية (مع الإشارة) للحساب الصحيح */}
+                        {numberFmt.format(liabilitiesActual + equityActual)} {currencySymbol}
                       </span>
                     </div>
                     {/* ✅ التحقق التلقائي من المعادلة الإلزامية: الأصول = الالتزامات + حقوق الملكية */}
