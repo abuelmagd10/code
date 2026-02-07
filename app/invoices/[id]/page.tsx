@@ -48,6 +48,7 @@ import {
 } from "@/lib/third-party-inventory"
 import { consumeFIFOLotsWithCOGS } from "@/lib/fifo-engine"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { checkDuplicateJournalEntry } from "@/lib/journal-entry-governance"
 
 interface Invoice {
   id: string
@@ -838,15 +839,17 @@ export default function InvoiceDetailPage() {
         return
       }
 
-      // تجنب التكرار - التحقق من عدم وجود قيد سابق
-      const { data: existing } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice") // قيد الفاتورة الرئيسي
-        .eq("reference_id", invoiceId)
-        .limit(1)
-      if (existing && existing.length > 0) return
+      // 🔐 GOVERNANCE: تجنب التكرار - التحقق من عدم وجود قيد سابق
+      const duplicateCheck = await checkDuplicateJournalEntry(
+        supabase,
+        mapping.companyId,
+        "invoice",
+        invoiceId
+      )
+      if (duplicateCheck.exists) {
+        console.log(`🔐 GOVERNANCE: Invoice journal already exists for ${invoiceId}`)
+        return
+      }
 
       // ===== 1) قيد المبيعات والذمم المدينة =====
       const { data: entry, error: entryError } = await supabase
@@ -1015,15 +1018,14 @@ export default function InvoiceDetailPage() {
         }
       } else {
         // ===== للفواتير المدفوعة: إنشاء قيد credit_note جديد =====
-        // Avoid duplicate credit note for this invoice
-        const { data: existing } = await supabase
-          .from("journal_entries")
-          .select("id")
-          .eq("company_id", mapping.companyId)
-          .eq("reference_type", "credit_note")
-          .eq("reference_id", invoiceId)
-          .limit(1)
-        if (!existing || existing.length === 0) {
+        // 🔐 GOVERNANCE: Avoid duplicate credit note for this invoice
+        const creditNoteCheck = await checkDuplicateJournalEntry(
+          supabase,
+          mapping.companyId,
+          "credit_note",
+          invoiceId
+        )
+        if (!creditNoteCheck.exists) {
           const { data: entry, error: entryError } = await supabase
             .from("journal_entries")
             .insert({
@@ -2090,26 +2092,14 @@ export default function InvoiceDetailPage() {
         throw new Error("فشل في الحصول على إعدادات الحسابات")
       }
 
-      const { data: existingPaymentJournal } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice_payment")
-        .eq("reference_id", invoice.id)
-        .limit(1)
-
-      const hasExistingPaymentJournal = existingPaymentJournal && existingPaymentJournal.length > 0
-
-      // ===== التحقق من وجود قيد الفاتورة (حماية ضد الدفع بدون قيد فاتورة) =====
-      const { data: existingInvoiceEntry } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice")
-        .eq("reference_id", invoice.id)
-        .limit(1)
-
-      const hasExistingInvoiceEntry = existingInvoiceEntry && existingInvoiceEntry.length > 0
+      // 🔐 GOVERNANCE: التحقق من وجود قيد الفاتورة (حماية ضد الدفع بدون قيد فاتورة)
+      const invoiceEntryCheck = await checkDuplicateJournalEntry(
+        supabase,
+        mapping.companyId,
+        "invoice",
+        invoice.id
+      )
+      const hasExistingInvoiceEntry = invoiceEntryCheck.exists
 
       // ===== 📌 ERP Accounting Core Logic (MANDATORY SPECIFICATION) =====
       // النمط المحاسبي الصارم: القيود تُنشأ عند الدفع فقط
@@ -2551,19 +2541,18 @@ export default function InvoiceDetailPage() {
         return
       }
 
-      // التحقق من عدم وجود قيد إيراد سابق للفاتورة
-      const { data: existingInvoiceEntry } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice")
-        .eq("reference_id", invoiceId)
-        .limit(1)
+      // 🔐 GOVERNANCE: التحقق من عدم وجود قيد إيراد سابق للفاتورة
+      const invoiceEntryCheck = await checkDuplicateJournalEntry(
+        supabase,
+        mapping.companyId,
+        "invoice",
+        invoiceId
+      )
 
       // ===== 1) قيد المبيعات والذمم (للتوافق مع البيانات القديمة) =====
       // Debit: AR / Credit: Revenue + VAT + Shipping
       // هذا يحدث فقط إذا لم يكن هناك قيد فاتورة سابق (بيانات قديمة)
-      if (!existingInvoiceEntry || existingInvoiceEntry.length === 0) {
+      if (!invoiceEntryCheck.exists) {
         const { data: entry, error: entryError } = await supabase
           .from("journal_entries")
           .insert({

@@ -15,6 +15,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { ArrowLeft, ArrowRight, Pencil, Send, CheckCircle, XCircle, Receipt, DollarSign, Calendar, FileText, AlertCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createNotification } from "@/lib/governance-layer"
+import { createExpenseJournalEntry, checkDuplicateJournalEntry } from "@/lib/journal-entry-governance"
 
 type Expense = {
   id: string
@@ -254,6 +255,59 @@ export default function ExpenseDetailPage() {
 
       if (error) throw error
 
+      // ✅ إنشاء القيد المحاسبي تلقائياً عند الاعتماد
+      try {
+        // التحقق من عدم وجود قيد سابق
+        const duplicateCheck = await checkDuplicateJournalEntry(
+          supabase,
+          companyId,
+          "expense",
+          expense.id
+        )
+
+        if (!duplicateCheck.exists) {
+          // الحصول على حسابات المصروفات والنقدية
+          const { data: accounts } = await supabase
+            .from("chart_of_accounts")
+            .select("id, account_code, account_type")
+            .eq("company_id", companyId)
+            .in("account_code", ["5000", "1010"]) // المصروفات والبنك
+
+          const expenseAccount = accounts?.find((a: any) => a.account_code === "5000")
+          const cashAccount = accounts?.find((a: any) => a.account_code === "1010")
+
+          if (expenseAccount && cashAccount) {
+            const journalResult = await createExpenseJournalEntry(
+              supabase,
+              {
+                id: expense.id,
+                company_id: companyId,
+                expense_number: expense.expense_number,
+                expense_date: expense.expense_date,
+                amount: expense.amount,
+                branch_id: expense.branch_id,
+                cost_center_id: expense.cost_center_id
+              },
+              expense.expense_account_id || expenseAccount.id,
+              expense.payment_account_id || cashAccount.id
+            )
+
+            if (journalResult.success) {
+              console.log(`✅ تم إنشاء قيد محاسبي للمصروف ${expense.expense_number}`)
+            } else {
+              console.warn(`⚠️ فشل إنشاء قيد محاسبي: ${journalResult.error}`)
+            }
+          } else {
+            console.warn("⚠️ لم يتم العثور على حسابات المصروفات أو النقدية")
+          }
+        } else {
+          console.log(`ℹ️ قيد محاسبي موجود مسبقاً للمصروف ${expense.expense_number}`)
+        }
+      } catch (journalErr) {
+        console.warn("Failed to create journal entry:", journalErr)
+        // لا نوقف العملية إذا فشل إنشاء القيد
+      }
+
       // Send notification to creator
       try {
         if (expense.created_by) {
@@ -280,7 +334,7 @@ export default function ExpenseDetailPage() {
 
       toast({
         title: "تم الاعتماد",
-        description: "تم اعتماد المصروف بنجاح"
+        description: "تم اعتماد المصروف بنجاح وإنشاء القيد المحاسبي"
       })
 
       loadExpense()
