@@ -39,6 +39,7 @@ export async function getTypeMapAndLeafSet(
 
 /**
  * Fetch journal entry lines filtered by company and date range.
+ * ✅ يستثني القيود المحذوفة (is_deleted = true أو deleted_at IS NOT NULL)
  */
 export async function getJournalLines(
   supabase: any,
@@ -48,8 +49,10 @@ export async function getJournalLines(
 ): Promise<any[]> {
   const { data: linesData, error: linesError } = await supabase
     .from("journal_entry_lines")
-    .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id)")
+    .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id, is_deleted, deleted_at)")
     .eq("journal_entries.company_id", companyId)
+    .or("journal_entries.is_deleted.is.null,journal_entries.is_deleted.eq.false") // ✅ استثناء المحذوفة
+    .is("journal_entries.deleted_at", null) // ✅ استثناء المحذوفة
     .gte("journal_entries.entry_date", fromDate)
     .lte("journal_entries.entry_date", toDate)
 
