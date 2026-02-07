@@ -88,7 +88,8 @@ export async function GET(request: NextRequest) {
       .select("id")
       .eq("company_id", companyId)
       .eq("status", "posted")
-      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
       .lte("entry_date", toDate) // ✅ رأس المال: جميع القيود حتى toDate
 
     if (entriesError) {
