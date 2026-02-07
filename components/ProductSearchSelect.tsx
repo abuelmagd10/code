@@ -26,6 +26,12 @@ interface ProductSearchSelectProps {
   currency?: string
   lang?: 'ar' | 'en'
   productsOnly?: boolean  // Hide services, show only products (for purchase pages)
+  /**
+   * 🔐 Branch-specific stock quantities
+   * Map of product_id -> available quantity in the selected branch's warehouses
+   * If provided, this overrides quantity_on_hand for stock display
+   */
+  branchStockMap?: Record<string, number>
 }
 
 /**
@@ -48,6 +54,7 @@ export function ProductSearchSelect({
   currency = "EGP",
   lang = 'ar',
   productsOnly = false,
+  branchStockMap,
 }: ProductSearchSelectProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<'all' | 'product' | 'service'>(productsOnly ? 'product' : 'all')
@@ -204,11 +211,20 @@ export function ProductSearchSelect({
                   </div>
                   <div className="flex items-center justify-between text-xs text-gray-500 mt-0.5">
                     {product.sku && <span className="font-mono">{product.sku}</span>}
-                    {showStock && product.item_type !== 'service' && product.quantity_on_hand !== undefined && (
-                      <span className={product.quantity_on_hand > 0 ? 'text-green-600' : 'text-red-500'}>
-                        {product.quantity_on_hand > 0 ? `${labels.inStock}: ${product.quantity_on_hand}` : labels.outOfStock}
-                      </span>
-                    )}
+                    {showStock && product.item_type !== 'service' && (() => {
+                      // 🔐 Use branch-specific stock if available, otherwise fall back to quantity_on_hand
+                      const stockQty = branchStockMap !== undefined
+                        ? (branchStockMap[product.id] ?? 0)
+                        : product.quantity_on_hand
+
+                      if (stockQty === undefined) return null
+
+                      return (
+                        <span className={stockQty > 0 ? 'text-green-600' : 'text-red-500'}>
+                          {stockQty > 0 ? `${labels.inStock}: ${stockQty}` : labels.outOfStock}
+                        </span>
+                      )
+                    })()}
                   </div>
                 </div>
               </SelectItem>

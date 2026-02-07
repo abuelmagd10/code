@@ -152,6 +152,10 @@ export default function NewSalesOrderPage() {
   const [warehouseId, setWarehouseId] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState<boolean>(false) // 🔐 Governance: Admin role state
 
+  // 🔐 Branch-specific stock quantities map
+  const [branchStockMap, setBranchStockMap] = useState<Record<string, number>>({})
+  const [isLoadingStock, setIsLoadingStock] = useState(false)
+
   // Tax codes from localStorage
   const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
 
@@ -244,6 +248,12 @@ export default function NewSalesOrderPage() {
     checkPerms()
   }, [supabase])
 
+  // 🔐 تحميل الكميات المتاحة عند تغيير الفرع أو المنتجات
+  useEffect(() => {
+    if (branchId && products.length > 0 && !isLoading) {
+      loadBranchStock(branchId, products)
+    }
+  }, [branchId, products, isLoading, loadBranchStock])
 
   const loadData = async () => {
     try {
@@ -279,10 +289,10 @@ export default function NewSalesOrderPage() {
       if (userBranchId) {
         // Fetch branch defaults instead of user assignments
         const { getBranchDefaults } = await import('@/lib/governance-branch-defaults')
-        
+
         try {
           const branchDefaults = await getBranchDefaults(supabase, userBranchId)
-          
+
           // Validate branch has required defaults
           if (!branchDefaults.default_warehouse_id || !branchDefaults.default_cost_center_id) {
             throw new Error(
@@ -379,11 +389,101 @@ export default function NewSalesOrderPage() {
     }
   }
 
+  // 🔐 دالة حساب الكميات المتاحة من مخازن الفرع المحدد
+  const loadBranchStock = useCallback(async (targetBranchId: string | null, productsList: Product[]) => {
+    if (!targetBranchId || productsList.length === 0) {
+      setBranchStockMap({})
+      return
+    }
+
+    try {
+      setIsLoadingStock(true)
+
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      // 1. جلب جميع المخازن التابعة للفرع المحدد
+      const { data: branchWarehouses, error: whError } = await supabase
+        .from('warehouses')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('branch_id', targetBranchId)
+        .eq('is_active', true)
+
+      if (whError) {
+        console.error('Error fetching branch warehouses:', whError)
+        setBranchStockMap({})
+        return
+      }
+
+      const warehouseIds = (branchWarehouses || []).map(w => w.id)
+
+      if (warehouseIds.length === 0) {
+        // لا توجد مخازن في هذا الفرع - جميع الكميات = 0
+        const emptyStock: Record<string, number> = {}
+        productsList.forEach(p => { emptyStock[p.id] = 0 })
+        setBranchStockMap(emptyStock)
+        return
+      }
+
+      // 2. جلب حركات المخزون لجميع المنتجات من مخازن الفرع فقط
+      const productIds = productsList.filter(p => p.item_type !== 'service').map(p => p.id)
+
+      if (productIds.length === 0) {
+        setBranchStockMap({})
+        return
+      }
+
+      const { data: transactions, error: txError } = await supabase
+        .from('inventory_transactions')
+        .select('product_id, quantity_change')
+        .eq('company_id', companyId)
+        .in('warehouse_id', warehouseIds)
+        .in('product_id', productIds)
+        .or('is_deleted.is.null,is_deleted.eq.false')
+
+      if (txError) {
+        console.error('Error fetching inventory transactions:', txError)
+        setBranchStockMap({})
+        return
+      }
+
+      // 3. حساب الكمية المتاحة لكل منتج
+      const stockMap: Record<string, number> = {}
+
+      // تهيئة جميع المنتجات بـ 0
+      productIds.forEach(pid => { stockMap[pid] = 0 })
+
+      // جمع الحركات
+      ;(transactions || []).forEach((tx: any) => {
+        const pid = tx.product_id
+        const change = Number(tx.quantity_change || 0)
+        stockMap[pid] = (stockMap[pid] || 0) + change
+      })
+
+      // التأكد من عدم وجود كميات سالبة
+      Object.keys(stockMap).forEach(pid => {
+        stockMap[pid] = Math.max(0, stockMap[pid])
+      })
+
+      console.log('🔐 Branch stock loaded:', { branchId: targetBranchId, warehouseCount: warehouseIds.length, stockMap })
+      setBranchStockMap(stockMap)
+    } catch (error) {
+      console.error('Error loading branch stock:', error)
+      setBranchStockMap({})
+    } finally {
+      setIsLoadingStock(false)
+    }
+  }, [supabase])
+
+
   const handleBranchChange = useCallback(async (newBranchId: string | null) => {
     if (!newBranchId) {
       setBranchId(null)
       setCostCenterId(null)
       setWarehouseId(null)
+      setBranchStockMap({})
       return
     }
 
@@ -405,6 +505,9 @@ export default function NewSalesOrderPage() {
       setBranchId(newBranchId)
       setCostCenterId(branch.default_cost_center_id)
       setWarehouseId(branch.default_warehouse_id)
+
+      // 🔐 تحديث الكميات المتاحة للفرع الجديد
+      await loadBranchStock(newBranchId, products)
     } catch (e: any) {
       toast({
         title: appLang === 'en' ? 'Branch Setup Required' : 'الفرع غير مُكوَّن',
@@ -414,7 +517,7 @@ export default function NewSalesOrderPage() {
         variant: 'destructive'
       })
     }
-  }, [supabase, toast, appLang])
+  }, [supabase, toast, appLang, products, loadBranchStock])
 
   const addItem = () => {
     setSoItems([
@@ -1271,6 +1374,7 @@ export default function NewSalesOrderPage() {
                                     currency={soCurrency}
                                     showStock={true}
                                     showPrice={true}
+                                    branchStockMap={branchStockMap}
                                   />
                                 </td>
                                 <td className="px-3 py-3">
@@ -1370,6 +1474,7 @@ export default function NewSalesOrderPage() {
                                   currency={soCurrency}
                                   showStock={true}
                                   showPrice={true}
+                                  branchStockMap={branchStockMap}
                                 />
                               </div>
                               <Button
