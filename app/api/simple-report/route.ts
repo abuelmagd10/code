@@ -348,10 +348,13 @@ export async function GET(request: NextRequest) {
     const netProfit = grossProfit - totalExpenses - totalDepreciation
 
     // ✅ حساب الأصول (البنك + المخزون + العملاء)
+    // ⚠️ الأصول هي رصيد تراكمي - يجب حسابها من جميع القيود حتى تاريخ النهاية
     const assetsByAccount: { [key: string]: { name: string; code: string; amount: number } } = {}
-    const assetLines = periodLines.filter((line: any) => {
+    const assetLines = (journalLinesData || []).filter((line: any) => {
       const coa = Array.isArray(line.chart_of_accounts) ? line.chart_of_accounts[0] : line.chart_of_accounts
-      return coa?.account_type === "asset"
+      const entryDate = line.journal_entries?.entry_date
+      // حساب جميع الحركات حتى تاريخ النهاية (وليس من تاريخ البداية)
+      return coa?.account_type === "asset" && entryDate && entryDate <= toDate
     })
 
     for (const line of assetLines) {
