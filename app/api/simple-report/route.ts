@@ -21,7 +21,7 @@
  *        - محاسبيًا: من حسابات expense (sub_type = 'purchases' أو account_code = '5110') إن وُجدت
  *        - تشغيليًا (للتبسيط ولضمان الدقة): من فواتير الشراء (bills) خلال الفترة
  *      ✅ الهدف في التقرير المبسط: عدم إخفاء أي مشتريات تمت فعليًا حتى لو كانت المعالجة المحاسبية عبر المخزون (inventory asset)
- *    - COGS: من حسابات expense (sub_type = 'cogs' أو account_code = '5000')
+ *    - COGS: من حسابات expense (sub_type = 'cogs' أو account_code = '5100')
  *    - المصروفات: من حسابات expense (باستثناء COGS والمشتريات والإهلاك)
  *    - الإهلاك: من حسابات expense (account_code = '5500')
  *
@@ -264,8 +264,8 @@ export async function GET(request: NextRequest) {
     let totalCOGS = 0
     const cogsLines = periodLines.filter((line: any) => {
       const coa = Array.isArray(line.chart_of_accounts) ? line.chart_of_accounts[0] : line.chart_of_accounts
-      return coa?.account_type === "expense" && 
-             (coa?.sub_type === "cogs" || coa?.sub_type === "cost_of_goods_sold" || coa?.account_code === "5000")
+      return coa?.account_type === "expense" &&
+             (coa?.sub_type === "cogs" || coa?.sub_type === "cost_of_goods_sold" || coa?.account_code === "5100")
     })
     for (const line of cogsLines) {
       const debit = Number(line.debit_amount || 0)
@@ -283,7 +283,7 @@ export async function GET(request: NextRequest) {
       const subType = coa?.sub_type || ""
       const accountCode = coa?.account_code || ""
       // استثناء COGS والمشتريات والإهلاك
-      if (subType === "cogs" || subType === "cost_of_goods_sold" || accountCode === "5000") return false
+      if (subType === "cogs" || subType === "cost_of_goods_sold" || accountCode === "5100") return false
       if (subType === "purchases" || accountCode === "5110") return false
       if (subType === "purchase_returns" || accountCode === "5120") return false
       if (accountCode === "5500") return false // ✅ استثناء حساب الإهلاك (يُحسب بشكل منفصل)
