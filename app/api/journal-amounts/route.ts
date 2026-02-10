@@ -41,7 +41,7 @@ async function handleRequest(req: NextRequest) {
     .select("journal_entry_id, debit_amount, credit_amount, chart_of_accounts!inner(sub_type), journal_entries!inner(company_id, branch_id, is_deleted, deleted_at)")
     .in("journal_entry_id", ids)
     .eq("journal_entries.company_id", companyId)
-    .or("journal_entries.is_deleted.is.null,journal_entries.is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+    .neq("journal_entries.is_deleted", true) // ✅ استثناء القيود المحذوفة (is_deleted)
     .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
 
   if (dbError) {

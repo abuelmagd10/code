@@ -70,7 +70,7 @@ export async function getJournalLines(
     .from("journal_entry_lines")
     .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id, is_deleted, deleted_at)")
     .eq("journal_entries.company_id", companyId)
-    .or("journal_entries.is_deleted.is.null,journal_entries.is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+    .neq("journal_entries.is_deleted", true) // ✅ استثناء القيود المحذوفة (is_deleted)
     .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
     .gte("journal_entries.entry_date", fromDate)
     .lte("journal_entries.entry_date", toDate)

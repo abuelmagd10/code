@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
     const { data: lines, error: linesError } = await db
       .from("journal_entry_lines")
       .select("journal_entry_id, account_id, debit_amount, credit_amount, journal_entries!inner(is_deleted, deleted_at)")
-      .or("journal_entries.is_deleted.is.null,journal_entries.is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+      .neq("journal_entries.is_deleted", true) // ✅ استثناء القيود المحذوفة (is_deleted)
       .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
 
     if (linesError) return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب القيود", linesError.message)
