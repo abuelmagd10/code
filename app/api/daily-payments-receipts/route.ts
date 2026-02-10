@@ -89,6 +89,7 @@ export async function GET(req: NextRequest) {
       `)
       .eq("company_id", companyId)
       .match(branchFilter)
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء المدفوعات المحذوفة
       .gte("payment_date", from)
       .lte("payment_date", to)
 

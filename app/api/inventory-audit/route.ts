@@ -128,6 +128,7 @@ export async function GET(req: NextRequest) {
       .select('id, bill_number, bill_date')
       .eq('company_id', companyId)
       .eq('branch_id', branchId)
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
       .gte('bill_date', from)
       .lte('bill_date', to)
     const billIds = (bills || []).map((b: any) => b.id)

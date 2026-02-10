@@ -44,7 +44,8 @@ async function calculateNetIncomeForPeriod(
     .eq("company_id", companyId)
     .gte("entry_date", periodStart)
     .lte("entry_date", periodEnd)
-    .is("deleted_at", null)
+    .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+    .is("deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
 
   if (entriesError) {
     throw new Error(`خطأ في جلب القيود: ${entriesError.message}`)
@@ -423,10 +424,11 @@ export async function createPeriodClosingEntry(
     // ✅ 8. حساب رصيد الأرباح المحتجزة بعد الإقفال
     const { data: retainedEarningsLines } = await supabase
       .from("journal_entry_lines")
-      .select("debit_amount, credit_amount, journal_entries!inner(company_id, deleted_at)")
+      .select("debit_amount, credit_amount, journal_entries!inner(company_id, is_deleted, deleted_at)")
       .eq("account_id", retainedEarningsAccountId)
       .eq("journal_entries.company_id", companyId)
-      .is("journal_entries.deleted_at", null)
+      .or("journal_entries.is_deleted.is.null,journal_entries.is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+      .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
 
     let retainedEarningsBalance = 0
     for (const line of retainedEarningsLines || []) {

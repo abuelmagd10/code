@@ -968,9 +968,11 @@ export async function validateAccrualAccounting(
       .select(`
         debit_amount,
         credit_amount,
-        journal_entries!inner(company_id)
+        journal_entries!inner(company_id, is_deleted, deleted_at)
       `)
       .eq("journal_entries.company_id", companyId)
+      .or("journal_entries.is_deleted.is.null,journal_entries.is_deleted.eq.false") // ✅ استثناء القيود المحذوفة
+      .is("journal_entries.deleted_at", null)
 
     const totalDebits = (allLines || []).reduce((sum: number, line: any) => 
       sum + Number(line.debit_amount || 0), 0)
@@ -989,10 +991,12 @@ export async function validateAccrualAccounting(
       .from("journal_entry_lines")
       .select(`
         debit_amount,
-        journal_entries!inner(company_id),
+        journal_entries!inner(company_id, is_deleted, deleted_at),
         chart_of_accounts!inner(sub_type)
       `)
       .eq("journal_entries.company_id", companyId)
+      .or("journal_entries.is_deleted.is.null,journal_entries.is_deleted.eq.false") // ✅ استثناء القيود المحذوفة
+      .is("journal_entries.deleted_at", null)
       .eq("chart_of_accounts.sub_type", "inventory")
 
     const inventoryBalance = (inventoryValue || []).reduce((sum: number, line: any) => 

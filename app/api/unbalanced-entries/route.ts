@@ -31,7 +31,8 @@ export async function GET(req: NextRequest) {
       .from("journal_entries")
       .select("id, entry_date")
       .eq("company_id", companyId)
-      .is("deleted_at", null)
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
       .lte("entry_date", asOf)
 
     if (entriesError) {

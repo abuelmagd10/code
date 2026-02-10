@@ -126,7 +126,8 @@ export async function GET(req: NextRequest) {
       `)
       .eq("journal_entries.company_id", companyId)
       .eq("journal_entries.status", "posted")
-      .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة
+      .or("journal_entries.is_deleted.is.null,journal_entries.is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+      .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
       .gte("journal_entries.entry_date", from)
       .lte("journal_entries.entry_date", to)
       .in("account_id", accountIds)

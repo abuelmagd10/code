@@ -93,7 +93,8 @@ export async function GET(req: NextRequest) {
       .select("id")
       .eq("company_id", companyId)
       .eq("status", "posted")
-      .is("deleted_at", null)
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
       .lt("entry_date", fromDate) // ✅ القيود قبل تاريخ بداية الفترة
 
     if (openingEntriesError) {
@@ -108,7 +109,8 @@ export async function GET(req: NextRequest) {
       .select("id")
       .eq("company_id", companyId)
       .eq("status", "posted")
-      .is("deleted_at", null)
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
       .gte("entry_date", fromDate)
       .lte("entry_date", asOf)
 

@@ -89,7 +89,8 @@ export async function GET(req: NextRequest) {
       `)
       .eq("company_id", companyId)
       .eq("status", "posted")
-      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة
+      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
       .gte("entry_date", from)
       .lte("entry_date", to)
       .order("entry_date")

@@ -119,13 +119,14 @@ export async function GET(request: NextRequest) {
         debit_amount,
         credit_amount,
         journal_entry_id,
-        journal_entries!inner(entry_date, company_id, status, deleted_at),
+        journal_entries!inner(entry_date, company_id, status, is_deleted, deleted_at),
         chart_of_accounts!inner(account_type, account_code, account_name, sub_type)
       `)
       .in("journal_entry_id", journalEntryIds)
       .eq("journal_entries.company_id", companyId)
       .eq("journal_entries.status", "posted")
-      .is("journal_entries.deleted_at", null) // ✅ فلترة القيود المحذوفة
+      .or("journal_entries.is_deleted.is.null,journal_entries.is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+      .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
 
     if (linesError) {
       return serverError(`خطأ في جلب سطور القيود: ${linesError.message}`)

@@ -42,10 +42,11 @@ export async function GET(req: NextRequest) {
 
     const { data, error: dbError } = await admin
       .from("journal_entry_lines")
-      .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, original_debit, original_credit, original_currency, exchange_rate_used, journal_entries!inner(entry_date, description, company_id, deleted_at)")
+      .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, original_debit, original_credit, original_currency, exchange_rate_used, journal_entries!inner(entry_date, description, company_id, is_deleted, deleted_at)")
       .eq("account_id", accountId)
       .eq("journal_entries.company_id", companyId)
-      .is("journal_entries.deleted_at", null)
+      .or("journal_entries.is_deleted.is.null,journal_entries.is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
+      .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
       .gte("journal_entries.entry_date", from)
       .lte("journal_entries.entry_date", to)
       .order("id", { ascending: false })
