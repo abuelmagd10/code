@@ -3477,7 +3477,8 @@ export default function InvoiceDetailPage() {
                     {appLang === 'en' ? 'Record Payment' : 'تسجيل دفعة'}
                   </Button>
                 ) : null}
-                {invoice.status !== "cancelled" && invoice.status !== "draft" && invoice.status !== "fully_returned" && permUpdate ? (
+                {/* 🔒 زر المرتجع: فقط للفواتير المنفذة (sent/partially_paid/paid) - ليس للمسودات أو الملغاة */}
+                {invoice.status !== "cancelled" && invoice.status !== "draft" && invoice.status !== "invoiced" && invoice.status !== "fully_returned" && permUpdate ? (
                   <Button variant="outline" className="border-orange-500 text-orange-600 hover:bg-orange-50" onClick={openPartialReturnDialog}>
                     {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
                   </Button>

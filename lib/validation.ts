@@ -212,19 +212,22 @@ export const validateField = (value: string, type: 'email' | 'phone' | 'number' 
 
 /**
  * حالات الفاتورة المسموح بها
+ * ⚠️ 'invoiced' = 'draft' (فاتورة مسودة لم يتم تنفيذها بعد)
  */
-export type InvoiceStatus = 'draft' | 'sent' | 'partially_paid' | 'paid' | 'cancelled' | 'fully_returned' | 'partially_returned';
+export type InvoiceStatus = 'draft' | 'sent' | 'invoiced' | 'partially_paid' | 'paid' | 'cancelled' | 'fully_returned' | 'partially_returned';
 
 /**
  * الحالات التي تم تنفيذها (لها أثر فعلي في المخزون)
  * 🔒 القاعدة: فقط هذه الحالات يُسمح لها بالمرتجع والإصلاح
+ * ⚠️ 'invoiced' ليست منفذة - لا يوجد لها أثر في المخزون أو القيود
  */
 export const EXECUTABLE_STATUSES: InvoiceStatus[] = ['sent', 'partially_paid', 'paid'];
 
 /**
- * الحالات التي لا يُسمح بأي عملية عليها
+ * الحالات التي لا يُسمح بأي عملية عليها (مسودات أو ملغاة)
+ * ⚠️ 'invoiced' تُعامل كـ draft - لا يوجد لها أثر فعلي
  */
-export const NON_EXECUTABLE_STATUSES: InvoiceStatus[] = ['draft', 'cancelled'];
+export const NON_EXECUTABLE_STATUSES: InvoiceStatus[] = ['draft', 'invoiced', 'cancelled'];
 
 /**
  * التحقق مما إذا كانت الفاتورة قابلة للتنفيذ (لها أثر فعلي)

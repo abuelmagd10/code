@@ -1176,7 +1176,8 @@ export default function InvoicesPage() {
                 </Button>
               </Link>
             )}
-            {row.status !== 'draft' && row.status !== 'voided' && row.status !== 'fully_returned' && row.status !== 'cancelled' && (
+            {/* 🔒 أزرار المرتجع: فقط للفواتير المنفذة (sent/partially_paid/paid) - ليس للمسودات أو الملغاة */}
+            {row.status !== 'draft' && row.status !== 'invoiced' && row.status !== 'voided' && row.status !== 'fully_returned' && row.status !== 'cancelled' && (
               <>
                 <Button
                   variant="outline"
