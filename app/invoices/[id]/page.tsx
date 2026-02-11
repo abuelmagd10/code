@@ -3468,8 +3468,8 @@ export default function InvoiceDetailPage() {
                     {changingStatus || isPending ? (appLang === 'en' ? 'Updating...' : 'جاري التحديث...') : (appLang === 'en' ? 'Mark as Sent' : 'تحديد كمرسلة')}
                   </Button>
                 ) : null}
-                {/* زر الدفع يظهر فقط إذا كانت الفاتورة مرسلة (sent) أو مدفوعة جزئياً وكان المتبقي أكبر من 0 */}
-                {netRemainingAmount > 0 && permPayWrite && invoice.status !== "draft" && invoice.status !== "cancelled" ? (
+                {/* 🔒 زر الدفع يظهر فقط للفواتير المنفذة (sent/partially_paid) - ليس للمسودات */}
+                {netRemainingAmount > 0 && permPayWrite && invoice.status !== "draft" && invoice.status !== "invoiced" && invoice.status !== "cancelled" ? (
                   <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => {
                     setPaymentAmount(netRemainingAmount)
                     setShowPayment(true)
