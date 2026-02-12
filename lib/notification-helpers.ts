@@ -820,7 +820,16 @@ export async function notifyTransferApprovalRequest(params: {
 
   const eventKey = `transfer_approval:${transferId}:requested`
 
-  // إشعار للمالك
+  // ✅ إشعار واحد فقط - بدون تحديد دور
+  // سيظهر لكل من لديه صلاحية في الشركة
+  // ثم نعتمد على منطق الفلترة في الـ frontend لإظهاره للأدوار المناسبة
+  //
+  // ملاحظة: عندما assigned_to_role = NULL:
+  // - دالة get_user_notifications تعيد الإشعار لكل الأدوار
+  // - لكن الـ frontend يفلتر حسب الدور
+  //
+  // الحل: نستخدم category = 'approval' للتمييز
+  // ونعدل منطق الفلترة لاحقاً إذا لزم الأمر
   await createNotification({
     companyId,
     referenceType: 'stock_transfer',
@@ -829,43 +838,12 @@ export async function notifyTransferApprovalRequest(params: {
     message,
     createdBy,
     branchId: sourceBranchId,
-    assignedToRole: 'owner',
+    // ✅ بدون assignedToRole - سيظهر للجميع في الشركة
+    // لكن فقط owner/admin/general_manager سيهتمون به (طلب اعتماد)
     priority: 'high' as NotificationPriority,
-    eventKey: `${eventKey}:owner`,
+    eventKey, // eventKey موحد لمنع التكرار
     severity: 'warning',
-    category: 'inventory'
-  })
-
-  // إشعار للأدمن
-  await createNotification({
-    companyId,
-    referenceType: 'stock_transfer',
-    referenceId: transferId,
-    title,
-    message,
-    createdBy,
-    branchId: sourceBranchId,
-    assignedToRole: 'admin',
-    priority: 'high' as NotificationPriority,
-    eventKey: `${eventKey}:admin`,
-    severity: 'warning',
-    category: 'inventory'
-  })
-
-  // إشعار للمدير العام
-  await createNotification({
-    companyId,
-    referenceType: 'stock_transfer',
-    referenceId: transferId,
-    title,
-    message,
-    createdBy,
-    branchId: sourceBranchId,
-    assignedToRole: 'general_manager',
-    priority: 'high' as NotificationPriority,
-    eventKey: `${eventKey}:general_manager`,
-    severity: 'warning',
-    category: 'inventory'
+    category: 'approvals' // ✅ تصنيف خاص لطلبات الاعتماد
   })
 }
 
