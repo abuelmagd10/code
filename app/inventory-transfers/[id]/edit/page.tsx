@@ -487,38 +487,49 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {items.map((item, index) => (
-                <div key={index} className="flex gap-4 items-end p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                  <div className="flex-1 space-y-2">
-                    <Label>{appLang === 'en' ? 'Product' : 'المنتج'}</Label>
-                    <Select value={item.product_id} onValueChange={(v) => updateItem(index, 'product_id', v)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={appLang === 'en' ? 'Select product' : 'اختر المنتج'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {products.map(p => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name} ({p.sku}) - {appLang === 'en' ? 'Available' : 'متوفر'}: {productStock[p.id] || 0}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+              {items.map((item, index) => {
+                // فلترة المنتجات المتاحة - إظهار المنتج الحالي + المنتجات غير المختارة
+                const selectedProductIds = items
+                  .filter((_, i) => i !== index)
+                  .map(i => i.product_id)
+                  .filter(Boolean)
+                const availableProducts = products.filter(
+                  p => !selectedProductIds.includes(p.id) || p.id === item.product_id
+                )
+
+                return (
+                  <div key={index} className="flex gap-4 items-end p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <div className="flex-1 space-y-2">
+                      <Label>{appLang === 'en' ? 'Product' : 'المنتج'}</Label>
+                      <Select value={item.product_id} onValueChange={(v) => updateItem(index, 'product_id', v)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={appLang === 'en' ? 'Select product' : 'اختر المنتج'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableProducts.map(p => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name} ({p.sku}) - {appLang === 'en' ? 'Available' : 'متوفر'}: {productStock[p.id] || 0}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="w-32 space-y-2">
+                      <Label>{appLang === 'en' ? 'Quantity' : 'الكمية'}</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max={productStock[item.product_id] || 999999}
+                        value={item.quantity}
+                        onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 0)}
+                      />
+                    </div>
+                    <Button variant="destructive" size="icon" onClick={() => removeItem(index)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
-                  <div className="w-32 space-y-2">
-                    <Label>{appLang === 'en' ? 'Quantity' : 'الكمية'}</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max={productStock[item.product_id] || 999999}
-                      value={item.quantity}
-                      onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 0)}
-                    />
-                  </div>
-                  <Button variant="destructive" size="icon" onClick={() => removeItem(index)}>
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
+                )
+              })}
               {items.length === 0 && (
                 <p className="text-center text-gray-500 py-8">
                   {appLang === 'en' ? 'No products added yet' : 'لم تتم إضافة منتجات بعد'}
