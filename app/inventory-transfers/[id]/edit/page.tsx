@@ -325,6 +325,7 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
 
     try {
       setIsSaving(true)
+      console.log('📝 [EDIT] Starting save...', { transferId: transfer.id, itemsCount: items.length })
 
       const srcWarehouse = warehouses.find(w => w.id === sourceWarehouseId)
       const destWarehouse = warehouses.find(w => w.id === destinationWarehouseId)
@@ -343,32 +344,70 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
         })
         .eq("id", transfer.id)
 
-      if (updateError) throw updateError
+      if (updateError) {
+        console.error('❌ [EDIT] Error updating transfer:', updateError)
+        throw updateError
+      }
+      console.log('✅ [EDIT] Transfer updated')
 
-      // حذف البنود القديمة وإضافة الجديدة
-      await supabase
+      // جلب البنود الحالية لمعرفة ما يجب حذفه/تحديثه/إضافته
+      const { data: existingItems } = await supabase
         .from("inventory_transfer_items")
-        .delete()
+        .select("id, product_id")
         .eq("transfer_id", transfer.id)
 
-      const transferItems = items.map(item => ({
-        transfer_id: transfer.id,
-        product_id: item.product_id,
-        quantity_requested: item.quantity,
-        unit_cost: 0
-      }))
+      const existingItemIds = (existingItems || []).map((i: any) => i.id)
+      const existingProductIds = (existingItems || []).map((i: any) => i.product_id)
+      const newProductIds = items.map(i => i.product_id)
 
-      const { error: itemsError } = await supabase
-        .from("inventory_transfer_items")
-        .insert(transferItems)
+      console.log('📊 [EDIT] Existing items:', existingItemIds.length, 'New items:', items.length)
 
-      if (itemsError) throw itemsError
+      // حذف البنود التي لم تعد موجودة
+      const itemsToDelete = (existingItems || []).filter((ei: any) => !newProductIds.includes(ei.product_id))
+      if (itemsToDelete.length > 0) {
+        console.log('🗑️ [EDIT] Deleting items:', itemsToDelete.map((i: any) => i.id))
+        for (const itemToDelete of itemsToDelete) {
+          await supabase
+            .from("inventory_transfer_items")
+            .delete()
+            .eq("id", itemToDelete.id)
+        }
+      }
+
+      // تحديث البنود الموجودة
+      for (const item of items) {
+        const existingItem = (existingItems || []).find((ei: any) => ei.product_id === item.product_id)
+        if (existingItem) {
+          console.log('🔄 [EDIT] Updating item:', existingItem.id)
+          await supabase
+            .from("inventory_transfer_items")
+            .update({ quantity_requested: item.quantity })
+            .eq("id", existingItem.id)
+        } else {
+          // إضافة بند جديد
+          console.log('➕ [EDIT] Inserting new item for product:', item.product_id)
+          await supabase
+            .from("inventory_transfer_items")
+            .insert({
+              transfer_id: transfer.id,
+              product_id: item.product_id,
+              quantity_requested: item.quantity,
+              unit_cost: 0
+            })
+        }
+      }
+
+      console.log('✅ [EDIT] All items processed')
 
       toast({ title: appLang === 'en' ? 'Transfer updated successfully' : 'تم تحديث الطلب بنجاح' })
       router.push(`/inventory-transfers/${transfer.id}`)
     } catch (error: any) {
       console.error("Error updating transfer:", error)
-      toast({ title: appLang === 'en' ? 'Error updating transfer' : 'خطأ في تحديث الطلب', variant: 'destructive' })
+      toast({
+        title: appLang === 'en' ? 'Error updating transfer' : 'خطأ في تحديث الطلب',
+        description: error?.message || '',
+        variant: 'destructive'
+      })
     } finally {
       setIsSaving(false)
     }
