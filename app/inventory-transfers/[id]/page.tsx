@@ -8,6 +8,14 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
@@ -67,6 +75,9 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   // للاستلام
   const [receivedQuantities, setReceivedQuantities] = useState<Record<string, number>>({})
   const [rejectionReason, setRejectionReason] = useState("")
+
+  // 🔐 Dialog للرفض مع سبب
+  const [showRejectDialog, setShowRejectDialog] = useState(false)
 
   useEffect(() => {
     setHydrated(true)
@@ -1049,11 +1060,21 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                       <ShieldCheck className="w-4 h-4" />
                       {appLang === 'en' ? 'Approve' : 'اعتماد'}
                     </Button>
-                    <Button variant="destructive" onClick={() => handleRejectTransfer()} disabled={isProcessing} className="gap-2">
+                    <Button variant="destructive" onClick={() => setShowRejectDialog(true)} disabled={isProcessing} className="gap-2">
                       <ShieldX className="w-4 h-4" />
                       {appLang === 'en' ? 'Reject' : 'رفض'}
                     </Button>
                   </>
+                )}
+
+                {/* 🔐 زر التعديل - للمحاسب فقط في حالة draft أو rejected */}
+                {canAccountantEdit && (
+                  <Link href={`/inventory-transfers/${transfer.id}/edit`}>
+                    <Button variant="outline" disabled={isProcessing} className="gap-2">
+                      <Edit className="w-4 h-4" />
+                      {appLang === 'en' ? 'Edit' : 'تعديل'}
+                    </Button>
+                  </Link>
                 )}
 
                 {/* 🔐 زر إعادة الإرسال - للمحاسب فقط في حالة draft أو rejected */}
@@ -1235,6 +1256,73 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
           )}
         </div>
       </main>
+
+      {/* 🔐 Dialog لرفض طلب النقل مع سبب */}
+      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <ShieldX className="w-5 h-5" />
+              {appLang === 'en' ? 'Reject Transfer Request' : 'رفض طلب النقل'}
+            </DialogTitle>
+            <DialogDescription>
+              {appLang === 'en'
+                ? 'Please provide a reason for rejecting this transfer request. The requester will be notified.'
+                : 'يرجى توضيح سبب رفض طلب النقل. سيتم إشعار مقدم الطلب.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="rejection-reason">
+                {appLang === 'en' ? 'Rejection Reason' : 'سبب الرفض'} <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="rejection-reason"
+                placeholder={appLang === 'en' ? 'Enter the reason for rejection...' : 'أدخل سبب الرفض...'}
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                className="min-h-[100px]"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowRejectDialog(false)
+              setRejectionReason("")
+            }}>
+              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (!rejectionReason.trim()) {
+                  toast({
+                    title: appLang === 'en' ? 'Rejection reason required' : 'سبب الرفض مطلوب',
+                    variant: 'destructive'
+                  })
+                  return
+                }
+                await handleRejectTransfer(rejectionReason.trim())
+                setShowRejectDialog(false)
+                setRejectionReason("")
+              }}
+              disabled={isProcessing || !rejectionReason.trim()}
+            >
+              {isProcessing ? (
+                <span className="flex items-center gap-2">
+                  <span className="animate-spin">⏳</span>
+                  {appLang === 'en' ? 'Rejecting...' : 'جاري الرفض...'}
+                </span>
+              ) : (
+                <>
+                  <ShieldX className="w-4 h-4 mr-2" />
+                  {appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض'}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
