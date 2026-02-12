@@ -29,15 +29,46 @@ export const commonErrorMessages: ErrorMessages = {
     ar: 'غير مصرح لك بالوصول إلى هذا المورد.',
     en: 'You are not authorized to access this resource.'
   },
-  
+
   FORBIDDEN: {
     ar: 'ليس لديك الصلاحيات اللازمة لهذا الإجراء.',
     en: 'You do not have the required permissions for this action.'
   },
-  
+
   SESSION_EXPIRED: {
     ar: 'انتهت جلسة العمل. يرجى تسجيل الدخول مرة أخرى.',
     en: 'Session expired. Please log in again.'
+  },
+
+  // 🔐 RLS Permission Errors - with contact guidance
+  RLS_INVENTORY_TRANSFER: {
+    ar: 'ليس لديك صلاحية إنشاء تحويلات المخزون. يرجى التواصل مع المدير (Manager) أو مسؤول النظام (Admin) لتنفيذ هذا الإجراء.',
+    en: 'You do not have permission to create inventory transfers. Please contact the Manager or Admin to perform this action.'
+  },
+
+  RLS_INVOICE_CREATE: {
+    ar: 'ليس لديك صلاحية إنشاء الفواتير. يرجى التواصل مع المدير (Manager) أو المحاسب (Accountant) لتنفيذ هذا الإجراء.',
+    en: 'You do not have permission to create invoices. Please contact the Manager or Accountant to perform this action.'
+  },
+
+  RLS_PAYMENT_CREATE: {
+    ar: 'ليس لديك صلاحية تسجيل المدفوعات. يرجى التواصل مع المحاسب (Accountant) أو المدير (Manager) لتنفيذ هذا الإجراء.',
+    en: 'You do not have permission to record payments. Please contact the Accountant or Manager to perform this action.'
+  },
+
+  RLS_JOURNAL_ENTRY: {
+    ar: 'ليس لديك صلاحية إنشاء القيود المحاسبية. يرجى التواصل مع المحاسب (Accountant) لتنفيذ هذا الإجراء.',
+    en: 'You do not have permission to create journal entries. Please contact the Accountant to perform this action.'
+  },
+
+  RLS_PRODUCT_CREATE: {
+    ar: 'ليس لديك صلاحية إضافة المنتجات. يرجى التواصل مع المدير (Manager) أو مسؤول المخزن (Warehouse Keeper) لتنفيذ هذا الإجراء.',
+    en: 'You do not have permission to add products. Please contact the Manager or Warehouse Keeper to perform this action.'
+  },
+
+  RLS_GENERIC: {
+    ar: 'ليس لديك صلاحية لتنفيذ هذا الإجراء. يرجى التواصل مع المدير أو مسؤول النظام.',
+    en: 'You do not have permission to perform this action. Please contact the Manager or Admin.'
   },
   
   // Data validation errors
@@ -191,8 +222,69 @@ export const formatValidationError = (field: string, errorType: string, lang: 'a
   if (errorType === 'invalid') {
     return lang === 'ar' ? `${fieldName} غير صحيح` : `Invalid ${fieldName}`
   }
-  
+
   return getErrorMessage('INVALID_INPUT', lang)
+}
+
+/**
+ * 🔐 Check if error is RLS (Row Level Security) permission error
+ */
+export const isRLSError = (error: any): boolean => {
+  if (!error) return false
+  return error?.code === '42501' ||
+         error?.message?.includes('row-level security') ||
+         error?.message?.includes('violates row-level security policy')
+}
+
+/**
+ * 🔐 Get appropriate RLS error message based on the table/operation
+ * @param tableName - The table that caused the RLS error
+ * @param lang - Language ('ar' or 'en')
+ * @returns Formatted error message with contact guidance
+ */
+export const getRLSErrorMessage = (tableName: string, lang: 'ar' | 'en' = 'ar'): { title: string; description: string } => {
+  const tableToErrorKey: Record<string, string> = {
+    'inventory_transfers': 'RLS_INVENTORY_TRANSFER',
+    'inventory_transfer_items': 'RLS_INVENTORY_TRANSFER',
+    'invoices': 'RLS_INVOICE_CREATE',
+    'invoice_items': 'RLS_INVOICE_CREATE',
+    'payments': 'RLS_PAYMENT_CREATE',
+    'journal_entries': 'RLS_JOURNAL_ENTRY',
+    'journal_entry_lines': 'RLS_JOURNAL_ENTRY',
+    'products': 'RLS_PRODUCT_CREATE',
+  }
+
+  const errorKey = tableToErrorKey[tableName] || 'RLS_GENERIC'
+  const message = commonErrorMessages[errorKey]
+
+  return {
+    title: lang === 'ar' ? 'غير مصرح لك' : 'Permission Denied',
+    description: message ? message[lang] : commonErrorMessages.RLS_GENERIC[lang]
+  }
+}
+
+/**
+ * 🔐 Handle Supabase error and return appropriate message
+ * Automatically detects RLS errors and provides helpful guidance
+ */
+export const handleSupabaseError = (
+  error: any,
+  tableName: string,
+  lang: 'ar' | 'en' = 'ar',
+  defaultErrorKey: string = 'OPERATION_FAILED'
+): { title: string; description: string; isRLS: boolean } => {
+  if (isRLSError(error)) {
+    return {
+      ...getRLSErrorMessage(tableName, lang),
+      isRLS: true
+    }
+  }
+
+  return {
+    title: lang === 'ar' ? 'خطأ' : 'Error',
+    description: getErrorMessage(defaultErrorKey, lang),
+    isRLS: false
+  }
 }
 
 export default commonErrorMessages

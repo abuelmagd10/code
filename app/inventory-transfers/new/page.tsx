@@ -375,7 +375,17 @@ export default function NewTransferPage() {
       router.push(`/inventory-transfers/${transfer.id}`)
     } catch (error: any) {
       console.error("Error creating transfer:", error)
-      toast({ title: appLang === 'en' ? 'Error creating transfer' : 'خطأ في إنشاء طلب النقل', variant: 'destructive' })
+
+      // 🔐 استخدام الدالة المساعدة للتعامل مع أخطاء RLS
+      const { handleSupabaseError } = await import('@/lib/error-messages')
+      const errorInfo = handleSupabaseError(error, 'inventory_transfers', appLang)
+
+      toast({
+        title: errorInfo.title,
+        description: errorInfo.isRLS ? errorInfo.description : (appLang === 'en' ? 'Error creating transfer' : 'خطأ في إنشاء طلب النقل'),
+        variant: 'destructive',
+        duration: errorInfo.isRLS ? 8000 : 5000
+      })
     } finally {
       setIsSaving(false)
     }
