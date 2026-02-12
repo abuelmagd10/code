@@ -24,6 +24,9 @@ interface Transfer {
   expected_arrival_date?: string
   received_date?: string
   notes?: string
+  rejection_reason?: string
+  rejected_by?: string
+  rejected_at?: string
   source_warehouses?: { id: string; name: string }
   destination_warehouses?: { id: string; name: string }
   source_branches?: { id: string; name: string }
@@ -139,6 +142,7 @@ export default function InventoryTransfersPage() {
         .select(`
           id, transfer_number, status, transfer_date, expected_arrival_date, received_date, notes, created_by, received_by,
           source_warehouse_id, destination_warehouse_id, source_branch_id, destination_branch_id,
+          rejection_reason, rejected_by, rejected_at,
           source_warehouses:warehouses!inventory_transfers_source_warehouse_id_fkey(id, name, branch_id),
           destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name, branch_id),
           source_branches:branches!inventory_transfers_source_branch_id_fkey(id, name),
@@ -241,11 +245,15 @@ export default function InventoryTransfersPage() {
   // ❌ مسؤول المخزن لا يمكنه إنشاء طلبات نقل
   const canCreate = permWrite && ["owner", "admin", "manager", "general_manager", "gm", "accountant"].includes(userRole)
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, hasRejectionReason?: boolean) => {
     switch (status) {
       case 'pending_approval':
         return <Badge variant="outline" className="gap-1 bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300"><AlertTriangle className="w-3 h-3" />{appLang === 'en' ? 'Pending Approval' : 'بانتظار الاعتماد'}</Badge>
       case 'draft':
+        // إذا كان هناك سبب رفض، نظهر "مرفوض - يحتاج تعديل"
+        if (hasRejectionReason) {
+          return <Badge variant="outline" className="gap-1 bg-red-50 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-300"><XCircle className="w-3 h-3" />{appLang === 'en' ? 'Rejected - Needs Edit' : 'مرفوض - يحتاج تعديل'}</Badge>
+        }
         return <Badge variant="outline" className="gap-1 bg-gray-50 text-gray-600 border-gray-300 dark:bg-gray-800 dark:text-gray-400"><Edit className="w-3 h-3" />{appLang === 'en' ? 'Draft' : 'مسودة'}</Badge>
       case 'pending':
         return <Badge variant="outline" className="gap-1 bg-yellow-50 text-yellow-700 border-yellow-300"><Clock className="w-3 h-3" />{appLang === 'en' ? 'Pending Start' : 'قيد الانتظار'}</Badge>
@@ -511,7 +519,7 @@ export default function InventoryTransfersPage() {
                             )}
                           </td>
                           <td className="px-4 py-3 text-center">
-                            {getStatusBadge(transfer.status)}
+                            {getStatusBadge(transfer.status, !!transfer.rejection_reason)}
                           </td>
                           <td className="px-4 py-3 text-center text-gray-500">
                             {new Date(transfer.transfer_date).toLocaleDateString('ar-EG')}

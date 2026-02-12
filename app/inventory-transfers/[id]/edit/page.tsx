@@ -185,13 +185,18 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
       setItems(loadedItems)
 
       // تحميل المخازن
-      const { data: warehousesData } = await supabase
+      console.log('📦 [EDIT] Loading warehouses for company:', cid)
+      const { data: warehousesData, error: warehousesError } = await supabase
         .from("warehouses")
         .select("id, name, branch_id, branches(name, branch_name)")
         .eq("company_id", cid)
         .eq("is_active", true)
         .order("name")
 
+      console.log('📦 [EDIT] Warehouses loaded:', warehousesData?.length, 'Error:', warehousesError)
+      if (warehousesError) {
+        console.error('❌ [EDIT] Error loading warehouses:', warehousesError)
+      }
       setWarehouses(warehousesData || [])
 
       // تحميل المنتجات

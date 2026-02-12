@@ -529,6 +529,15 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
       // إرسال إشعار للمحاسب المنشئ
       try {
+        console.log('🔔 [REJECT] Sending rejection notification:', {
+          companyId,
+          transferId: transfer.id,
+          transferNumber: transfer.transfer_number,
+          branchId: transfer.source_branch_id,
+          rejectedBy: user.id,
+          rejectionReason: reason,
+          createdBy: transfer.created_by
+        })
         await notifyTransferRejected({
           companyId,
           transferId: transfer.id,
@@ -539,8 +548,9 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
           createdBy: transfer.created_by,
           appLang
         })
+        console.log('✅ [REJECT] Rejection notification sent successfully')
       } catch (notifError) {
-        console.error("Error sending rejection notification:", notifError)
+        console.error("❌ [REJECT] Error sending rejection notification:", notifError)
       }
 
       toast({ title: appLang === 'en' ? 'Transfer rejected' : 'تم رفض طلب النقل' })
