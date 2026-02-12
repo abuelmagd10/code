@@ -189,7 +189,7 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
       console.log('📦 [EDIT] Loading warehouses for company:', cid)
       const { data: warehousesData, error: warehousesError } = await supabase
         .from("warehouses")
-        .select("id, name, branch_id, branches(name, branch_name)")
+        .select("id, name, branch_id, branches!warehouses_branch_id_fkey(name)")
         .eq("company_id", cid)
         .eq("is_active", true)
         .order("name")
@@ -224,17 +224,51 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
   }
 
   const loadWarehouseStock = async (warehouseId: string, cid: string) => {
-    const { data: stockData } = await supabase
-      .from("inventory")
-      .select("product_id, quantity")
-      .eq("company_id", cid)
-      .eq("warehouse_id", warehouseId)
+    try {
+      // الحصول على branch_id من المخزن
+      const { data: wh } = await supabase
+        .from("warehouses")
+        .select("branch_id")
+        .eq("company_id", cid)
+        .eq("id", warehouseId)
+        .single()
 
-    const stockMap: Record<string, number> = {}
-    stockData?.forEach(s => {
-      stockMap[s.product_id] = (stockMap[s.product_id] || 0) + (s.quantity || 0)
-    })
-    setProductStock(stockMap)
+      const branchId = String((wh as any)?.branch_id || "")
+      if (!branchId) {
+        setProductStock({})
+        return
+      }
+
+      // الحصول على cost_center_id الافتراضي للفرع
+      const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+      const defaults = await getBranchDefaults(supabase, branchId)
+
+      // حساب المخزون من inventory_transactions
+      const { data: transactions } = await supabase
+        .from("inventory_transactions")
+        .select("product_id, quantity_change, is_deleted")
+        .eq("company_id", cid)
+        .eq("branch_id", branchId)
+        .eq("cost_center_id", defaults.default_cost_center_id)
+        .eq("warehouse_id", warehouseId)
+
+      const stockMap: Record<string, number> = {}
+      transactions?.forEach((tx: any) => {
+        if (!tx.is_deleted) {
+          stockMap[tx.product_id] = (stockMap[tx.product_id] || 0) + (tx.quantity_change || 0)
+        }
+      })
+
+      // التأكد من أن القيم موجبة
+      Object.keys(stockMap).forEach(key => {
+        stockMap[key] = Math.max(0, stockMap[key])
+      })
+
+      setProductStock(stockMap)
+    } catch (error) {
+      console.error("Error loading warehouse stock:", error)
+      setProductStock({})
+    }
   }
 
   const addItem = () => {
