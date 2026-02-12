@@ -367,10 +367,27 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
       if (itemsToDelete.length > 0) {
         console.log('🗑️ [EDIT] Deleting items:', itemsToDelete.map((i: any) => i.id))
         for (const itemToDelete of itemsToDelete) {
-          await supabase
-            .from("inventory_transfer_items")
-            .delete()
-            .eq("id", itemToDelete.id)
+          // محاولة الحذف باستخدام RPC أولاً
+          const { error: rpcError } = await supabase.rpc('delete_transfer_item', {
+            p_item_id: itemToDelete.id
+          })
+
+          if (rpcError) {
+            console.log('⚠️ [EDIT] RPC delete not available, trying direct delete...')
+            // محاولة الحذف المباشر
+            const { error: delError } = await supabase
+              .from("inventory_transfer_items")
+              .delete()
+              .eq("id", itemToDelete.id)
+
+            if (delError) {
+              console.error('❌ [EDIT] Direct delete failed:', delError)
+            } else {
+              console.log('✅ [EDIT] Deleted item via direct:', itemToDelete.id)
+            }
+          } else {
+            console.log('✅ [EDIT] Deleted item via RPC:', itemToDelete.id)
+          }
         }
       }
 
