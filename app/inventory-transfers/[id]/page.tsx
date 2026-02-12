@@ -528,12 +528,13 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       })
 
       // إرسال إشعار للمحاسب المنشئ
+      // ⚠️ لا نرسل branch_id لأن الإشعار شخصي (assigned_to_user)
+      // وقد يكون المحاسب في فرع مختلف عن فرع المخزن المصدر
       try {
         console.log('🔔 [REJECT] Sending rejection notification:', {
           companyId,
           transferId: transfer.id,
           transferNumber: transfer.transfer_number,
-          branchId: transfer.source_branch_id,
           rejectedBy: user.id,
           rejectionReason: reason,
           createdBy: transfer.created_by
@@ -542,7 +543,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
           companyId,
           transferId: transfer.id,
           transferNumber: transfer.transfer_number,
-          branchId: transfer.source_branch_id || undefined,
+          // ⚠️ لا نرسل branchId - الإشعار شخصي للمستخدم
           rejectedBy: user.id,
           rejectionReason: reason,
           createdBy: transfer.created_by,

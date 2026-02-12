@@ -903,7 +903,7 @@ export async function notifyTransferRejected(params: {
   createdBy: string // المحاسب المنشئ
   appLang?: 'ar' | 'en'
 }) {
-  const { companyId, transferId, transferNumber, branchId, rejectedBy, rejectedByName, rejectionReason, createdBy, appLang = 'ar' } = params
+  const { companyId, transferId, transferNumber, rejectedBy, rejectedByName, rejectionReason, createdBy, appLang = 'ar' } = params
 
   const title = appLang === 'en'
     ? 'Transfer Request Rejected'
@@ -918,6 +918,8 @@ export async function notifyTransferRejected(params: {
     : `تم رفض طلب النقل ${transferNumber} بواسطة ${rejectedByName || 'الإدارة'}${reasonText}`
 
   // إشعار للمحاسب المنشئ
+  // ⚠️ لا نرسل branchId لأن الإشعار شخصي (assigned_to_user)
+  // وقد يكون المحاسب في فرع مختلف عن فرع المخزن المصدر
   await createNotification({
     companyId,
     referenceType: 'stock_transfer',
@@ -925,7 +927,7 @@ export async function notifyTransferRejected(params: {
     title,
     message,
     createdBy: rejectedBy,
-    branchId,
+    // ⚠️ لا نرسل branchId - الإشعار شخصي للمستخدم
     assignedToUser: createdBy,
     priority: 'high' as NotificationPriority,
     eventKey: `transfer_approval:${transferId}:rejected`,

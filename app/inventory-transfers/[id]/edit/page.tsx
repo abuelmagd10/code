@@ -95,6 +95,7 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
     try {
       setIsLoading(true)
       const cid = await getActiveCompanyId(supabase)
+      console.log('🏢 [EDIT] Active company ID:', cid)
       if (!cid) {
         router.push("/companies")
         return
