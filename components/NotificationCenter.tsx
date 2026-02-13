@@ -292,15 +292,15 @@ export function NotificationCenter({
 
       // 🔹 Client-side filtering
       let filtered = data || []
-      
-      // ✅ Filter by branch - يعمل لجميع المستخدمين إذا اختاروا فرع معين
+
+      // ✅ Filter by branch - عند اختيار فرع معين، نعرض فقط إشعارات ذلك الفرع
       if (filterBranch !== "all") {
-        filtered = filtered.filter(n => !n.branch_id || n.branch_id === filterBranch)
+        filtered = filtered.filter(n => n.branch_id === filterBranch)
       }
 
-      // ✅ Filter by warehouse - يعمل لجميع المستخدمين إذا اختاروا مخزن معين
+      // ✅ Filter by warehouse - عند اختيار مخزن معين، نعرض فقط إشعارات ذلك المخزن
       if (filterWarehouse !== "all") {
-        filtered = filtered.filter(n => !n.warehouse_id || n.warehouse_id === filterWarehouse)
+        filtered = filtered.filter(n => n.warehouse_id === filterWarehouse)
       }
 
       // Filter by priority
