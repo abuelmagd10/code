@@ -350,60 +350,81 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
       }
       console.log('✅ [EDIT] Transfer updated')
 
-      // جلب البنود الحالية لمعرفة ما يجب حذفه/تحديثه/إضافته
-      const { data: existingItems } = await supabase
+      // جلب البنود الحالية من قاعدة البيانات
+      const { data: dbItems, error: dbItemsError } = await supabase
         .from("inventory_transfer_items")
         .select("id, product_id")
         .eq("transfer_id", transfer.id)
 
-      const existingItemIds = (existingItems || []).map((i: any) => i.id)
-      const existingProductIds = (existingItems || []).map((i: any) => i.product_id)
-      const newProductIds = items.map(i => i.product_id)
-
-      console.log('📊 [EDIT] Existing items:', existingItemIds.length, 'New items:', items.length)
-
-      // حذف البنود التي لم تعد موجودة
-      const itemsToDelete = (existingItems || []).filter((ei: any) => !newProductIds.includes(ei.product_id))
-      if (itemsToDelete.length > 0) {
-        console.log('🗑️ [EDIT] Deleting items:', itemsToDelete.map((i: any) => i.id))
-        for (const itemToDelete of itemsToDelete) {
-          // محاولة الحذف باستخدام RPC أولاً
-          const { error: rpcError } = await supabase.rpc('delete_transfer_item', {
-            p_item_id: itemToDelete.id
-          })
-
-          if (rpcError) {
-            console.log('⚠️ [EDIT] RPC delete not available, trying direct delete...')
-            // محاولة الحذف المباشر
-            const { error: delError } = await supabase
-              .from("inventory_transfer_items")
-              .delete()
-              .eq("id", itemToDelete.id)
-
-            if (delError) {
-              console.error('❌ [EDIT] Direct delete failed:', delError)
-            } else {
-              console.log('✅ [EDIT] Deleted item via direct:', itemToDelete.id)
-            }
-          } else {
-            console.log('✅ [EDIT] Deleted item via RPC:', itemToDelete.id)
-          }
-        }
+      if (dbItemsError) {
+        console.error('❌ [EDIT] Error fetching existing items:', dbItemsError)
       }
 
-      // تحديث البنود الموجودة
+      const dbItemIds = (dbItems || []).map((i: any) => i.id)
+      const currentItemIds = items.filter(i => i.id).map(i => i.id)
+
+      console.log('📊 [EDIT] DB items:', dbItemIds)
+      console.log('📊 [EDIT] Current items (with id):', currentItemIds)
+      console.log('📊 [EDIT] Current items (all):', items.map(i => ({ id: i.id, product_id: i.product_id })))
+
+      // حذف البنود التي تم إزالتها من الواجهة
+      const itemIdsToDelete = dbItemIds.filter((dbId: string) => !currentItemIds.includes(dbId))
+
+      if (itemIdsToDelete.length > 0) {
+        console.log('🗑️ [EDIT] Items to delete:', itemIdsToDelete)
+
+        for (const itemId of itemIdsToDelete) {
+          console.log('🗑️ [EDIT] Attempting to delete item:', itemId)
+
+          // محاولة الحذف المباشر
+          const { error: delError, data: delData } = await supabase
+            .from("inventory_transfer_items")
+            .delete()
+            .eq("id", itemId)
+            .select()
+
+          console.log('🗑️ [EDIT] Delete result:', { error: delError, data: delData })
+
+          if (delError) {
+            console.error('❌ [EDIT] Direct delete failed:', delError.message, delError.code)
+
+            // محاولة الحذف باستخدام RPC
+            const { error: rpcError, data: rpcData } = await supabase.rpc('delete_transfer_item', {
+              p_item_id: itemId
+            })
+
+            console.log('🗑️ [EDIT] RPC delete result:', { error: rpcError, data: rpcData })
+
+            if (rpcError) {
+              console.error('❌ [EDIT] RPC delete also failed:', rpcError.message)
+            } else {
+              console.log('✅ [EDIT] Deleted via RPC:', itemId)
+            }
+          } else {
+            console.log('✅ [EDIT] Deleted directly:', itemId)
+          }
+        }
+      } else {
+        console.log('ℹ️ [EDIT] No items to delete')
+      }
+
+      // تحديث أو إضافة البنود
       for (const item of items) {
-        const existingItem = (existingItems || []).find((ei: any) => ei.product_id === item.product_id)
-        if (existingItem) {
-          console.log('🔄 [EDIT] Updating item:', existingItem.id)
-          await supabase
+        if (item.id && dbItemIds.includes(item.id)) {
+          // تحديث بند موجود
+          console.log('🔄 [EDIT] Updating item:', item.id, 'quantity:', item.quantity)
+          const { error: updateErr } = await supabase
             .from("inventory_transfer_items")
             .update({ quantity_requested: item.quantity })
-            .eq("id", existingItem.id)
-        } else {
+            .eq("id", item.id)
+
+          if (updateErr) {
+            console.error('❌ [EDIT] Update failed:', updateErr)
+          }
+        } else if (!item.id) {
           // إضافة بند جديد
           console.log('➕ [EDIT] Inserting new item for product:', item.product_id)
-          await supabase
+          const { error: insertErr } = await supabase
             .from("inventory_transfer_items")
             .insert({
               transfer_id: transfer.id,
@@ -411,6 +432,10 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
               quantity_requested: item.quantity,
               unit_cost: 0
             })
+
+          if (insertErr) {
+            console.error('❌ [EDIT] Insert failed:', insertErr)
+          }
         }
       }
 
