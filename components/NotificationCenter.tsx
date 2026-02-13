@@ -1108,15 +1108,25 @@ export function NotificationCenter({
                               variant="ghost"
                               size="sm"
                               className="h-8 text-xs"
-                              onClick={(e) => {
+                              onClick={async (e) => {
                                 e.stopPropagation()
                                 const route = getNotificationRoute(
-                                  notification.reference_type, 
+                                  notification.reference_type,
                                   notification.reference_id,
                                   notification.event_key || undefined,
                                   notification.category || undefined
                                 )
                                 if (route) {
+                                  // أرشفة الإشعار تلقائياً عند فتح المرجع
+                                  if (notification.status !== 'archived') {
+                                    try {
+                                      await updateNotificationStatus(notification.id, 'archived', userId)
+                                      setNotifications(prev => prev.filter(n => n.id !== notification.id))
+                                      window.dispatchEvent(new Event('notifications_updated'))
+                                    } catch (error) {
+                                      console.error("Error archiving notification:", error)
+                                    }
+                                  }
                                   onOpenChange(false)
                                   router.push(route)
                                 }
