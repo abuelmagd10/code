@@ -937,6 +937,45 @@ export async function notifyTransferRejected(params: {
 }
 
 /**
+ * إشعار تعديل طلب النقل (بعد الرفض)
+ * يُرسل إلى: Owner, Admin, General Manager للاعتماد مرة أخرى
+ */
+export async function notifyTransferModified(params: {
+  companyId: string
+  transferId: string
+  transferNumber: string
+  sourceBranchId?: string
+  modifiedBy: string
+  modifiedByName?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, transferId, transferNumber, sourceBranchId, modifiedBy, modifiedByName, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? 'Transfer Request Modified'
+    : 'تم تعديل طلب النقل'
+
+  const message = appLang === 'en'
+    ? `Transfer request ${transferNumber} has been modified and requires approval${modifiedByName ? ` (by ${modifiedByName})` : ''}`
+    : `تم تعديل طلب النقل ${transferNumber} ويحتاج إلى اعتماد${modifiedByName ? ` (بواسطة ${modifiedByName})` : ''}`
+
+  // إشعار للإدارة (Owner/Admin/GM)
+  await createNotification({
+    companyId,
+    referenceType: 'stock_transfer',
+    referenceId: transferId,
+    title,
+    message,
+    createdBy: modifiedBy,
+    branchId: sourceBranchId,
+    priority: 'high' as NotificationPriority,
+    eventKey: `transfer_approval:${transferId}:modified:${Date.now()}`,
+    severity: 'warning',
+    category: 'approvals'
+  })
+}
+
+/**
  * إشعار بدء نقل المخزون (in_transit)
  * يُرسل إلى: المنشئ الأصلي للطلب
  */

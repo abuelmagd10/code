@@ -14,6 +14,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import { ArrowLeftRight, Plus, Trash2, Warehouse, Package, Save, ArrowLeft, AlertCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { notifyTransferModified } from "@/lib/notification-helpers"
 
 interface Product {
   id: string
@@ -44,6 +45,7 @@ interface TransferData {
   status: string
   source_warehouse_id: string
   destination_warehouse_id: string
+  source_branch_id?: string
   expected_arrival_date?: string
   notes?: string
   rejection_reason?: string
@@ -440,6 +442,21 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
       }
 
       console.log('✅ [EDIT] All items processed')
+
+      // إرسال إشعار للإدارة بأن الطلب تم تعديله ويحتاج اعتماد
+      try {
+        await notifyTransferModified({
+          companyId,
+          transferId: transfer.id,
+          transferNumber: transfer.transfer_number,
+          sourceBranchId: transfer.source_branch_id || undefined,
+          modifiedBy: userId,
+          appLang
+        })
+        console.log('✅ [EDIT] Notification sent')
+      } catch (notifError) {
+        console.error("Error sending modification notification:", notifError)
+      }
 
       toast({ title: appLang === 'en' ? 'Transfer updated successfully' : 'تم تحديث الطلب بنجاح' })
       router.push(`/inventory-transfers/${transfer.id}`)
