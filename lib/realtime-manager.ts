@@ -728,13 +728,18 @@ class RealtimeManager {
         }
       }
 
-      // المحاسب يرى جميع طلبات النقل في الشركة
-      if (role === 'accountant') {
-        console.log(`✅ [RealtimeManager] Accountant can see all transfers in company:`, {
-          recordId: record.id,
-          userRole: role
-        })
-        return true
+      // المحاسب يرى طلبات النقل من/إلى فرعه فقط
+      if (role === 'accountant' && accessInfo.branchId) {
+        if (sourceBranchId === accessInfo.branchId || destBranchId === accessInfo.branchId) {
+          console.log(`✅ [RealtimeManager] Accountant can see transfer involving their branch:`, {
+            recordId: record.id,
+            sourceBranchId,
+            destBranchId,
+            userBranchId: accessInfo.branchId,
+            userRole: role
+          })
+          return true
+        }
       }
 
       // إذا لم يتطابق أي شرط، نرفض
