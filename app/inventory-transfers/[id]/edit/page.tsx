@@ -604,8 +604,13 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
                         value={item.quantity}
                         onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 0)}
                       />
+                      {item.product_id && (
+                        <p className="text-xs text-gray-500">
+                          {appLang === 'en' ? 'Available' : 'متوفر'}: {productStock[item.product_id] || 0}
+                        </p>
+                      )}
                     </div>
-                    <Button variant="destructive" size="icon" onClick={() => removeItem(index)}>
+                    <Button variant="destructive" size="icon" className="mt-6" onClick={() => removeItem(index)}>
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
