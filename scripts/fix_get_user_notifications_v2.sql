@@ -83,11 +83,17 @@ BEGIN
     )
     AND (p_branch_id IS NULL OR n.branch_id = p_branch_id OR n.branch_id IS NULL)
     AND (p_warehouse_id IS NULL OR n.warehouse_id = p_warehouse_id OR n.warehouse_id IS NULL)
-    AND (p_status IS NULL OR n.status = p_status)
+    -- ✅ إصلاح فلتر الحالة:
+    -- - إذا p_status = NULL → نعرض كل شيء ما عدا archived
+    -- - إذا p_status = 'archived' → نعرض المؤرشفة فقط
+    -- - إذا p_status = أي قيمة أخرى → نعرض تلك الحالة فقط
+    AND (
+      (p_status IS NULL AND n.status != 'archived')
+      OR (p_status IS NOT NULL AND n.status = p_status)
+    )
     AND (p_severity IS NULL OR COALESCE(n.severity, 'info') = p_severity)
     AND (p_category IS NULL OR COALESCE(n.category, 'system') = p_category)
     AND (n.expires_at IS NULL OR n.expires_at > NOW())
-    AND n.status != 'archived'
   ORDER BY
     CASE n.priority
       WHEN 'urgent' THEN 1
