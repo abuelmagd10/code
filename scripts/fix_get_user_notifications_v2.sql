@@ -33,11 +33,7 @@ RETURNS TABLE (
   warehouse_name VARCHAR(255),
   severity TEXT,
   category TEXT,
-  event_key TEXT,
-  assigned_to_user UUID,
-  assigned_to_role VARCHAR(50),
-  read_at TIMESTAMPTZ,
-  actioned_at TIMESTAMPTZ
+  event_key TEXT
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -62,15 +58,11 @@ BEGIN
     n.priority,
     n.status,
     n.created_at,
-    b.name AS branch_name,
-    w.name AS warehouse_name,
+    b.name::VARCHAR(255) AS branch_name,
+    w.name::VARCHAR(255) AS warehouse_name,
     COALESCE(n.severity, 'info')::TEXT AS severity,
     COALESCE(n.category, 'system')::TEXT AS category,
-    n.event_key,
-    n.assigned_to_user,
-    n.assigned_to_role,
-    n.read_at,
-    n.actioned_at
+    n.event_key
   FROM notifications n
   LEFT JOIN branches b ON (n.branch_id = b.id AND b.company_id = p_company_id)
   LEFT JOIN warehouses w ON (n.warehouse_id = w.id AND w.company_id = p_company_id)
@@ -83,7 +75,7 @@ BEGIN
       OR (
         n.assigned_to_user IS NULL  -- عام
         AND (
-          n.assigned_to_role = v_user_role 
+          n.assigned_to_role = v_user_role
           OR n.assigned_to_role IS NULL
           OR v_user_role IN ('owner', 'admin')  -- Owner/Admin يرون كل الإشعارات العامة
         )
