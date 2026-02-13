@@ -371,35 +371,78 @@ export function NotificationCenter({
     }
   }, [open, loadNotifications])
 
-  // 🔔 Realtime Updates
+  // 🔔 Realtime Updates - التحقق من جميع الفلاتر
   const shouldShowNotification = useCallback((notification: any): boolean => {
+    // 1. التحقق من الشركة
     if (notification.company_id !== companyId) return false
+
+    // 2. التحقق من المستخدم المخصص له
     if (notification.assigned_to_user && notification.assigned_to_user !== userId) {
       if (userRole !== 'owner' && userRole !== 'admin') return false
     }
+
+    // 3. التحقق من الدور المخصص له
     if (notification.assigned_to_role && notification.assigned_to_role !== userRole) {
       if (userRole !== 'owner' && userRole !== 'admin') {
         if (!(notification.assigned_to_role === 'admin' && userRole === 'owner')) return false
       }
     }
+
+    // 4. التحقق من الفرع (للمستخدمين غير Owner/Admin)
     if (branchId && userRole !== 'owner' && userRole !== 'admin') {
       if (notification.branch_id && notification.branch_id !== branchId) return false
     }
+
+    // 5. التحقق من المخزن (للمستخدمين غير Owner/Admin)
     if (warehouseId && userRole !== 'owner' && userRole !== 'admin') {
       if (notification.warehouse_id && notification.warehouse_id !== warehouseId) return false
     }
+
+    // 6. التحقق من انتهاء الصلاحية
     if (notification.expires_at && new Date(notification.expires_at) <= new Date()) return false
-    // ✅ احترام فلتر الحالة: إذا كان المستخدم يريد رؤية المؤرشفة، نعرضها
-    if (notification.status === 'archived' && filterStatus !== 'archived') return false
+
+    // 7. ✅ التحقق من فلتر الحالة
+    if (filterStatus !== 'all') {
+      if (notification.status !== filterStatus) return false
+    } else {
+      // عند اختيار "الكل"، نستبعد المؤرشفة
+      if (notification.status === 'archived') return false
+    }
+
+    // 8. ✅ التحقق من فلتر الأولوية
+    if (filterPriority !== 'all' && notification.priority !== filterPriority) return false
+
+    // 9. ✅ التحقق من فلتر التصنيف
+    if (filterCategory !== 'all' && notification.category !== filterCategory) return false
+
+    // 10. ✅ التحقق من فلتر النوع
+    if (filterReferenceType !== 'all' && notification.reference_type !== filterReferenceType) return false
+
+    // 11. ✅ التحقق من فلتر الفرع (للـ Owner/Admin)
+    if (filterBranch !== 'all' && notification.branch_id !== filterBranch) return false
+
+    // 12. ✅ التحقق من فلتر المخزن (للـ Owner/Admin)
+    if (filterWarehouse !== 'all' && notification.warehouse_id !== filterWarehouse) return false
+
+    // 13. ✅ التحقق من البحث
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      const matchesSearch =
+        notification.title?.toLowerCase().includes(query) ||
+        notification.message?.toLowerCase().includes(query) ||
+        notification.reference_id?.toLowerCase().includes(query)
+      if (!matchesSearch) return false
+    }
+
     return true
-  }, [companyId, userId, branchId, warehouseId, userRole, filterStatus])
+  }, [companyId, userId, branchId, warehouseId, userRole, filterStatus, filterPriority, filterCategory, filterReferenceType, filterBranch, filterWarehouse, searchQuery])
 
   const addOrUpdateNotification = useCallback((notification: Notification) => {
     if (!notification || !notification.id) return
 
-    // ✅ احترام فلتر الحالة: إذا كان المؤرشف ولا نريد رؤيته، نتجاهله
-    if (notification.status === 'archived' && filterStatus !== 'archived' && filterStatus !== 'all') {
-      // إزالة الإشعار المؤرشف من القائمة إذا لم يكن المستخدم يريد رؤيته
+    // ✅ التحقق من جميع الفلاتر قبل إضافة/تحديث الإشعار
+    if (!shouldShowNotification(notification)) {
+      // إزالة الإشعار من القائمة إذا لم يعد يطابق الفلاتر
       setNotifications(prev => prev.filter(n => n.id !== notification.id))
       window.dispatchEvent(new Event('notifications_updated'))
       return
@@ -420,7 +463,7 @@ export function NotificationCenter({
     })
 
     window.dispatchEvent(new Event('notifications_updated'))
-  }, [filterStatus])
+  }, [shouldShowNotification])
 
   useRealtimeTable<Notification>({
     table: 'notifications',
