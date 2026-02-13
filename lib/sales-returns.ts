@@ -164,7 +164,10 @@ export async function processSalesReturn(
         returnedSubtotal,
         returnedTax,
         customerId: invoiceCheck.customer_id,
-        lang
+        lang,
+        // ✅ تمرير بيانات الفاتورة للتسوية التلقائية
+        invoiceTotal: Number(invoiceCheck.total_amount || 0),
+        paidAmount: Number(invoiceCheck.paid_amount || 0)
       })
     }
 
@@ -353,6 +356,10 @@ async function updateInvoiceItemsReturn(
 /**
  * معالجة القيود المحاسبية للمرتجع (للفواتير المدفوعة فقط)
  * مع عكس COGS (Zoho Books Compatible)
+ *
+ * ✅ التسوية التلقائية للفواتير المدفوعة جزئياً:
+ * - إذا المرتجع ≤ المتبقي: تخفيض الذمة المدينة فقط (لا رصيد دائن)
+ * - إذا المرتجع > المتبقي: تصفير المتبقي + رصيد دائن بالفرق
  */
 async function processReturnAccounting(
   supabase: SupabaseClient,
@@ -365,9 +372,37 @@ async function processReturnAccounting(
     returnedTax: number
     customerId: string
     lang: 'ar' | 'en'
+    // ✅ إضافة بيانات الفاتورة للتسوية
+    invoiceTotal?: number
+    paidAmount?: number
   }
 ): Promise<number> {
-  const { companyId, invoiceId, invoiceNumber, returnTotal, returnedSubtotal, returnedTax, customerId, lang } = params
+  const {
+    companyId, invoiceId, invoiceNumber, returnTotal, returnedSubtotal, returnedTax,
+    customerId, lang, invoiceTotal = 0, paidAmount = 0
+  } = params
+
+  // ✅ حساب المتبقي غير المدفوع
+  const remainingUnpaid = Math.max(0, invoiceTotal - paidAmount)
+
+  // ✅ حساب التسوية والرصيد الدائن
+  // - settlementAmount: المبلغ الذي يُخصم من الذمة المدينة (المتبقي)
+  // - creditAmount: المبلغ الذي يُنشأ كرصيد دائن للعميل
+  const settlementAmount = Math.min(returnTotal, remainingUnpaid)
+  const creditAmount = Math.max(0, returnTotal - remainingUnpaid)
+
+  // نسبة التسوية للضريبة
+  const settlementRatio = returnTotal > 0 ? settlementAmount / returnTotal : 0
+  const creditRatio = returnTotal > 0 ? creditAmount / returnTotal : 0
+
+  const settlementSubtotal = returnedSubtotal * settlementRatio
+  const settlementTax = returnedTax * settlementRatio
+  const creditSubtotal = returnedSubtotal * creditRatio
+  const creditTax = returnedTax * creditRatio
+
+  console.log(`📊 [Return Accounting] Invoice ${invoiceNumber}:`)
+  console.log(`   - Total: ${invoiceTotal}, Paid: ${paidAmount}, Remaining: ${remainingUnpaid}`)
+  console.log(`   - Return: ${returnTotal}, Settlement: ${settlementAmount}, Credit: ${creditAmount}`)
 
   // جلب الحسابات المطلوبة
   const { data: accounts } = await supabase
@@ -378,7 +413,7 @@ async function processReturnAccounting(
   const findAccount = (condition: (a: any) => boolean) =>
     (accounts || []).find(condition)?.id
 
-  // البحث عن حساب الإيرادات: sales_revenue أو revenue أو اسم يحتوي إيرادات
+  // البحث عن حساب الإيرادات
   const revenue = findAccount(a =>
     a.sub_type?.toLowerCase() === 'sales_revenue' ||
     a.sub_type?.toLowerCase() === 'revenue' ||
@@ -387,22 +422,36 @@ async function processReturnAccounting(
       a.account_name?.toLowerCase().includes('sales revenue')
     ))
   )
+
+  // البحث عن حساب ذمم العملاء (للتسوية)
+  const accountsReceivable = findAccount(a =>
+    a.sub_type?.toLowerCase() === 'accounts_receivable' ||
+    a.sub_type?.toLowerCase() === 'receivable' ||
+    a.account_name?.includes('ذمم العملاء') ||
+    a.account_name?.includes('المدينون') ||
+    a.account_name?.toLowerCase().includes('accounts receivable') ||
+    a.account_name?.toLowerCase().includes('receivable')
+  )
+
   const vatPayable = findAccount(a => a.sub_type?.toLowerCase().includes('vat'))
-  // البحث عن حساب رصيد العملاء الدائن: customer_credit أو deferred_revenue أو إيرادات مقدمة
-  const customerCredit = findAccount(a =>
+
+  // البحث عن حساب رصيد العملاء الدائن (للرصيد الزائد فقط)
+  const customerCreditAccount = findAccount(a =>
     a.sub_type?.toLowerCase() === 'customer_credit' ||
     a.sub_type?.toLowerCase() === 'deferred_revenue' ||
     a.account_name?.toLowerCase().includes('customer credit') ||
     a.account_name?.includes('إيرادات مقدمة') ||
     a.account_name?.includes('رصيد دائن')
   )
-  // ملاحظة: inventory و cogs لم يعد مطلوبين هنا
-  // لأن trigger trg_auto_cogs_reversal_on_return يتولى إنشاء قيد COGS تلقائياً
 
   // تحسين رسالة الخطأ لتوضيح الحسابات المفقودة
   const missingAccounts: string[] = []
   if (!revenue) missingAccounts.push(lang === 'en' ? 'Revenue' : 'الإيرادات')
-  if (!customerCredit) missingAccounts.push(lang === 'en' ? 'Customer Credit' : 'رصيد العملاء الدائن')
+  if (!accountsReceivable) missingAccounts.push(lang === 'en' ? 'Accounts Receivable' : 'ذمم العملاء')
+  // رصيد العملاء الدائن مطلوب فقط إذا كان هناك رصيد زائد
+  if (creditAmount > 0 && !customerCreditAccount) {
+    missingAccounts.push(lang === 'en' ? 'Customer Credit' : 'رصيد العملاء الدائن')
+  }
 
   if (missingAccounts.length > 0) {
     const errorMsg = lang === 'en'
@@ -411,10 +460,7 @@ async function processReturnAccounting(
     throw new Error(errorMsg)
   }
 
-  // ملاحظة: قيد COGS يتم إنشاؤه تلقائياً عبر trigger في قاعدة البيانات
-  // trg_auto_cogs_reversal_on_return عند إضافة حركة مخزون sale_return
-
-  // إنشاء قيد المرتجع (الإيرادات ورصيد العميل فقط - COGS يتولاها الـ trigger)
+  // إنشاء قيد المرتجع
   const { data: journalEntry } = await supabase
     .from('journal_entries')
     .insert({
@@ -422,72 +468,117 @@ async function processReturnAccounting(
       reference_type: 'sales_return',
       reference_id: invoiceId,
       entry_date: new Date().toISOString().slice(0, 10),
-      description: `مرتجع مبيعات للفاتورة ${invoiceNumber}`
+      description: creditAmount > 0
+        ? `مرتجع مبيعات للفاتورة ${invoiceNumber} (تسوية: ${settlementAmount.toFixed(2)}، رصيد دائن: ${creditAmount.toFixed(2)})`
+        : `مرتجع مبيعات للفاتورة ${invoiceNumber} (تسوية مع المتبقي)`
     })
     .select('id')
     .single()
 
   if (journalEntry) {
-    const lines = [
+    const lines: any[] = []
+
+    // ===== الجزء الأول: تسوية مع المتبقي غير المدفوع =====
+    if (settlementAmount > 0) {
       // 1. عكس الإيراد (مدين: مردودات المبيعات)
-      {
+      lines.push({
         journal_entry_id: journalEntry.id,
         account_id: revenue,
-        debit_amount: returnedSubtotal,
+        debit_amount: settlementSubtotal,
         credit_amount: 0,
-        description: 'مردودات المبيعات'
-      },
-      // 2. رصيد دائن للعميل (دائن)
-      {
-        journal_entry_id: journalEntry.id,
-        account_id: customerCredit,
-        debit_amount: 0,
-        credit_amount: returnedSubtotal,
-        description: 'رصيد دائن للعميل'
-      }
-    ]
+        description: 'مردودات المبيعات (تسوية مع المتبقي)'
+      })
 
-    // 3. عكس الضريبة (إن وجدت) - مدين ودائن
-    if (vatPayable && returnedTax > 0) {
-      lines.push(
-        {
+      // 2. تخفيض ذمم العملاء (دائن: ذمم العملاء)
+      lines.push({
+        journal_entry_id: journalEntry.id,
+        account_id: accountsReceivable,
+        debit_amount: 0,
+        credit_amount: settlementSubtotal,
+        description: 'تخفيض ذمم العملاء (تسوية المرتجع)'
+      })
+
+      // 3. عكس الضريبة للتسوية (إن وجدت)
+      if (vatPayable && settlementTax > 0) {
+        lines.push({
           journal_entry_id: journalEntry.id,
           account_id: vatPayable,
-          debit_amount: returnedTax,
+          debit_amount: settlementTax,
           credit_amount: 0,
-          description: 'عكس ضريبة المبيعات'
-        },
-        {
+          description: 'عكس ضريبة المبيعات (تسوية)'
+        })
+        lines.push({
           journal_entry_id: journalEntry.id,
-          account_id: customerCredit,
+          account_id: accountsReceivable,
           debit_amount: 0,
-          credit_amount: returnedTax,
-          description: 'رصيد دائن للعميل (ضريبة)'
-        }
-      )
+          credit_amount: settlementTax,
+          description: 'تخفيض ذمم العملاء (ضريبة التسوية)'
+        })
+      }
     }
 
-    // ملاحظة: قيد COGS (مخزون/تكلفة بضاعة) يتم إنشاؤه تلقائياً عبر:
-    // trigger: trg_auto_cogs_reversal_on_return
+    // ===== الجزء الثاني: رصيد دائن للمبلغ الزائد =====
+    if (creditAmount > 0 && customerCreditAccount) {
+      // 1. عكس الإيراد (مدين: مردودات المبيعات)
+      lines.push({
+        journal_entry_id: journalEntry.id,
+        account_id: revenue,
+        debit_amount: creditSubtotal,
+        credit_amount: 0,
+        description: 'مردودات المبيعات (رصيد دائن)'
+      })
+
+      // 2. رصيد دائن للعميل (دائن)
+      lines.push({
+        journal_entry_id: journalEntry.id,
+        account_id: customerCreditAccount,
+        debit_amount: 0,
+        credit_amount: creditSubtotal,
+        description: 'رصيد دائن للعميل'
+      })
+
+      // 3. عكس الضريبة للرصيد الدائن (إن وجدت)
+      if (vatPayable && creditTax > 0) {
+        lines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: vatPayable,
+          debit_amount: creditTax,
+          credit_amount: 0,
+          description: 'عكس ضريبة المبيعات (رصيد دائن)'
+        })
+        lines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: customerCreditAccount,
+          debit_amount: 0,
+          credit_amount: creditTax,
+          description: 'رصيد دائن للعميل (ضريبة)'
+        })
+      }
+
+      // ✅ إنشاء سجل رصيد دائن فقط للمبلغ الزائد
+      await supabase.from('customer_credits').insert({
+        company_id: companyId,
+        customer_id: customerId,
+        credit_number: `CR-${Date.now()}`,
+        credit_date: new Date().toISOString().slice(0, 10),
+        amount: creditAmount,
+        used_amount: 0,
+        reference_type: 'invoice_return',
+        reference_id: invoiceId,
+        status: 'active',
+        notes: `رصيد دائن من مرتجع الفاتورة ${invoiceNumber} (المبلغ الزائد عن المتبقي)`
+      })
+
+      console.log(`✅ Created customer credit: ${creditAmount.toFixed(2)} for invoice ${invoiceNumber}`)
+    } else {
+      console.log(`✅ No customer credit needed - return fully settled against remaining balance`)
+    }
 
     await supabase.from('journal_entry_lines').insert(lines)
-
-    // إنشاء رصيد دائن للعميل
-    await supabase.from('customer_credits').insert({
-      company_id: companyId,
-      customer_id: customerId,
-      credit_number: `CR-${Date.now()}`,
-      credit_date: new Date().toISOString().slice(0, 10),
-      amount: returnTotal,
-      used_amount: 0,
-      reference_type: 'invoice_return',
-      reference_id: invoiceId,
-      status: 'active',
-      notes: `رصيد دائن من مرتجع الفاتورة ${invoiceNumber}`
-    })
   }
 
-  return returnTotal
+  // ✅ إرجاع المبلغ الذي تم إنشاء رصيد دائن له فقط (وليس كامل المرتجع)
+  return creditAmount
 }
 
 /**

@@ -1997,14 +1997,23 @@ export default function InvoicesPage() {
         const returnStatus = newTotal === 0 ? "full" : "partial"
 
         // ===== معالجة المدفوعات حسب القواعد الجديدة =====
-        // حساب نسبة المرتجع من الإجمالي الأصلي
-        const returnRatio = oldTotal > 0 ? returnTotal / oldTotal : 0
-        // حساب المبلغ المدفوع الذي يجب عكسه (نسبياً)
-        const paidToReverse = Math.min(oldPaid * returnRatio, returnTotal)
-        // المبلغ المدفوع الجديد بعد العكس
+        // ✅ التسوية التلقائية للفواتير المدفوعة جزئياً
+        // حساب المتبقي غير المدفوع قبل المرتجع
+        const remainingUnpaid = Math.max(0, oldTotal - oldPaid)
+
+        // ✅ حساب الرصيد الدائن الفعلي:
+        // - إذا المرتجع ≤ المتبقي: لا رصيد دائن (التسوية تخفض الذمة فقط)
+        // - إذا المرتجع > المتبقي: رصيد دائن = المرتجع - المتبقي
+        const customerCreditAmount = Math.max(0, returnTotal - remainingUnpaid)
+
+        // حساب المبلغ المدفوع الجديد
+        // إذا المرتجع أكبر من المتبقي، نخفض المدفوع بالفرق
+        const paidToReverse = Math.max(0, returnTotal - remainingUnpaid)
         const newPaid = Math.max(0, oldPaid - paidToReverse)
-        // رصيد العميل الدائن = المدفوع الذي تم عكسه
-        const customerCreditAmount = paidToReverse
+
+        console.log(`📊 [Return Credit Calculation] Invoice ${invRow.invoice_number}:`)
+        console.log(`   - Original Total: ${oldTotal}, Paid: ${oldPaid}, Remaining: ${remainingUnpaid}`)
+        console.log(`   - Return: ${returnTotal}, Credit: ${customerCreditAmount}, New Paid: ${newPaid}`)
 
         // تحديد حالة الفاتورة
         let newStatus: string = invRow.status

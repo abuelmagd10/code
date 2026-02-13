@@ -1607,22 +1607,39 @@ export default function InvoiceDetailPage() {
 
       // If credit_note method, create customer credit record
       // 📌 للفواتير المرسلة: لا ننشئ customer credit (لأنه لا يوجد مدفوعات)
+      // ✅ التسوية التلقائية: رصيد دائن فقط للمبلغ الزائد عن المتبقي غير المدفوع
       if (returnMethod === 'credit_note' && invoice.status !== 'sent') {
-        // إذا كان هناك مبلغ زائد مدفوع، نضيفه كرصيد للعميل
-        const creditAmount = excessPayment > 0 ? excessPayment : returnTotal
-        await supabase.from("customer_credits").insert({
-          company_id: mapping.companyId,
-          customer_id: invoice.customer_id,
-          invoice_id: invoice.id,
-          credit_number: `CR-${Date.now()}`,
-          credit_date: new Date().toISOString().slice(0, 10),
-          amount: creditAmount,
-          remaining_amount: creditAmount,
-          reason: returnNotes || (appLang === 'en'
-            ? `Sales return${excessPayment > 0 ? ' (includes payment refund)' : ''}`
-            : `مرتجع مبيعات${excessPayment > 0 ? ' (يشمل إرجاع مدفوعات)' : ''}`),
-          status: 'active'
-        })
+        // ✅ حساب المتبقي غير المدفوع قبل المرتجع
+        const remainingUnpaid = Math.max(0, originalTotal - currentPaidAmount)
+
+        // ✅ حساب الرصيد الدائن الفعلي:
+        // - إذا المرتجع ≤ المتبقي: لا رصيد دائن (التسوية تخفض الذمة فقط)
+        // - إذا المرتجع > المتبقي: رصيد دائن = المرتجع - المتبقي
+        const actualCreditAmount = Math.max(0, returnTotal - remainingUnpaid)
+
+        console.log(`📊 [Return Credit Calculation] Invoice ${invoice.invoice_number}:`)
+        console.log(`   - Original Total: ${originalTotal}, Paid: ${currentPaidAmount}, Remaining: ${remainingUnpaid}`)
+        console.log(`   - Return: ${returnTotal}, Actual Credit: ${actualCreditAmount}`)
+
+        // ✅ إنشاء رصيد دائن فقط إذا كان هناك مبلغ زائد
+        if (actualCreditAmount > 0) {
+          await supabase.from("customer_credits").insert({
+            company_id: mapping.companyId,
+            customer_id: invoice.customer_id,
+            invoice_id: invoice.id,
+            credit_number: `CR-${Date.now()}`,
+            credit_date: new Date().toISOString().slice(0, 10),
+            amount: actualCreditAmount,
+            remaining_amount: actualCreditAmount,
+            reason: returnNotes || (appLang === 'en'
+              ? `Sales return - excess over remaining balance`
+              : `مرتجع مبيعات - المبلغ الزائد عن المتبقي`),
+            status: 'active'
+          })
+          console.log(`✅ Created customer credit: ${actualCreditAmount.toFixed(2)} for invoice ${invoice.invoice_number}`)
+        } else {
+          console.log(`✅ No customer credit needed - return fully settled against remaining balance`)
+        }
       }
 
       // ===== عكس البونص في حالة المرتجع الكلي =====
