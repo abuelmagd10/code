@@ -23,7 +23,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeftRight, Warehouse, Package, CheckCircle2, Clock, XCircle, Truck, ArrowLeft, User, Calendar, FileText, Send, PackageCheck, X, Trash2, ShieldCheck, ShieldX, AlertTriangle, Edit } from "lucide-react"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
-import { notifyTransferApproved, notifyTransferRejected, notifyStockTransferRequest } from "@/lib/notification-helpers"
+import { notifyTransferApproved, notifyTransferRejected, notifyStockTransferRequest, notifyTransferStarted, notifyTransferReceived } from "@/lib/notification-helpers"
 
 interface TransferData {
   id: string
@@ -425,7 +425,20 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
         })
       } catch (notifError) {
         console.error("Error creating notification:", notifError)
-        // لا نوقف العملية إذا فشل إنشاء الإشعار
+      }
+
+      // إشعار للمنشئ الأصلي بأن النقل بدأ
+      try {
+        await notifyTransferStarted({
+          companyId,
+          transferId: transfer.id,
+          transferNumber: transfer.transfer_number,
+          createdBy: transfer.created_by,
+          startedBy: user.id,
+          appLang
+        })
+      } catch (notifError) {
+        console.error("Error sending start notification:", notifError)
       }
 
       loadData()
@@ -820,6 +833,21 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       }
 
       toast({ title: appLang === 'en' ? 'Products received successfully' : 'تم استلام المنتجات بنجاح' })
+
+      // إشعار للمنشئ الأصلي بأن النقل تم استلامه
+      try {
+        await notifyTransferReceived({
+          companyId,
+          transferId: transfer.id,
+          transferNumber: transfer.transfer_number,
+          createdBy: transfer.created_by,
+          receivedBy: user.id,
+          appLang
+        })
+      } catch (notifError) {
+        console.error("Error sending receive notification:", notifError)
+      }
+
       loadData()
     } catch (error: any) {
       console.error("Error:", error)

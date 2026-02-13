@@ -935,3 +935,85 @@ export async function notifyTransferRejected(params: {
     category: 'inventory'
   })
 }
+
+/**
+ * إشعار بدء نقل المخزون (in_transit)
+ * يُرسل إلى: المنشئ الأصلي للطلب
+ */
+export async function notifyTransferStarted(params: {
+  companyId: string
+  transferId: string
+  transferNumber: string
+  createdBy: string // المنشئ الأصلي
+  startedBy: string
+  startedByName?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, transferId, transferNumber, createdBy, startedBy, startedByName, appLang = 'ar' } = params
+
+  // لا نرسل إشعار للمستخدم نفسه
+  if (createdBy === startedBy) return
+
+  const title = appLang === 'en'
+    ? 'Transfer Started'
+    : 'تم بدء النقل'
+
+  const message = appLang === 'en'
+    ? `Transfer ${transferNumber} has been started${startedByName ? ` by ${startedByName}` : ''}`
+    : `تم بدء نقل الطلب ${transferNumber}${startedByName ? ` بواسطة ${startedByName}` : ''}`
+
+  await createNotification({
+    companyId,
+    referenceType: 'stock_transfer',
+    referenceId: transferId,
+    title,
+    message,
+    createdBy: startedBy,
+    assignedToUser: createdBy,
+    priority: 'normal' as NotificationPriority,
+    eventKey: `transfer:${transferId}:started`,
+    severity: 'info',
+    category: 'inventory'
+  })
+}
+
+/**
+ * إشعار استلام نقل المخزون
+ * يُرسل إلى: المنشئ الأصلي للطلب
+ */
+export async function notifyTransferReceived(params: {
+  companyId: string
+  transferId: string
+  transferNumber: string
+  createdBy: string // المنشئ الأصلي
+  receivedBy: string
+  receivedByName?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, transferId, transferNumber, createdBy, receivedBy, receivedByName, appLang = 'ar' } = params
+
+  // لا نرسل إشعار للمستخدم نفسه
+  if (createdBy === receivedBy) return
+
+  const title = appLang === 'en'
+    ? 'Transfer Received'
+    : 'تم استلام النقل'
+
+  const message = appLang === 'en'
+    ? `Transfer ${transferNumber} has been received successfully${receivedByName ? ` by ${receivedByName}` : ''}`
+    : `تم استلام طلب النقل ${transferNumber} بنجاح${receivedByName ? ` بواسطة ${receivedByName}` : ''}`
+
+  await createNotification({
+    companyId,
+    referenceType: 'stock_transfer',
+    referenceId: transferId,
+    title,
+    message,
+    createdBy: receivedBy,
+    assignedToUser: createdBy,
+    priority: 'normal' as NotificationPriority,
+    eventKey: `transfer:${transferId}:received`,
+    severity: 'info',
+    category: 'inventory'
+  })
+}
