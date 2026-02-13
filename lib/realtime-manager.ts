@@ -691,6 +691,66 @@ class RealtimeManager {
       return true
     }
 
+    // ✅ استثناء خاص: inventory_transfers - يستخدم source/destination بدلاً من branch_id/warehouse_id
+    // المستخدم يرى طلبات النقل إذا كان:
+    // 1. أنشأها (تم فحصه أعلاه)
+    // 2. مسؤول عن المخزن المصدر أو الوجهة
+    // 3. مدير الفرع المصدر أو الوجهة
+    if (table === 'inventory_transfers') {
+      const sourceWarehouseId = record.source_warehouse_id
+      const destWarehouseId = record.destination_warehouse_id
+      const sourceBranchId = record.source_branch_id
+      const destBranchId = record.destination_branch_id
+
+      // مسؤول المخزن يرى طلبات النقل من/إلى مخزنه
+      if (accessFilter.filterByWarehouse && accessInfo.warehouseId) {
+        if (sourceWarehouseId === accessInfo.warehouseId || destWarehouseId === accessInfo.warehouseId) {
+          console.log(`✅ [RealtimeManager] Store manager can see transfer involving their warehouse:`, {
+            recordId: record.id,
+            sourceWarehouseId,
+            destWarehouseId,
+            userWarehouseId: accessInfo.warehouseId
+          })
+          return true
+        }
+      }
+
+      // مدير الفرع يرى طلبات النقل من/إلى فرعه
+      if (accessFilter.filterByBranch && accessInfo.branchId) {
+        if (sourceBranchId === accessInfo.branchId || destBranchId === accessInfo.branchId) {
+          console.log(`✅ [RealtimeManager] Manager can see transfer involving their branch:`, {
+            recordId: record.id,
+            sourceBranchId,
+            destBranchId,
+            userBranchId: accessInfo.branchId
+          })
+          return true
+        }
+      }
+
+      // المحاسب يرى جميع طلبات النقل في الشركة
+      if (role === 'accountant') {
+        console.log(`✅ [RealtimeManager] Accountant can see all transfers in company:`, {
+          recordId: record.id,
+          userRole: role
+        })
+        return true
+      }
+
+      // إذا لم يتطابق أي شرط، نرفض
+      console.warn(`🚫 [RealtimeManager] Transfer event rejected: no access to source/dest warehouse/branch`, {
+        recordId: record.id,
+        sourceWarehouseId,
+        destWarehouseId,
+        sourceBranchId,
+        destBranchId,
+        userWarehouseId: accessInfo.warehouseId,
+        userBranchId: accessInfo.branchId,
+        userRole: role
+      })
+      return false
+    }
+
     // ✅ استخدام canAccessRecord للتحقق الشامل
     // ⚠️ مهم: canAccessRecord يرفض الوصول للموظف إذا كان created_by_user_id غير موجود أو لا يتطابق
     const hasAccess = canAccessRecord(accessInfo, recordForCheck)
