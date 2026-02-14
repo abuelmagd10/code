@@ -13,34 +13,35 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table'
-import { Loader2, Printer } from 'lucide-react'
-import { formatCurrency } from '@/lib/utils' // Assuming usage of existing util
-
-
+import { Loader2 } from 'lucide-react'
+import { formatCurrency } from '@/lib/utils'
 import { useAccess } from '@/lib/access-context'
+import { ReportFilters } from '@/components/reports/report-filters'
+import { ExportButton } from '@/components/reports/export-button'
 
 export default function TrialBalancePage() {
-  const { profile, isLoading: isAccessLoading } = useAccess()
-  // Config
+  const { profile } = useAccess()
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0])
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
+  const [branchId, setBranchId] = useState<string | undefined>()
+  const [costCenterId, setCostCenterId] = useState<string | undefined>()
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<TrialBalanceRow[]>([])
   const [totalDebit, setTotalDebit] = useState(0)
   const [totalCredit, setTotalCredit] = useState(0)
-
-  // In a real app, this comes from context/auth
-  // For now, we'll fetch the first company or use a placeholder
-  // Use dynamic company ID from AccessContext
-  // Placeholder Company ID removed
-  // const companyId = 'bf507664-071a-4ea8-9a48-47700a604246'
 
   async function fetchData() {
     if (!profile?.company_id) return
 
     setLoading(true)
     try {
-      const result = await getTrialBalance(profile.company_id, startDate, endDate)
+      const result = await getTrialBalance(
+        profile.company_id,
+        startDate,
+        endDate,
+        branchId,
+        costCenterId
+      )
       setData(result)
 
       const debit = result.reduce((sum, r) => sum + Number(r.total_debit), 0)
@@ -50,7 +51,6 @@ export default function TrialBalancePage() {
 
     } catch (error) {
       console.error(error)
-      // toast.error('Failed to load report')
     } finally {
       setLoading(false)
     }
@@ -60,38 +60,49 @@ export default function TrialBalancePage() {
     if (profile?.company_id) {
       fetchData()
     }
-  }, [profile?.company_id]) // Initial load
+  }, [profile?.company_id, startDate, endDate, branchId, costCenterId])
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold tracking-tight">Trial Balance</h1>
-        <Button variant="outline" onClick={() => window.print()}>
-          <Printer className="mr-2 h-4 w-4" /> Print
-        </Button>
+        <ExportButton
+          data={data}
+          filename="trial_balance"
+          columns={[
+            { key: 'account_code', label: 'Code' },
+            { key: 'account_name', label: 'Account Name' },
+            { key: 'account_type', label: 'Type' },
+            { key: 'total_debit', label: 'Debit' },
+            { key: 'total_credit', label: 'Credit' },
+            { key: 'balance', label: 'Balance' },
+          ]}
+        />
       </div>
+
+      <ReportFilters
+        startDate={startDate}
+        endDate={endDate}
+        branchId={branchId}
+        costCenterId={costCenterId}
+        onFilterChange={(filters) => {
+          if (filters.startDate !== undefined) setStartDate(filters.startDate)
+          if (filters.endDate !== undefined) setEndDate(filters.endDate)
+          if (filters.branchId !== undefined) setBranchId(filters.branchId)
+          if (filters.costCenterId !== undefined) setCostCenterId(filters.costCenterId)
+        }}
+        onReset={() => {
+          setBranchId(undefined)
+          setCostCenterId(undefined)
+        }}
+        showDateRange
+      />
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle>Report Parameters</CardTitle>
-          <div className="flex items-end gap-4">
-            <div className="grid gap-1.5">
-              <label className="text-sm font-medium">Start Date</label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <label className="text-sm font-medium">End Date</label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
-            <Button onClick={fetchData} disabled={loading}>
+          <div className="flex justify-between items-center">
+            <CardTitle>Report Data</CardTitle>
+            <Button onClick={fetchData} disabled={loading} size="sm">
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Run Report
             </Button>
@@ -140,9 +151,9 @@ export default function TrialBalancePage() {
                 <TableBody className="border-t-2 border-primary/20 bg-muted/30 font-bold">
                   <TableRow>
                     <TableCell colSpan={3} className="text-right">Totals:</TableCell>
-                    <TableCell className="text-right">{formatCurrency(totals.debit)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(totals.credit)}</TableCell>
-                    <TableCell className="text-right">{(totals.debit - totals.credit).toFixed(2)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(totalDebit)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(totalCredit)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(totalDebit - totalCredit)}</TableCell>
                   </TableRow>
                 </TableBody>
               )}

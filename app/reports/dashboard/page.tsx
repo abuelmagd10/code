@@ -3,29 +3,33 @@
 import { useState, useEffect } from 'react'
 import { getFinancialSummary, type FinancialSummary } from '@/actions/financial-reports'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { DollarSign, TrendingUp, TrendingDown, Scale, Wallet } from 'lucide-react'
+import { DollarSign, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { useAccess } from '@/lib/access-context'
+import { ReportFilters } from '@/components/reports/report-filters'
 
-export default function FinancialDashboardPage() {
-    const { profile, isLoading: isAccessLoading } = useAccess()
+export default function FinancialDashboard() {
+    const { profile } = useAccess()
     const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0])
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
-    const [loading, setLoading] = useState(false)
+    const [branchId, setBranchId] = useState<string | undefined>()
+    const [costCenterId, setCostCenterId] = useState<string | undefined>()
     const [summary, setSummary] = useState<FinancialSummary | null>(null) // Changed to single object, not array
 
     async function fetchData() {
         if (!profile?.company_id) return
 
-        setLoading(true)
         try {
-            const result = await getFinancialSummary(profile.company_id, startDate, endDate)
+            const result = await getFinancialSummary(
+                profile.company_id,
+                startDate,
+                endDate,
+                branchId,
+                costCenterId
+            )
             setSummary(result)
         } catch (error) {
             console.error(error)
-        } finally {
-            setLoading(false)
         }
     }
 
@@ -33,15 +37,33 @@ export default function FinancialDashboardPage() {
         if (profile?.company_id) {
             fetchData()
         }
-    }, [profile?.company_id, startDate, endDate]) // Added startDate, endDate to dependencies
+    }, [profile?.company_id, startDate, endDate, branchId, costCenterId])
 
-    if (loading || isAccessLoading) return <div className="p-8 text-center text-muted-foreground">Loading financial data...</div>
     if (!summary) return <div className="p-8 text-center text-muted-foreground">No data available</div>
 
     return (
         <div className="p-6 space-y-6">
-            <h1 className="text-3xl font-bold tracking-tight mb-8">Financial Overview</h1>
+            <div className="flex justify-between items-center">
+                <h1 className="text-3xl font-bold tracking-tight">Financial Dashboard</h1>
+            </div>
 
+            <ReportFilters
+                startDate={startDate}
+                endDate={endDate}
+                branchId={branchId}
+                costCenterId={costCenterId}
+                onFilterChange={(filters) => {
+                    if (filters.startDate !== undefined) setStartDate(filters.startDate)
+                    if (filters.endDate !== undefined) setEndDate(filters.endDate)
+                    if (filters.branchId !== undefined) setBranchId(filters.branchId)
+                    if (filters.costCenterId !== undefined) setCostCenterId(filters.costCenterId)
+                }}
+                onReset={() => {
+                    setBranchId(undefined)
+                    setCostCenterId(undefined)
+                }}
+                showDateRange
+            />
             {/* KPI CARDS */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
 
