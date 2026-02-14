@@ -59,7 +59,7 @@ export class EquityReportingService {
             .eq('journal_entries.company_id', companyId)
             .eq('journal_entries.status', 'posted')
             .lte('journal_entries.entry_date', toDate) // We need history up to endDate
-            .gt('journal_entries.entry_date', '0000-01-01') // Optimization
+            .gt('journal_entries.entry_date', '1900-01-01') // Optimization
         // Note: We need ALL history for opening balance, so no lower bound on date unless we have closing entries.
         // Assuming no closing entries yet.
 
