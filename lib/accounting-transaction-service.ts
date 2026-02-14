@@ -337,5 +337,150 @@ export class AccountingTransactionService {
             return { success: false, error: error.message }
         }
     }
+
+    /**
+     * تنفيذ اعتماد فاتورة شراء ذري (Atomic Bill Posting)
+     * يشمل:
+     * 1. القيود المحاسبية (Inventory/Purchases + VAT vs AP)
+     * 2. حركات المخزون (Inventory Transactions)
+     * 3. تحديث حالة الفاتورة (Bill Status Update)
+     */
+    async postBillAtomic(
+        params: {
+            billId: string
+            billNumber: string
+            billDate: string
+            companyId: string
+            branchId: string | null
+            warehouseId: string | null
+            costCenterId: string | null
+            subtotal: number
+            taxAmount: number
+            totalAmount: number
+            status: string
+        },
+        accountMapping: {
+            companyId: string
+            ap: string
+            inventory?: string
+            purchases?: string
+            vatInput?: string
+        }
+    ): Promise<AtomicTransactionResult> {
+        try {
+            console.log(`Starting atomic bill posting for bill: ${params.billNumber}`)
+
+            const { prepareBillPosting } = await import('./purchase-posting')
+
+            // 1. تحضير جميع البيانات
+            const preparation = await prepareBillPosting(this.supabase, params, accountMapping)
+
+            if (!preparation.success || !preparation.payload) {
+                throw new Error(preparation.error || 'Failed to prepare bill posting data')
+            }
+
+            // 2. استدعاء RPC
+            const { data: rpcResult, error: rpcError } = await this.supabase.rpc('post_purchase_transaction', {
+                p_transaction_type: 'post_bill',
+                p_company_id: params.companyId,
+                p_bill_id: params.billId,
+                p_bill_update: preparation.payload.billUpdate,
+                p_journal_entry: preparation.payload.journal,
+                p_inventory_transactions: preparation.payload.inventoryTransactions
+            })
+
+            if (rpcError) {
+                console.error('Atomic Bill Posting RPC Error:', rpcError)
+                throw new Error(rpcError.message)
+            }
+
+            return {
+                success: true,
+                journalEntryIds: rpcResult?.journal_entry_id ? [rpcResult.journal_entry_id] : []
+            }
+
+        } catch (error: any) {
+            console.error('Atomic Bill Posting Error:', error)
+            return { success: false, error: error.message }
+        }
+    }
+
+    /**
+     * تنفيذ مرتجع مشتريات ذري (Atomic Purchase Return)
+     * يشمل:
+     * 1. سجل المرتجع (Purchase Return Record)
+     * 2. إشعار دائن المورد (Vendor Credit)
+     * 3. حركات المخزون (Inventory Reversal)
+     * 4. القيود المحاسبية (Journal Entries)
+     * 5. تحديث الفاتورة والبنود (Bill & Items Update)
+     */
+    async postPurchaseReturnAtomic(
+        params: {
+            billId: string
+            billNumber: string
+            companyId: string
+            supplierId: string
+            branchId: string
+            warehouseId: string
+            costCenterId: string
+            returnItems: any[]
+            returnMethod: 'credit' | 'cash' | 'bank'
+            returnAccountId?: string | null
+            isPaid: boolean
+            lang: 'ar' | 'en'
+        },
+        accountMapping: {
+            companyId: string
+            ap: string
+            inventory?: string
+            expense?: string
+            vendorCreditLiability?: string
+            cash?: string
+            bank?: string
+        }
+    ): Promise<AtomicTransactionResult> {
+        try {
+            console.log(`Starting atomic purchase return for bill: ${params.billNumber}`)
+
+            const { preparePurchaseReturnData } = await import('./purchase-returns-preparation')
+
+            // 1. تحضير جميع البيانات
+            const preparation = await preparePurchaseReturnData(this.supabase, params, accountMapping)
+
+            if (!preparation.success || !preparation.payload) {
+                throw new Error(preparation.error || 'Failed to prepare purchase return data')
+            }
+
+            // 2. استدعاء RPC
+            const { data: rpcResult, error: rpcError } = await this.supabase.rpc('post_purchase_transaction', {
+                p_transaction_type: 'purchase_return',
+                p_company_id: params.companyId,
+                p_bill_id: params.billId,
+                p_bill_update: preparation.payload.billUpdate,
+                p_journal_entry: preparation.payload.journal,
+                p_inventory_transactions: preparation.payload.inventoryTransactions,
+                p_purchase_return: preparation.payload.purchaseReturn,
+                p_vendor_credit: preparation.payload.vendorCredit,
+                p_vendor_credit_items: preparation.payload.vendorCreditItems,
+                p_update_source: {
+                    bill_items_update: preparation.payload.billItemsUpdate
+                }
+            })
+
+            if (rpcError) {
+                console.error('Atomic Purchase Return RPC Error:', rpcError)
+                throw new Error(rpcError.message)
+            }
+
+            return {
+                success: true,
+                journalEntryIds: rpcResult?.journal_entry_id ? [rpcResult.journal_entry_id] : []
+            }
+
+        } catch (error: any) {
+            console.error('Atomic Purchase Return Error:', error)
+            return { success: false, error: error.message }
+        }
+    }
 }
 
