@@ -1,7 +1,7 @@
 'use server'
 
-import { createClient } from '@/utils/supabase/server' // Assuming standard util path, adjust if needed
-import { cookies } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
+
 
 // Define Types
 export type TrialBalanceRow = {
@@ -45,7 +45,7 @@ export type FinancialSummary = {
  * Get Trial Balance
  */
 export async function getTrialBalance(companyId: string, startDate: string, endDate: string) {
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
 
     const { data, error } = await supabase.rpc('get_trial_balance', {
         p_company_id: companyId,
@@ -65,7 +65,7 @@ export async function getTrialBalance(companyId: string, startDate: string, endD
  * Get Income Statement
  */
 export async function getIncomeStatement(companyId: string, startDate: string, endDate: string) {
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
 
     const { data, error } = await supabase.rpc('get_income_statement', {
         p_company_id: companyId,
@@ -85,7 +85,7 @@ export async function getIncomeStatement(companyId: string, startDate: string, e
  * Get Balance Sheet
  */
 export async function getBalanceSheet(companyId: string, asOfDate: string) {
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
 
     const { data, error } = await supabase.rpc('get_balance_sheet', {
         p_company_id: companyId,
@@ -104,7 +104,7 @@ export async function getBalanceSheet(companyId: string, asOfDate: string) {
  * Get Financial Summary (KPIs)
  */
 export async function getFinancialSummary(companyId: string, startDate: string, endDate: string) {
-    const supabase = createClient(cookies())
+    const supabase = await createClient()
 
     const { data, error } = await supabase.rpc('get_financial_summary', {
         p_company_id: companyId,
