@@ -1,0 +1,3 @@
+-- Apply migrations
+-- This file is a reference for manual application if needed.
+-- I will apply these using the execute_sql tool.
