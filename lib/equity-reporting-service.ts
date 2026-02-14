@@ -234,7 +234,7 @@ export class EquityReportingService {
     }
 
     private isCapital(acc: { subtype: string, name: string }) {
-        return acc.subtype === 'capital' || acc.name.includes('capital') || acc.name.includes('رأس المال')
+        return acc.subtype === 'capital' || acc.name.includes('capital') || acc.name.includes('رأس مال')
     }
 
     private isRetainedEarnings(acc: { subtype: string, name: string }) {
