@@ -139,6 +139,125 @@ export async function consumeFIFOLots(
 }
 
 /**
+ * تحضير بيانات استهلاك FIFO (بدون تنفيذ)
+ * @param supabase - Supabase client
+ * @param params - معلومات الاستهلاك
+ */
+export async function prepareFIFOConsumptionData(
+  supabase: SupabaseClient,
+  params: {
+    companyId: string
+    branchId: string
+    costCenterId: string
+    warehouseId: string
+    productId: string
+    quantity: number
+    sourceType: 'invoice' | 'return' | 'adjustment' | 'depreciation' | 'write_off'
+    sourceId: string
+    transactionDate?: string
+    createdByUserId?: string
+  }
+): Promise<{
+  success: boolean
+  totalCOGS: number
+  inventoryTransactions: any[]
+  cogsTransactions: any[]
+  fifoConsumptions: any[]
+  error?: string
+}> {
+  try {
+    // 1. حساب COGS باستخدام FIFO (قراءة فقط)
+    const fifoResult = await calculateFIFOCOGS(supabase, params.productId, params.quantity)
+
+    if (fifoResult.insufficient_stock) {
+      return {
+        success: false,
+        totalCOGS: 0,
+        inventoryTransactions: [],
+        cogsTransactions: [],
+        fifoConsumptions: [],
+        error: `مخزون غير كافي: ${fifoResult.missing_quantity} وحدة ناقصة`
+      }
+    }
+
+    const transactionDate = params.transactionDate || new Date().toISOString().split('T')[0]
+    const inventoryTransactions = []
+    const cogsTransactions = []
+    const fifoConsumptions = []
+
+    // 2. تحضير حركة المخزون (Inventory Transaction)
+    // خصم الكمية الكلية من المخزون
+    inventoryTransactions.push({
+      company_id: params.companyId,
+      branch_id: params.branchId,
+      warehouse_id: params.warehouseId,
+      cost_center_id: params.costCenterId,
+      product_id: params.productId,
+      transaction_type: params.sourceType === 'invoice' ? 'sale' :
+        params.sourceType === 'write_off' ? 'write_off' : 'adjustment_out',
+      quantity_change: -params.quantity, // قيمة سالبة للخصم
+      reference_type: params.sourceType,
+      reference_id: params.sourceId,
+      notes: `FIFO Consumption for ${params.sourceType} ${params.sourceId}`,
+      transaction_date: transactionDate
+    })
+
+    // 3. تحضير بيانات استهلاك FIFO و COGS
+    for (const consumption of fifoResult.lots_used) {
+      // FIFO Consumption Record
+      fifoConsumptions.push({
+        company_id: params.companyId,
+        lot_id: consumption.lot_id,
+        reference_type: params.sourceType,
+        reference_id: params.sourceId,
+        quantity_consumed: consumption.quantity_consumed,
+        unit_cost: consumption.unit_cost,
+        total_cost: consumption.total_cost,
+        consumed_at: new Date().toISOString()
+      })
+
+      // COGS Transaction Record
+      cogsTransactions.push({
+        company_id: params.companyId,
+        branch_id: params.branchId,
+        cost_center_id: params.costCenterId,
+        warehouse_id: params.warehouseId,
+        product_id: params.productId,
+        source_type: params.sourceType,
+        source_id: params.sourceId,
+        quantity: consumption.quantity_consumed,
+        unit_cost: consumption.unit_cost,
+        total_cost: consumption.total_cost,
+        transaction_date: transactionDate,
+        notes: `COGS from Lot ${consumption.lot_date}`,
+        // fifo_consumption_id سيتم ربطه لاحقاً أو يمكن توليده هنا UUID إذا لزم الأمر
+        // لكن في الـ atomic RPC، يمكننا ترك الربط لقاعدة البيانات أو استخدام UUIDs مولدة مسبقاً
+        // هنا سنتركه NULL أو نولد UUID في التطبيق
+      })
+    }
+
+    return {
+      success: true,
+      totalCOGS: fifoResult.total_cogs,
+      inventoryTransactions,
+      cogsTransactions,
+      fifoConsumptions
+    }
+
+  } catch (error: any) {
+    console.error('Error in prepareFIFOConsumptionData:', error)
+    return {
+      success: false,
+      totalCOGS: 0,
+      inventoryTransactions: [],
+      cogsTransactions: [],
+      fifoConsumptions: [],
+      error: error.message || 'خطأ غير متوقع'
+    }
+  }
+}
+
+/**
  * استهلاك دفعات FIFO وإنشاء سجلات COGS تلقائياً (ERP Professional)
  * ✅ هذه الدالة تدمج FIFO Engine مع cogs_transactions
  * 
@@ -197,8 +316,8 @@ export async function consumeFIFOLotsWithCOGS(
       companyId: params.companyId,
       productId: params.productId,
       quantity: params.quantity,
-      consumptionType: params.sourceType === 'invoice' ? 'sale' : 
-                      params.sourceType === 'write_off' ? 'write_off' : 'adjustment_out',
+      consumptionType: params.sourceType === 'invoice' ? 'sale' :
+        params.sourceType === 'write_off' ? 'write_off' : 'adjustment_out',
       referenceType: params.sourceType,
       referenceId: params.sourceId,
       consumptionDate: params.transactionDate
@@ -206,7 +325,7 @@ export async function consumeFIFOLotsWithCOGS(
 
     // إنشاء سجلات COGS لكل دفعة مستهلكة
     const cogsTransactionIds: string[] = []
-    
+
     for (const consumption of fifoResult.lots_used) {
       // الحصول على fifo_consumption_id من fifo_lot_consumptions
       const { data: fifoConsumption } = await supabase
@@ -261,8 +380,62 @@ export async function consumeFIFOLotsWithCOGS(
   }
 }
 
+
 /**
- * عكس استهلاك دفعات FIFO (عند المرتجعات)
+ * تحضير بيانات عكس استهلاك FIFO (للاستخدام الذري)
+ * يعتمد على إدخال سجل استهلاك جديد بكمية سالبة لزيادة المخزون المتبقي
+ */
+export async function prepareReverseFIFOConsumption(
+  supabase: SupabaseClient,
+  referenceType: string,
+  referenceId: string,
+  newSourceId?: string // معرف المرتجع الجديد (اختياري)
+): Promise<any[]> {
+  try {
+    // 1. جلب الاستهلاكات الأصلية
+    const { data: consumptions } = await supabase
+      .from('fifo_lot_consumptions')
+      .select(`
+        lot_id,
+        quantity_consumed,
+        unit_cost,
+        total_cost,
+        company_id
+      `)
+      .eq('reference_type', referenceType) // e.g. 'invoice'
+      .eq('reference_id', referenceId)
+
+    if (!consumptions || consumptions.length === 0) {
+      return []
+    }
+
+    const reversalConsumptions = []
+
+    for (const c of consumptions) {
+      // إنشاء سجل عكسي (كمية سالبة)
+      // هذا سيؤدي في RPC إلى: remaining_quantity - (-quantity) = +quantity
+      reversalConsumptions.push({
+        company_id: c.company_id,
+        lot_id: c.lot_id,
+        reference_type: 'sales_return', // نوع جديد للمرتجع
+        reference_id: newSourceId || referenceId, // ربط بالمرتجع الجديد أو الفاتورة كـ fallback
+        quantity_consumed: -Number(c.quantity_consumed), // عكس الكمية
+        unit_cost: c.unit_cost,
+        total_cost: -Number(c.total_cost), // عكس التكلفة أيضاً للتوازن
+        consumed_at: new Date().toISOString()
+      })
+    }
+
+    return reversalConsumptions
+
+  } catch (error) {
+    console.error('Error preparing reverse FIFO:', error)
+    return []
+  }
+}
+
+/**
+ * عكس استهلاك دفعات FIFO (عند المرتجعات) - Legacy RPC Call
  * @param supabase - Supabase client
  * @param referenceType - نوع المرجع
  * @param referenceId - معرف المرجع

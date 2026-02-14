@@ -63,7 +63,7 @@ export async function createCOGSTransaction(
     // التحقق من تطابق totalCost مع quantity × unitCost (للدقة)
     const expectedTotalCost = Number((params.quantity * params.unitCost).toFixed(2))
     const actualTotalCost = Number(params.totalCost.toFixed(2))
-    
+
     if (Math.abs(expectedTotalCost - actualTotalCost) > 0.01) {
       return {
         success: false,
@@ -114,18 +114,19 @@ export async function createCOGSTransaction(
   }
 }
 
+
 /**
- * إنشاء عكس COGS (عند المرتجعات)
+ * تحضير بيانات عكس COGS (للاستخدام الذري)
  * @param supabase - Supabase client
  * @param originalTransactionId - معرف السجل الأصلي
  * @param newSourceId - معرف المصدر الجديد (return_id)
- * @returns نتيجة العملية
+ * @returns بيانات السجل الجديد
  */
-export async function reverseCOGSTransaction(
+export async function prepareReverseCOGSTransaction(
   supabase: SupabaseClient,
   originalTransactionId: string,
   newSourceId: string
-): Promise<COGSTransactionResult> {
+): Promise<any | null> {
   try {
     // الحصول على السجل الأصلي
     const { data: original, error: fetchError } = await supabase
@@ -135,35 +136,33 @@ export async function reverseCOGSTransaction(
       .single()
 
     if (fetchError || !original) {
-      return {
-        success: false,
-        error: 'لم يتم العثور على السجل الأصلي'
-      }
+      console.error('Original COGS transaction not found:', originalTransactionId)
+      return null
     }
 
-    // إنشاء عكس COGS (نفس البيانات لكن source_type = return)
-    return await createCOGSTransaction(supabase, {
-      companyId: original.company_id,
-      branchId: original.branch_id,
-      costCenterId: original.cost_center_id,
-      warehouseId: original.warehouse_id,
-      productId: original.product_id,
-      sourceType: 'return',
-      sourceId: newSourceId,
-      quantity: original.quantity,
-      unitCost: original.unit_cost, // نفس التكلفة الأصلية (FIFO)
-      totalCost: original.total_cost, // نفس التكلفة الأصلية
-      transactionDate: new Date().toISOString().split('T')[0],
-      notes: `عكس COGS من ${original.source_type} ${original.source_id}`
-    })
-  } catch (error: any) {
-    console.error('Error in reverseCOGSTransaction:', error)
+    // إرجاع كائن البيانات لعكس COGS (نفس البيانات لكن source_type = return)
+    // ملاحظة: الكمية والتكلفة موجبة هنا لأننا ننشئ سجل جديد بنوع return
+    // وفي التقارير، يتم طرح التكاليف ذات النوع return من الإجمالي
     return {
-      success: false,
-      error: error.message || 'خطأ غير متوقع'
+      company_id: original.company_id,
+      branch_id: original.branch_id,
+      cost_center_id: original.cost_center_id,
+      warehouse_id: original.warehouse_id,
+      product_id: original.product_id,
+      source_type: 'return',
+      source_id: newSourceId,
+      quantity: original.quantity,
+      unit_cost: original.unit_cost, // نفس التكلفة الأصلية (FIFO)
+      total_cost: original.total_cost, // نفس التكلفة الأصلية
+      transaction_date: new Date().toISOString().split('T')[0],
+      notes: `عكس COGS من ${original.source_type} ${original.source_id}`
     }
+  } catch (error: any) {
+    console.error('Error in prepareReverseCOGSTransaction:', error)
+    return null
   }
 }
+
 
 /**
  * حساب إجمالي COGS مع الحوكمة
@@ -308,7 +307,7 @@ export async function validateCOGSIntegrity(
       .from('inventory_transactions')
       .select('quantity_change')
       .eq('company_id', companyId)
-    
+
     if (warehouseId) {
       inventoryQuery = inventoryQuery.eq('warehouse_id', warehouseId)
     }

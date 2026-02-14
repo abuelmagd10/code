@@ -74,21 +74,21 @@ export async function getAccrualAccountMapping(
     return account?.id
   }
 
-    const mapping: AccrualAccountMapping = {
-      company_id: companyId,
-      accounts_receivable: findAccount('accounts_receivable', 'asset') || '',
-      accounts_payable: findAccount('accounts_payable', 'liability') || '',
-      sales_revenue: findAccount('sales_revenue', 'income') || '',
-      inventory: findAccount('inventory', 'asset') || '',
-      cogs: findAccount('cogs') || findAccount('cost_of_goods_sold', 'expense') || '',
-      cash: findAccount('cash', 'asset') || '',
-      bank: findAccount('bank', 'asset') || '',
-      vat_output: findAccount('vat_output', 'liability') || '',
-      vat_input: findAccount('vat_input', 'asset') || '',
-      customer_advance: findAccount('customer_advance', 'liability'),
-      supplier_advance: findAccount('supplier_advance', 'asset'),
-      write_off_expense: findAccount('write_off_expense', 'expense')
-    }
+  const mapping: AccrualAccountMapping = {
+    company_id: companyId,
+    accounts_receivable: findAccount('accounts_receivable', 'asset') || '',
+    accounts_payable: findAccount('accounts_payable', 'liability') || '',
+    sales_revenue: findAccount('sales_revenue', 'income') || '',
+    inventory: findAccount('inventory', 'asset') || '',
+    cogs: findAccount('cogs') || findAccount('cost_of_goods_sold', 'expense') || '',
+    cash: findAccount('cash', 'asset') || '',
+    bank: findAccount('bank', 'asset') || '',
+    vat_output: findAccount('vat_output', 'liability') || '',
+    vat_input: findAccount('vat_input', 'asset') || '',
+    customer_advance: findAccount('customer_advance', 'liability'),
+    supplier_advance: findAccount('supplier_advance', 'asset'),
+    write_off_expense: findAccount('write_off_expense', 'expense')
+  }
 
   // التحقق من وجود الحسابات الأساسية
   const requiredAccounts = ['accounts_receivable', 'accounts_payable', 'sales_revenue', 'inventory', 'cogs']
@@ -102,6 +102,107 @@ export async function getAccrualAccountMapping(
 }
 
 /**
+ * تحضير بيانات قيد إيراد الفاتورة (بدون حفظ)
+ * لاستخدامها في المعاملات الذرية (Atomic Transactions)
+ */
+export async function prepareInvoiceRevenueJournal(
+  supabase: any,
+  invoiceId: string,
+  companyId: string
+): Promise<AccrualJournalEntry | null> {
+  // الحصول على بيانات الفاتورة
+  const { data: invoice, error: invoiceError } = await supabase
+    .from("invoices")
+    .select(`
+      id, invoice_number, invoice_date, status,
+      subtotal, tax_amount, total_amount, shipping,
+      branch_id, cost_center_id, customer_id
+    `)
+    .eq("id", invoiceId)
+    .eq("company_id", companyId)
+    .single()
+
+  if (invoiceError || !invoice) {
+    throw new Error(`Invoice not found: ${invoiceError?.message}`)
+  }
+
+  // فقط للفواتير المرسلة (ليس المسودات)
+  if (invoice.status === 'draft') {
+    return null
+  }
+
+  // الحصول على خريطة الحسابات
+  const mapping = await getAccrualAccountMapping(supabase, companyId)
+
+  // حساب المبالغ
+  const netAmount = Number(invoice.subtotal || 0)
+  const vatAmount = Number(invoice.tax_amount || 0)
+  const shippingAmount = Number(invoice.shipping || 0)
+  const totalAmount = Number(invoice.total_amount || 0)
+
+  // إنشاء القيد المحاسبي
+  const journalEntry: AccrualJournalEntry = {
+    company_id: companyId,
+    reference_type: 'invoice',
+    reference_id: invoiceId,
+    entry_date: invoice.invoice_date,
+    description: `إيراد المبيعات - ${invoice.invoice_number}`,
+    branch_id: invoice.branch_id,
+    cost_center_id: invoice.cost_center_id,
+    lines: []
+  }
+
+  // مدين: العملاء (Accounts Receivable) - إجمالي الفاتورة
+  journalEntry.lines.push({
+    account_id: mapping.accounts_receivable,
+    debit_amount: totalAmount,
+    credit_amount: 0,
+    description: 'مستحق من العميل',
+    branch_id: invoice.branch_id,
+    cost_center_id: invoice.cost_center_id
+  })
+
+  // دائن: إيرادات المبيعات (Sales Revenue) - صافي المبلغ
+  if (netAmount > 0) {
+    journalEntry.lines.push({
+      account_id: mapping.sales_revenue,
+      debit_amount: 0,
+      credit_amount: netAmount,
+      description: 'إيراد المبيعات',
+      branch_id: invoice.branch_id,
+      cost_center_id: invoice.cost_center_id
+    })
+  }
+
+  // دائن: ضريبة القيمة المضافة (إذا وجدت)
+  if (vatAmount > 0 && mapping.vat_output) {
+    journalEntry.lines.push({
+      account_id: mapping.vat_output,
+      debit_amount: 0,
+      credit_amount: vatAmount,
+      description: 'ضريبة القيمة المضافة',
+      branch_id: invoice.branch_id,
+      cost_center_id: invoice.cost_center_id
+    })
+  }
+
+  // دائن: إيراد الشحن (إذا وجد)
+  if (shippingAmount > 0) {
+    // يمكن استخدام حساب إيراد منفصل للشحن أو نفس حساب المبيعات
+    journalEntry.lines.push({
+      account_id: mapping.sales_revenue, // أو حساب منفصل للشحن
+      debit_amount: 0,
+      credit_amount: shippingAmount,
+      description: 'إيراد الشحن',
+      branch_id: invoice.branch_id,
+      cost_center_id: invoice.cost_center_id
+    })
+  }
+
+  return journalEntry
+}
+
+/**
  * تسجيل الإيراد عند إصدار الفاتورة (Issue Event)
  * هذا هو الحدث الأساسي في Accrual Accounting
  */
@@ -111,40 +212,6 @@ export async function createInvoiceRevenueJournal(
   companyId: string
 ): Promise<string | null> {
   try {
-    // الحصول على بيانات الفاتورة
-    const { data: invoice, error: invoiceError } = await supabase
-      .from("invoices")
-      .select(`
-        id, invoice_number, invoice_date, status,
-        subtotal, tax_amount, total_amount, shipping,
-        branch_id, cost_center_id, customer_id
-      `)
-      .eq("id", invoiceId)
-      .eq("company_id", companyId)
-      .single()
-
-    if (invoiceError || !invoice) {
-      throw new Error(`Invoice not found: ${invoiceError?.message}`)
-    }
-
-    // فقط للفواتير المرسلة (ليس المسودات)
-    if (invoice.status === 'draft') {
-      return null
-    }
-
-    // ✅ ERP-Grade: Period Lock Check - منع تسجيل فاتورة في فترة مغلقة
-    try {
-      const { assertPeriodNotLocked } = await import("./accounting-period-lock")
-      await assertPeriodNotLocked(supabase, {
-        companyId,
-        date: invoice.invoice_date || new Date().toISOString().split("T")[0],
-      })
-    } catch (lockError: any) {
-      throw new Error(
-        `الفترة المحاسبية مقفلة: ${lockError.message || "لا يمكن تسجيل فاتورة في فترة محاسبية مغلقة"}`
-      )
-    }
-
     // التحقق من عدم وجود قيد سابق
     const { data: existingEntry } = await supabase
       .from("journal_entries")
@@ -155,77 +222,14 @@ export async function createInvoiceRevenueJournal(
       .limit(1)
 
     if (existingEntry && existingEntry.length > 0) {
-      console.log(`Invoice journal already exists for ${invoice.invoice_number}`)
+      console.log(`Invoice journal already exists for ${invoiceId}`)
       return existingEntry[0].id
     }
 
-    // الحصول على خريطة الحسابات
-    const mapping = await getAccrualAccountMapping(supabase, companyId)
+    // تحضير القيد
+    const journalEntry = await prepareInvoiceRevenueJournal(supabase, invoiceId, companyId)
 
-    // حساب المبالغ
-    const netAmount = Number(invoice.subtotal || 0)
-    const vatAmount = Number(invoice.tax_amount || 0)
-    const shippingAmount = Number(invoice.shipping || 0)
-    const totalAmount = Number(invoice.total_amount || 0)
-
-    // إنشاء القيد المحاسبي
-    const journalEntry: AccrualJournalEntry = {
-      company_id: companyId,
-      reference_type: 'invoice',
-      reference_id: invoiceId,
-      entry_date: invoice.invoice_date,
-      description: `إيراد المبيعات - ${invoice.invoice_number}`,
-      branch_id: invoice.branch_id,
-      cost_center_id: invoice.cost_center_id,
-      lines: []
-    }
-
-    // مدين: العملاء (Accounts Receivable) - إجمالي الفاتورة
-    journalEntry.lines.push({
-      account_id: mapping.accounts_receivable,
-      debit_amount: totalAmount,
-      credit_amount: 0,
-      description: 'مستحق من العميل',
-      branch_id: invoice.branch_id,
-      cost_center_id: invoice.cost_center_id
-    })
-
-    // دائن: إيرادات المبيعات (Sales Revenue) - صافي المبلغ
-    if (netAmount > 0) {
-      journalEntry.lines.push({
-        account_id: mapping.sales_revenue,
-        debit_amount: 0,
-        credit_amount: netAmount,
-        description: 'إيراد المبيعات',
-        branch_id: invoice.branch_id,
-        cost_center_id: invoice.cost_center_id
-      })
-    }
-
-    // دائن: ضريبة القيمة المضافة (إذا وجدت)
-    if (vatAmount > 0 && mapping.vat_output) {
-      journalEntry.lines.push({
-        account_id: mapping.vat_output,
-        debit_amount: 0,
-        credit_amount: vatAmount,
-        description: 'ضريبة القيمة المضافة',
-        branch_id: invoice.branch_id,
-        cost_center_id: invoice.cost_center_id
-      })
-    }
-
-    // دائن: إيراد الشحن (إذا وجد)
-    if (shippingAmount > 0) {
-      // يمكن استخدام حساب إيراد منفصل للشحن أو نفس حساب المبيعات
-      journalEntry.lines.push({
-        account_id: mapping.sales_revenue, // أو حساب منفصل للشحن
-        debit_amount: 0,
-        credit_amount: shippingAmount,
-        description: 'إيراد الشحن',
-        branch_id: invoice.branch_id,
-        cost_center_id: invoice.cost_center_id
-      })
-    }
+    if (!journalEntry) return null
 
     // حفظ القيد في قاعدة البيانات
     return await saveJournalEntry(supabase, journalEntry)
@@ -234,6 +238,97 @@ export async function createInvoiceRevenueJournal(
     console.error('Error creating invoice revenue journal:', error)
     throw error
   }
+}
+
+/**
+ * تحضير بيانات قيد تكلفة البضاعة المباعة (بدون حفظ)
+ */
+export async function prepareCOGSJournalOnDelivery(
+  supabase: any,
+  invoiceId: string,
+  companyId: string,
+  preCalculatedTotalCOGS?: number // اختياري: إذا كان محسوباً مسبقاً في نفس العملية
+): Promise<AccrualJournalEntry | null> {
+  // الحصول على بيانات الفاتورة
+  const { data: invoice, error: invoiceError } = await supabase
+    .from("invoices")
+    .select(`
+      id, invoice_number, invoice_date, status,
+      branch_id, cost_center_id
+    `)
+    .eq("id", invoiceId)
+    .eq("company_id", companyId)
+    .single()
+
+  if (invoiceError || !invoice) {
+    throw new Error(`Invoice not found: ${invoiceError?.message}`)
+  }
+
+  // فقط للفواتير المرسلة
+  if (invoice.status === 'draft') {
+    return null
+  }
+
+  let totalCOGS = preCalculatedTotalCOGS || 0
+
+  if (!preCalculatedTotalCOGS) {
+    // ✅ ERP Professional: حساب COGS من cogs_transactions (المصدر الوحيد للحقيقة)
+    try {
+      const { getCOGSByInvoice } = await import("@/lib/cogs-transactions")
+      const cogsTransactions = await getCOGSByInvoice(supabase, invoiceId)
+
+      if (cogsTransactions && cogsTransactions.length > 0) {
+        totalCOGS = cogsTransactions.reduce((sum, ct) => sum + Number(ct.total_cost || 0), 0)
+      } else {
+        console.warn(`⚠️ No cogs_transactions found for invoice ${invoiceId} - skipping COGS journal entry creation`)
+        return null
+      }
+    } catch (error: any) {
+      console.error("Error fetching COGS transactions:", error)
+      return null
+    }
+  }
+
+  // إذا لم توجد تكلفة، لا نسجل قيد
+  if (totalCOGS <= 0) {
+    return null
+  }
+
+  // الحصول على خريطة الحسابات
+  const mapping = await getAccrualAccountMapping(supabase, companyId)
+
+  // إنشاء قيد COGS
+  const journalEntry: AccrualJournalEntry = {
+    company_id: companyId,
+    reference_type: 'invoice_cogs',
+    reference_id: invoiceId,
+    entry_date: invoice.invoice_date,
+    description: `تكلفة البضاعة المباعة - ${invoice.invoice_number}`,
+    branch_id: invoice.branch_id,
+    cost_center_id: invoice.cost_center_id,
+    lines: [
+      {
+        // مدين: تكلفة البضاعة المباعة (COGS) - مصروف
+        account_id: mapping.cogs,
+        debit_amount: totalCOGS,
+        credit_amount: 0,
+        description: 'تكلفة البضاعة المباعة',
+        branch_id: invoice.branch_id,
+        cost_center_id: invoice.cost_center_id
+      },
+      {
+        // دائن: المخزون (Inventory) - أصل
+        account_id: mapping.inventory,
+        debit_amount: 0,
+        credit_amount: totalCOGS,
+        description: 'خصم من المخزون',
+        branch_id: invoice.branch_id,
+        cost_center_id: invoice.cost_center_id
+      }
+    ]
+  }
+
+  return journalEntry
 }
 
 /**
@@ -246,26 +341,6 @@ export async function createCOGSJournalOnDelivery(
   companyId: string
 ): Promise<string | null> {
   try {
-    // الحصول على بيانات الفاتورة
-    const { data: invoice, error: invoiceError } = await supabase
-      .from("invoices")
-      .select(`
-        id, invoice_number, invoice_date, status,
-        branch_id, cost_center_id
-      `)
-      .eq("id", invoiceId)
-      .eq("company_id", companyId)
-      .single()
-
-    if (invoiceError || !invoice) {
-      throw new Error(`Invoice not found: ${invoiceError?.message}`)
-    }
-
-    // فقط للفواتير المرسلة
-    if (invoice.status === 'draft') {
-      return null
-    }
-
     // التحقق من عدم وجود قيد COGS سابق
     const { data: existingCOGS } = await supabase
       .from("journal_entries")
@@ -276,73 +351,14 @@ export async function createCOGSJournalOnDelivery(
       .limit(1)
 
     if (existingCOGS && existingCOGS.length > 0) {
-      console.log(`COGS journal already exists for ${invoice.invoice_number}`)
+      console.log(`COGS journal already exists for ${invoiceId}`)
       return existingCOGS[0].id
     }
 
-    // ✅ ERP Professional: حساب COGS من cogs_transactions (المصدر الوحيد للحقيقة)
-    // 📌 يمنع استخدام products.cost_price في التقارير الرسمية
-    // 📌 FIFO Engine هو الجهة الوحيدة المخولة بتحديد unit_cost
-    // 📌 COGS = SUM(total_cost) FROM cogs_transactions WHERE source_type = 'invoice'
-    let totalCOGS = 0
+    // تحضير القيد
+    const journalEntry = await prepareCOGSJournalOnDelivery(supabase, invoiceId, companyId)
 
-    try {
-      const { getCOGSByInvoice } = await import("@/lib/cogs-transactions")
-      const cogsTransactions = await getCOGSByInvoice(supabase, invoiceId)
-      
-      if (cogsTransactions && cogsTransactions.length > 0) {
-        totalCOGS = cogsTransactions.reduce((sum, ct) => sum + Number(ct.total_cost || 0), 0)
-      } else {
-        // ⚠️ إذا لم توجد cogs_transactions، لا نُنشئ journal entry
-        // لأن هذا يعني أن COGS لم يتم تسجيله بعد أو الفاتورة draft
-        console.warn(`⚠️ No cogs_transactions found for invoice ${invoiceId} - skipping COGS journal entry creation`)
-        return null
-      }
-    } catch (error: any) {
-      console.error("Error fetching COGS transactions:", error)
-      // ❌ في حالة الخطأ، لا نستخدم fallback على cost_price
-      // لأن هذا سينتهك القاعدة الذهبية: cogs_transactions هو Source of Truth الوحيد
-      return null
-    }
-
-    // إذا لم توجد تكلفة، لا نسجل قيد
-    if (totalCOGS <= 0) {
-      return null
-    }
-
-    // الحصول على خريطة الحسابات
-    const mapping = await getAccrualAccountMapping(supabase, companyId)
-
-    // إنشاء قيد COGS
-    const journalEntry: AccrualJournalEntry = {
-      company_id: companyId,
-      reference_type: 'invoice_cogs',
-      reference_id: invoiceId,
-      entry_date: invoice.invoice_date,
-      description: `تكلفة البضاعة المباعة - ${invoice.invoice_number}`,
-      branch_id: invoice.branch_id,
-      cost_center_id: invoice.cost_center_id,
-      lines: [
-        {
-          // مدين: تكلفة البضاعة المباعة (COGS) - مصروف
-          account_id: mapping.cogs,
-          debit_amount: totalCOGS,
-          credit_amount: 0,
-          description: 'تكلفة البضاعة المباعة',
-          branch_id: invoice.branch_id,
-          cost_center_id: invoice.cost_center_id
-        },
-        {
-          // دائن: المخزون (Inventory) - أصل
-          account_id: mapping.inventory,
-          debit_amount: 0,
-          credit_amount: totalCOGS,
-          description: 'خصم من المخزون',
-          branch_id: invoice.branch_id,
-          cost_center_id: invoice.cost_center_id
-        }
-      ]
-    }
+    if (!journalEntry) return null
 
     // حفظ القيد في قاعدة البيانات
     return await saveJournalEntry(supabase, journalEntry)
@@ -351,6 +367,89 @@ export async function createCOGSJournalOnDelivery(
     console.error('Error creating COGS journal:', error)
     throw error
   }
+}
+
+/**
+ * تحضير بيانات قيد التحصيل/الدفع من كائن البيانات مباشرة (بدون حفظ)
+ */
+export async function preparePaymentJournalFromData(
+  supabase: any,
+  paymentData: any, // Payment Object
+  companyId: string
+): Promise<AccrualJournalEntry | null> {
+
+  // الحصول على خريطة الحسابات
+  const mapping = await getAccrualAccountMapping(supabase, companyId)
+
+  // تحديد حساب النقد/البنك
+  const cashAccountId = paymentData.account_id || mapping.cash || mapping.bank
+
+  if (!cashAccountId) {
+    throw new Error('Cash/Bank account not found')
+  }
+
+  const amount = Number(paymentData.amount || 0)
+  const isCustomerPayment = !!paymentData.customer_id
+  const isSupplierPayment = !!paymentData.supplier_id
+
+  // إنشاء قيد التحصيل/الدفع
+  const journalEntry: AccrualJournalEntry = {
+    company_id: companyId,
+    // نستخدم معرف مؤقت إذا كان غير موجود (سيتم تحديثه لاحقاً أو استخدامه كمرجع)
+    // في حالة Atomic Transaction، سنعتمد على الترتيب أو معرفات تم إنشاؤها مسبقاً
+    reference_type: 'payment',
+    reference_id: paymentData.id || 'TEMP_PAYMENT_ID',
+    entry_date: paymentData.payment_date,
+    description: `${isCustomerPayment ? 'تحصيل نقدي' : 'دفع نقدي'} - ${paymentData.reference || 'دفعة'}`,
+    branch_id: paymentData.branch_id,
+    cost_center_id: paymentData.cost_center_id,
+    warehouse_id: paymentData.warehouse_id,
+    lines: []
+  }
+
+  if (isCustomerPayment) {
+    // دفعة من عميل: Dr. Cash / Cr. AR
+    journalEntry.lines.push(
+      {
+        account_id: cashAccountId,
+        debit_amount: amount,
+        credit_amount: 0,
+        description: 'تحصيل نقدي',
+        branch_id: paymentData.branch_id,
+        cost_center_id: paymentData.cost_center_id
+      },
+      {
+        account_id: mapping.accounts_receivable,
+        debit_amount: 0,
+        credit_amount: amount,
+        description: 'تحصيل من العميل',
+        branch_id: paymentData.branch_id,
+        cost_center_id: paymentData.cost_center_id
+      }
+    )
+  } else if (isSupplierPayment) {
+    // دفعة لمورد: Dr. AP / Cr. Cash
+    journalEntry.lines.push(
+      {
+        account_id: mapping.accounts_payable,
+        debit_amount: amount,
+        credit_amount: 0,
+        description: 'سداد للمورد',
+        branch_id: paymentData.branch_id,
+        cost_center_id: paymentData.cost_center_id
+      },
+      {
+        account_id: cashAccountId,
+        debit_amount: 0,
+        credit_amount: amount,
+        description: 'دفع نقدي',
+        branch_id: paymentData.branch_id,
+        cost_center_id: paymentData.cost_center_id
+      }
+    )
+  }
+
+  return journalEntry
 }
 
 /**
@@ -369,7 +468,8 @@ export async function createPaymentJournal(
       .from("payments")
       .select(`
         id, payment_date, amount, payment_method,
-        reference_number, account_id, customer_id, supplier_id
+        reference, account_id, customer_id, supplier_id,
+        branch_id, cost_center_id, warehouse_id, company_id
       `)
       .eq("id", paymentId)
       .eq("company_id", companyId)
@@ -393,63 +493,10 @@ export async function createPaymentJournal(
       return existingPayment[0].id
     }
 
-    // الحصول على خريطة الحسابات
-    const mapping = await getAccrualAccountMapping(supabase, companyId)
+    // تحضير القيد
+    const journalEntry = await preparePaymentJournalFromData(supabase, payment, companyId)
 
-    // تحديد حساب النقد/البنك
-    const cashAccountId = payment.account_id || mapping.cash || mapping.bank
-
-    if (!cashAccountId) {
-      throw new Error('Cash/Bank account not found')
-    }
-
-    const amount = Number(payment.amount || 0)
-    const isCustomerPayment = !!payment.customer_id
-    const isSupplierPayment = !!payment.supplier_id
-
-    // إنشاء قيد التحصيل/الدفع
-    const journalEntry: AccrualJournalEntry = {
-      company_id: companyId,
-      reference_type: 'payment',
-      reference_id: paymentId,
-      entry_date: payment.payment_date,
-      description: `${isCustomerPayment ? 'تحصيل نقدي' : 'دفع نقدي'} - ${payment.reference_number || 'دفعة'}`,
-      lines: []
-    }
-
-    if (isCustomerPayment) {
-      // دفعة من عميل: Dr. Cash / Cr. AR
-      journalEntry.lines.push(
-        {
-          account_id: cashAccountId,
-          debit_amount: amount,
-          credit_amount: 0,
-          description: 'تحصيل نقدي'
-        },
-        {
-          account_id: mapping.accounts_receivable,
-          debit_amount: 0,
-          credit_amount: amount,
-          description: 'تحصيل من العميل'
-        }
-      )
-    } else if (isSupplierPayment) {
-      // دفعة لمورد: Dr. AP / Cr. Cash
-      journalEntry.lines.push(
-        {
-          account_id: mapping.accounts_payable,
-          debit_amount: amount,
-          credit_amount: 0,
-          description: 'سداد للمورد'
-        },
-        {
-          account_id: cashAccountId,
-          debit_amount: 0,
-          credit_amount: amount,
-          description: 'دفع نقدي'
-        }
-      )
-    }
+    if (!journalEntry) return null
 
     // حفظ القيد في قاعدة البيانات
     return await saveJournalEntry(supabase, journalEntry)
@@ -755,7 +802,7 @@ async function saveJournalEntry(
   // التحقق من توازن القيد
   const totalDebits = journalEntry.lines.reduce((sum, line) => sum + line.debit_amount, 0)
   const totalCredits = journalEntry.lines.reduce((sum, line) => sum + line.credit_amount, 0)
-  
+
   if (Math.abs(totalDebits - totalCredits) > 0.01) {
     throw new Error(`Journal entry is not balanced: Debits=${totalDebits}, Credits=${totalCredits}`)
   }
@@ -800,7 +847,7 @@ async function saveJournalEntry(
       .from("journal_entries")
       .delete()
       .eq("id", entry.id)
-    
+
     throw new Error(`Error creating journal entry lines: ${linesError.message}`)
   }
 
@@ -941,7 +988,7 @@ export async function validateAccrualAccounting(
       .eq("company_id", companyId)
       .eq("reference_type", "invoice")
       .limit(1)
-    
+
     tests.push({
       name: "Revenue Recognition Before Payment",
       passed: (revenueBeforePayment?.length || 0) > 0,
@@ -955,7 +1002,7 @@ export async function validateAccrualAccounting(
       .eq("company_id", companyId)
       .eq("reference_type", "invoice_cogs")
       .limit(1)
-    
+
     tests.push({
       name: "COGS Recognition on Sale",
       passed: (cogsOnSale?.length || 0) > 0,
@@ -999,7 +1046,7 @@ export async function validateAccrualAccounting(
       .is("journal_entries.deleted_at", null)
       .eq("chart_of_accounts.sub_type", "inventory")
 
-    const inventoryBalance = (inventoryValue || []).reduce((sum: number, line: any) => 
+    const inventoryBalance = (inventoryValue || []).reduce((sum: number, line: any) =>
       sum + Number(line.debit_amount || 0), 0)
 
     tests.push({

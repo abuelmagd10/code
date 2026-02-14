@@ -203,9 +203,9 @@ export default function InvoiceDetailPage() {
         const readOk = await canAction(supabase, "invoices", "read")
         setPermRead(!!readOk)
         readCheckCompleted = true
-        
+
         if (!readOk) return // إذا لم يكن للمستخدم صلاحية القراءة، لا داعي للتحقق من الباقي
-        
+
         const ok = await canAction(supabase, "invoices", "update")
         setPermUpdate(!!ok)
         const delOk = await canAction(supabase, "invoices", "delete")
@@ -474,7 +474,7 @@ export default function InvoiceDetailPage() {
         // 📌 التحقق من المتطلبات قبل الإرسال
         if (newStatus === "sent") {
           console.log("📦 Starting pre-send validation...")
-          
+
           // 1️⃣ التحقق من وجود شركة شحن (اختياري - إذا موجود يُستخدم نظام بضاعة لدى الغير)
           const shippingValidation = await validateShippingProvider(supabase, invoiceId)
           const hasShippingProvider = shippingValidation.valid && shippingValidation.shippingProviderId
@@ -483,10 +483,10 @@ export default function InvoiceDetailPage() {
           } else {
             console.log("📦 No shipping provider - using direct inventory deduction model")
           }
-          
+
           // 2️⃣ التحقق من توفر المخزون
           console.log("📦 Checking inventory availability...")
-          
+
           // ✅ التحقق من وجود جميع البيانات المطلوبة للفحص
           if (!invoice?.company_id || !invoice?.branch_id || !invoice?.warehouse_id || !invoice?.cost_center_id) {
             const missingFields = []
@@ -494,7 +494,7 @@ export default function InvoiceDetailPage() {
             if (!invoice?.branch_id) missingFields.push("الفرع")
             if (!invoice?.warehouse_id) missingFields.push("المخزن")
             if (!invoice?.cost_center_id) missingFields.push("مركز التكلفة")
-            
+
             startTransition(() => {
               setChangingStatus(false)
             })
@@ -508,7 +508,7 @@ export default function InvoiceDetailPage() {
             })
             return
           }
-          
+
           const { data: invoiceItems } = await supabase
             .from("invoice_items")
             .select("product_id, quantity")
@@ -566,7 +566,7 @@ export default function InvoiceDetailPage() {
             toast({
               variant: "destructive",
               title: appLang === 'en' ? "Accounting Period Locked" : "❌ الفترة المحاسبية مقفلة",
-              description: lockError.message || (appLang === 'en' 
+              description: lockError.message || (appLang === 'en'
                 ? "Cannot change invoice status in a locked accounting period"
                 : "لا يمكن تغيير حالة الفاتورة في فترة محاسبية مقفلة"),
               duration: 8000,
@@ -586,8 +586,8 @@ export default function InvoiceDetailPage() {
 
         // ✅ إرسال حدث لتحديث صفحة بضائع لدى الغير
         if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('invoice_status_changed', { 
-            detail: { invoiceId, newStatus } 
+          window.dispatchEvent(new CustomEvent('invoice_status_changed', {
+            detail: { invoiceId, newStatus }
           }))
         }
 
@@ -604,14 +604,14 @@ export default function InvoiceDetailPage() {
         if (invoice) {
           const { data: { user } } = await supabase.auth.getUser()
           const auditUserId = user?.id || null
-          
+
           if (newStatus === "sent") {
             console.log("📌 Calling deductInventoryOnly()...")
             // 1️⃣ خصم المخزون + نقل إلى بضاعة لدى الغير
             await deductInventoryOnly()
             // ❌ لا قيد محاسبي عند Sent - القيد يُنشأ عند الدفع فقط
             console.log(`✅ INV Sent: تم خصم المخزون ونقله إلى بضاعة لدى الغير`)
-            
+
             // 📝 Audit Log: تسجيل عملية الإرسال
             if (auditUserId && invoice.company_id) {
               const { error: auditErr } = await supabase.from("audit_logs").insert({
@@ -622,7 +622,7 @@ export default function InvoiceDetailPage() {
                 record_id: invoiceId,
                 record_identifier: invoice.invoice_number,
                 old_data: { status: invoice.status },
-                new_data: { 
+                new_data: {
                   status: "sent",
                   shipping_provider_id: invoice.shipping_provider_id,
                   total_amount: invoice.total_amount
@@ -630,7 +630,7 @@ export default function InvoiceDetailPage() {
               })
               if (auditErr) console.warn("Audit log failed:", auditErr)
             }
-            
+
           } else if (newStatus === "paid" || newStatus === "partially_paid") {
             // ✅ إذا كانت الفاتورة في حالة "paid" مباشرة (بدون المرور بـ "sent")
             // يجب خصم المخزون وإنشاء COGS إذا لم يتم ذلك من قبل
@@ -640,7 +640,7 @@ export default function InvoiceDetailPage() {
               .eq("source_id", invoiceId)
               .eq("source_type", "invoice")
               .limit(1)
-            
+
             if (!existingCOGS || existingCOGS.length === 0) {
               console.log("📌 Invoice paid directly - calling deductInventoryOnly()...")
               // إنشاء COGS إذا لم يكن موجوداً
@@ -649,12 +649,12 @@ export default function InvoiceDetailPage() {
             } else {
               console.log(`✅ INV Paid: COGS already exists, skipping inventory deduction`)
             }
-            
+
           } else if (newStatus === "draft" || newStatus === "cancelled") {
             await reverseInventoryForInvoice()
             // عكس القيود المحاسبية إن وجدت (للفواتير المدفوعة سابقاً)
             await reverseInvoiceJournals()
-            
+
             // 📝 Audit Log: تسجيل عملية الإلغاء/الإرجاع لمسودة
             if (auditUserId && invoice.company_id) {
               const { error: auditErr2 } = await supabase.from("audit_logs").insert({
@@ -1496,7 +1496,7 @@ export default function InvoiceDetailPage() {
       if (invoice.status === 'sent') {
         // ✅ تحديد الحالة الصحيحة بناءً على المرتجع
         const newStatus = newInvoiceTotal === 0 ? 'fully_returned' : 'partially_returned'
-        
+
         const { error: updateInvoiceErr } = await supabase.from("invoices").update({
           subtotal: newSubtotal,
           tax_amount: newTax,
@@ -1574,7 +1574,7 @@ export default function InvoiceDetailPage() {
           paid_amount: newPaidAmount,
           status: newInvoiceTotal === 0 ? 'fully_returned' : // ✅ إصلاح: fully_returned بدلاً من cancelled
             newPaidAmount >= newInvoiceTotal ? 'paid' :
-              newPaidAmount > 0 ? 'partially_paid' : 
+              newPaidAmount > 0 ? 'partially_paid' :
                 newReturnedAmount > 0 ? 'partially_returned' : 'sent' // ✅ إصلاح: partially_returned
         }).eq("id", invoice.id)
 
@@ -1589,7 +1589,7 @@ export default function InvoiceDetailPage() {
         // ✅ إصلاح: تحديث الحالة تلقائياً بناءً على paid_amount و total_amount و المرتجع
         const newStatus = newInvoiceTotal === 0 ? 'fully_returned' :
           currentPaidAmount >= newInvoiceTotal ? 'paid' :
-            currentPaidAmount > 0 ? 'partially_paid' : 
+            currentPaidAmount > 0 ? 'partially_paid' :
               newReturnedAmount > 0 ? 'partially_returned' : 'sent' // ✅ إصلاح: partially_returned للفواتير المرتجعة جزئياً
 
         const { error: updateErr2 } = await supabase.from("invoices").update({
@@ -1916,9 +1916,9 @@ export default function InvoiceDetailPage() {
         .eq("source_id", invoice.id)
         .eq("source_type", "invoice")
         .limit(1)
-      
+
       console.log(`🔍 Checking existing COGS transactions: ${existingCOGS?.length || 0} found`)
-      
+
       if (!existingCOGS || existingCOGS.length === 0) {
         // ✅ التحقق من وجود third-party inventory items فعلياً (وليس فقط shipping_provider_id)
         // إذا لم تكن هناك third-party items، يتم استخدام deductInventoryOnly() حتى لو كان هناك shipping_provider_id
@@ -1928,9 +1928,9 @@ export default function InvoiceDetailPage() {
           .eq("invoice_id", invoice.id)
           .eq("company_id", mapping.companyId)
           .limit(1)
-        
+
         const hasThirdPartyItems = thirdPartyItems && thirdPartyItems.length > 0
-        
+
         if (!hasThirdPartyItems) {
           // ✅ Direct Sales أو Third-Party بدون items: إنشاء COGS الآن (FIFO + COGS Transactions)
           console.log("📌 Invoice paid - no third-party items found, calling deductInventoryOnly() to create COGS...")
@@ -1972,11 +1972,11 @@ export default function InvoiceDetailPage() {
           target_table: "invoices",
           record_id: invoice.id,
           record_identifier: invoice.invoice_number,
-          old_data: { 
+          old_data: {
             status: invoice.status,
             paid_amount: invoice.paid_amount
           },
-          new_data: { 
+          new_data: {
             status: newStatus,
             paid_amount: newPaid,
             payment_amount: amount,
@@ -2094,7 +2094,7 @@ export default function InvoiceDetailPage() {
           // Fallback: إذا فشل transferToThirdParty, استخدم FIFO + COGS مباشرة
           // (لا return - استمر في الكود أدناه)
         }
-        
+
         // ✅ COGS يتم إنشاؤه عند الدفع عبر clearThirdPartyInventory() (لـ third-party)
         // فقط return إذا نجح transferToThirdParty
         if (success) {
@@ -2102,83 +2102,28 @@ export default function InvoiceDetailPage() {
         }
       }
 
-      // ✅ ERP Professional: خصم المخزون باستخدام FIFO + COGS Transactions
-      const { data: invItems } = await supabase
-        .from("invoice_items")
-        .select("product_id, quantity, products(item_type)")
-        .eq("invoice_id", invoiceId)
+      // ✅ ERP Professional: Atomic Posting via Server-Side Service (Accrual & Atomic)
+      // This replaces the client-side FIFO logic with a robust, atomic RPC transaction.
+      // يضمن هذا الاستبدال تنفيذ العملية بشكل ذري (Atomic Transaction) في الخادم
+      // ويحقق مبدأ الاستحقاق (Accrual) بإنشاء القيود فوراً
 
-      const productItems = (invItems || []).filter((it: any) => !!it.product_id && it.products?.item_type !== 'service')
+      console.log("📌 Calling Atomic Posting API...")
+      const response = await fetch(`/api/invoices/${invoiceId}/post`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      })
 
-      // التحقق من الحوكمة (إلزامي لـ COGS)
-      if (!invoice.branch_id || !invoice.cost_center_id || !invoice.warehouse_id) {
-        console.error("❌ COGS requires governance: branch_id, cost_center_id, warehouse_id must be set")
-        // Fallback: استخدام الطريقة القديمة بدون COGS
-        const invTx = productItems.map((it: any) => ({
-          company_id: mapping.companyId,
-          product_id: it.product_id,
-          transaction_type: "sale",
-          quantity_change: -Number(it.quantity || 0),
-          reference_id: invoiceId,
-          notes: `بيع ${invoice.invoice_number} (مرسلة - بدون COGS - missing governance)`,
-          branch_id: invoice.branch_id || null,
-          cost_center_id: invoice.cost_center_id || null,
-          warehouse_id: invoice.warehouse_id || null,
-        }))
-        if (invTx.length > 0) {
-          const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
-          if (invErr) console.error("❌ Failed inserting inventory transactions:", invErr)
-        }
-        return
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        console.error("❌ Atomic Posting Failed:", result.error)
+        throw new Error(result.error || "فشل ترحيل الفاتورة ذرياً")
       }
 
-      // ✅ استخدام FIFO + COGS Transactions لكل منتج
-      const { data: { user } } = await supabase.auth.getUser()
-      let totalCOGSCreated = 0
+      console.log("✅ Atomic Posting Successful:", result.data)
 
-      for (const item of productItems) {
-        const fifoResult = await consumeFIFOLotsWithCOGS(supabase, {
-          companyId: mapping.companyId,
-          branchId: invoice.branch_id!,
-          costCenterId: invoice.cost_center_id!,
-          warehouseId: invoice.warehouse_id!,
-          productId: item.product_id,
-          quantity: Number(item.quantity || 0),
-          sourceType: 'invoice',
-          sourceId: invoiceId,
-          transactionDate: invoice.invoice_date || new Date().toISOString().split('T')[0],
-          createdByUserId: user?.id
-        })
+      // لا حاجة لإنشاء inventory_transactions يدوياً هنا لأن الـ API قام بذلك
 
-        if (fifoResult.success) {
-          totalCOGSCreated += fifoResult.cogsTransactionIds.length
-          console.log(`✅ COGS created for product ${item.product_id}: ${fifoResult.cogsTransactionIds.length} transactions, total COGS: ${fifoResult.totalCOGS}`)
-        } else {
-          console.error(`❌ Failed to create COGS for product ${item.product_id}:`, fifoResult.error)
-        }
-      }
-
-      // إنشاء inventory_transactions للأرشيف (للتوافق مع النظام القديم)
-      const invTx = productItems.map((it: any) => ({
-        company_id: mapping.companyId,
-        product_id: it.product_id,
-        transaction_type: "sale",
-        quantity_change: -Number(it.quantity || 0),
-        reference_id: invoiceId,
-        notes: `بيع ${invoice.invoice_number} (FIFO + COGS)`,
-        branch_id: invoice.branch_id || null,
-        cost_center_id: invoice.cost_center_id || null,
-        warehouse_id: invoice.warehouse_id || null,
-      }))
-
-      if (invTx.length > 0) {
-        const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
-        if (invErr) {
-          console.error("❌ Failed inserting inventory transactions:", invErr)
-        } else {
-          console.log(`✅ Created ${totalCOGSCreated} COGS transactions for invoice ${invoice.invoice_number}`)
-        }
-      }
     } catch (err) {
       console.error("Error deducting inventory for invoice:", err)
     }
@@ -2364,8 +2309,8 @@ export default function InvoiceDetailPage() {
               {appLang === 'en' ? 'Access Denied' : 'غير مصرح بالوصول'}
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-              {appLang === 'en' 
-                ? 'You do not have permission to view this invoice.' 
+              {appLang === 'en'
+                ? 'You do not have permission to view this invoice.'
                 : 'ليس لديك صلاحية لعرض هذه الفاتورة.'}
             </p>
             <Button onClick={() => router.back()} className="mt-4" variant="outline">

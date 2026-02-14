@@ -6,7 +6,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { canReturnInvoice, getInvoiceOperationError, requiresJournalEntries } from './validation'
 import { reverseFIFOConsumption } from './fifo-engine'
-import { reverseCOGSTransaction, getCOGSByInvoice } from './cogs-transactions'
+import { prepareReverseCOGSTransaction, getCOGSByInvoice } from './cogs-transactions'
 
 export interface SalesReturnItem {
   id: string
@@ -91,22 +91,22 @@ export async function processSalesReturn(
     // 3️⃣ ب) ✅ ERP Professional: عكس COGS Transactions (للمنتجات المرتجعة)
     // الحصول على سجلات COGS الأصلية للفاتورة
     const originalCOGSTransactions = await getCOGSByInvoice(supabase, invoiceId)
-    
+
     // إنشاء Sales Return ID مؤقت للربط
     let salesReturnId: string | null = null
-    
+
     // عكس COGS لكل منتج مرتجع
     for (const returnItem of returnItems.filter(r => r.qtyToReturn > 0)) {
       // البحث عن سجلات COGS الأصلية لهذا المنتج
       const productCOGS = originalCOGSTransactions.filter(
         tx => tx.product_id === returnItem.product_id
       )
-      
+
       // عكس COGS بنفس نسبة المرتجع (quantity ratio)
       for (const cogsTx of productCOGS) {
         const returnRatio = returnItem.qtyToReturn / returnItem.quantity
         const returnQuantity = cogsTx.quantity * returnRatio
-        
+
         if (returnQuantity > 0) {
           // إنشاء sales_return مؤقت إذا لم يكن موجوداً
           if (!salesReturnId) {
@@ -117,19 +117,35 @@ export async function processSalesReturn(
               .order('created_at', { ascending: false })
               .limit(1)
               .single()
-            
+
             if (!tempErr && tempReturn) {
               salesReturnId = tempReturn.id
             }
           }
-          
+
           // عكس COGS بنفس التكلفة الأصلية (FIFO)
-          const reverseResult = await reverseCOGSTransaction(
+          const reversalData = await prepareReverseCOGSTransaction(
             supabase,
             cogsTx.id,
             salesReturnId || invoiceId // استخدام invoiceId كـ fallback
           )
-          
+
+          let reverseResult = { success: false, transactionId: '', error: '' }
+
+          if (reversalData) {
+            const { data: revTx, error: revErr } = await supabase
+              .from('cogs_transactions')
+              .insert(reversalData)
+              .select('id')
+              .single()
+
+            if (!revErr && revTx) {
+              reverseResult = { success: true, transactionId: revTx.id, error: '' }
+            } else {
+              reverseResult = { success: false, transactionId: '', error: revErr?.message || 'Unknown error' }
+            }
+          }
+
           if (reverseResult.success) {
             console.log(`✅ COGS reversed for product ${returnItem.product_id}: ${reverseResult.transactionId}`)
           } else {
@@ -230,8 +246,423 @@ export async function processSalesReturn(
   }
 }
 
+
 /**
- * معالجة حركات المخزون للمرتجع
+ * تحضير بيانات مرتجع المبيعات (للاستخدام الذري)
+ * يعيد جميع الكائنات اللازمة للإدخال في قاعدة البيانات
+ */
+export async function prepareSalesReturnData(
+  supabase: SupabaseClient,
+  params: {
+    invoiceId: string
+    invoiceNumber: string
+    returnItems: SalesReturnItem[]
+    returnMode: 'partial' | 'full'
+    companyId: string
+    userId: string
+    lang: 'ar' | 'en'
+  }
+): Promise<{
+  success: boolean
+  salesReturn?: any
+  salesReturnItems?: any[]
+  inventoryTransactions?: any[]
+  cogsTransactions?: any[]
+  fifoConsumptions?: any[]
+  journalEntry?: any
+  customerCredits?: any[]
+  updateSource?: any
+  error?: string
+}> {
+  try {
+    const { invoiceId, invoiceNumber, returnItems, returnMode, companyId, userId, lang } = params
+
+    // 1️⃣ التحقق من الفاتورة
+    const { data: invoiceCheck } = await supabase
+      .from('invoices')
+      .select('status, paid_amount, total_amount, customer_id, sales_order_id, subtotal, tax_amount, returned_amount, branch_id, warehouse_id, cost_center_id')
+      .eq('id', invoiceId)
+      .single()
+
+    if (!invoiceCheck) {
+      return { success: false, error: 'Invoice not found' }
+    }
+
+    if (!canReturnInvoice(invoiceCheck.status)) {
+      return { success: false, error: 'Cannot return this invoice status' }
+    }
+
+    // 2️⃣ حساب التوتال
+    const returnedSubtotal = returnItems.reduce((s, r) => {
+      const totalQty = r.qtyToReturn + (r.qtyCreditOnly || 0)
+      return s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * totalQty
+    }, 0)
+    const returnedTax = returnItems.reduce((s, r) => {
+      const totalQty = r.qtyToReturn + (r.qtyCreditOnly || 0)
+      return s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * totalQty) * (r.tax_rate || 0) / 100)
+    }, 0)
+    const returnTotal = returnedSubtotal + returnedTax
+
+    // 3️⃣ توليد معرفات UUID مسبقاً
+    const salesReturnId = crypto.randomUUID()
+
+    // 4️⃣ تحضير بيانات Sales Return Header
+    // هنا نحتاج حساب Credit Amount للتسوية
+    const invoiceTotal = Number(invoiceCheck.total_amount || 0)
+    const paidAmount = Number(invoiceCheck.paid_amount || 0)
+    const remainingUnpaid = Math.max(0, invoiceTotal - paidAmount)
+    const creditAmount = Math.max(0, returnTotal - remainingUnpaid)
+
+    const salesReturn = {
+      id: salesReturnId,
+      company_id: companyId,
+      customer_id: invoiceCheck.customer_id,
+      invoice_id: invoiceId,
+      branch_id: invoiceCheck.branch_id,
+      warehouse_id: invoiceCheck.warehouse_id,
+      cost_center_id: invoiceCheck.cost_center_id,
+      return_number: `SR-${Date.now().toString().slice(-8)}`, // مؤقت
+      return_date: new Date().toISOString().slice(0, 10),
+      subtotal: returnedSubtotal,
+      tax_amount: returnedTax,
+      total_amount: returnTotal,
+      refund_amount: creditAmount,
+      refund_method: creditAmount > 0 ? 'credit_note' : 'none',
+      status: 'completed',
+      reason: returnMode === 'full' ? 'مرتجع كامل' : 'مرتجع جزئي',
+      notes: `مرتجع للفاتورة ${invoiceNumber}`
+    }
+
+    // 5️⃣ تحضير Sales Return Items
+    const salesReturnItemsData = returnItems.map(item => ({
+      sales_return_id: salesReturnId,
+      product_id: item.product_id,
+      quantity: item.qtyToReturn + (item.qtyCreditOnly || 0),
+      // ملاحظة: sales_return_items يسجل الكمية الكلية (بما في ذلك التالف إذا أردنا توثيقه)
+      // لكن المخزون يتأثر فقط بـ qtyToReturn (الصالح)
+      unit_price: item.unit_price,
+      tax_rate: item.tax_rate,
+      discount_percent: item.discount_percent,
+      line_total: item.line_total
+    }))
+
+    // 6️⃣ تحضير الحركات (Inventory + FIFO + COGS)
+    // استيراد الدوال
+    const { prepareReverseFIFOConsumption } = await import('./fifo-engine')
+    const { prepareReverseCOGSTransaction, getCOGSByInvoice } = await import('./cogs-transactions')
+
+    // أ) عكس استهلاك FIFO (إرجاع الدفعات)
+    // هذا يعيد مصفوفة من الاستهلاكات السالبة
+    const fifoConsumptions = await prepareReverseFIFOConsumption(supabase, 'invoice', invoiceId, salesReturnId)
+
+    // ب) عكس COGS Transactions
+    const originalCOGSTransactions = await getCOGSByInvoice(supabase, invoiceId)
+    const cogsTransactions = []
+
+    for (const returnItem of returnItems.filter(r => r.qtyToReturn > 0)) {
+      const productCOGS = originalCOGSTransactions.filter(tx => tx.product_id === returnItem.product_id)
+      for (const cogsTx of productCOGS) {
+        // عكس نسبة وتناسب
+        // لكن هنا سنفترض التبسيط: عكس سجل جديد بناءً على الكمية المرتجعة
+        // prepareReverseCOGSTransaction يعكس السجل كاملاً... هذا قد يكون خطأ إذا كان المرتجع جزئي!
+        // يجب تعديل المنطق ليدعم "الكمية المرتجعة"
+
+        const returnRatio = returnItem.qtyToReturn / returnItem.quantity
+        // تحديث الكمية في الذاكرة للسجل المعكوس
+        const reversal = await prepareReverseCOGSTransaction(supabase, cogsTx.id, salesReturnId)
+        if (reversal) {
+          reversal.quantity = cogsTx.quantity * returnRatio
+          reversal.total_cost = cogsTx.total_cost * returnRatio
+          // unit_cost يبقى كما هو
+          cogsTransactions.push(reversal)
+        }
+      }
+    }
+
+    // ج) حركات المخزون (Inventory Transactions)
+    const inventoryTransactions = []
+    for (const item of returnItems.filter(i => i.qtyToReturn > 0 && i.product_id)) {
+      inventoryTransactions.push({
+        company_id: companyId,
+        branch_id: invoiceCheck.branch_id,
+        warehouse_id: invoiceCheck.warehouse_id,
+        cost_center_id: invoiceCheck.cost_center_id,
+        product_id: item.product_id,
+        transaction_type: 'sale_return',
+        quantity_change: item.qtyToReturn, // زيادة المخزون
+        reference_type: 'sales_return', // نربط بالمرتجع الجديد
+        reference_id: salesReturnId,
+        notes: item.qtyCreditOnly
+          ? `مرتجع مبيعات (${item.qtyToReturn} صالحة، ${item.qtyCreditOnly} تالفة)`
+          : 'مرتجع مبيعات',
+        transaction_date: new Date().toISOString().slice(0, 10)
+      })
+    }
+
+    // 7️⃣ تحضير القيود المحاسبية
+    let journalEntry = null
+    let customerCredits: any[] = []
+
+    if (requiresJournalEntries(invoiceCheck.status)) {
+      const preparedAccounting = await prepareReturnJournal(supabase, {
+        companyId, invoiceId, invoiceNumber, returnTotal, returnedSubtotal, returnedTax,
+        customerId: invoiceCheck.customer_id, lang,
+        invoiceTotal, paidAmount, creditAmount,
+        salesReturnId
+      })
+
+      if (preparedAccounting) {
+        preparedAccounting.journalEntry.reference_id = salesReturnId
+        journalEntry = preparedAccounting.journalEntry
+        customerCredits = preparedAccounting.customerCredits || []
+      }
+    }
+
+    // 8️⃣ تحديث المصدر (Invoice + SO Status)
+    const oldReturned = Number(invoiceCheck.returned_amount || 0)
+    const newReturned = oldReturned + returnTotal
+
+    let newStatus = invoiceCheck.status
+    if (newReturned >= invoiceTotal) {
+      newStatus = 'fully_returned'
+    } else if (newReturned > 0) {
+      newStatus = 'partially_returned'
+    }
+
+    const updateSource = {
+      invoice_id: invoiceId,
+      sales_order_id: invoiceCheck.sales_order_id,
+      status: newStatus,
+      returned_amount: newReturned,
+      return_status: newReturned >= invoiceTotal ? 'full' : 'partial'
+    }
+
+    return {
+      success: true,
+      salesReturn,
+      salesReturnItems: salesReturnItemsData,
+      inventoryTransactions,
+      cogsTransactions,
+      fifoConsumptions,
+      journalEntry,
+      customerCredits,
+      updateSource
+    }
+
+  } catch (error: any) {
+    console.error('Error preparing sales return data:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+
+/**
+ * تحضير قيد المرتجع (بدون حفظ)
+ */
+async function prepareReturnJournal(supabase: SupabaseClient, params: any): Promise<{
+  journalEntry: any
+  customerCredits: any[]
+} | null> {
+  const {
+    companyId, invoiceId, invoiceNumber, returnTotal, returnedSubtotal, returnedTax,
+    customerId, lang, invoiceTotal = 0, paidAmount = 0
+  } = params
+
+  // ✅ حساب المتبقي غير المدفوع
+  const remainingUnpaid = Math.max(0, invoiceTotal - paidAmount)
+
+  // ✅ حساب التسوية والرصيد الدائن
+  // - settlementAmount: المبلغ الذي يُخصم من الذمة المدينة (المتبقي)
+  // - creditAmount: المبلغ الذي يُنشأ كرصيد دائن للعميل
+  const settlementAmount = Math.min(returnTotal, remainingUnpaid)
+  const creditAmount = Math.max(0, returnTotal - remainingUnpaid)
+
+  // نسبة التسوية للضريبة
+  const settlementRatio = returnTotal > 0 ? settlementAmount / returnTotal : 0
+  const creditRatio = returnTotal > 0 ? creditAmount / returnTotal : 0
+
+  const settlementSubtotal = returnedSubtotal * settlementRatio
+  const settlementTax = returnedTax * settlementRatio
+  const creditSubtotal = returnedSubtotal * creditRatio
+  const creditTax = returnedTax * creditRatio
+
+  // جلب الحسابات المطلوبة
+  const { data: accounts } = await supabase
+    .from('chart_of_accounts')
+    .select('id, account_code, account_name, account_type, sub_type')
+    .eq('company_id', companyId)
+
+  const findAccount = (condition: (a: any) => boolean) =>
+    (accounts || []).find(condition)?.id
+
+  // البحث عن حساب الإيرادات
+  const revenue = findAccount(a =>
+    a.sub_type?.toLowerCase() === 'sales_revenue' ||
+    a.sub_type?.toLowerCase() === 'revenue' ||
+    (a.account_type === 'income' && (
+      a.account_name?.includes('إيرادات المبيعات') ||
+      a.account_name?.toLowerCase().includes('sales revenue')
+    ))
+  )
+
+  // البحث عن حساب ذمم العملاء (للتسوية)
+  const accountsReceivable = findAccount(a =>
+    a.sub_type?.toLowerCase() === 'accounts_receivable' ||
+    a.sub_type?.toLowerCase() === 'receivable' ||
+    a.account_name?.includes('ذمم العملاء') ||
+    a.account_name?.includes('المدينون') ||
+    a.account_name?.toLowerCase().includes('accounts receivable') ||
+    a.account_name?.toLowerCase().includes('receivable')
+  )
+
+  const vatPayable = findAccount(a => a.sub_type?.toLowerCase().includes('vat'))
+
+  // البحث عن حساب رصيد العملاء الدائن (للرصيد الزائد فقط)
+  const customerCreditAccount = findAccount(a =>
+    a.sub_type?.toLowerCase() === 'customer_credit' ||
+    a.sub_type?.toLowerCase() === 'deferred_revenue' ||
+    a.account_name?.toLowerCase().includes('customer credit') ||
+    a.account_name?.includes('إيرادات مقدمة') ||
+    a.account_name?.includes('رصيد دائن')
+  )
+
+  // تحسين رسالة الخطأ لتوضيح الحسابات المفقودة
+  const missingAccounts: string[] = []
+  if (!revenue) missingAccounts.push(lang === 'en' ? 'Revenue' : 'الإيرادات')
+  if (!accountsReceivable) missingAccounts.push(lang === 'en' ? 'Accounts Receivable' : 'ذمم العملاء')
+  // رصيد العملاء الدائن مطلوب فقط إذا كان هناك رصيد زائد
+  if (creditAmount > 0 && !customerCreditAccount) {
+    missingAccounts.push(lang === 'en' ? 'Customer Credit' : 'رصيد العملاء الدائن')
+  }
+
+  if (missingAccounts.length > 0) {
+    throw new Error(lang === 'en'
+      ? `Required accounts not found: ${missingAccounts.join(', ')}.`
+      : `الحسابات المطلوبة غير موجودة: ${missingAccounts.join('، ')}.`
+    )
+  }
+
+  const lines: any[] = []
+  const journalEntryId = crypto.randomUUID()
+
+  // ===== الجزء الأول: تسوية مع المتبقي غير المدفوع =====
+  if (settlementAmount > 0) {
+    // 1. عكس الإيراد (مدين: مردودات المبيعات)
+    lines.push({
+      journal_entry_id: journalEntryId,
+      account_id: revenue,
+      debit_amount: settlementSubtotal,
+      credit_amount: 0,
+      description: 'مردودات المبيعات (تسوية مع المتبقي)'
+    })
+
+    // 2. تخفيض ذمم العملاء (دائن: ذمم العملاء)
+    lines.push({
+      journal_entry_id: journalEntryId,
+      account_id: accountsReceivable,
+      debit_amount: 0,
+      credit_amount: settlementSubtotal,
+      description: 'تخفيض ذمم العملاء (تسوية المرتجع)'
+    })
+
+    // 3. عكس الضريبة للتسوية (إن وجدت)
+    if (vatPayable && settlementTax > 0) {
+      lines.push({
+        journal_entry_id: journalEntryId,
+        account_id: vatPayable,
+        debit_amount: settlementTax,
+        credit_amount: 0,
+        description: 'عكس ضريبة المبيعات (تسوية)'
+      })
+      lines.push({
+        journal_entry_id: journalEntryId,
+        account_id: accountsReceivable,
+        debit_amount: 0,
+        credit_amount: settlementTax,
+        description: 'تخفيض ذمم العملاء (ضريبة التسوية)'
+      })
+    }
+  }
+
+  // ===== الجزء الثاني: رصيد دائن للمبلغ الزائد =====
+  const customerCredits: any[] = []
+
+  if (creditAmount > 0 && customerCreditAccount) {
+    // 1. عكس الإيراد (مدين: مردودات المبيعات)
+    lines.push({
+      journal_entry_id: journalEntryId,
+      account_id: revenue,
+      debit_amount: creditSubtotal,
+      credit_amount: 0,
+      description: 'مردودات المبيعات (رصيد دائن)'
+    })
+
+    // 2. رصيد دائن للعميل (دائن)
+    lines.push({
+      journal_entry_id: journalEntryId,
+      account_id: customerCreditAccount,
+      debit_amount: 0,
+      credit_amount: creditSubtotal,
+      description: 'رصيد دائن للعميل'
+    })
+
+    // 3. عكس الضريبة للرصيد الدائن (إن وجدت)
+    if (vatPayable && creditTax > 0) {
+      lines.push({
+        journal_entry_id: journalEntryId,
+        account_id: vatPayable,
+        debit_amount: creditTax,
+        credit_amount: 0,
+        description: 'عكس ضريبة المبيعات (رصيد دائن)'
+      })
+      lines.push({
+        journal_entry_id: journalEntryId,
+        account_id: customerCreditAccount,
+        debit_amount: 0,
+        credit_amount: creditTax,
+        description: 'رصيد دائن للعميل (ضريبة)'
+      })
+    }
+
+    // ✅ تحضير سجل رصيد دائن
+    customerCredits.push({
+      company_id: companyId,
+      customer_id: customerId,
+      credit_number: `CR-${Date.now()}`,
+      credit_date: new Date().toISOString().slice(0, 10),
+      amount: creditAmount,
+      reference_type: 'invoice_return',
+      reference_id: invoiceId,
+      status: 'active',
+      notes: `رصيد دائن من مرتجع الفاتورة ${invoiceNumber} (المبلغ الزائد عن المتبقي)`
+    })
+  }
+
+  return {
+    journalEntry: {
+      id: journalEntryId,
+      company_id: companyId,
+      reference_type: 'sales_return',
+      reference_id: invoiceId, // Maybe link to sales_return_id if available? But invoiceId is standard linkage for now
+      // Actually we should link Journal Entry to the *Return Document* usually.
+      // But keeping existing pattern `processReturnAccounting` linked to invoiceId in `reference_id`?
+      // `processReturnAccounting` uses `reference_id: invoiceId`.
+      // Let's stick to invoiceId or better salesReturnId if passed.
+      // Params has salesReturnId? Yes, I added it in prepareSalesReturnData.
+      // Let's use it if available in params, else invoiceId.
+      entry_date: new Date().toISOString().slice(0, 10),
+      description: creditAmount > 0
+        ? `مرتجع مبيعات للفاتورة ${invoiceNumber} (تسوية: ${settlementAmount.toFixed(2)}، رصيد دائن: ${creditAmount.toFixed(2)})`
+        : `مرتجع مبيعات للفاتورة ${invoiceNumber} (تسوية مع المتبقي)`,
+      lines: lines
+    },
+    customerCredits
+  }
+}
+
+
+/**
+ * معالجة حركات المخزون للمرتجع - Legacy Direct DB Update
  * ملاحظة: فقط qtyToReturn ترجع للمخزون، qtyCreditOnly لا ترجع (تالفة)
  *
  * استراتيجية: تحديث الحركة الموجودة إن وجدت، وإلا إنشاء حركة جديدة
@@ -248,6 +679,7 @@ async function processInventoryReturn(
     lang: 'ar' | 'en'
   }
 ) {
+
   const { companyId, invoiceId, branchId, warehouseId, costCenterId, returnItems, lang } = params
 
   if (!branchId || !warehouseId || !costCenterId) {
