@@ -30,6 +30,7 @@ interface EntryLine {
   debit_amount: number
   credit_amount: number
   description: string
+  cost_center_id?: string | null
 }
 
 export default function NewJournalEntryPage() {
@@ -91,6 +92,10 @@ export default function NewJournalEntryPage() {
   const [branchId, setBranchId] = useState<string | null>(null)
   const [costCenterId, setCostCenterId] = useState<string | null>(null)
 
+  // Data for line items
+  const [branches, setBranches] = useState<any[]>([])
+  const [costCenters, setCostCenters] = useState<any[]>([])
+
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
@@ -98,7 +103,22 @@ export default function NewJournalEntryPage() {
 
   useEffect(() => {
     loadAccounts()
+    loadBranchesAndCostCenters()
   }, [])
+
+  const loadBranchesAndCostCenters = async () => {
+    try {
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const activeCompanyId = await getActiveCompanyId(supabase)
+      if (!activeCompanyId) return
+
+      const { data: bData } = await supabase.from('branches').select('id, name').eq('company_id', activeCompanyId).eq('is_active', true)
+      setBranches(bData || [])
+
+      const { data: ccData } = await supabase.from('cost_centers').select('id, cost_center_name, branch_id').eq('company_id', activeCompanyId).eq('is_active', true)
+      setCostCenters(ccData || [])
+    } catch (e) { console.error(e) }
+  }
 
   useEffect(() => {
     setHydrated(true)
@@ -221,6 +241,7 @@ export default function NewJournalEntryPage() {
         debit_amount: 0,
         credit_amount: 0,
         description: "",
+        cost_center_id: costCenterId || "",
       },
     ])
   }
@@ -339,6 +360,10 @@ export default function NewJournalEntryPage() {
           exchange_rate_used: exchangeRate,
           // Professional multi-currency fields
           exchange_rate_id: exchangeRateId || null,
+          cost_center_id: (line as any).cost_center_id || null,
+          branch_id: (line as any).cost_center_id
+            ? costCenters.find(c => c.id === (line as any).cost_center_id)?.branch_id
+            : (branchId || null)
         }
       })
 
@@ -568,6 +593,22 @@ export default function NewJournalEntryPage() {
                               decimalPlaces={2}
                               className="text-sm"
                             />
+                          </div>
+
+                          <div>
+                            <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Cost Center' : 'مركز التكلفة'}</Label>
+                            <select
+                              value={(line as any).cost_center_id || ""}
+                              onChange={(e) => updateEntryLine(index, "cost_center_id", e.target.value)}
+                              className="w-full px-3 py-2 border rounded-lg text-sm"
+                            >
+                              <option value="">{appLang === 'en' ? 'None' : 'بدون'}</option>
+                              {costCenters.map((cc) => (
+                                <option key={cc.id} value={cc.id}>
+                                  {cc.cost_center_name}
+                                </option>
+                              ))}
+                            </select>
                           </div>
 
                           <div>

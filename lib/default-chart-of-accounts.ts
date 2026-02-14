@@ -213,9 +213,9 @@ export async function createDefaultChartOfAccounts(
 ): Promise<{ success: boolean; error?: string; accountsCreated?: number }> {
   try {
     // Build a map of account_code to parent account
-    const accountMap = new Map<string, string>()
 
     // First pass: insert all accounts and build the map
+    const accountMap = new Map<string, string>()
     const accountsToInsert = DEFAULT_ACCOUNTS.map(acc => ({
       company_id: companyId,
       account_code: acc.account_code,
@@ -226,6 +226,7 @@ export async function createDefaultChartOfAccounts(
       description: '',
       opening_balance: acc.opening_balance || 0,
       is_active: acc.is_active !== false,
+      is_system: true, // Mark all default accounts as system accounts
       parent_id: null, // Will be updated in second pass
       level: acc.parent_code ? (acc.parent_code.length === 4 ? 2 : 3) : 1
     }))
