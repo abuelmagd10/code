@@ -1160,6 +1160,88 @@ export default function BillViewPage() {
     }
   }
 
+  /**
+   * ✅ ATOMIC Bill Posting (Replacement for postBillInventoryOnly + postAPPurchaseJournal)
+   * Uses AccountingTransactionService.postBillAtomic for atomic execution
+   */
+  const postBillAtomic = async () => {
+    try {
+      if (!bill) return
+      setPosting(true)
+
+      // Get account mapping
+      const mapping = await findAccountIds(bill.company_id)
+      if (!mapping || !mapping.ap || (!mapping.purchases && !mapping.inventory)) {
+        toastActionError(toast, "الإرسال", "فاتورة المورد", "لم يتم العثور على إعدادات الحسابات")
+        setPosting(false)
+        return
+      }
+
+      // Governance validation
+      if (!bill.branch_id || !bill.warehouse_id || !bill.cost_center_id) {
+        const errorMsg = appLang === 'en'
+          ? 'Branch, Warehouse, and Cost Center are required'
+          : 'الفرع والمخزن ومركز التكلفة مطلوبة'
+        toastActionError(toast, "الإرسال", "فاتورة المورد", errorMsg)
+        setPosting(false)
+        return
+      }
+
+      // Check for existing transactions (idempotency)
+      const { data: existingTx } = await supabase
+        .from("inventory_transactions")
+        .select("id")
+        .eq("reference_id", bill.id)
+        .eq("transaction_type", "purchase")
+        .limit(1)
+
+      if (existingTx && existingTx.length > 0) {
+        toastActionSuccess(toast, "التحقق", "تم إضافة المخزون مسبقاً")
+        setPosting(false)
+        return
+      }
+
+      // ✅ ATOMIC EXECUTION: Use AccountingTransactionService
+      const { AccountingTransactionService } = await import('@/lib/accounting-transaction-service')
+      const service = new AccountingTransactionService(supabase)
+
+      const result = await service.postBillAtomic(
+        {
+          billId: bill.id,
+          billNumber: bill.bill_number,
+          billDate: bill.bill_date,
+          companyId: bill.company_id,
+          branchId: bill.branch_id,
+          warehouseId: bill.warehouse_id,
+          costCenterId: bill.cost_center_id,
+          subtotal: Number(bill.subtotal || 0),
+          taxAmount: Number(bill.tax_amount || 0),
+          totalAmount: Number(bill.total_amount || 0),
+          status: 'sent'
+        },
+        {
+          companyId: mapping.companyId,
+          ap: mapping.ap,
+          inventory: mapping.inventory,
+          purchases: mapping.purchases,
+          vatInput: mapping.vatInput
+        }
+      )
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to post bill')
+      }
+
+      console.log(`✅ Bill posted atomically: ${bill.bill_number}`)
+      toastActionSuccess(toast, "الإرسال", "تم إرسال الفاتورة بنجاح")
+    } catch (err: any) {
+      console.error('Atomic bill posting error:', err)
+      toastActionError(toast, "الإرسال", "فاتورة المورد", err.message || 'فشل إرسال الفاتورة')
+    } finally {
+      setPosting(false)
+    }
+  }
+
   const changeStatus = async (newStatus: string) => {
     try {
       if (!bill) return
@@ -1211,16 +1293,11 @@ export default function BillViewPage() {
       const { error } = await supabase.from("bills").update({ status: newStatus }).eq("id", bill.id)
       if (error) throw error
       if (newStatus === "sent") {
-        // ===== 📌 ERP Accounting & Inventory Core Logic (MANDATORY FINAL SPECIFICATION) =====
-        // النمط المحاسبي الصارم:
-        // Sent/Received: زيادة المخزون فقط (Stock In) - ❌ لا قيد محاسبي
-        // Paid: قيد AP/Inventory + قيد السداد (AP/Cash)
-        // 1️⃣ إضافة المخزون (كميات فقط)
-        await postBillInventoryOnly()
-        // ❌ لا قيد محاسبي عند Sent - القيد يُنشأ عند الدفع فقط
-        // تحديث حالة أمر الشراء المرتبط
+        // ✅ ATOMIC Bill Posting: Inventory + Journal Entries in one transaction
+        await postBillAtomic()
+        // Update linked purchase order status
         await updateLinkedPurchaseOrderStatus(bill.id)
-        console.log(`✅ BILL Sent: تم إضافة المخزون فقط (النمط المحاسبي الصارم - لا قيد)`)
+        console.log(`✅ BILL Sent: Posted atomically (Inventory + AP Journal)`)
       } else if (newStatus === "draft" || newStatus === "cancelled") {
         await reverseBillInventory()
         // عكس القيود المحاسبية إن وجدت (للفواتير المدفوعة سابقاً)
