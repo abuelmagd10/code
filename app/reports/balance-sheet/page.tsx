@@ -155,13 +155,21 @@ export default function BalanceSheetPage() {
               <div className="mt-8 pt-4 border-t-4 border-double border-primary/50">
                 <div className="flex justify-between items-center text-xl font-bold">
                   <span>Total Liabilities & Equity</span>
-                  <span>{formatCurrency(totals.liabilities + totals.equity)}</span>
+                  <span>{formatCurrency(aggregates.liabilities + aggregates.equity)}</span>
                 </div>
-                {Math.abs(totals.assets - (totals.liabilities + totals.equity)) > 0.01 && (
-                  <div className="mt-2 text-sm text-red-500 font-medium">
-                    Warning: Unbalanced ({formatCurrency(totals.assets - (totals.liabilities + totals.equity))})
-                  </div>
-                )}
+              </div>
+
+              {/* Validation: Assets = Liabilities + Equity */}
+              <div className="mt-6 p-4 bg-muted/50 rounded-lg">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium">Balance Sheet Equation:</span>
+                  <span className={`font-bold ${Math.abs(aggregates.assets - (aggregates.liabilities + aggregates.equity)) < 0.01 ? 'text-green-600' : 'text-red-600'}`}>
+                    {Math.abs(aggregates.assets - (aggregates.liabilities + aggregates.equity)) < 0.01 ? '✓ Balanced' : '✗ Out of Balance'}
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Assets ({formatCurrency(aggregates.assets)}) = Liabilities ({formatCurrency(aggregates.liabilities)}) + Equity ({formatCurrency(aggregates.equity)})
+                </p>
               </div>
             </div>
           </div>
