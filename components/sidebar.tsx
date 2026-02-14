@@ -1040,6 +1040,7 @@ export function Sidebar() {
                 {
                   key: 'accounting', icon: BookOpen, label: (lang === 'en' ? 'Accounting' : 'الحسابات'), items: [
                     { label: (lang === 'en' ? 'Payments' : 'المدفوعات'), href: `/payments${q}`, icon: DollarSign },
+                    { label: (lang === 'en' ? 'Drawings' : 'المسحوبات الشخصية'), href: `/drawings${q}`, icon: DollarSign },
                     { label: (lang === 'en' ? 'Expenses' : 'المصروفات'), href: `/expenses${q}`, icon: DollarSign },
                     { label: (lang === 'en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
