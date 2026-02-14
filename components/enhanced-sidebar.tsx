@@ -143,9 +143,10 @@ export function EnhancedSidebar() {
                                                                   : href.includes('/payments') ? 'payments'
                                                                     : href.includes('/banking') ? 'banking'
                                                                       : href.includes('/reports') ? 'reports'
-                                                                        : href.includes('/shareholders') ? 'shareholders'
-                                                                          : href.includes('/dashboard') ? 'dashboard'
-                                                                            : ''
+                                                                        : href.includes('/drawings') ? 'shareholders'
+                                                                          : href.includes('/shareholders') ? 'shareholders'
+                                                                            : href.includes('/dashboard') ? 'dashboard'
+                                                                              : ''
       return !res || deniedResources.indexOf(res) === -1
     }
 
@@ -396,6 +397,7 @@ export function EnhancedSidebar() {
                 {
                   key: 'accounting', icon: BookOpen, label: (appLanguage === 'en' ? 'Accounting' : 'الحسابات'), items: [
                     { label: (appLanguage === 'en' ? 'Payments' : 'المدفوعات'), href: `/payments${q}`, icon: DollarSign },
+                    { label: (appLanguage === 'en' ? 'Drawings' : 'المسحوبات الشخصية'), href: `/drawings${q}`, icon: DollarSign },
                     { label: (appLanguage === 'en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
                     { label: (appLanguage === 'en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
                     { label: (appLanguage === 'en' ? 'Chart of Accounts' : 'الشجرة المحاسبية'), href: `/chart-of-accounts${q}`, icon: BookOpen },

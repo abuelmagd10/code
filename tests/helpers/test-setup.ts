@@ -61,7 +61,8 @@ export async function createTestCompany(supabase: TestSupabaseClient) {
     .from('companies')
     .insert({
       name: `Test Company ${Date.now()}`,
-      user_id: userId
+      user_id: userId,
+      email: testEmail
     })
     .select()
     .single()

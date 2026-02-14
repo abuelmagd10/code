@@ -86,6 +86,7 @@ function buildMenuItems(lang: string) {
     { label: L.invoices, href: `/invoices${q}`, icon: FileText },
     { label: L.bills, href: `/bills${q}`, icon: FileText },
     { label: L.payments, href: `/payments${q}`, icon: DollarSign },
+    { label: (lang === 'en' ? 'Drawings' : 'المسحوبات'), href: `/drawings${q}`, icon: DollarSign },
     { label: L.expenses, href: `/expenses${q}`, icon: DollarSign },
     { label: L.journal, href: `/journal-entries${q}`, icon: FileText },
     { label: L.banking, href: `/banking${q}`, icon: DollarSign },
@@ -113,10 +114,10 @@ export function Sidebar() {
 
   // 🔐 استخدام AccessContext كمصدر وحيد للصلاحيات
   const { isReady: accessReady, canAccessPage, profile, getFirstAllowedPage, refreshAccess } = useAccess()
-  
+
   // 🔐 استخدام role من AccessContext
   const myRole = profile?.role || ""
-  
+
   // الحفاظ على التوافق مع النظام القديم (fallback)
   const [permissionsReady, setPermissionsReady] = useState<boolean>(false)
   const [deniedResources, setDeniedResources] = useState<string[]>([])
@@ -204,6 +205,7 @@ export function Sidebar() {
     if (href.includes('/payments')) return 'payments'
     if (href.includes('/expenses')) return 'expenses'
     if (href.includes('/banking')) return 'banking'
+    if (href.includes('/drawings')) return 'shareholders'
     if (href.includes('/shareholders')) return 'shareholders'
     // أخرى
     if (href.includes('/products')) return 'products'
@@ -216,12 +218,12 @@ export function Sidebar() {
   const isItemAllowed = (href: string): boolean => {
     const res = getResourceFromHref(href)
     if (res === 'profile' || res === 'no_permissions') return true
-    
+
     // 🔐 استخدام AccessContext إذا كان جاهزاً
     if (accessReady && profile) {
       return canAccessPage(res)
     }
-    
+
     // Fallback: استخدام النظام القديم
     if (!permissionsReady) return false
     return !res || deniedResources.indexOf(res) === -1
@@ -296,7 +298,7 @@ export function Sidebar() {
         setUnreadCount(0)
         return
       }
-      
+
       setCurrentUserId(user.id)
       const cid = await getActiveCompanyId(supabaseHook)
       if (!cid) {
@@ -314,7 +316,7 @@ export function Sidebar() {
 
       try {
         const count = await getUnreadNotificationCount(
-          user.id, 
+          user.id,
           cid,
           member?.branch_id || undefined,
           member?.role || undefined
@@ -464,7 +466,7 @@ export function Sidebar() {
           } else if (payload.eventType === 'UPDATE') {
             const notification = payload.new as any
             const oldNotification = payload.old as any
-            
+
             // إذا تغيرت الحالة من unread إلى read/archived
             if (oldNotification.status === 'unread' && notification.status !== 'unread') {
               if (shouldAffectCount(oldNotification)) {
@@ -637,15 +639,15 @@ export function Sidebar() {
       setPermissionsReady(true)
     }
     loadPerms()
-    
+
     // جلب عدد الإشعارات غير المقروءة (استخدام الدالة المعرفة خارج useEffect)
     loadUnreadCount()
-    
+
     // تحديث عدد الإشعارات عند تغيير الشركة أو عند استقبال حدث
     const handleNotificationsUpdate = () => {
       loadUnreadCount()
     }
-    
+
     // جلب ملف المستخدم (username)
     const loadUserProfile = async () => {
       try {
@@ -719,12 +721,12 @@ export function Sidebar() {
       const v = typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar'
       setAppLanguage(v === 'en' ? 'en' : 'ar')
     }
-    const onCompanyUpdated = () => { 
+    const onCompanyUpdated = () => {
       loadCompany()
       loadUserRoleAndBranch()
       handleNotificationsUpdate() // تحديث عدد الإشعارات عند تغيير الشركة
     }
-    const onPermissionsUpdated = async () => { 
+    const onPermissionsUpdated = async () => {
       // ✅ تحديث الصلاحيات فقط - لا إعادة توجيه
       // ✅ إعادة التوجيه يتم التعامل معها في RealtimeRouteGuard
       console.log('🔄 [Sidebar] Permissions updated, reloading permissions...')
@@ -732,7 +734,7 @@ export function Sidebar() {
         loadPerms()
       }, 100)
     }
-    
+
     const onAccessProfileUpdated = async () => {
       // ✅ تحديث Access Profile - تحديث القوائم والفرع
       // ✅ لا إعادة توجيه - يتم التعامل معه في RealtimeRouteGuard
@@ -1096,7 +1098,7 @@ export function Sidebar() {
                 )}
               </Button>
             )}
-            
+
             {/* عرض معلومات المستخدم */}
             {userProfile && (
               <div className="px-2 py-2 rounded-lg bg-slate-800/50">
@@ -1153,7 +1155,7 @@ export function Sidebar() {
           onClick={() => setIsOpen(false)}
         />
       )}
-      
+
       {/* Notification Center */}
       {currentUserId && activeCompanyId && (
         <NotificationCenter

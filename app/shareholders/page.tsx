@@ -13,12 +13,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Plus, Edit2, Trash2, DollarSign, Users } from "lucide-react"
+import { Plus, Edit2, Trash2, DollarSign, Users, AlertCircle, CheckCircle, Banknote } from "lucide-react"
 import { filterLeafAccounts, filterCashBankAccounts } from "@/lib/accounts"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
+import { EquityTransactionService, PendingDividend } from "@/lib/equity-transaction-service"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 interface Shareholder {
   id: string
@@ -103,6 +105,22 @@ export default function ShareholdersPage() {
   const [settings, setSettings] = useState<DistributionSettings>({})
   const [isSavingDefaults, setIsSavingDefaults] = useState<boolean>(false)
 
+  // === ERP Governance: Retained Earnings Validation ===
+  const [retainedEarningsBalance, setRetainedEarningsBalance] = useState<number>(0)
+  const [isCheckingGovernance, setIsCheckingGovernance] = useState<boolean>(false)
+  const [governanceError, setGovernanceError] = useState<string | null>(null)
+
+  // === Dividend Payment Section ===
+  const [pendingDividends, setPendingDividends] = useState<PendingDividend[]>([])
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState<boolean>(false)
+  const [selectedPaymentLine, setSelectedPaymentLine] = useState<PendingDividend | null>(null)
+  const [paymentAmount, setPaymentAmount] = useState<number>(0)
+  const [paymentAccountId, setPaymentAccountId] = useState<string>("")
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank_transfer' | 'check'>('cash')
+  const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().slice(0, 10))
+  const [paymentReferenceNumber, setPaymentReferenceNumber] = useState<string>("")
+  const [isPayingSaving, setIsPayingSaving] = useState<boolean>(false)
+
   // === إصلاح أمني: صلاحيات المساهمين ===
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
@@ -153,6 +171,12 @@ export default function ShareholdersPage() {
           // الخطأ تم معالجته في loadDistributionSettings وتم إظهار toast
           return
         }
+
+        // === ERP Governance: Load retained earnings balance and pending dividends ===
+        await Promise.all([
+          checkRetainedEarningsBalance(cid),
+          loadPendingDividends(cid)
+        ])
       } catch (e) {
         console.error("Error initializing shareholders page:", e)
       } finally {
@@ -251,6 +275,35 @@ export default function ShareholdersPage() {
         credit_account_id: data.credit_account_id || undefined,
         dividends_payable_account_id: data.dividends_payable_account_id || undefined
       })
+    }
+  }
+
+  // === ERP Governance: Check Retained Earnings Balance ===
+  const checkRetainedEarningsBalance = async (company_id: string) => {
+    setIsCheckingGovernance(true)
+    setGovernanceError(null)
+    try {
+      const service = new EquityTransactionService(supabase)
+      const balance = await service.getRetainedEarningsBalance(company_id)
+      setRetainedEarningsBalance(balance)
+      return balance
+    } catch (error: any) {
+      console.error("Error checking retained earnings:", error)
+      setGovernanceError(error?.message || 'فشل التحقق من الأرباح المحتجزة')
+      return 0
+    } finally {
+      setIsCheckingGovernance(false)
+    }
+  }
+
+  // === Load Pending Dividends for Payment ===
+  const loadPendingDividends = async (company_id: string) => {
+    try {
+      const service = new EquityTransactionService(supabase)
+      const pending = await service.getPendingDividends(company_id)
+      setPendingDividends(pending)
+    } catch (error: any) {
+      console.error("Error loading pending dividends:", error)
     }
   }
 
@@ -713,88 +766,164 @@ export default function ShareholdersPage() {
     if (!companyId) return
     if (distributionAmount <= 0) return
     if (shareholders.length === 0) return
-    // Optional check: percentages total to 100
+
+    // Governance Check 1: Percentages must total 100%
     if (Math.round(totalPercentage) !== 100) {
-      toast({ title: "نِسَب غير صالحة", description: "يجب أن يكون مجموع نسب الملكية 100% قبل توزيع الأرباح", variant: "destructive" })
+      toast({
+        title: appLang === 'en' ? "Invalid Percentages" : "نِسَب غير صالحة",
+        description: appLang === 'en'
+          ? "Total ownership percentages must equal 100% before distributing profits"
+          : "يجب أن يكون مجموع نسب الملكية 100% قبل توزيع الأرباح",
+        variant: "destructive"
+      })
       return
     }
+
+    // Governance Check 2: Required accounts
     if (!settings.debit_account_id || !settings.dividends_payable_account_id) {
-      toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار حساب الأرباح المحتجزة وحساب الأرباح الموزعة المستحقة أولًا", variant: "destructive" })
+      toast({
+        title: appLang === 'en' ? "Incomplete Data" : "بيانات غير مكتملة",
+        description: appLang === 'en'
+          ? "Please select Retained Earnings and Dividends Payable accounts first"
+          : "يرجى اختيار حساب الأرباح المحتجزة وحساب الأرباح الموزعة المستحقة أولًا",
+        variant: "destructive"
+      })
       return
     }
+
     try {
       setDistributionSaving(true)
-      // Create distribution header
-      const { data: header, error: hErr } = await supabase
-        .from("profit_distributions")
-        .insert([
-          { company_id: companyId, distribution_date: distributionDate, total_profit: distributionAmount },
-        ])
-        .select("id")
-        .single()
-      if (hErr) throw hErr
-      const distribution_id = header.id
-      // Create lines
-      const lines = shareholders.map((s) => ({
-        distribution_id,
-        shareholder_id: s.id,
-        percentage_at_distribution: Number(s.percentage || 0),
+
+      // === ERP Governance: Use Atomic Transaction with Validation ===
+      const service = new EquityTransactionService(supabase)
+
+      // Prepare shareholder distribution lines
+      const shareholderLines = shareholders.map((s) => ({
+        id: s.id,
+        percentage: Number(s.percentage || 0),
         amount: Number(((distributionAmount * Number(s.percentage || 0)) / 100).toFixed(2)),
       }))
-      const { error: lErr } = await supabase.from("profit_distribution_lines").insert(lines)
-      if (lErr) throw lErr
 
-      // Create journal entry (automatic)
-      const { data: entry, error: jErr } = await supabase
-        .from("journal_entries")
-        .insert([
-          {
-            company_id: companyId,
-            reference_type: "profit_distribution",
-            reference_id: distribution_id,
-            entry_date: distributionDate,
-            description: `توزيع أرباح بمبلغ ${distributionAmount.toFixed(2)}`,
-            branch_id: branchId || null,
-            cost_center_id: costCenterId || null,
-          },
-        ])
-        .select("id")
-        .single()
-      if (jErr) throw jErr
+      // Get current user ID
+      const { data: { user } } = await supabase.auth.getUser()
 
-      // القيد المحاسبي الصحيح:
-      // من حـ/ الأرباح المحتجزة (debit_account_id)
-      // إلى حـ/ الأرباح الموزعة المستحقة (dividends_payable_account_id)
-      const debitLine = {
-        journal_entry_id: entry.id,
-        account_id: settings.debit_account_id!, // الأرباح المحتجزة (3200)
-        debit_amount: Number(distributionAmount.toFixed(2)),
-        credit_amount: 0,
-        description: "من حـ/ الأرباح المحتجزة",
-        branch_id: branchId || null,
-        cost_center_id: costCenterId || null,
+      // Execute atomic distribution with governance validation
+      const result = await service.distributeDividends({
+        companyId,
+        totalAmount: distributionAmount,
+        distributionDate,
+        shareholders: shareholderLines,
+        retainedEarningsAccountId: settings.debit_account_id,
+        dividendsPayableAccountId: settings.dividends_payable_account_id,
+        branchId: branchId || undefined,
+        costCenterId: costCenterId || undefined,
+        fiscalYear: new Date(distributionDate).getFullYear(),
+        userId: user?.id
+      })
+
+      if (!result.success) {
+        // Governance Error (e.g., insufficient retained earnings)
+        toast({
+          title: appLang === 'en' ? "Distribution Failed" : "فشل التوزيع",
+          description: result.error || (appLang === 'en' ? "Distribution validation failed" : "فشل التحقق من صلاحية التوزيع"),
+          variant: "destructive"
+        })
+        return
       }
 
-      const creditLine = {
-        journal_entry_id: entry.id,
-        account_id: settings.dividends_payable_account_id!, // الأرباح الموزعة المستحقة (2150)
-        debit_amount: 0,
-        credit_amount: Number(distributionAmount.toFixed(2)),
-        description: "إلى حـ/ الأرباح الموزعة المستحقة",
-        branch_id: branchId || null,
-        cost_center_id: costCenterId || null,
-      }
-
-      const { error: jlErr } = await supabase.from("journal_entry_lines").insert([debitLine, creditLine])
-      if (jlErr) throw jlErr
-
+      // Success - refresh data
       setDistributionAmount(0)
-      toastActionSuccess(toast, "التسجيل", "توزيع الأرباح")
-    } catch (error) {
+      await loadPendingDividends(companyId) // Refresh pending dividends
+      await checkRetainedEarningsBalance(companyId) // Refresh balance
+
+      toast({
+        title: appLang === 'en' ? "Distribution Recorded" : "تم تسجيل التوزيع",
+        description: appLang === 'en'
+          ? `Dividend of ${distributionAmount.toFixed(2)} distributed successfully. Available for payment.`
+          : `تم توزيع أرباح بمبلغ ${distributionAmount.toFixed(2)} بنجاح. متاح للصرف الآن.`,
+      })
+
+    } catch (error: any) {
       console.error("Error distributing profit:", error)
       toastActionError(toast, "التسجيل", "توزيع الأرباح")
     } finally {
       setDistributionSaving(false)
+    }
+  }
+
+  // === Dividend Payment Function ===
+  const payDividend = async () => {
+    if (!companyId || !selectedPaymentLine || paymentAmount <= 0 || !paymentAccountId) {
+      toast({
+        title: appLang === 'en' ? "Incomplete Data" : "بيانات غير مكتملة",
+        description: appLang === 'en'
+          ? "Please fill all required fields"
+          : "يرجى ملء جميع الحقول المطلوبة",
+        variant: "destructive"
+      })
+      return
+    }
+
+    if (paymentAmount > selectedPaymentLine.remaining_amount) {
+      toast({
+        title: appLang === 'en' ? "Amount Exceeds Remaining" : "المبلغ يتجاوز المتبقي",
+        description: appLang === 'en'
+          ? `Maximum payable: ${selectedPaymentLine.remaining_amount.toFixed(2)}`
+          : `الحد الأقصى للصرف: ${selectedPaymentLine.remaining_amount.toFixed(2)}`,
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      setIsPayingSaving(true)
+
+      const service = new EquityTransactionService(supabase)
+      const { data: { user } } = await supabase.auth.getUser()
+
+      const result = await service.payDividend({
+        companyId,
+        distributionLineId: selectedPaymentLine.line_id,
+        amount: paymentAmount,
+        paymentDate,
+        paymentAccountId,
+        dividendsPayableAccountId: settings.dividends_payable_account_id!,
+        paymentMethod,
+        referenceNumber: paymentReferenceNumber || undefined,
+        branchId: branchId || undefined,
+        costCenterId: costCenterId || undefined,
+        userId: user?.id
+      })
+
+      if (!result.success) {
+        toast({
+          title: appLang === 'en' ? "Payment Failed" : "فشل الصرف",
+          description: result.error,
+          variant: "destructive"
+        })
+        return
+      }
+
+      // Success
+      toast({
+        title: appLang === 'en' ? "Payment Recorded" : "تم تسجيل الصرف",
+        description: appLang === 'en'
+          ? `${paymentAmount.toFixed(2)} paid to ${selectedPaymentLine.shareholder_name}`
+          : `تم صرف ${paymentAmount.toFixed(2)} للمساهم ${selectedPaymentLine.shareholder_name}`,
+      })
+
+      // Reset and refresh
+      setIsPaymentDialogOpen(false)
+      setSelectedPaymentLine(null)
+      setPaymentAmount(0)
+      setPaymentReferenceNumber("")
+      await loadPendingDividends(companyId)
+
+    } catch (error: any) {
+      console.error("Error paying dividend:", error)
+      toastActionError(toast, "الصرف", "الأرباح الموزعة")
+    } finally {
+      setIsPayingSaving(false)
     }
   }
 
@@ -1126,6 +1255,56 @@ export default function ShareholdersPage() {
             </DialogContent>
           </Dialog>
 
+          {/* ERP Governance: Retained Earnings Balance Alert */}
+          <Card className="border-blue-200 bg-blue-50 dark:bg-blue-900/20">
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-full ${retainedEarningsBalance > 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                    {retainedEarningsBalance > 0 ? <CheckCircle className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-300" suppressHydrationWarning>
+                      {(hydrated && appLang === 'en') ? 'Available Retained Earnings' : 'الأرباح المحتجزة المتاحة'}
+                    </p>
+                    <p className={`text-2xl font-bold ${retainedEarningsBalance > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {retainedEarningsBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => companyId && checkRetainedEarningsBalance(companyId)}
+                  disabled={isCheckingGovernance}
+                >
+                  {isCheckingGovernance
+                    ? ((hydrated && appLang === 'en') ? 'Checking...' : 'جاري التحقق...')
+                    : ((hydrated && appLang === 'en') ? 'Refresh' : 'تحديث')}
+                </Button>
+              </div>
+              {governanceError && (
+                <Alert variant="destructive" className="mt-3">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{governanceError}</AlertDescription>
+                </Alert>
+              )}
+              {retainedEarningsBalance <= 0 && (
+                <Alert variant="destructive" className="mt-3">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle suppressHydrationWarning>
+                    {(hydrated && appLang === 'en') ? 'No Profits Available' : 'لا توجد أرباح متاحة'}
+                  </AlertTitle>
+                  <AlertDescription suppressHydrationWarning>
+                    {(hydrated && appLang === 'en')
+                      ? 'Cannot distribute dividends. Retained earnings balance is zero or negative. Please close accounting periods to transfer profits.'
+                      : 'لا يمكن توزيع أرباح. رصيد الأرباح المحتجزة صفر أو سالب. يرجى إقفال الفترات المحاسبية لتحويل الأرباح.'}
+                  </AlertDescription>
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Profit distribution */}
           <Card>
             <CardHeader>
@@ -1246,6 +1425,183 @@ export default function ShareholdersPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* === Dividend Payment Section === */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2" suppressHydrationWarning>
+                <Banknote className="h-5 w-5" />
+                {(hydrated && appLang === 'en') ? 'Pay Dividends to Shareholders' : 'صرف الأرباح للمساهمين'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {pendingDividends.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Banknote className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <p suppressHydrationWarning>
+                    {(hydrated && appLang === 'en')
+                      ? 'No pending dividends to pay. Distribute profits first.'
+                      : 'لا توجد أرباح مستحقة للصرف. قم بتوزيع الأرباح أولاً.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Shareholder' : 'المساهم'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Distribution Date' : 'تاريخ التوزيع'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total Amount' : 'المبلغ الكلي'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Paid' : 'المدفوع'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Remaining' : 'المتبقي'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Status' : 'الحالة'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Action' : 'إجراء'}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pendingDividends.map((div) => (
+                        <TableRow key={div.line_id}>
+                          <TableCell className="font-medium">{div.shareholder_name}</TableCell>
+                          <TableCell>{div.distribution_date}</TableCell>
+                          <TableCell>{div.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                          <TableCell className="text-green-600">{div.paid_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                          <TableCell className="text-orange-600 font-semibold">{div.remaining_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                          <TableCell>
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              div.status === 'paid' ? 'bg-green-100 text-green-700' :
+                              div.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                              {div.status === 'paid'
+                                ? ((hydrated && appLang === 'en') ? 'Paid' : 'مدفوع')
+                                : div.status === 'partially_paid'
+                                ? ((hydrated && appLang === 'en') ? 'Partial' : 'جزئي')
+                                : ((hydrated && appLang === 'en') ? 'Pending' : 'معلق')}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedPaymentLine(div)
+                                setPaymentAmount(div.remaining_amount)
+                                setIsPaymentDialogOpen(true)
+                              }}
+                              disabled={div.status === 'paid'}
+                            >
+                              <Banknote className="h-4 w-4 mr-1" />
+                              {(hydrated && appLang === 'en') ? 'Pay' : 'صرف'}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Dividend Payment Dialog */}
+          <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle suppressHydrationWarning>
+                  {(hydrated && appLang === 'en') ? 'Pay Dividend' : 'صرف أرباح'}
+                </DialogTitle>
+              </DialogHeader>
+              {selectedPaymentLine && (
+                <form onSubmit={(e) => { e.preventDefault(); payDividend(); }} className="space-y-4">
+                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                    <p className="text-sm text-gray-600 dark:text-gray-300" suppressHydrationWarning>
+                      {(hydrated && appLang === 'en') ? 'Shareholder:' : 'المساهم:'}
+                    </p>
+                    <p className="font-semibold">{selectedPaymentLine.shareholder_name}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mt-2" suppressHydrationWarning>
+                      {(hydrated && appLang === 'en') ? 'Remaining Amount:' : 'المبلغ المتبقي:'}
+                    </p>
+                    <p className="font-semibold text-orange-600">
+                      {selectedPaymentLine.remaining_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Payment Amount' : 'مبلغ الصرف'}</Label>
+                    <NumericInput
+                      value={paymentAmount}
+                      onChange={(val) => setPaymentAmount(val)}
+                      max={selectedPaymentLine.remaining_amount}
+                      decimalPlaces={2}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Payment Date' : 'تاريخ الصرف'}</Label>
+                    <Input
+                      type="date"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Payment Account' : 'حساب الدفع'}</Label>
+                    <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={(hydrated && appLang === 'en') ? 'Select account' : 'اختر الحساب'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cashBankAccounts.map((acc) => (
+                          <SelectItem key={acc.id} value={acc.id}>
+                            {acc.account_code} - {acc.account_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Payment Method' : 'طريقة الدفع'}</Label>
+                    <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as any)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">{(hydrated && appLang === 'en') ? 'Cash' : 'نقدي'}</SelectItem>
+                        <SelectItem value="bank_transfer">{(hydrated && appLang === 'en') ? 'Bank Transfer' : 'تحويل بنكي'}</SelectItem>
+                        <SelectItem value="check">{(hydrated && appLang === 'en') ? 'Check' : 'شيك'}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {paymentMethod !== 'cash' && (
+                    <div className="space-y-2">
+                      <Label suppressHydrationWarning>
+                        {(hydrated && appLang === 'en') ? 'Reference Number' : 'رقم المرجع'}
+                      </Label>
+                      <Input
+                        value={paymentReferenceNumber}
+                        onChange={(e) => setPaymentReferenceNumber(e.target.value)}
+                        placeholder={(hydrated && appLang === 'en') ? 'Check/Transfer number' : 'رقم الشيك/التحويل'}
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button type="button" variant="ghost" onClick={() => setIsPaymentDialogOpen(false)}>
+                      {(hydrated && appLang === 'en') ? 'Cancel' : 'إلغاء'}
+                    </Button>
+                    <Button type="submit" disabled={isPayingSaving || paymentAmount <= 0 || !paymentAccountId}>
+                      {isPayingSaving
+                        ? ((hydrated && appLang === 'en') ? 'Processing...' : 'جاري المعالجة...')
+                        : ((hydrated && appLang === 'en') ? 'Confirm Payment' : 'تأكيد الصرف')}
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </DialogContent>
+          </Dialog>
         </div>
       </main>
     </div>

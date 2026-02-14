@@ -42,6 +42,7 @@ export default function ReportsPage() {
       items: [
         { title: t('Income Statement', 'قائمة الدخل'), description: t('Statement of revenues and expenses', 'قائمة الإيرادات والمصروفات'), href: "/reports/income-statement", icon: "📈" },
         { title: t('Balance Sheet', 'الميزانية العمومية'), description: t('Assets, liabilities, and equity', 'الأصول والالتزامات وحقوق الملكية'), href: "/reports/balance-sheet", icon: "📊" },
+        { title: t('Statement of Changes in Equity', 'قائمة التغيرات في حقوق الملكية'), description: t('Equity movements analysis', 'تحليل حركات حقوق الملكية'), href: "/reports/equity-changes", icon: "📉" },
         { title: t('Cash Flow Statement', 'التدفقات النقدية'), description: t('Operating/Investing/Financing cash flows', 'التدفقات التشغيلية/الاستثمارية/التمويلية'), href: "/reports/cash-flow", icon: "💧" },
         { title: t('Trial Balance', 'ميزان المراجعة'), description: t('Balances of all accounts', 'أرصدة جميع الحسابات'), href: "/reports/trial-balance", icon: "⚖️" },
         { title: t('General Ledger', 'كشف الحسابات'), description: t('Journal entries by account', 'قيود اليومية حسب الحساب'), href: "/journal-entries", icon: "📚" },
