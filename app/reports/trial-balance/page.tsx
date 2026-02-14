@@ -15,32 +15,38 @@ import {
 } from '@/components/ui/table'
 import { Loader2, Printer } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils' // Assuming usage of existing util
-import { useCompany } from '@/hooks/use-company' // Hypothetical hook, will use hardcoded or context if not available
+
+
+import { useAccess } from '@/lib/access-context'
 
 export default function TrialBalancePage() {
+  const { profile, isLoading: isAccessLoading } = useAccess()
   // Config
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0])
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<TrialBalanceRow[]>([])
-  const [totals, setTotals] = useState({ debit: 0, credit: 0 })
+  const [totalDebit, setTotalDebit] = useState(0)
+  const [totalCredit, setTotalCredit] = useState(0)
 
   // In a real app, this comes from context/auth
   // For now, we'll fetch the first company or use a placeholder
-  const companyId = 'bf507664-071a-4ea8-9a48-47700a604246' // Replace with logic to get actual ID
+  // Use dynamic company ID from AccessContext
+  // Placeholder Company ID removed
+  // const companyId = 'bf507664-071a-4ea8-9a48-47700a604246'
 
   async function fetchData() {
+    if (!profile?.company_id) return
+
     setLoading(true)
     try {
-      const result = await getTrialBalance(companyId, startDate, endDate)
+      const result = await getTrialBalance(profile.company_id, startDate, endDate)
       setData(result)
 
-      // Calculate totals
-      const t = result.reduce((acc, row) => ({
-        debit: acc.debit + Number(row.total_debit),
-        credit: acc.credit + Number(row.total_credit)
-      }), { debit: 0, credit: 0 })
-      setTotals(t)
+      const debit = result.reduce((sum, r) => sum + Number(r.total_debit), 0)
+      const credit = result.reduce((sum, r) => sum + Number(r.total_credit), 0)
+      setTotalDebit(debit)
+      setTotalCredit(credit)
 
     } catch (error) {
       console.error(error)
@@ -51,8 +57,10 @@ export default function TrialBalancePage() {
   }
 
   useEffect(() => {
-    fetchData()
-  }, []) // Initial load
+    if (profile?.company_id) {
+      fetchData()
+    }
+  }, [profile?.company_id]) // Initial load
 
   return (
     <div className="p-6 space-y-6">

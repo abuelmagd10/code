@@ -16,31 +16,38 @@ import {
 import { Loader2, Printer } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 
+import { useAccess } from '@/lib/access-context'
+
 export default function BalanceSheetPage() {
+  const { profile, isLoading: isAccessLoading } = useAccess()
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0])
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<BalanceSheetRow[]>([])
 
-  const [totals, setTotals] = useState({
+  // Financial Aggregates
+  const [aggregates, setAggregates] = useState({
     assets: 0,
     liabilities: 0,
     equity: 0
   })
 
-  // Placeholder Company ID
-  const companyId = 'bf507664-071a-4ea8-9a48-47700a604246'
-
   async function fetchData() {
+    if (!profile?.company_id) return
+
     setLoading(true)
     try {
-      const result = await getBalanceSheet(companyId, asOfDate)
+      const result = await getBalanceSheet(profile.company_id, asOfDate)
       setData(result)
 
-      const assets = result.filter(r => r.section === 'Asset').reduce((sum, r) => sum + Number(r.balance), 0)
-      const liabilities = result.filter(r => r.section === 'Liability').reduce((sum, r) => sum + Number(r.balance), 0)
+      const assets = result.filter(r => r.section === 'Assets').reduce((sum, r) => sum + Number(r.balance), 0)
+      const liabilities = result.filter(r => r.section === 'Liabilities').reduce((sum, r) => sum + Number(r.balance), 0)
       const equity = result.filter(r => r.section === 'Equity').reduce((sum, r) => sum + Number(r.balance), 0)
 
-      setTotals({ assets, liabilities, equity })
+      setAggregates({
+        assets,
+        liabilities,
+        equity
+      })
 
     } catch (error) {
       console.error(error)
@@ -50,8 +57,10 @@ export default function BalanceSheetPage() {
   }
 
   useEffect(() => {
-    fetchData()
-  }, [])
+    if (profile?.company_id) {
+      fetchData()
+    }
+  }, [profile?.company_id])
 
   const renderSection = (title: string, sectionFilter: string) => {
     const rows = data.filter(r => r.section === sectionFilter)

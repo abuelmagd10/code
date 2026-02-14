@@ -16,7 +16,10 @@ import {
 import { Loader2, Printer } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 
+import { useAccess } from '@/lib/access-context'
+
 export default function IncomeStatementPage() {
+  const { profile, isLoading: isAccessLoading } = useAccess()
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0])
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
   const [loading, setLoading] = useState(false)
@@ -31,13 +34,12 @@ export default function IncomeStatementPage() {
     netIncome: 0
   })
 
-  // Placeholder Company ID (should be dynamic)
-  const companyId = 'bf507664-071a-4ea8-9a48-47700a604246'
-
   async function fetchData() {
+    if (!profile?.company_id) return
+
     setLoading(true)
     try {
-      const result = await getIncomeStatement(companyId, startDate, endDate)
+      const result = await getIncomeStatement(profile.company_id, startDate, endDate)
       setData(result)
 
       const rev = result.filter(r => r.section === 'Revenue').reduce((sum, r) => sum + Number(r.amount), 0)
@@ -60,8 +62,10 @@ export default function IncomeStatementPage() {
   }
 
   useEffect(() => {
-    fetchData()
-  }, [])
+    if (profile?.company_id) {
+      fetchData()
+    }
+  }, [profile?.company_id])
 
   const renderSection = (title: string, sectionFilter: string) => {
     const rows = data.filter(r => r.section === sectionFilter)

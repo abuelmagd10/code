@@ -6,32 +6,37 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { DollarSign, TrendingUp, TrendingDown, Scale, Wallet } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
+import { useAccess } from '@/lib/access-context'
 
-export default function FinancialDashboard() {
-    const [data, setData] = useState<FinancialSummary | null>(null)
-    const [loading, setLoading] = useState(true)
+export default function FinancialDashboardPage() {
+    const { profile, isLoading: isAccessLoading } = useAccess()
+    const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0])
+    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
+    const [loading, setLoading] = useState(false)
+    const [summary, setSummary] = useState<FinancialSummary | null>(null) // Changed to single object, not array
 
-    // Default to YTD
-    const startDate = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]
-    const endDate = new Date().toISOString().split('T')[0]
-    const companyId = 'bf507664-071a-4ea8-9a48-47700a604246'
+    async function fetchData() {
+        if (!profile?.company_id) return
+
+        setLoading(true)
+        try {
+            const result = await getFinancialSummary(profile.company_id, startDate, endDate)
+            setSummary(result)
+        } catch (error) {
+            console.error(error)
+        } finally {
+            setLoading(false)
+        }
+    }
 
     useEffect(() => {
-        async function fetch() {
-            try {
-                const result = await getFinancialSummary(companyId, startDate, endDate)
-                setData(result)
-            } catch (e) {
-                console.error(e)
-            } finally {
-                setLoading(false)
-            }
+        if (profile?.company_id) {
+            fetchData()
         }
-        fetch()
-    }, [])
+    }, [profile?.company_id, startDate, endDate]) // Added startDate, endDate to dependencies
 
-    if (loading) return <div className="p-8 text-center text-muted-foreground">Loading financial data...</div>
-    if (!data) return <div className="p-8 text-center text-muted-foreground">No data available</div>
+    if (loading || isAccessLoading) return <div className="p-8 text-center text-muted-foreground">Loading financial data...</div>
+    if (!summary) return <div className="p-8 text-center text-muted-foreground">No data available</div>
 
     return (
         <div className="p-6 space-y-6">
@@ -47,7 +52,7 @@ export default function FinancialDashboard() {
                         <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-green-700">{formatCurrency(data.total_revenue)}</div>
+                        <div className="text-2xl font-bold text-green-700">{formatCurrency(summary.total_revenue)}</div>
                         <p className="text-xs text-muted-foreground">Year to date</p>
                     </CardContent>
                 </Card>
@@ -59,7 +64,7 @@ export default function FinancialDashboard() {
                         <TrendingDown className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-red-700">{formatCurrency(data.total_expenses + data.total_cogs)}</div>
+                        <div className="text-2xl font-bold text-red-700">{formatCurrency(summary.total_expenses + summary.total_cogs)}</div>
                         <p className="text-xs text-muted-foreground">Excludes tax</p>
                     </CardContent>
                 </Card>
@@ -71,10 +76,10 @@ export default function FinancialDashboard() {
                         <TrendingUp className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className={`text-2xl font-bold ${data.net_income >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {formatCurrency(data.net_income)}
+                        <div className={`text-2xl font-bold ${summary.net_income >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatCurrency(summary.net_income)}
                         </div>
-                        <p className="text-xs text-muted-foreground">Profit margin: {data.total_revenue ? ((data.net_income / data.total_revenue) * 100).toFixed(1) : 0}%</p>
+                        <p className="text-xs text-muted-foreground">Profit margin: {summary.total_revenue ? ((summary.net_income / summary.total_revenue) * 100).toFixed(1) : 0}%</p>
                     </CardContent>
                 </Card>
 
@@ -85,7 +90,7 @@ export default function FinancialDashboard() {
                         <Wallet className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{formatCurrency(data.total_equity)}</div>
+                        <div className="text-2xl font-bold">{formatCurrency(summary.total_equity)}</div>
                         <p className="text-xs text-muted-foreground">Shareholder Value</p>
                     </CardContent>
                 </Card>
@@ -100,20 +105,20 @@ export default function FinancialDashboard() {
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
                                 <span className="font-medium">Total Assets</span>
-                                <span className="text-green-600 font-bold">{formatCurrency(data.total_assets)}</span>
+                                <span className="text-green-600 font-bold">{formatCurrency(summary.total_assets)}</span>
                             </div>
                             <div className="flex items-center justify-between">
                                 <span className="font-medium">Total Liabilities</span>
-                                <span className="text-red-600 font-bold">{formatCurrency(data.total_liabilities)}</span>
+                                <span className="text-red-600 font-bold">{formatCurrency(summary.total_liabilities)}</span>
                             </div>
                             <div className="h-2 bg-muted rounded-full overflow-hidden flex">
                                 <div
                                     className="bg-green-500 h-full"
-                                    style={{ width: `${(data.total_assets / (data.total_assets + data.total_liabilities)) * 100}%` }}
+                                    style={{ width: `${(summary.total_assets / (summary.total_assets + summary.total_liabilities)) * 100}%` }}
                                 />
                                 <div
                                     className="bg-red-500 h-full"
-                                    style={{ width: `${(data.total_liabilities / (data.total_assets + data.total_liabilities)) * 100}%` }}
+                                    style={{ width: `${(summary.total_liabilities / (summary.total_assets + summary.total_liabilities)) * 100}%` }}
                                 />
                             </div>
                         </div>
