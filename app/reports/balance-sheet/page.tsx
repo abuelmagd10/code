@@ -4,23 +4,23 @@ import { useState, useEffect } from 'react'
 import { getBalanceSheet, type BalanceSheetRow } from '@/actions/financial-reports'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
   TableCell,
+  TableHead,
+  TableHeader,
   TableRow
 } from '@/components/ui/table'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Printer } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
+
 import { useAccess } from '@/lib/access-context'
-import { ReportFilters } from '@/components/reports/report-filters'
-import { ExportButton } from '@/components/reports/export-button'
 
 export default function BalanceSheetPage() {
-  const { profile } = useAccess()
+  const { profile, isLoading: isAccessLoading } = useAccess()
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0])
-  const [branchId, setBranchId] = useState<string | undefined>()
-  const [costCenterId, setCostCenterId] = useState<string | undefined>()
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<BalanceSheetRow[]>([])
 
@@ -36,12 +36,7 @@ export default function BalanceSheetPage() {
 
     setLoading(true)
     try {
-      const result = await getBalanceSheet(
-        profile.company_id,
-        asOfDate,
-        branchId,
-        costCenterId
-      )
+      const result = await getBalanceSheet(profile.company_id, asOfDate)
       setData(result)
 
       const assets = result.filter(r => r.section === 'Assets').reduce((sum, r) => sum + Number(r.balance), 0)
@@ -65,7 +60,7 @@ export default function BalanceSheetPage() {
     if (profile?.company_id) {
       fetchData()
     }
-  }, [profile?.company_id, asOfDate, branchId, costCenterId])
+  }, [profile?.company_id])
 
   const renderSection = (title: string, sectionFilter: string) => {
     const rows = data.filter(r => r.section === sectionFilter)
@@ -99,33 +94,10 @@ export default function BalanceSheetPage() {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold tracking-tight">Balance Sheet</h1>
-        <ExportButton
-          data={data}
-          filename="balance_sheet"
-          columns={[
-            { key: 'section', label: 'Section' },
-            { key: 'account_code', label: 'Code' },
-            { key: 'account_name', label: 'Account Name' },
-            { key: 'balance', label: 'Balance' },
-          ]}
-        />
+        <Button variant="outline" onClick={() => window.print()}>
+          <Printer className="mr-2 h-4 w-4" /> Print
+        </Button>
       </div>
-
-      <ReportFilters
-        asOfDate={asOfDate}
-        branchId={branchId}
-        costCenterId={costCenterId}
-        onFilterChange={(filters) => {
-          if (filters.asOfDate !== undefined) setAsOfDate(filters.asOfDate)
-          if (filters.branchId !== undefined) setBranchId(filters.branchId)
-          if (filters.costCenterId !== undefined) setCostCenterId(filters.costCenterId)
-        }}
-        onReset={() => {
-          setBranchId(undefined)
-          setCostCenterId(undefined)
-        }}
-        showAsOfDate
-      />
 
       <Card>
         <CardHeader className="pb-3 border-b">
@@ -135,9 +107,15 @@ export default function BalanceSheetPage() {
               <p className="text-sm text-muted-foreground">As of {asOfDate}</p>
             </div>
 
-            <Button size="sm" onClick={fetchData} disabled={loading}>
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Run Report'}
-            </Button>
+            <div className="flex items-end gap-3">
+              <div className="grid gap-1">
+                <label className="text-xs font-medium">As Of</label>
+                <Input type="date" className="h-8" value={asOfDate} onChange={e => setAsOfDate(e.target.value)} />
+              </div>
+              <Button size="sm" onClick={fetchData} disabled={loading}>
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Run Report'}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="pt-6">
@@ -155,21 +133,13 @@ export default function BalanceSheetPage() {
               <div className="mt-8 pt-4 border-t-4 border-double border-primary/50">
                 <div className="flex justify-between items-center text-xl font-bold">
                   <span>Total Liabilities & Equity</span>
-                  <span>{formatCurrency(aggregates.liabilities + aggregates.equity)}</span>
+                  <span>{formatCurrency(totals.liabilities + totals.equity)}</span>
                 </div>
-              </div>
-
-              {/* Validation: Assets = Liabilities + Equity */}
-              <div className="mt-6 p-4 bg-muted/50 rounded-lg">
-                <div className="flex justify-between items-center">
-                  <span className="font-medium">Balance Sheet Equation:</span>
-                  <span className={`font-bold ${Math.abs(aggregates.assets - (aggregates.liabilities + aggregates.equity)) < 0.01 ? 'text-green-600' : 'text-red-600'}`}>
-                    {Math.abs(aggregates.assets - (aggregates.liabilities + aggregates.equity)) < 0.01 ? '✓ Balanced' : '✗ Out of Balance'}
-                  </span>
-                </div>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Assets ({formatCurrency(aggregates.assets)}) = Liabilities ({formatCurrency(aggregates.liabilities)}) + Equity ({formatCurrency(aggregates.equity)})
-                </p>
+                {Math.abs(totals.assets - (totals.liabilities + totals.equity)) > 0.01 && (
+                  <div className="mt-2 text-sm text-red-500 font-medium">
+                    Warning: Unbalanced ({formatCurrency(totals.assets - (totals.liabilities + totals.equity))})
+                  </div>
+                )}
               </div>
             </div>
           </div>

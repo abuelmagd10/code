@@ -44,21 +44,13 @@ export type FinancialSummary = {
 /**
  * Get Trial Balance
  */
-export async function getTrialBalance(
-    companyId: string,
-    startDate: string,
-    endDate: string,
-    branchId?: string,
-    costCenterId?: string
-) {
+export async function getTrialBalance(companyId: string, startDate: string, endDate: string) {
     const supabase = await createClient()
 
     const { data, error } = await supabase.rpc('get_trial_balance', {
         p_company_id: companyId,
         p_start_date: startDate,
-        p_end_date: endDate,
-        p_branch_id: branchId || null,
-        p_cost_center_id: costCenterId || null
+        p_end_date: endDate
     })
 
     if (error) {
@@ -72,21 +64,13 @@ export async function getTrialBalance(
 /**
  * Get Income Statement
  */
-export async function getIncomeStatement(
-    companyId: string,
-    startDate: string,
-    endDate: string,
-    branchId?: string,
-    costCenterId?: string
-) {
+export async function getIncomeStatement(companyId: string, startDate: string, endDate: string) {
     const supabase = await createClient()
 
     const { data, error } = await supabase.rpc('get_income_statement', {
         p_company_id: companyId,
         p_start_date: startDate,
-        p_end_date: endDate,
-        p_branch_id: branchId || null,
-        p_cost_center_id: costCenterId || null
+        p_end_date: endDate
     })
 
     if (error) {
@@ -100,19 +84,12 @@ export async function getIncomeStatement(
 /**
  * Get Balance Sheet
  */
-export async function getBalanceSheet(
-    companyId: string,
-    asOfDate: string,
-    branchId?: string,
-    costCenterId?: string
-) {
+export async function getBalanceSheet(companyId: string, asOfDate: string) {
     const supabase = await createClient()
 
     const { data, error } = await supabase.rpc('get_balance_sheet', {
         p_company_id: companyId,
-        p_as_of_date: asOfDate,
-        p_branch_id: branchId || null,
-        p_cost_center_id: costCenterId || null
+        p_as_of_date: asOfDate
     })
 
     if (error) {
@@ -126,21 +103,13 @@ export async function getBalanceSheet(
 /**
  * Get Financial Summary (KPIs)
  */
-export async function getFinancialSummary(
-    companyId: string,
-    startDate: string,
-    endDate: string,
-    branchId?: string,
-    costCenterId?: string
-) {
+export async function getFinancialSummary(companyId: string, startDate: string, endDate: string) {
     const supabase = await createClient()
 
     const { data, error } = await supabase.rpc('get_financial_summary', {
         p_company_id: companyId,
         p_start_date: startDate,
-        p_end_date: endDate,
-        p_branch_id: branchId || null,
-        p_cost_center_id: costCenterId || null
+        p_end_date: endDate
     })
 
     if (error) {

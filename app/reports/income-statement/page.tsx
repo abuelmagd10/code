@@ -4,24 +4,24 @@ import { useState, useEffect } from 'react'
 import { getIncomeStatement, type IncomeStatementRow } from '@/actions/financial-reports'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
   TableCell,
+  TableHead,
+  TableHeader,
   TableRow
 } from '@/components/ui/table'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Printer } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
+
 import { useAccess } from '@/lib/access-context'
-import { ReportFilters } from '@/components/reports/report-filters'
-import { ExportButton } from '@/components/reports/export-button'
 
 export default function IncomeStatementPage() {
-  const { profile } = useAccess()
+  const { profile, isLoading: isAccessLoading } = useAccess()
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0])
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
-  const [branchId, setBranchId] = useState<string | undefined>()
-  const [costCenterId, setCostCenterId] = useState<string | undefined>()
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<IncomeStatementRow[]>([])
 
@@ -39,13 +39,7 @@ export default function IncomeStatementPage() {
 
     setLoading(true)
     try {
-      const result = await getIncomeStatement(
-        profile.company_id,
-        startDate,
-        endDate,
-        branchId,
-        costCenterId
-      )
+      const result = await getIncomeStatement(profile.company_id, startDate, endDate)
       setData(result)
 
       const rev = result.filter(r => r.section === 'Revenue').reduce((sum, r) => sum + Number(r.amount), 0)
@@ -71,7 +65,7 @@ export default function IncomeStatementPage() {
     if (profile?.company_id) {
       fetchData()
     }
-  }, [profile?.company_id, startDate, endDate, branchId, costCenterId])
+  }, [profile?.company_id])
 
   const renderSection = (title: string, sectionFilter: string) => {
     const rows = data.filter(r => r.section === sectionFilter)
@@ -104,35 +98,10 @@ export default function IncomeStatementPage() {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold tracking-tight">Income Statement</h1>
-        <ExportButton
-          data={data}
-          filename="income_statement"
-          columns={[
-            { key: 'section', label: 'Section' },
-            { key: 'account_code', label: 'Code' },
-            { key: 'account_name', label: 'Account Name' },
-            { key: 'amount', label: 'Amount' },
-          ]}
-        />
+        <Button variant="outline" onClick={() => window.print()}>
+          <Printer className="mr-2 h-4 w-4" /> Print
+        </Button>
       </div>
-
-      <ReportFilters
-        startDate={startDate}
-        endDate={endDate}
-        branchId={branchId}
-        costCenterId={costCenterId}
-        onFilterChange={(filters) => {
-          if (filters.startDate !== undefined) setStartDate(filters.startDate)
-          if (filters.endDate !== undefined) setEndDate(filters.endDate)
-          if (filters.branchId !== undefined) setBranchId(filters.branchId)
-          if (filters.costCenterId !== undefined) setCostCenterId(filters.costCenterId)
-        }}
-        onReset={() => {
-          setBranchId(undefined)
-          setCostCenterId(undefined)
-        }}
-        showDateRange
-      />
 
       <Card>
         <CardHeader className="pb-3 border-b">
@@ -142,9 +111,19 @@ export default function IncomeStatementPage() {
               <p className="text-sm text-muted-foreground">For period {startDate} to {endDate}</p>
             </div>
 
-            <Button size="sm" onClick={fetchData} disabled={loading}>
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Run'}
-            </Button>
+            <div className="flex items-end gap-3">
+              <div className="grid gap-1">
+                <label className="text-xs font-medium">From</label>
+                <Input type="date" className="h-8" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              </div>
+              <div className="grid gap-1">
+                <label className="text-xs font-medium">To</label>
+                <Input type="date" className="h-8" value={endDate} onChange={e => setEndDate(e.target.value)} />
+              </div>
+              <Button size="sm" onClick={fetchData} disabled={loading}>
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Run'}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="pt-6">
