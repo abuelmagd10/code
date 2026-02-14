@@ -563,7 +563,6 @@ export default function BillViewPage() {
       setReturnProcessing(true)
 
       // 🔍 التحقق من توفر المخزون قبل المرتجع
-      // مرتجع الشراء يعني إرجاع البضاعة للمورد، لذا يجب أن تكون البضاعة متوفرة في المخزون
       const itemsToCheck = returnItems
         .filter(it => it.return_qty > 0 && it.product_id)
         .map(it => ({
@@ -572,7 +571,6 @@ export default function BillViewPage() {
         }))
 
       if (itemsToCheck.length > 0) {
-        // Pass bill context for proper inventory filtering
         const inventoryContext = bill ? {
           company_id: bill.company_id,
           branch_id: bill.branch_id || null,
@@ -593,29 +591,11 @@ export default function BillViewPage() {
         }
       }
 
+      // Get account mapping
       const mapping = await findAccountIds(bill.company_id)
       if (!mapping) {
         toastActionError(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Bill' : 'الفاتورة', appLang === 'en' ? 'Account settings not found' : 'لم يتم العثور على إعدادات الحسابات')
-        return
-      }
-
-      // Calculate base amount for multi-currency
-      const baseReturnTotal = returnCurrency === appCurrency ? returnTotal : Math.round(returnTotal * returnExRate.rate * 10000) / 10000
-
-      // Determine refund account
-      let refundAccountId: string | null = returnAccountId || null
-      if (!refundAccountId) {
-        if (returnMethod === 'cash') {
-          refundAccountId = mapping.cash || null
-        } else if (returnMethod === 'bank') {
-          refundAccountId = mapping.bank || null
-        } else {
-          refundAccountId = mapping.ap || null // Credit to AP (reduce payable)
-        }
-      }
-
-      if (!refundAccountId && returnMethod !== 'credit') {
-        toastActionError(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Account' : 'الحساب', appLang === 'en' ? 'No refund account found' : 'لم يتم العثور على حساب للاسترداد')
+        setReturnProcessing(false)
         return
       }
 
@@ -641,324 +621,83 @@ export default function BillViewPage() {
         if (!effectiveCostCenterId) effectiveCostCenterId = defaults.default_cost_center_id
       }
 
-      // ✅ التحقق من الحوكمة قبل المتابعة
       if (!effectiveBranchId || !effectiveWarehouseId || !effectiveCostCenterId) {
         toastActionError(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Governance' : 'الحوكمة', appLang === 'en' ? 'Branch, Warehouse, and Cost Center are required' : 'الفرع والمخزن ومركز التكلفة مطلوبة')
         setReturnProcessing(false)
         return
       }
 
-      // ✅ 1. إنشاء purchase_return record أولاً (مطلوب دائماً)
-      const returnNumber = `PRET-${Date.now().toString().slice(-8)}`
-      const { data: purchaseReturn, error: prError } = await supabase
-          .from("purchase_returns")
-          .insert({
-            company_id: bill.company_id,
-            supplier_id: bill.supplier_id,
-            bill_id: bill.id,
-            return_number: returnNumber,
-            return_date: new Date().toISOString().slice(0, 10),
-            subtotal: baseReturnTotal,
-            tax_amount: 0,
-            total_amount: baseReturnTotal,
-            settlement_method: returnMethod === 'credit' ? 'credit' : returnMethod === 'cash' ? 'cash' : 'bank',
-            status: 'completed',
-            reason: appLang === 'en' ? 'Purchase return' : 'مرتجع مشتريات',
-            notes: appLang === 'en' ? `Purchase return for bill ${bill.bill_number}` : `مرتجع مشتريات للفاتورة ${bill.bill_number}`,
-            branch_id: effectiveBranchId,
-            cost_center_id: effectiveCostCenterId,
-            warehouse_id: effectiveWarehouseId
-          })
-          .select()
-          .single()
-
-      if (prError) {
-        console.error("❌ Failed to create purchase return record:", prError)
-        throw new Error(`فشل إنشاء سجل المرتجع: ${prError.message}`)
-      }
-
-      if (!purchaseReturn) {
-        throw new Error("فشل إنشاء سجل المرتجع")
-      }
-
-      // ✅ 2. عكس FIFO و COGS (قبل القيود المحاسبية)
-      const returnItemsForFIFO = returnItems
-        .filter(it => it.return_qty > 0 && it.product_id)
-        .map(it => ({
-          productId: it.product_id!,
-          quantity: it.return_qty,
-          billItemId: it.item_id
-        }))
-
-      let fifoReversalResult: any = null
-      let inventoryCostFromFIFO = 0
-
-      if (returnItemsForFIFO.length > 0) {
-        // عكس FIFO و COGS
-        fifoReversalResult = await processPurchaseReturnFIFOReversal(supabase, {
-          billId: bill.id,
-          purchaseReturnId: purchaseReturn.id,
-          returnItems: returnItemsForFIFO,
-          companyId: bill.company_id,
-          branchId: effectiveBranchId,
-          costCenterId: effectiveCostCenterId,
-          warehouseId: effectiveWarehouseId
-        })
-
-        if (!fifoReversalResult.success) {
-          console.error("❌ Failed to reverse FIFO/COGS:", fifoReversalResult.error)
-          // لا نوقف العملية، لكن نسجل الخطأ
-        } else {
-          inventoryCostFromFIFO = fifoReversalResult.totalReversedCost
-          console.log(`✅ FIFO/COGS reversed: ${fifoReversalResult.reversedLots} lots, ${fifoReversalResult.reversedCOGSTransactions.length} COGS transactions, Total cost: ${inventoryCostFromFIFO}`)
-        }
-      }
-
-      // ✅ 3. إنشاء القيد المحاسبي (الصحيح حسب طريقة المرتجع)
-      const { data: entry, error: entryErr } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: bill.company_id,
-          reference_type: "purchase_return",
-          reference_id: bill.id,
-          entry_date: new Date().toISOString().slice(0, 10),
-          description: appLang === 'en' ? `Purchase return for bill ${bill.bill_number}` : `مرتجع مشتريات للفاتورة ${bill.bill_number}`,
-          branch_id: effectiveBranchId,
-          cost_center_id: effectiveCostCenterId
-        })
-        .select()
-        .single()
-      if (entryErr) throw entryErr
-
-      const lines: any[] = []
-      const invOrExp = mapping.inventory || mapping.expense
-      const inventoryCost = inventoryCostFromFIFO > 0 ? inventoryCostFromFIFO : baseReturnTotal // استخدام FIFO إذا متاح
-
-      if (returnMethod === 'credit') {
-        // ✅ الحالة A: Credit Return - Vendor Credit فقط
-        // نحتاج حساب Vendor Credit Liability (AP Contra)
-        // إذا لم يكن موجوداً، نستخدم AP مؤقتاً
-        const vendorCreditAccount = mapping.vendorCreditLiability || mapping.ap
-
-        if (vendorCreditAccount) {
-          lines.push({
-            journal_entry_id: entry.id,
-            account_id: vendorCreditAccount,
-            debit_amount: baseReturnTotal,
-            credit_amount: 0,
-            description: appLang === 'en' ? 'Vendor Credit Liability (AP Contra)' : 'إشعار دائن المورد (AP Contra)',
-            original_currency: returnCurrency,
-            original_debit: returnTotal,
-            original_credit: 0,
-            exchange_rate_used: returnExRate.rate,
-            exchange_rate_id: returnExRate.rateId,
-            rate_source: returnExRate.source,
-            branch_id: effectiveBranchId,
-            cost_center_id: effectiveCostCenterId
-          })
-        }
-
-        if (invOrExp) {
-          lines.push({
-            journal_entry_id: entry.id,
-            account_id: invOrExp,
-            debit_amount: 0,
-            credit_amount: inventoryCost,
-            description: mapping.inventory ? (appLang === 'en' ? 'Inventory returned to supplier' : 'مخزون مرتجع للمورد') : (appLang === 'en' ? 'Expense reversal' : 'عكس المصروف'),
-            original_currency: returnCurrency,
-            original_debit: 0,
-            original_credit: returnTotal,
-            exchange_rate_used: returnExRate.rate,
-            exchange_rate_id: returnExRate.rateId,
-            rate_source: returnExRate.source,
-            branch_id: effectiveBranchId,
-            cost_center_id: effectiveCostCenterId
-          })
-        }
-      } else {
-        // ✅ الحالة B: Cash Refund - استرداد نقدي مباشر
-        if (refundAccountId) {
-          lines.push({
-            journal_entry_id: entry.id,
-            account_id: refundAccountId,
-            debit_amount: baseReturnTotal,
-            credit_amount: 0,
-            description: returnMethod === 'cash' ? (appLang === 'en' ? 'Cash refund received' : 'استرداد نقدي مستلم') : (appLang === 'en' ? 'Bank refund received' : 'استرداد بنكي مستلم'),
-            original_currency: returnCurrency,
-            original_debit: returnTotal,
-            original_credit: 0,
-            exchange_rate_used: returnExRate.rate,
-            exchange_rate_id: returnExRate.rateId,
-            rate_source: returnExRate.source,
-            branch_id: effectiveBranchId,
-            cost_center_id: effectiveCostCenterId
-          })
-        }
-
-        if (invOrExp) {
-          lines.push({
-            journal_entry_id: entry.id,
-            account_id: invOrExp,
-            debit_amount: 0,
-            credit_amount: inventoryCost,
-            description: mapping.inventory ? (appLang === 'en' ? 'Inventory returned to supplier' : 'مخزون مرتجع للمورد') : (appLang === 'en' ? 'Expense reversal' : 'عكس المصروف'),
-            original_currency: returnCurrency,
-            original_debit: 0,
-            original_credit: returnTotal,
-            exchange_rate_used: returnExRate.rate,
-            exchange_rate_id: returnExRate.rateId,
-            rate_source: returnExRate.source,
-            branch_id: effectiveBranchId,
-            cost_center_id: effectiveCostCenterId
-          })
-        }
-      }
-
-      const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
-      if (linesErr) throw linesErr
-
-      // ✅ تحديث purchase_return record بربطه بالقيد
-      if (purchaseReturn) {
-        await supabase
-          .from("purchase_returns")
-          .update({ journal_entry_id: entry.id })
-          .eq("id", purchaseReturn.id)
-      }
-
-      // Update bill_items returned_quantity
-      for (const it of returnItems) {
-        if (it.return_qty > 0) {
-          const originalItem = items.find(i => i.id === it.item_id)
-          const newReturnedQty = (originalItem?.returned_quantity || 0) + it.return_qty
-          await supabase.from("bill_items").update({ returned_quantity: newReturnedQty }).eq("id", it.item_id)
-        }
-      }
-
-      // ✅ 4. إنشاء inventory transactions للبنود المرتجعة
-      const invTx = returnItems.filter(it => it.return_qty > 0 && it.product_id).map(it => ({
-        company_id: bill.company_id,
-        product_id: it.product_id,
-        transaction_type: "purchase_return",
-        quantity_change: -it.return_qty,
-        reference_id: bill.id,
-        journal_entry_id: entry.id,
-        notes: appLang === 'en' ? `Purchase return for bill ${bill.bill_number}` : `مرتجع مشتريات للفاتورة ${bill.bill_number}`,
-        branch_id: effectiveBranchId,
-        cost_center_id: effectiveCostCenterId,
-        warehouse_id: effectiveWarehouseId
-      }))
-      if (invTx.length > 0) {
-        await supabase.from("inventory_transactions").insert(invTx)
-        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
-        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
-      }
-
-      // ✅ 5. تحديث الفاتورة (ERP-grade: لا تعديل الفاتورة المدفوعة)
+      // Determine if bill is paid
       const billStatus = bill.status?.toLowerCase()
       const isPaid = billStatus === 'paid' || billStatus === 'partially_paid'
-      const currentReturnedAmount = Number((bill as any).returned_amount || 0)
-      const newReturnedAmount = currentReturnedAmount + baseReturnTotal
-      const billTotal = Number(bill.total_amount || 0)
-      const newReturnStatus = newReturnedAmount >= billTotal ? 'full' : 'partial'
 
-      if (isPaid) {
-        // ✅ للفواتير المدفوعة: لا تعديل (audit-locked)
-        // فقط تسجيل returned_amount للمرجعية
-        const { error: billUpdateErr } = await supabase.from("bills").update({
-          returned_amount: newReturnedAmount,
-          return_status: newReturnStatus
-        }).eq("id", bill.id)
+      // ✅ ATOMIC EXECUTION: Use AccountingTransactionService
+      const { AccountingTransactionService } = await import('@/lib/accounting-transaction-service')
+      const service = new AccountingTransactionService(supabase)
 
-        if (billUpdateErr) {
-          console.error("❌ Failed to update bill returned_amount:", billUpdateErr)
-          throw new Error(`فشل تحديث المرتجع: ${billUpdateErr.message}`)
-        }
-        console.log("✅ Bill returned_amount updated (audit-locked):", { billId: bill.id, newReturnedAmount, newReturnStatus })
-      } else {
-        // ✅ للفواتير غير المدفوعة: يمكن تعديل الإجمالي
-        const oldTotal = Number(bill.total_amount || 0)
-        const newTotal = Math.max(oldTotal - baseReturnTotal, 0)
-        const newReturnStatus = newTotal === 0 ? 'full' : 'partial'
-
-        let newStatus: string
-        if (newTotal === 0) {
-          newStatus = "fully_returned"
-        } else {
-          newStatus = billStatus || "sent"
-        }
-
-        const { error: billUpdateErr } = await supabase.from("bills").update({
-          total_amount: newTotal,
-          returned_amount: newReturnedAmount,
-          return_status: newReturnStatus,
-          status: newStatus
-        }).eq("id", bill.id)
-
-        if (billUpdateErr) {
-          console.error("❌ Failed to update bill after return:", billUpdateErr)
-          throw new Error(`فشل تحديث الفاتورة: ${billUpdateErr.message}`)
-        }
-        console.log("✅ Bill updated (non-paid):", { billId: bill.id, newTotal, newReturnedAmount, newReturnStatus, newStatus })
-      }
-
-      // ✅ 6. إنشاء Vendor Credit للفواتير المدفوعة (Credit Return فقط)
-      if (isPaid && returnMethod === 'credit' && purchaseReturn) {
-        const { data: { user } } = await supabase.auth.getUser()
-        
-        const vendorCreditResult = await createVendorCreditForReturn(supabase, {
+      const result = await service.postPurchaseReturnAtomic(
+        {
+          billId: bill.id,
+          billNumber: bill.bill_number,
           companyId: bill.company_id,
           supplierId: bill.supplier_id,
-          billId: bill.id,
-          purchaseReturnId: purchaseReturn.id,
-          returnNumber: purchaseReturn.return_number,
-          returnDate: purchaseReturn.return_date,
-          subtotal: baseReturnTotal,
-          taxAmount: 0,
-          totalAmount: baseReturnTotal,
           branchId: effectiveBranchId,
-          costCenterId: effectiveCostCenterId,
           warehouseId: effectiveWarehouseId,
-          journalEntryId: entry.id,
-          items: returnItems
-            .filter(it => it.return_qty > 0)
-            .map(it => {
-              const originalItem = items.find(i => i.id === it.item_id)
-              return {
-                productId: it.product_id,
-                description: originalItem?.description || '',
-                quantity: it.return_qty,
-                unitPrice: Number(originalItem?.unit_price || 0),
-                taxRate: Number(originalItem?.tax_rate || 0),
-                discountPercent: Number(originalItem?.discount_percent || 0),
-                lineTotal: Number(originalItem?.line_total || 0) * (it.return_qty / Number(originalItem?.quantity || 1))
-              }
-            }),
-          currency: returnCurrency,
-          exchangeRate: returnExRate.rate,
-          exchangeRateId: returnExRate.rateId
-        })
-
-        if (vendorCreditResult.success) {
-          console.log(`✅ Vendor Credit created: ${vendorCreditResult.vendorCreditId}`)
-        } else {
-          console.error(`❌ Failed to create Vendor Credit: ${vendorCreditResult.error}`)
-          // لا نوقف العملية، لكن نسجل الخطأ
+          costCenterId: effectiveCostCenterId,
+          returnItems: returnItems.map(it => ({
+            item_id: it.item_id,
+            product_id: it.product_id,
+            product_name: it.product_name,
+            return_qty: it.return_qty,
+            unit_price: Number(items.find(i => i.id === it.item_id)?.unit_price || 0),
+            tax_rate: Number(items.find(i => i.id === it.item_id)?.tax_rate || 0),
+            discount_percent: Number(items.find(i => i.id === it.item_id)?.discount_percent || 0)
+          })),
+          returnMethod: returnMethod as 'credit' | 'cash' | 'bank',
+          returnAccountId: returnAccountId,
+          isPaid,
+          lang: appLang as 'ar' | 'en'
+        },
+        {
+          companyId: mapping.companyId,
+          ap: mapping.ap!,
+          inventory: mapping.inventory,
+          expense: mapping.expense,
+          vendorCreditLiability: mapping.vendorCreditLiability,
+          cash: mapping.cash,
+          bank: mapping.bank
         }
+      )
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to process purchase return')
       }
 
-      // تحديث حالة أمر الشراء المرتبط
+      // Update linked purchase order status
       await updateLinkedPurchaseOrderStatus(bill.id)
 
-      toastActionSuccess(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Purchase return processed' : 'تم معالجة المرتجع')
+      toastActionSuccess(
+        toast,
+        appLang === 'en' ? 'Return' : 'المرتجع',
+        appLang === 'en' ? 'Purchase Return' : 'مرتجع المشتريات',
+        appLang
+      )
       setReturnOpen(false)
       await loadData()
     } catch (err: any) {
-      console.error("Error processing purchase return:", err)
-      toastActionError(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Bill' : 'الفاتورة', err?.message || '')
+      console.error('Purchase return error:', err)
+      toastActionError(
+        toast,
+        appLang === 'en' ? 'Return' : 'المرتجع',
+        appLang === 'en' ? 'Purchase Return' : 'مرتجع المشتريات',
+        err.message || (appLang === 'en' ? 'Failed to process return' : 'فشل معالجة المرتجع'),
+        appLang
+      )
     } finally {
       setReturnProcessing(false)
     }
   }
+
 
   const canHardDelete = useMemo(() => {
     if (!bill) return false
@@ -1044,7 +783,7 @@ export default function BillViewPage() {
       byNameIncludes("prepaid to suppliers") ||
       byNameIncludes("prepayment") ||
       byType("asset")
-    
+
     // 📌 حساب Vendor Credit Liability (AP Contra) - لإشعارات دائن الموردين
     const vendorCreditLiability =
       bySubType("vendor_credit_liability") ||
@@ -1340,7 +1079,7 @@ export default function BillViewPage() {
         .eq("id", bill.branch_id)
         .eq("company_id", bill.company_id)
         .single()
-      
+
       if (!branchCheck) {
         const errorMsg = appLang === 'en'
           ? 'Branch does not belong to company'
@@ -1356,7 +1095,7 @@ export default function BillViewPage() {
         .eq("id", bill.warehouse_id)
         .eq("company_id", bill.company_id)
         .single()
-      
+
       if (!warehouseCheck) {
         const errorMsg = appLang === 'en'
           ? 'Warehouse does not belong to company'
@@ -1372,7 +1111,7 @@ export default function BillViewPage() {
         .eq("id", bill.cost_center_id)
         .eq("company_id", bill.company_id)
         .single()
-      
+
       if (!costCenterCheck) {
         const errorMsg = appLang === 'en'
           ? 'Cost Center does not belong to company'
@@ -1775,37 +1514,35 @@ export default function BillViewPage() {
                       {appLang === 'en' ? `Bill #${bill.bill_number}` : `فاتورة #${bill.bill_number}`}
                     </h1>
                     {/* شارة الحالة */}
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
-                      bill.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${bill.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                       bill.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                      bill.status === 'sent' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                      bill.status === 'draft' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' :
-                      bill.status === 'voided' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                      bill.status === 'pending_approval' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' :
-                      bill.status === 'approved' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
-                      bill.status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                      bill.status === 'received' ? 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200' :
-                      'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                    }`}>
+                        bill.status === 'sent' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                          bill.status === 'draft' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' :
+                            bill.status === 'voided' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                              bill.status === 'pending_approval' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' :
+                                bill.status === 'approved' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
+                                  bill.status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                                    bill.status === 'received' ? 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200' :
+                                      'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                      }`}>
                       {bill.status === 'paid' ? (appLang === 'en' ? 'Paid' : 'مدفوعة') :
                         bill.status === 'partially_paid' ? (appLang === 'en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
-                        bill.status === 'sent' ? (appLang === 'en' ? 'Sent' : 'مرسلة') :
-                        bill.status === 'draft' ? (appLang === 'en' ? 'Draft' : 'مسودة') :
-                        bill.status === 'voided' ? (appLang === 'en' ? 'Voided' : 'ملغاة') :
-                        bill.status === 'pending_approval' ? (appLang === 'en' ? 'Pending Approval' : 'بانتظار الاعتماد') :
-                        bill.status === 'approved' ? (appLang === 'en' ? 'Approved' : 'معتمدة') :
-                        bill.status === 'rejected' ? (appLang === 'en' ? 'Rejected' : 'مرفوضة') :
-                        bill.status === 'received' ? (appLang === 'en' ? 'Received' : 'تم الاستلام') :
-                        bill.status}
+                          bill.status === 'sent' ? (appLang === 'en' ? 'Sent' : 'مرسلة') :
+                            bill.status === 'draft' ? (appLang === 'en' ? 'Draft' : 'مسودة') :
+                              bill.status === 'voided' ? (appLang === 'en' ? 'Voided' : 'ملغاة') :
+                                bill.status === 'pending_approval' ? (appLang === 'en' ? 'Pending Approval' : 'بانتظار الاعتماد') :
+                                  bill.status === 'approved' ? (appLang === 'en' ? 'Approved' : 'معتمدة') :
+                                    bill.status === 'rejected' ? (appLang === 'en' ? 'Rejected' : 'مرفوضة') :
+                                      bill.status === 'received' ? (appLang === 'en' ? 'Received' : 'تم الاستلام') :
+                                        bill.status}
                     </span>
                     {/* ✅ شارة حالة الاستلام */}
                     {bill.receipt_status && (
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
-                        bill.receipt_status === 'received' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${bill.receipt_status === 'received' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
                         bill.receipt_status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                        bill.receipt_status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                        'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                      }`}>
+                          bill.receipt_status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                            'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                        }`}>
                         {bill.receipt_status === 'received' ? (appLang === 'en' ? 'Received' : 'تم الاستلام') :
                           bill.receipt_status === 'rejected' ? (appLang === 'en' ? 'Rejected' : 'مرفوض') :
                             bill.receipt_status === 'pending' ? (appLang === 'en' ? 'Pending Receipt' : 'بانتظار الاستلام') :
@@ -1878,118 +1615,118 @@ export default function BillViewPage() {
                   // ✅ السماح بإعادة إرسال الفاتورة إذا تم رفضها إدارياً
                   (bill.status === "rejected")) &&
                   canSubmitForApproval && (
-                  <Button
-                    onClick={async () => {
-                      try {
-                        setPosting(true)
-                        const companyId = await getActiveCompanyId(supabase)
-                        const { data: { user } } = await supabase.auth.getUser()
-                        if (!companyId || !user) {
-                          setPosting(false)
-                          return
-                        }
+                    <Button
+                      onClick={async () => {
+                        try {
+                          setPosting(true)
+                          const companyId = await getActiveCompanyId(supabase)
+                          const { data: { user } } = await supabase.auth.getUser()
+                          if (!companyId || !user) {
+                            setPosting(false)
+                            return
+                          }
 
-                        const { error } = await supabase
-                          .from("bills")
-                          .update({
-                            status: "pending_approval",
-                            approval_status: "pending_approval",
-                            approved_by: null,
-                            approved_at: null,
-                            // ✅ عند إعادة الإرسال نعيد ضبط حالة الاستلام وسبب الرفض
-                            receipt_status: null,
-                            receipt_rejection_reason: null,
-                            // ✅ مسح بيانات الرفض السابق
-                            rejection_reason: null,
-                            rejected_by: null,
-                            rejected_at: null,
-                          })
-                          .eq("id", bill.id)
-                          .eq("company_id", companyId)
+                          const { error } = await supabase
+                            .from("bills")
+                            .update({
+                              status: "pending_approval",
+                              approval_status: "pending_approval",
+                              approved_by: null,
+                              approved_at: null,
+                              // ✅ عند إعادة الإرسال نعيد ضبط حالة الاستلام وسبب الرفض
+                              receipt_status: null,
+                              receipt_rejection_reason: null,
+                              // ✅ مسح بيانات الرفض السابق
+                              rejection_reason: null,
+                              rejected_by: null,
+                              rejected_at: null,
+                            })
+                            .eq("id", bill.id)
+                            .eq("company_id", companyId)
 
-                        if (error) throw error
+                          if (error) throw error
 
-                        // إشعارات للمالك والمدير العام داخل نفس الشركة فقط
-                        // ✅ إضافة timestamp للـ event_key لضمان إرسال إشعار جديد عند إعادة الإرسال بعد الرفض
-                        const isResubmission = bill.status === "rejected" || (bill.status === "approved" && (bill as any).receipt_status === "rejected")
-                        const eventKeySuffix = isResubmission ? `:resubmit:${Date.now()}` : ""
-                        const notificationTitle = isResubmission
-                          ? (appLang === "en" ? "Purchase bill resubmitted for approval" : "تم إعادة إرسال فاتورة المشتريات للاعتماد")
-                          : (appLang === "en" ? "Purchase bill pending approval" : "فاتورة مشتريات بانتظار الاعتماد الإداري")
-                        const notificationMessage = isResubmission
-                          ? (appLang === "en"
+                          // إشعارات للمالك والمدير العام داخل نفس الشركة فقط
+                          // ✅ إضافة timestamp للـ event_key لضمان إرسال إشعار جديد عند إعادة الإرسال بعد الرفض
+                          const isResubmission = bill.status === "rejected" || (bill.status === "approved" && (bill as any).receipt_status === "rejected")
+                          const eventKeySuffix = isResubmission ? `:resubmit:${Date.now()}` : ""
+                          const notificationTitle = isResubmission
+                            ? (appLang === "en" ? "Purchase bill resubmitted for approval" : "تم إعادة إرسال فاتورة المشتريات للاعتماد")
+                            : (appLang === "en" ? "Purchase bill pending approval" : "فاتورة مشتريات بانتظار الاعتماد الإداري")
+                          const notificationMessage = isResubmission
+                            ? (appLang === "en"
                               ? `Purchase bill ${bill.bill_number} has been resubmitted for admin approval after rejection`
                               : `تم إعادة إرسال فاتورة المشتريات رقم ${bill.bill_number} للاعتماد الإداري بعد الرفض`)
-                          : (appLang === "en"
+                            : (appLang === "en"
                               ? `Purchase bill ${bill.bill_number} is pending admin approval`
                               : `فاتورة مشتريات رقم ${bill.bill_number} في انتظار الاعتماد الإداري`)
 
-                        try {
-                          await createNotification({
-                            companyId,
-                            referenceType: "bill",
-                            referenceId: bill.id,
-                            title: notificationTitle,
-                            message: notificationMessage,
-                            createdBy: user.id,
-                            branchId: bill.branch_id || undefined,
-                            costCenterId: bill.cost_center_id || undefined,
-                            assignedToRole: "owner",
-                            priority: "high",
-                            eventKey: `bill:${bill.id}:pending_approval_owner${eventKeySuffix}`,
-                            severity: "warning",
-                            category: "approvals"
-                          })
+                          try {
+                            await createNotification({
+                              companyId,
+                              referenceType: "bill",
+                              referenceId: bill.id,
+                              title: notificationTitle,
+                              message: notificationMessage,
+                              createdBy: user.id,
+                              branchId: bill.branch_id || undefined,
+                              costCenterId: bill.cost_center_id || undefined,
+                              assignedToRole: "owner",
+                              priority: "high",
+                              eventKey: `bill:${bill.id}:pending_approval_owner${eventKeySuffix}`,
+                              severity: "warning",
+                              category: "approvals"
+                            })
 
-                          await createNotification({
-                            companyId,
-                            referenceType: "bill",
-                            referenceId: bill.id,
-                            title: notificationTitle,
-                            message: notificationMessage,
-                            createdBy: user.id,
-                            branchId: bill.branch_id || undefined,
-                            costCenterId: bill.cost_center_id || undefined,
-                            assignedToRole: "general_manager",
-                            priority: "high",
-                            eventKey: `bill:${bill.id}:pending_approval_gm${eventKeySuffix}`,
-                            severity: "warning",
-                            category: "approvals"
-                          })
-                        } catch (notifErr) {
-                          console.warn("Bill approval notifications failed:", notifErr)
+                            await createNotification({
+                              companyId,
+                              referenceType: "bill",
+                              referenceId: bill.id,
+                              title: notificationTitle,
+                              message: notificationMessage,
+                              createdBy: user.id,
+                              branchId: bill.branch_id || undefined,
+                              costCenterId: bill.cost_center_id || undefined,
+                              assignedToRole: "general_manager",
+                              priority: "high",
+                              eventKey: `bill:${bill.id}:pending_approval_gm${eventKeySuffix}`,
+                              severity: "warning",
+                              category: "approvals"
+                            })
+                          } catch (notifErr) {
+                            console.warn("Bill approval notifications failed:", notifErr)
+                          }
+
+                          toastActionSuccess(
+                            toast,
+                            appLang === "en" ? "Submit" : "إرسال",
+                            appLang === "en" ? "Purchase Bill for approval" : "فاتورة المشتريات للاعتماد",
+                            appLang
+                          )
+                          await loadData()
+                        } catch (err) {
+                          console.error("Error submitting bill for approval:", err)
+                          toastActionError(
+                            toast,
+                            appLang === "en" ? "Submit" : "الإرسال",
+                            appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
+                            appLang === "en" ? "Failed to submit for approval" : "تعذر إرسال الفاتورة للاعتماد",
+                            appLang
+                          )
+                        } finally {
+                          setPosting(false)
                         }
-
-                        toastActionSuccess(
-                          toast,
-                          appLang === "en" ? "Submit" : "إرسال",
-                          appLang === "en" ? "Purchase Bill for approval" : "فاتورة المشتريات للاعتماد",
-                          appLang
-                        )
-                        await loadData()
-                      } catch (err) {
-                        console.error("Error submitting bill for approval:", err)
-                        toastActionError(
-                          toast,
-                          appLang === "en" ? "Submit" : "الإرسال",
-                          appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
-                          appLang === "en" ? "Failed to submit for approval" : "تعذر إرسال الفاتورة للاعتماد",
-                          appLang
-                        )
-                      } finally {
-                        setPosting(false)
-                      }
-                    }}
-                    disabled={posting}
-                    size="sm"
-                    className="bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    <CheckCircle className="w-4 h-4 sm:mr-1" />
-                    <span className="hidden sm:inline">
-                      {posting ? "..." : (appLang === 'en' ? 'Submit for Approval' : 'إرسال للاعتماد الإداري')}
-                    </span>
-                  </Button>
-                )}
+                      }}
+                      disabled={posting}
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      <CheckCircle className="w-4 h-4 sm:mr-1" />
+                      <span className="hidden sm:inline">
+                        {posting ? "..." : (appLang === 'en' ? 'Submit for Approval' : 'إرسال للاعتماد الإداري')}
+                      </span>
+                    </Button>
+                  )}
 
                 {/* اعتماد إداري من المالك / المدير العام */}
                 {bill.status === "pending_approval" && canApproveAdmin && (
@@ -2148,17 +1885,17 @@ export default function BillViewPage() {
                 */}
                 {["received", "partially_paid", "paid"].includes(bill.status) &&
                   items.some(it => (it.quantity - (it.returned_quantity || 0)) > 0) && (
-                  <>
-                    <Button variant="outline" size="sm" onClick={() => openReturnDialog('partial')} className="text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400">
-                      <RotateCcw className="w-4 h-4 sm:mr-1" />
-                      <span className="hidden sm:inline">{appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}</span>
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => openReturnDialog('full')} className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400">
-                      <RotateCcw className="w-4 h-4 sm:mr-1" />
-                      <span className="hidden sm:inline">{appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}</span>
-                    </Button>
-                  </>
-                )}
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => openReturnDialog('partial')} className="text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400">
+                        <RotateCcw className="w-4 h-4 sm:mr-1" />
+                        <span className="hidden sm:inline">{appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}</span>
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => openReturnDialog('full')} className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400">
+                        <RotateCcw className="w-4 h-4 sm:mr-1" />
+                        <span className="hidden sm:inline">{appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}</span>
+                      </Button>
+                    </>
+                  )}
 
                 {/* فاصل */}
                 <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />
@@ -2368,7 +2105,7 @@ export default function BillViewPage() {
                       )}
                     </CardContent>
                   </Card>
-                  
+
                   {/* ✅ عرض حالة الاستلام وسبب الرفض */}
                   {bill.receipt_status && (
                     <Card>
@@ -2378,12 +2115,11 @@ export default function BillViewPage() {
                       <CardContent className="space-y-3 text-sm">
                         <div className="flex items-center justify-between">
                           <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Status' : 'الحالة'}</span>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            bill.receipt_status === 'received' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${bill.receipt_status === 'received' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
                             bill.receipt_status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                            bill.receipt_status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                            'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                          }`}>
+                              bill.receipt_status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                                'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                            }`}>
                             {bill.receipt_status === 'received' ? (appLang === 'en' ? 'Received' : 'تم الاستلام') :
                               bill.receipt_status === 'rejected' ? (appLang === 'en' ? 'Rejected' : 'مرفوض') :
                                 bill.receipt_status === 'pending' ? (appLang === 'en' ? 'Pending Receipt' : 'بانتظار الاستلام') :
