@@ -4,9 +4,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Download, Filter, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Download, Filter, AlertTriangle, CheckCircle, Printer } from 'lucide-react'
 import { useSupabase } from '@/lib/supabase/hooks'
 import { getActiveCompanyId } from '@/lib/company'
+import { useRef } from 'react'
 
 interface ReportFilters {
   companyId: string
@@ -49,17 +50,19 @@ export const EnhancedReportLayout = ({
   lang
 }: EnhancedReportLayoutProps) => {
   const supabase = useSupabase()
+  const reportContentRef = useRef<HTMLDivElement>(null)
   const [filters, setFilters] = useState<ReportFilters>({
     companyId: '',
     fromDate: new Date().getFullYear() + '-01-01',
     toDate: new Date().toISOString().slice(0, 10),
     asOfDate: new Date().toISOString().slice(0, 10)
   })
-  const [branches, setBranches] = useState<Array<{id: string, name: string}>>([])
-  const [costCenters, setCostCenters] = useState<Array<{id: string, name: string}>>([])
-  const [warehouses, setWarehouses] = useState<Array<{id: string, name: string}>>([])
+  const [branches, setBranches] = useState<Array<{ id: string, name: string }>>([])
+  const [costCenters, setCostCenters] = useState<Array<{ id: string, name: string }>>([])
+  const [warehouses, setWarehouses] = useState<Array<{ id: string, name: string }>>([])
   const [validation, setValidation] = useState<ReportValidation[]>([])
   const [showFilters, setShowFilters] = useState(false)
+  const [companyDetails, setCompanyDetails] = useState<any>(null)
 
   useEffect(() => {
     loadCompanyData()
@@ -69,8 +72,22 @@ export const EnhancedReportLayout = ({
     if (filters.companyId) {
       onFiltersChange(filters)
       validateReport()
+      loadCompanyDetails(filters.companyId)
     }
   }, [filters])
+
+  const loadCompanyDetails = async (id: string) => {
+    try {
+      const { data } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', id)
+        .single()
+      if (data) setCompanyDetails(data)
+    } catch (e) {
+      console.error('Failed to load company details', e)
+    }
+  }
 
   const loadCompanyData = async () => {
     try {
@@ -123,6 +140,47 @@ export const EnhancedReportLayout = ({
     setFilters(prev => ({ ...prev, [key]: value || undefined }))
   }
 
+  const handlePrint = async () => {
+    try {
+      if (!reportContentRef.current) return
+
+      const { openPrintWindow } = await import('@/lib/print-utils')
+
+
+      const companyName = companyDetails?.name || 'Company Name'
+      const address = companyDetails?.address || ''
+      const phone = companyDetails?.phone || ''
+
+      const content = reportContentRef.current.innerHTML
+
+      openPrintWindow(content, {
+        lang: lang,
+        direction: lang === 'ar' ? 'rtl' : 'ltr',
+        title: title,
+        pageSize: 'A4',
+        margin: '15mm',
+        companyName: companyName,
+        companyAddress: address,
+        companyPhone: phone,
+        printedBy: 'System User',
+        showHeader: true,
+        showFooter: true,
+        extraHeader: `
+          <div style="text-align: center; margin-bottom: 10px;">
+             <h2 style="font-size: 20px; font-weight: bold; padding: 4px 12px; border: 1px solid #000; display: inline-block; border-radius: 4px; margin: 0;">${title}</h2>
+             <p style="color: #6b7280; margin-top: 4px; font-size: 11px;">
+               ${showAsOfDate ? `${lang === 'en' ? 'As of' : 'كما في'}: ${filters.asOfDate}` : ''}
+               ${showDateRange ? `${lang === 'en' ? 'Period' : 'الفترة'}: ${filters.fromDate} - ${filters.toDate}` : ''}
+             </p>
+          </div>
+        `
+      })
+
+    } catch (e) {
+      console.error('Print failed', e)
+    }
+  }
+
   const hasErrors = validation.some(v => v.status === 'ERROR' && v.isCritical)
   const hasWarnings = validation.some(v => v.status === 'WARNING' || (v.status === 'ERROR' && !v.isCritical))
 
@@ -141,6 +199,12 @@ export const EnhancedReportLayout = ({
             <Filter className="w-4 h-4 mr-2" />
             {lang === 'en' ? 'Filters' : 'الفلاتر'}
           </Button>
+
+          <Button variant="outline" onClick={handlePrint}>
+            <Printer className="w-4 h-4 mr-2" />
+            {lang === 'en' ? 'Print' : 'طباعة'}
+          </Button>
+
           {onExport && (
             <>
               <Button variant="outline" onClick={() => onExport('pdf')}>
@@ -167,7 +231,7 @@ export const EnhancedReportLayout = ({
                   {lang === 'en' ? '⚠️ Critical Data Issues Detected' : '⚠️ تم اكتشاف مشاكل حرجة في البيانات'}
                 </div>
                 <div className="text-sm">
-                  {lang === 'en' 
+                  {lang === 'en'
                     ? 'Report data may be inaccurate. Please review journal entries and account balances.'
                     : 'بيانات التقرير قد تكون غير دقيقة. يرجى مراجعة القيود المحاسبية وأرصدة الحسابات.'}
                 </div>
@@ -182,7 +246,7 @@ export const EnhancedReportLayout = ({
                   {lang === 'en' ? '⚠️ Data Warnings' : '⚠️ تحذيرات البيانات'}
                 </div>
                 <div className="text-sm">
-                  {lang === 'en' 
+                  {lang === 'en'
                     ? 'Minor data inconsistencies detected. Report is generally accurate.'
                     : 'تم اكتشاف تضارب طفيف في البيانات. التقرير دقيق بشكل عام.'}
                 </div>
@@ -197,7 +261,7 @@ export const EnhancedReportLayout = ({
                   {lang === 'en' ? '✅ Data Integrity Verified' : '✅ تم التحقق من سلامة البيانات'}
                 </div>
                 <div className="text-sm">
-                  {lang === 'en' 
+                  {lang === 'en'
                     ? 'All data checks passed. Report is accurate and reliable.'
                     : 'تم اجتياز جميع فحوصات البيانات. التقرير دقيق وموثوق.'}
                 </div>
@@ -318,7 +382,7 @@ export const EnhancedReportLayout = ({
       )}
 
       {/* محتوى التقرير */}
-      <Card>
+      <Card ref={reportContentRef}>
         <CardContent className="pt-6">
           {children}
         </CardContent>
@@ -349,11 +413,10 @@ export const EnhancedReportLayout = ({
                     <tr key={index} className="border-b">
                       <td className="p-2">{check.checkName}</td>
                       <td className="p-2">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          check.status === 'OK' ? 'bg-green-100 text-green-800' :
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${check.status === 'OK' ? 'bg-green-100 text-green-800' :
                           check.status === 'WARNING' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
+                            'bg-red-100 text-red-800'
+                          }`}>
                           {check.status}
                         </span>
                       </td>

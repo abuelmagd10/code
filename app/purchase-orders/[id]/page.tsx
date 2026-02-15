@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
-import { Pencil, ArrowRight, ArrowLeft, Loader2, Mail, Send, FileText, CreditCard, RotateCcw, DollarSign, Package, Receipt, ShoppingCart, Plus, CheckCircle, Clock, AlertCircle, Ban } from "lucide-react"
+import { Pencil, ArrowRight, ArrowLeft, Loader2, Mail, Send, FileText, CreditCard, RotateCcw, DollarSign, Package, Receipt, ShoppingCart, Plus, CheckCircle, Clock, AlertCircle, Ban, Printer } from "lucide-react"
 import { type UserContext, validatePurchaseOrderAction, canViewPurchasePrices } from "@/lib/validation"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
@@ -51,6 +51,7 @@ interface PO {
   shipping_tax_rate?: number
   adjustment?: number
   bill_id?: string
+  company_id?: string
 }
 
 interface LinkedBill {
@@ -110,6 +111,9 @@ export default function PurchaseOrderDetailPage() {
   const [canViewPrices, setCanViewPrices] = useState(false)
   const [poCreatedBy, setPoCreatedBy] = useState<string | null>(null)
 
+  const printContentRef = useRef<HTMLDivElement>(null)
+  const [companyDetails, setCompanyDetails] = useState<any>(null)
+
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
   }
@@ -149,6 +153,19 @@ export default function PurchaseOrderDetailPage() {
     load()
   }, [])
 
+  const loadCompanyDetails = async (companyId: string) => {
+    try {
+      const { data } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', companyId)
+        .single()
+      if (data) setCompanyDetails(data)
+    } catch (e) {
+      console.error('Failed to load company details', e)
+    }
+  }
+
   const load = async () => {
     try {
       setIsLoading(true)
@@ -175,6 +192,8 @@ export default function PurchaseOrderDetailPage() {
         }
         setUserContext(context)
         setCanViewPrices(canViewPurchasePrices(context))
+
+        loadCompanyDetails(companyId)
       }
 
       // تحميل أمر الشراء مع suppliers (بدون created_by لأنه غير موجود في الجدول)
@@ -280,19 +299,19 @@ export default function PurchaseOrderDetailPage() {
         const billedQtyMap: Record<string, number> = {}
         // ✅ حساب الكميات المفوترة من الفواتير المعتمدة فقط (لحساب حالة "مفوتر بالكامل")
         const approvedBilledQtyMap: Record<string, number> = {}
-        
-        ; (billItems || []).forEach((bi: any) => {
-          const bill = uniqueBills.find((b: any) => b.id === bi.bill_id)
-          const isApproved = bill && bill.status && bill.status !== 'draft'
-          
-          // جميع الفواتير (للعرض)
-          billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
-          
-          // الفواتير المعتمدة فقط (لحساب الحالة)
-          if (isApproved) {
-            approvedBilledQtyMap[bi.product_id] = (approvedBilledQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
-          }
-        })
+
+          ; (billItems || []).forEach((bi: any) => {
+            const bill = uniqueBills.find((b: any) => b.id === bi.bill_id)
+            const isApproved = bill && bill.status && bill.status !== 'draft'
+
+            // جميع الفواتير (للعرض)
+            billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
+
+            // الفواتير المعتمدة فقط (لحساب الحالة)
+            if (isApproved) {
+              approvedBilledQtyMap[bi.product_id] = (approvedBilledQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
+            }
+          })
 
         // Update items with billed quantities (من جميع الفواتير)
         setItems(prev => prev.map(item => ({
@@ -348,7 +367,7 @@ export default function PurchaseOrderDetailPage() {
 
         // تحديث المدفوعات والمرتجعات
         const billIdsArray = billsData.map((b: any) => b.id)
-        
+
         // جلب المدفوعات
         const { data: paymentsData } = await supabase
           .from("payments")
@@ -398,7 +417,7 @@ export default function PurchaseOrderDetailPage() {
 
     // ✅ تحديث فوري عند تحميل الصفحة
     refreshBillsData()
-    
+
     // ✅ تحديث دوري كل 3 ثواني لمراقبة التغييرات على الفواتير المرتبطة
     const interval = setInterval(refreshBillsData, 3000)
 
@@ -425,20 +444,20 @@ export default function PurchaseOrderDetailPage() {
     // ✅ نفس منطق صفحة الفواتير: نستخدم total_amount مباشرة من كل فاتورة
     // في صفحة الفواتير: Bill Total = bill.total_amount مباشرة
     // في صفحة أمر الشراء: Total Billed = مجموع total_amount من جميع الفواتير المرتبطة
-    const totalBilled = linkedBills.length > 0 
+    const totalBilled = linkedBills.length > 0
       ? linkedBills.reduce((sum, b) => {
-          // ✅ استخدام total_amount مباشرة (مثل صفحة الفواتير)
-          return sum + Number(b.total_amount || 0)
-        }, 0)
+        // ✅ استخدام total_amount مباشرة (مثل صفحة الفواتير)
+        return sum + Number(b.total_amount || 0)
+      }, 0)
       : 0
-    
+
     // ✅ صافي المتبقي = إجمالي الفواتير - المدفوع
     // نفس منطق صفحة الفواتير تماماً: netRemaining = bill.total_amount - paidTotal
     // في صفحة أمر الشراء: netRemaining = totalBilled - totalPaid
     // (نستخدم totalBilled لأن هذا هو إجمالي الفواتير المرتبطة)
     const netRemaining = totalBilled - totalPaid
-    
-    return { 
+
+    return {
       totalBilled, // ✅ إجمالي الفواتير (total_amount من كل فاتورة)
       totalPaid, // ✅ إجمالي المدفوع
       totalReturned, // ✅ إجمالي المرتجعات (للعرض فقط)
@@ -531,6 +550,9 @@ export default function PurchaseOrderDetailPage() {
       const { error } = await supabase.from("purchase_orders").update({ status: newStatus }).eq("id", poId)
       if (error) throw error
 
+      // Update local state immediately
+      setPo(prev => prev ? ({ ...prev, status: newStatus }) : null)
+
       if (newStatus === "sent") {
         // Try to send email to supplier if they have an email
         const supplierEmail = po?.suppliers?.email
@@ -599,6 +621,43 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
+  const handlePrint = async () => {
+    try {
+      const el = printContentRef.current
+      if (!el) return
+
+      const clone = el.cloneNode(true) as HTMLElement
+      // Remove tabs trigger list and non-printable elements
+      const toRemove = clone.querySelectorAll('.no-print, button, [role="tablist"]')
+      toRemove.forEach(e => e.remove())
+
+      const content = clone.innerHTML
+      const { openPrintWindow } = await import('@/lib/print-utils')
+
+      const companyName = companyDetails?.name || 'Company Name'
+      const address = companyDetails?.address || ''
+      const phone = companyDetails?.phone || ''
+
+      openPrintWindow(content, {
+        lang: appLang as 'ar' | 'en',
+        direction: appLang === 'ar' ? 'rtl' : 'ltr',
+        title: appLang === 'en' ? `Purchase Order ${po?.po_number || ''}` : `أمر شراء ${po?.po_number || ''}`,
+        fontSize: 10,
+        pageSize: 'A4',
+        margin: '15mm',
+        companyName: companyName,
+        companyAddress: address,
+        companyPhone: phone,
+        printedBy: 'System User',
+        showHeader: true,
+        showFooter: true
+      })
+    } catch (err) {
+      console.error("Error generating print:", err)
+      toastActionError(toast, appLang === 'en' ? 'Print' : 'طباعة', appLang === 'en' ? 'Purchase Order' : 'أمر الشراء', String((err as any)?.message || ''))
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -643,6 +702,14 @@ export default function PurchaseOrderDetailPage() {
               </div>
             </div>
             <div className="flex gap-2 flex-wrap">
+              {/* Print Button */}
+              {permUpdate && (
+                <Button variant="outline" onClick={handlePrint} className="dark:border-gray-600 dark:text-gray-300">
+                  <Printer className="h-4 w-4 mr-2" />
+                  <span suppressHydrationWarning>{appLang === 'en' ? 'Print' : 'طباعة'}</span>
+                </Button>
+              )}
+
               {/* Create Bill button - show if not fully billed */}
               {permWriteBills && !isFullyBilled && remainingItems.length > 0 && (
                 <Link href={`/bills/new?from_po=${poId}`}>
@@ -678,358 +745,295 @@ export default function PurchaseOrderDetailPage() {
             </div>
           </div>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-            <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                  <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total Billed' : 'إجمالي الفواتير'}</p>
-                  <p className="text-lg font-bold text-blue-600">{symbol}{summary.totalBilled.toFixed(2)}</p>
-                </div>
-              </div>
-            </Card>
-            <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                  <CreditCard className="h-5 w-5 text-green-600 dark:text-green-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total Paid' : 'إجمالي المدفوع'}</p>
-                  <p className="text-lg font-bold text-green-600">{symbol}{summary.totalPaid.toFixed(2)}</p>
-                </div>
-              </div>
-            </Card>
-            <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-                  <RotateCcw className="h-5 w-5 text-orange-600 dark:text-orange-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total Returns' : 'إجمالي المرتجعات'}</p>
-                  <p className="text-lg font-bold text-orange-600">{symbol}{summary.totalReturned.toFixed(2)}</p>
-                </div>
-              </div>
-            </Card>
-            <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${summary.netRemaining > 0 ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30'}`}>
-                  <DollarSign className={`h-5 w-5 ${summary.netRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`} />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Net Remaining' : 'صافي المتبقي'}</p>
-                  <p className={`text-lg font-bold ${summary.netRemaining > 0 ? 'text-red-600' : 'text-green-600'}`}>{symbol}{summary.netRemaining.toFixed(2)}</p>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {/* Order Info & Supplier */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-            <Card className="dark:bg-gray-800 dark:border-gray-700">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base dark:text-white flex items-center gap-2">
-                  <ShoppingCart className="h-4 w-4" />
-                  {appLang === 'en' ? 'Order Information' : 'معلومات الأمر'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Order Number' : 'رقم الأمر'}</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{po.po_number}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Date' : 'التاريخ'}</span>
-                  <span className="text-gray-900 dark:text-white">{po.po_date}</span>
-                </div>
-                {po.due_date && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Due Date' : 'تاريخ الاستحقاق'}</span>
-                    <span className="text-gray-900 dark:text-white">{po.due_date}</span>
+          <div ref={printContentRef} className="space-y-6">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 no-print">
+              <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                    <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Currency' : 'العملة'}</span>
-                  <span className="text-gray-900 dark:text-white">{currency}</span>
-                </div>
-                {(po as any).shipping_providers?.provider_name && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}</span>
-                    <span className="text-gray-900 dark:text-white">{(po as any).shipping_providers.provider_name}</span>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total Billed' : 'إجمالي الفواتير'}</p>
+                    <p className="text-lg font-bold text-blue-600">{symbol}{summary.totalBilled.toFixed(2)}</p>
                   </div>
-                )}
-                <div className="flex justify-between pt-2 border-t dark:border-gray-700">
-                  <span className="text-gray-500 dark:text-gray-400 font-medium">{appLang === 'en' ? 'Order Total' : 'إجمالي الأمر'}</span>
-                  <span className="font-bold text-gray-900 dark:text-white">{symbol}{total.toFixed(2)}</span>
                 </div>
-              </CardContent>
-            </Card>
+              </Card>
+              <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                    <CreditCard className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total Paid' : 'إجمالي المدفوع'}</p>
+                    <p className="text-lg font-bold text-green-600">{symbol}{summary.totalPaid.toFixed(2)}</p>
+                  </div>
+                </div>
+              </Card>
+              <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                    <RotateCcw className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total Returns' : 'إجمالي المرتجعات'}</p>
+                    <p className="text-lg font-bold text-orange-600">{symbol}{summary.totalReturned.toFixed(2)}</p>
+                  </div>
+                </div>
+              </Card>
+              <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${summary.netRemaining > 0 ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30'}`}>
+                    <DollarSign className={`h-5 w-5 ${summary.netRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Net Remaining' : 'صافي المتبقي'}</p>
+                    <p className={`text-lg font-bold ${summary.netRemaining > 0 ? 'text-red-600' : 'text-green-600'}`}>{symbol}{summary.netRemaining.toFixed(2)}</p>
+                  </div>
+                </div>
+              </Card>
+            </div>
 
-            <Card className="dark:bg-gray-800 dark:border-gray-700">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base dark:text-white">{appLang === 'en' ? 'Supplier' : 'المورد'}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <p className="font-medium text-gray-900 dark:text-white text-lg">{po.suppliers?.name || '-'}</p>
-                {po.suppliers?.email && <p className="text-sm text-gray-600 dark:text-gray-400">{po.suppliers.email}</p>}
-                {po.suppliers?.phone && <p className="text-sm text-gray-600 dark:text-gray-400">{po.suppliers.phone}</p>}
-                {po.suppliers?.address && <p className="text-sm text-gray-500 dark:text-gray-500">{po.suppliers.address}</p>}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-4 h-auto">
-              <TabsTrigger value="items" className="text-xs sm:text-sm py-2">
-                <Package className="h-4 w-4 mr-1 hidden sm:inline" />
-                {appLang === 'en' ? 'Items' : 'البنود'}
-              </TabsTrigger>
-              <TabsTrigger value="bills" className="text-xs sm:text-sm py-2">
-                <FileText className="h-4 w-4 mr-1 hidden sm:inline" />
-                {appLang === 'en' ? 'Bills' : 'الفواتير'} ({linkedBills.length})
-              </TabsTrigger>
-              <TabsTrigger value="payments" className="text-xs sm:text-sm py-2">
-                <CreditCard className="h-4 w-4 mr-1 hidden sm:inline" />
-                {appLang === 'en' ? 'Payments' : 'المدفوعات'} ({linkedPayments.length})
-              </TabsTrigger>
-              <TabsTrigger value="returns" className="text-xs sm:text-sm py-2">
-                <RotateCcw className="h-4 w-4 mr-1 hidden sm:inline" />
-                {appLang === 'en' ? 'Returns' : 'المرتجعات'} ({linkedBills.filter(b => Number((b as any).returned_amount || 0) > 0).length})
-              </TabsTrigger>
-            </TabsList>
-
-            {/* Items Tab */}
-            <TabsContent value="items">
+            {/* Order Info & Supplier */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               <Card className="dark:bg-gray-800 dark:border-gray-700">
-                <CardContent className="pt-6">
-                  <div className="overflow-x-auto">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base dark:text-white flex items-center gap-2">
+                    <ShoppingCart className="h-4 w-4" />
+                    {appLang === 'en' ? 'Order Information' : 'معلومات الأمر'}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Order Number' : 'رقم الأمر'}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{po.po_number}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Date' : 'التاريخ'}</span>
+                    <span className="text-gray-900 dark:text-white">{po.po_date}</span>
+                  </div>
+                  {po.due_date && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Due Date' : 'تاريخ الاستحقاق'}</span>
+                      <span className="text-gray-900 dark:text-white">{po.due_date}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Currency' : 'العملة'}</span>
+                    <span className="text-gray-900 dark:text-white">{currency}</span>
+                  </div>
+                  {(po as any).shipping_providers?.provider_name && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}</span>
+                      <span className="text-gray-900 dark:text-white">{(po as any).shipping_providers.provider_name}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-2 border-t dark:border-gray-700">
+                    <span className="text-gray-500 dark:text-gray-400 font-medium">{appLang === 'en' ? 'Order Total' : 'إجمالي الأمر'}</span>
+                    <span className="font-bold text-gray-900 dark:text-white">{symbol}{total.toFixed(2)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="dark:bg-gray-800 dark:border-gray-700">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base dark:text-white">{appLang === 'en' ? 'Supplier' : 'المورد'}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p className="font-medium text-gray-900 dark:text-white text-lg">{po.suppliers?.name || '-'}</p>
+                  {po.suppliers?.email && <p className="text-sm text-gray-600 dark:text-gray-400">{po.suppliers.email}</p>}
+                  {po.suppliers?.phone && <p className="text-sm text-gray-600 dark:text-gray-400">{po.suppliers.phone}</p>}
+                  {po.suppliers?.address && <p className="text-sm text-gray-500 dark:text-gray-500">{po.suppliers.address}</p>}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Tabs */}
+            <Card className="dark:bg-gray-800 dark:border-gray-700">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <div className="border-b dark:border-gray-700 px-4 pt-4 no-print">
+                  <TabsList className="grid w-full grid-cols-4 h-auto bg-transparent p-0">
+                    <TabsTrigger
+                      value="items"
+                      className="data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700 dark:data-[state=active]:bg-blue-900/30 dark:data-[state=active]:text-blue-300 flex items-center gap-1 sm:gap-2 text-xs sm:text-sm py-2"
+                    >
+                      <Package className="h-4 w-4 hidden sm:inline" />
+                      {appLang === 'en' ? 'Items' : 'البنود'}
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="bills"
+                      className="data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700 dark:data-[state=active]:bg-blue-900/30 dark:data-[state=active]:text-blue-300 flex items-center gap-1 sm:gap-2 text-xs sm:text-sm py-2"
+                    >
+                      <FileText className="h-4 w-4 hidden sm:inline" />
+                      {appLang === 'en' ? 'Bills' : 'الفواتير'} ({linkedBills.length})
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="payments"
+                      className="data-[state=active]:bg-green-100 data-[state=active]:text-green-700 dark:data-[state=active]:bg-green-900/30 dark:data-[state=active]:text-green-300 flex items-center gap-1 sm:gap-2 text-xs sm:text-sm py-2"
+                    >
+                      <CreditCard className="h-4 w-4 hidden sm:inline" />
+                      {appLang === 'en' ? 'Payments' : 'المدفوعات'} ({linkedPayments.length})
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="returns"
+                      className="data-[state=active]:bg-orange-100 data-[state=active]:text-orange-700 dark:data-[state=active]:bg-orange-900/30 dark:data-[state=active]:text-orange-300 flex items-center gap-1 sm:gap-2 text-xs sm:text-sm py-2"
+                    >
+                      <RotateCcw className="h-4 w-4 hidden sm:inline" />
+                      {appLang === 'en' ? 'Returns' : 'المرتجعات'} ({linkedBills.filter(b => Number((b as any).returned_amount || 0) > 0).length})
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
+
+                <TabsContent value="items" className="p-4 m-0">
+                  <div className="overflow-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                          <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
-                          <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Ordered' : 'المطلوب'}</th>
-                          <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Billed' : 'المفوتر'}</th>
-                          <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
-                          {/* 🔐 ERP Access Control: إخفاء الأسعار للموظفين */}
-                          {canViewPrices && <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Price' : 'السعر'}</th>}
-                          {canViewPrices && <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Tax' : 'الضريبة'}</th>}
-                          {canViewPrices && <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>}
+                        <tr className="border-b dark:border-gray-700 text-left">
+                          <th className="py-2 px-2 text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                          <th className="py-2 px-2 text-gray-600 dark:text-gray-400 text-center">{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
+                          <th className="py-2 px-2 text-gray-600 dark:text-gray-400 text-center">{appLang === 'en' ? 'Billed' : 'المفوتر'}</th>
+                          <th className="py-2 px-2 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{appLang === 'en' ? 'Price' : 'السعر'}</th>
+                          <th className="py-2 px-2 text-gray-600 dark:text-gray-400 text-right">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {items.map((item) => {
-                          const remaining = Math.max(0, Number(item.quantity || 0) - Number(item.billed_quantity || 0))
-                          return (
-                            <tr key={item.id} className="border-b dark:border-gray-700">
-                              <td className="px-4 py-2">{item.products?.name}</td>
-                              <td className="px-4 py-2">{item.quantity}</td>
-                              <td className="px-4 py-2 text-green-600">{item.billed_quantity || 0}</td>
-                              <td className={`px-4 py-2 ${remaining > 0 ? 'text-orange-600 font-medium' : 'text-green-600'}`}>{remaining}</td>
-                              {/* 🔐 ERP Access Control: إخفاء الأسعار للموظفين */}
-                              {canViewPrices && <td className="px-4 py-2">{symbol}{item.unit_price.toFixed(2)}</td>}
-                              {canViewPrices && <td className="px-4 py-2">{item.tax_rate}%</td>}
-                              {canViewPrices && <td className="px-4 py-2 font-semibold">{symbol}{(item.quantity * item.unit_price * (1 + item.tax_rate / 100)).toFixed(2)}</td>}
-                            </tr>
-                          )
-                        })}
+                        {items.map((item) => (
+                          <tr key={item.id} className="border-b dark:border-gray-700">
+                            <td className="py-2 px-2 font-medium text-gray-900 dark:text-white">
+                              {item.products?.name || '-'}
+                              <div className="text-xs text-gray-500">{item.products?.sku}</div>
+                            </td>
+                            <td className="py-2 px-2 text-center text-gray-700 dark:text-gray-300">{item.quantity}</td>
+                            <td className="py-2 px-2 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-xs ${Number(item.billed_quantity || 0) >= item.quantity
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                                : Number(item.billed_quantity || 0) > 0
+                                  ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
+                                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                                }`}>
+                                {item.billed_quantity || 0}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2 text-gray-700 dark:text-gray-300 hidden sm:table-cell">
+                              {canViewPrices ? `${symbol}${Number(item.unit_price).toFixed(2)}` : '***'}
+                            </td>
+                            <td className="py-2 px-2 text-right font-medium text-gray-900 dark:text-white">
+                              {canViewPrices ? `${symbol}${Number(item.line_total).toFixed(2)}` : '***'}
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
-                  {/* 🔐 ERP Access Control: إخفاء الإجماليات للموظفين */}
-                  {canViewPrices && (
-                    <div className="border-t pt-6 flex justify-end dark:border-gray-700">
-                      <div className="w-full md:w-80 space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span>{appLang === 'en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
-                          <span>{symbol}{(po.subtotal || 0).toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>{appLang === 'en' ? 'Tax:' : 'الضريبة:'}</span>
-                          <span>{symbol}{(po.tax_amount || 0).toFixed(2)}</span>
-                        </div>
-                        {(po.discount_value || 0) > 0 && (
-                          <div className="flex justify-between text-red-600">
-                            <span>{appLang === 'en' ? 'Discount:' : 'الخصم:'}</span>
-                            <span>-{po.discount_type === 'percent' ? `${po.discount_value}%` : `${symbol}${(po.discount_value || 0).toFixed(2)}`}</span>
-                          </div>
-                        )}
-                        {(po.shipping || 0) > 0 && (
-                          <div className="flex justify-between">
-                            <span>{appLang === 'en' ? 'Shipping:' : 'الشحن:'}</span>
-                            <span>{symbol}{(po.shipping || 0).toFixed(2)}</span>
-                          </div>
-                        )}
-                        <div className="border-t pt-2 flex justify-between font-bold text-lg dark:border-gray-700">
-                          <span>{appLang === 'en' ? 'Total:' : 'الإجمالي:'}</span>
-                          <span>{symbol}{total.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
+                </TabsContent>
 
-            {/* Bills Tab */}
-            <TabsContent value="bills">
-              <Card className="dark:bg-gray-800 dark:border-gray-700">
-                <CardContent className="pt-6">
+                <TabsContent value="bills" className="p-4 m-0">
                   {linkedBills.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <FileText className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                      <p>{appLang === 'en' ? 'No bills linked to this order' : 'لا توجد فواتير مرتبطة بهذا الأمر'}</p>
-                      {permWriteBills && remainingItems.length > 0 && (
-                        <Link href={`/bills/new?from_po=${poId}`}>
-                          <Button className="mt-4 bg-green-600 hover:bg-green-700">
-                            <Plus className="h-4 w-4 mr-1" />
-                            {appLang === 'en' ? 'Create First Bill' : 'إنشاء أول فاتورة'}
-                          </Button>
-                        </Link>
-                      )}
+                    <div className="text-center py-8">
+                      <FileText className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+                      <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No bills linked to this order' : 'لا توجد فواتير مرتبطة بهذا الأمر'}</p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Bill Number' : 'رقم الفاتورة'}</th>
-                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
-                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
+                          <tr className="border-b dark:border-gray-700 text-left">
+                            <th className="py-2 px-2 text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Bill #' : 'رقم الفاتورة'}</th>
+                            <th className="py-2 px-2 text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                            <th className="py-2 px-2 text-gray-600 dark:text-gray-400 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                            <th className="py-2 px-2 text-gray-600 dark:text-gray-400 text-center">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
                           </tr>
                         </thead>
                         <tbody>
                           {linkedBills.map((bill) => (
-                            <tr key={bill.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                              <td className="px-4 py-2 font-medium">{bill.bill_number}</td>
-                              <td className="px-4 py-2">{new Date(bill.bill_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</td>
-                              <td className="px-4 py-2">{symbol}{Number(bill.total_amount || 0).toFixed(2)}</td>
-                              <td className="px-4 py-2">{getStatusBadge(bill.status)}</td>
+                            <tr key={bill.id} className="border-b dark:border-gray-700">
+                              <td className="py-2 px-2 font-medium text-blue-600 dark:text-blue-400">
+                                <Link href={`/bills/${bill.id}`} className="hover:underline">{bill.bill_number}</Link>
+                              </td>
+                              <td className="py-2 px-2 text-gray-700 dark:text-gray-300">{bill.bill_date}</td>
+                              <td className="py-2 px-2 text-right font-medium text-gray-900 dark:text-white">{symbol}{Number(bill.total_amount).toFixed(2)}</td>
+                              <td className="py-2 px-2 text-center">
+                                {getStatusBadge(bill.status)}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            </TabsContent>
+                </TabsContent>
 
-            {/* Payments Tab */}
-            <TabsContent value="payments">
-              <Card className="dark:bg-gray-800 dark:border-gray-700">
-                <CardContent className="pt-6">
+                <TabsContent value="payments" className="p-4 m-0">
                   {linkedPayments.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <CreditCard className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                      <p>{appLang === 'en' ? 'No payments recorded' : 'لا توجد مدفوعات مسجلة'}</p>
+                    <div className="text-center py-8">
+                      <CreditCard className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+                      <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No payments linked to this order' : 'لا توجد مدفوعات مرتبطة بهذا الأمر'}</p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Reference' : 'المرجع'}</th>
-                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
-                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Method' : 'الطريقة'}</th>
+                          <tr className="border-b dark:border-gray-700 text-left">
+                            <th className="py-2 px-2 text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Ref #' : 'رقم المرجع'}</th>
+                            <th className="py-2 px-2 text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                            <th className="py-2 px-2 text-gray-600 dark:text-gray-400 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                            <th className="py-2 px-2 text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Method' : 'الطريقة'}</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {linkedPayments.map((payment) => (
-                            <tr key={payment.id} className="border-b dark:border-gray-700">
-                              <td className="px-4 py-2 font-medium">{payment.reference_number}</td>
-                              <td className="px-4 py-2">{new Date(payment.payment_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</td>
-                              <td className="px-4 py-2 text-green-600 font-medium">{symbol}{Number(payment.amount || 0).toFixed(2)}</td>
-                              <td className="px-4 py-2">{payment.payment_method}</td>
+                          {linkedPayments.map((pay) => (
+                            <tr key={pay.id} className="border-b dark:border-gray-700">
+                              <td className="py-2 px-2 font-medium text-gray-900 dark:text-white">{pay.reference_number || '-'}</td>
+                              <td className="py-2 px-2 text-gray-700 dark:text-gray-300">{pay.payment_date}</td>
+                              <td className="py-2 px-2 text-right font-medium text-green-600 dark:text-green-400">{symbol}{Number(pay.amount).toFixed(2)}</td>
+                              <td className="py-2 px-2 text-gray-700 dark:text-gray-300">
+                                {pay.payment_method === 'cash' ? (appLang === 'en' ? 'Cash' : 'نقدي') :
+                                  pay.payment_method === 'bank_transfer' ? (appLang === 'en' ? 'Bank Transfer' : 'تحويل بنكي') :
+                                    pay.payment_method === 'check' ? (appLang === 'en' ? 'Check' : 'شيك') :
+                                      (appLang === 'en' ? 'Other' : 'أخرى')}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            </TabsContent>
+                </TabsContent>
 
-            {/* Returns Tab */}
-            <TabsContent value="returns">
-              <Card className="dark:bg-gray-800 dark:border-gray-700">
-                <CardContent className="pt-6">
-                  {(() => {
-                    const billsWithReturns = linkedBills.filter(b => Number((b as any).returned_amount || 0) > 0)
-                    if (billsWithReturns.length === 0) {
-                      return (
-                        <div className="text-center py-8 text-gray-500">
-                          <RotateCcw className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                          <p>{appLang === 'en' ? 'No returns recorded' : 'لا توجد مرتجعات مسجلة'}</p>
-                        </div>
-                      )
-                    }
-                    return (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                              <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Bill Number' : 'رقم الفاتورة'}</th>
-                              <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Original Amount' : 'المبلغ الأصلي'}</th>
-                              <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Returned Amount' : 'المبلغ المرتجع'}</th>
-                              <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Net Amount' : 'المبلغ الصافي'}</th>
-                              <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
+                <TabsContent value="returns" className="p-4 m-0">
+                  {linkedReturns.length === 0 ? (
+                    <div className="text-center py-8">
+                      <RotateCcw className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+                      <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No returns linked to this order' : 'لا توجد مرتجعات مرتبطة بهذا الأمر'}</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b dark:border-gray-700 text-left">
+                            <th className="py-2 px-2 text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Return #' : 'رقم المرتجع'}</th>
+                            <th className="py-2 px-2 text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                            <th className="py-2 px-2 text-gray-600 dark:text-gray-400 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                            <th className="py-2 px-2 text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Reason' : 'السبب'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {linkedReturns.map((ret) => (
+                            <tr key={ret.id} className="border-b dark:border-gray-700">
+                              <td className="py-2 px-2 font-medium text-orange-600 dark:text-orange-400">{ret.return_number}</td>
+                              <td className="py-2 px-2 text-gray-700 dark:text-gray-300">{ret.return_date}</td>
+                              <td className="py-2 px-2 text-right font-medium text-orange-600 dark:text-orange-400">{symbol}{Number(ret.total_amount).toFixed(2)}</td>
+                              <td className="py-2 px-2 text-gray-700 dark:text-gray-300 truncate max-w-[200px]">{ret.reason || '-'}</td>
                             </tr>
-                          </thead>
-                          <tbody>
-                            {billsWithReturns.map((bill) => {
-                              const returned = Number((bill as any).returned_amount || 0)
-                              const original = Number((bill as any).original_total || 0) || (Number(bill.total_amount || 0) + returned)
-                              const netAmount = Number(bill.total_amount || 0)
-                              const returnStatus = (bill as any).return_status === 'full' ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل') : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')
-                              return (
-                                <tr key={bill.id} className="border-b dark:border-gray-700">
-                                  <td className="px-4 py-2 font-medium">
-                                    <span className="text-gray-900 dark:text-white">{bill.bill_number}</span>
-                                  </td>
-                                  <td className="px-4 py-2">{symbol}{original.toFixed(2)}</td>
-                                  <td className="px-4 py-2 text-orange-600 font-medium">-{symbol}{returned.toFixed(2)}</td>
-                                  <td className="px-4 py-2 font-semibold">{symbol}{netAmount.toFixed(2)}</td>
-                                  <td className="px-4 py-2">
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300">
-                                      <RotateCcw className="h-3 w-3" />
-                                      {returnStatus}
-                                    </span>
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                        {/* إجمالي المرتجعات */}
-                        <div className="mt-4 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg flex justify-between items-center">
-                          <span className="font-semibold text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Total Returns' : 'إجمالي المرتجعات'}</span>
-                          <span className="font-bold text-orange-600">{symbol}{summary.totalReturned.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    )
-                  })()}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-
-          {/* Notes */}
-          {po.notes && (
-            <Card className="dark:bg-gray-800 dark:border-gray-700">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base dark:text-white">{appLang === 'en' ? 'Notes' : 'ملاحظات'}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{po.notes}</p>
-              </CardContent>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </Card>
-          )}
+          </div>
         </div>
       </main>
     </div>

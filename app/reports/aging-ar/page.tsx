@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -48,6 +48,8 @@ export default function AgingARPage() {
   })
   const [hydrated, setHydrated] = useState(false)
   const numberFmt = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const [companyDetails, setCompanyDetails] = useState<any>(null)
+  const printRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadData()
@@ -78,7 +80,8 @@ export default function AgingARPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const { data: memberData } = await supabase.from("company_members").select("role, branch_id, cost_center_id").eq("company_id", companyId).eq("user_id", user.id).maybeSingle();
-      const { data: companyData } = await supabase.from("companies").select("user_id").eq("id", companyId).single();
+      const { data: companyData } = await supabase.from("companies").select("*").eq("id", companyId).single();
+      if (companyData) setCompanyDetails(companyData)
       const isOwner = companyData?.user_id === user.id;
       const role = isOwner ? "owner" : (memberData?.role || "viewer");
       const accessFilter = getAccessFilter(role, user.id, memberData?.branch_id || null, memberData?.cost_center_id || null);
@@ -217,7 +220,37 @@ export default function AgingARPage() {
                   />
                 </div>
               </div>
-              <Button variant="outline" onClick={() => window.print()}>
+              <Button variant="outline" onClick={async () => {
+                try {
+                  if (!printRef.current) return
+                  const { openPrintWindow } = await import('@/lib/print-utils')
+                  const companyName = companyDetails?.name || 'Company Name'
+                  const address = companyDetails?.address || ''
+                  const phone = companyDetails?.phone || ''
+                  const content = printRef.current.innerHTML
+
+                  openPrintWindow(content, {
+                    lang: appLang,
+                    direction: appLang === 'ar' ? 'rtl' : 'ltr',
+                    title: appLang === 'en' ? 'AR Aging Report' : 'تقرير تقادم الذمم المدينة',
+                    pageSize: 'A4',
+                    margin: '15mm',
+                    companyName: companyName,
+                    companyAddress: address,
+                    companyPhone: phone,
+                    printedBy: 'System User',
+                    showHeader: true,
+                    showFooter: true,
+                    extraHeader: `
+                      <div style="text-align: center; margin-bottom: 20px;">
+                        <p style="font-size: 14px; color: #4b5563;">
+                          ${appLang === 'en' ? 'As of' : 'حتى تاريخ'}: ${endDate}
+                        </p>
+                      </div>
+                    `
+                  })
+                } catch (e) { console.error(e) }
+              }}>
                 <Download className="w-4 h-4 mr-2" />
                 {(hydrated && appLang === 'en') ? 'Print' : 'طباعة'}
               </Button>
@@ -261,7 +294,7 @@ export default function AgingARPage() {
               ) : Object.keys(buckets).length === 0 ? (
                 <div className="text-center text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'No outstanding customer balances by this date.' : 'لا توجد أرصدة مستحقة للعملاء حتى هذا التاريخ.'}</div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto" ref={printRef}>
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-left">

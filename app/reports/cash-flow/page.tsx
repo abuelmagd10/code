@@ -2,11 +2,13 @@
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Download, ArrowRight } from "lucide-react"
+import { Download, ArrowRight, Printer } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { CompanyHeader } from "@/components/company-header"
+import { useToast } from "@/hooks/use-toast"
 
 interface CashFlowItem {
   id: string
@@ -28,11 +30,12 @@ interface CashFlowData {
 export default function CashFlowReportPage() {
   const supabase = useSupabase()
   const router = useRouter()
+  const { toast } = useToast()
   const [data, setData] = useState<CashFlowData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const docLang = document.documentElement?.lang
@@ -57,7 +60,7 @@ export default function CashFlowReportPage() {
   })
   const [toDate, setToDate] = useState<string>(() => formatLocalDate(new Date()))
 
-  const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const numberFmt = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   const [baseCurrency] = useState<string>(() => {
     if (typeof window === 'undefined') return 'EGP'
@@ -69,6 +72,10 @@ export default function CashFlowReportPage() {
   }
   const currencySymbol = currencySymbols[baseCurrency] || baseCurrency
 
+  // Print support
+  const printContentRef = useRef<HTMLDivElement>(null)
+  const [companyDetails, setCompanyDetails] = useState<any>(null)
+
   useEffect(() => {
     setHydrated(true)
     const handler = () => {
@@ -78,7 +85,7 @@ export default function CashFlowReportPage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
@@ -94,6 +101,10 @@ export default function CashFlowReportPage() {
         setError('لم يتم العثور على شركة نشطة')
         return
       }
+
+      // Fetch company details for print
+      const { data: comp } = await supabase.from('companies').select('*').eq('id', companyId).single()
+      if (comp) setCompanyDetails(comp)
 
       const res = await fetch(`/api/cash-flow?companyId=${encodeURIComponent(companyId)}&from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`)
 
@@ -121,15 +132,62 @@ export default function CashFlowReportPage() {
 
   useEffect(() => { loadData() }, [fromDate, toDate])
 
+  const handlePrint = async () => {
+    try {
+      if (!printContentRef.current) return
+
+      const { openPrintWindow } = await import('@/lib/print-utils')
+
+      const companyName = companyDetails?.name || 'Company Name'
+      const address = companyDetails?.address || ''
+      const phone = companyDetails?.phone || ''
+
+      const contentEl = printContentRef.current.cloneNode(true) as HTMLElement
+      const toRemove = contentEl.querySelectorAll('.no-print')
+      toRemove.forEach(el => el.remove())
+
+      const content = contentEl.innerHTML
+
+      openPrintWindow(content, {
+        lang: appLang,
+        direction: appLang === 'ar' ? 'rtl' : 'ltr',
+        title: appLang === 'en' ? 'Cash Flow' : 'التدفقات النقدية',
+        pageSize: 'A4',
+        margin: '15mm',
+        companyName: companyName,
+        companyAddress: address,
+        companyPhone: phone,
+        printedBy: 'System User',
+        showHeader: true,
+        showFooter: true,
+        extraHeader: `
+          <div style="text-align: center; margin-bottom: 20px;">
+             <p style="font-size: 14px; color: #4b5563;">
+               ${appLang === 'en' ? 'Period' : 'الفترة'}: ${fromDate} - ${toDate}
+             </p>
+          </div>
+        `
+      })
+
+    } catch (e: any) {
+      console.error('Print failed', e)
+      toast({
+        title: appLang === 'en' ? 'Print Error' : 'خطأ طباعة',
+        description: String(e?.message || ''),
+        variant: 'destructive'
+      })
+    }
+  }
+
   const exportCsv = () => {
     if (!data) return
 
     const headers = [
-      (hydrated && appLang==='en') ? 'Category' : 'الفئة',
-      (hydrated && appLang==='en') ? 'Date' : 'التاريخ',
-      (hydrated && appLang==='en') ? 'Type' : 'النوع',
-      (hydrated && appLang==='en') ? 'Description' : 'الوصف',
-      (hydrated && appLang==='en') ? 'Amount' : 'المبلغ'
+      (hydrated && appLang === 'en') ? 'Category' : 'الفئة',
+      (hydrated && appLang === 'en') ? 'Date' : 'التاريخ',
+      (hydrated && appLang === 'en') ? 'Type' : 'النوع',
+      (hydrated && appLang === 'en') ? 'Description' : 'الوصف',
+      (hydrated && appLang === 'en') ? 'Amount' : 'المبلغ'
     ]
 
     const lines: string[][] = []
@@ -137,7 +195,7 @@ export default function CashFlowReportPage() {
     // Operating activities
     data.operating.items.forEach(item => {
       lines.push([
-        (hydrated && appLang==='en') ? 'Operating' : 'تشغيلية',
+        (hydrated && appLang === 'en') ? 'Operating' : 'تشغيلية',
         item.date,
         item.type,
         item.description || '',
@@ -148,7 +206,7 @@ export default function CashFlowReportPage() {
     // Investing activities
     data.investing.items.forEach(item => {
       lines.push([
-        (hydrated && appLang==='en') ? 'Investing' : 'استثمارية',
+        (hydrated && appLang === 'en') ? 'Investing' : 'استثمارية',
         item.date,
         item.type,
         item.description || '',
@@ -159,7 +217,7 @@ export default function CashFlowReportPage() {
     // Financing activities
     data.financing.items.forEach(item => {
       lines.push([
-        (hydrated && appLang==='en') ? 'Financing' : 'تمويلية',
+        (hydrated && appLang === 'en') ? 'Financing' : 'تمويلية',
         item.date,
         item.type,
         item.description || '',
@@ -180,61 +238,75 @@ export default function CashFlowReportPage() {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
-      {/* Main Content - تحسين للهاتف */}
+      {/* Main Content */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 max-w-full">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <CompanyHeader />
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
             <div className="min-w-0">
-              <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Cash Flow' : 'التدفقات النقدية'}</h1>
-              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5 sm:mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Net cash by category' : 'صافي النقد'}</p>
+              <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Cash Flow' : 'التدفقات النقدية'}</h1>
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5 sm:mt-1" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Net cash by category' : 'صافي النقد'}</p>
             </div>
             <div className="flex gap-2 items-center">
-              <Button variant="outline" onClick={() => window.print()}><Download className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'Print' : 'طباعة'}</Button>
-              <Button variant="outline" onClick={exportCsv}><Download className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'Export CSV' : 'تصدير CSV'}</Button>
-              <Button variant="outline" onClick={() => router.push('/reports')}><ArrowRight className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'Back' : 'العودة'}</Button>
+              <Button variant="outline" onClick={handlePrint}>
+                <Printer className="w-4 h-4 mr-2" />
+                {(hydrated && appLang === 'en') ? 'Print' : 'طباعة'}
+              </Button>
+              <Button variant="outline" onClick={exportCsv}>
+                <Download className="w-4 h-4 mr-2" />
+                {(hydrated && appLang === 'en') ? 'Export CSV' : 'تصدير CSV'}
+              </Button>
+              <Button variant="outline" onClick={() => router.push('/reports')}>
+                <ArrowRight className="w-4 h-4 mr-2" />
+                {(hydrated && appLang === 'en') ? 'Back' : 'العودة'}
+              </Button>
             </div>
           </div>
-          <Card>
-            <CardHeader>
-              <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Filters' : 'المرشحات'}</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-              <div>
-                <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'From' : 'من'}</label>
-                <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'To' : 'إلى'}</label>
-                <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full border rounded px-3 py-2" />
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+
+          <div className="print:hidden">
+            <Card>
+              <CardHeader>
+                <CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Filters' : 'المرشحات'}</CardTitle>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                 <div>
-                  <div className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Operating' : 'تشغيلية'}</div>
-                  <div className="px-3 py-2 border rounded bg-blue-50 dark:bg-blue-900 font-semibold text-blue-700 dark:text-blue-300">
-                    {numberFmt.format(data?.operating.total || 0)} {currencySymbol}
-                  </div>
+                  <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'From' : 'من'}</label>
+                  <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full border rounded px-3 py-2" />
                 </div>
                 <div>
-                  <div className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Investing' : 'استثمارية'}</div>
-                  <div className="px-3 py-2 border rounded bg-purple-50 dark:bg-purple-900 font-semibold text-purple-700 dark:text-purple-300">
-                    {numberFmt.format(data?.investing.total || 0)} {currencySymbol}
+                  <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'To' : 'إلى'}</label>
+                  <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full border rounded px-3 py-2" />
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 col-span-2">
+                  <div>
+                    <div className="text-sm" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Operating' : 'تشغيلية'}</div>
+                    <div className="px-3 py-2 border rounded bg-blue-50 dark:bg-blue-900 font-semibold text-blue-700 dark:text-blue-300">
+                      {numberFmt.format(data?.operating.total || 0)} {currencySymbol}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Investing' : 'استثمارية'}</div>
+                    <div className="px-3 py-2 border rounded bg-purple-50 dark:bg-purple-900 font-semibold text-purple-700 dark:text-purple-300">
+                      {numberFmt.format(data?.investing.total || 0)} {currencySymbol}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Financing' : 'تمويلية'}</div>
+                    <div className="px-3 py-2 border rounded bg-orange-50 dark:bg-orange-900 font-semibold text-orange-700 dark:text-orange-300">
+                      {numberFmt.format(data?.financing.total || 0)} {currencySymbol}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Net Cash Flow' : 'صافي التدفق النقدي'}</div>
+                    <div className={"px-3 py-2 border rounded font-bold " + ((data?.netCashFlow || 0) >= 0 ? "bg-green-50 dark:bg-green-900 text-green-700 dark:text-green-300" : "bg-red-50 dark:bg-red-900 text-red-700 dark:text-red-300")}>
+                      {numberFmt.format(data?.netCashFlow || 0)} {currencySymbol}
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <div className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Financing' : 'تمويلية'}</div>
-                  <div className="px-3 py-2 border rounded bg-orange-50 dark:bg-orange-900 font-semibold text-orange-700 dark:text-orange-300">
-                    {numberFmt.format(data?.financing.total || 0)} {currencySymbol}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Net Cash Flow' : 'صافي التدفق النقدي'}</div>
-                  <div className={"px-3 py-2 border rounded font-bold " + ((data?.netCashFlow || 0) >= 0 ? "bg-green-50 dark:bg-green-900 text-green-700 dark:text-green-300" : "bg-red-50 dark:bg-red-900 text-red-700 dark:text-red-300")}>
-                    {numberFmt.format(data?.netCashFlow || 0)} {currencySymbol}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
+
           {loading ? (
             <div className="flex justify-center items-center py-20">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
@@ -248,7 +320,7 @@ export default function CashFlowReportPage() {
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-red-900 dark:text-red-100 mb-1">
-                      {(hydrated && appLang==='en') ? 'Error Loading Report' : 'حدث خطأ في تحميل التقرير'}
+                      {(hydrated && appLang === 'en') ? 'Error Loading Report' : 'حدث خطأ في تحميل التقرير'}
                     </h3>
                     <p className="text-red-700 dark:text-red-300">{error}</p>
                     <Button
@@ -256,7 +328,7 @@ export default function CashFlowReportPage() {
                       variant="outline"
                       className="mt-3 border-red-300 text-red-700 hover:bg-red-50"
                     >
-                      {(hydrated && appLang==='en') ? 'Try Again' : 'حاول مرة أخرى'}
+                      {(hydrated && appLang === 'en') ? 'Try Again' : 'حاول مرة أخرى'}
                     </Button>
                   </div>
                 </div>
@@ -266,26 +338,26 @@ export default function CashFlowReportPage() {
             <Card>
               <CardContent className="pt-6">
                 <p className="text-center text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                  {(hydrated && appLang==='en') ? 'No data to display.' : 'لا توجد بيانات لعرضها.'}
+                  {(hydrated && appLang === 'en') ? 'No data to display.' : 'لا توجد بيانات لعرضها.'}
                 </p>
               </CardContent>
             </Card>
           ) : (
-            <>
+            <div ref={printContentRef} className="space-y-6">
               {/* Operating Activities */}
               <Card className="border-r-4 border-r-blue-500">
                 <CardHeader className="bg-blue-50 dark:bg-blue-900/20">
                   <CardTitle className="text-blue-700 dark:text-blue-300" suppressHydrationWarning>
-                    {(hydrated && appLang==='en') ? 'Operating Activities' : 'الأنشطة التشغيلية'}
+                    {(hydrated && appLang === 'en') ? 'Operating Activities' : 'الأنشطة التشغيلية'}
                   </CardTitle>
                   <p className="text-sm text-blue-600 dark:text-blue-400">
-                    {(hydrated && appLang==='en') ? 'Cash from day-to-day business operations' : 'النقد من العمليات اليومية'}
+                    {(hydrated && appLang === 'en') ? 'Cash from day-to-day business operations' : 'النقد من العمليات اليومية'}
                   </p>
                 </CardHeader>
                 <CardContent className="pt-6">
                   {data.operating.items.length === 0 ? (
                     <p className="text-center text-gray-500" suppressHydrationWarning>
-                      {(hydrated && appLang==='en') ? 'No operating activities' : 'لا توجد أنشطة تشغيلية'}
+                      {(hydrated && appLang === 'en') ? 'No operating activities' : 'لا توجد أنشطة تشغيلية'}
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -301,7 +373,7 @@ export default function CashFlowReportPage() {
                         </div>
                       ))}
                       <div className="flex justify-between items-center p-3 bg-blue-100 dark:bg-blue-900 rounded font-bold">
-                        <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Operating' : 'إجمالي التشغيلية'}</span>
+                        <span suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total Operating' : 'إجمالي التشغيلية'}</span>
                         <span className="text-blue-700 dark:text-blue-300">
                           {numberFmt.format(data.operating.total)} {currencySymbol}
                         </span>
@@ -315,16 +387,16 @@ export default function CashFlowReportPage() {
               <Card className="border-r-4 border-r-purple-500">
                 <CardHeader className="bg-purple-50 dark:bg-purple-900/20">
                   <CardTitle className="text-purple-700 dark:text-purple-300" suppressHydrationWarning>
-                    {(hydrated && appLang==='en') ? 'Investing Activities' : 'الأنشطة الاستثمارية'}
+                    {(hydrated && appLang === 'en') ? 'Investing Activities' : 'الأنشطة الاستثمارية'}
                   </CardTitle>
                   <p className="text-sm text-purple-600 dark:text-purple-400">
-                    {(hydrated && appLang==='en') ? 'Cash from investments and assets' : 'النقد من الاستثمارات والأصول'}
+                    {(hydrated && appLang === 'en') ? 'Cash from investments and assets' : 'النقد من الاستثمارات والأصول'}
                   </p>
                 </CardHeader>
                 <CardContent className="pt-6">
                   {data.investing.items.length === 0 ? (
                     <p className="text-center text-gray-500" suppressHydrationWarning>
-                      {(hydrated && appLang==='en') ? 'No investing activities' : 'لا توجد أنشطة استثمارية'}
+                      {(hydrated && appLang === 'en') ? 'No investing activities' : 'لا توجد أنشطة استثمارية'}
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -340,7 +412,7 @@ export default function CashFlowReportPage() {
                         </div>
                       ))}
                       <div className="flex justify-between items-center p-3 bg-purple-100 dark:bg-purple-900 rounded font-bold">
-                        <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Investing' : 'إجمالي الاستثمارية'}</span>
+                        <span suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total Investing' : 'إجمالي الاستثمارية'}</span>
                         <span className="text-purple-700 dark:text-purple-300">
                           {numberFmt.format(data.investing.total)} {currencySymbol}
                         </span>
@@ -354,16 +426,16 @@ export default function CashFlowReportPage() {
               <Card className="border-r-4 border-r-orange-500">
                 <CardHeader className="bg-orange-50 dark:bg-orange-900/20">
                   <CardTitle className="text-orange-700 dark:text-orange-300" suppressHydrationWarning>
-                    {(hydrated && appLang==='en') ? 'Financing Activities' : 'الأنشطة التمويلية'}
+                    {(hydrated && appLang === 'en') ? 'Financing Activities' : 'الأنشطة التمويلية'}
                   </CardTitle>
                   <p className="text-sm text-orange-600 dark:text-orange-400">
-                    {(hydrated && appLang==='en') ? 'Cash from loans, capital, and dividends' : 'النقد من القروض ورأس المال والأرباح'}
+                    {(hydrated && appLang === 'en') ? 'Cash from loans, capital, and dividends' : 'النقد من القروض ورأس المال والأرباح'}
                   </p>
                 </CardHeader>
                 <CardContent className="pt-6">
                   {data.financing.items.length === 0 ? (
                     <p className="text-center text-gray-500" suppressHydrationWarning>
-                      {(hydrated && appLang==='en') ? 'No financing activities' : 'لا توجد أنشطة تمويلية'}
+                      {(hydrated && appLang === 'en') ? 'No financing activities' : 'لا توجد أنشطة تمويلية'}
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -379,7 +451,7 @@ export default function CashFlowReportPage() {
                         </div>
                       ))}
                       <div className="flex justify-between items-center p-3 bg-orange-100 dark:bg-orange-900 rounded font-bold">
-                        <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Financing' : 'إجمالي التمويلية'}</span>
+                        <span suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total Financing' : 'إجمالي التمويلية'}</span>
                         <span className="text-orange-700 dark:text-orange-300">
                           {numberFmt.format(data.financing.total)} {currencySymbol}
                         </span>
@@ -393,7 +465,7 @@ export default function CashFlowReportPage() {
               <Card className={`border-r-4 ${data.netCashFlow >= 0 ? 'border-r-green-500' : 'border-r-red-500'}`}>
                 <CardHeader className={data.netCashFlow >= 0 ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-red-900/20'}>
                   <CardTitle className={data.netCashFlow >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'} suppressHydrationWarning>
-                    {(hydrated && appLang==='en') ? 'Net Cash Flow' : 'صافي التدفق النقدي'}
+                    {(hydrated && appLang === 'en') ? 'Net Cash Flow' : 'صافي التدفق النقدي'}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-6">
@@ -402,7 +474,7 @@ export default function CashFlowReportPage() {
                       {data.netCashFlow >= 0 ? '+' : ''}{numberFmt.format(data.netCashFlow)} {currencySymbol}
                     </div>
                     <p className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                      {(hydrated && appLang==='en')
+                      {(hydrated && appLang === 'en')
                         ? `From ${new Date(data.period.from).toLocaleDateString('en')} to ${new Date(data.period.to).toLocaleDateString('en')}`
                         : `من ${new Date(data.period.from).toLocaleDateString('ar')} إلى ${new Date(data.period.to).toLocaleDateString('ar')}`
                       }
@@ -410,7 +482,7 @@ export default function CashFlowReportPage() {
                   </div>
                 </CardContent>
               </Card>
-            </>
+            </div>
           )}
         </div>
       </main>

@@ -438,19 +438,42 @@ export default function InvoiceDetailPage() {
       const el = invoiceContentRef.current
       if (!el) return
 
-      const content = el.innerHTML
+      // اقتباس المحتوى المطلوب فقط مع الحفاظ على التنسيق
+      // Clone the element to manipulate it without affecting the UI
+      const clone = el.cloneNode(true) as HTMLElement
+
+      // Remove non-printable elements from clone if any legacy classes remain
+      const toRemove = clone.querySelectorAll('.no-print, button, .actions')
+      toRemove.forEach(e => e.remove())
+
+      const content = clone.innerHTML
       const appLang = typeof window !== 'undefined'
         ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
         : 'ar'
 
+      // Prepare Company Data for Header
+      const companyName = invoice?.companies?.name || 'Company Name'
+      // Try to get logo from invoice company, or fall back to state
+      const logo = (invoice as any)?.companies?.logo_url || companyLogoUrl
+      const address = (invoice as any)?.companies?.address || ''
+      const phone = (invoice as any)?.companies?.phone || ''
+      const email = (invoice as any)?.companies?.email || ''
+
       const { openPrintWindow } = await import('@/lib/print-utils')
+
       openPrintWindow(content, {
         lang: appLang as 'ar' | 'en',
         direction: appLang === 'ar' ? 'rtl' : 'ltr',
         title: appLang === 'en' ? `Invoice ${invoice?.invoice_number || ''}` : `فاتورة ${invoice?.invoice_number || ''}`,
-        fontSize: 11,
+        fontSize: 10,
         pageSize: 'A4',
-        margin: '5mm'
+        margin: '15mm',
+        companyName: companyName,
+        companyAddress: address,
+        companyPhone: phone,
+        printedBy: 'System User', // In a real app, this would come from auth context
+        showHeader: true,
+        showFooter: true
       })
     } catch (err) {
       console.error("Error generating PDF:", err)

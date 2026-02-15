@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -30,7 +30,7 @@ export default function AgingAPReportPage() {
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().slice(0, 10))
   const [rows, setRows] = useState<Bill[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const docLang = document.documentElement?.lang
@@ -41,7 +41,9 @@ export default function AgingAPReportPage() {
     } catch { return 'ar' }
   })
   const [hydrated, setHydrated] = useState(false)
-  const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const numberFmt = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const [companyDetails, setCompanyDetails] = useState<any>(null)
+  const printRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadData()
@@ -56,7 +58,7 @@ export default function AgingAPReportPage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
@@ -83,16 +85,19 @@ export default function AgingAPReportPage() {
     const companyId = await getActiveCompanyId(supabase)
     if (!companyId) return {}
 
+    const { data: companyData } = await supabase.from("companies").select("*").eq("id", companyId).single();
+    if (companyData) setCompanyDetails(companyData)
+
     const { data: pays } = await supabase
       .from("payments")
       .select("bill_id, amount")
       .eq("company_id", companyId)
       .lte("payment_date", endDate)
     const map: Record<string, number> = {}
-    ;(pays || []).forEach((p: any) => {
-      if (!p.bill_id) return
-      map[p.bill_id] = (map[p.bill_id] || 0) + Number(p.amount || 0)
-    })
+      ; (pays || []).forEach((p: any) => {
+        if (!p.bill_id) return
+        map[p.bill_id] = (map[p.bill_id] || 0) + Number(p.amount || 0)
+      })
     return map
   }
 
@@ -146,13 +151,43 @@ export default function AgingAPReportPage() {
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 max-w-full">
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'AP Aging' : 'تقادم الذمم الدائنة'}</h1>
-            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2 truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Amounts due to suppliers' : 'المبالغ المستحقة للموردين'}</p>
+            <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'AP Aging' : 'تقادم الذمم الدائنة'}</h1>
+            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2 truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Amounts due to suppliers' : 'المبالغ المستحقة للموردين'}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap print:hidden">
-            <Button variant="outline" onClick={() => window.print()}>
+            <Button variant="outline" onClick={async () => {
+              try {
+                if (!printRef.current) return
+                const { openPrintWindow } = await import('@/lib/print-utils')
+                const companyName = companyDetails?.name || 'Company Name'
+                const address = companyDetails?.address || ''
+                const phone = companyDetails?.phone || ''
+                const content = printRef.current.innerHTML
+
+                openPrintWindow(content, {
+                  lang: appLang,
+                  direction: appLang === 'ar' ? 'rtl' : 'ltr',
+                  title: appLang === 'en' ? 'AP Aging Report' : 'تقرير تقادم الذمم الدائنة',
+                  pageSize: 'A4',
+                  margin: '15mm',
+                  companyName: companyName,
+                  companyAddress: address,
+                  companyPhone: phone,
+                  printedBy: 'System User',
+                  showHeader: true,
+                  showFooter: true,
+                  extraHeader: `
+                    <div style="text-align: center; margin-bottom: 20px;">
+                      <p style="font-size: 14px; color: #4b5563;">
+                        ${appLang === 'en' ? 'As of' : 'حتى تاريخ'}: ${endDate}
+                      </p>
+                    </div>
+                  `
+                })
+              } catch (e) { console.error(e) }
+            }}>
               <Download className="w-4 h-4 mr-2" />
-              {(hydrated && appLang==='en') ? 'Print' : 'طباعة'}
+              {(hydrated && appLang === 'en') ? 'Print' : 'طباعة'}
             </Button>
             <Button
               variant="outline"
@@ -191,26 +226,26 @@ export default function AgingAPReportPage() {
               }}
             >
               <Download className="w-4 h-4 mr-2" />
-              {(hydrated && appLang==='en') ? 'Export CSV' : 'تصدير CSV'}
+              {(hydrated && appLang === 'en') ? 'Export CSV' : 'تصدير CSV'}
             </Button>
             <Button variant="outline" onClick={() => router.push('/reports')}>
               <ArrowRight className="w-4 h-4 mr-2" />
-              {(hydrated && appLang==='en') ? 'Back' : 'رجوع'}
+              {(hydrated && appLang === 'en') ? 'Back' : 'رجوع'}
             </Button>
           </div>
 
           <Card>
             <CardHeader>
-              <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Filters' : 'المرشحات'}</CardTitle>
+              <CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Filters' : 'المرشحات'}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm" htmlFor="end_date" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'End Date' : 'تاريخ النهاية'}</label>
+                  <label className="text-sm" htmlFor="end_date" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'End Date' : 'تاريخ النهاية'}</label>
                   <Input id="end_date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full sm:w-40" />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Outstanding' : 'إجمالي مستحق'}</label>
+                  <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total Outstanding' : 'إجمالي مستحق'}</label>
                   <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">
                     {numberFmt.format(totals.outstanding)}
                   </div>
@@ -221,28 +256,28 @@ export default function AgingAPReportPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Aging by Supplier' : 'أعمار الذمم حسب المورد'}</CardTitle>
+              <CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Aging by Supplier' : 'أعمار الذمم حسب المورد'}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto" ref={printRef}>
                 <table className="min-w-[640px] w-full text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Supplier' : 'المورد'}</th>
-                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Bill #' : 'رقم الفاتورة'}</th>
-                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Not Due' : 'غير مستحق'}</th>
-                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? '0-30' : '0-30'}</th>
-                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? '31-60' : '31-60'}</th>
-                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? '61-90' : '61-90'}</th>
-                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? '91+' : '91+'}</th>
-                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Outstanding' : 'المستحق'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Supplier' : 'المورد'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Bill #' : 'رقم الفاتورة'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Not Due' : 'غير مستحق'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? '0-30' : '0-30'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? '31-60' : '31-60'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? '61-90' : '61-90'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? '91+' : '91+'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Outstanding' : 'المستحق'}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="px-2 py-4 text-center text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                          {(hydrated && appLang==='en') ? 'No outstanding payables to suppliers by this date.' : 'لا توجد مبالغ مستحقة على الموردين حتى هذا التاريخ.'}
+                          {(hydrated && appLang === 'en') ? 'No outstanding payables to suppliers by this date.' : 'لا توجد مبالغ مستحقة على الموردين حتى هذا التاريخ.'}
                         </td>
                       </tr>
                     ) : rows.map((bill) => {
@@ -263,7 +298,7 @@ export default function AgingAPReportPage() {
                   </tbody>
                   <tfoot>
                     <tr className="border-t bg-gray-50 dark:bg-slate-900 font-semibold">
-                      <td className="px-2 py-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Totals' : 'الإجماليات'}</td>
+                      <td className="px-2 py-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Totals' : 'الإجماليات'}</td>
                       <td></td>
                       <td className="px-2 py-2">{numberFmt.format(totals.notDue)}</td>
                       <td className="px-2 py-2">{numberFmt.format(totals.d0_30)}</td>

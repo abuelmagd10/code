@@ -11,9 +11,13 @@ import { ShoppingCart, ArrowLeft, ArrowRight, Pencil, FileText, Printer, Receipt
 import { canAction } from "@/lib/authz"
 import Link from "next/link"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError } from "@/lib/notifications"
+import { getActiveCompanyId } from "@/lib/company"
 
 interface SalesOrder {
   id: string
+  company_id: string
   so_number: string
   so_date: string
   due_date: string | null
@@ -91,6 +95,7 @@ export default function SalesOrderDetailPage() {
   const router = useRouter()
   const params = useParams()
   const orderId = params.id as string
+  const { toast } = useToast()
 
   const [order, setOrder] = useState<SalesOrder | null>(null)
   const [items, setItems] = useState<SOItem[]>([])
@@ -110,6 +115,8 @@ export default function SalesOrderDetailPage() {
     } catch { return 'ar' }
   })
   const [hydrated, setHydrated] = useState(false)
+  const printContentRef = useRef<HTMLDivElement>(null)
+  const [companyDetails, setCompanyDetails] = useState<any>(null)
 
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -141,6 +148,19 @@ export default function SalesOrderDetailPage() {
     checkPerms()
   }, [supabase])
 
+  const loadCompanyDetails = async (companyId: string) => {
+    try {
+      const { data } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', companyId)
+        .single()
+      if (data) setCompanyDetails(data)
+    } catch (e) {
+      console.error('Failed to load company details', e)
+    }
+  }
+
   const loadOrder = useCallback(async () => {
     if (!orderId) return
     setIsLoading(true)
@@ -154,6 +174,13 @@ export default function SalesOrderDetailPage() {
 
       if (orderError) throw orderError
       setOrder(orderData)
+
+      if (orderData.company_id) {
+        loadCompanyDetails(orderData.company_id)
+      } else {
+        const activeCompanyId = await getActiveCompanyId(supabase)
+        if (activeCompanyId) loadCompanyDetails(activeCompanyId)
+      }
 
       // Load order items
       const { data: itemsData } = await supabase
@@ -239,8 +266,6 @@ export default function SalesOrderDetailPage() {
     },
   })
 
-
-
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
       draft: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-700 dark:text-gray-300', label: { ar: 'مسودة', en: 'Draft' } },
@@ -320,6 +345,45 @@ export default function SalesOrderDetailPage() {
     return appLang === 'en' ? m.en : m.ar
   }
 
+  const handlePrint = async () => {
+    try {
+      const el = printContentRef.current
+      if (!el) return
+
+      const clone = el.cloneNode(true) as HTMLElement
+      // Remove tabs trigger list and non-printable elements
+      const toRemove = clone.querySelectorAll('.no-print, button, [role="tablist"]')
+      toRemove.forEach(e => e.remove())
+
+      const content = clone.innerHTML
+      const { openPrintWindow } = await import('@/lib/print-utils')
+
+      const { openPrintWindow } = await import('@/lib/print-utils')
+
+      const companyName = companyDetails?.name || 'Company Name'
+      const address = companyDetails?.address || ''
+      const phone = companyDetails?.phone || ''
+
+      openPrintWindow(content, {
+        lang: appLang as 'ar' | 'en',
+        direction: appLang === 'ar' ? 'rtl' : 'ltr',
+        title: appLang === 'en' ? `Sales Order ${order?.so_number || ''}` : `أمر بيع ${order?.so_number || ''}`,
+        fontSize: 10,
+        pageSize: 'A4',
+        margin: '15mm',
+        companyName: companyName,
+        companyAddress: address,
+        companyPhone: phone,
+        printedBy: 'System User',
+        showHeader: true,
+        showFooter: true
+      })
+    } catch (err) {
+      console.error("Error generating print:", err)
+      toastActionError(toast, appLang === 'en' ? 'Print' : 'طباعة', appLang === 'en' ? 'Sales Order' : 'أمر البيع', String((err as any)?.message || ''))
+    }
+  }
+
   if (!hydrated) return null
 
   const currency = order?.currency || 'EGP'
@@ -348,18 +412,20 @@ export default function SalesOrderDetailPage() {
                 {order && <div className="mt-1">{getStatusBadge(order.status)}</div>}
               </div>
             </div>
-            {order?.status === 'draft' && permUpdate && (
+            {permUpdate && (
               <div className="flex gap-2 flex-shrink-0">
-                <Button variant="outline" onClick={() => window.print()} className="dark:border-gray-600 dark:text-gray-300">
+                <Button variant="outline" onClick={handlePrint} className="dark:border-gray-600 dark:text-gray-300">
                   <Printer className="h-4 w-4 mr-2" />
                   <span suppressHydrationWarning>{appLang === 'en' ? 'Print' : 'طباعة'}</span>
                 </Button>
-                <Link href={`/sales-orders/${orderId}/edit`}>
-                  <Button className="bg-blue-600 hover:bg-blue-700 text-white">
-                    <Pencil className="h-4 w-4 mr-2" />
-                    <span suppressHydrationWarning>{appLang === 'en' ? 'Edit' : 'تعديل'}</span>
-                  </Button>
-                </Link>
+                {order?.status === 'draft' && (
+                  <Link href={`/sales-orders/${orderId}/edit`}>
+                    <Button className="bg-blue-600 hover:bg-blue-700 text-white">
+                      <Pencil className="h-4 w-4 mr-2" />
+                      <span suppressHydrationWarning>{appLang === 'en' ? 'Edit' : 'تعديل'}</span>
+                    </Button>
+                  </Link>
+                )}
               </div>
             )}
           </div>
@@ -369,9 +435,9 @@ export default function SalesOrderDetailPage() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
             </div>
           ) : order ? (
-            <div className="space-y-6">
+            <div className="space-y-6" ref={printContentRef}>
               {/* Summary Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 no-print">
                 <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
@@ -475,7 +541,7 @@ export default function SalesOrderDetailPage() {
               {/* Tabs for Items, Invoices, Payments, Returns */}
               <Card className="dark:bg-gray-800 dark:border-gray-700">
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                  <div className="border-b dark:border-gray-700 px-4 pt-4">
+                  <div className="border-b dark:border-gray-700 px-4 pt-4 no-print">
                     <TabsList className="grid w-full grid-cols-4 h-auto gap-1 bg-transparent p-0">
                       <TabsTrigger
                         value="items"
@@ -753,4 +819,3 @@ export default function SalesOrderDetailPage() {
     </div>
   )
 }
-
