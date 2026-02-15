@@ -177,6 +177,37 @@ export const statusConfigs: Record<string, {
     className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
     label: { ar: 'مكتمل', en: 'Completed' }
   },
+  // Attendance statuses
+  present: {
+    variant: 'default',
+    className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+    label: { ar: 'حضور', en: 'Present' }
+  },
+  absent: {
+    variant: 'destructive',
+    className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+    label: { ar: 'غياب', en: 'Absent' }
+  },
+  leave: {
+    variant: 'outline',
+    className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+    label: { ar: 'إجازة', en: 'Leave' }
+  },
+  sick: {
+    variant: 'secondary',
+    className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+    label: { ar: 'مرضية', en: 'Sick' }
+  },
+  late: {
+    variant: 'outline',
+    className: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
+    label: { ar: 'تأخير', en: 'Late' }
+  },
+  early_leave: {
+    variant: 'outline',
+    className: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
+    label: { ar: 'انصراف مبكر', en: 'Early Leave' }
+  },
   // Write-off statuses
   locked: {
     variant: 'secondary',
