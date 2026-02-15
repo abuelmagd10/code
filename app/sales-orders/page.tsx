@@ -31,6 +31,7 @@ import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument
 import { useBranchFilter } from "@/hooks/use-branch-filter";
 import { BranchFilter } from "@/components/BranchFilter";
 import { ERPPageHeader, useERPLanguage } from "@/components/erp-page-header";
+import { CompanyHeader } from "@/components/company-header";
 import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { StatusBadge } from "@/components/DataTableFormatters";
 import { useRealtimeTable } from "@/hooks/use-realtime-table";
@@ -1494,6 +1495,9 @@ function SalesOrdersContent() {
       <Sidebar />
       {/* Main Content */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+        {/* Company Header */}
+        <CompanyHeader />
+
         {/* ✅ Unified Page Header */}
         <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
           <ERPPageHeader
