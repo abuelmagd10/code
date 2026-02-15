@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
       *,
       invoices:invoice_id (invoice_number, total_amount, invoice_date, customer_id),
       sales_orders:sales_order_id (so_number),
-      employees:employee_id (full_name, employee_code)
+      employees:employee_id (full_name)
     `).eq("company_id", companyId)
 
     if (userId) query = query.eq("user_id", userId)
