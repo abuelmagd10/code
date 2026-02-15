@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
     // التقارير المحاسبية الرسمية تعتمد على journal_entries فقط
     let query = client.from("user_bonuses").select(`
       *,
-      invoices:invoice_id (invoice_number, total_amount, invoice_date, customer_name),
+      invoices:invoice_id (invoice_number, total_amount, invoice_date, customer_id),
       sales_orders:sales_order_id (so_number),
       employees:employee_id (full_name, employee_code)
     `).eq("company_id", companyId)
