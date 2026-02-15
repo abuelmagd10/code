@@ -193,6 +193,226 @@ export async function logAudit(params: {
   }
 }
 
+/**
+ * تسجيل عملية اعتماد (APPROVE)
+ */
+export async function logApprove(params: {
+  companyId: string
+  userId: string
+  userEmail?: string
+  userName?: string
+  targetTable: string
+  recordId: string
+  recordIdentifier: string
+  reason?: string
+  oldData?: Record<string, any>
+  newData?: Record<string, any>
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch('/api/audit-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'APPROVE',
+        companyId: params.companyId,
+        userId: params.userId,
+        details: {
+          user_email: params.userEmail,
+          user_name: params.userName,
+          target_table: params.targetTable,
+          record_id: params.recordId,
+          record_identifier: params.recordIdentifier,
+          reason: params.reason,
+          old_data: params.oldData,
+          new_data: params.newData
+        }
+      })
+    })
+
+    if (!response.ok) throw new Error('Failed to log approve event')
+    return { success: true }
+  } catch (err: any) {
+    console.error('Failed to log approve:', err)
+    return { success: false, error: err?.message }
+  }
+}
+
+/**
+ * تسجيل عملية ترحيل (POST)
+ */
+export async function logPost(params: {
+  companyId: string
+  userId: string
+  userEmail?: string
+  userName?: string
+  targetTable: string
+  recordId: string
+  recordIdentifier: string
+  reason?: string
+  oldData?: Record<string, any>
+  newData?: Record<string, any>
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch('/api/audit-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'POST',
+        companyId: params.companyId,
+        userId: params.userId,
+        details: {
+          user_email: params.userEmail,
+          user_name: params.userName,
+          target_table: params.targetTable,
+          record_id: params.recordId,
+          record_identifier: params.recordIdentifier,
+          reason: params.reason,
+          old_data: params.oldData,
+          new_data: params.newData
+        }
+      })
+    })
+
+    if (!response.ok) throw new Error('Failed to log post event')
+    return { success: true }
+  } catch (err: any) {
+    console.error('Failed to log post:', err)
+    return { success: false, error: err?.message }
+  }
+}
+
+/**
+ * تسجيل عملية إلغاء (CANCEL)
+ */
+export async function logCancel(params: {
+  companyId: string
+  userId: string
+  userEmail?: string
+  userName?: string
+  targetTable: string
+  recordId: string
+  recordIdentifier: string
+  reason: string  // إلزامي للإلغاء
+  oldData?: Record<string, any>
+  newData?: Record<string, any>
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch('/api/audit-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'CANCEL',
+        companyId: params.companyId,
+        userId: params.userId,
+        details: {
+          user_email: params.userEmail,
+          user_name: params.userName,
+          target_table: params.targetTable,
+          record_id: params.recordId,
+          record_identifier: params.recordIdentifier,
+          reason: params.reason,
+          old_data: params.oldData,
+          new_data: params.newData
+        }
+      })
+    })
+
+    if (!response.ok) throw new Error('Failed to log cancel event')
+    return { success: true }
+  } catch (err: any) {
+    console.error('Failed to log cancel:', err)
+    return { success: false, error: err?.message }
+  }
+}
+
+/**
+ * تسجيل عملية عكس (REVERSE)
+ */
+export async function logReverse(params: {
+  companyId: string
+  userId: string
+  userEmail?: string
+  userName?: string
+  targetTable: string
+  recordId: string
+  recordIdentifier: string
+  reason: string  // إلزامي للعكس
+  oldData?: Record<string, any>
+  newData?: Record<string, any>
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch('/api/audit-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'REVERSE',
+        companyId: params.companyId,
+        userId: params.userId,
+        details: {
+          user_email: params.userEmail,
+          user_name: params.userName,
+          target_table: params.targetTable,
+          record_id: params.recordId,
+          record_identifier: params.recordIdentifier,
+          reason: params.reason,
+          old_data: params.oldData,
+          new_data: params.newData
+        }
+      })
+    })
+
+    if (!response.ok) throw new Error('Failed to log reverse event')
+    return { success: true }
+  } catch (err: any) {
+    console.error('Failed to log reverse:', err)
+    return { success: false, error: err?.message }
+  }
+}
+
+/**
+ * تسجيل عملية إقفال (CLOSE) - للفترات المحاسبية
+ */
+export async function logClose(params: {
+  companyId: string
+  userId: string
+  userEmail?: string
+  userName?: string
+  targetTable: string
+  recordId: string
+  recordIdentifier: string
+  reason?: string
+  oldData?: Record<string, any>
+  newData?: Record<string, any>
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch('/api/audit-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'CLOSE',
+        companyId: params.companyId,
+        userId: params.userId,
+        details: {
+          user_email: params.userEmail,
+          user_name: params.userName,
+          target_table: params.targetTable,
+          record_id: params.recordId,
+          record_identifier: params.recordIdentifier,
+          reason: params.reason,
+          old_data: params.oldData,
+          new_data: params.newData
+        }
+      })
+    })
+
+    if (!response.ok) throw new Error('Failed to log close event')
+    return { success: true }
+  } catch (err: any) {
+    console.error('Failed to log close:', err)
+    return { success: false, error: err?.message }
+  }
+}
+
 // Reference types that indicate the journal entry is linked to a document
 export const DOCUMENT_LINKED_REFERENCE_TYPES = [
   "invoice",

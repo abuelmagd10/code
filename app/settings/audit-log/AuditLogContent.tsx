@@ -82,8 +82,22 @@ import {
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 
-// أنواع العمليات
-type ActionType = "INSERT" | "UPDATE" | "DELETE" | "REVERT" | "LOGIN" | "LOGOUT" | "SETTINGS" | "PERMISSIONS";
+// أنواع العمليات (Phase 1 Enhanced)
+type ActionType =
+  | "INSERT"
+  | "UPDATE"
+  | "DELETE"
+  | "REVERT"
+  | "APPROVE"
+  | "POST"
+  | "CANCEL"
+  | "REVERSE"
+  | "CLOSE"
+  | "LOGIN"
+  | "LOGOUT"
+  | "ACCESS_DENIED"
+  | "SETTINGS"
+  | "PERMISSIONS";
 
 interface AuditLog {
   id: string;
@@ -371,28 +385,45 @@ const getReadableIdentifier = (log: AuditLog): string => {
 // وصف العملية بشكل مفهوم
 const getActionDescription = (log: AuditLog): string => {
   const tableName = translateTable(log.target_table);
-  const identifier = getReadableIdentifier(log);
+  const identifier = log.record_identifier || log.record_id;
 
   switch (log.action) {
     case "INSERT":
-      return `تم إضافة ${tableName}: ${identifier}`;
+      return `تم إنشاء ${tableName} جديد: ${identifier}`;
     case "UPDATE":
-      const fieldsCount = log.changed_fields?.length || 0;
-      return `تم تعديل ${tableName}: ${identifier} (${fieldsCount} ${fieldsCount === 1 ? "حقل" : "حقول"})`;
+      if (log.changed_fields && log.changed_fields.length > 0) {
+        const fields = log.changed_fields
+          .map((f) => fieldTranslations[f] || f)
+          .join("، ");
+        return `تم تحديث ${tableName}: ${identifier} (${fields})`;
+      }
+      return `تم تحديث ${tableName}: ${identifier}`;
     case "DELETE":
       return `تم حذف ${tableName}: ${identifier}`;
     case "REVERT":
-      return `تم التراجع عن عملية في ${tableName}`;
+      return `تم التراجع عن عملية في ${tableName}: ${identifier}`;
+    case "APPROVE":
+      return `تم اعتماد ${tableName}: ${identifier}`;
+    case "POST":
+      return `تم ترحيل ${tableName}: ${identifier}`;
+    case "CANCEL":
+      return `تم إلغاء ${tableName}: ${identifier}`;
+    case "REVERSE":
+      return `تم عكس ${tableName}: ${identifier}`;
+    case "CLOSE":
+      return `تم إقفال ${tableName}: ${identifier}`;
     case "LOGIN":
       return `تسجيل دخول: ${log.user_name || log.user_email}`;
     case "LOGOUT":
       return `تسجيل خروج: ${log.user_name || log.user_email}`;
+    case "ACCESS_DENIED":
+      return `محاولة وصول غير مصرح: ${tableName}`;
     case "SETTINGS":
-      return `تغيير إعدادات: ${identifier}`;
+      return `تم تغيير إعدادات: ${identifier}`;
     case "PERMISSIONS":
-      return `تغيير صلاحيات: ${identifier}`;
+      return `تم تغيير صلاحيات: ${identifier}`;
     default:
-      return `${log.action} - ${tableName}`;
+      return `عملية ${log.action} على ${tableName}: ${identifier}`;
   }
 };
 
@@ -403,8 +434,14 @@ const getActionText = (action: string): string => {
     case "UPDATE": return "تعديل";
     case "DELETE": return "حذف";
     case "REVERT": return "تراجع";
+    case "APPROVE": return "اعتماد";
+    case "POST": return "ترحيل";
+    case "CANCEL": return "إلغاء";
+    case "REVERSE": return "عكس";
+    case "CLOSE": return "إقفال";
     case "LOGIN": return "تسجيل دخول";
     case "LOGOUT": return "تسجيل خروج";
+    case "ACCESS_DENIED": return "وصول مرفوض";
     case "SETTINGS": return "إعدادات";
     case "PERMISSIONS": return "صلاحيات";
     default: return action;
@@ -746,10 +783,22 @@ export default function AuditLogPage() {
         return <Trash2 className="h-4 w-4" />;
       case "REVERT":
         return <Undo2 className="h-4 w-4" />;
+      case "APPROVE":
+        return <Check className="h-4 w-4" />;
+      case "POST":
+        return <FileText className="h-4 w-4" />;
+      case "CANCEL":
+        return <XCircle className="h-4 w-4" />;
+      case "REVERSE":
+        return <RefreshCw className="h-4 w-4" />;
+      case "CLOSE":
+        return <Clock className="h-4 w-4" />;
       case "LOGIN":
         return <LogIn className="h-4 w-4" />;
       case "LOGOUT":
         return <LogIn className="h-4 w-4 rotate-180" />;
+      case "ACCESS_DENIED":
+        return <Shield className="h-4 w-4" />;
       case "SETTINGS":
         return <Settings className="h-4 w-4" />;
       case "PERMISSIONS":
@@ -769,10 +818,22 @@ export default function AuditLogPage() {
         return "bg-red-100 text-red-700 border-red-200";
       case "REVERT":
         return "bg-purple-100 text-purple-700 border-purple-200";
+      case "APPROVE":
+        return "bg-emerald-100 text-emerald-700 border-emerald-200";
+      case "POST":
+        return "bg-sky-100 text-sky-700 border-sky-200";
+      case "CANCEL":
+        return "bg-rose-100 text-rose-700 border-rose-200";
+      case "REVERSE":
+        return "bg-violet-100 text-violet-700 border-violet-200";
+      case "CLOSE":
+        return "bg-slate-100 text-slate-700 border-slate-200";
       case "LOGIN":
         return "bg-cyan-100 text-cyan-700 border-cyan-200";
       case "LOGOUT":
         return "bg-orange-100 text-orange-700 border-orange-200";
+      case "ACCESS_DENIED":
+        return "bg-red-200 text-red-800 border-red-300";
       case "SETTINGS":
         return "bg-amber-100 text-amber-700 border-amber-200";
       case "PERMISSIONS":
@@ -1557,9 +1618,44 @@ export default function AuditLogPage() {
                           <Undo2 className="h-3 w-3 text-purple-600" /> تراجع
                         </span>
                       </SelectItem>
+                      <SelectItem value="APPROVE">
+                        <span className="flex items-center gap-2">
+                          <Check className="h-3 w-3 text-emerald-600" /> اعتماد
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="POST">
+                        <span className="flex items-center gap-2">
+                          <FileText className="h-3 w-3 text-sky-600" /> ترحيل
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="CANCEL">
+                        <span className="flex items-center gap-2">
+                          <XCircle className="h-3 w-3 text-rose-600" /> إلغاء
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="REVERSE">
+                        <span className="flex items-center gap-2">
+                          <RefreshCw className="h-3 w-3 text-violet-600" /> عكس
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="CLOSE">
+                        <span className="flex items-center gap-2">
+                          <Clock className="h-3 w-3 text-slate-600" /> إقفال
+                        </span>
+                      </SelectItem>
                       <SelectItem value="LOGIN">
                         <span className="flex items-center gap-2">
                           <LogIn className="h-3 w-3 text-cyan-600" /> تسجيل دخول
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="LOGOUT">
+                        <span className="flex items-center gap-2">
+                          <LogIn className="h-3 w-3 rotate-180 text-orange-600" /> تسجيل خروج
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="ACCESS_DENIED">
+                        <span className="flex items-center gap-2">
+                          <Shield className="h-3 w-3 text-red-600" /> وصول مرفوض
                         </span>
                       </SelectItem>
                       <SelectItem value="SETTINGS">
