@@ -14,23 +14,23 @@ async function getAdmin() {
 // GET: جلب البونصات لمستخدم معين أو للشركة
 export async function GET(req: NextRequest) {
   try {
-    // === تحصين أمني: استخدام secureApiRequest ===
-    const { companyId, error } = await secureApiRequest(req, {
-      requireAuth: true,
-      requireCompany: true
-      // requirePermission مؤقتاً معطل للتشخيص
-    })
+    console.log("🔍 [Bonuses API] Starting GET request...")
 
-    if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
-    // === نهاية التحصين الأمني ===
+    // جلب companyId من الـ URL parameters مباشرة
+    const { searchParams } = new URL(req.url)
+    const companyId = searchParams.get("companyId")
+
+    console.log("🔍 [Bonuses API] Company ID from URL:", companyId)
+
+    if (!companyId) {
+      return apiError(HTTP_STATUS.BAD_REQUEST, "companyId مطلوب", "companyId is required")
+    }
 
     const admin = await getAdmin()
     if (!admin) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
     }
 
-    const { searchParams } = new URL(req.url)
     const userId = searchParams.get("userId")
     const status = searchParams.get("status")
     const payrollRunId = searchParams.get("payrollRunId")
