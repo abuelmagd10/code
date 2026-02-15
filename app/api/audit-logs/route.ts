@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
-import { requireOwnerOrAdmin } from "@/lib/api-security";
+import { secureApiRequest } from "@/lib/api-security";
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from "@/lib/api-error-handler";
 import { getActiveCompanyId } from "@/lib/company";
 
@@ -201,9 +201,16 @@ export async function GET(request: NextRequest) {
 // POST - التراجع عن عملية
 export async function POST(request: NextRequest) {
   try {
-    // === تحصين أمني: استخدام requireOwnerOrAdmin ===
+    // === تحصين أمني: المالك والمدير والمدير العام فقط (نفس صلاحيات GET) ===
     console.log("📝 [Audit Logs POST] Starting request...");
-    const { user, companyId, member, error } = await requireOwnerOrAdmin(request);
+    const { user, companyId, member, error } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      allowRoles: ['owner', 'admin', 'manager'],
+      customErrorMessage: {
+        forbidden: "المالك أو المدير أو المدير العام فقط يمكنه تنفيذ هذه العملية"
+      }
+    });
 
     console.log("📝 [Audit Logs POST] Security check result:", {
       hasUser: !!user,
