@@ -24,7 +24,7 @@ import { CompanyHeader } from "@/components/company-header"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
-import { PageHeaderList } from "@/components/PageHeader"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
@@ -212,7 +212,7 @@ export default function InvoicesPage() {
   const statusOptions = useMemo(() => {
     // جمع جميع الحالات الفعلية من الفواتير
     const availableStatuses = new Set<string>()
-    
+
     invoices.forEach((inv) => {
       // حساب الحالة الفعلية (مثل منطق الفلترة)
       const actualPaid = paidByInvoice[inv.id] || 0
@@ -220,7 +220,7 @@ export default function InvoicesPage() {
       const returnedAmount = Number(inv.returned_amount || 0)
       const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : Number(inv.total_amount || 0))
       const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
-      
+
       let actualStatus: string
       if (inv.status === 'draft' || inv.status === 'invoiced') {
         actualStatus = 'draft'
@@ -239,9 +239,9 @@ export default function InvoicesPage() {
       } else {
         actualStatus = inv.status || 'draft'
       }
-      
+
       availableStatuses.add(actualStatus)
-      
+
       // إضافة "has_credit" إذا كانت الفاتورة لديها رصيد دائن
       if (inv.status !== 'cancelled' && inv.status !== 'fully_returned') {
         const netInvoiceAmount = originalTotal - returnedAmount
@@ -250,7 +250,7 @@ export default function InvoicesPage() {
         }
       }
     })
-    
+
     // إرجاع فقط الحالات المتاحة من القائمة الكاملة
     return allStatusOptions.filter(opt => availableStatuses.has(opt.value))
   }, [invoices, paidByInvoice, appCurrency, allStatusOptions])
@@ -357,7 +357,7 @@ export default function InvoicesPage() {
     },
     onUpdate: (newInvoice, oldInvoice) => {
       // ✅ تحديث السجل في القائمة
-      setInvoices(prev => prev.map(invoice => 
+      setInvoices(prev => prev.map(invoice =>
         invoice.id === newInvoice.id ? newInvoice : invoice
       ));
     },
@@ -407,7 +407,7 @@ export default function InvoicesPage() {
 
       const role = member?.role || "staff"
       setCurrentUserRole(role)
-      
+
       // استخدام getRoleAccessLevel لتحديد مستوى الوصول بشكل موحد
       const accessLevel = getRoleAccessLevel(role)
       // المديرين (owner, admin, manager, accountant, viewer) يرون جميع الفواتير أو فواتير الفرع
@@ -427,7 +427,7 @@ export default function InvoicesPage() {
 
       // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها) مع مراعاة صلاحيات الفروع
       if (canViewAll) {
-        
+
         let membersQuery = supabase
           .from("company_members")
           .select("user_id, role, branch_id")
@@ -557,11 +557,11 @@ export default function InvoicesPage() {
         : '/api/invoices'
       const response = await fetch(apiUrl)
       const result = await response.json()
-      
+
       if (!result.success) {
         throw new Error(result.error || 'Failed to load invoices')
       }
-      
+
       setInvoices(result.data || [])
 
       // تحميل المدفوعات من جدول payments لحساب المبالغ المدفوعة الفعلية
@@ -616,7 +616,7 @@ export default function InvoicesPage() {
       // بناء خريطة: invoice_id -> created_by_user_id
       // أولوية: 1) من sales_order، 2) من created_by_user_id مباشرة من قاعدة البيانات
       const invToEmpMap: Record<string, string> = {}
-      
+
       // إذا كان هناك فواتير، جلب created_by_user_id و sales_order_id مباشرة من قاعدة البيانات
       // استخدام invoiceIds الموجود من الأعلى (السطر 453)
       if (invoiceIds.length > 0) {
@@ -631,13 +631,13 @@ export default function InvoicesPage() {
             invToEmpMap[inv.id] = inv.created_by_user_id
           }
         }
-        
+
         // ثانياً: تحديث من sales_orders إذا كان متوفراً (أولوية أعلى)
         const salesOrderIds = (invoicesFromDb || [])
           .filter((inv: any) => inv.sales_order_id)
           .map((inv: any) => inv.sales_order_id)
           .filter((id: any) => id) // إزالة القيم null/undefined
-        
+
         if (salesOrderIds.length > 0) {
           const { data: salesOrders } = await supabase
             .from("sales_orders")
@@ -654,9 +654,9 @@ export default function InvoicesPage() {
             }
           }
         }
-        
+
       }
-      
+
       setInvoiceToEmployeeMap(invToEmpMap)
 
       // تحميل شركات الشحن
@@ -738,7 +738,7 @@ export default function InvoicesPage() {
         const employeeIdFromMap = invoiceToEmployeeMap[inv.id]
         const employeeIdFromInvoice = (inv as any).created_by_user_id
         const employeeId = employeeIdFromMap || employeeIdFromInvoice
-        
+
         // إذا كان employeeId موجوداً، يجب أن يكون مطابقاً للموظف المحدد
         if (employeeId) {
           if (employeeId !== filterEmployeeId) {
@@ -782,7 +782,7 @@ export default function InvoicesPage() {
         // ✅ استخدام original_total إذا كان موجوداً، وإلا استخدام display_total أو total_amount (مثل منطق hasCredit)
         const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : Number(inv.total_amount || 0))
         const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
-        
+
         // ✅ تحديد الحالة الفعلية بناءً على المنطق نفسه في العرض
         // ملاحظة: يجب حساب المرتجع قبل حساب الدفع لأن المرتجع له أولوية أعلى
         let actualStatus: string
@@ -1084,10 +1084,10 @@ export default function InvoicesPage() {
         const paidAmount = Number(row.paid_amount || 0)
         const returnedAmount = Number(row.returned_amount || 0)
         const originalTotal = Number(row.original_total || row.total_amount || 0)
-        
+
         // ✅ تحديد ما إذا كان المرتجع كامل (بناءً على original_total)
         const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
-        
+
         // ✅ تحديد حالة الدفع بناءً على حالة الفاتورة الفعلية أولاً ثم المبالغ
         let paymentStatus: string
         if (row.status === 'draft') {
@@ -1110,15 +1110,15 @@ export default function InvoicesPage() {
           // ✅ استخدام حالة الفاتورة الفعلية كـ fallback
           paymentStatus = row.status || 'draft'
         }
-        
+
         // تحديد ما إذا كان هناك مرتجع جزئي
         const hasPartialReturn = returnedAmount > 0 && returnedAmount < originalTotal
-        
+
         return (
           <div className="flex flex-col items-center gap-1">
             {/* حالة الدفع الأساسية */}
             <StatusBadge status={paymentStatus} lang={appLang} />
-            
+
             {/* حالة المرتجع الجزئي (إن وجد) */}
             {hasPartialReturn && (
               <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
@@ -2262,18 +2262,26 @@ export default function InvoicesPage() {
               {/* رأس الصفحة - تحسين للهاتف */}
               {/* ✅ Unified Page Header */}
               <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-                <PageHeaderList
+                <ERPPageHeader
                   title={appLang === 'en' ? 'Sales Invoices' : 'فواتير المبيعات'}
                   description={appLang === 'en' ? 'Manage customer invoices and track payments' : 'إدارة فواتير العملاء وتتبع المدفوعات'}
-                  icon={FileText}
-                  createHref={permWrite ? "/invoices/new" : undefined}
-                  createLabel={appLang === 'en' ? 'New' : 'جديدة'}
-                  createDisabled={!permWrite}
-                  createTitle={!permWrite ? (appLang === 'en' ? 'No permission to create invoices' : 'لا توجد صلاحية لإنشاء فواتير') : undefined}
+                  variant="list"
                   lang={appLang}
-                  userRole={currentUserRole}
-                  governanceType="branch_creator"
-                  governanceEntityName={appLang === 'en' ? 'invoices' : 'الفواتير'}
+                  actions={
+                    permWrite ? (
+                      <Button asChild>
+                        <Link href="/invoices/new">
+                          <Plus className="h-4 w-4 mr-2" />
+                          {appLang === 'en' ? 'New Invoice' : 'فاتورة جديدة'}
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button disabled title={appLang === 'en' ? 'No permission to create invoices' : 'لا توجد صلاحية لإنشاء فواتير'}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        {appLang === 'en' ? 'New Invoice' : 'فاتورة جديدة'}
+                      </Button>
+                    )
+                  }
                 />
               </div>
 
