@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
     let query = supabase
       .from("cost_centers")
-      .select("*, branches(id, name, code)")
+      .select("*, branches!cost_centers_branch_id_fkey(id, name, code)")
       .eq("company_id", companyId)
       .order("cost_center_name")
 

@@ -23,7 +23,7 @@ export async function GET(
 
     const { data, error } = await supabase
       .from("cost_centers")
-      .select("*, branches(id, name, code)")
+      .select("*, branches!cost_centers_branch_id_fkey(id, name, code)")
       .eq("id", id)
       .eq("company_id", companyId)
       .single()
