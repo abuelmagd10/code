@@ -70,7 +70,6 @@ export async function GET(req: NextRequest) {
       sales_orders:sales_order_id (so_number),
       employees:employee_id (full_name, employee_code)
     `).eq("company_id", companyId)
-      .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء البونصات المحذوفة
 
     if (userId) query = query.eq("user_id", userId)
     if (status) query = query.eq("status", status)
