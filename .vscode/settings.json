@@ -6,5 +6,8 @@
     "augment.nextEdit.enableGlobalBackgroundSuggestions": true,
     "Codegeex.SidebarUI.LanguagePreference": "English",
     "Codegeex.CommitMessage.LanguagePreference": "English",
-    "Codegeex.RepoIndex": true
+    "Codegeex.RepoIndex": true,
+    "css.lint.unknownAtRules": "ignore",
+    "scss.lint.unknownAtRules": "ignore",
+    "less.lint.unknownAtRules": "ignore"
 }
