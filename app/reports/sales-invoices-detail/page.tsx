@@ -8,7 +8,7 @@ import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
 import { getAccessFilter } from "@/lib/authz"
-import { PageHeaderReport } from "@/components/PageHeader"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 
 interface Customer { id: string; name: string; phone?: string | null }
@@ -159,14 +159,24 @@ export default function SalesInvoicesDetailReportPage() {
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 max-w-full">
           {/* ✅ Unified Page Header */}
-          <PageHeaderReport
+          <ERPPageHeader
             title={(hydrated && appLang === 'en') ? 'Sales Detail' : 'تفصيل المبيعات'}
             description={(hydrated && appLang === 'en') ? 'Detailed list' : 'قائمة تفصيلية'}
-            onPrint={() => window.print()}
-            onExportCSV={exportCsv}
+            variant="report"
             backHref="/reports"
-            backLabel={(hydrated && appLang === 'en') ? 'Back' : 'العودة'}
+            backLabel={(hydrated && appLang === 'en') ? 'Back to Reports' : 'العودة للتقارير'}
             lang={appLang}
+            actions={
+              <div className="flex items-center gap-2">
+                <Button onClick={() => window.print()} variant="outline" size="sm">
+                  {(hydrated && appLang === 'en') ? 'Print' : 'طباعة'}
+                </Button>
+                <Button onClick={exportCsv} variant="outline" size="sm">
+                  <Download className="h-4 w-4 mr-2" />
+                  {(hydrated && appLang === 'en') ? 'Export CSV' : 'تصدير CSV'}
+                </Button>
+              </div>
+            }
           />
           <Card>
             <CardHeader>
