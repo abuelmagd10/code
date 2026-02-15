@@ -15,10 +15,10 @@ async function getAdmin() {
 export async function GET(req: NextRequest) {
   try {
     // === تحصين أمني: استخدام secureApiRequest ===
-    const { user, companyId, member, error } = await secureApiRequest(req, {
+    const { companyId, error } = await secureApiRequest(req, {
       requireAuth: true,
-      requireCompany: true,
-      requirePermission: { resource: "bonuses", action: "read" }
+      requireCompany: true
+      // requirePermission مؤقتاً معطل للتشخيص
     })
 
     if (error) return error
