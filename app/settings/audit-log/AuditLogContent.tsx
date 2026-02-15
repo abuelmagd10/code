@@ -326,14 +326,16 @@ const formatValue = (key: string, value: any): string => {
 // استخراج معرف مفهوم من البيانات
 const getReadableIdentifier = (log: AuditLog): string => {
   const data = log.new_data || log.old_data;
-  if (!data) return log.record_identifier;
+  const shortId = log.record_identifier?.slice(0, 8) || "---";
+
+  if (!data) return log.record_identifier || shortId;
 
   // حسب نوع الجدول
   switch (log.target_table) {
     case "invoices":
-      return data.invoice_number || `فاتورة ${log.record_identifier.slice(0, 8)}`;
+      return data.invoice_number || `فاتورة ${shortId}`;
     case "bills":
-      return data.bill_number || `فاتورة مشتريات ${log.record_identifier.slice(0, 8)}`;
+      return data.bill_number || `فاتورة مشتريات ${shortId}`;
     case "payments":
       const amount = data.amount ? `${Math.abs(data.amount).toLocaleString("ar-EG")} ج.م` : "";
       const method = valueTranslations.payment_method?.[data.payment_method] || data.payment_method || "";
@@ -342,27 +344,27 @@ const getReadableIdentifier = (log: AuditLog): string => {
         const shortNote = data.notes.length > 40 ? data.notes.slice(0, 40) + "..." : data.notes;
         return shortNote;
       }
-      return `${method} ${amount}`.trim() || `دفعة ${log.record_identifier.slice(0, 8)}`;
+      return `${method} ${amount}`.trim() || `دفعة ${shortId}`;
     case "customers":
-      return data.name || `عميل ${log.record_identifier.slice(0, 8)}`;
+      return data.name || `عميل ${shortId}`;
     case "suppliers":
-      return data.name || `مورد ${log.record_identifier.slice(0, 8)}`;
+      return data.name || `مورد ${shortId}`;
     case "products":
-      return data.name || `منتج ${log.record_identifier.slice(0, 8)}`;
+      return data.name || `منتج ${shortId}`;
     case "journal_entries":
-      return data.reference_number || `قيد ${log.record_identifier.slice(0, 8)}`;
+      return data.reference_number || `قيد ${shortId}`;
     case "chart_of_accounts":
-      return data.account_name || data.name || `حساب ${log.record_identifier.slice(0, 8)}`;
+      return data.account_name || data.name || `حساب ${shortId}`;
     case "estimates":
-      return data.estimate_number || `عرض سعر ${log.record_identifier.slice(0, 8)}`;
+      return data.estimate_number || `عرض سعر ${shortId}`;
     case "sales_orders":
-      return data.order_number || `أمر بيع ${log.record_identifier.slice(0, 8)}`;
+      return data.order_number || `أمر بيع ${shortId}`;
     case "purchase_orders":
-      return data.order_number || `أمر شراء ${log.record_identifier.slice(0, 8)}`;
+      return data.order_number || `أمر شراء ${shortId}`;
     case "sales_returns":
-      return data.return_number || `مرتجع ${log.record_identifier.slice(0, 8)}`;
+      return data.return_number || `مرتجع ${shortId}`;
     default:
-      return data.name || data.number || log.record_identifier.slice(0, 8);
+      return data.name || data.number || shortId;
   }
 };
 
@@ -1114,7 +1116,7 @@ export default function AuditLogPage() {
                               </Badge>
                               <span className="text-gray-700 font-medium">{translateTable(rel.target_table)}</span>
                             </div>
-                            <span className="text-xs text-gray-400">{rel.record_identifier?.slice(0, 8)}...</span>
+                            <span className="text-xs text-gray-400">{rel.record_identifier?.slice(0, 8) || "---"}...</span>
                           </div>
                         ))}
                       </div>
