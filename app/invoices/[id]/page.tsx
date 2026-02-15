@@ -40,7 +40,7 @@ import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
-import { PageHeaderDetail } from "@/components/PageHeader"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import {
   transferToThirdParty,
   clearThirdPartyInventory,
@@ -2336,8 +2336,10 @@ export default function InvoiceDetailPage() {
                 ? 'You do not have permission to view this invoice.'
                 : 'ليس لديك صلاحية لعرض هذه الفاتورة.'}
             </p>
-            <Button onClick={() => router.back()} className="mt-4" variant="outline">
-              {appLang === 'en' ? 'Go Back' : 'العودة'}
+            <Button asChild className="mt-4" variant="outline">
+              <Link href="/invoices">
+                {appLang === 'en' ? 'Go to Invoices' : 'الذهاب للفواتير'}
+              </Link>
             </Button>
           </div>
         </main>
@@ -2412,28 +2414,65 @@ export default function InvoiceDetailPage() {
       <main ref={printAreaRef} className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 print-area overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 print:space-y-4 max-w-full">
           {/* ✅ Unified Page Header */}
-          <PageHeaderDetail
+          <ERPPageHeader
             title={appLang === 'en' ? `Invoice #${invoice.invoice_number}` : `الفاتورة #${invoice.invoice_number}`}
             description={appLang === 'en' ? `Issue date: ${new Date(invoice.invoice_date).toLocaleDateString('en')}` : `تاريخ الإصدار: ${new Date(invoice.invoice_date).toLocaleDateString('ar')}`}
-            onDownloadPDF={handleDownloadPDF}
-            onPrint={handlePrint}
-            previousHref={prevInvoiceId || undefined}
-            previousLabel={appLang === 'en' ? 'Previous Invoice' : 'الفاتورة السابقة'}
-            nextHref={nextInvoiceId || undefined}
-            nextLabel={appLang === 'en' ? 'Next Invoice' : 'الفاتورة التالية'}
-            editHref={`/invoices/${invoice.id}/edit`}
-            editLabel={appLang === 'en' ? 'Edit' : 'تعديل'}
-            editDisabled={!permUpdate || invoice.status === 'paid' || invoice.status === 'partially_paid'}
-            editTitle={
-              !permUpdate
-                ? (appLang === 'en' ? 'No permission to edit' : 'لا توجد صلاحية للتعديل')
-                : (invoice.status === 'paid' || invoice.status === 'partially_paid')
-                  ? (appLang === 'en' ? 'Cannot edit paid invoice. Use Returns instead.' : 'لا يمكن تعديل الفاتورة المدفوعة. استخدم المرتجعات بدلاً من ذلك.')
-                  : undefined
-            }
+            variant="detail"
             backHref="/invoices"
-            backLabel={appLang === 'en' ? 'Back' : 'العودة'}
+            backLabel={appLang === 'en' ? 'Back to Invoices' : 'العودة للفواتير'}
             lang={appLang}
+            actions={
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Previous/Next Navigation */}
+                {prevInvoiceId && (
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/invoices/${prevInvoiceId}`}>
+                      {appLang === 'en' ? '← Previous' : 'السابق ←'}
+                    </Link>
+                  </Button>
+                )}
+                {nextInvoiceId && (
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/invoices/${nextInvoiceId}`}>
+                      {appLang === 'en' ? 'Next →' : '→ التالي'}
+                    </Link>
+                  </Button>
+                )}
+
+                {/* Edit Button */}
+                <Button
+                  asChild={permUpdate && invoice.status !== 'paid' && invoice.status !== 'partially_paid'}
+                  variant="outline"
+                  size="sm"
+                  disabled={!permUpdate || invoice.status === 'paid' || invoice.status === 'partially_paid'}
+                  title={
+                    !permUpdate
+                      ? (appLang === 'en' ? 'No permission to edit' : 'لا توجد صلاحية للتعديل')
+                      : (invoice.status === 'paid' || invoice.status === 'partially_paid')
+                        ? (appLang === 'en' ? 'Cannot edit paid invoice. Use Returns instead.' : 'لا يمكن تعديل الفاتورة المدفوعة. استخدم المرتجعات بدلاً من ذلك.')
+                        : undefined
+                  }
+                >
+                  {permUpdate && invoice.status !== 'paid' && invoice.status !== 'partially_paid' ? (
+                    <Link href={`/invoices/${invoice.id}/edit`}>
+                      {appLang === 'en' ? 'Edit' : 'تعديل'}
+                    </Link>
+                  ) : (
+                    <span>{appLang === 'en' ? 'Edit' : 'تعديل'}</span>
+                  )}
+                </Button>
+
+                {/* Print Button */}
+                <Button onClick={handlePrint} variant="outline" size="sm">
+                  {appLang === 'en' ? 'Print' : 'طباعة'}
+                </Button>
+
+                {/* Download PDF Button */}
+                <Button onClick={handleDownloadPDF} variant="outline" size="sm">
+                  {appLang === 'en' ? 'Download PDF' : 'تنزيل PDF'}
+                </Button>
+              </div>
+            }
           />
 
           <Card ref={invoiceContentRef} className="print:shadow-none print:border-0 bg-white">
