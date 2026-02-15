@@ -64,12 +64,7 @@ export async function GET(req: NextRequest) {
     // ✅ جلب البونصات (تقرير تشغيلي - من user_bonuses مباشرة)
     // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
     // التقارير المحاسبية الرسمية تعتمد على journal_entries فقط
-    let query = client.from("user_bonuses").select(`
-      *,
-      invoices:invoice_id (invoice_number, total_amount, invoice_date, customer_id),
-      sales_orders:sales_order_id (so_number),
-      employees:employee_id (full_name)
-    `).eq("company_id", companyId)
+    let query = client.from("user_bonuses").select("*").eq("company_id", companyId)
 
     if (userId) query = query.eq("user_id", userId)
     if (status) query = query.eq("status", status)
