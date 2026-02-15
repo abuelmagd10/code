@@ -5,6 +5,8 @@ import { getIncomeStatement, type IncomeStatementRow } from '@/actions/financial
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ExportActions } from '@/components/reports/export-actions'
+import { ReportHeader } from '@/components/reports/report-header'
 import {
   Table,
   TableBody,
@@ -99,35 +101,49 @@ export default function IncomeStatementPage() {
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold tracking-tight">Income Statement</h1>
         <Button variant="outline" onClick={() => window.print()}>
-          <Printer className="mr-2 h-4 w-4" /> Print
+          <div className="flex gap-2">
+            <ExportActions onPrint={() => window.print()} />
+          </div>
         </Button>
       </div>
 
       <Card>
-        <CardHeader className="pb-3 border-b">
-          <div className="flex justify-between items-end">
-            <div className="space-y-1">
-              <CardTitle>Profit & Loss Statement</CardTitle>
-              <p className="text-sm text-muted-foreground">For period {startDate} to {endDate}</p>
-            </div>
-
-            <div className="flex items-end gap-3">
-              <div className="grid gap-1">
-                <label className="text-xs font-medium">From</label>
-                <Input type="date" className="h-8" value={startDate} onChange={e => setStartDate(e.target.value)} />
+        <CardHeader className="pb-3 print:hidden">
+          <CardTitle>Report Parameters</CardTitle>
+          <div className="flex items-end gap-4">
+            <div className="grid gap-1.5">
+              <label className="text-sm font-medium">Period</label>
+              <div className="flex gap-2">
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-[150px]"
+                />
+                <span className="self-center">-</span>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-[150px]"
+                />
               </div>
-              <div className="grid gap-1">
-                <label className="text-xs font-medium">To</label>
-                <Input type="date" className="h-8" value={endDate} onChange={e => setEndDate(e.target.value)} />
-              </div>
-              <Button size="sm" onClick={fetchData} disabled={loading}>
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Run'}
-              </Button>
             </div>
+            <Button onClick={fetchData} disabled={loading}>
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Run Report
+            </Button>
           </div>
         </CardHeader>
-        <CardContent className="pt-6">
-          <div className="max-w-4xl mx-auto border rounded-lg overflow-hidden shadow-sm">
+        <CardContent>
+          <div className="rounded-md border print:border-none">
+            <div className="hidden print:block mb-6">
+              <ReportHeader
+                title="Income Statement"
+                startDate={startDate}
+                endDate={endDate}
+              />
+            </div>
             <Table>
               <TableBody>
                 {/* REVENUE */}

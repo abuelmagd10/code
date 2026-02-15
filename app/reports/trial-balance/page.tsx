@@ -5,6 +5,8 @@ import { getTrialBalance, type TrialBalanceRow } from '@/actions/financial-repor
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ExportActions } from '@/components/reports/export-actions'
+import { ReportHeader } from '@/components/reports/report-header'
 import {
   Table,
   TableBody,
@@ -64,32 +66,34 @@ export default function TrialBalancePage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center print:hidden">
         <h1 className="text-3xl font-bold tracking-tight">Trial Balance</h1>
-        <Button variant="outline" onClick={() => window.print()}>
-          <Printer className="mr-2 h-4 w-4" /> Print
-        </Button>
+        <div className="flex gap-2">
+          <ExportActions onPrint={() => window.print()} />
+        </div>
       </div>
 
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 print:hidden">
           <CardTitle>Report Parameters</CardTitle>
           <div className="flex items-end gap-4">
             <div className="grid gap-1.5">
-              <label className="text-sm font-medium">Start Date</label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <label className="text-sm font-medium">End Date</label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
+              <label className="text-sm font-medium">Period</label>
+              <div className="flex gap-2">
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-[150px]"
+                />
+                <span className="self-center">-</span>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-[150px]"
+                />
+              </div>
             </div>
             <Button onClick={fetchData} disabled={loading}>
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -98,7 +102,15 @@ export default function TrialBalancePage() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="rounded-md border print:border-none">
+
+            <div className="hidden print:block mb-6">
+              <ReportHeader
+                title="Trial Balance"
+                startDate={startDate}
+                endDate={endDate}
+              />
+            </div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -140,9 +152,13 @@ export default function TrialBalancePage() {
                 <TableBody className="border-t-2 border-primary/20 bg-muted/30 font-bold">
                   <TableRow>
                     <TableCell colSpan={3} className="text-right">Totals:</TableCell>
-                    <TableCell className="text-right">{formatCurrency(totals.debit)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(totals.credit)}</TableCell>
-                    <TableCell className="text-right">{(totals.debit - totals.credit).toFixed(2)}</TableCell>
+                    <TableCell className="text-right font-mono">{formatCurrency(totalDebit)}</TableCell>
+                    <TableCell className="text-right font-mono">{formatCurrency(totalCredit)}</TableCell>
+                    <TableCell className="text-right font-mono">
+                      <span className={Math.abs(totalDebit - totalCredit) > 0.01 ? "text-red-500" : "text-green-500"}>
+                        {formatCurrency(totalDebit - totalCredit)}
+                      </span>
+                    </TableCell>
                   </TableRow>
                 </TableBody>
               )}

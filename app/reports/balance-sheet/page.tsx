@@ -5,6 +5,8 @@ import { getBalanceSheet, type BalanceSheetRow } from '@/actions/financial-repor
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ExportActions } from '@/components/reports/export-actions'
+import { ReportHeader } from '@/components/reports/report-header'
 import {
   Table,
   TableBody,
@@ -92,52 +94,60 @@ export default function BalanceSheetPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center print:hidden">
         <h1 className="text-3xl font-bold tracking-tight">Balance Sheet</h1>
-        <Button variant="outline" onClick={() => window.print()}>
-          <Printer className="mr-2 h-4 w-4" /> Print
-        </Button>
+        <div className="flex gap-2">
+          <ExportActions onPrint={() => window.print()} />
+        </div>
       </div>
 
       <Card>
-        <CardHeader className="pb-3 border-b">
-          <div className="flex justify-between items-end">
-            <div className="space-y-1">
-              <CardTitle>Statement of Financial Position</CardTitle>
-              <p className="text-sm text-muted-foreground">As of {asOfDate}</p>
+        <CardHeader className="pb-3 print:hidden">
+          <CardTitle>Report Parameters</CardTitle>
+          <div className="flex items-end gap-4">
+            <div className="grid gap-1.5">
+              <label className="text-sm font-medium">As Of Date</label>
+              <Input
+                type="date"
+                value={asOfDate}
+                onChange={(e) => setAsOfDate(e.target.value)}
+                className="w-[200px]"
+              />
             </div>
-
-            <div className="flex items-end gap-3">
-              <div className="grid gap-1">
-                <label className="text-xs font-medium">As Of</label>
-                <Input type="date" className="h-8" value={asOfDate} onChange={e => setAsOfDate(e.target.value)} />
-              </div>
-              <Button size="sm" onClick={fetchData} disabled={loading}>
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Run Report'}
-              </Button>
-            </div>
+            <Button onClick={fetchData} disabled={loading}>
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Run Report
+            </Button>
           </div>
         </CardHeader>
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-12 max-w-6xl mx-auto">
-            {/* LEFT COLUMN: ASSETS */}
-            <div>
-              {renderSection('Assets', 'Asset')}
-            </div>
+        <CardContent>
+          <div className="hidden print:block mb-6">
+            <ReportHeader
+              title="Balance Sheet"
+              asOfDate={asOfDate}
+            />
+          </div>
+          <div className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-12 max-w-6xl mx-auto">
+              {/* LEFT COLUMN: ASSETS */}
+              <div>
+                {renderSection('Assets', 'Asset')}
+              </div>
 
-            {/* RIGHT COLUMN: LIABILITIES & EQUITY */}
-            <div>
-              {renderSection('Liabilities', 'Liability')}
-              {renderSection('Equity', 'Equity')}
+              {/* RIGHT COLUMN: LIABILITIES & EQUITY */}
+              <div>
+                {renderSection('Liabilities', 'Liability')}
+                {renderSection('Equity', 'Equity')}
 
-              <div className="mt-8 pt-4 border-t-4 border-double border-primary/50">
-                <div className="flex justify-between items-center text-xl font-bold">
-                  <span>Total Liabilities & Equity</span>
-                  <span>{formatCurrency(totals.liabilities + totals.equity)}</span>
+                <div className="mt-8 pt-4 border-t-4 border-double border-primary/50">
+                  <div className="flex justify-between items-center text-xl font-bold">
+                    <span>Total Liabilities & Equity</span>
+                    <span>{formatCurrency(aggregates.liabilities + aggregates.equity)}</span>
+                  </div>
                 </div>
-                {Math.abs(totals.assets - (totals.liabilities + totals.equity)) > 0.01 && (
+                {Math.abs(aggregates.assets - (aggregates.liabilities + aggregates.equity)) > 0.01 && (
                   <div className="mt-2 text-sm text-red-500 font-medium">
-                    Warning: Unbalanced ({formatCurrency(totals.assets - (totals.liabilities + totals.equity))})
+                    Warning: Unbalanced ({formatCurrency(aggregates.assets - (aggregates.liabilities + aggregates.equity))})
                   </div>
                 )}
               </div>

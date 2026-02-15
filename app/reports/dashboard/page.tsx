@@ -114,11 +114,11 @@ export default function FinancialDashboardPage() {
                             <div className="h-2 bg-muted rounded-full overflow-hidden flex">
                                 <div
                                     className="bg-green-500 h-full"
-                                    style={{ width: `${(summary.total_assets / (summary.total_assets + summary.total_liabilities)) * 100}%` }}
+                                    style={{ width: `${(summary.total_assets + summary.total_liabilities) > 0 ? (summary.total_assets / (summary.total_assets + summary.total_liabilities)) * 100 : 0}%` }}
                                 />
                                 <div
                                     className="bg-red-500 h-full"
-                                    style={{ width: `${(summary.total_liabilities / (summary.total_assets + summary.total_liabilities)) * 100}%` }}
+                                    style={{ width: `${(summary.total_assets + summary.total_liabilities) > 0 ? (summary.total_liabilities / (summary.total_assets + summary.total_liabilities)) * 100 : 0}%` }}
                                 />
                             </div>
                         </div>
