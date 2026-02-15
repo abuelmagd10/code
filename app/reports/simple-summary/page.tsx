@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
 import { ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts"
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { ERPPageHeader } from "@/components/erp-page-header"
 
 interface ReportData {
   capital: { total: number }
@@ -45,9 +46,9 @@ export default function SimpleSummaryReport() {
   useEffect(() => { setHydrated(true); setAppLang((localStorage.getItem("app-language") as 'ar' | 'en') || 'ar') }, [])
   const t = (en: string, ar: string) => (hydrated && appLang === 'en') ? en : ar
 
-  const numberFmt = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { 
-    minimumFractionDigits: 0, 
-    maximumFractionDigits: 0 
+  const numberFmt = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
   })
 
   const loadData = async () => {
@@ -121,30 +122,29 @@ export default function SimpleSummaryReport() {
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 max-w-full">
           <CompanyHeader />
-          
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 print:hidden">
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <span className="text-3xl">📊</span>
-                {t('Financial Summary Report', 'تقرير ملخص النشاط المالي')}
-              </h1>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                {t('A simplified report for non-accountants explaining how money flows in the business', 
-                   'تقرير مبسط لغير المحاسبين يشرح كيف تتحرك الأموال في المشروع')}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handlePrint}>
-                <Printer className="w-4 h-4 ml-2" />
-                {t('Print', 'طباعة')}
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleExport}>
-                <Download className="w-4 h-4 ml-2" />
-                {t('Export', 'تصدير')}
-              </Button>
-            </div>
-          </div>
+
+          {/* ✅ Unified Page Header */}
+          <ERPPageHeader
+            title={t('Financial Summary Report', 'تقرير ملخص النشاط المالي')}
+            description={t('A simplified report for non-accountants explaining how money flows in the business',
+              'تقرير مبسط لغير المحاسبين يشرح كيف تتحرك الأموال في المشروع')}
+            variant="report"
+            backHref="/reports"
+            backLabel={t('Back to Reports', 'العودة للتقارير')}
+            lang={appLang}
+            actions={
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handlePrint}>
+                  <Printer className="w-4 h-4 ml-2" />
+                  {t('Print', 'طباعة')}
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleExport}>
+                  <Download className="w-4 h-4 ml-2" />
+                  {t('Export', 'تصدير')}
+                </Button>
+              </div>
+            }
+          />
 
           {/* Date Filters */}
           <Card className="print:hidden">
@@ -210,7 +210,7 @@ export default function SimpleSummaryReport() {
                             <TooltipTrigger><HelpCircle className="w-4 h-4 text-gray-400" /></TooltipTrigger>
                             <TooltipContent className="max-w-[300px]">
                               <p>{t('The capital is the amount the project started with, used to buy goods and pay expenses.',
-                                 'رأس المال هو المبلغ الذي بدأ به المشروع، ويُستخدم في شراء البضاعة ودفع المصاريف.')}</p>
+                                'رأس المال هو المبلغ الذي بدأ به المشروع، ويُستخدم في شراء البضاعة ودفع المصاريف.')}</p>
                             </TooltipContent>
                           </UITooltip>
                         </TooltipProvider>
@@ -226,7 +226,7 @@ export default function SimpleSummaryReport() {
                       </p>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                         💡 {t('This amount is the foundation used to buy inventory and pay operating expenses.',
-                             'هذا المبلغ هو الأساس الذي تم استخدامه في شراء البضاعة ودفع المصاريف.')}
+                          'هذا المبلغ هو الأساس الذي تم استخدامه في شراء البضاعة ودفع المصاريف.')}
                       </p>
                     </div>
                   </div>
@@ -248,7 +248,7 @@ export default function SimpleSummaryReport() {
                             <TooltipTrigger><HelpCircle className="w-4 h-4 text-gray-400" /></TooltipTrigger>
                             <TooltipContent className="max-w-[300px]">
                               <p>{t('Purchases are products bought for resale in the store.',
-                                 'المشتريات هي المنتجات التي تم شراؤها لإعادة بيعها في المتجر.')}</p>
+                                'المشتريات هي المنتجات التي تم شراؤها لإعادة بيعها في المتجر.')}</p>
                             </TooltipContent>
                           </UITooltip>
                         </TooltipProvider>
@@ -267,11 +267,11 @@ export default function SimpleSummaryReport() {
                       </p>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                         💡 {t('These products were purchased for resale to customers.',
-                             'هذه المنتجات تم شراؤها لإعادة بيعها للعملاء.')}
+                          'هذه المنتجات تم شراؤها لإعادة بيعها للعملاء.')}
                       </p>
                       <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 bg-blue-50 dark:bg-blue-950/30 p-2 rounded">
                         ℹ️ {t('Purchases are calculated from accounting entries, or from purchase bills if no entries exist.',
-                             'المشتريات محسوبة من القيود المحاسبية، أو من فواتير الشراء إذا لم توجد قيود.')}
+                          'المشتريات محسوبة من القيود المحاسبية، أو من فواتير الشراء إذا لم توجد قيود.')}
                       </p>
                     </div>
                   </div>
@@ -293,7 +293,7 @@ export default function SimpleSummaryReport() {
                             <TooltipTrigger><HelpCircle className="w-4 h-4 text-gray-400" /></TooltipTrigger>
                             <TooltipContent className="max-w-[300px]">
                               <p>{t('Operating expenses paid to run the business, not directly related to buying or selling.',
-                                 'مصاريف تم دفعها لتشغيل المشروع، وليست مرتبطة بالشراء أو البيع مباشرة.')}</p>
+                                'مصاريف تم دفعها لتشغيل المشروع، وليست مرتبطة بالشراء أو البيع مباشرة.')}</p>
                             </TooltipContent>
                           </UITooltip>
                         </TooltipProvider>
@@ -320,7 +320,7 @@ export default function SimpleSummaryReport() {
                   )}
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
                     💡 {t('These expenses were paid to run the business and are not directly related to buying or selling.',
-                         'هذه مصاريف تم دفعها لتشغيل المشروع، وليست مرتبطة بالشراء أو البيع مباشرة.')}
+                      'هذه مصاريف تم دفعها لتشغيل المشروع، وليست مرتبطة بالشراء أو البيع مباشرة.')}
                   </p>
                 </CardContent>
               </Card>
@@ -341,7 +341,7 @@ export default function SimpleSummaryReport() {
                               <TooltipTrigger><HelpCircle className="w-4 h-4 text-gray-400" /></TooltipTrigger>
                               <TooltipContent className="max-w-[300px]">
                                 <p>{t('Loss from expired or damaged products.',
-                                   'خسارة ناتجة عن انتهاء صلاحية منتجات أو تلفها.')}</p>
+                                  'خسارة ناتجة عن انتهاء صلاحية منتجات أو تلفها.')}</p>
                               </TooltipContent>
                             </UITooltip>
                           </TooltipProvider>
@@ -355,11 +355,11 @@ export default function SimpleSummaryReport() {
                     </p>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                       ⚠️ {t('Inventory depreciation is a loss from expired or damaged products.',
-                           'إهلاك المخزون هو جزء من الخسارة الناتجة عن انتهاء صلاحية منتجات أو تلفها.')}
+                        'إهلاك المخزون هو جزء من الخسارة الناتجة عن انتهاء صلاحية منتجات أو تلفها.')}
                     </p>
                     <p className="text-xs text-green-600 dark:text-green-400 mt-1 bg-green-50 dark:bg-green-950/30 p-2 rounded">
                       ✅ {t('Note: Depreciation is deducted from net profit to calculate the actual profit.',
-                           'ملاحظة: الإهلاك يُخصم من صافي الربح لحساب الربح الفعلي.')}
+                        'ملاحظة: الإهلاك يُخصم من صافي الربح لحساب الربح الفعلي.')}
                     </p>
                   </CardContent>
                 </Card>
@@ -380,7 +380,7 @@ export default function SimpleSummaryReport() {
                             <TooltipTrigger><HelpCircle className="w-4 h-4 text-gray-400" /></TooltipTrigger>
                             <TooltipContent className="max-w-[300px]">
                               <p>{t('Total value of products sold to customers.',
-                                 'إجمالي قيمة المنتجات التي تم بيعها للعملاء.')}</p>
+                                'إجمالي قيمة المنتجات التي تم بيعها للعملاء.')}</p>
                             </TooltipContent>
                           </UITooltip>
                         </TooltipProvider>
@@ -402,7 +402,7 @@ export default function SimpleSummaryReport() {
                   )}
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                     💡 {t('Sales represent total revenue from products sold.',
-                         'المبيعات هي إجمالي ما تم بيعه من المنتجات.')}
+                      'المبيعات هي إجمالي ما تم بيعه من المنتجات.')}
                   </p>
                 </CardContent>
               </Card>
@@ -423,7 +423,7 @@ export default function SimpleSummaryReport() {
                               <TooltipTrigger><HelpCircle className="w-4 h-4 text-gray-400" /></TooltipTrigger>
                               <TooltipContent className="max-w-[300px]">
                                 <p>{t('Assets are what the company owns: cash, inventory, and receivables.',
-                                   'الأصول هي ما تملكه الشركة: النقد والمخزون والذمم المدينة.')}</p>
+                                  'الأصول هي ما تملكه الشركة: النقد والمخزون والذمم المدينة.')}</p>
                               </TooltipContent>
                             </UITooltip>
                           </TooltipProvider>
@@ -453,11 +453,11 @@ export default function SimpleSummaryReport() {
                     </div>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
                       💡 {t('Assets represent what the company owns. Inventory is an asset that will convert to profit when sold.',
-                           'الأصول تمثل ما تملكه الشركة. المخزون أصل سيتحول لربح عند بيعه.')}
+                        'الأصول تمثل ما تملكه الشركة. المخزون أصل سيتحول لربح عند بيعه.')}
                     </p>
                     <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 bg-blue-50 dark:bg-blue-950/30 p-2 rounded">
                       ℹ️ {t('Note: Inventory value is not a loss - it will become profit when products are sold.',
-                           'ملاحظة: قيمة المخزون ليست خسارة - ستتحول لربح عند بيع المنتجات.')}
+                        'ملاحظة: قيمة المخزون ليست خسارة - ستتحول لربح عند بيع المنتجات.')}
                     </p>
                   </CardContent>
                 </Card>
@@ -632,7 +632,7 @@ export default function SimpleSummaryReport() {
                   <Info className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-600 dark:text-gray-400">
                     {t('No data available. Please select a date range and click "Update Report".',
-                       'لا توجد بيانات متاحة. يرجى اختيار نطاق تاريخ والنقر على "تحديث التقرير".')}
+                      'لا توجد بيانات متاحة. يرجى اختيار نطاق تاريخ والنقر على "تحديث التقرير".')}
                   </p>
                 </div>
               </CardContent>
