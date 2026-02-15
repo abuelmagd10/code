@@ -78,8 +78,12 @@ export async function GET(req: NextRequest) {
 
       // Filter by month if also provided
       if (month && Number(month) > 0) {
-        const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
-        const monthEnd = `${year}-${String(month).padStart(2, '0')}-31T23:59:59`
+        const monthNum = Number(month)
+        const yearNum = Number(year)
+        const monthStart = `${year}-${String(monthNum).padStart(2, '0')}-01`
+        // حساب آخر يوم في الشهر بشكل صحيح
+        const lastDayOfMonth = new Date(yearNum, monthNum, 0).getDate()
+        const monthEnd = `${year}-${String(monthNum).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}T23:59:59`
         query = query.gte("calculated_at", monthStart).lte("calculated_at", monthEnd)
       }
     }
