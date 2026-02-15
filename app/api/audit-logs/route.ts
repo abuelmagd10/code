@@ -202,10 +202,24 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // === تحصين أمني: استخدام requireOwnerOrAdmin ===
+    console.log("📝 [Audit Logs POST] Starting request...");
     const { user, companyId, member, error } = await requireOwnerOrAdmin(request);
 
-    if (error) return error;
+    console.log("📝 [Audit Logs POST] Security check result:", {
+      hasUser: !!user,
+      userId: user?.id,
+      companyId,
+      hasMember: !!member,
+      memberRole: member?.role,
+      hasError: !!error
+    });
+
+    if (error) {
+      console.log("📝 [Audit Logs POST] Returning error response");
+      return error;
+    }
     if (!companyId || !member || !user) {
+      console.log("📝 [Audit Logs POST] Missing required data");
       return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة أو المستخدم", "Company or user not found");
     }
     // === نهاية التحصين الأمني ===
