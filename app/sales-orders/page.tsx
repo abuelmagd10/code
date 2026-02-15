@@ -30,7 +30,7 @@ import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordMo
 import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control";
 import { useBranchFilter } from "@/hooks/use-branch-filter";
 import { BranchFilter } from "@/components/BranchFilter";
-import { PageHeaderList } from "@/components/PageHeader";
+import { ERPPageHeader, useERPLanguage } from "@/components/erp-page-header";
 import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { StatusBadge } from "@/components/DataTableFormatters";
 import { useRealtimeTable } from "@/hooks/use-realtime-table";
@@ -185,21 +185,21 @@ function SalesOrdersContent() {
   const statusOptions = useMemo(() => {
     // جمع جميع الحالات الفعلية من الأوامر
     const availableStatuses = new Set<string>();
-    
+
     orders.forEach((order) => {
       // استخدام حالة الفاتورة المرتبطة إذا كانت موجودة، وإلا استخدام حالة الأمر
       const linkedInvoice = order.invoice_id ? linkedInvoices[order.invoice_id] : null;
       const displayStatus = linkedInvoice ? linkedInvoice.status : order.status;
-      
+
       availableStatuses.add(displayStatus);
-      
+
       // إضافة "draft" و "invoiced" إذا كانت الفاتورة المرتبطة في حالة "draft" أو "invoiced"
       if (linkedInvoice && (linkedInvoice.status === 'draft' || linkedInvoice.status === 'invoiced')) {
         availableStatuses.add('draft');
         availableStatuses.add('invoiced');
       }
     });
-    
+
     // إرجاع فقط الحالات المتاحة من القائمة الكاملة
     return allStatusOptions.filter(opt => availableStatuses.has(opt.value));
   }, [orders, linkedInvoices, allStatusOptions]);
@@ -210,7 +210,7 @@ function SalesOrdersContent() {
   const [customerId, setCustomerId] = useState<string>("");
   const [soNumber, setSONumber] = useState<string>("");
   const [soDate, setSODate] = useState<string>("");
-  
+
   useEffect(() => {
     setSODate(new Date().toISOString().slice(0, 10));
   }, []);
@@ -229,14 +229,14 @@ function SalesOrdersContent() {
     return { subtotal, total };
   }, [items, taxAmount]);
 
-    // Filtered orders - إصدار مبسط بدون فلاتر حوكمة
+  // Filtered orders - إصدار مبسط بدون فلاتر حوكمة
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
       // Status filter - Multi-select
       if (filterStatuses.length > 0) {
         const linkedInvoice = order.invoice_id ? linkedInvoices[order.invoice_id] : null;
         const displayStatus = linkedInvoice ? linkedInvoice.status : order.status;
-        
+
         // ✅ معالجة حالة "draft" لتشمل أيضاً "invoiced" (حالة مسودة قبل الإرسال)
         const normalizedStatuses = filterStatuses.map(s => {
           if (s === "draft") {
@@ -244,7 +244,7 @@ function SalesOrdersContent() {
           }
           return [s];
         }).flat();
-        
+
         if (!normalizedStatuses.includes(displayStatus)) return false;
       }
 
@@ -510,15 +510,15 @@ function SalesOrdersContent() {
           const paidAmount = Number(linkedInvoice?.paid_amount || 0)
           const returnedAmount = Number(linkedInvoice?.returned_amount || 0)
           const originalTotal = Number(linkedInvoice?.original_total || linkedInvoice?.total_amount || 0)
-          
+
           // ✅ تحديد ما إذا كان المرتجع كامل (بناءً على original_total)
           const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
           const hasPartialReturn = returnedAmount > 0 && returnedAmount < originalTotal
-          
+
           // ✅ تحديد حالة الدفع بناءً على حالة الفاتورة الفعلية أولاً ثم المبالغ
           let paymentStatus: string
           const invoiceStatus = linkedInvoice?.status || ''
-          
+
           // إذا كانت الفاتورة draft أو invoiced (قبل الإرسال) → لا نعرض حالة دفع
           if (invoiceStatus === 'draft' || invoiceStatus === 'invoiced') {
             paymentStatus = 'draft' // حالة مسودة/قيد الإنشاء
@@ -716,187 +716,187 @@ function SalesOrdersContent() {
     checkPerms();
   }, [supabase, appLang]);
 
-    // تحميل الأوامر - إصدار مبسط جداً
+  // تحميل الأوامر - إصدار مبسط جداً
   const loadOrders = async () => {
-  try {
-    setLoading(true);
-    const activeCompanyId = await getActiveCompanyId(supabase);
-    if (!activeCompanyId) {
-      setLoading(false);
-      return;
-    }
-
-    // Load sales orders
-    // 🔐 إرسال branch_id إذا كان المستخدم المميز اختار فرعاً معيناً
-    const branchIdParam = branchFilter.getFilteredBranchId();
-    const apiUrl = branchIdParam
-      ? `/api/sales-orders?branch_id=${branchIdParam}`
-      : '/api/sales-orders';
-    const response = await fetch(apiUrl);
-    const result = await response.json();
-    const so = result.success ? result.data : [];
-
-    setOrders(so || []);
-
-    // 🔐 تحميل العملاء مع تطبيق الصلاحيات
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
-    const { data: member } = await supabase
-      .from("company_members")
-      .select("role, branch_id, cost_center_id")
-      .eq("company_id", activeCompanyId)
-      .eq("user_id", user.id)
-      .single();
-
-    const role = member?.role || "staff";
-    const accessLevel = getRoleAccessLevel(role);
-    
-    // 🔐 ERP Access Control - بناء فلتر الوصول للعملاء
-    const accessFilter = getAccessFilter(
-      role,
-      user.id,
-      member?.branch_id || null,
-      member?.cost_center_id || null
-    );
-
-    // جلب الصلاحيات المشتركة
-    let sharedGrantorUserIds: string[] = [];
-    const { data: sharedPerms } = await supabase
-      .from("permission_sharing")
-      .select("grantor_user_id, resource_type")
-      .eq("grantee_user_id", user.id)
-      .eq("company_id", activeCompanyId)
-      .eq("is_active", true)
-      .or("resource_type.eq.all,resource_type.eq.customers");
-
-    if (sharedPerms && sharedPerms.length > 0) {
-      sharedGrantorUserIds = sharedPerms.map((p: any) => p.grantor_user_id);
-    }
-
-    // تحميل العملاء مع تطبيق الصلاحيات
-    let allCustomers: Customer[] = [];
-
-    if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-      // موظف عادي: يرى فقط العملاء الذين أنشأهم
-      const { data: ownCust } = await supabase
-        .from("customers")
-        .select("id, name, phone")
-        .eq("company_id", activeCompanyId)
-        .eq("created_by_user_id", accessFilter.createdByUserId)
-        .order("name");
-      allCustomers = ownCust || [];
-      // جلب العملاء المشتركين
-      if (sharedGrantorUserIds.length > 0) {
-        const { data: sharedCust } = await supabase
-          .from("customers")
-          .select("id, name, phone")
-          .eq("company_id", activeCompanyId)
-          .in("created_by_user_id", sharedGrantorUserIds);
-        const existingIds = new Set(allCustomers.map(c => c.id));
-        (sharedCust || []).forEach((c: Customer) => {
-          if (!existingIds.has(c.id)) allCustomers.push(c);
-        });
+    try {
+      setLoading(true);
+      const activeCompanyId = await getActiveCompanyId(supabase);
+      if (!activeCompanyId) {
+        setLoading(false);
+        return;
       }
-    } else if (accessFilter.filterByBranch && accessFilter.branchId) {
-      // مدير/محاسب مع فرع محدد: يرى عملاء الفرع
-      if (role === 'accountant') {
-        // المحاسب: يرى عملاء الفرع + العملاء بدون فرع محدد
-        const { data: branchCust } = await supabase
+
+      // Load sales orders
+      // 🔐 إرسال branch_id إذا كان المستخدم المميز اختار فرعاً معيناً
+      const branchIdParam = branchFilter.getFilteredBranchId();
+      const apiUrl = branchIdParam
+        ? `/api/sales-orders?branch_id=${branchIdParam}`
+        : '/api/sales-orders';
+      const response = await fetch(apiUrl);
+      const result = await response.json();
+      const so = result.success ? result.data : [];
+
+      setOrders(so || []);
+
+      // 🔐 تحميل العملاء مع تطبيق الصلاحيات
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id")
+        .eq("company_id", activeCompanyId)
+        .eq("user_id", user.id)
+        .single();
+
+      const role = member?.role || "staff";
+      const accessLevel = getRoleAccessLevel(role);
+
+      // 🔐 ERP Access Control - بناء فلتر الوصول للعملاء
+      const accessFilter = getAccessFilter(
+        role,
+        user.id,
+        member?.branch_id || null,
+        member?.cost_center_id || null
+      );
+
+      // جلب الصلاحيات المشتركة
+      let sharedGrantorUserIds: string[] = [];
+      const { data: sharedPerms } = await supabase
+        .from("permission_sharing")
+        .select("grantor_user_id, resource_type")
+        .eq("grantee_user_id", user.id)
+        .eq("company_id", activeCompanyId)
+        .eq("is_active", true)
+        .or("resource_type.eq.all,resource_type.eq.customers");
+
+      if (sharedPerms && sharedPerms.length > 0) {
+        sharedGrantorUserIds = sharedPerms.map((p: any) => p.grantor_user_id);
+      }
+
+      // تحميل العملاء مع تطبيق الصلاحيات
+      let allCustomers: Customer[] = [];
+
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        // موظف عادي: يرى فقط العملاء الذين أنشأهم
+        const { data: ownCust } = await supabase
           .from("customers")
           .select("id, name, phone")
           .eq("company_id", activeCompanyId)
-          .or(`branch_id.eq.${accessFilter.branchId},branch_id.is.null`)
+          .eq("created_by_user_id", accessFilter.createdByUserId)
           .order("name");
-        allCustomers = branchCust || [];
+        allCustomers = ownCust || [];
+        // جلب العملاء المشتركين
+        if (sharedGrantorUserIds.length > 0) {
+          const { data: sharedCust } = await supabase
+            .from("customers")
+            .select("id, name, phone")
+            .eq("company_id", activeCompanyId)
+            .in("created_by_user_id", sharedGrantorUserIds);
+          const existingIds = new Set(allCustomers.map(c => c.id));
+          (sharedCust || []).forEach((c: Customer) => {
+            if (!existingIds.has(c.id)) allCustomers.push(c);
+          });
+        }
+      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        // مدير/محاسب مع فرع محدد: يرى عملاء الفرع
+        if (role === 'accountant') {
+          // المحاسب: يرى عملاء الفرع + العملاء بدون فرع محدد
+          const { data: branchCust } = await supabase
+            .from("customers")
+            .select("id, name, phone")
+            .eq("company_id", activeCompanyId)
+            .or(`branch_id.eq.${accessFilter.branchId},branch_id.is.null`)
+            .order("name");
+          allCustomers = branchCust || [];
+        } else {
+          // المدير: يرى فقط عملاء الفرع
+          const { data: branchCust } = await supabase
+            .from("customers")
+            .select("id, name, phone")
+            .eq("company_id", activeCompanyId)
+            .eq("branch_id", accessFilter.branchId)
+            .order("name");
+          allCustomers = branchCust || [];
+        }
+      } else if (accessLevel === 'branch' && (role === 'accountant' || role === 'manager')) {
+        // محاسب/مدير بدون فرع محدد: يرى جميع العملاء
+        const { data: allCust } = await supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("company_id", activeCompanyId)
+          .order("name");
+        allCustomers = allCust || [];
       } else {
-        // المدير: يرى فقط عملاء الفرع
-        const { data: branchCust } = await supabase
+        // owner/admin: جميع العملاء
+        const { data: allCust } = await supabase
           .from("customers")
           .select("id, name, phone")
           .eq("company_id", activeCompanyId)
-          .eq("branch_id", accessFilter.branchId)
           .order("name");
-        allCustomers = branchCust || [];
+        allCustomers = allCust || [];
       }
-    } else if (accessLevel === 'branch' && (role === 'accountant' || role === 'manager')) {
-      // محاسب/مدير بدون فرع محدد: يرى جميع العملاء
-      const { data: allCust } = await supabase
-        .from("customers")
-        .select("id, name, phone")
-        .eq("company_id", activeCompanyId)
-        .order("name");
-      allCustomers = allCust || [];
-    } else {
-      // owner/admin: جميع العملاء
-      const { data: allCust } = await supabase
-        .from("customers")
-        .select("id, name, phone")
-        .eq("company_id", activeCompanyId)
-        .order("name");
-      allCustomers = allCust || [];
+
+      setCustomers(allCustomers);
+
+      // Load products
+      const { data: productsData } = await supabase
+        .from("products")
+        .select("id, name, unit_price, item_type")
+        .eq("company_id", activeCompanyId);
+
+      setProducts(productsData || []);
+
+      // Load order items
+      if (so && so.length > 0) {
+        const { data: items } = await supabase
+          .from("sales_order_items")
+          .select("sales_order_id, quantity, product_id, products(name)")
+          .in("sales_order_id", so.map((o: SalesOrder) => o.id));
+
+        setOrderItems(items || []);
+      }
+
+      // Load shipping providers
+      const { data: shipping } = await supabase
+        .from("shipping_providers")
+        .select("id, provider_name")
+        .eq("company_id", activeCompanyId);
+
+      setShippingProviders(shipping || []);
+
+      // Load linked invoices
+      const invoiceIds = (so || []).filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
+      if (invoiceIds.length > 0) {
+        const { data: invoices } = await supabase
+          .from("invoices")
+          .select("id, status, total_amount, paid_amount, returned_amount, return_status, original_total")
+          .in("id", invoiceIds);
+
+        const invoiceMap: Record<string, LinkedInvoice> = {};
+        (invoices || []).forEach((inv: any) => {
+          invoiceMap[inv.id] = {
+            id: inv.id,
+            status: inv.status,
+            total_amount: inv.total_amount || 0,
+            paid_amount: inv.paid_amount || 0,
+            returned_amount: inv.returned_amount || 0,
+            return_status: inv.return_status,
+            original_total: inv.original_total
+          };
+        });
+        setLinkedInvoices(invoiceMap);
+      }
+
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading orders:', error);
+      setLoading(false);
     }
-
-    setCustomers(allCustomers);
-
-    // Load products
-    const { data: productsData } = await supabase
-      .from("products")
-      .select("id, name, unit_price, item_type")
-      .eq("company_id", activeCompanyId);
-    
-    setProducts(productsData || []);
-
-    // Load order items
-    if (so && so.length > 0) {
-      const { data: items } = await supabase
-        .from("sales_order_items")
-        .select("sales_order_id, quantity, product_id, products(name)")
-        .in("sales_order_id", so.map((o: SalesOrder) => o.id));
-      
-      setOrderItems(items || []);
-    }
-
-    // Load shipping providers
-    const { data: shipping } = await supabase
-      .from("shipping_providers")
-      .select("id, provider_name")
-      .eq("company_id", activeCompanyId);
-    
-    setShippingProviders(shipping || []);
-
-    // Load linked invoices
-    const invoiceIds = (so || []).filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
-    if (invoiceIds.length > 0) {
-      const { data: invoices } = await supabase
-        .from("invoices")
-        .select("id, status, total_amount, paid_amount, returned_amount, return_status, original_total")
-        .in("id", invoiceIds);
-
-      const invoiceMap: Record<string, LinkedInvoice> = {};
-      (invoices || []).forEach((inv: any) => {
-        invoiceMap[inv.id] = {
-          id: inv.id,
-          status: inv.status,
-          total_amount: inv.total_amount || 0,
-          paid_amount: inv.paid_amount || 0,
-          returned_amount: inv.returned_amount || 0,
-          return_status: inv.return_status,
-          original_total: inv.original_total
-        };
-      });
-      setLinkedInvoices(invoiceMap);
-    }
-
-    setLoading(false);
-  } catch (error) {
-    console.error('Error loading orders:', error);
-    setLoading(false);
-  }
-};
+  };
 
   // دالة لتحديث حالة الفاتورة المرتبطة
   const refreshInvoiceStatus = async (invoiceId: string) => {
@@ -1025,10 +1025,10 @@ function SalesOrdersContent() {
     },
     onUpdate: (newOrder, oldOrder) => {
       // ✅ تحديث السجل في القائمة
-      setOrders(prev => prev.map(order => 
+      setOrders(prev => prev.map(order =>
         order.id === newOrder.id ? newOrder : order
       ));
-      
+
       // ✅ إذا تغيرت الفاتورة المرتبطة، تحديث linkedInvoices
       if (newOrder.invoice_id !== oldOrder.invoice_id) {
         if (newOrder.invoice_id) {
@@ -1129,17 +1129,17 @@ function SalesOrdersContent() {
         console.log('Governance fetch skipped - missing userContext or supabase');
         return;
       }
-      
+
       // Wait for authentication to be ready
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) {
         console.error('Governance fetch - auth error or no user:', authError);
         return;
       }
-      
+
       console.log('Governance fetch - user authenticated:', user.id);
       const info: any = {};
-      
+
       if (userContext.branch_id) {
         try {
           console.log('Fetching branch name for ID:', userContext.branch_id);
@@ -1154,7 +1154,7 @@ function SalesOrdersContent() {
           console.error('Exception fetching branch name:', error);
         }
       }
-      
+
       if (userContext.warehouse_id) {
         try {
           console.log('Fetching warehouse name for ID:', userContext.warehouse_id);
@@ -1169,12 +1169,12 @@ function SalesOrdersContent() {
           console.error('Exception fetching warehouse name:', error);
         }
       }
-      
+
       if (userContext.cost_center_id) {
         try {
           console.log('Fetching cost center name for ID:', userContext.cost_center_id);
           console.log('User context:', userContext);
-          
+
           // First, let's try to see what columns are available
           const { data: costCenterData, error: costCenterError } = await supabase
             .from('cost_centers')
@@ -1182,7 +1182,7 @@ function SalesOrdersContent() {
             .eq('id', userContext.cost_center_id)
             .eq('company_id', userContext.company_id)
             .single();
-            
+
           if (costCenterError) {
             console.error('Error fetching cost center:', costCenterError);
             console.error('Error details:', JSON.stringify(costCenterError, null, 2));
@@ -1203,11 +1203,11 @@ function SalesOrdersContent() {
           console.error('Exception fetching cost center name:', error);
         }
       }
-      
+
       console.log('Governance info fetched:', info);
       setGovernanceInfo(info);
     };
-    
+
     fetchGovernanceNames();
   }, [userContext, supabase]);
 
@@ -1496,18 +1496,37 @@ function SalesOrdersContent() {
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
         {/* ✅ Unified Page Header */}
         <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-          <PageHeaderList
+          <ERPPageHeader
             title={appLang === 'en' ? 'Sales Orders' : 'أوامر البيع'}
             description={appLang === 'en' ? 'Manage customer sales orders and track fulfillment' : 'إدارة أوامر بيع العملاء وتتبع التنفيذ'}
-            icon={ShoppingCart}
-            createHref={permWrite ? "/sales-orders/new" : undefined}
-            createLabel={appLang === 'en' ? 'New Sales Order' : 'أمر بيع جديد'}
-            createDisabled={!permWrite}
-            createTitle={!permWrite ? (appLang === 'en' ? 'No permission to create sales orders' : 'لا توجد صلاحية لإنشاء أوامر بيع') : undefined}
+            variant="list"
             lang={appLang}
-            userRole={currentUserRole}
-            governanceType="branch_creator"
-            governanceEntityName={appLang === 'en' ? 'sales orders' : 'أوامر البيع'}
+            actions={
+              permWrite ? (
+                <Button asChild>
+                  <Link href="/sales-orders/new">
+                    <Plus className="h-4 w-4 mr-2" />
+                    {appLang === 'en' ? 'New Sales Order' : 'أمر بيع جديد'}
+                  </Link>
+                </Button>
+              ) : (
+                <Button disabled title={appLang === 'en' ? 'No permission to create sales orders' : 'لا توجد صلاحية لإنشاء أوامر بيع'}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  {appLang === 'en' ? 'New Sales Order' : 'أمر بيع جديد'}
+                </Button>
+              )
+            }
+            extra={
+              // 🔐 Governance Notice
+              currentUserRole && !['owner', 'admin', 'general_manager'].includes(currentUserRole) ? (
+                <p className="text-xs text-blue-600 dark:text-blue-400">
+                  {['manager', 'accountant'].includes(currentUserRole)
+                    ? `🏢 ${appLang === 'en' ? 'Showing sales orders from your branch only' : 'تعرض أوامر البيع الخاصة بفرعك فقط'}`
+                    : `👨‍💼 ${appLang === 'en' ? 'Showing sales orders you created only' : 'تعرض أوامر البيع التي أنشأتها فقط'}`
+                  }
+                </p>
+              ) : null
+            }
           />
         </div>
 
@@ -1859,7 +1878,7 @@ function SalesOrdersContent() {
                 <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Notes' : 'ملاحظات'}</label>
                 <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
               </div>
-              
+
               {/* 🔐 حقول الحوكمة للقراءة فقط */}
               {!editing && (
                 <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t mt-2">
