@@ -358,8 +358,6 @@ export default function SalesOrderDetailPage() {
       const content = clone.innerHTML
       const { openPrintWindow } = await import('@/lib/print-utils')
 
-      const { openPrintWindow } = await import('@/lib/print-utils')
-
       const companyName = companyDetails?.name || 'Company Name'
       const address = companyDetails?.address || ''
       const phone = companyDetails?.phone || ''
