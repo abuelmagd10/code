@@ -1,125 +1,170 @@
 /**
- * دوال الاستعادة للنسخ الاحتياطية
+ * دوال الاستعادة للنسخ الاحتياطية (Enterprise Grade)
  * Backup Restore Utilities
  */
 
 import { createClient } from '@/lib/supabase/server'
-import { BackupData, RestoreOptions, RestoreResult, EXPORT_ORDER } from './types'
-import { validateBackup } from './validation-utils'
+import { BackupData, RestoreOptions, RestoreResult, QueueStatus } from './types'
 
 /**
- * استعادة نسخة احتياطية
+ * دالة الاستعادة المركزية (Atomic Restore)
+ * تدعم Dry Run و Execution و Batch Processing
  */
 export async function restoreBackup(
   backupData: BackupData,
   options: RestoreOptions
 ): Promise<RestoreResult> {
+  const supabase = await createClient()
   const startTime = Date.now()
-  const errors: string[] = []
-  const warnings: string[] = []
-  let recordsRestored = 0
 
   try {
-    // 1. التحقق من الصلاحيات
+    // 1. التحقق من الصلاحيات (Owner Only)
     const permissionCheck = await canRestoreBackup(options.userId, options.companyId)
     if (!permissionCheck.allowed) {
       throw new Error(permissionCheck.reason || 'غير مصرح')
     }
 
-    // 2. التحقق من صحة النسخة (إلا إذا تم تخطيه)
-    if (!options.skipValidation) {
-      const validation = await validateBackup(backupData, options.companyId)
-      if (!validation.valid) {
-        throw new Error(`فشل التحقق: ${validation.errors.map(e => e.message).join(', ')}`)
+    // 2. تحليل حجم البيانات لتحديد الاستراتيجية
+    const BATCH_THRESHOLD = 500; // سجل لكل دفعة
+    const isLargeDataset = backupData.metadata.total_records > 1000;
+
+    // 3. إعداد بيانات الطابور
+    // إذا كانت البيانات كبيرة، لا نخزنها في حقل JSONB لتجنب تجاوز الحدود ونستخدم restore_batches
+    const queuePayload = isLargeDataset
+      ? {
+        metadata: backupData.metadata,
+        schema_info: backupData.schema_info,
+        data: {} // بيانات فارغة، سيتم تعبئتها في restore_batches
       }
+      : backupData;
+
+    // 4. إدخال طلب الاستعادة في الطابور
+    const { data: queueEntry, error: queueError } = await supabase
+      .from('restore_queue')
+      .insert({
+        company_id: options.companyId,
+        user_id: options.userId,
+        status: 'PENDING',
+        backup_data: queuePayload,
+        ip_address: options.ipAddress || 'unknown'
+      })
+      .select()
+      .single()
+
+    if (queueError || !queueEntry) {
+      throw new Error(`فشل إنشاء طلب الاستعادة: ${queueError?.message}`)
     }
 
-    // 3. Dry Run (اختبار بدون تنفيذ فعلي)
-    if (options.dryRun) {
-      return {
-        success: true,
-        recordsRestored: backupData.metadata.total_records,
-        duration: Date.now() - startTime,
-        errors: [],
-        warnings: ['هذا اختبار فقط - لم يتم تنفيذ الاستعادة الفعلية']
-      }
-    }
-
-    // 4. تنفيذ الاستعادة
-    const supabase = await createClient()
-
-    // 5. حذف البيانات الحالية (إذا لزم الأمر)
-    if (options.mode === 'restore_to_empty') {
-      await clearCompanyData(options.companyId)
-    }
-
-    // 6. استعادة البيانات حسب الترتيب
-    for (const tableName of EXPORT_ORDER) {
-      const records = backupData.data[tableName]
-      if (!records || !Array.isArray(records) || records.length === 0) {
-        continue
-      }
-
+    // 5. معالجة الدفعات (Batch Processing) إذا كانت البيانات كبيرة
+    if (isLargeDataset) {
       try {
-        // استبدال company_id بالشركة المستهدفة
-        const recordsToInsert = records.map(record => ({
-          ...record,
-          company_id: options.companyId
-        }))
-
-        // إدراج البيانات
-        const { error } = await supabase
-          .from(tableName)
-          .insert(recordsToInsert)
-
-        if (error) {
-          // محاولة الإدراج سجل بسجل في حالة الفشل
-          let successCount = 0
-          for (const record of recordsToInsert) {
-            const { error: singleError } = await supabase
-              .from(tableName)
-              .insert(record)
-            
-            if (!singleError) {
-              successCount++
-            } else {
-              errors.push(`فشل إدراج سجل في ${tableName}: ${singleError.message}`)
-            }
-          }
-          recordsRestored += successCount
-          warnings.push(`تم استعادة ${successCount}/${records.length} سجل من ${tableName}`)
-        } else {
-          recordsRestored += records.length
-        }
-      } catch (err: any) {
-        errors.push(`خطأ في استعادة ${tableName}: ${err.message}`)
+        await processBatches(supabase, queueEntry.id, backupData.data, BATCH_THRESHOLD);
+      } catch (batchError: any) {
+        await updateQueueStatus(queueEntry.id, 'FAILED')
+        throw new Error(`فشل معالجة الدفعات: ${batchError.message}`)
       }
     }
 
-    // 7. التحقق من النتائج
-    const verificationResult = await verifyRestoreIntegrity(options.companyId, backupData)
-    if (!verificationResult.valid) {
-      warnings.push(...verificationResult.warnings)
+    // 6. استدعاء RPC تنفيذ الاستعادة (Atomic Transaction)
+    // نمرر معرف الطابور، وRPC سيكتشف وجود Data أو Batches
+    const { data: rpcResult, error: rpcError } = await supabase.rpc(
+      'restore_company_backup',
+      {
+        p_queue_id: queueEntry.id,
+        p_dry_run: options.dryRun ?? true
+      }
+    )
+
+    if (rpcError) {
+      // تحديث حالة الفشل في الطابور إذا فشل RPC
+      await updateQueueStatus(queueEntry.id, 'FAILED')
+      throw new Error(`خطأ في تنفيذ RPC: ${rpcError.message}`)
     }
+
+    // 7. تحليل النتيجة
+    const report = rpcResult as any
+    const success = report.success === true
+
+    // تحديث حالة الطابور بناءً على النتيجة
+    const finalStatus: QueueStatus = success
+      ? (options.dryRun ? 'DRY_RUN_SUCCESS' : 'COMPLETED')
+      : (options.dryRun ? 'DRY_RUN_FAILED' : 'FAILED')
+
+    await updateQueueStatus(queueEntry.id, finalStatus, report)
 
     const duration = Date.now() - startTime
 
     return {
-      success: errors.length === 0,
-      recordsRestored,
+      success,
+      mode: options.dryRun ? 'DRY_RUN' : 'RESTORE',
+      // محاولة استخراج عدد السجلات المستعادة من التقرير
+      recordsRestored: report.counts_expected
+        ? Object.values(report.counts_expected).reduce((a: any, b: any) => Number(a) + Number(b), 0) as number
+        : (report.summary?.totalRecords || backupData.metadata.total_records),
       duration,
-      errors,
-      warnings
+      report,
+      error: success ? undefined : report.error
     }
+
   } catch (err: any) {
     return {
       success: false,
-      recordsRestored,
+      mode: options.dryRun ? 'DRY_RUN' : 'RESTORE',
       duration: Date.now() - startTime,
-      errors: [err.message],
-      warnings
+      error: err.message,
+      report: undefined
     }
   }
+}
+
+/**
+ * معالجة تقسيم البيانات إلى دفعات وإدراجها
+ */
+async function processBatches(supabase: any, queueId: string, data: Record<string, any[]>, batchSize: number) {
+  const batches = [];
+
+  for (const [tableName, records] of Object.entries(data)) {
+    if (!records || !Array.isArray(records) || records.length === 0) continue;
+
+    for (let i = 0; i < records.length; i += batchSize) {
+      const chunk = records.slice(i, i + batchSize);
+      batches.push({
+        queue_id: queueId,
+        table_name: tableName,
+        batch_index: Math.floor(i / batchSize),
+        data: chunk // JSONB Array
+      });
+    }
+  }
+
+  // إدراج الدفعات بشكل متوازي (مع مراعاة حدود الاتصال)
+  // نقوم بإدراج كل 10 دفعات معاً لتسريع العملية
+  const CHUNK_SIZE = 10;
+  for (let i = 0; i < batches.length; i += CHUNK_SIZE) {
+    const batchChunk = batches.slice(i, i + CHUNK_SIZE);
+
+    // استخدام insert مع Supabase
+    const { error } = await supabase.from('restore_batches').insert(batchChunk);
+
+    if (error) {
+      throw error;
+    }
+  }
+}
+
+/**
+ * تحديث حالة طلب الاستعادة
+ */
+async function updateQueueStatus(queueId: string, status: QueueStatus, report?: any) {
+  const supabase = await createClient()
+  await supabase
+    .from('restore_queue')
+    .update({
+      status,
+      processed_at: new Date().toISOString(),
+      report: report || undefined
+    })
+    .eq('id', queueId)
 }
 
 /**
@@ -142,93 +187,10 @@ export async function canRestoreBackup(
     return { allowed: false, reason: 'المستخدم ليس عضواً في الشركة' }
   }
 
-  // فقط Owner يمكنه الاستعادة
+  // فقط Owner يمكنه الاستعادة (Hard Requirement)
   if (member.role !== 'owner') {
-    return { allowed: false, reason: 'فقط مالك الشركة يمكنه استعادة النسخ الاحتياطية' }
+    return { allowed: false, reason: 'فقط مالك الشركة (Owner) يملك صلاحية استعادة النسخ الاحتياطية' }
   }
 
   return { allowed: true }
 }
-
-/**
- * حذف بيانات الشركة الحالية
- */
-async function clearCompanyData(companyId: string): Promise<void> {
-  const supabase = await createClient()
-
-  // حذف البيانات بترتيب عكسي (لتجنب مشاكل Foreign Keys)
-  const reversedOrder = [...EXPORT_ORDER].reverse()
-
-  for (const tableName of reversedOrder) {
-    if (tableName === 'companies') continue // لا نحذف الشركة نفسها
-
-    try {
-      await supabase
-        .from(tableName)
-        .delete()
-        .eq('company_id', companyId)
-    } catch (err) {
-      console.warn(`تحذير: فشل حذف بيانات ${tableName}:`, err)
-    }
-  }
-}
-
-/**
- * التحقق من سلامة البيانات بعد الاستعادة
- */
-async function verifyRestoreIntegrity(
-  companyId: string,
-  backupData: BackupData
-): Promise<{ valid: boolean; warnings: string[] }> {
-  const warnings: string[] = []
-  const supabase = await createClient()
-
-  // 1. التحقق من عدد السجلات
-  for (const tableName of EXPORT_ORDER) {
-    const expectedCount = backupData.data[tableName]?.length || 0
-    if (expectedCount === 0) continue
-
-    try {
-      const { count } = await supabase
-        .from(tableName)
-        .select('*', { count: 'exact', head: true })
-        .eq('company_id', companyId)
-
-      if (count !== expectedCount) {
-        warnings.push(`عدد السجلات في ${tableName} غير متطابق: متوقع ${expectedCount}، فعلي ${count}`)
-      }
-    } catch (err) {
-      warnings.push(`فشل التحقق من ${tableName}`)
-    }
-  }
-
-  // 2. التحقق من توازن القيود المحاسبية
-  const { data: journalEntries } = await supabase
-    .from('journal_entries')
-    .select('id')
-    .eq('company_id', companyId)
-
-  if (journalEntries) {
-    for (const entry of journalEntries) {
-      const { data: lines } = await supabase
-        .from('journal_entry_lines')
-        .select('debit_amount, credit_amount')
-        .eq('journal_entry_id', entry.id)
-
-      if (lines) {
-        const totalDebit = lines.reduce((sum: number, l: { debit_amount?: number | null; credit_amount?: number | null }) => sum + Number(l.debit_amount || 0), 0)
-        const totalCredit = lines.reduce((sum: number, l: { debit_amount?: number | null; credit_amount?: number | null }) => sum + Number(l.credit_amount || 0), 0)
-
-        if (Math.abs(totalDebit - totalCredit) > 0.01) {
-          warnings.push(`قيد محاسبي غير متوازن: ${entry.id}`)
-        }
-      }
-    }
-  }
-
-  return {
-    valid: warnings.length === 0,
-    warnings
-  }
-}
-

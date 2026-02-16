@@ -3,16 +3,33 @@
  * Backup & Restore System Types
  */
 
+export type QueueStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'DRY_RUN_SUCCESS' | 'DRY_RUN_FAILED';
+
+export interface RestoreQueueEntry {
+  id: string;
+  company_id: string;
+  user_id: string;
+  status: QueueStatus;
+  backup_file_url?: string;
+  backup_data?: any; // JSONB
+  report?: any;      // Validation Report
+  created_at: string;
+  processed_at?: string;
+  ip_address?: string;
+}
+
 export interface BackupMetadata {
-  version: string
-  system_version: string
+  version: string // Backup Format Version (e.g., "2.0")
+  system_version: string // App Version
+  schema_version: string // DB Schema Version (e.g., "2026.02")
+  erp_version: string // Core Logic Version
   created_at: string
   created_by: string
   company_id: string
   company_name: string
   backup_type: 'full' | 'partial'
   total_records: number
-  checksum: string
+  checksum: string // SHA-256
 }
 
 export interface SchemaInfo {
@@ -74,14 +91,17 @@ export interface RestoreOptions {
   userId: string
   skipValidation?: boolean
   dryRun?: boolean
+  ipAddress?: string // For Audit Log
 }
 
 export interface RestoreResult {
-  success: boolean
-  recordsRestored: number
-  duration: number
-  errors: string[]
-  warnings: string[]
+  success: boolean;
+  mode: 'DRY_RUN' | 'RESTORE';
+  report?: any;
+  error?: string;
+  recordsRestored?: number;
+  duration?: number;
+  warnings?: string[];
 }
 
 export interface AuditLogEntry {
@@ -99,67 +119,69 @@ export interface AuditLogEntry {
   }
 }
 
-// ترتيب الجداول للتصدير والاستعادة
+// ترتيب الجداول للتصدير والاستعادة (Topological Order)
 export const EXPORT_ORDER = [
-  // 1. الجداول المستقلة (No Dependencies)
+  // 1. Core Config (No FKs or Self-Ref)
   'companies',
-  'chart_of_accounts',
+  'branches',
+  'warehouses',
+  'cost_centers',
+  'chart_of_accounts', // Beware of Parent-Child
+
+  // 2. Entities
   'customers',
   'suppliers',
-  'products',
   'employees',
   'shareholders',
-  'branches',
-  'cost_centers',
-  'warehouses',
-  'bank_accounts',
-  
-  // 2. المستندات الرئيسية
+  'company_members', // Users/Permissions
+
+  // 3. Catalog
+  'products',
+  'services',
+
+  // 4. Sales Cycle
   'estimates',
   'sales_orders',
-  'invoices',
-  'bills',
-  'purchase_orders',
-  
-  // 3. تفاصيل المستندات
-  'estimate_items',
   'sales_order_items',
+  'invoices',
   'invoice_items',
-  'bill_items',
-  'purchase_order_items',
-  
-  // 4. المرتجعات
   'sales_returns',
   'sales_return_items',
-  'purchase_returns',
-  'purchase_return_items',
-  
-  // 5. الإشعارات
+  'customer_debit_notes',
+  'customer_debit_note_items',
   'customer_credits',
   'customer_credit_applications',
-  'vendor_credits',
+
+  // 5. Purchase Cycle
+  'purchase_orders',
+  'purchase_order_items',
+  'bills',
+  'bill_items',
+  'purchase_returns',
+  'purchase_return_items',
   'supplier_debit_notes',
-  
-  // 6. القيود والمدفوعات
-  'journal_entries',
-  'journal_entry_lines',
-  'payments',
-  
-  // 7. المخزون والأصول
+  'vendor_credits',
+
+  // 6. Inventory & Assets
   'inventory_transactions',
   'inventory_write_offs',
   'fixed_assets',
   'asset_categories',
+  'asset_transactions',
   'depreciation_schedules',
-  
-  // 8. الموارد البشرية
+
+  // 7. Finance & Accounting (The Result of above)
+  'journal_entries',
+  'journal_entry_lines',
+  'payments',
+  'bank_accounts',
+  'bank_transactions',
+  'bank_reconciliations',
+
+  // 8. HR
   'payroll_runs',
   'payslips',
-  'user_bonuses',
-  
-  // 9. البنوك
-  'bank_transactions',
-  'bank_reconciliations'
+  'user_bonuses'
 ] as const
 
 // الجداول المستثناة من التصدير (أمان)
@@ -169,7 +191,7 @@ export const EXCLUDED_TABLES = [
   'auth.refresh_tokens',
   'company_invitations',
   'audit_logs',
-  'company_members' // سيتم التعامل معها بشكل خاص
+  'restore_queue'
 ] as const
 
 export type ExportTable = typeof EXPORT_ORDER[number]

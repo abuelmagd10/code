@@ -70,12 +70,12 @@ export async function POST(request: NextRequest) {
       target_id: companyId,
       description: result.success
         ? `استعادة نسخة احتياطية (${result.recordsRestored} سجل)`
-        : `فشل استعادة نسخة احتياطية: ${result.errors.join(', ')}`,
+        : `فشل استعادة نسخة احتياطية: ${result.error || 'Unknown Error'}`,
       metadata: {
-        records_restored: result.recordsRestored,
-        duration_seconds: Math.round(result.duration / 1000),
+        records_restored: result.recordsRestored || 0,
+        duration_seconds: Math.round((result.duration || 0) / 1000),
         success: result.success,
-        errors: result.errors,
+        errors: result.error ? [result.error] : [],
         warnings: result.warnings
       }
     })
@@ -91,21 +91,22 @@ export async function POST(request: NextRequest) {
           ? 'Restore test successful'
           : 'Backup restored successfully',
         result: {
-          records_restored: result.recordsRestored,
-          duration_seconds: Math.round(result.duration / 1000),
-          warnings: result.warnings
+          records_restored: result.recordsRestored || 0,
+          duration_seconds: Math.round((result.duration || 0) / 1000),
+          warnings: result.warnings,
+          report: result.report
         }
       })
     } else {
       return NextResponse.json(
         {
           success: false,
-          error: 'فشل استعادة النسخة الاحتياطية',
+          error: result.error || 'فشل استعادة النسخة الاحتياطية',
           error_en: 'Failed to restore backup',
           result: {
-            records_restored: result.recordsRestored,
-            duration_seconds: Math.round(result.duration / 1000),
-            errors: result.errors,
+            records_restored: result.recordsRestored || 0,
+            duration_seconds: Math.round((result.duration || 0) / 1000),
+            errors: result.error ? [result.error] : [],
             warnings: result.warnings
           }
         },

@@ -13,35 +13,21 @@ const BACKUP_VERSION = '2.0'
 /**
  * تصدير نسخة احتياطية كاملة لشركة
  */
+/**
+ * تصدير نسخة احتياطية كاملة لشركة
+ */
 export async function exportCompanyBackup(
   companyId: string,
   userId: string,
   companyName: string
 ): Promise<BackupData> {
   const supabase = await createClient()
-  const startTime = Date.now()
-  
+
   const data: Record<string, any[]> = {}
   let totalRecords = 0
 
-  // 1. تصدير بيانات الشركة
-  const { data: companyData, error: companyError } = await supabase
-    .from('companies')
-    .select('*')
-    .eq('id', companyId)
-    .single()
-
-  if (companyError || !companyData) {
-    throw new Error('فشل في جلب بيانات الشركة')
-  }
-
-  data['companies'] = [companyData]
-  totalRecords += 1
-
-  // 2. تصدير الجداول حسب الترتيب
+  // 1. تصدير الجداول حسب الترتيب الطوبولوجي (Topological Order)
   for (const tableName of EXPORT_ORDER) {
-    if (tableName === 'companies') continue // تم تصديرها بالفعل
-    
     try {
       const { data: tableData, error } = await supabase
         .from(tableName)
@@ -62,17 +48,27 @@ export async function exportCompanyBackup(
     }
   }
 
+  // 2. حساب Checksum للبيانات
+  // نستخدم مفاتيح مرتبة لضمان تطابق الهاش
+  const dataString = JSON.stringify(data, Object.keys(data).sort())
+  const checksum = crypto
+    .createHash('sha256')
+    .update(dataString)
+    .digest('hex')
+
   // 3. إنشاء Metadata
   const metadata: BackupMetadata = {
     version: BACKUP_VERSION,
     system_version: SYSTEM_VERSION,
+    schema_version: '2026.02', // يجب تحديثه مع كل تحديث للكيما
+    erp_version: '1.0.0', // إصدار المنطق المحاسبي
     created_at: new Date().toISOString(),
     created_by: userId,
     company_id: companyId,
     company_name: companyName,
     backup_type: 'full',
     total_records: totalRecords,
-    checksum: '' // سيتم حسابه لاحقاً
+    checksum: checksum
   }
 
   // 4. إنشاء Schema Info
@@ -91,13 +87,6 @@ export async function exportCompanyBackup(
       tables: [...EXCLUDED_TABLES]
     }
   }
-
-  // 6. حساب Checksum
-  const dataString = JSON.stringify(backupData.data)
-  backupData.metadata.checksum = crypto
-    .createHash('sha256')
-    .update(dataString)
-    .digest('hex')
 
   return backupData
 }
