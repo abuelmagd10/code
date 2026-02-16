@@ -178,7 +178,7 @@ export function generatePrintHTML(
           border-bottom: 2px solid #1f2937;
           background: #ffffff;
           z-index: 999;
-          padding: 0 15mm; /* Match page margins */
+          /* No padding - margins handled by @page */
         }
 
         .print-footer-fixed {
@@ -193,7 +193,7 @@ export function generatePrintHTML(
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 0 15mm; /* Match page margins */
+          /* No padding - margins handled by @page */
         }
 
         /* Page number counter */
@@ -203,11 +203,10 @@ export function generatePrintHTML(
 
         /* ==================== BODY PADDING ==================== */
         body {
-          /* Reduced padding to match @page margins */
+          /* Only top/bottom padding for header/footer clearance */
           padding-top: 105px;   /* Header height + small gap */
           padding-bottom: 40px; /* Footer height + small gap */
-          padding-left: 0;      /* Margins handled by @page */
-          padding-right: 0;     /* Margins handled by @page */
+          /* NO side padding - handled by @page margins */
         }
         
         /* ==================== TABLE ENHANCEMENTS ==================== */
@@ -255,9 +254,7 @@ export function generatePrintHTML(
         p { margin-bottom: 6px; color: #1f2937; }
         
         /* ==================== HELPER CLASSES ==================== */
-        .print-content {
-          padding: 0 15mm; /* Match page side margins for content */
-        }
+        /* No padding on print-content - @page margins are sufficient */
         
         .text-right { text-align: right; }
         .text-left { text-align: left; }
