@@ -2599,7 +2599,7 @@ export default function InvoiceDetailPage() {
                         </tr>
                       )}
                       {costCenterName && (
-                        <tr>
+                        <tr className="print:hidden">
                           <td className="py-1 font-medium text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang === 'en' ? 'Cost Center:' : 'مركز التكلفة:'}</td>
                           <td className="py-1 text-right">{costCenterName}</td>
                         </tr>
