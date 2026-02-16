@@ -2624,16 +2624,16 @@ export default function InvoiceDetailPage() {
               <div className="overflow-x-auto print:overflow-visible">
                 <table className="min-w-full w-full text-xs sm:text-sm print:text-xs border-collapse">
                   <thead>
-                    <tr className="bg-blue-600 text-white print:bg-blue-100 print:text-blue-900">
-                      <th className="px-3 py-2 text-right border border-blue-500 print:border-gray-300">#</th>
+                    <tr className="bg-blue-600 text-white print:bg-gray-100 print:text-black print:border-b-2 print:border-gray-300">
+                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300 w-[50px]">#</th>
                       <th className="px-3 py-2 text-right border border-blue-500 print:border-gray-300">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
-                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300">{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
-                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300">{appLang === 'en' ? 'Returned' : 'المرتجع'}</th>
-                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300">{appLang === 'en' ? 'Net Qty' : 'الصافي'}</th>
-                      <th className="px-3 py-2 text-right border border-blue-500 print:border-gray-300">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300">{appLang === 'en' ? 'Disc%' : 'خصم%'}</th>
-                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300">{appLang === 'en' ? 'Tax%' : 'ضريبة%'}</th>
-                      <th className="px-3 py-2 text-right border border-blue-500 print:border-gray-300">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
+                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300 w-[70px]">{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
+                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300 w-[70px]">{appLang === 'en' ? 'Returned' : 'المرتجع'}</th>
+                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300 w-[70px]">{appLang === 'en' ? 'Net Qty' : 'الصافي'}</th>
+                      <th className="px-3 py-2 text-right border border-blue-500 print:border-gray-300 w-[100px]">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300 w-[70px]">{appLang === 'en' ? 'Disc%' : 'خصم%'}</th>
+                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300 w-[70px]">{appLang === 'en' ? 'Tax%' : 'ضريبة%'}</th>
+                      <th className="px-3 py-2 text-right border border-blue-500 print:border-gray-300 w-[120px]">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2646,30 +2646,30 @@ export default function InvoiceDetailPage() {
                       const netTotal = (effectiveQty * item.unit_price * (1 - (item.discount_percent || 0) / 100)) * (1 + item.tax_rate / 100)
                       return (
                         <tr key={item.id} className={`border ${index % 2 === 0 ? 'bg-white dark:bg-slate-800' : 'bg-gray-50 dark:bg-slate-900'} print:bg-white`}>
-                          <td className="px-3 py-2 text-center border border-gray-200 text-gray-500 dark:text-gray-400">{index + 1}</td>
+                          <td className="px-3 py-2 text-center border border-gray-200 text-gray-500 dark:text-gray-400 print:text-black w-[50px]">{index + 1}</td>
                           <td className="px-3 py-2 border border-gray-200">
-                            <div className="font-medium">{item.products?.name}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">SKU: {item.products?.sku}</div>
+                            <div className="font-medium print:text-black">{item.products?.name}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 print:text-gray-600">SKU: {item.products?.sku}</div>
                           </td>
-                          <td className="px-3 py-2 text-center border border-gray-200">{item.quantity}</td>
-                          <td className="px-3 py-2 text-center border border-gray-200">
+                          <td className="px-3 py-2 text-center border border-gray-200 print:text-black w-[70px]">{item.quantity}</td>
+                          <td className="px-3 py-2 text-center border border-gray-200 w-[70px]">
                             {returnedQty > 0 ? (
-                              <span className="text-red-600 font-medium print:text-red-700">-{returnedQty}</span>
+                              <span className="text-red-600 font-medium print:text-black">-{returnedQty}</span>
                             ) : (
-                              <span className="text-gray-400 dark:text-gray-500">-</span>
+                              <span className="text-gray-400 dark:text-gray-500 print:text-gray-300">-</span>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-center border border-gray-200 font-medium">
+                          <td className="px-3 py-2 text-center border border-gray-200 font-medium print:text-black w-[70px]">
                             {returnedQty > 0 ? effectiveQty : item.quantity}
                           </td>
-                          <td className="px-3 py-2 text-right border border-gray-200">{item.unit_price.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-center border border-gray-200">{(item.discount_percent || 0) > 0 ? `${(item.discount_percent || 0).toFixed(1)}%` : '-'}</td>
-                          <td className="px-3 py-2 text-center border border-gray-200">{item.tax_rate > 0 ? `${item.tax_rate}%` : '-'}</td>
-                          <td className="px-3 py-2 text-right border border-gray-200 font-semibold">
+                          <td className="px-3 py-2 text-right border border-gray-200 print:text-black w-[100px]">{item.unit_price.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-center border border-gray-200 print:text-black w-[70px]">{(item.discount_percent || 0) > 0 ? `${(item.discount_percent || 0).toFixed(1)}%` : '-'}</td>
+                          <td className="px-3 py-2 text-center border border-gray-200 print:text-black w-[70px]">{item.tax_rate > 0 ? `${item.tax_rate}%` : '-'}</td>
+                          <td className="px-3 py-2 text-right border border-gray-200 font-semibold print:text-black w-[120px]">
                             {returnedQty > 0 ? (
                               <>
-                                <span className="line-through text-gray-400 dark:text-gray-500 text-xs">{originalTotal.toFixed(2)}</span>
-                                <div className="text-green-600 print:text-green-700">{netTotal.toFixed(2)}</div>
+                                <span className="line-through text-gray-400 dark:text-gray-500 text-xs print:text-gray-400">{originalTotal.toFixed(2)}</span>
+                                <div className="text-green-600 print:text-black">{netTotal.toFixed(2)}</div>
                               </>
                             ) : (
                               originalTotal.toFixed(2)
@@ -2700,7 +2700,7 @@ export default function InvoiceDetailPage() {
                 </div>
 
                 {/* ملخص المبالغ - عرض محسّن للمرتجعات (Invoice Lifecycle UI Rules) */}
-                <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-4 print:bg-gray-100 print:p-3">
+                <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-4 print:bg-transparent print:p-0 print:border print:border-gray-200 print:mt-4">
                   {(() => {
                     // حسابات العرض فقط (UI Only) - بدون تغيير في DB
                     const returnedAmount = Number((invoice as any).returned_amount || 0)
@@ -2877,8 +2877,10 @@ export default function InvoiceDetailPage() {
                           {/* الإجمالي (فقط إذا لا يوجد مرتجعات) */}
                           {!hasReturnsDisplay && (
                             <tr className="border-t-2 border-gray-300">
-                              <td className="py-2 font-bold text-lg text-gray-900 dark:text-white print:text-black">{appLang === 'en' ? 'Total:' : 'الإجمالي:'}</td>
-                              <td className="py-2 text-right font-bold text-lg text-blue-600 print:text-blue-800">{invoice.total_amount.toFixed(2)} <span className="text-sm">{currencySymbol}</span></td>
+                              <td className="py-2 font-bold text-lg text-gray-900 dark:text-white print:text-black border-t-2 border-gray-800">{appLang === 'en' ? 'Total:' : 'الإجمالي:'}</td>
+                              <td className="py-2 text-right font-bold text-lg text-blue-600 print:text-black border-t-2 border-gray-800">
+                                <span className="double-underline">{invoice.total_amount.toFixed(2)} <span className="text-sm">{currencySymbol}</span></span>
+                              </td>
                             </tr>
                           )}
 
