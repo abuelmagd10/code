@@ -251,6 +251,9 @@ export function generatePrintHTML(
         .uppercase { text-transform: uppercase !important; }
         .capitalize { text-transform: capitalize !important; }
 
+        /* Images */
+        img { max-width: 100% !important; height: auto !important; }
+
         /* Backgrounds */
         .bg-white { background-color: #ffffff !important; }
         .bg-gray-50 { background-color: #f9fafb !important; }

@@ -2484,7 +2484,7 @@ export default function InvoiceDetailPage() {
                   {/* معلومات الشركة */}
                   <div className="flex items-start gap-4">
                     {companyLogo ? (
-                      <img src={companyLogo} crossOrigin="anonymous" alt="Company Logo" className="h-20 w-20 rounded object-cover border print:h-16 print:w-16" />
+                      <img src={companyLogo} crossOrigin="anonymous" alt="Company Logo" className="h-20 w-20 rounded object-cover border print:h-16 print:w-16" style={{ width: '80px', height: '80px', objectFit: 'cover' }} />
                     ) : (
                       <div className="h-20 w-20 rounded bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 dark:text-gray-500 print:h-16 print:w-16">
                         <span className="text-2xl font-bold">{invoice.companies?.name?.charAt(0) || 'C'}</span>
