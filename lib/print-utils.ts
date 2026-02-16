@@ -162,7 +162,7 @@ export function generatePrintHTML(
         /* ==================== A4 PAGE SETUP ==================== */
         @page {
           size: ${opts.pageSize} ${pageOrientation};
-          margin-top: 20mm;    /* Space for header */
+          margin-top: 10mm;    /* Reduced - header is fixed */
           margin-bottom: 15mm; /* Space for footer */
           margin-left: 15mm;   /* Side margins */
           margin-right: 15mm;  /* Side margins */
@@ -172,20 +172,19 @@ export function generatePrintHTML(
         .print-header-fixed {
           position: fixed;
           top: 0; 
-          left: 0; 
-          right: 0;
+          left: 15mm;  /* Match page margin */
+          right: 15mm; /* Match page margin */
           height: 100px;
           border-bottom: 2px solid #1f2937;
           background: #ffffff;
           z-index: 999;
-          /* No padding - margins handled by @page */
         }
 
         .print-footer-fixed {
           position: fixed;
           bottom: 0; 
-          left: 0; 
-          right: 0;
+          left: 15mm;  /* Match page margin */
+          right: 15mm; /* Match page margin */
           height: 35px;
           border-top: 1px solid #d1d5db;
           background: #f9fafb;
@@ -193,7 +192,6 @@ export function generatePrintHTML(
           display: flex;
           justify-content: space-between;
           align-items: center;
-          /* No padding - margins handled by @page */
         }
 
         /* Page number counter */
@@ -203,9 +201,9 @@ export function generatePrintHTML(
 
         /* ==================== BODY PADDING ==================== */
         body {
-          /* Only top/bottom padding for header/footer clearance */
-          padding-top: 105px;   /* Header height + small gap */
-          padding-bottom: 40px; /* Footer height + small gap */
+          /* Increased padding to clear fixed header */
+          padding-top: 110px;   /* Header (100px) + gap (10px) */
+          padding-bottom: 45px; /* Footer (35px) + gap (10px) */
           /* NO side padding - handled by @page margins */
         }
         
