@@ -326,16 +326,16 @@ export function generatePrintHTML(
         th:first-child,
         td:first-child {
           width: auto;
-          min-width: 100px;
+          /* Removed min-width to allow shrinking if needed */
         }
         
-        /* Number columns - fixed width */
+        /* Number columns - optimized width */
         th.w-20,
         td.w-20,
         th[class*="quantity"],
         td[class*="quantity"] {
-          width: 80px !important;
-          min-width: 80px;
+          width: 50px !important; /* Reduced from 80px */
+          min-width: 50px;
         }
         
         th.w-24,
@@ -344,8 +344,8 @@ export function generatePrintHTML(
         td[class*="price"],
         th[class*="amount"],
         td[class*="amount"] {
-          width: 100px !important;
-          min-width: 100px;
+          width: 70px !important; /* Reduced from 100px */
+          min-width: 70px;
         }
         
         /* Total Row Styling */

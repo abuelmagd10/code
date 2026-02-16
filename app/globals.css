@@ -506,6 +506,29 @@ img {
     font-variant-numeric: tabular-nums !important;
   }
 
+  /* Optimized Column Widths (Reduced) */
+  td[class*="quantity"],
+  th[class*="quantity"] {
+    width: 50px !important;
+    min-width: 50px;
+  }
+
+  td[class*="price"],
+  th[class*="price"],
+  td[class*="amount"],
+  th[class*="amount"] {
+    width: 70px !important;
+    min-width: 70px;
+  }
+
+  /* Allow first column to shrink */
+  th:first-child,
+  td:first-child {
+    width: auto !important;
+    min-width: 0 !important;
+    /* Allow shrinking */
+  }
+
   /* Total/Summary Rows */
   tr.font-bold,
   tfoot tr {
