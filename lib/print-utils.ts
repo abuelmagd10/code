@@ -159,39 +159,53 @@ export function generatePrintHTML(
           background: #fff;
         }
         
-        /* ==================== A4 PAGE SETUP (STANDARDIZED) ==================== */
+        /* ==================== PROFESSIONAL A4 SETUP (ZOHO BOOKS STANDARD) ==================== */
+        * {
+          box-sizing: border-box;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        
         @page {
           size: ${opts.pageSize} ${pageOrientation};
-          /* UNIFIED MARGINS - DO NOT MODIFY WITHOUT UPDATING globals.css */
-          margin: 15mm 15mm 20mm 15mm; /* top right bottom left */
+          /* Professional margins matching enterprise ERP standards */
+          margin: 20mm 15mm 20mm 15mm; /* top right bottom left */
+        }
+        
+        html, body {
+          width: 100%;
+          height: 100%;
+          margin: 0 !important;
+          padding: 0 !important;
         }
 
-        /* ==================== HEADER/FOOTER (WITHIN MARGINS) ==================== */
+        /* ==================== HEADER (PROFESSIONAL SPACING) ==================== */
         .print-header-fixed {
           position: fixed;
-          top: 0; 
+          top: 0;
           left: 0;
           right: 0;
-          height: 100px;
+          height: 90px; /* Reduced for better balance */
+          padding: 12px 0; /* Internal spacing only */
           border-bottom: 2px solid #1f2937;
           background: #ffffff;
           z-index: 999;
-          /* No padding - respects @page margins automatically */
         }
 
+        /* ==================== FOOTER (PROFESSIONAL SPACING) ==================== */
         .print-footer-fixed {
           position: fixed;
-          bottom: 0; 
+          bottom: 0;
           left: 0;
           right: 0;
-          height: 35px;
+          height: 40px; /* Slightly larger for balance */
+          padding: 8px 0; /* Internal spacing only */
           border-top: 1px solid #d1d5db;
           background: #f9fafb;
           z-index: 999;
           display: flex;
           justify-content: space-between;
           align-items: center;
-          /* No padding - respects @page margins automatically */
         }
 
         /* Page number counter */
@@ -199,12 +213,22 @@ export function generatePrintHTML(
           content: counter(page);
         }
 
-        /* ==================== BODY PADDING (HEADER/FOOTER CLEARANCE ONLY) ==================== */
+        /* ==================== CONTENT AREA (SAFE PRINT ZONE) ==================== */
         body {
-          /* ONLY vertical padding for fixed header/footer clearance */
-          /* NO horizontal padding - @page margins handle this */
+          /* Safe print area - balanced spacing */
           margin: 0;
-          padding: 110px 0 45px 0; /* top right bottom left */
+          padding: 100px 0 50px 0; /* top right bottom left */
+          /* Header (90px) + gap (10px) = 100px */
+          /* Footer (40px) + gap (10px) = 50px */
+        }
+        
+        /* Content wrapper for additional safety */
+        .print-content,
+        main {
+          width: 100%;
+          max-width: 100%;
+          margin: 0 auto;
+          padding: 0;
         }
         
         /* ==================== TABLE ENHANCEMENTS (PROFESSIONAL ERP) ==================== */
