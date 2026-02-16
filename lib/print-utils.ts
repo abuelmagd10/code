@@ -1,6 +1,16 @@
 /**
- * Print Utilities - Unified print/PDF generation
- * توحيد تنسيقات الطباعة وملفات PDF
+ * 🚨 CORE SYSTEM - STANDARD ERP PRINT ENGINE 🚨
+ * ==============================================================================
+ * This file controls the print output for the ENTIRE system.
+ * DO NOT MODIFY margins, fonts, or base styles without system-wide regression testing.
+ * 
+ * Governance:
+ * 1. Margins MUST be 18mm 15mm 18mm 15mm (A4 Standard).
+ * 2. Header/Footer heights are fixed.
+ * 3. All tables must use fixed layout and numeric alignment rules.
+ * 
+ * @see docs/PRINT_STANDARDS.md
+ * ==============================================================================
  */
 
 export interface PrintOptions {
