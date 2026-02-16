@@ -400,17 +400,26 @@ img {
     border: none !important;
   }
 
-  /* ========== TABLE HANDLING (CRITICAL) ========== */
+  /* ========== TABLE HANDLING (CRITICAL - PROFESSIONAL ERP) ========== */
   table {
     width: 100% !important;
     margin-bottom: 20px !important;
     border-collapse: collapse !important;
     page-break-inside: auto;
+    table-layout: fixed !important;
+    /* Prevent column fluctuation */
+    font-size: 9pt !important;
   }
 
   thead {
     display: table-header-group !important;
     /* Repeat header on new pages */
+    background-color: #f3f4f6 !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+    font-weight: 700 !important;
   }
 
   tr {
@@ -421,11 +430,14 @@ img {
 
   td,
   th {
-    padding: 6px 8px !important;
+    padding: 8px !important;
     border: 1px solid #d1d5db !important;
     /* Gray-300 */
     font-size: 9pt !important;
     color: #000 !important;
+    vertical-align: middle !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   th {
@@ -434,6 +446,47 @@ img {
     font-weight: 700 !important;
     text-align: inherit;
     /* Respect RTL/LTR */
+    white-space: nowrap !important;
+    padding: 10px 8px !important;
+  }
+
+  /* Zebra Striping */
+  tbody tr:nth-child(even) {
+    background-color: #f9fafb !important;
+  }
+
+  tbody tr:nth-child(odd) {
+    background-color: #ffffff !important;
+  }
+
+  /* Number Columns - Always Right Aligned with Monospace */
+  td.text-right,
+  th.text-right,
+  td[class*="amount"],
+  td[class*="price"],
+  td[class*="total"],
+  td[class*="quantity"],
+  td[class*="discount"],
+  td[class*="tax"],
+  .numeric-cell {
+    text-align: right !important;
+    font-family: 'Courier New', Consolas, monospace !important;
+    direction: ltr !important;
+    font-variant-numeric: tabular-nums !important;
+  }
+
+  /* Total/Summary Rows */
+  tr.font-bold,
+  tfoot tr {
+    font-weight: 700 !important;
+    background-color: #f3f4f6 !important;
+    border-top: 2px solid #1f2937 !important;
+  }
+
+  /* Prevent Wrapping */
+  td.whitespace-nowrap,
+  th.whitespace-nowrap {
+    white-space: nowrap !important;
   }
 
   /* ========== REPORT SPECIFIC UTILITIES ========== */

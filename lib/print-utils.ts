@@ -207,41 +207,139 @@ export function generatePrintHTML(
           /* NO side padding - handled by @page margins */
         }
         
-        /* ==================== TABLE ENHANCEMENTS ==================== */
+        /* ==================== TABLE ENHANCEMENTS (PROFESSIONAL ERP) ==================== */
         table { 
-          width: 100%; 
-          border-collapse: collapse; 
-          margin-bottom: 12px;
+          width: 100% !important;
+          border-collapse: collapse !important;
+          margin-bottom: 16px !important;
           page-break-inside: auto;
+          table-layout: fixed; /* Prevent column width fluctuation */
+          font-size: 9pt;
         }
         
+        /* Table Header - Repeat on every page */
         thead { 
-          display: table-header-group; /* Repeat on every page */
+          display: table-header-group !important;
+          background-color: #f3f4f6 !important;
         }
         
+        /* Table Footer */
         tfoot { 
           display: table-footer-group;
+          font-weight: 700;
+          background-color: #f9fafb !important;
         }
         
+        /* Row Management - Prevent splitting */
         tr { 
-          page-break-inside: avoid; 
+          page-break-inside: avoid !important;
           page-break-after: auto;
         }
         
+        /* Header Cells - Professional Styling */
         th { 
-          background-color: #f3f4f6; 
-          color: #111827; 
-          font-weight: 700; 
-          padding: 8px 6px; 
-          border: 1px solid #d1d5db;
-          text-align: ${opts.direction === 'rtl' ? 'right' : 'left'};
+          background-color: #f3f4f6 !important;
+          color: #111827 !important;
+          font-weight: 700 !important;
+          font-size: 9pt !important;
+          padding: 10px 8px !important;
+          border: 1px solid #d1d5db !important;
+          text-align: ${opts.direction === 'rtl' ? 'right' : 'left'} !important;
+          vertical-align: middle !important;
+          line-height: 1.3;
+          white-space: nowrap; /* Prevent header wrapping */
         }
         
+        /* Data Cells - Clean and Organized */
         td { 
-          padding: 6px; 
-          border: 1px solid #e5e7eb; 
-          vertical-align: top;
-          color: #1f2937;
+          padding: 8px !important;
+          border: 1px solid #e5e7eb !important;
+          vertical-align: middle !important;
+          color: #1f2937 !important;
+          font-size: 9pt !important;
+          line-height: 1.4;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        
+        /* Zebra Striping for Better Readability */
+        tbody tr:nth-child(even) {
+          background-color: #f9fafb !important;
+        }
+        
+        tbody tr:nth-child(odd) {
+          background-color: #ffffff !important;
+        }
+        
+        /* Number Alignment - Always Right */
+        td.text-right,
+        th.text-right,
+        td[class*="amount"],
+        td[class*="price"],
+        td[class*="total"],
+        td[class*="quantity"],
+        td[class*="discount"],
+        td[class*="tax"] {
+          text-align: right !important;
+          font-family: 'Courier New', monospace; /* Monospace for numbers */
+          direction: ltr !important; /* Numbers always LTR */
+        }
+        
+        /* Text Alignment - Respect Direction */
+        td.text-left,
+        th.text-left {
+          text-align: ${opts.direction === 'rtl' ? 'right' : 'left'} !important;
+        }
+        
+        td.text-center,
+        th.text-center {
+          text-align: center !important;
+        }
+        
+        /* Column Width Management */
+        /* Item/Description columns - flexible */
+        th:first-child,
+        td:first-child {
+          width: auto;
+          min-width: 100px;
+        }
+        
+        /* Number columns - fixed width */
+        th.w-20,
+        td.w-20,
+        th[class*="quantity"],
+        td[class*="quantity"] {
+          width: 80px !important;
+          min-width: 80px;
+        }
+        
+        th.w-24,
+        td.w-24,
+        th[class*="price"],
+        td[class*="price"],
+        th[class*="amount"],
+        td[class*="amount"] {
+          width: 100px !important;
+          min-width: 100px;
+        }
+        
+        /* Total Row Styling */
+        tr.font-bold,
+        tfoot tr {
+          font-weight: 700 !important;
+          background-color: #f3f4f6 !important;
+          border-top: 2px solid #1f2937 !important;
+        }
+        
+        /* Summary/Total Cells */
+        td.font-bold {
+          font-weight: 700 !important;
+        }
+        
+        /* Prevent Text Wrapping in Critical Cells */
+        td.whitespace-nowrap,
+        th.whitespace-nowrap {
+          white-space: nowrap !important;
         }
         
         /* ==================== TYPOGRAPHY ==================== */
