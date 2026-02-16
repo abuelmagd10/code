@@ -159,32 +159,31 @@ export function generatePrintHTML(
           background: #fff;
         }
         
-        /* ==================== A4 PAGE SETUP ==================== */
+        /* ==================== A4 PAGE SETUP (STANDARDIZED) ==================== */
         @page {
           size: ${opts.pageSize} ${pageOrientation};
-          margin-top: 10mm;    /* Reduced - header is fixed */
-          margin-bottom: 15mm; /* Space for footer */
-          margin-left: 15mm;   /* Side margins */
-          margin-right: 15mm;  /* Side margins */
+          /* UNIFIED MARGINS - DO NOT MODIFY WITHOUT UPDATING globals.css */
+          margin: 15mm 15mm 20mm 15mm; /* top right bottom left */
         }
 
-        /* ==================== HEADER/FOOTER ==================== */
+        /* ==================== HEADER/FOOTER (WITHIN MARGINS) ==================== */
         .print-header-fixed {
           position: fixed;
           top: 0; 
-          left: 15mm;  /* Match page margin */
-          right: 15mm; /* Match page margin */
+          left: 0;
+          right: 0;
           height: 100px;
           border-bottom: 2px solid #1f2937;
           background: #ffffff;
           z-index: 999;
+          /* No padding - respects @page margins automatically */
         }
 
         .print-footer-fixed {
           position: fixed;
           bottom: 0; 
-          left: 15mm;  /* Match page margin */
-          right: 15mm; /* Match page margin */
+          left: 0;
+          right: 0;
           height: 35px;
           border-top: 1px solid #d1d5db;
           background: #f9fafb;
@@ -192,6 +191,7 @@ export function generatePrintHTML(
           display: flex;
           justify-content: space-between;
           align-items: center;
+          /* No padding - respects @page margins automatically */
         }
 
         /* Page number counter */
@@ -199,12 +199,12 @@ export function generatePrintHTML(
           content: counter(page);
         }
 
-        /* ==================== BODY PADDING ==================== */
+        /* ==================== BODY PADDING (HEADER/FOOTER CLEARANCE ONLY) ==================== */
         body {
-          /* Increased padding to clear fixed header */
-          padding-top: 110px;   /* Header (100px) + gap (10px) */
-          padding-bottom: 45px; /* Footer (35px) + gap (10px) */
-          /* NO side padding - handled by @page margins */
+          /* ONLY vertical padding for fixed header/footer clearance */
+          /* NO horizontal padding - @page margins handle this */
+          margin: 0;
+          padding: 110px 0 45px 0; /* top right bottom left */
         }
         
         /* ==================== TABLE ENHANCEMENTS (PROFESSIONAL ERP) ==================== */
