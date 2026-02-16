@@ -9,16 +9,21 @@ export interface PrintOptions {
   fontSize?: number
   title?: string
   pageSize?: 'A4' | 'Letter'
+  pageOrientation?: 'portrait' | 'landscape'
   margin?: string
   companyName?: string
   // Header details
   companyAddress?: string
   companyPhone?: string
+  companyLogo?: string  // URL or base64 image
   showHeader?: boolean
   extraHeader?: string // HTML string to be injected below the main header but above content
   // Footer details
   printedBy?: string
   showFooter?: boolean
+  showPageNumbers?: boolean
+  // Advanced
+  customCSS?: string  // Additional CSS to inject
 }
 
 const defaultOptions: Required<PrintOptions> = {
@@ -27,14 +32,18 @@ const defaultOptions: Required<PrintOptions> = {
   fontSize: 10,
   title: 'Document',
   pageSize: 'A4',
+  pageOrientation: 'portrait',
   margin: '15mm',
   companyName: '',
   companyAddress: '',
   companyPhone: '',
+  companyLogo: '',
   showHeader: true,
   extraHeader: '',
   printedBy: 'System User',
-  showFooter: true
+  showFooter: true,
+  showPageNumbers: true,
+  customCSS: ''
 }
 
 /**
@@ -42,7 +51,9 @@ const defaultOptions: Required<PrintOptions> = {
  * Supports:
  * - Fixed Headers/Footers (repeated on every page via CSS)
  * - Table Header repetition
- * - A4 Strict scaling
+ * - A4 Strict scaling with Portrait/Landscape support
+ * - Company logo integration
+ * - Professional page breaks
  */
 export function generatePrintHTML(
   content: string,
@@ -54,47 +65,73 @@ export function generatePrintHTML(
     : "'Segoe UI', Tahoma, Arial, sans-serif"
 
   const currentDate = new Date().toLocaleString(opts.lang === 'en' ? 'en-GB' : 'ar-EG')
+  const currentDateShort = new Date().toLocaleDateString(opts.lang === 'en' ? 'en' : 'ar')
 
-  // Header HTML - Using table layout usually ensures space reservation better than fixed
-  // But for modern browsers, fixed + body margin is standard.
-  // We will Use a standard HTML structure with fixed header/footer classes defined in global layout.
+  // Logo HTML
+  const logoHTML = opts.companyLogo ? `
+    <div style="width: 80px; height: 80px; display: flex; align-items: center; justify-content: center;">
+      <img src="${opts.companyLogo}" alt="Logo" style="max-width: 100%; max-height: 100%; object-fit: contain;" />
+    </div>
+  ` : ''
 
-  // NOTE: In strict ERP systems, logos usually on left for EN, right for AR.
-  // We will leverage the direction of the body 'rtl'/'ltr'.
-
+  // Header HTML - Professional layout with logo
   const headerHTML = opts.showHeader ? `
     <div class="print-header-fixed">
-      <div style="display: flex; justify-content: space-between; align-items: center; height: 100%; padding: 0 10px;">
-        <div style="width: 33%; text-align: ${opts.direction === 'rtl' ? 'right' : 'left'};">
-           <h2 style="margin: 0; font-size: 16pt; font-weight: bold;">${opts.companyName}</h2>
-           ${opts.companyAddress ? `<p style="margin: 4px 0 0; font-size: 9pt;">${opts.companyAddress}</p>` : ''}
-           ${opts.companyPhone ? `<p style="margin: 2px 0 0; font-size: 9pt;">${opts.companyPhone}</p>` : ''}
-        </div>
-        <div style="width: 33%; text-align: center;">
-           <h1 style="margin: 0; font-size: 18pt; font-weight: 800; border: 2px solid #000; display: inline-block; padding: 5px 20px; border-radius: 4px;">
-             ${opts.title}
-           </h1>
-        </div>
-        <div style="width: 33%; text-align: ${opts.direction === 'rtl' ? 'left' : 'right'};">
-           <!-- Placeholder for Logo if image provided, usually handled by caller passing image in content, but here we can't easily access company logo URL globally without passing it in. -->
-           <!-- For now, we rely on the caller to inject the logo, or we display Date/Ref -->
-           <p style="margin: 0; font-size: 10pt; font-weight: bold;">Date: ${new Date().toLocaleDateString(opts.lang === 'en' ? 'en' : 'ar')}</p>
-        </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; height: 100%; padding: 0 15px;">
+        ${opts.direction === 'rtl' ? `
+          <!-- RTL: Company Info (Right) | Title (Center) | Logo (Left) -->
+          <div style="flex: 1; text-align: right;">
+             <h2 style="margin: 0; font-size: 16pt; font-weight: bold; color: #1f2937;">${opts.companyName}</h2>
+             ${opts.companyAddress ? `<p style="margin: 4px 0 0; font-size: 9pt; color: #4b5563;">${opts.companyAddress}</p>` : ''}
+             ${opts.companyPhone ? `<p style="margin: 2px 0 0; font-size: 9pt; color: #4b5563;">${opts.companyPhone}</p>` : ''}
+          </div>
+          <div style="flex: 1; text-align: center;">
+             <h1 style="margin: 0; font-size: 18pt; font-weight: 800; color: #111827; border: 2px solid #1f2937; display: inline-block; padding: 8px 24px; border-radius: 6px; background: #f9fafb;">
+               ${opts.title}
+             </h1>
+          </div>
+          <div style="flex: 0 0 auto; text-align: left;">
+             ${logoHTML || `<p style="margin: 0; font-size: 10pt; font-weight: bold; color: #4b5563;">التاريخ: ${currentDateShort}</p>`}
+          </div>
+        ` : `
+          <!-- LTR: Logo (Left) | Title (Center) | Company Info (Right) -->
+          <div style="flex: 0 0 auto; text-align: left;">
+             ${logoHTML || `<p style="margin: 0; font-size: 10pt; font-weight: bold; color: #4b5563;">Date: ${currentDateShort}</p>`}
+          </div>
+          <div style="flex: 1; text-align: center;">
+             <h1 style="margin: 0; font-size: 18pt; font-weight: 800; color: #111827; border: 2px solid #1f2937; display: inline-block; padding: 8px 24px; border-radius: 6px; background: #f9fafb;">
+               ${opts.title}
+             </h1>
+          </div>
+          <div style="flex: 1; text-align: right;">
+             <h2 style="margin: 0; font-size: 16pt; font-weight: bold; color: #1f2937;">${opts.companyName}</h2>
+             ${opts.companyAddress ? `<p style="margin: 4px 0 0; font-size: 9pt; color: #4b5563;">${opts.companyAddress}</p>` : ''}
+             ${opts.companyPhone ? `<p style="margin: 2px 0 0; font-size: 9pt; color: #4b5563;">${opts.companyPhone}</p>` : ''}
+          </div>
+        `}
       </div>
     </div>
   ` : ''
 
+  // Footer HTML - Professional with page numbers
   const footerHTML = opts.showFooter ? `
     <div class="print-footer-fixed">
-       <div style="padding: 0 20px;">
-         <span>${opts.lang === 'en' ? 'Printed By:' : 'طبع بواسطة:'} ${opts.printedBy}</span>
+       <div style="padding: 0 20px; font-size: 9pt; color: #6b7280;">
+         <span>${opts.lang === 'en' ? 'Printed By:' : 'طبع بواسطة:'} <strong>${opts.printedBy}</strong></span>
        </div>
-       <div style="padding: 0 20px;">
-         <!-- Browser adds page numbers automatically in margin, but if we want custom ones we need CSS counters. Browsers often cut custom CSS counters in footer. We rely on browser default for "Page X of Y" or use simpler "Page" text -->
+       <div style="padding: 0 20px; font-size: 9pt; color: #6b7280;">
          <span>${currentDate}</span>
        </div>
+       ${opts.showPageNumbers ? `
+       <div style="padding: 0 20px; font-size: 9pt; color: #6b7280;">
+         <span class="page-number"></span>
+       </div>
+       ` : ''}
     </div>
   ` : ''
+
+  // Page orientation
+  const pageOrientation = opts.pageOrientation === 'landscape' ? 'landscape' : 'portrait'
 
   return `
     <!DOCTYPE html>
@@ -105,67 +142,124 @@ export function generatePrintHTML(
       <title>${opts.title}</title>
       ${opts.lang === 'ar' ? '<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">' : ''}
       <style>
-        /* Base Reset */
-        * { box-sizing: border-box; }
-        html, body {
-          width: 100%; height: 100%; margin: 0; padding: 0;
-          font-family: ${fontFamily};
+        /* ==================== BASE RESET ==================== */
+        * { 
+          box-sizing: border-box; 
+          margin: 0;
+          padding: 0;
         }
         
-        /* A4 Page Setup */
+        html, body {
+          width: 100%; 
+          height: 100%; 
+          font-family: ${fontFamily};
+          font-size: ${opts.fontSize}pt;
+          line-height: 1.4;
+          color: #000;
+          background: #fff;
+        }
+        
+        /* ==================== A4 PAGE SETUP ==================== */
         @page {
-          size: ${opts.pageSize};
+          size: ${opts.pageSize} ${pageOrientation};
           margin: ${opts.margin};
         }
 
-        /* Fixed Header/Footer CSS */
+        /* ==================== HEADER/FOOTER ==================== */
         .print-header-fixed {
           position: fixed;
-          top: 0; left: 0; right: 0;
-          height: 100px; /* Space for Header */
-          border-bottom: 2px solid #000;
-          background: #fff;
+          top: 0; 
+          left: 0; 
+          right: 0;
+          height: 100px;
+          border-bottom: 2px solid #1f2937;
+          background: #ffffff;
           z-index: 999;
         }
 
         .print-footer-fixed {
           position: fixed;
-          bottom: 0; left: 0; right: 0;
-          height: 30px;
-          border-top: 1px solid #ccc;
-          background: #fff;
+          bottom: 0; 
+          left: 0; 
+          right: 0;
+          height: 35px;
+          border-top: 1px solid #d1d5db;
+          background: #f9fafb;
           z-index: 999;
           display: flex;
           justify-content: space-between;
           align-items: center;
-          font-size: 9pt;
         }
 
-        /* Body Padding to prevent overlap with fixed elements */
+        /* Page number counter */
+        .page-number:before {
+          content: counter(page);
+        }
+
+        /* ==================== BODY PADDING ==================== */
         body {
-          padding-top: 110px; /* Header Height + Gap */
-          padding-bottom: 40px; /* Footer Height + Gap */
+          padding-top: 115px;
+          padding-bottom: 45px;
         }
         
-        /* Table enhancements */
-        table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-        th { background-color: #f3f4f6; color: #000; font-weight: bold; padding: 5px; border: 1px solid #ccc; }
-        td { padding: 5px; border: 1px solid #ccc; vertical-align: top; }
+        /* ==================== TABLE ENHANCEMENTS ==================== */
+        table { 
+          width: 100%; 
+          border-collapse: collapse; 
+          margin-bottom: 12px;
+          page-break-inside: auto;
+        }
         
-        /* Repeat Header */
-        thead { display: table-header-group; }
-        tr { break-inside: avoid; }
-
-        /* Typography */
-        h1, h2, h3, h4, h5, h6 { color: #000; margin-bottom: 5px; }
-        p { margin-bottom: 5px; color: #000; }
+        thead { 
+          display: table-header-group; /* Repeat on every page */
+        }
         
-        /* Helper Classes */
+        tfoot { 
+          display: table-footer-group;
+        }
+        
+        tr { 
+          page-break-inside: avoid; 
+          page-break-after: auto;
+        }
+        
+        th { 
+          background-color: #f3f4f6; 
+          color: #111827; 
+          font-weight: 700; 
+          padding: 8px 6px; 
+          border: 1px solid #d1d5db;
+          text-align: ${opts.direction === 'rtl' ? 'right' : 'left'};
+        }
+        
+        td { 
+          padding: 6px; 
+          border: 1px solid #e5e7eb; 
+          vertical-align: top;
+          color: #1f2937;
+        }
+        
+        /* ==================== TYPOGRAPHY ==================== */
+        h1 { font-size: 18pt; font-weight: 800; color: #111827; margin-bottom: 8px; }
+        h2 { font-size: 16pt; font-weight: 700; color: #1f2937; margin-bottom: 6px; }
+        h3 { font-size: 14pt; font-weight: 600; color: #374151; margin-bottom: 5px; }
+        h4 { font-size: 12pt; font-weight: 600; color: #4b5563; margin-bottom: 4px; }
+        p { margin-bottom: 6px; color: #1f2937; }
+        
+        /* ==================== HELPER CLASSES ==================== */
         .text-right { text-align: right; }
         .text-left { text-align: left; }
         .text-center { text-align: center; }
-        .font-bold { font-weight: bold; }
+        .font-bold { font-weight: 700; }
+        .font-semibold { font-weight: 600; }
         .no-print { display: none; }
+        
+        .page-break-before { page-break-before: always; }
+        .page-break-after { page-break-after: always; }
+        .page-break-avoid { page-break-inside: avoid; }
+        
+        /* ==================== CUSTOM CSS ==================== */
+        ${opts.customCSS || ''}
       </style>
     </head>
     <body onload="window.print();">
