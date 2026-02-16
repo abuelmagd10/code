@@ -234,11 +234,14 @@ export function generatePrintHTML(
         /* ==================== TABLE ENHANCEMENTS (PROFESSIONAL ERP) ==================== */
         table { 
           width: 100% !important;
+          max-width: 100% !important; /* Never exceed container */
           border-collapse: collapse !important;
           margin-bottom: 16px !important;
           page-break-inside: auto;
-          table-layout: fixed; /* Prevent column width fluctuation */
+          table-layout: fixed !important; /* Prevent column width fluctuation */
           font-size: 9pt;
+          word-wrap: break-word; /* Break long words */
+          overflow-wrap: break-word;
         }
         
         /* Table Header - Repeat on every page */
@@ -272,6 +275,8 @@ export function generatePrintHTML(
           vertical-align: middle !important;
           line-height: 1.3;
           white-space: nowrap; /* Prevent header wrapping */
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         
         /* Data Cells - Clean and Organized */
@@ -284,6 +289,9 @@ export function generatePrintHTML(
           line-height: 1.4;
           overflow: hidden;
           text-overflow: ellipsis;
+          word-wrap: break-word; /* Break long words */
+          overflow-wrap: break-word;
+          max-width: 0; /* Enable ellipsis with table-layout: fixed */
         }
         
         /* Zebra Striping for Better Readability */
