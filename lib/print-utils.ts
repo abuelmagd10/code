@@ -162,7 +162,10 @@ export function generatePrintHTML(
         /* ==================== A4 PAGE SETUP ==================== */
         @page {
           size: ${opts.pageSize} ${pageOrientation};
-          margin: ${opts.margin};
+          margin-top: 20mm;    /* Space for header */
+          margin-bottom: 15mm; /* Space for footer */
+          margin-left: 15mm;   /* Side margins */
+          margin-right: 15mm;  /* Side margins */
         }
 
         /* ==================== HEADER/FOOTER ==================== */
@@ -175,6 +178,7 @@ export function generatePrintHTML(
           border-bottom: 2px solid #1f2937;
           background: #ffffff;
           z-index: 999;
+          padding: 0 15mm; /* Match page margins */
         }
 
         .print-footer-fixed {
@@ -189,6 +193,7 @@ export function generatePrintHTML(
           display: flex;
           justify-content: space-between;
           align-items: center;
+          padding: 0 15mm; /* Match page margins */
         }
 
         /* Page number counter */
@@ -198,8 +203,11 @@ export function generatePrintHTML(
 
         /* ==================== BODY PADDING ==================== */
         body {
-          padding-top: 115px;
-          padding-bottom: 45px;
+          /* Reduced padding to match @page margins */
+          padding-top: 105px;   /* Header height + small gap */
+          padding-bottom: 40px; /* Footer height + small gap */
+          padding-left: 0;      /* Margins handled by @page */
+          padding-right: 0;     /* Margins handled by @page */
         }
         
         /* ==================== TABLE ENHANCEMENTS ==================== */
@@ -247,6 +255,10 @@ export function generatePrintHTML(
         p { margin-bottom: 6px; color: #1f2937; }
         
         /* ==================== HELPER CLASSES ==================== */
+        .print-content {
+          padding: 0 15mm; /* Match page side margins for content */
+        }
+        
         .text-right { text-align: right; }
         .text-left { text-align: left; }
         .text-center { text-align: center; }
