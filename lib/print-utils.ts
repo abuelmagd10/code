@@ -234,14 +234,11 @@ export function generatePrintHTML(
         /* ==================== TABLE ENHANCEMENTS (PROFESSIONAL ERP) ==================== */
         table { 
           width: 100% !important;
-          max-width: 100% !important; /* Never exceed container */
           border-collapse: collapse !important;
           margin-bottom: 16px !important;
           page-break-inside: auto;
-          table-layout: fixed !important; /* Prevent column width fluctuation */
+          table-layout: fixed; /* Prevent column width fluctuation */
           font-size: 9pt;
-          word-wrap: break-word; /* Break long words */
-          overflow-wrap: break-word;
         }
         
         /* Table Header - Repeat on every page */
@@ -268,15 +265,14 @@ export function generatePrintHTML(
           background-color: #f3f4f6 !important;
           color: #111827 !important;
           font-weight: 700 !important;
-          font-size: 9pt !important;
-          padding: 10px 8px !important;
+          font-size: 8pt !important; /* Slightly smaller for better fit */
+          padding: 8px 4px !important; /* Reduced padding */
           border: 1px solid #d1d5db !important;
           text-align: ${opts.direction === 'rtl' ? 'right' : 'left'} !important;
           vertical-align: middle !important;
-          line-height: 1.3;
-          white-space: nowrap; /* Prevent header wrapping */
-          overflow: hidden;
-          text-overflow: ellipsis;
+          line-height: 1.2;
+          white-space: normal !important; /* ALLOW wrapping to prevent overflow */
+          overflow-wrap: break-word;
         }
         
         /* Data Cells - Clean and Organized */
@@ -289,9 +285,6 @@ export function generatePrintHTML(
           line-height: 1.4;
           overflow: hidden;
           text-overflow: ellipsis;
-          word-wrap: break-word; /* Break long words */
-          overflow-wrap: break-word;
-          max-width: 0; /* Enable ellipsis with table-layout: fixed */
         }
         
         /* Zebra Striping for Better Readability */

@@ -432,16 +432,13 @@ img {
   /* ========== TABLE HANDLING (CRITICAL - PROFESSIONAL ERP) ========== */
   table {
     width: 100% !important;
-    max-width: 100% !important;
-    /* Never exceed container */
     margin-bottom: 20px !important;
     border-collapse: collapse !important;
     page-break-inside: auto;
     table-layout: fixed !important;
     /* Prevent column fluctuation */
-    font-size: 9pt !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
+    font-size: 8pt !important;
+    word-wrap: break-word;
   }
 
   thead {
@@ -471,25 +468,17 @@ img {
     vertical-align: middle !important;
     overflow: hidden;
     text-overflow: ellipsis;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
   }
 
   th {
     background-color: #f3f4f6 !important;
     /* Gray-100 */
     font-weight: 700 !important;
-    text-align: inherit;
     /* Respect RTL/LTR */
-    white-space: nowrap !important;
-    padding: 10px 8px !important;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  td {
-    max-width: 0;
-    /* Enable ellipsis with table-layout: fixed */
+    white-space: normal !important;
+    /* Allow wrapping */
+    overflow-wrap: break-word;
+    padding: 8px 4px !important;
   }
 
   /* Zebra Striping */
