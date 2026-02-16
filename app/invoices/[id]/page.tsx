@@ -430,7 +430,7 @@ export default function InvoiceDetailPage() {
 
 
   const handlePrint = () => {
-    window.print()
+    handleDownloadPDF()
   }
 
   const handleDownloadPDF = async () => {
@@ -443,7 +443,8 @@ export default function InvoiceDetailPage() {
       const clone = el.cloneNode(true) as HTMLElement
 
       // Remove non-printable elements from clone if any legacy classes remain
-      const toRemove = clone.querySelectorAll('.no-print, button, .actions')
+      // Enhanced cleanup: remove buttons, inputs, actions, and specific print-hidden elements
+      const toRemove = clone.querySelectorAll('.no-print, .print\\:hidden, button, .btn, [role="button"], input, select, textarea, .actions')
       toRemove.forEach(e => e.remove())
 
       const content = clone.innerHTML
