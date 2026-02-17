@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
             });
 
         // If RPC function doesn't exist (migration not applied yet), use fallback query
-        if (rpcError && rpcError.message?.includes('function') && rpcError.message?.includes('does not exist')) {
+        if (rpcError && (rpcError.code === 'PGRST202' || rpcError.message?.includes('does not exist'))) {
             console.warn('⚠️ RPC function not found, using fallback query. Please apply migration: 20260217_004_commission_payroll_integration.sql');
 
             // Fallback: Manual aggregation query
@@ -74,7 +74,6 @@ export async function GET(request: NextRequest) {
                     employees!inner(full_name)
                 `)
                 .eq('company_id', companyId)
-                .eq('payment_status', 'scheduled')
                 .gte('created_at', startDate)
                 .lte('created_at', endDate);
 
@@ -155,7 +154,6 @@ export async function GET(request: NextRequest) {
                     `)
                     .eq('company_id', companyId)
                     .eq('employee_id', emp.employee_id)
-                    .eq('payment_status', 'scheduled')
                     .gte('created_at', startDate)
                     .lte('created_at', endDate)
                     .order('created_at', { ascending: false });
