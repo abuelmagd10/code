@@ -1,5 +1,4 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 
 /**
@@ -8,7 +7,7 @@ import { NextResponse } from 'next/server';
  */
 export async function GET(request: Request) {
     try {
-        const supabase = createRouteHandlerClient({ cookies });
+        const supabase = await createClient();
 
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
@@ -52,7 +51,7 @@ export async function GET(request: Request) {
  */
 export async function POST(request: Request) {
     try {
-        const supabase = createRouteHandlerClient({ cookies });
+        const supabase = await createClient();
 
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
@@ -125,7 +124,7 @@ export async function POST(request: Request) {
                 .eq('is_active', true);
 
             if (allEmployees) {
-                targetEmployees.push(...allEmployees.map(e => e.id));
+                targetEmployees.push(...allEmployees.map((e: any) => e.id));
             }
         }
 
