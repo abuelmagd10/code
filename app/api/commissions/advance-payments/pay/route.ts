@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
 
         const { data: employee, error: empError } = await client
             .from('employees')
-            .select('id, company_id, name')
+            .select('id, company_id, full_name')
             .eq('id', employeeId)
             .eq('company_id', companyId)
             .single()

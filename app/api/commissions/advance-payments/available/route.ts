@@ -40,9 +40,8 @@ export async function GET(req: NextRequest) {
         // ✅ استخدام company_id من التحقق الموحد (ليس من المعاملات)
         const { data: employees, error: empError } = await client
             .from('employees')
-            .select('id, name, user_id')
+            .select('id, full_name, user_id')
             .eq('company_id', companyId)
-            .eq('status', 'active')
 
         if (empError) throw empError
 
@@ -86,7 +85,7 @@ export async function GET(req: NextRequest) {
             if (totalEarned > 0 || totalAdvanced > 0) {
                 employeeSummaries.push({
                     employee_id: emp.id,
-                    employee_name: emp.name,
+                    employee_name: emp.full_name,
                     total_earned: totalEarned,
                     total_advance_paid: totalAdvanced,
                     available_amount: available

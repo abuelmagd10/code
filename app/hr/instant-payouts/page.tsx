@@ -88,11 +88,10 @@ export default function EarlyCommissionPayoutPage() {
 
                 const { data: emps } = await supabase
                     .from('employees')
-                    .select('id, name, user_id')
+                    .select('id, full_name, user_id')
                     .eq('company_id', cid)
-                    .eq('status', 'active')
-                    .order('name')
-                setAllEmployees(emps || [])
+                    .order('full_name')
+                setAllEmployees((emps || []).map(e => ({ ...e, name: e.full_name })))
 
                 await loadAdvanceHistory(cid)
             }
@@ -106,7 +105,7 @@ export default function EarlyCommissionPayoutPage() {
                 .select(`
                     id, employee_id, amount, payment_date, reference_number,
                     status, deducted_in_payroll, created_at,
-                    employees(name)
+                    employees(full_name)
                 `)
                 .eq('company_id', cid)
                 .order('created_at', { ascending: false })
@@ -114,7 +113,7 @@ export default function EarlyCommissionPayoutPage() {
 
             const history = (data || []).map((h: any) => ({
                 ...h,
-                employee_name: h.employees?.name || 'Unknown'
+                employee_name: h.employees?.full_name || 'Unknown'
             }))
             setAdvanceHistory(history)
         } catch (err) {
