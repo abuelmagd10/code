@@ -50,10 +50,16 @@ interface CommissionRun {
     approved_at: string | null
     posted_at: string | null
     paid_at: string | null
+    payroll_run_id: string | null // NEW: Link to payroll run
     // Joined data
     created_by_user?: {
         display_name?: string
         username?: string
+    } | null
+    payroll_runs?: { // NEW: Joined payroll run data
+        id: string
+        period_year: number
+        period_month: number
     } | null
 }
 
@@ -141,6 +147,11 @@ export default function CommissionRunsPage() {
           created_by_user:created_by(
             display_name:user_profiles(display_name),
             username:user_profiles(username)
+          ),
+          payroll_runs:payroll_run_id(
+            id,
+            period_year,
+            period_month
           )
         `)
                 .eq('company_id', activeCompanyId)
@@ -271,6 +282,23 @@ export default function CommissionRunsPage() {
             )
         },
         {
+            key: 'payroll_run_id',
+            header: appLang === 'en' ? 'Payroll' : 'المرتبات',
+            type: 'custom',
+            align: 'center',
+            width: 'min-w-[130px]',
+            format: (_, run) => (
+                run.payroll_runs ? (
+                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 gap-1">
+                        <Wallet className="h-3 w-3" />
+                        {run.payroll_runs.period_month}/{run.payroll_runs.period_year}
+                    </span>
+                ) : (
+                    <span className="text-gray-400 text-xs">-</span>
+                )
+            )
+        },
+        {
             key: 'total_commission',
             header: appLang === 'en' ? 'Gross' : 'الإجمالي',
             type: 'custom',
@@ -350,9 +378,9 @@ export default function CommissionRunsPage() {
                         <CardContent>
                             {/* Filters */}
                             <FilterContainer
+                                title={appLang === 'en' ? 'Filter Runs' : 'تصفية التشغيلات'}
                                 activeCount={activeFilterCount}
                                 onClear={clearFilters}
-                                lang={appLang}
                             >
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                     {/* Search */}
@@ -441,12 +469,11 @@ export default function CommissionRunsPage() {
                                             : (appLang === 'en' ? 'Create your first commission run to get started' : 'أنشئ أول تشغيل عمولة للبدء')
                                     }
                                     action={
-                                        permWrite && activeFilterCount === 0 ? (
-                                            <Button onClick={() => setIsCalculationDialogOpen(true)} className="gap-2">
-                                                <Plus className="h-4 w-4" />
-                                                {appLang === 'en' ? 'New Run' : 'تشغيل جديد'}
-                                            </Button>
-                                        ) : undefined
+                                        permWrite && activeFilterCount === 0 ? {
+                                            label: appLang === 'en' ? 'New Run' : 'تشغيل جديد',
+                                            onClick: () => setIsCalculationDialogOpen(true),
+                                            icon: Plus
+                                        } : undefined
                                     }
                                 />
                             ) : (
@@ -454,6 +481,7 @@ export default function CommissionRunsPage() {
                                     data={filteredRuns}
                                     columns={tableColumns}
                                     lang={appLang}
+                                    keyField="id"
                                 />
                             )}
                         </CardContent>

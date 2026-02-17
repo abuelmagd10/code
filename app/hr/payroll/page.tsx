@@ -49,11 +49,17 @@ export default function PayrollPage() {
   const [pendingBonuses, setPendingBonuses] = useState<any[]>([])
   const [bonusSettings, setBonusSettings] = useState<any>(null)
   const [attachingBonuses, setAttachingBonuses] = useState(false)
+
+  // Commission Runs Integration
+  const [pendingCommissionRuns, setPendingCommissionRuns] = useState<any[]>([])
+  const [attachingCommissionRun, setAttachingCommissionRun] = useState<string | null>(null)
+
   const totals = {
     base_salary: payslips.reduce((s, p) => s + Number(p.base_salary || 0), 0),
     allowances: payslips.reduce((s, p) => s + Number(p.allowances || 0), 0),
     bonuses: payslips.reduce((s, p) => s + Number(p.bonuses || 0), 0),
     sales_bonus: payslips.reduce((s, p) => s + Number(p.sales_bonus || 0), 0),
+    commission: payslips.reduce((s, p) => s + Number(p.commission || 0), 0), // Assuming commission is added to payslips
     advances: payslips.reduce((s, p) => s + Number(p.advances || 0), 0),
     insurance: payslips.reduce((s, p) => s + Number(p.insurance || 0), 0),
     deductions: payslips.reduce((s, p) => s + Number(p.deductions || 0), 0),
@@ -71,7 +77,14 @@ export default function PayrollPage() {
     })()
   }, [supabase])
 
-  useEffect(() => { (async () => { if (!companyId) return; await loadRunAndPayslips(companyId, year, month); await loadPendingBonuses(companyId, year, month) })() }, [companyId, year, month])
+  useEffect(() => {
+    (async () => {
+      if (!companyId) return;
+      await loadRunAndPayslips(companyId, year, month);
+      await loadPendingBonuses(companyId, year, month);
+      await loadPendingCommissionRuns(companyId);
+    })()
+  }, [companyId, year, month])
 
   const loadPendingBonuses = async (cid: string, yr: number, mo: number) => {
     try {
@@ -81,6 +94,52 @@ export default function PayrollPage() {
         setPendingBonuses(Array.isArray(data) ? data : [])
       }
     } catch { setPendingBonuses([]) }
+  }
+
+  const loadPendingCommissionRuns = async (cid: string) => {
+    try {
+      // Load runs that are posted/paid but not attached to any payroll run
+      const { data } = await supabase
+        .from('commission_runs')
+        .select('*')
+        .eq('company_id', cid)
+        .in('status', ['posted', 'paid'])
+        .is('payroll_run_id', null)
+        .order('created_at', { ascending: false })
+
+      setPendingCommissionRuns(data || [])
+    } catch (err) {
+      console.error('Error loading commission runs:', err)
+      setPendingCommissionRuns([])
+    }
+  }
+
+  const attachCommissionRun = async (runId: string) => {
+    if (!companyId || !result?.run_id) { toast({ title: t('Run payroll first', 'قم بتشغيل المرتبات أولاً') }); return }
+    setAttachingCommissionRun(runId)
+    try {
+      const res = await fetch('/api/commissions/attach-to-payroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          commissionRunId: runId,
+          payrollRunId: result.run_id
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast({
+          title: t('Commissions attached', 'تم ربط العمولات'),
+          description: t('Successfully updated payslips', 'تم تحديث قسائم المرتبات بنجاح')
+        })
+        await loadPayslips(companyId, String(result.run_id))
+        await loadPendingCommissionRuns(companyId)
+      } else {
+        toast({ title: t('Error', 'خطأ'), description: data?.error || t('Failed to attach commissions', 'فشل ربط العمولات') })
+      }
+    } catch { toast({ title: t('Network error', 'خطأ الشبكة') }) }
+    finally { setAttachingCommissionRun(null) }
   }
 
   const attachBonusesToPayroll = async () => {
@@ -374,6 +433,56 @@ export default function PayrollPage() {
               </Card>
             )}
 
+            {/* Commission Runs Card */}
+            {pendingCommissionRuns.length > 0 && (
+              <Card className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 no-print">
+                <CardHeader>
+                  <CardTitle className="text-blue-700 dark:text-blue-300">
+                    {t('Pending Commission Runs', 'مسيرات العمولات المعلقة')}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="border-b">
+                        <tr>
+                          <th className="p-2 text-right">{t('Run Period', 'الفترة')}</th>
+                          <th className="p-2 text-right">{t('Plan', 'الخطة')}</th>
+                          <th className="p-2 text-right">{t('Status', 'الحالة')}</th>
+                          <th className="p-2 text-right">{t('Action', 'إجراء')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingCommissionRuns.map((run) => (
+                          <tr key={run.id} className="border-b">
+                            <td className="p-2">
+                              {new Date(run.period_start).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')} - {new Date(run.period_end).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}
+                            </td>
+                            <td className="p-2">{run.commission_plans?.name || '-'}</td>
+                            <td className="p-2">
+                              <span className="px-2 py-1 rounded bg-green-100 text-green-800 text-xs font-bold">
+                                {run.status === 'paid' ? t('Paid', 'مدفوع') : t('Posted', 'مرحل')}
+                              </span>
+                            </td>
+                            <td className="p-2">
+                              <Button
+                                size="sm"
+                                className="bg-blue-600 hover:bg-blue-700 text-white"
+                                onClick={() => attachCommissionRun(run.id)}
+                                disabled={attachingCommissionRun === run.id || !result?.run_id}
+                              >
+                                {attachingCommissionRun === run.id ? t('Attaching...', 'جاري الربط...') : t('Attach to Payroll', 'ربط بالمرتبات')}
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
               <CardHeader><CardTitle>{t('Run Results', 'نتائج التشغيل')}</CardTitle></CardHeader>
               <CardContent>
@@ -389,6 +498,7 @@ export default function PayrollPage() {
                           <th className="p-2 text-right">{t('Allowances', 'بدلات')}</th>
                           <th className="p-2 text-right">{t('Bonuses', 'مكافآت')}</th>
                           <th className="p-2 text-right text-green-600">{t('Sales Bonus', 'بونص مبيعات')}</th>
+                          <th className="p-2 text-right text-blue-600">{t('Commission', 'عمولات')}</th>
                           <th className="p-2 text-right">{t('Advances', 'سلف')}</th>
                           <th className="p-2 text-right">{t('Insurance', 'تأمينات')}</th>
                           <th className="p-2 text-right">{t('Deductions', 'خصومات')}</th>
@@ -405,6 +515,7 @@ export default function PayrollPage() {
                               <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.allowances} onChange={(ev) => setEditSlip({ ...editSlip, allowances: Number(ev.target.value) })} />) : Number(p.allowances || 0).toFixed(2)}</td>
                               <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.bonuses} onChange={(ev) => setEditSlip({ ...editSlip, bonuses: Number(ev.target.value) })} />) : Number(p.bonuses || 0).toFixed(2)}</td>
                               <td className="p-2 text-green-600">{Number(p.sales_bonus || 0).toFixed(2)}</td>
+                              <td className="p-2 text-blue-600 font-semibold">{Number(p.commission || 0).toFixed(2)}</td>
                               <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.advances} onChange={(ev) => setEditSlip({ ...editSlip, advances: Number(ev.target.value) })} />) : Number(p.advances || 0).toFixed(2)}</td>
                               <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.insurance} onChange={(ev) => setEditSlip({ ...editSlip, insurance: Number(ev.target.value) })} />) : Number(p.insurance || 0).toFixed(2)}</td>
                               <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.deductions} onChange={(ev) => setEditSlip({ ...editSlip, deductions: Number(ev.target.value) })} />) : Number(p.deductions || 0).toFixed(2)}</td>
@@ -433,6 +544,7 @@ export default function PayrollPage() {
                           <td className="p-2 font-semibold">{totals.allowances.toFixed(2)}</td>
                           <td className="p-2 font-semibold">{totals.bonuses.toFixed(2)}</td>
                           <td className="p-2 font-semibold text-green-600">{totals.sales_bonus.toFixed(2)}</td>
+                          <td className="p-2 font-semibold text-blue-600">{totals.commission.toFixed(2)}</td>
                           <td className="p-2 font-semibold">{totals.advances.toFixed(2)}</td>
                           <td className="p-2 font-semibold">{totals.insurance.toFixed(2)}</td>
                           <td className="p-2 font-semibold">{totals.deductions.toFixed(2)}</td>
