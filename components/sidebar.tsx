@@ -172,7 +172,6 @@ export function Sidebar() {
     if (href.includes('/hr')) return 'hr'
     // الإعدادات - الأكثر تحديداً أولاً
     if (href.includes('/settings/commissions/plans')) return 'commission_plans'
-    if (href.includes('/settings/commissions/runs')) return 'commission_runs'
     if (href.includes('/settings/taxes')) return 'taxes'
     if (href.includes('/settings/exchange-rates')) return 'exchange_rates'
     if (href.includes('/settings/audit-log')) return 'audit_log'
@@ -1080,8 +1079,6 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Branches' : 'الفروع'), href: `/branches${q}`, icon: Building2 },
                     { label: (lang === 'en' ? 'Cost Centers' : 'مراكز التكلفة'), href: `/cost-centers${q}`, icon: DollarSign },
                     { label: (lang === 'en' ? 'Warehouses' : 'المخازن'), href: `/warehouses${q}`, icon: Package },
-                    { label: (lang === 'en' ? 'Commission Plans' : 'خطط العمولات'), href: `/settings/commissions/plans${q}`, icon: DollarSign },
-                    { label: (lang === 'en' ? 'Commission Runs' : 'تشغيل العمولات'), href: `/settings/commissions/runs${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'My Profile' : 'ملفي الشخصي'), href: `/settings/profile${q}`, icon: Users },
                   ]
                 },
