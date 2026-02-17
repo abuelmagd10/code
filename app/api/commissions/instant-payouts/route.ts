@@ -60,6 +60,77 @@ export async function GET(request: NextRequest) {
                 p_employee_id: employeeId || null
             });
 
+        // If RPC function doesn't exist (migration not applied yet), use fallback query
+        if (rpcError && rpcError.message?.includes('function') && rpcError.message?.includes('does not exist')) {
+            console.warn('⚠️ RPC function not found, using fallback query. Please apply migration: 20260217_004_commission_payroll_integration.sql');
+
+            // Fallback: Manual aggregation query
+            const { data: ledgerData, error: ledgerError } = await supabase
+                .from('commission_ledger')
+                .select(`
+                    employee_id,
+                    commission_amount,
+                    source_type,
+                    employees!inner(full_name)
+                `)
+                .eq('company_id', companyId)
+                .eq('payment_status', 'scheduled')
+                .gte('created_at', startDate)
+                .lte('created_at', endDate);
+
+            if (ledgerError) {
+                console.error('Error fetching ledger data:', ledgerError);
+                return NextResponse.json(
+                    { error: 'Failed to fetch commission data. Please apply database migration.', details: ledgerError.message },
+                    { status: 500 }
+                );
+            }
+
+            // Manually aggregate by employee
+            const employeeMap = new Map();
+            (ledgerData || []).forEach((entry: any) => {
+                const empId = entry.employee_id;
+                if (!employeeMap.has(empId)) {
+                    employeeMap.set(empId, {
+                        employee_id: empId,
+                        employee_name: entry.employees?.full_name || 'Unknown',
+                        invoices_count: 0,
+                        gross_commission: 0,
+                        clawbacks: 0,
+                        net_commission: 0
+                    });
+                }
+
+                const emp = employeeMap.get(empId);
+                const amount = Number(entry.commission_amount || 0);
+
+                if (entry.source_type === 'sales_invoice') {
+                    emp.invoices_count++;
+                    emp.gross_commission += amount;
+                } else if (entry.source_type === 'credit_note') {
+                    emp.clawbacks += amount;
+                }
+                emp.net_commission += amount;
+            });
+
+            const employeesFromFallback = Array.from(employeeMap.values())
+                .filter(emp => emp.net_commission > 0);
+
+            // Use fallback data
+            const employeesWithDetails = employeesFromFallback;
+
+            return NextResponse.json({
+                employees: employeesWithDetails,
+                summary: {
+                    total_employees: employeesWithDetails.length,
+                    total_gross: employeesWithDetails.reduce((sum, e) => sum + Number(e.gross_commission || 0), 0),
+                    total_clawbacks: employeesWithDetails.reduce((sum, e) => sum + Number(e.clawbacks || 0), 0),
+                    total_net: employeesWithDetails.reduce((sum, e) => sum + Number(e.net_commission || 0), 0)
+                },
+                warning: 'Using fallback query. Please apply migration for better performance.'
+            });
+        }
+
         if (rpcError) {
             console.error('Error fetching instant payouts:', rpcError);
             return NextResponse.json(
