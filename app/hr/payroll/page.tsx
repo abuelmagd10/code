@@ -99,14 +99,15 @@ export default function PayrollPage() {
 
   const loadPendingCommissionRuns = async (cid: string) => {
     try {
-      // Load runs that are posted/paid but not attached to any payroll run
+      // Load commission runs that are posted/paid
+      // Note: Commission advances are now handled through commission_advance_payments
       const { data } = await supabase
         .from('commission_runs')
         .select('*')
         .eq('company_id', cid)
         .in('status', ['posted', 'paid'])
-        .is('payroll_run_id', null)
         .order('created_at', { ascending: false })
+        .limit(10)
 
       setPendingCommissionRuns(data || [])
     } catch (err) {
