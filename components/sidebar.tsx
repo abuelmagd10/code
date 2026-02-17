@@ -137,7 +137,7 @@ export function Sidebar() {
         "sales_orders", "purchase_orders", "invoices", "bills", "payments", "expenses",
         "journal_entries", "banking", "reports", "chart_of_accounts",
         "shareholders", "settings", "users", "taxes", "branches", "warehouses",
-        "commission_plans", "commission_runs"
+        "commission_plans", "commission_runs", "instant_payouts"
       ]
       const denied = allResources.filter(r => !profile.allowed_pages.includes(r) && r !== "profile")
       setDeniedResources(denied)
@@ -168,6 +168,7 @@ export function Sidebar() {
     if (href.includes('/hr/employees')) return 'employees'
     if (href.includes('/hr/attendance')) return 'attendance'
     if (href.includes('/hr/payroll')) return 'payroll'
+    if (href.includes('/hr/instant-payouts')) return 'instant_payouts'
     if (href.includes('/hr')) return 'hr'
     // الإعدادات - الأكثر تحديداً أولاً
     if (href.includes('/settings/commissions/plans')) return 'commission_plans'
@@ -1070,6 +1071,7 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Employees' : 'الموظفون'), href: `/hr/employees${q}`, icon: Users },
                     { label: (lang === 'en' ? 'Attendance' : 'الحضور والانصراف'), href: `/hr/attendance${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Payroll' : 'المرتبات'), href: `/hr/payroll${q}`, icon: DollarSign },
+                    { label: (lang === 'en' ? 'Instant Payouts' : 'الصرف الفوري'), href: `/hr/instant-payouts${q}`, icon: DollarSign },
                   ]
                 }] : []),
                 {

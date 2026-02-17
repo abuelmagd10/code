@@ -69,6 +69,10 @@ const commissionPlanSchema = z.object({
         .max(100, 'Rate cannot exceed 100%')
         .nullable(),
 
+    payout_mode: z.enum(['immediate', 'payroll'], {
+        required_error: 'Payout mode is required'
+    }),
+
     tier_rules: z.array(z.object({
         id: z.string(),
         min_amount: z.number(),
@@ -129,6 +133,7 @@ interface CommissionPlan {
     effective_from: string
     effective_to: string | null
     flat_rate: number | null
+    payout_mode: 'immediate' | 'payroll'
     tier_rules: TierRule[] | null
 }
 
@@ -167,6 +172,7 @@ export function PlanFormDialog({
         effective_from: new Date().toISOString().split('T')[0],
         effective_to: null,
         flat_rate: 0,
+        payout_mode: 'payroll',
         tier_rules: null
     })
 
@@ -201,6 +207,7 @@ export function PlanFormDialog({
                 effective_from: editingPlan.effective_from,
                 effective_to: editingPlan.effective_to,
                 flat_rate: editingPlan.flat_rate,
+                payout_mode: editingPlan.payout_mode || 'payroll',
                 tier_rules: editingPlan.tier_rules
             })
         } else {
@@ -214,6 +221,7 @@ export function PlanFormDialog({
                 effective_from: new Date().toISOString().split('T')[0],
                 effective_to: null,
                 flat_rate: 0,
+                payout_mode: 'payroll',
                 tier_rules: null
             })
         }
@@ -485,6 +493,41 @@ export function PlanFormDialog({
                                 </SelectItem>
                             </SelectContent>
                         </Select>
+                    </div>
+
+                    {/* Payout Mode */}
+                    <div className="space-y-2">
+                        <Label htmlFor="payout_mode">
+                            {lang === 'en' ? 'Payment Method' : 'طريقة الدفع'} *
+                        </Label>
+                        <Select
+                            value={formData.payout_mode}
+                            onValueChange={(value) => handleFieldChange('payout_mode', value as 'immediate' | 'payroll')}
+                        >
+                            <SelectTrigger className={formErrors.payout_mode ? 'border-red-500' : ''}>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="payroll">
+                                    {lang === 'en' ? 'Monthly with Payroll' : 'شهرياً مع المرتبات'}
+                                </SelectItem>
+                                <SelectItem value="immediate">
+                                    {lang === 'en' ? 'Instant Payout (per invoice)' : 'صرف فوري (لكل فاتورة)'}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                        {formErrors.payout_mode && (
+                            <p className="text-sm text-red-600 dark:text-red-400">{formErrors.payout_mode}</p>
+                        )}
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {formData.payout_mode === 'immediate'
+                                ? (lang === 'en'
+                                    ? '💡 Commissions will be paid via Instant Payouts page'
+                                    : '💡 سيتم صرف العمولات عبر صفحة الصرف الفوري')
+                                : (lang === 'en'
+                                    ? '💡 Commissions will be paid monthly with salaries'
+                                    : '💡 سيتم صرف العمولات شهرياً مع المرتبات')}
+                        </p>
                     </div>
 
                     {/* Handle Returns */}
