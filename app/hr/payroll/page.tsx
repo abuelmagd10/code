@@ -59,7 +59,8 @@ export default function PayrollPage() {
     allowances: payslips.reduce((s, p) => s + Number(p.allowances || 0), 0),
     bonuses: payslips.reduce((s, p) => s + Number(p.bonuses || 0), 0),
     sales_bonus: payslips.reduce((s, p) => s + Number(p.sales_bonus || 0), 0),
-    commission: payslips.reduce((s, p) => s + Number(p.commission || 0), 0), // Assuming commission is added to payslips
+    commission: payslips.reduce((s, p) => s + Number(p.commission || 0), 0),
+    commission_advance_deducted: payslips.reduce((s, p) => s + Number(p.commission_advance_deducted || 0), 0),
     advances: payslips.reduce((s, p) => s + Number(p.advances || 0), 0),
     insurance: payslips.reduce((s, p) => s + Number(p.insurance || 0), 0),
     deductions: payslips.reduce((s, p) => s + Number(p.deductions || 0), 0),
@@ -198,7 +199,7 @@ export default function PayrollPage() {
     if (!cid || !runId) { setPayslips([]); return }
     const { data } = await supabase
       .from('payslips')
-      .select('employee_id, base_salary, allowances, deductions, bonuses, sales_bonus, advances, insurance, net_salary, breakdown')
+      .select('employee_id, base_salary, allowances, deductions, bonuses, sales_bonus, commission, commission_advance_deducted, advances, insurance, net_salary, breakdown')
       .eq('company_id', cid)
       .eq('payroll_run_id', runId)
     const arr = Array.isArray(data) ? data : []
@@ -499,6 +500,7 @@ export default function PayrollPage() {
                           <th className="p-2 text-right">{t('Bonuses', 'مكافآت')}</th>
                           <th className="p-2 text-right text-green-600">{t('Sales Bonus', 'بونص مبيعات')}</th>
                           <th className="p-2 text-right text-blue-600">{t('Commission', 'عمولات')}</th>
+                          <th className="p-2 text-right text-orange-600">{t('Comm. Advance', 'سلف عمولات')}</th>
                           <th className="p-2 text-right">{t('Advances', 'سلف')}</th>
                           <th className="p-2 text-right">{t('Insurance', 'تأمينات')}</th>
                           <th className="p-2 text-right">{t('Deductions', 'خصومات')}</th>
@@ -516,6 +518,7 @@ export default function PayrollPage() {
                               <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.bonuses} onChange={(ev) => setEditSlip({ ...editSlip, bonuses: Number(ev.target.value) })} />) : Number(p.bonuses || 0).toFixed(2)}</td>
                               <td className="p-2 text-green-600">{Number(p.sales_bonus || 0).toFixed(2)}</td>
                               <td className="p-2 text-blue-600 font-semibold">{Number(p.commission || 0).toFixed(2)}</td>
+                              <td className="p-2 text-orange-600">{Number(p.commission_advance_deducted || 0).toFixed(2)}</td>
                               <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.advances} onChange={(ev) => setEditSlip({ ...editSlip, advances: Number(ev.target.value) })} />) : Number(p.advances || 0).toFixed(2)}</td>
                               <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.insurance} onChange={(ev) => setEditSlip({ ...editSlip, insurance: Number(ev.target.value) })} />) : Number(p.insurance || 0).toFixed(2)}</td>
                               <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.deductions} onChange={(ev) => setEditSlip({ ...editSlip, deductions: Number(ev.target.value) })} />) : Number(p.deductions || 0).toFixed(2)}</td>
@@ -545,6 +548,7 @@ export default function PayrollPage() {
                           <td className="p-2 font-semibold">{totals.bonuses.toFixed(2)}</td>
                           <td className="p-2 font-semibold text-green-600">{totals.sales_bonus.toFixed(2)}</td>
                           <td className="p-2 font-semibold text-blue-600">{totals.commission.toFixed(2)}</td>
+                          <td className="p-2 font-semibold text-orange-600">{totals.commission_advance_deducted.toFixed(2)}</td>
                           <td className="p-2 font-semibold">{totals.advances.toFixed(2)}</td>
                           <td className="p-2 font-semibold">{totals.insurance.toFixed(2)}</td>
                           <td className="p-2 font-semibold">{totals.deductions.toFixed(2)}</td>

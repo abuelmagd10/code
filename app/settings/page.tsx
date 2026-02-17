@@ -1745,18 +1745,20 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* طريقة الصرف */}
+                {/* طريقة الصرف - ثابتة على "مع المرتبات" */}
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Payout Mode' : 'طريقة الصرف'}</Label>
-                  <Select value={bonusSettings.bonus_payout_mode} onValueChange={(v: 'immediate' | 'payroll') => setBonusSettings({ ...bonusSettings, bonus_payout_mode: v })} disabled={!isCompanyOwner}>
-                    <SelectTrigger className="bg-gray-50 dark:bg-slate-800 w-full md:w-1/2">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="payroll">{language === 'en' ? 'With Payroll (Monthly)' : 'مع المرتبات (شهرياً)'}</SelectItem>
-                      <SelectItem value="immediate">{language === 'en' ? 'Immediate (Per Invoice)' : 'فوري (لكل فاتورة)'}</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    <span className="text-blue-700 dark:text-blue-300 font-medium">
+                      {language === 'en' ? 'With Payroll (Monthly)' : 'مع المرتبات (شهرياً)'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {language === 'en'
+                      ? 'Commissions are automatically added to monthly salary. Use Early Payout page for advance payments.'
+                      : 'يتم إضافة العمولات تلقائياً للمرتب الشهري. استخدم صفحة الصرف المبكر للسلف.'}
+                  </p>
                 </div>
 
                 {/* زر الحفظ */}

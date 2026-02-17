@@ -114,9 +114,45 @@ export async function POST(req: NextRequest) {
       const absDays = absencesByEmp[id] || 0
       const daily = base / 30
       const absenceDeduction = daily * absDays
+
+      // ✅ جلب ملخص العمولات للموظف (العمولات المكتسبة - السلف المصروفة)
+      // ✅ إصلاح 3: تمرير payroll_run_id لحساب السلف بشكل صحيح عند إعادة الحساب
+      let commissionEarned = 0
+      let commissionAdvanceDeducted = 0
+      try {
+        const { data: commSummary } = await client.rpc('get_employee_commission_summary_for_payroll', {
+          p_company_id: companyId,
+          p_employee_id: id,
+          p_period_year: year,
+          p_period_month: month,
+          p_payroll_run_id: runId // ✅ تمرير runId للتعامل مع إعادة الحساب
+        })
+        if (commSummary) {
+          commissionEarned = Number(commSummary.net_earned || 0)
+          commissionAdvanceDeducted = Number(commSummary.advance_paid || 0)
+        }
+      } catch (commErr) {
+        console.log('Commission summary not available for employee:', id, commErr)
+      }
+
+      const netCommission = Math.max(commissionEarned - commissionAdvanceDeducted, 0)
       const totalDeductions = Number(adj.deductions || 0) + Number(adj.advances || 0) + Number(adj.insurance || 0) + Number(absenceDeduction || 0)
-      const net = base + Number(adj.allowances || 0) + Number(adj.bonuses || 0) - totalDeductions
-      rows.push({ company_id: companyId, payroll_run_id: runId, employee_id: id, base_salary: base, allowances: adj.allowances || 0, deductions: totalDeductions, bonuses: adj.bonuses || 0, advances: adj.advances || 0, insurance: adj.insurance || 0, net_salary: net, breakdown: { absences: absDays, daily_rate: daily } })
+      const net = base + Number(adj.allowances || 0) + Number(adj.bonuses || 0) + netCommission - totalDeductions
+      rows.push({
+        company_id: companyId,
+        payroll_run_id: runId,
+        employee_id: id,
+        base_salary: base,
+        allowances: adj.allowances || 0,
+        deductions: totalDeductions,
+        bonuses: adj.bonuses || 0,
+        advances: adj.advances || 0,
+        insurance: adj.insurance || 0,
+        commission: commissionEarned,
+        commission_advance_deducted: commissionAdvanceDeducted,
+        net_salary: net,
+        breakdown: { absences: absDays, daily_rate: daily, commission_earned: commissionEarned, commission_advance_deducted: commissionAdvanceDeducted }
+      })
     }
 
     if (rows.length > 0) {
@@ -136,6 +172,23 @@ export async function POST(req: NextRequest) {
       if (ins.error) {
         return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إنشاء كشوف المرتبات", ins.error.message)
       }
+
+      // ✅ تحديث حالة سلف العمولات (تعليمها كمخصومة من المرتب)
+      for (const row of rows) {
+        if (row.commission_advance_deducted > 0) {
+          try {
+            await client.rpc('deduct_commission_advances_for_payroll', {
+              p_company_id: companyId,
+              p_employee_id: row.employee_id,
+              p_payroll_run_id: runId,
+              p_period_year: year,
+              p_period_month: month
+            })
+          } catch (deductErr) {
+            console.log('Error deducting commission advances for employee:', row.employee_id, deductErr)
+          }
+        }
+      }
     }
     try {
       await (admin || ssr).from('audit_logs').insert({
@@ -143,7 +196,7 @@ export async function POST(req: NextRequest) {
         target_table: 'payroll_runs',
         company_id: companyId,
         user_id: user!.id,
-        record_id: runId, // ✅ استخدام runId (payroll run ID) بدلاً من payslip ID
+        record_id: runId,
         new_data: { year, month, count: rows.length }
       })
     } catch {}
