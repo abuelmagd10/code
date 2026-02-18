@@ -95,10 +95,17 @@ export default function ThirdPartyInventoryPage() {
   // 🔐 ERP Access Control - Governance Rules
   // 👑 Owner/Admin/GM: See all goods in all branches
   // 🏢 Manager/Accountant: See only their branch
+  // 📦 Store Manager (Main Warehouse): See all branches
+  // 📦 Store Manager (Branch Warehouse): See only their branch
   // 👨‍💼 Staff: See only goods from sales orders they created
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>("employee")
+  const [isMainWarehouse, setIsMainWarehouse] = useState<boolean>(false)
+
+  // قائمة الفروع للفلترة
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
+  const [filterBranchId, setFilterBranchId] = useState<string>("all")
 
   // التحقق من صلاحية الوصول لصفحة الفواتير
   const canAccessInvoices = canAccessPage("invoices")
@@ -137,8 +144,13 @@ export default function ThirdPartyInventoryPage() {
     { value: "partially_paid", label: isAr ? "مدفوعة جزئياً" : "Partially Paid" },
   ]
 
-  // Can view all (manager/admin/owner)
-  const canViewAll = ["owner", "admin", "manager"].includes(currentUserRole)
+  // Can view all (admin/owner + store_manager in main warehouse)
+  const canViewAll = ["owner", "admin", "general_manager"].includes(currentUserRole) ||
+    (currentUserRole === "store_manager" && isMainWarehouse)
+
+  // يمكنه رؤية فلتر الفروع
+  const canSeeBranchFilter = ["owner", "admin", "general_manager"].includes(currentUserRole) ||
+    (currentUserRole === "store_manager" && isMainWarehouse)
 
   useEffect(() => {
     loadData()
@@ -183,6 +195,7 @@ export default function ThirdPartyInventoryPage() {
 
       // Get current user
       let memberData: { role?: string; branch_id?: string | null; cost_center_id?: string | null; warehouse_id?: string | null } | null = null
+      let userIsInMainWarehouse = false
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setCurrentUserId(user.id)
@@ -203,7 +216,36 @@ export default function ThirdPartyInventoryPage() {
             cost_center_id: member.cost_center_id || null,
             warehouse_id: member.warehouse_id || null
           })
+
+          // 📦 التحقق إذا كان مسئول المخزن في المخزن الرئيسي
+          if (member.role === 'store_manager' && member.warehouse_id) {
+            const { data: warehouseData } = await supabase
+              .from("warehouses")
+              .select("is_main")
+              .eq("id", member.warehouse_id)
+              .single()
+            userIsInMainWarehouse = warehouseData?.is_main === true
+            setIsMainWarehouse(userIsInMainWarehouse)
+          }
         }
+      }
+
+      // 🏢 جلب الفروع للفلترة (للمستخدمين المخولين فقط)
+      const roleForBranchFilter = memberData?.role || "employee"
+      const canLoadBranches = ["owner", "admin", "general_manager"].includes(roleForBranchFilter) ||
+        (roleForBranchFilter === "store_manager" && userIsInMainWarehouse)
+
+      if (canLoadBranches) {
+        const { data: branchesData } = await supabase
+          .from("branches")
+          .select("id, name")
+          .eq("company_id", companyId)
+          .eq("is_active", true)
+          .order("is_main", { ascending: false })
+          .order("name")
+        setBranches(branchesData || [])
+      } else {
+        setBranches([])
       }
 
       // جلب شركات الشحن
@@ -304,12 +346,16 @@ export default function ThirdPartyInventoryPage() {
       // 🔐 فلترة حسب الدور والفرع والمخزن
       const currentWarehouseId = memberData?.warehouse_id || null
 
-      if (currentRole === 'store_manager') {
-        // 📦 مسئول المخزن: يرى مخزنه فقط
-        if (currentWarehouseId) {
-          invoicesQuery = invoicesQuery.eq("warehouse_id", currentWarehouseId)
-        } else if (currentBranchId) {
-          // Fallback: إذا لم يكن له مخزن محدد، يرى الفرع
+      // 📦 التحقق إذا كان store_manager في المخزن الرئيسي
+      const isStoreManagerInMainWarehouse = currentRole === 'store_manager' && userIsInMainWarehouse
+
+      // 👑 Owner / Admin / GM / Store Manager (Main Warehouse): يرون كل شيء
+      if (['owner', 'admin', 'general_manager'].includes(currentRole) || isStoreManagerInMainWarehouse) {
+        // لا فلترة على مستوى الدور - فقط فلتر الفرع إذا تم اختياره
+        // (سيتم تطبيقه لاحقاً في filteredItems)
+      } else if (currentRole === 'store_manager') {
+        // 📦 مسئول المخزن (غير الرئيسي): يرى فرعه فقط
+        if (currentBranchId) {
           invoicesQuery = invoicesQuery.eq("branch_id", currentBranchId)
         }
       } else if (currentRole === 'manager' || currentRole === 'accountant') {
@@ -322,7 +368,6 @@ export default function ThirdPartyInventoryPage() {
         // سنقوم بفلترة البيانات بعد جلبها لأن الربط معقد (invoice → sales_order → created_by)
         // RLS سيتولى الفلترة على مستوى قاعدة البيانات
       }
-      // 👑 Owner / Admin / General Manager: لا فلترة (يرون كل شيء)
 
       invoicesQuery = invoicesQuery.order("invoice_date", { ascending: false })
 
@@ -453,6 +498,7 @@ export default function ThirdPartyInventoryPage() {
 
   // Clear all filters
   const clearFilters = () => {
+    setFilterBranchId("all")
     setFilterEmployeeId("all")
     setSearchQuery("")
     setFilterStatuses([])
@@ -465,6 +511,7 @@ export default function ThirdPartyInventoryPage() {
 
   // Active filter count
   const activeFilterCount = [
+    filterBranchId !== "all",
     filterEmployeeId !== "all",
     !!searchQuery,
     filterStatuses.length > 0,
@@ -478,6 +525,11 @@ export default function ThirdPartyInventoryPage() {
   // فلترة البضائع
   const filteredItems = useMemo(() => {
     return items.filter(item => {
+      // 🏢 فلتر الفرع (للمستخدمين المخولين فقط)
+      if (canSeeBranchFilter && filterBranchId !== "all") {
+        if (item.invoices?.branch_id !== filterBranchId) return false
+      }
+
       // فلتر الموظف
       if (canViewAll && filterEmployeeId !== "all") {
         if (item.created_by !== filterEmployeeId) return false
@@ -520,7 +572,7 @@ export default function ThirdPartyInventoryPage() {
 
       return true
     })
-  }, [items, filterEmployeeId, searchQuery, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, dateFrom, dateTo, canViewAll])
+  }, [items, filterBranchId, filterEmployeeId, searchQuery, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, dateFrom, dateTo, canViewAll, canSeeBranchFilter])
 
   // حساب الإحصائيات
   const stats = useMemo(() => {
@@ -585,7 +637,15 @@ export default function ThirdPartyInventoryPage() {
                     {isAr ? "تتبع البضائع المرسلة لشركات الشحن" : "Track goods sent to shipping companies"}
                   </p>
                   {/* 🔐 Governance Notice */}
-                  {currentUserRole === 'manager' || currentUserRole === 'accountant' || currentUserRole === 'store_manager' ? (
+                  {currentUserRole === 'store_manager' && isMainWarehouse ? (
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                      {isAr ? "📦 المخزن الرئيسي - تعرض جميع البضائع في الشركة" : "📦 Main Warehouse - Showing all company goods"}
+                    </p>
+                  ) : currentUserRole === 'store_manager' ? (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {isAr ? "📦 تعرض البضائع الخاصة بفرعك فقط" : "📦 Showing goods from your branch only"}
+                    </p>
+                  ) : currentUserRole === 'manager' || currentUserRole === 'accountant' ? (
                     <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                       {isAr ? "🏢 تعرض البضائع الخاصة بفرعك فقط" : "🏢 Showing goods from your branch only"}
                     </p>
@@ -671,9 +731,48 @@ export default function ThirdPartyInventoryPage() {
             defaultOpen={false}
           >
             <div className="space-y-4">
+              {/* 🏢 فلتر الفروع - يظهر فقط للمخولين (Owner/Admin/GM/Store Manager Main Warehouse) */}
+              {canSeeBranchFilter && branches.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                  <Package className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  <span className="text-sm font-medium text-purple-700 dark:text-purple-300">
+                    {isAr ? 'فلترة حسب الفرع:' : 'Filter by Branch:'}
+                  </span>
+                  <Select
+                    value={filterBranchId}
+                    onValueChange={(value) => setFilterBranchId(value)}
+                  >
+                    <SelectTrigger className="w-[220px] h-9 bg-white dark:bg-slate-800">
+                      <SelectValue placeholder={isAr ? 'جميع الفروع' : 'All Branches'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        {isAr ? '🏢 جميع الفروع' : '🏢 All Branches'}
+                      </SelectItem>
+                      {branches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id}>
+                          🏪 {branch.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {filterBranchId !== "all" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setFilterBranchId("all")}
+                      className="h-8 px-3 text-purple-600 hover:text-purple-800 hover:bg-purple-100"
+                    >
+                      <X className="w-4 h-4 mr-1" />
+                      {isAr ? 'مسح' : 'Clear'}
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {/* فلتر الموظفين - صف منفصل أعلى الفلاتر - يظهر فقط للمديرين */}
               {canViewAll && employees.length > 0 && (
-                <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="flex flex-wrap items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                   <UserCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
                     {isAr ? 'فلترة حسب الموظف:' : 'Filter by Employee:'}
