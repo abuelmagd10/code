@@ -3281,8 +3281,8 @@ export default function InvoiceDetailPage() {
                 {/* ❌ تم إزالة زر "تحديد كمدفوعة" - الحالة تتحدث تلقائياً عند الدفع أو المرتجع */}
               </>
             )}
-            {/* 💰 زر صرف رصيد العميل الدائن - يظهر خارج شرط الحالة لأن الرصيد الدائن يحدث عادة للفواتير المدفوعة */}
-            {customerCreditAmount > 0 && permPayWrite && invoice.customer_id && invoice.status !== "cancelled" && invoice.status !== "draft" ? (
+            {/* 💰 زر صرف رصيد العميل الدائن - يظهر فقط للفواتير المدفوعة التي بها رصيد دائن */}
+            {customerCreditAmount > 0 && permPayWrite && invoice.customer_id && (invoice.status === "paid" || invoice.status === "fully_returned") ? (
               <Button
                 variant="outline"
                 className="border-green-500 text-green-600 hover:bg-green-50"
