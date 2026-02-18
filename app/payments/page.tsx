@@ -142,6 +142,8 @@ export default function PaymentsPage() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchNames, setBranchNames] = useState<Record<string, string>>({})
   const [invoiceToSalesOrderMap, setInvoiceToSalesOrderMap] = useState<Record<string, { id: string; so_number: string }>>({}) // Map invoice_id -> sales_order
+  const [invoiceBranchMap, setInvoiceBranchMap] = useState<Record<string, string>>({}) // Map invoice_id -> branch_id
+  const [billBranchMap, setBillBranchMap] = useState<Record<string, string>>({}) // Map bill_id -> branch_id
   const [loading, setLoading] = useState(true)
 
   // Currency support - using CurrencyService
@@ -529,10 +531,9 @@ export default function PaymentsPage() {
         const selectedBranchId = branchFilter.getFilteredBranchId()
 
         // جلب مدفوعات العملاء مع فلترة الفرع
-        // ✅ جلب branch_id من الفاتورة المرتبطة (invoices) لأن payment.branch_id قد يكون null
         let custPaysQuery = supabase
           .from("payments")
-          .select("*, branches:branch_id(name), invoices:invoice_id(branch_id)")
+          .select("*, branches:branch_id(name)")
           .eq("company_id", activeCompanyId)
           .not("customer_id", "is", null)
 
@@ -554,10 +555,9 @@ export default function PaymentsPage() {
         setCustomerPayments(custPays || [])
 
         // جلب مدفوعات الموردين مع فلترة الفرع
-        // ✅ جلب branch_id من فاتورة الشراء المرتبطة (bills) لأن payment.branch_id قد يكون null
         let suppPaysQuery = supabase
           .from("payments")
-          .select("*, branches:branch_id(name), bills:bill_id(branch_id)")
+          .select("*, branches:branch_id(name)")
           .eq("company_id", activeCompanyId)
           .not("supplier_id", "is", null)
 
@@ -628,10 +628,9 @@ export default function PaymentsPage() {
       const selectedBranchId = branchFilter.getFilteredBranchId()
 
       // جلب مدفوعات العملاء مع فلترة الفرع
-      // ✅ جلب branch_id من الفاتورة المرتبطة (invoices) لأن payment.branch_id قد يكون null
       let custPaysQuery = supabase
         .from("payments")
-        .select("*, branches:branch_id(name), invoices:invoice_id(branch_id)")
+        .select("*, branches:branch_id(name)")
         .eq("company_id", companyId)
         .not("customer_id", "is", null)
 
@@ -645,10 +644,9 @@ export default function PaymentsPage() {
       setCustomerPayments(custPays || [])
 
       // جلب مدفوعات الموردين مع فلترة الفرع
-      // ✅ جلب branch_id من فاتورة الشراء المرتبطة (bills) لأن payment.branch_id قد يكون null
       let suppPaysQuery = supabase
         .from("payments")
-        .select("*, branches:branch_id(name), bills:bill_id(branch_id)")
+        .select("*, branches:branch_id(name)")
         .eq("company_id", companyId)
         .not("supplier_id", "is", null)
 
@@ -678,7 +676,7 @@ export default function PaymentsPage() {
     onDelete: handlePaymentsRealtimeEvent,
   })
 
-  // Load invoice numbers and related sales orders for displayed customer payments
+  // Load invoice numbers, branch_ids and related sales orders for displayed customer payments
   useEffect(() => {
     ; (async () => {
       try {
@@ -686,16 +684,21 @@ export default function PaymentsPage() {
         if (!ids.length) {
           setInvoiceNumbers({})
           setInvoiceToSalesOrderMap({})
+          setInvoiceBranchMap({})
           return
         }
-        const { data: invs } = await supabase.from("invoices").select("id, invoice_number, sales_order_id").in("id", ids)
+        // ✅ جلب branch_id مع بيانات الفاتورة لعرض الفرع الصحيح في قائمة المدفوعات
+        const { data: invs } = await supabase.from("invoices").select("id, invoice_number, sales_order_id, branch_id").in("id", ids)
         const map: Record<string, string> = {}
+        const branchMap: Record<string, string> = {} // invoice_id -> branch_id
         const salesOrderIds: string[] = []
         ; (invs || []).forEach((r: any) => {
           map[r.id] = r.invoice_number
+          if (r.branch_id) branchMap[r.id] = r.branch_id
           if (r.sales_order_id) salesOrderIds.push(r.sales_order_id)
         })
         setInvoiceNumbers(map)
+        setInvoiceBranchMap(branchMap)
 
         // جلب بيانات أوامر البيع المرتبطة
         if (salesOrderIds.length > 0) {
@@ -719,24 +722,32 @@ export default function PaymentsPage() {
     })()
   }, [customerPayments, supabase])
 
-  // Load bill numbers for displayed supplier payments
+  // Load bill numbers and branch_ids for displayed supplier payments
   useEffect(() => {
     ; (async () => {
       try {
         const ids = Array.from(new Set((supplierPayments || []).map((p) => p.bill_id).filter(Boolean))) as string[]
-        if (!ids.length) { setBillNumbers({}); return }
-        const { data: bills } = await supabase.from("bills").select("id, bill_number, purchase_order_id").in("id", ids)
+        if (!ids.length) {
+          setBillNumbers({})
+          setBillBranchMap({})
+          return
+        }
+        // ✅ جلب branch_id مع بيانات الفاتورة لعرض الفرع الصحيح في قائمة المدفوعات
+        const { data: bills } = await supabase.from("bills").select("id, bill_number, purchase_order_id, branch_id").in("id", ids)
         const map: Record<string, string> = {}
+        const branchMap: Record<string, string> = {} // bill_id -> branch_id
         const billPoMap: Record<string, string> = {} // bill_id -> purchase_order_id
-          ; (bills || []).forEach((r: any) => { 
+          ; (bills || []).forEach((r: any) => {
             map[r.id] = r.bill_number
+            if (r.branch_id) branchMap[r.id] = r.branch_id
             if (r.purchase_order_id) {
               billPoMap[r.id] = r.purchase_order_id
             }
           })
         setBillNumbers(map)
+        setBillBranchMap(branchMap)
         setBillToPoMap(billPoMap)
-        
+
         // ✅ جلب أرقام أوامر الشراء المرتبطة بالفواتير
         const poIds = Array.from(new Set((bills || []).map((b: any) => b.purchase_order_id).filter(Boolean))) as string[]
         if (poIds.length > 0) {
@@ -2593,8 +2604,8 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{p.payment_date}</td>
                       <td className="px-2 py-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                          {/* ✅ عرض الفرع: من الفاتورة المرتبطة (أولوية) → من الدفعة → fallback */}
-                          {((p as any).invoices?.branch_id ? branchNames[(p as any).invoices.branch_id] : null) || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
+                          {/* ✅ عرض الفرع: من الفاتورة المرتبطة (invoiceBranchMap) → من الدفعة → fallback */}
+                          {(p.invoice_id && invoiceBranchMap[p.invoice_id] ? branchNames[invoiceBranchMap[p.invoice_id]] : null) || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
                         </span>
                       </td>
                       <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
@@ -2825,8 +2836,8 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{p.payment_date}</td>
                       <td className="px-2 py-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
-                          {/* ✅ عرض الفرع: من فاتورة الشراء المرتبطة (أولوية) → من الدفعة → fallback */}
-                          {((p as any).bills?.branch_id ? branchNames[(p as any).bills.branch_id] : null) || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
+                          {/* ✅ عرض الفرع: من فاتورة الشراء المرتبطة (billBranchMap) → من الدفعة → fallback */}
+                          {(p.bill_id && billBranchMap[p.bill_id] ? branchNames[billBranchMap[p.bill_id]] : null) || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
                         </span>
                       </td>
                       <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
