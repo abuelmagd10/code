@@ -298,7 +298,8 @@ export default function InvoiceDetailPage() {
     ; (async () => {
       if (!showCustomerRefund || !invoice?.company_id) return
       try {
-        // تحميل الحسابات النقدية/البنكية
+        // تحميل الحسابات النقدية/البنكية + حسابات رصيد العملاء الدائن
+        // (حسابات customer_credit مطلوبة داخل الحوار لإنشاء قيد محاسبي متوازن)
         const { data: accounts } = await supabase
           .from("chart_of_accounts")
           .select("id, account_code, account_name, account_type, sub_type")
@@ -309,12 +310,18 @@ export default function InvoiceDetailPage() {
           const nmLower = nm.toLowerCase()
           const isCashOrBankSubtype = st === "cash" || st === "bank"
           const nameSuggestsCashOrBank = nmLower.includes("bank") || nmLower.includes("cash") || /بنك|بنكي|مصرف|خزينة|نقد/.test(nm)
-          return isCashOrBankSubtype || nameSuggestsCashOrBank
+          const isCustomerCreditAccount = st === "customer_credit" || st === "customer_advance"
+          return isCashOrBankSubtype || nameSuggestsCashOrBank || isCustomerCreditAccount
         })
         setRefundAccounts(list)
         if (!refundAccountId && list.length > 0) {
-          const preferred = list.find((a: any) => String(a.sub_type || '').toLowerCase() === 'cash' || /صندوق|خزينة|نقد|cash/i.test(String(a.account_name || '')))
-          setRefundAccountId((preferred || list[0]).id)
+          const cashBankList = list.filter((a: any) => {
+            const st = String(a.sub_type || '').toLowerCase()
+            return st === 'cash' || st === 'bank' || /صندوق|خزينة|نقد|cash|bank/i.test(String(a.account_name || ''))
+          })
+          const sourceList = cashBankList.length > 0 ? cashBankList : list
+          const preferred = sourceList.find((a: any) => String(a.sub_type || '').toLowerCase() === 'cash' || /صندوق|خزينة|نقد|cash/i.test(String(a.account_name || '')))
+          setRefundAccountId((preferred || sourceList[0]).id)
         }
 
         // تحميل العملات

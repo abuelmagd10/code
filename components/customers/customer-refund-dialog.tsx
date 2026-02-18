@@ -33,7 +33,7 @@ interface CustomerRefundDialogProps {
   customerId: string
   customerName: string
   maxAmount: number
-  accounts: { id: string; account_code: string; account_name: string; account_type: string }[]
+  accounts: { id: string; account_code: string; account_name: string; account_type: string; sub_type?: string }[]
   appCurrency: string
   currencies: Currency[]
   refundAmount: number
@@ -464,9 +464,14 @@ export function CustomerRefundDialog({
                 <SelectValue placeholder={appLang==='en' ? 'Select account' : 'اختر الحساب'} />
               </SelectTrigger>
               <SelectContent>
-                {accounts.map((acc) => (
-                  <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                ))}
+                {accounts
+                  .filter((acc) => {
+                    const st = String((acc as any).sub_type || '').toLowerCase()
+                    return st !== 'customer_credit' && st !== 'customer_advance'
+                  })
+                  .map((acc) => (
+                    <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
