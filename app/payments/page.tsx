@@ -531,7 +531,7 @@ export default function PaymentsPage() {
         // جلب مدفوعات العملاء مع فلترة الفرع
         let custPaysQuery = supabase
           .from("payments")
-          .select("*, branches(name)")
+          .select("*, branches:branch_id(name)")
           .eq("company_id", activeCompanyId)
           .not("customer_id", "is", null)
 
@@ -555,7 +555,7 @@ export default function PaymentsPage() {
         // جلب مدفوعات الموردين مع فلترة الفرع
         let suppPaysQuery = supabase
           .from("payments")
-          .select("*, branches(name)")
+          .select("*, branches:branch_id(name)")
           .eq("company_id", activeCompanyId)
           .not("supplier_id", "is", null)
 
@@ -628,7 +628,7 @@ export default function PaymentsPage() {
       // جلب مدفوعات العملاء مع فلترة الفرع
       let custPaysQuery = supabase
         .from("payments")
-        .select("*, branches(name)")
+        .select("*, branches:branch_id(name)")
         .eq("company_id", companyId)
         .not("customer_id", "is", null)
 
@@ -644,7 +644,7 @@ export default function PaymentsPage() {
       // جلب مدفوعات الموردين مع فلترة الفرع
       let suppPaysQuery = supabase
         .from("payments")
-        .select("*, branches(name)")
+        .select("*, branches:branch_id(name)")
         .eq("company_id", companyId)
         .not("supplier_id", "is", null)
 
@@ -773,7 +773,7 @@ export default function PaymentsPage() {
 
         let query = supabase
           .from("invoices")
-          .select("id, invoice_number, invoice_date, total_amount, paid_amount, status, branch_id, branches(name)")
+          .select("id, invoice_number, invoice_date, total_amount, paid_amount, status, branch_id, branches:branch_id(name)")
           .eq("customer_id", newCustPayment.customer_id)
           .in("status", ["sent", "partially_paid", "partially_returned"]) // غير مسددة بالكامل (بما فيها المرتجعة جزئياً)
 
@@ -801,7 +801,7 @@ export default function PaymentsPage() {
         // نستبعد فقط: paid, cancelled, fully_returned
         let query = supabase
           .from("bills")
-          .select("id, bill_number, bill_date, total_amount, paid_amount, status, branch_id, branches(name)")
+          .select("id, bill_number, bill_date, total_amount, paid_amount, status, branch_id, branches:branch_id(name)")
           .eq("supplier_id", newSuppPayment.supplier_id)
           .eq("company_id", companyId)
           .in("status", ["draft", "sent", "received", "partially_paid", "partially_returned"]) // ✅ شامل Draft
