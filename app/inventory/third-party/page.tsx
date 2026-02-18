@@ -301,8 +301,18 @@ export default function ThirdPartyInventoryPage() {
         .in("status", ["sent", "confirmed", "partially_returned", "partially_paid"])
         .not("shipping_provider_id", "is", null)
 
-      // 🔐 فلترة حسب الدور والفرع
-      if (currentRole === 'manager' || currentRole === 'accountant' || currentRole === 'store_manager') {
+      // 🔐 فلترة حسب الدور والفرع والمخزن
+      const currentWarehouseId = memberData?.warehouse_id || null
+
+      if (currentRole === 'store_manager') {
+        // 📦 مسئول المخزن: يرى مخزنه فقط
+        if (currentWarehouseId) {
+          invoicesQuery = invoicesQuery.eq("warehouse_id", currentWarehouseId)
+        } else if (currentBranchId) {
+          // Fallback: إذا لم يكن له مخزن محدد، يرى الفرع
+          invoicesQuery = invoicesQuery.eq("branch_id", currentBranchId)
+        }
+      } else if (currentRole === 'manager' || currentRole === 'accountant') {
         // 🏢 Branch Manager / Accountant: يرون فرعهم فقط
         if (currentBranchId) {
           invoicesQuery = invoicesQuery.eq("branch_id", currentBranchId)
