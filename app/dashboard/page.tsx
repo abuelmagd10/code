@@ -398,16 +398,17 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       // 🔐 في Branch View: نستخدم الاستعلام المباشر مع فلترة الفرع
       // لأن API لا يدعم فلترة الفرع حالياً
       if (visibilityRules?.scope === 'branch' && visibilityRules.branchId) {
-        // استعلام مباشر مع فلترة الفرع ومركز التكلفة
+        // ✅ استعلام مباشر مع فلترة الفرع من journal_entries (وليس journal_entry_lines)
+        // لأن branch_id قد تكون null في journal_entry_lines لكنها موجودة في journal_entries
         let linesQuery = supabase
           .from("journal_entry_lines")
-          .select("account_id, debit_amount, credit_amount, branch_id, cost_center_id, journal_entries!inner(entry_date, company_id)")
+          .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id, branch_id, cost_center_id)")
           .in("account_id", accIds)
           .eq("journal_entries.company_id", company.id)
-          .eq("branch_id", visibilityRules.branchId)
+          .eq("journal_entries.branch_id", visibilityRules.branchId)
 
         if (visibilityRules.costCenterId) {
-          linesQuery = linesQuery.eq("cost_center_id", visibilityRules.costCenterId)
+          linesQuery = linesQuery.eq("journal_entries.cost_center_id", visibilityRules.costCenterId)
         }
         if (fromDate) linesQuery = linesQuery.gte("journal_entries.entry_date", fromDate)
         if (toDate) linesQuery = linesQuery.lte("journal_entries.entry_date", toDate)
