@@ -346,6 +346,11 @@ export function CustomerRefundDialog({
             : `صرف رصيد دائن للعميل ${customerName} - فاتورة #${invoiceNumber}`)
         : (refundNotes || (appLang === 'en' ? `Credit refund to customer ${customerName}` : `صرف رصيد دائن للعميل ${customerName}`))
 
+      // ⚠️ لا نضيف invoice_id هنا عمداً:
+      // صرف الرصيد الدائن هو عملية شركة→عميل مستقلة وليست دفعة على الفاتورة.
+      // ربطها بـ invoice_id يُسبب تحديث paid_amount في الفاتورة (عبر trigger قاعدة البيانات)
+      // مما يُغير الحالة من "مدفوعة" إلى "مدفوعة جزئياً" بشكل خاطئ.
+      // رقم الفاتورة موجود في notes و reference_number للمرجعية.
       const paymentPayload: any = {
         company_id: activeCompanyId,
         customer_id: customerId,
@@ -356,10 +361,6 @@ export function CustomerRefundDialog({
         notes: paymentNotes,
         branch_id: finalBranchId,
         cost_center_id: finalCostCenterId
-      }
-      // 📄 إضافة invoice_id إن وُجد
-      if (invoiceId) {
-        paymentPayload.invoice_id = invoiceId
       }
       try {
         // محاولة إدراج مع account_id
