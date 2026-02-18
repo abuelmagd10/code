@@ -70,7 +70,7 @@ export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: '1160', account_name: 'ضريبة القيمة المضافة - مدخلات', account_name_en: 'VAT Input (Recoverable)', account_type: 'asset', normal_balance: 'debit', sub_type: 'vat_input', parent_code: '1100' },
   { account_code: '1170', account_name: 'سلف ومقدمات للموظفين', account_name_en: 'Employee Advances', account_type: 'asset', normal_balance: 'debit', parent_code: '1100' },
   { account_code: '1180', account_name: 'سلف ومقدمات للموردين', account_name_en: 'Supplier Advances', account_type: 'asset', normal_balance: 'debit', parent_code: '1100' },
-  { account_code: '1190', account_name: 'أرصدة العملاء الدائنة', account_name_en: 'Customer Credit Balances', account_type: 'asset', normal_balance: 'debit', sub_type: 'customer_credit', parent_code: '1100' },
+  { account_code: '1190', account_name: 'أرصدة العملاء الدائنة', account_name_en: 'Customer Credit Balances', account_type: 'asset', normal_balance: 'debit', sub_type: 'other_receivable', parent_code: '1100' },
 
   // ─────────────────────────────────────────────────────────────
   // 12xx - الأصول الثابتة (Fixed Assets / PPE)

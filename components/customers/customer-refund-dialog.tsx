@@ -215,11 +215,18 @@ export function CustomerRefundDialog({
       }
 
       // Find appropriate accounts
+      // الأولوية: حساب الالتزامات ذو sub_type=customer_credit (رصيد دائن للعميل = التزام على الشركة)
+      // ثم sub_type=customer_advance، ثم البحث بالاسم كاحتياط أخير
       const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
-      const customerCredit = find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_credit") ||
-                           find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") ||
-                           find((a: any) => String(a.account_name || "").toLowerCase().includes("سلف العملاء")) ||
-                           find((a: any) => String(a.account_name || "").toLowerCase().includes("رصيد العملاء"))
+      const findLiability = (f: (a: any) => boolean) =>
+        (accounts || []).find((a: any) => String(a.account_type || '').toLowerCase() === 'liability' && f(a))?.id
+      const customerCredit =
+        findLiability((a: any) => String(a.sub_type || "").toLowerCase() === "customer_credit") ||
+        find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_credit") ||
+        findLiability((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") ||
+        find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") ||
+        find((a: any) => String(a.account_name || "").toLowerCase().includes("سلف العملاء")) ||
+        find((a: any) => String(a.account_name || "").toLowerCase().includes("رصيد العملاء"))
 
       // 🛡️ تحقق صريح: إذا لم يُوجد حساب رصيد العملاء الدائن في دليل الحسابات نوقف العملية
       // هذا يمنع إنشاء قيد محاسبي غير متوازن بدون سطر المدين
