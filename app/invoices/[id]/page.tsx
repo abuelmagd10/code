@@ -488,31 +488,8 @@ export default function InvoiceDetailPage() {
           .maybeSingle()
         setExistingShipment(shipmentData)
 
-        try {
-          const companyId = (invoiceData as any)?.company_id || (invoiceData as any)?.companies?.id || await getActiveCompanyId(supabase)
-          if (companyId) {
-            const { data: nextByNumber } = await supabase
-              .from("invoices")
-              .select("id, invoice_number")
-              .eq("company_id", companyId)
-              .gt("invoice_number", invoiceData.invoice_number)
-              .order("invoice_number", { ascending: true })
-              .limit(1)
-            setNextInvoiceId((nextByNumber && nextByNumber[0]?.id) || null)
-
-            const { data: prevByNumber } = await supabase
-              .from("invoices")
-              .select("id, invoice_number")
-              .eq("company_id", companyId)
-              .lt("invoice_number", invoiceData.invoice_number)
-              .order("invoice_number", { ascending: false })
-              .limit(1)
-            setPrevInvoiceId((prevByNumber && prevByNumber[0]?.id) || null)
-          } else {
-            setNextInvoiceId(null)
-            setPrevInvoiceId(null)
-          }
-        } catch { }
+        // 🔐 تحميل التنقل يُؤجَّل إلى useEffect منفصل يعتمد على الفاتورة + صلاحيات المستخدم
+        // (انظر useEffect [invoice, isPrivilegedUser, userBranchId] أدناه)
       }
     } catch (error) {
       console.error("Error loading invoice:", error)
@@ -544,6 +521,45 @@ export default function InvoiceDetailPage() {
       }
     },
   })
+
+  // 🔐 تحميل روابط التنقل (السابق / التالي) مع فلتر الفرع للأدوار المقيّدة
+  useEffect(() => {
+    if (!invoice) return
+    ;(async () => {
+      try {
+        const companyId = (invoice as any).company_id || await getActiveCompanyId(supabase)
+        if (!companyId) { setNextInvoiceId(null); setPrevInvoiceId(null); return }
+
+        // الأدوار المميزة ترى جميع فواتير الشركة - غيرها مقيّدة بفرعها
+        const branchFilter = isPrivilegedUser ? null : (userBranchId || null)
+
+        let nextQ = supabase
+          .from("invoices")
+          .select("id, invoice_number")
+          .eq("company_id", companyId)
+          .gt("invoice_number", (invoice as any).invoice_number)
+          .order("invoice_number", { ascending: true })
+          .limit(1)
+        if (branchFilter) nextQ = nextQ.eq("branch_id", branchFilter)
+
+        let prevQ = supabase
+          .from("invoices")
+          .select("id, invoice_number")
+          .eq("company_id", companyId)
+          .lt("invoice_number", (invoice as any).invoice_number)
+          .order("invoice_number", { ascending: false })
+          .limit(1)
+        if (branchFilter) prevQ = prevQ.eq("branch_id", branchFilter)
+
+        const [{ data: nextData }, { data: prevData }] = await Promise.all([nextQ, prevQ])
+        setNextInvoiceId((nextData && nextData[0]?.id) || null)
+        setPrevInvoiceId((prevData && prevData[0]?.id) || null)
+      } catch {
+        setNextInvoiceId(null)
+        setPrevInvoiceId(null)
+      }
+    })()
+  }, [invoice, isPrivilegedUser, userBranchId])
 
   useEffect(() => {
     (async () => {
