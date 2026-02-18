@@ -175,6 +175,8 @@ export default function InvoiceDetailPage() {
   // 🔐 صرف رصيد العميل الدائن من الفاتورة
   // 💰 الرصيد الفعلي من جدول customer_credits (المصدر الموثوق)
   const [customerCreditFromDB, setCustomerCreditFromDB] = useState(0)
+  // 💸 إجمالي الرصيد الدائن الذي صُرف فعلاً للعميل (used_amount) - مرجع توضيحي
+  const [customerCreditDisbursed, setCustomerCreditDisbursed] = useState(0)
   const [showCustomerRefund, setShowCustomerRefund] = useState(false)
   const [refundAmount, setRefundAmount] = useState(0)
   const [refundCurrency, setRefundCurrency] = useState('EGP')
@@ -452,14 +454,21 @@ export default function InvoiceDetailPage() {
               .select("amount, used_amount, applied_amount, status")
               .eq("company_id", invoiceData.company_id)
               .eq("customer_id", invoiceData.customer_id)
-              .eq("status", "active")
+            // الرصيد المتاح (active فقط)
             const totalCreditBalance = (creditsData || []).reduce((sum: number, c: any) => {
+              if (String(c.status || '') !== 'active') return sum
               const available = Number(c.amount || 0) - Number(c.used_amount || 0) - Number(c.applied_amount || 0)
               return sum + Math.max(0, available)
             }, 0)
+            // إجمالي المُصرَف (used_amount عبر جميع السجلات)
+            const totalDisbursed = (creditsData || []).reduce((sum: number, c: any) => {
+              return sum + Number(c.used_amount || 0)
+            }, 0)
             setCustomerCreditFromDB(totalCreditBalance)
+            setCustomerCreditDisbursed(totalDisbursed)
           } catch {
             setCustomerCreditFromDB(0)
+            setCustomerCreditDisbursed(0)
           }
         }
 
@@ -3163,6 +3172,26 @@ export default function InvoiceDetailPage() {
                 </div>
               </Card>
             </div>
+
+            {/* مرجع توضيحي: الرصيد الدائن المُصرَف للعميل */}
+            {customerCreditDisbursed > 0 && (
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+                <div className="p-2 bg-purple-100 dark:bg-purple-800 rounded-lg shrink-0">
+                  <span className="text-lg">💸</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">
+                    {appLang === 'en' ? 'Disbursed Customer Credit (Reference)' : 'رصيد دائن مُصرَف للعميل (مرجع توضيحي)'}
+                  </p>
+                  <p className="text-sm font-bold text-purple-700 dark:text-purple-300">
+                    {currencySymbol}{customerCreditDisbursed.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <span className="text-xs text-purple-500 dark:text-purple-400 shrink-0 italic">
+                  {appLang === 'en' ? 'Already refunded to customer' : 'تم ردّه للعميل مسبقاً'}
+                </span>
+              </div>
+            )}
 
             {/* جدول المدفوعات */}
             {permPayView && (

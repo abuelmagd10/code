@@ -143,7 +143,7 @@ export default function CustomersPage() {
   }, [])
 
   const [accounts, setAccounts] = useState<{ id: string; account_code: string; account_name: string; account_type: string }[]>([])
-  const [balances, setBalances] = useState<Record<string, { advance: number; applied: number; available: number; credits?: number }>>({})
+  const [balances, setBalances] = useState<Record<string, { advance: number; applied: number; available: number; credits?: number; disbursed?: number }>>({})
   // الذمم المدينة لكل عميل (المبالغ المستحقة من الفواتير)
   const [receivables, setReceivables] = useState<Record<string, number>>({})
   // تتبع العملاء الذين لديهم فواتير نشطة (تمنع الحذف والتعديل)
@@ -403,12 +403,11 @@ export default function CustomersPage() {
         .from("advance_applications")
         .select("customer_id, amount_applied")
         .eq("company_id", activeCompanyId)
-      // ✅ جلب أرصدة العملاء الدائنة من المرتجعات
+      // ✅ جلب أرصدة العملاء الدائنة من المرتجعات (جميع الحالات لحساب المُصرَف أيضاً)
       const { data: customerCredits } = await supabase
         .from("customer_credits")
         .select("customer_id, amount, used_amount, status")
         .eq("company_id", activeCompanyId)
-        .eq("status", "active")
 
       const advMap: Record<string, number> = {}
         ; (pays || []).forEach((p: any) => {
@@ -426,23 +425,31 @@ export default function CustomersPage() {
           const amt = Number(a.amount_applied || 0)
           appMap[cid] = (appMap[cid] || 0) + amt
         })
-      // ✅ حساب أرصدة العملاء الدائنة المتاحة (من المرتجعات)
+      // ✅ حساب أرصدة العملاء الدائنة المتاحة والمُصرَفة (من المرتجعات)
       const creditMap: Record<string, number> = {}
+      const disbursedMap: Record<string, number> = {}
         ; (customerCredits || []).forEach((c: any) => {
           const cid = String(c.customer_id || "")
           if (!cid) return
-          const available = Math.max(Number(c.amount || 0) - Number(c.used_amount || 0), 0)
-          creditMap[cid] = (creditMap[cid] || 0) + available
+          // المتاح: فقط من السجلات النشطة
+          if (String(c.status || '') === 'active') {
+            const available = Math.max(Number(c.amount || 0) - Number(c.used_amount || 0), 0)
+            creditMap[cid] = (creditMap[cid] || 0) + available
+          }
+          // المُصرَف: من جميع السجلات
+          const usedAmt = Number(c.used_amount || 0)
+          if (usedAmt > 0) disbursedMap[cid] = (disbursedMap[cid] || 0) + usedAmt
         })
 
       const allIds = Array.from(new Set([...(allCustomers || []).map((c: any) => String(c.id || ""))]))
-      const out: Record<string, { advance: number; applied: number; available: number; credits: number }> = {}
+      const out: Record<string, { advance: number; applied: number; available: number; credits: number; disbursed: number }> = {}
       allIds.forEach((id) => {
         const adv = Number(advMap[id] || 0)
         const ap = Number(appMap[id] || 0)
         const credits = Number(creditMap[id] || 0)
+        const disbursed = Number(disbursedMap[id] || 0)
         // الرصيد المتاح = السلف المتبقية + أرصدة المرتجعات
-        out[id] = { advance: adv, applied: ap, available: Math.max(adv - ap, 0) + credits, credits }
+        out[id] = { advance: adv, applied: ap, available: Math.max(adv - ap, 0) + credits, credits, disbursed }
       })
       setBalances(out)
 
@@ -907,12 +914,20 @@ export default function CustomersPage() {
       align: 'right',
       hidden: 'sm',
       format: (_, row) => {
-        const b = balances[row.id] || { advance: 0, applied: 0, available: 0, credits: 0 }
+        const b = balances[row.id] || { advance: 0, applied: 0, available: 0, credits: 0, disbursed: 0 }
         const available = b.available
+        const disbursed = b.disbursed || 0
         return (
-          <span className={available > 0 ? "text-green-600 dark:text-green-400 font-semibold" : "text-gray-600 dark:text-gray-400"}>
-            {available.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-          </span>
+          <div className="flex flex-col items-end gap-0.5">
+            <span className={available > 0 ? "text-green-600 dark:text-green-400 font-semibold" : "text-gray-600 dark:text-gray-400"}>
+              {available.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            </span>
+            {disbursed > 0 && (
+              <span className="text-xs text-purple-500 dark:text-purple-400 flex items-center gap-1" title={appLang === 'en' ? 'Disbursed credit (reference)' : 'رصيد مُصرَف (مرجع)'}>
+                💸 {disbursed.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+            )}
+          </div>
         )
       }
     },

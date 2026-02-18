@@ -102,6 +102,8 @@ export default function SalesOrderDetailPage() {
   const [linkedInvoices, setLinkedInvoices] = useState<LinkedInvoice[]>([])
   const [linkedPayments, setLinkedPayments] = useState<LinkedPayment[]>([])
   const [linkedReturns, setLinkedReturns] = useState<LinkedReturn[]>([])
+  // 💸 إجمالي الرصيد الدائن المُصرَف للعميل (مرجع توضيحي)
+  const [customerCreditDisbursed, setCustomerCreditDisbursed] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [permUpdate, setPermUpdate] = useState(false)
   const [permReadInvoices, setPermReadInvoices] = useState(false)
@@ -205,6 +207,19 @@ export default function SalesOrderDetailPage() {
 
       const uniqueInvoices = invoicesData || []
       setLinkedInvoices(uniqueInvoices)
+
+      // 💸 تحميل الرصيد الدائن المُصرَف للعميل (مرجع توضيحي)
+      if (orderData.customer_id && orderData.company_id) {
+        try {
+          const { data: creditsData } = await supabase
+            .from("customer_credits")
+            .select("used_amount")
+            .eq("company_id", orderData.company_id)
+            .eq("customer_id", orderData.customer_id)
+          const totalDisbursed = (creditsData || []).reduce((sum: number, c: any) => sum + Number(c.used_amount || 0), 0)
+          setCustomerCreditDisbursed(totalDisbursed)
+        } catch { setCustomerCreditDisbursed(0) }
+      }
 
       // Load payments for all linked invoices
       if (uniqueInvoices.length > 0) {
@@ -479,6 +494,26 @@ export default function SalesOrderDetailPage() {
                   </div>
                 </Card>
               </div>
+
+              {/* مرجع توضيحي: الرصيد الدائن المُصرَف للعميل */}
+              {customerCreditDisbursed > 0 && (
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 no-print">
+                  <div className="p-2 bg-purple-100 dark:bg-purple-800 rounded-lg shrink-0">
+                    <span className="text-lg">💸</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">
+                      {appLang === 'en' ? 'Disbursed Customer Credit (Reference)' : 'رصيد دائن مُصرَف للعميل (مرجع توضيحي)'}
+                    </p>
+                    <p className="text-sm font-bold text-purple-700 dark:text-purple-300">
+                      {symbol}{customerCreditDisbursed.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <span className="text-xs text-purple-500 dark:text-purple-400 shrink-0 italic">
+                    {appLang === 'en' ? 'Already refunded to customer' : 'تم ردّه للعميل مسبقاً'}
+                  </span>
+                </div>
+              )}
 
               {/* Order Info & Customer */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
