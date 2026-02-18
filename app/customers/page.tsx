@@ -269,23 +269,25 @@ export default function CustomersPage() {
           // 🔐 تحميل الفروع ومراكز التكلفة (للأدوار المميزة فقط)
           const PRIV_ROLES = ['owner', 'admin', 'general_manager']
           if (PRIV_ROLES.includes(role.toLowerCase())) {
-            // تحميل الفروع
+            // تحميل الفروع (branch_name هو اسم العمود الصحيح)
             const { data: branchesData } = await supabase
               .from("branches")
-              .select("id, name")
-              .eq("company_id", activeCompanyId)
-              .eq("status", "active")
-              .order("name")
-            setAllBranches(branchesData || [])
-
-            // تحميل مراكز التكلفة
-            const { data: costCentersData } = await supabase
-              .from("cost_centers")
-              .select("id, name, code")
+              .select("id, branch_name")
               .eq("company_id", activeCompanyId)
               .eq("is_active", true)
-              .order("name")
-            setAllCostCenters(costCentersData || [])
+              .order("branch_name")
+            // تحويل branch_name إلى name للتوافق مع الواجهة
+            setAllBranches((branchesData || []).map((b: { id: string; branch_name: string | null }) => ({ id: b.id, name: b.branch_name || '' })))
+
+            // تحميل مراكز التكلفة (cost_center_name و cost_center_code هما اسما العمود الصحيحان)
+            const { data: costCentersData } = await supabase
+              .from("cost_centers")
+              .select("id, cost_center_name, cost_center_code")
+              .eq("company_id", activeCompanyId)
+              .eq("is_active", true)
+              .order("cost_center_name")
+            // تحويل الأسماء للتوافق مع الواجهة
+            setAllCostCenters((costCentersData || []).map((cc: { id: string; cost_center_name: string | null; cost_center_code: string | null }) => ({ id: cc.id, name: cc.cost_center_name || '', code: cc.cost_center_code || '' })))
           }
         }
       }
