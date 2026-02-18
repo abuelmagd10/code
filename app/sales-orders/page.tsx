@@ -512,6 +512,9 @@ function SalesOrdersContent() {
           const returnedAmount = Number(linkedInvoice?.returned_amount || 0)
           const originalTotal = Number(linkedInvoice?.original_total || linkedInvoice?.total_amount || 0)
 
+          // ✅ حساب المستحق الفعلي بعد خصم المرتجع
+          const effectiveOwed = Math.max(0, originalTotal - returnedAmount)
+
           // ✅ تحديد ما إذا كان المرتجع كامل (بناءً على original_total)
           const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
           const hasPartialReturn = returnedAmount > 0 && returnedAmount < originalTotal
@@ -525,7 +528,8 @@ function SalesOrdersContent() {
             paymentStatus = 'draft' // حالة مسودة/قيد الإنشاء
           } else if (isFullyReturned) {
             paymentStatus = 'fully_returned'
-          } else if (paidAmount >= originalTotal && originalTotal > 0) {
+          } else if (paidAmount >= effectiveOwed && effectiveOwed > 0) {
+            // ✅ المدفوع يغطي المستحق الفعلي (بعد خصم المرتجع) = مدفوعة بالكامل
             paymentStatus = 'paid'
           } else if (paidAmount > 0) {
             paymentStatus = 'partially_paid'

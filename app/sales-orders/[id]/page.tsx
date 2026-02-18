@@ -282,16 +282,14 @@ export default function SalesOrderDetailPage() {
   }
 
   // Calculate summary totals
-  // 🔧 إصلاح: حساب المرتجعات من invoices.returned_amount (مثل أوامر الشراء)
+  // ✅ total_amount هو الإجمالي الأصلي (لا يتغير بالمرتجعات)
   const summary = useMemo(() => {
-    // إجمالي الفواتير = total_amount الحالي + returned_amount (الإجمالي الأصلي)
+    // إجمالي الفواتير = total_amount (الإجمالي الأصلي)
     const totalInvoiced = linkedInvoices.reduce((sum, inv) => {
-      const currentTotal = Number(inv.total_amount || 0)
-      const returnedAmount = Number((inv as any).returned_amount || 0)
-      return sum + currentTotal + returnedAmount // الإجمالي الأصلي
+      return sum + Number(inv.total_amount || 0)
     }, 0)
     const totalPaid = linkedPayments.reduce((sum, pay) => sum + (pay.amount || 0), 0)
-    // المرتجعات من invoices.returned_amount (الطريقة الصحيحة)
+    // المرتجعات من invoices.returned_amount
     const totalReturned = linkedInvoices.reduce((sum, inv) => sum + Number((inv as any).returned_amount || 0), 0)
     const netRemaining = Math.max(0, totalInvoiced - totalPaid - totalReturned)
     return { totalInvoiced, totalPaid, totalReturned, netRemaining }
@@ -638,7 +636,8 @@ export default function SalesOrderDetailPage() {
                           <tbody>
                             {linkedInvoices.map((inv) => {
                               const returnedAmount = Number(inv.returned_amount || 0)
-                              const originalTotal = inv.total_amount + returnedAmount
+                              // ✅ total_amount هو الإجمالي الأصلي (لا يتغير بالمرتجعات)
+                              const originalTotal = Number(inv.total_amount || 0)
                               return (
                                 <tr key={inv.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <td className="py-3 px-2">
