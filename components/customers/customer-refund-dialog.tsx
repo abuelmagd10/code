@@ -18,6 +18,7 @@ const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
 interface Branch {
   id: string
   name: string
+  defaultCostCenterId?: string | null
 }
 
 interface CostCenter {
@@ -106,6 +107,20 @@ export function CustomerRefundDialog({
       setSelectedCostCenterId(userCostCenterId || '')
     }
   }, [open, userBranchId, userCostCenterId])
+
+  // 🔄 تحديد مركز التكلفة تلقائياً عند تغيير الفرع (للأدوار المميزة فقط)
+  useEffect(() => {
+    if (isPrivilegedUser && selectedBranchId && selectedBranchId !== 'none' && branches) {
+      const selectedBranch = branches.find(b => b.id === selectedBranchId)
+      if (selectedBranch?.defaultCostCenterId) {
+        // تحقق من أن مركز التكلفة موجود في القائمة
+        const costCenterExists = costCenters?.some(cc => cc.id === selectedBranch.defaultCostCenterId)
+        if (costCenterExists) {
+          setSelectedCostCenterId(selectedBranch.defaultCostCenterId)
+        }
+      }
+    }
+  }, [selectedBranchId, branches, costCenters, isPrivilegedUser])
 
 
 

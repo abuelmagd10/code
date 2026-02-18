@@ -166,7 +166,7 @@ export default function CustomersPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
 
   // 🔐 قوائم الفروع ومراكز التكلفة (للأدوار المميزة - لنافذة صرف الرصيد)
-  const [allBranches, setAllBranches] = useState<{ id: string; name: string }[]>([])
+  const [allBranches, setAllBranches] = useState<{ id: string; name: string; defaultCostCenterId?: string | null }[]>([])
   const [allCostCenters, setAllCostCenters] = useState<{ id: string; name: string; code?: string }[]>([])
 
   // Pagination state
@@ -269,15 +269,19 @@ export default function CustomersPage() {
           // 🔐 تحميل الفروع ومراكز التكلفة (للأدوار المميزة فقط)
           const PRIV_ROLES = ['owner', 'admin', 'general_manager']
           if (PRIV_ROLES.includes(role.toLowerCase())) {
-            // تحميل الفروع (branch_name هو اسم العمود الصحيح)
+            // تحميل الفروع (branch_name هو اسم العمود الصحيح + default_cost_center_id للربط التلقائي)
             const { data: branchesData } = await supabase
               .from("branches")
-              .select("id, branch_name")
+              .select("id, branch_name, default_cost_center_id")
               .eq("company_id", activeCompanyId)
               .eq("is_active", true)
               .order("branch_name")
             // تحويل branch_name إلى name للتوافق مع الواجهة
-            setAllBranches((branchesData || []).map((b: { id: string; branch_name: string | null }) => ({ id: b.id, name: b.branch_name || '' })))
+            setAllBranches((branchesData || []).map((b: { id: string; branch_name: string | null; default_cost_center_id: string | null }) => ({
+              id: b.id,
+              name: b.branch_name || '',
+              defaultCostCenterId: b.default_cost_center_id
+            })))
 
             // تحميل مراكز التكلفة (cost_center_name و cost_center_code هما اسما العمود الصحيحان)
             const { data: costCentersData } = await supabase
