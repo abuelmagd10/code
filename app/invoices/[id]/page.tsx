@@ -170,6 +170,8 @@ export default function InvoiceDetailPage() {
   const [linkedSalesOrder, setLinkedSalesOrder] = useState<{ id: string; so_number: string } | null>(null)
 
   // 🔐 صرف رصيد العميل الدائن من الفاتورة
+  // 💰 الرصيد الفعلي من جدول customer_credits (المصدر الموثوق)
+  const [customerCreditFromDB, setCustomerCreditFromDB] = useState(0)
   const [showCustomerRefund, setShowCustomerRefund] = useState(false)
   const [refundAmount, setRefundAmount] = useState(0)
   const [refundCurrency, setRefundCurrency] = useState('EGP')
@@ -189,7 +191,7 @@ export default function InvoiceDetailPage() {
   const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
   const isPrivilegedUser = PRIVILEGED_ROLES.includes(currentUserRole)
   // 🔐 الأدوار التي يمكنها رؤية وتنفيذ زر صرف رصيد العميل
-  const CREDIT_REFUND_ROLES = ['owner', 'admin', 'general_manager', 'accountant']
+  const CREDIT_REFUND_ROLES = ['owner', 'admin', 'general_manager', 'accountant', 'manager']
   const canSeeCreditRefundButton = CREDIT_REFUND_ROLES.includes(currentUserRole) || permPayWrite
 
   // Currency symbols map
@@ -431,6 +433,25 @@ export default function InvoiceDetailPage() {
           .eq("invoice_id", invoiceId)
           .order("payment_date", { ascending: false })
         setInvoicePayments(paymentsData || [])
+
+        // 💰 تحميل رصيد العميل الدائن من جدول customer_credits (المصدر الموثوق)
+        if (invoiceData.customer_id && invoiceData.company_id) {
+          try {
+            const { data: creditsData } = await supabase
+              .from("customer_credits")
+              .select("amount, used_amount, applied_amount, status")
+              .eq("company_id", invoiceData.company_id)
+              .eq("customer_id", invoiceData.customer_id)
+              .eq("status", "active")
+            const totalCreditBalance = (creditsData || []).reduce((sum: number, c: any) => {
+              const available = Number(c.amount || 0) - Number(c.used_amount || 0) - Number(c.applied_amount || 0)
+              return sum + Math.max(0, available)
+            }, 0)
+            setCustomerCreditFromDB(totalCreditBalance)
+          } catch {
+            setCustomerCreditFromDB(0)
+          }
+        }
 
         // Load returns (sales_returns) for this invoice
         const { data: returnsData } = await supabase
@@ -2486,8 +2507,12 @@ export default function InvoiceDetailPage() {
   const originalInvoiceTotal = invoice.total_amount + totalReturnsAmount
   const netInvoiceAfterReturns = originalInvoiceTotal - totalReturnsAmount  // = invoice.total_amount
   // 🛡️ منع الصرف المتكرر: الرصيد المتاح = (المدفوع - صافي الفاتورة) - المصروف مسبقاً
-  const grossCreditAmount = Math.max(0, totalPaidAmount - netInvoiceAfterReturns)
-  const customerCreditAmount = Math.max(0, grossCreditAmount - totalRefundedToCustomer)
+  // نستخدم invoice.paid_amount كمصدر احتياطي إذا كانت الدفعات غير مرتبطة بـ invoice_id
+  const effectivePaidAmount = totalPaidAmount > 0 ? totalPaidAmount : Number(invoice.paid_amount || 0)
+  const grossCreditAmount = Math.max(0, effectivePaidAmount - netInvoiceAfterReturns)
+  const calculatedCreditAmount = Math.max(0, grossCreditAmount - totalRefundedToCustomer)
+  // 💰 المصدر الموثوق: أعلى قيمة بين الحساب التقديري وما هو مسجل في customer_credits
+  const customerCreditAmount = Math.max(calculatedCreditAmount, customerCreditFromDB)
 
   // Derive display breakdowns similar to creation page
   const safeItems = Array.isArray(items) ? items : []
