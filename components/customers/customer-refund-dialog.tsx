@@ -157,9 +157,13 @@ export function CustomerRefundDialog({
         refundAmount :
         Math.round(refundAmount * refundExRate.rate * 10000) / 10000
 
-      // 🔐 تحديد الفرع ومركز التكلفة للقيد
-      const finalBranchId = isPrivilegedUser ? (selectedBranchId || null) : (userBranchId || null)
-      const finalCostCenterId = isPrivilegedUser ? (selectedCostCenterId || null) : (userCostCenterId || null)
+      // 🔐 تحديد الفرع ومركز التكلفة للقيد (قيمة "none" تعني بدون فرع/مركز تكلفة)
+      const finalBranchId = isPrivilegedUser
+        ? (selectedBranchId && selectedBranchId !== 'none' ? selectedBranchId : null)
+        : (userBranchId || null)
+      const finalCostCenterId = isPrivilegedUser
+        ? (selectedCostCenterId && selectedCostCenterId !== 'none' ? selectedCostCenterId : null)
+        : (userCostCenterId || null)
 
       // ===== إنشاء قيد صرف رصيد العميل =====
       // القيد المحاسبي:
@@ -396,7 +400,7 @@ export function CustomerRefundDialog({
                       <SelectValue placeholder={appLang === 'en' ? 'Select branch' : 'اختر الفرع'} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">{appLang === 'en' ? '-- No Branch --' : '-- بدون فرع --'}</SelectItem>
+                      <SelectItem value="none">{appLang === 'en' ? '-- No Branch --' : '-- بدون فرع --'}</SelectItem>
                       {branches.map((branch) => (
                         <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
                       ))}
@@ -412,7 +416,7 @@ export function CustomerRefundDialog({
                       <SelectValue placeholder={appLang === 'en' ? 'Select cost center' : 'اختر مركز التكلفة'} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">{appLang === 'en' ? '-- No Cost Center --' : '-- بدون مركز تكلفة --'}</SelectItem>
+                      <SelectItem value="none">{appLang === 'en' ? '-- No Cost Center --' : '-- بدون مركز تكلفة --'}</SelectItem>
                       {costCenters.map((cc) => (
                         <SelectItem key={cc.id} value={cc.id}>{cc.code ? `${cc.code} - ` : ''}{cc.name}</SelectItem>
                       ))}
