@@ -134,6 +134,9 @@ export default function PaymentsPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [customerPayments, setCustomerPayments] = useState<Payment[]>([])
   const [supplierPayments, setSupplierPayments] = useState<Payment[]>([])
+  // 🔐 المدفوعات الخام (قبل الفلترة بناءً على فرع الفاتورة) - للمستخدمين العاديين
+  const [rawCustomerPayments, setRawCustomerPayments] = useState<Payment[]>([])
+  const [rawSupplierPayments, setRawSupplierPayments] = useState<Payment[]>([])
   const [invoiceNumbers, setInvoiceNumbers] = useState<Record<string, string>>({})
   const [billNumbers, setBillNumbers] = useState<Record<string, string>>({})
   const [poNumbers, setPoNumbers] = useState<Record<string, string>>({})
@@ -144,6 +147,8 @@ export default function PaymentsPage() {
   const [invoiceToSalesOrderMap, setInvoiceToSalesOrderMap] = useState<Record<string, { id: string; so_number: string }>>({}) // Map invoice_id -> sales_order
   const [invoiceBranchMap, setInvoiceBranchMap] = useState<Record<string, string>>({}) // Map invoice_id -> branch_id
   const [billBranchMap, setBillBranchMap] = useState<Record<string, string>>({}) // Map bill_id -> branch_id
+  // 🔐 حفظ سياق الفلترة للاستخدام في useEffect لاحقاً
+  const [pendingBranchFilter, setPendingBranchFilter] = useState<{ userBranchId: string | null; isPrivileged: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
 
   // Currency support - using CurrencyService
@@ -527,56 +532,68 @@ export default function PaymentsPage() {
 
         // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
         const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
-        const canFilterByBranch = PRIVILEGED_ROLES.includes(currentRole.toLowerCase())
+        const isPrivileged = PRIVILEGED_ROLES.includes(currentRole.toLowerCase())
         const selectedBranchId = branchFilter.getFilteredBranchId()
+        const userBranchId = visibilityRules.branchId || null
 
-        // جلب مدفوعات العملاء مع فلترة الفرع
+        // جلب مدفوعات العملاء
         let custPaysQuery = supabase
           .from("payments")
           .select("*, branches:branch_id(name)")
           .eq("company_id", activeCompanyId)
           .not("customer_id", "is", null)
 
-        // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
-        if (canFilterByBranch && selectedBranchId) {
-          // المستخدم المميز اختار فرعاً معيناً
+        // 🔐 المستخدم المميز: يمكنه فلترة بفرع معين (اختياري)
+        // المستخدم العادي: نجلب كل المدفوعات ونفلترها لاحقاً بناءً على فرع الفاتورة
+        if (isPrivileged && selectedBranchId) {
           custPaysQuery = custPaysQuery.eq("branch_id", selectedBranchId)
-        } else if (!canFilterByBranch && visibilityRules.filterByBranch && visibilityRules.branchId) {
-          // المستخدم العادي - فلترة بفرعه فقط
-          custPaysQuery = custPaysQuery.eq("branch_id", visibilityRules.branchId)
         }
-        // else: المستخدم المميز بدون فلتر = جميع الفروع
+        // ملاحظة: للمستخدم العادي، لا نفلتر هنا - سنفلتر لاحقاً بناءً على فرع الفاتورة
 
         const { data: custPays, error: custPaysErr } = await custPaysQuery
           .order("payment_date", { ascending: false })
         if (custPaysErr) {
           toastActionError(toast, "الجلب", "مدفوعات العملاء", "تعذر جلب مدفوعات العملاء")
         }
-        setCustomerPayments(custPays || [])
 
-        // جلب مدفوعات الموردين مع فلترة الفرع
+        // 🔐 للمستخدم العادي: حفظ المدفوعات الخام للفلترة لاحقاً
+        if (!isPrivileged && userBranchId) {
+          setRawCustomerPayments(custPays || [])
+          setPendingBranchFilter({ userBranchId, isPrivileged: false })
+          // لا نعرض شيء حتى يتم الفلترة بناءً على فرع الفاتورة
+          setCustomerPayments([])
+        } else {
+          setCustomerPayments(custPays || [])
+          setRawCustomerPayments([])
+        }
+
+        // جلب مدفوعات الموردين
         let suppPaysQuery = supabase
           .from("payments")
           .select("*, branches:branch_id(name)")
           .eq("company_id", activeCompanyId)
           .not("supplier_id", "is", null)
 
-        // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
-        if (canFilterByBranch && selectedBranchId) {
-          // المستخدم المميز اختار فرعاً معيناً
+        // 🔐 المستخدم المميز: يمكنه فلترة بفرع معين (اختياري)
+        if (isPrivileged && selectedBranchId) {
           suppPaysQuery = suppPaysQuery.eq("branch_id", selectedBranchId)
-        } else if (!canFilterByBranch && visibilityRules.filterByBranch && visibilityRules.branchId) {
-          // المستخدم العادي - فلترة بفرعه فقط
-          suppPaysQuery = suppPaysQuery.eq("branch_id", visibilityRules.branchId)
         }
-        // else: المستخدم المميز بدون فلتر = جميع الفروع
 
         const { data: suppPays, error: suppPaysErr } = await suppPaysQuery
           .order("payment_date", { ascending: false })
         if (suppPaysErr) {
           toastActionError(toast, "الجلب", "مدفوعات الموردين", "تعذر جلب مدفوعات الموردين")
         }
-        setSupplierPayments(suppPays || [])
+
+        // 🔐 للمستخدم العادي: حفظ المدفوعات الخام للفلترة لاحقاً
+        if (!isPrivileged && userBranchId) {
+          setRawSupplierPayments(suppPays || [])
+          // لا نعرض شيء حتى يتم الفلترة بناءً على فرع الفاتورة
+          setSupplierPayments([])
+        } else {
+          setSupplierPayments(suppPays || [])
+          setRawSupplierPayments([])
+        }
 
         // 🔐 جلب قائمة الفروع للعرض في الجداول
         const { data: branchesData } = await supabase
@@ -624,40 +641,56 @@ export default function PaymentsPage() {
       const visibilityRules = buildDataVisibilityFilter(userContext)
 
       const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
-      const canFilterByBranch = PRIVILEGED_ROLES.includes((userContext.role || '').toLowerCase())
+      const isPrivileged = PRIVILEGED_ROLES.includes((userContext.role || '').toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
+      const userBranchId = visibilityRules.branchId || null
 
-      // جلب مدفوعات العملاء مع فلترة الفرع
+      // جلب مدفوعات العملاء
       let custPaysQuery = supabase
         .from("payments")
         .select("*, branches:branch_id(name)")
         .eq("company_id", companyId)
         .not("customer_id", "is", null)
 
-      if (canFilterByBranch && selectedBranchId) {
+      // 🔐 المستخدم المميز: يمكنه فلترة بفرع معين (اختياري)
+      if (isPrivileged && selectedBranchId) {
         custPaysQuery = custPaysQuery.eq("branch_id", selectedBranchId)
-      } else if (!canFilterByBranch && visibilityRules.filterByBranch && visibilityRules.branchId) {
-        custPaysQuery = custPaysQuery.eq("branch_id", visibilityRules.branchId)
       }
 
       const { data: custPays } = await custPaysQuery.order("payment_date", { ascending: false })
-      setCustomerPayments(custPays || [])
 
-      // جلب مدفوعات الموردين مع فلترة الفرع
+      // 🔐 للمستخدم العادي: حفظ المدفوعات الخام للفلترة لاحقاً
+      if (!isPrivileged && userBranchId) {
+        setRawCustomerPayments(custPays || [])
+        setPendingBranchFilter({ userBranchId, isPrivileged: false })
+        setCustomerPayments([])
+      } else {
+        setCustomerPayments(custPays || [])
+        setRawCustomerPayments([])
+      }
+
+      // جلب مدفوعات الموردين
       let suppPaysQuery = supabase
         .from("payments")
         .select("*, branches:branch_id(name)")
         .eq("company_id", companyId)
         .not("supplier_id", "is", null)
 
-      if (canFilterByBranch && selectedBranchId) {
+      // 🔐 المستخدم المميز: يمكنه فلترة بفرع معين (اختياري)
+      if (isPrivileged && selectedBranchId) {
         suppPaysQuery = suppPaysQuery.eq("branch_id", selectedBranchId)
-      } else if (!canFilterByBranch && visibilityRules.filterByBranch && visibilityRules.branchId) {
-        suppPaysQuery = suppPaysQuery.eq("branch_id", visibilityRules.branchId)
       }
 
       const { data: suppPays } = await suppPaysQuery.order("payment_date", { ascending: false })
-      setSupplierPayments(suppPays || [])
+
+      // 🔐 للمستخدم العادي: حفظ المدفوعات الخام للفلترة لاحقاً
+      if (!isPrivileged && userBranchId) {
+        setRawSupplierPayments(suppPays || [])
+        setSupplierPayments([])
+      } else {
+        setSupplierPayments(suppPays || [])
+        setRawSupplierPayments([])
+      }
     } catch (err) {
       console.error("Error reloading payments with filters:", err)
     }
@@ -677,14 +710,21 @@ export default function PaymentsPage() {
   })
 
   // Load invoice numbers, branch_ids and related sales orders for displayed customer payments
+  // 🔐 للمستخدم العادي: نجلب بيانات الفواتير من المدفوعات الخام ثم نفلتر
   useEffect(() => {
     ; (async () => {
       try {
-        const ids = Array.from(new Set((customerPayments || []).map((p) => p.invoice_id).filter(Boolean))) as string[]
+        // استخدام المدفوعات الخام للمستخدم العادي، أو المدفوعات المفلترة للمستخدم المميز
+        const paymentsToProcess = rawCustomerPayments.length > 0 ? rawCustomerPayments : customerPayments
+        const ids = Array.from(new Set((paymentsToProcess || []).map((p) => p.invoice_id).filter(Boolean))) as string[]
         if (!ids.length) {
           setInvoiceNumbers({})
           setInvoiceToSalesOrderMap({})
           setInvoiceBranchMap({})
+          // 🔐 للمستخدم العادي: إذا لا توجد فواتير، نعرض قائمة فارغة
+          if (rawCustomerPayments.length > 0 && pendingBranchFilter) {
+            setCustomerPayments([])
+          }
           return
         }
         // ✅ جلب branch_id مع بيانات الفاتورة لعرض الفرع الصحيح في قائمة المدفوعات
@@ -699,6 +739,21 @@ export default function PaymentsPage() {
         })
         setInvoiceNumbers(map)
         setInvoiceBranchMap(branchMap)
+
+        // 🔐 للمستخدم العادي: فلترة المدفوعات بناءً على فرع الفاتورة
+        if (rawCustomerPayments.length > 0 && pendingBranchFilter && pendingBranchFilter.userBranchId) {
+          const userBranchId = pendingBranchFilter.userBranchId
+          const filteredPayments = rawCustomerPayments.filter((p) => {
+            // 1. إذا الدفعة لها branch_id ويطابق فرع المستخدم
+            if (p.branch_id === userBranchId) return true
+            // 2. إذا الفاتورة المرتبطة من فرع المستخدم
+            if (p.invoice_id && branchMap[p.invoice_id] === userBranchId) return true
+            // 3. إذا الدفعة بدون branch_id والفاتورة بدون branch_id (fallback)
+            if (!p.branch_id && p.invoice_id && !branchMap[p.invoice_id]) return true
+            return false
+          })
+          setCustomerPayments(filteredPayments)
+        }
 
         // جلب بيانات أوامر البيع المرتبطة
         if (salesOrderIds.length > 0) {
@@ -720,16 +775,23 @@ export default function PaymentsPage() {
         }
       } catch (e) { /* ignore */ }
     })()
-  }, [customerPayments, supabase])
+  }, [customerPayments, rawCustomerPayments, pendingBranchFilter, supabase])
 
   // Load bill numbers and branch_ids for displayed supplier payments
+  // 🔐 للمستخدم العادي: نجلب بيانات الفواتير من المدفوعات الخام ثم نفلتر
   useEffect(() => {
     ; (async () => {
       try {
-        const ids = Array.from(new Set((supplierPayments || []).map((p) => p.bill_id).filter(Boolean))) as string[]
+        // استخدام المدفوعات الخام للمستخدم العادي، أو المدفوعات المفلترة للمستخدم المميز
+        const paymentsToProcess = rawSupplierPayments.length > 0 ? rawSupplierPayments : supplierPayments
+        const ids = Array.from(new Set((paymentsToProcess || []).map((p) => p.bill_id).filter(Boolean))) as string[]
         if (!ids.length) {
           setBillNumbers({})
           setBillBranchMap({})
+          // 🔐 للمستخدم العادي: إذا لا توجد فواتير، نعرض قائمة فارغة
+          if (rawSupplierPayments.length > 0 && pendingBranchFilter) {
+            setSupplierPayments([])
+          }
           return
         }
         // ✅ جلب branch_id مع بيانات الفاتورة لعرض الفرع الصحيح في قائمة المدفوعات
@@ -748,6 +810,21 @@ export default function PaymentsPage() {
         setBillBranchMap(branchMap)
         setBillToPoMap(billPoMap)
 
+        // 🔐 للمستخدم العادي: فلترة المدفوعات بناءً على فرع الفاتورة
+        if (rawSupplierPayments.length > 0 && pendingBranchFilter && pendingBranchFilter.userBranchId) {
+          const userBranchId = pendingBranchFilter.userBranchId
+          const filteredPayments = rawSupplierPayments.filter((p) => {
+            // 1. إذا الدفعة لها branch_id ويطابق فرع المستخدم
+            if (p.branch_id === userBranchId) return true
+            // 2. إذا الفاتورة المرتبطة من فرع المستخدم
+            if (p.bill_id && branchMap[p.bill_id] === userBranchId) return true
+            // 3. إذا الدفعة بدون branch_id والفاتورة بدون branch_id (fallback)
+            if (!p.branch_id && p.bill_id && !branchMap[p.bill_id]) return true
+            return false
+          })
+          setSupplierPayments(filteredPayments)
+        }
+
         // ✅ جلب أرقام أوامر الشراء المرتبطة بالفواتير
         const poIds = Array.from(new Set((bills || []).map((b: any) => b.purchase_order_id).filter(Boolean))) as string[]
         if (poIds.length > 0) {
@@ -760,7 +837,7 @@ export default function PaymentsPage() {
         }
       } catch (e) { /* ignore */ }
     })()
-  }, [supplierPayments])
+  }, [supplierPayments, rawSupplierPayments, pendingBranchFilter, supabase])
 
   // Load account names for displayed supplier payments
   useEffect(() => {
