@@ -343,23 +343,42 @@ export default function InvoicesPage() {
   }, []);
 
   // ✅ Realtime: الاشتراك في تحديثات الفواتير
+  // ⚠️ ملاحظة: Realtime لا يرسل البيانات المنضمة (joined data) مثل branches و customers
+  // لذا نقوم بجلب البيانات المنضمة للسجلات الجديدة أو الاحتفاظ بها من السجل القديم
   useRealtimeTable<Invoice>({
     table: 'invoices',
     enabled: !!userContext?.company_id,
-    onInsert: (newInvoice) => {
+    onInsert: async (newInvoice) => {
       // ✅ فحص التكرار قبل الإضافة
-      setInvoices(prev => {
-        if (prev.find(inv => inv.id === newInvoice.id)) {
-          return prev; // السجل موجود بالفعل
-        }
-        return [newInvoice, ...prev];
-      });
+      const existingInvoice = invoices.find(inv => inv.id === newInvoice.id);
+      if (existingInvoice) return;
+
+      // ⚠️ Realtime لا يرسل البيانات المنضمة، لذا نجلبها من قاعدة البيانات
+      const { data: fullInvoice } = await supabase
+        .from("invoices")
+        .select("*, customers(name, phone), branches(name)")
+        .eq("id", newInvoice.id)
+        .single();
+
+      if (fullInvoice) {
+        setInvoices(prev => [fullInvoice, ...prev]);
+      }
     },
     onUpdate: (newInvoice, oldInvoice) => {
-      // ✅ تحديث السجل في القائمة
-      setInvoices(prev => prev.map(invoice =>
-        invoice.id === newInvoice.id ? newInvoice : invoice
-      ));
+      // ✅ تحديث السجل في القائمة مع الحفاظ على البيانات المنضمة (branches, customers)
+      // ⚠️ Realtime لا يرسل البيانات المنضمة، لذا نحافظ عليها من السجل القديم
+      setInvoices(prev => prev.map(invoice => {
+        if (invoice.id === newInvoice.id) {
+          // دمج البيانات الجديدة مع البيانات المنضمة القديمة
+          return {
+            ...newInvoice,
+            // الحفاظ على البيانات المنضمة من السجل القديم
+            branches: (invoice as any).branches,
+            customers: (invoice as any).customers,
+          };
+        }
+        return invoice;
+      }));
     },
     onDelete: (oldInvoice) => {
       // ✅ حذف السجل من القائمة

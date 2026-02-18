@@ -401,24 +401,43 @@ export default function PurchaseOrdersPage() {
   }, [supabase, branchFilter.selectedBranchId]); // إعادة تحميل البيانات عند تغيير الفرع المحدد
 
   // ✅ Realtime: الاشتراك في تحديثات أوامر الشراء
+  // ⚠️ ملاحظة: Realtime لا يرسل البيانات المنضمة (joined data) مثل branches و suppliers
+  // لذا نقوم بجلب البيانات المنضمة للسجلات الجديدة
   useRealtimeTable<PurchaseOrder>({
     table: 'purchase_orders',
     enabled: !!userContext?.company_id,
-    onInsert: (newOrder) => {
+    onInsert: async (newOrder) => {
       // ✅ فحص التكرار قبل الإضافة
-      setOrders(prev => {
-        if (prev.find(o => o.id === newOrder.id)) {
-          return prev; // السجل موجود بالفعل
-        }
-        return [newOrder, ...prev];
-      });
+      const existingOrder = orders.find(o => o.id === newOrder.id);
+      if (existingOrder) return;
+
+      // ⚠️ Realtime لا يرسل البيانات المنضمة، لذا نجلبها من قاعدة البيانات
+      const { data: fullOrder } = await supabase
+        .from("purchase_orders")
+        .select("*, suppliers(name, phone), branches(name)")
+        .eq("id", newOrder.id)
+        .single();
+
+      if (fullOrder) {
+        setOrders(prev => [fullOrder, ...prev]);
+      }
     },
     onUpdate: (newOrder, oldOrder) => {
-      // ✅ تحديث السجل في القائمة
-      setOrders(prev => prev.map(order => 
-        order.id === newOrder.id ? newOrder : order
-      ));
-      
+      // ✅ تحديث السجل في القائمة مع الحفاظ على البيانات المنضمة (branches, suppliers)
+      // ⚠️ Realtime لا يرسل البيانات المنضمة، لذا نحافظ عليها من السجل القديم
+      setOrders(prev => prev.map(order => {
+        if (order.id === newOrder.id) {
+          // دمج البيانات الجديدة مع البيانات المنضمة القديمة
+          return {
+            ...newOrder,
+            // الحفاظ على البيانات المنضمة من السجل القديم
+            branches: (order as any).branches,
+            suppliers: (order as any).suppliers,
+          };
+        }
+        return order;
+      }));
+
       // ✅ إذا تغيرت الفاتورة المرتبطة، تحديث linkedBills
       if (newOrder.bill_id !== oldOrder.bill_id) {
         if (newOrder.bill_id) {
