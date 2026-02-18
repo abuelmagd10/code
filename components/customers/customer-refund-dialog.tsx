@@ -110,8 +110,9 @@ export function CustomerRefundDialog({
   // 🔐 حالات الفرع ومركز التكلفة
   const isPrivilegedUser = PRIVILEGED_ROLES.includes(userRole.toLowerCase())
   // للأدوار المميزة: استخدم فرع الفاتورة افتراضياً، وإلا فرع المستخدم
-  const defaultBranchId = isPrivilegedUser ? (invoiceBranchId || userBranchId || '') : (userBranchId || '')
-  const defaultCostCenterId = isPrivilegedUser ? (invoiceCostCenterId || userCostCenterId || '') : (userCostCenterId || '')
+  // 'none' هي القيمة المناسبة عند غياب اختيار (تتطابق مع SelectItem value="none")
+  const defaultBranchId = isPrivilegedUser ? (invoiceBranchId || userBranchId || 'none') : (userBranchId || 'none')
+  const defaultCostCenterId = isPrivilegedUser ? (invoiceCostCenterId || userCostCenterId || 'none') : (userCostCenterId || 'none')
   const [selectedBranchId, setSelectedBranchId] = useState<string>(defaultBranchId)
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<string>(defaultCostCenterId)
 
@@ -124,8 +125,8 @@ export function CustomerRefundDialog({
     if (open) {
       // للمميزين: فرع الفاتورة أولاً، ثم فرع المستخدم
       // لغير المميزين: فرع المستخدم فقط
-      const bId = isPrivilegedUser ? (invoiceBranchId || userBranchId || '') : (userBranchId || '')
-      const ccId = isPrivilegedUser ? (invoiceCostCenterId || userCostCenterId || '') : (userCostCenterId || '')
+      const bId = isPrivilegedUser ? (invoiceBranchId || userBranchId || 'none') : (userBranchId || 'none')
+      const ccId = isPrivilegedUser ? (invoiceCostCenterId || userCostCenterId || 'none') : (userCostCenterId || 'none')
       setSelectedBranchId(bId)
       setSelectedCostCenterId(ccId)
     }
