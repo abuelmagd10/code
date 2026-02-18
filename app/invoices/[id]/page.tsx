@@ -86,6 +86,9 @@ interface Invoice {
   warehouse_id?: string | null
   // Linked Sales Order
   sales_order_id?: string | null
+  // Returns
+  returned_amount?: number
+  return_status?: string | null
 }
 
 interface InvoiceItem {
