@@ -221,6 +221,20 @@ export function CustomerRefundDialog({
                            find((a: any) => String(a.account_name || "").toLowerCase().includes("سلف العملاء")) ||
                            find((a: any) => String(a.account_name || "").toLowerCase().includes("رصيد العملاء"))
 
+      // 🛡️ تحقق صريح: إذا لم يُوجد حساب رصيد العملاء الدائن في دليل الحسابات نوقف العملية
+      // هذا يمنع إنشاء قيد محاسبي غير متوازن بدون سطر المدين
+      if (!customerCredit) {
+        toast({
+          title: appLang === 'en' ? 'Account Configuration Error' : 'خطأ في إعداد الحسابات',
+          description: appLang === 'en'
+            ? 'No customer credit account (sub_type: customer_credit) found in chart of accounts. Please configure it first.'
+            : 'لم يُعثر على حساب رصيد العملاء الدائن في دليل الحسابات (sub_type: customer_credit). يرجى إضافته أولاً.',
+          variant: 'destructive',
+        })
+        setIsProcessing(false)
+        return
+      }
+
       // Calculate base amount in app currency
       const baseRefundAmount = refundCurrency === appCurrency ?
         refundAmount :
