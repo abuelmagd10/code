@@ -1103,6 +1103,9 @@ export default function InvoicesPage() {
         const returnedAmount = Number(row.returned_amount || 0)
         const originalTotal = Number(row.original_total || row.total_amount || 0)
 
+        // ✅ حساب المستحق الفعلي بعد خصم المرتجع
+        const effectiveOwed = Math.max(0, originalTotal - returnedAmount)
+
         // ✅ تحديد ما إذا كان المرتجع كامل (بناءً على original_total)
         const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
 
@@ -1118,7 +1121,8 @@ export default function InvoicesPage() {
         } else if (isFullyReturned) {
           // ✅ التحقق الصحيح من المرتجع الكامل
           paymentStatus = 'fully_returned'
-        } else if (paidAmount >= originalTotal && originalTotal > 0) {
+        } else if (paidAmount >= effectiveOwed && effectiveOwed > 0) {
+          // ✅ المدفوع يغطي المستحق الفعلي (بعد خصم المرتجع) = مدفوعة بالكامل
           paymentStatus = 'paid'
         } else if (paidAmount > 0) {
           paymentStatus = 'partially_paid'
