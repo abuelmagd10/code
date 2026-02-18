@@ -1903,8 +1903,14 @@ export default function InvoiceDetailPage() {
 
       // 2) تحديث الفاتورة (المبلغ المدفوع والحالة)
       const newPaid = Number(invoice.paid_amount || 0) + Number(amount || 0)
-      // نأخذ المرتجعات بعين الاعتبار: صافي المستحق = الإجمالي - المرتجع
-      const netInvoiceAmount = Number(invoice.total_amount || 0) - Number(invoice.returned_amount || 0)
+      const returnedAmt = Number(invoice.returned_amount || 0)
+      const totalAmt = Number(invoice.total_amount || 0)
+      // لفواتير "sent" المرتجعة: يُخفَّض total_amount مباشرة في DB (= الصافي بعد المرتجع).
+      // لفواتير "paid/partially_paid" المرتجعة: يبقى total_amount أصلياً، ونطرح returned_amount.
+      // نكتشف الحالة الأولى بسهولة: returned_amount > total_amount يعني total_amount مُخفَّض سابقاً.
+      const netInvoiceAmount = (returnedAmt > 0 && totalAmt < returnedAmt)
+        ? totalAmt                          // total_amount مُخفَّض سابقاً؛ هو الصافي الفعلي
+        : Math.max(0, totalAmt - returnedAmt)
       const remaining = netInvoiceAmount - newPaid
       const newStatus = remaining <= 0 ? "paid" : "partially_paid"
       const { error: invErr } = await supabase

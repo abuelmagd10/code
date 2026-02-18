@@ -198,8 +198,11 @@ async function main() {
     
     // If exec_sql not found, stop
     if (failCount > 0 && successCount === 0) {
+      const projectRef = supabaseUrl
+        ? new URL(supabaseUrl).hostname.split('.')[0]
+        : '<YOUR_PROJECT_REF>';
       console.log('\n📋 Manual SQL to apply via Supabase Dashboard SQL Editor:');
-      console.log('   https://supabase.com/dashboard/project/hfvsbsizokxontflgdyn/sql/new');
+      console.log(`   https://supabase.com/dashboard/project/${projectRef}/sql/new`);
       console.log('\n   File: supabase/migrations/20260218_003_prevent_negative_payment_invoice_link.sql');
       break;
     }
