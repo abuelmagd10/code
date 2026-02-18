@@ -1038,26 +1038,25 @@ function SalesOrdersContent() {
         }
       }
     },
-    onUpdate: (newOrder, oldOrder) => {
-      // ✅ تحديث السجل في القائمة مع الحفاظ على البيانات المنضمة (branches, customers)
-      // ⚠️ Realtime لا يرسل البيانات المنضمة، لذا نحافظ عليها من السجل القديم
-      setOrders(prev => prev.map(order => {
-        if (order.id === newOrder.id) {
-          // دمج البيانات الجديدة مع البيانات المنضمة القديمة
-          return {
-            ...newOrder,
-            // الحفاظ على البيانات المنضمة من السجل القديم
-            branches: (order as any).branches,
-            customers: (order as any).customers,
-          };
-        }
-        return order;
-      }));
+    onUpdate: async (newOrder, oldOrder) => {
+      // ⚠️ Realtime لا يرسل البيانات المنضمة (branches, customers)
+      // لذا نجلب البيانات الكاملة من قاعدة البيانات لضمان دقة البيانات
+      const { data: fullOrder } = await supabase
+        .from("sales_orders")
+        .select("*, customers:customer_id(id, name, phone, city), branches:branch_id(name)")
+        .eq("id", newOrder.id)
+        .single();
 
-      // ✅ إذا تغيرت الفاتورة المرتبطة، تحديث linkedInvoices
-      if (newOrder.invoice_id !== oldOrder.invoice_id) {
-        if (newOrder.invoice_id) {
-          refreshInvoiceStatus(newOrder.invoice_id);
+      if (fullOrder) {
+        setOrders(prev => prev.map(order =>
+          order.id === newOrder.id ? fullOrder : order
+        ));
+
+        // ✅ إذا تغيرت الفاتورة المرتبطة، تحديث linkedInvoices
+        if (newOrder.invoice_id !== oldOrder.invoice_id) {
+          if (newOrder.invoice_id) {
+            refreshInvoiceStatus(newOrder.invoice_id);
+          }
         }
       }
     },

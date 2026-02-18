@@ -422,46 +422,44 @@ export default function PurchaseOrdersPage() {
         setOrders(prev => [fullOrder, ...prev]);
       }
     },
-    onUpdate: (newOrder, oldOrder) => {
-      // ✅ تحديث السجل في القائمة مع الحفاظ على البيانات المنضمة (branches, suppliers)
-      // ⚠️ Realtime لا يرسل البيانات المنضمة، لذا نحافظ عليها من السجل القديم
-      setOrders(prev => prev.map(order => {
-        if (order.id === newOrder.id) {
-          // دمج البيانات الجديدة مع البيانات المنضمة القديمة
-          return {
-            ...newOrder,
-            // الحفاظ على البيانات المنضمة من السجل القديم
-            branches: (order as any).branches,
-            suppliers: (order as any).suppliers,
-          };
-        }
-        return order;
-      }));
+    onUpdate: async (newOrder, oldOrder) => {
+      // ⚠️ Realtime لا يرسل البيانات المنضمة (branches, suppliers)
+      // لذا نجلب البيانات الكاملة من قاعدة البيانات لضمان دقة البيانات
+      const { data: fullOrder } = await supabase
+        .from("purchase_orders")
+        .select("*, suppliers(name, phone), branches(name)")
+        .eq("id", newOrder.id)
+        .single();
 
-      // ✅ إذا تغيرت الفاتورة المرتبطة، تحديث linkedBills
-      if (newOrder.bill_id !== oldOrder.bill_id) {
-        if (newOrder.bill_id) {
-          // تحديث حالة الفاتورة المرتبطة
-          supabase
-            .from("bills")
-            .select("id, status, total_amount, paid_amount, returned_amount, return_status")
-            .eq("id", newOrder.bill_id)
-            .single()
-            .then(({ data: bill }: { data: LinkedBill | null }): void => {
-              if (bill) {
-                setLinkedBills(prev => ({
-                  ...prev,
-                  [bill.id]: {
-                    id: bill.id,
-                    status: bill.status,
-                    total_amount: bill.total_amount,
-                    paid_amount: bill.paid_amount,
-                    returned_amount: bill.returned_amount,
-                    return_status: bill.return_status
-                  }
-                }));
-              }
-            });
+      if (fullOrder) {
+        setOrders(prev => prev.map(order =>
+          order.id === newOrder.id ? fullOrder : order
+        ));
+
+        // ✅ إذا تغيرت الفاتورة المرتبطة، تحديث linkedBills
+        if (newOrder.bill_id !== oldOrder.bill_id) {
+          if (newOrder.bill_id) {
+            // تحديث حالة الفاتورة المرتبطة
+            const { data: bill } = await supabase
+              .from("bills")
+              .select("id, status, total_amount, paid_amount, returned_amount, return_status")
+              .eq("id", newOrder.bill_id)
+              .single();
+
+            if (bill) {
+              setLinkedBills(prev => ({
+                ...prev,
+                [bill.id]: {
+                  id: bill.id,
+                  status: bill.status,
+                  total_amount: bill.total_amount,
+                  paid_amount: bill.paid_amount,
+                  returned_amount: bill.returned_amount,
+                  return_status: bill.return_status
+                }
+              }));
+            }
+          }
         }
       }
     },

@@ -364,21 +364,20 @@ export default function InvoicesPage() {
         setInvoices(prev => [fullInvoice, ...prev]);
       }
     },
-    onUpdate: (newInvoice, oldInvoice) => {
-      // ✅ تحديث السجل في القائمة مع الحفاظ على البيانات المنضمة (branches, customers)
-      // ⚠️ Realtime لا يرسل البيانات المنضمة، لذا نحافظ عليها من السجل القديم
-      setInvoices(prev => prev.map(invoice => {
-        if (invoice.id === newInvoice.id) {
-          // دمج البيانات الجديدة مع البيانات المنضمة القديمة
-          return {
-            ...newInvoice,
-            // الحفاظ على البيانات المنضمة من السجل القديم
-            branches: (invoice as any).branches,
-            customers: (invoice as any).customers,
-          };
-        }
-        return invoice;
-      }));
+    onUpdate: async (newInvoice) => {
+      // ⚠️ Realtime لا يرسل البيانات المنضمة (branches, customers)
+      // لذا نجلب البيانات الكاملة من قاعدة البيانات لضمان دقة البيانات
+      const { data: fullInvoice } = await supabase
+        .from("invoices")
+        .select("*, customers(name, phone), branches(name)")
+        .eq("id", newInvoice.id)
+        .single();
+
+      if (fullInvoice) {
+        setInvoices(prev => prev.map(invoice =>
+          invoice.id === newInvoice.id ? fullInvoice : invoice
+        ));
+      }
     },
     onDelete: (oldInvoice) => {
       // ✅ حذف السجل من القائمة
