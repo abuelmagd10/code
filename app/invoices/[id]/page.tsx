@@ -311,7 +311,14 @@ export default function InvoiceDetailPage() {
 
         // تحميل العملات
         const currencies = await getActiveCurrencies(supabase, invoice.company_id)
-        setRefundCurrencies(currencies.length > 0 ? currencies : [...DEFAULT_CURRENCIES])
+        setRefundCurrencies(currencies.length > 0 ? currencies : DEFAULT_CURRENCIES.map(c => ({
+          ...c,
+          id: c.code,
+          symbol: c.code,
+          decimals: 2,
+          is_active: true,
+          is_base: c.code === appCurrency
+        })))
         setRefundCurrency(appCurrency)
 
         // تحميل الفروع ومراكز التكلفة (للأدوار المميزة)
