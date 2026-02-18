@@ -49,6 +49,9 @@ import {
 import { consumeFIFOLotsWithCOGS } from "@/lib/fifo-engine"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { checkDuplicateJournalEntry } from "@/lib/journal-entry-governance"
+import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
+import { getActiveCurrencies, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
+import { useAccess } from "@/lib/access-context"
 
 interface Invoice {
   id: string
@@ -166,6 +169,26 @@ export default function InvoiceDetailPage() {
   // Linked Sales Order
   const [linkedSalesOrder, setLinkedSalesOrder] = useState<{ id: string; so_number: string } | null>(null)
 
+  // 🔐 صرف رصيد العميل الدائن من الفاتورة
+  const [showCustomerRefund, setShowCustomerRefund] = useState(false)
+  const [refundAmount, setRefundAmount] = useState(0)
+  const [refundCurrency, setRefundCurrency] = useState('EGP')
+  const [refundDate, setRefundDate] = useState(new Date().toISOString().slice(0, 10))
+  const [refundMethod, setRefundMethod] = useState('cash')
+  const [refundAccountId, setRefundAccountId] = useState('')
+  const [refundNotes, setRefundNotes] = useState('')
+  const [refundExRate, setRefundExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
+  const [refundAccounts, setRefundAccounts] = useState<{ id: string; account_code: string; account_name: string; account_type: string }[]>([])
+  const [refundCurrencies, setRefundCurrencies] = useState<Currency[]>([])
+  const [allBranches, setAllBranches] = useState<{ id: string; name: string; defaultCostCenterId?: string | null }[]>([])
+  const [allCostCenters, setAllCostCenters] = useState<{ id: string; name: string; code?: string }[]>([])
+  const { profile: accessProfile } = useAccess()
+  const currentUserRole = accessProfile?.role || ''
+  const userBranchId = accessProfile?.branch_id || null
+  const userCostCenterId = accessProfile?.cost_center_id || null
+  const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+  const isPrivilegedUser = PRIVILEGED_ROLES.includes(currentUserRole)
+
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -261,6 +284,67 @@ export default function InvoiceDetailPage() {
       }
     })()
   }, [showPayment])
+
+  // 🔐 تحميل بيانات صرف رصيد العميل الدائن
+  useEffect(() => {
+    ; (async () => {
+      if (!showCustomerRefund || !invoice?.company_id) return
+      try {
+        // تحميل الحسابات النقدية/البنكية
+        const { data: accounts } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_name, account_type, sub_type")
+          .eq("company_id", invoice.company_id)
+        const list = (accounts || []).filter((a: any) => {
+          const st = String(a.sub_type || "").toLowerCase()
+          const nm = String(a.account_name || "")
+          const nmLower = nm.toLowerCase()
+          const isCashOrBankSubtype = st === "cash" || st === "bank"
+          const nameSuggestsCashOrBank = nmLower.includes("bank") || nmLower.includes("cash") || /بنك|بنكي|مصرف|خزينة|نقد/.test(nm)
+          return isCashOrBankSubtype || nameSuggestsCashOrBank
+        })
+        setRefundAccounts(list)
+        if (!refundAccountId && list.length > 0) {
+          const preferred = list.find((a: any) => String(a.sub_type || '').toLowerCase() === 'cash' || /صندوق|خزينة|نقد|cash/i.test(String(a.account_name || '')))
+          setRefundAccountId((preferred || list[0]).id)
+        }
+
+        // تحميل العملات
+        const currencies = await getActiveCurrencies(supabase, invoice.company_id)
+        setRefundCurrencies(currencies.length > 0 ? currencies : [...DEFAULT_CURRENCIES])
+        setRefundCurrency(appCurrency)
+
+        // تحميل الفروع ومراكز التكلفة (للأدوار المميزة)
+        if (isPrivilegedUser) {
+          const { data: branchesData } = await supabase
+            .from("branches")
+            .select("id, branch_name, default_cost_center_id")
+            .eq("company_id", invoice.company_id)
+            .eq("is_active", true)
+            .order("branch_name")
+          setAllBranches((branchesData || []).map((b: any) => ({
+            id: b.id,
+            name: b.branch_name || '',
+            defaultCostCenterId: b.default_cost_center_id
+          })))
+
+          const { data: costCentersData } = await supabase
+            .from("cost_centers")
+            .select("id, cost_center_name, cost_center_code")
+            .eq("company_id", invoice.company_id)
+            .eq("is_active", true)
+            .order("cost_center_name")
+          setAllCostCenters((costCentersData || []).map((cc: any) => ({
+            id: cc.id,
+            name: cc.cost_center_name || '',
+            code: cc.cost_center_code || ''
+          })))
+        }
+      } catch (e) {
+        console.warn("Error loading refund data:", e)
+      }
+    })()
+  }, [showCustomerRefund, invoice?.company_id, isPrivilegedUser, supabase, appCurrency])
 
   const loadInvoice = async () => {
     try {
@@ -2379,6 +2463,12 @@ export default function InvoiceDetailPage() {
   // صافي المتبقي = إجمالي الفاتورة الحالي (بعد المرتجعات) - المدفوع
   const netRemainingAmount = Math.max(0, invoice.total_amount - totalPaidAmount)
 
+  // 💰 حساب رصيد العميل الدائن (إذا المدفوع > صافي الفاتورة بعد المرتجعات)
+  // الإجمالي الأصلي = الحالي + المرتجعات (لحساب الفرق الحقيقي)
+  const originalInvoiceTotal = invoice.total_amount + totalReturnsAmount
+  const netInvoiceAfterReturns = originalInvoiceTotal - totalReturnsAmount  // = invoice.total_amount
+  const customerCreditAmount = Math.max(0, totalPaidAmount - netInvoiceAfterReturns)
+
   // Derive display breakdowns similar to creation page
   const safeItems = Array.isArray(items) ? items : []
   const netItemsSubtotal = safeItems.reduce((sum, it) => sum + Number(it.line_total || 0), 0)
@@ -3178,6 +3268,22 @@ export default function InvoiceDetailPage() {
                     {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
                   </Button>
                 ) : null}
+                {/* 💰 زر صرف رصيد العميل الدائن - يظهر فقط إذا كان هناك رصيد دائن */}
+                {customerCreditAmount > 0 && permPayWrite && invoice.customer_id ? (
+                  <Button
+                    variant="outline"
+                    className="border-green-500 text-green-600 hover:bg-green-50"
+                    onClick={() => {
+                      setRefundAmount(customerCreditAmount)
+                      setRefundDate(new Date().toISOString().slice(0, 10))
+                      setRefundNotes(appLang === 'en' ? `Credit refund from invoice #${invoice.invoice_number}` : `صرف رصيد دائن من الفاتورة #${invoice.invoice_number}`)
+                      setShowCustomerRefund(true)
+                    }}
+                  >
+                    <DollarSign className="w-4 h-4 ml-2" />
+                    {appLang === 'en' ? 'Refund Customer Credit' : 'صرف رصيد العميل'}
+                  </Button>
+                ) : null}
                 {/* 📌 تم إلغاء زر "إنشاء شحنة" - الوظيفة مدمجة في "تحديد كمرسلة" */}
                 {/* View Shipment Button - if shipment/third party goods exists */}
                 {existingShipment ? (
@@ -3610,6 +3716,42 @@ export default function InvoiceDetailPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* 💰 Dialog: صرف رصيد العميل الدائن */}
+          {invoice.customer_id && (
+            <CustomerRefundDialog
+              open={showCustomerRefund}
+              onOpenChange={setShowCustomerRefund}
+              customerId={invoice.customer_id}
+              customerName={invoice.customers?.name || ''}
+              maxAmount={customerCreditAmount}
+              accounts={refundAccounts}
+              appCurrency={appCurrency}
+              currencies={refundCurrencies}
+              refundAmount={refundAmount}
+              setRefundAmount={setRefundAmount}
+              refundCurrency={refundCurrency}
+              setRefundCurrency={setRefundCurrency}
+              refundDate={refundDate}
+              setRefundDate={setRefundDate}
+              refundMethod={refundMethod}
+              setRefundMethod={setRefundMethod}
+              refundAccountId={refundAccountId}
+              setRefundAccountId={setRefundAccountId}
+              refundNotes={refundNotes}
+              setRefundNotes={setRefundNotes}
+              refundExRate={refundExRate}
+              onRefundComplete={() => {
+                setShowCustomerRefund(false)
+                loadInvoice()
+              }}
+              userRole={currentUserRole}
+              userBranchId={userBranchId}
+              userCostCenterId={userCostCenterId}
+              branches={allBranches}
+              costCenters={allCostCenters}
+            />
+          )}
         </div>
       </main>
     </div>
