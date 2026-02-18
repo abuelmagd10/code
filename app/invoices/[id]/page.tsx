@@ -3797,6 +3797,8 @@ export default function InvoiceDetailPage() {
               costCenters={allCostCenters}
               invoiceId={invoice.id}
               invoiceNumber={invoice.invoice_number}
+              invoiceBranchId={invoice.branch_id || null}
+              invoiceCostCenterId={invoice.cost_center_id || null}
             />
           )}
         </div>

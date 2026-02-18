@@ -60,6 +60,9 @@ interface CustomerRefundDialogProps {
   // 📄 مصدر الفاتورة (اختياري - لربط الصرف بالفاتورة)
   invoiceId?: string | null
   invoiceNumber?: string | null
+  // 🏢 فرع ومركز تكلفة الفاتورة كقيم افتراضية للأدوار المميزة
+  invoiceBranchId?: string | null
+  invoiceCostCenterId?: string | null
 }
 
 export function CustomerRefundDialog({
@@ -93,7 +96,10 @@ export function CustomerRefundDialog({
   costCenters = [],
   // 📄 مصدر الفاتورة
   invoiceId = null,
-  invoiceNumber = null
+  invoiceNumber = null,
+  // 🏢 فرع ومركز تكلفة الفاتورة
+  invoiceBranchId = null,
+  invoiceCostCenterId = null,
 }: CustomerRefundDialogProps) {
   const supabase = useSupabase()
   const { toast } = useToast()
@@ -103,8 +109,11 @@ export function CustomerRefundDialog({
 
   // 🔐 حالات الفرع ومركز التكلفة
   const isPrivilegedUser = PRIVILEGED_ROLES.includes(userRole.toLowerCase())
-  const [selectedBranchId, setSelectedBranchId] = useState<string>(userBranchId || '')
-  const [selectedCostCenterId, setSelectedCostCenterId] = useState<string>(userCostCenterId || '')
+  // للأدوار المميزة: استخدم فرع الفاتورة افتراضياً، وإلا فرع المستخدم
+  const defaultBranchId = isPrivilegedUser ? (invoiceBranchId || userBranchId || '') : (userBranchId || '')
+  const defaultCostCenterId = isPrivilegedUser ? (invoiceCostCenterId || userCostCenterId || '') : (userCostCenterId || '')
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(defaultBranchId)
+  const [selectedCostCenterId, setSelectedCostCenterId] = useState<string>(defaultCostCenterId)
 
   // 🏢 أسماء الفرع ومركز التكلفة للمحاسب (للعرض فقط)
   const [lockedBranchName, setLockedBranchName] = useState<string>('')
@@ -113,10 +122,14 @@ export function CustomerRefundDialog({
   // تحديث القيم الافتراضية عند فتح النافذة
   useEffect(() => {
     if (open) {
-      setSelectedBranchId(userBranchId || '')
-      setSelectedCostCenterId(userCostCenterId || '')
+      // للمميزين: فرع الفاتورة أولاً، ثم فرع المستخدم
+      // لغير المميزين: فرع المستخدم فقط
+      const bId = isPrivilegedUser ? (invoiceBranchId || userBranchId || '') : (userBranchId || '')
+      const ccId = isPrivilegedUser ? (invoiceCostCenterId || userCostCenterId || '') : (userCostCenterId || '')
+      setSelectedBranchId(bId)
+      setSelectedCostCenterId(ccId)
     }
-  }, [open, userBranchId, userCostCenterId])
+  }, [open, isPrivilegedUser, invoiceBranchId, invoiceCostCenterId, userBranchId, userCostCenterId])
 
   // 🏢 تحميل أسماء الفرع ومركز التكلفة للمستخدمين غير المميزين (محاسب الفرع)
   useEffect(() => {
@@ -145,19 +158,22 @@ export function CustomerRefundDialog({
     })()
   }, [open, isPrivilegedUser, userBranchId, userCostCenterId, supabase])
 
-  // 🔄 تحديد مركز التكلفة تلقائياً عند تغيير الفرع (للأدوار المميزة فقط)
-  useEffect(() => {
-    if (isPrivilegedUser && selectedBranchId && selectedBranchId !== 'none' && branches) {
-      const selectedBranch = branches.find(b => b.id === selectedBranchId)
-      if (selectedBranch?.defaultCostCenterId) {
-        // تحقق من أن مركز التكلفة موجود في القائمة
-        const costCenterExists = costCenters?.some(cc => cc.id === selectedBranch.defaultCostCenterId)
-        if (costCenterExists) {
-          setSelectedCostCenterId(selectedBranch.defaultCostCenterId)
-        }
+  // 🔄 تحديث مركز التكلفة تلقائياً عند تغيير الفرع بواسطة المستخدم
+  const handleBranchChange = (newBranchId: string) => {
+    setSelectedBranchId(newBranchId)
+    if (newBranchId && newBranchId !== 'none' && branches) {
+      const branch = branches.find(b => b.id === newBranchId)
+      if (branch?.defaultCostCenterId) {
+        const ccExists = costCenters?.some(cc => cc.id === branch.defaultCostCenterId)
+        if (ccExists) setSelectedCostCenterId(branch.defaultCostCenterId)
+        else setSelectedCostCenterId('none')
+      } else {
+        setSelectedCostCenterId('none')
       }
+    } else {
+      setSelectedCostCenterId('none')
     }
-  }, [selectedBranchId, branches, costCenters, isPrivilegedUser])
+  }
 
 
 
@@ -378,11 +394,11 @@ export function CustomerRefundDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-md max-h-[90vh] flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle>{appLang==='en' ? 'Refund Customer Credit' : 'صرف رصيد العميل الدائن'}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-y-auto flex-1 px-6 pb-2">
           <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
             <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Customer' : 'العميل'}: <span className="font-semibold">{customerName}</span></p>
             <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Available Balance' : 'الرصيد المتاح'}: <span className="font-semibold text-green-600">{maxAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</span></p>
@@ -485,7 +501,7 @@ export function CustomerRefundDialog({
               {branches.length > 0 && (
                 <div className="space-y-2">
                   <Label className="text-sm">{appLang === 'en' ? 'Branch' : 'الفرع'}</Label>
-                  <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
+                  <Select value={selectedBranchId} onValueChange={handleBranchChange}>
                     <SelectTrigger>
                       <SelectValue placeholder={appLang === 'en' ? 'Select branch' : 'اختر الفرع'} />
                     </SelectTrigger>
@@ -517,16 +533,17 @@ export function CustomerRefundDialog({
             </div>
           )}
 
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isProcessing}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-            <Button 
-              onClick={processCustomerRefund} 
-              className="bg-green-600 hover:bg-green-700" 
-              disabled={isProcessing || !refundAmount || refundAmount <= 0 || refundAmount > maxAmount || !refundAccountId}
-            >
-              {isProcessing ? (appLang==='en' ? 'Processing...' : 'جاري المعالجة...') : (appLang==='en' ? 'Confirm Refund' : 'تأكيد الصرف')}
-            </Button>
-          </div>
+        </div>
+        {/* أزرار ثابتة في أسفل الديالوج */}
+        <div className="flex gap-2 justify-end px-6 py-4 border-t shrink-0 bg-white dark:bg-gray-950">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isProcessing}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+          <Button 
+            onClick={processCustomerRefund} 
+            className="bg-green-600 hover:bg-green-700" 
+            disabled={isProcessing || !refundAmount || refundAmount <= 0 || refundAmount > maxAmount || !refundAccountId}
+          >
+            {isProcessing ? (appLang==='en' ? 'Processing...' : 'جاري المعالجة...') : (appLang==='en' ? 'Confirm Refund' : 'تأكيد الصرف')}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
