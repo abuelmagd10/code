@@ -188,6 +188,9 @@ export default function InvoiceDetailPage() {
   const userCostCenterId = accessProfile?.cost_center_id || null
   const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
   const isPrivilegedUser = PRIVILEGED_ROLES.includes(currentUserRole)
+  // 🔐 الأدوار التي يمكنها رؤية وتنفيذ زر صرف رصيد العميل
+  const CREDIT_REFUND_ROLES = ['owner', 'admin', 'general_manager', 'accountant']
+  const canSeeCreditRefundButton = CREDIT_REFUND_ROLES.includes(currentUserRole) || permPayWrite
 
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
@@ -3298,8 +3301,8 @@ export default function InvoiceDetailPage() {
                 {/* ❌ تم إزالة زر "تحديد كمدفوعة" - الحالة تتحدث تلقائياً عند الدفع أو المرتجع */}
               </>
             )}
-            {/* 💰 زر صرف رصيد العميل الدائن - يظهر فقط إذا: رصيد > 0، غير ملغاة، غير Draft */}
-            {customerCreditAmount > 0 && permPayWrite && invoice.customer_id && invoice.status !== "cancelled" && invoice.status !== "draft" ? (
+            {/* 💰 زر صرف رصيد العميل الدائن - يظهر لـ: owner/admin/general_manager (اختيار الفرع) و accountant (فرعه فقط) */}
+            {customerCreditAmount > 0 && canSeeCreditRefundButton && invoice.customer_id && invoice.status !== "cancelled" && invoice.status !== "draft" ? (
               <Button
                 variant="outline"
                 className="border-green-500 text-green-600 hover:bg-green-50"

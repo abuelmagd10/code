@@ -106,6 +106,10 @@ export function CustomerRefundDialog({
   const [selectedBranchId, setSelectedBranchId] = useState<string>(userBranchId || '')
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<string>(userCostCenterId || '')
 
+  // 🏢 أسماء الفرع ومركز التكلفة للمحاسب (للعرض فقط)
+  const [lockedBranchName, setLockedBranchName] = useState<string>('')
+  const [lockedCostCenterName, setLockedCostCenterName] = useState<string>('')
+
   // تحديث القيم الافتراضية عند فتح النافذة
   useEffect(() => {
     if (open) {
@@ -113,6 +117,33 @@ export function CustomerRefundDialog({
       setSelectedCostCenterId(userCostCenterId || '')
     }
   }, [open, userBranchId, userCostCenterId])
+
+  // 🏢 تحميل أسماء الفرع ومركز التكلفة للمستخدمين غير المميزين (محاسب الفرع)
+  useEffect(() => {
+    if (isPrivilegedUser || !open) return
+    ;(async () => {
+      try {
+        const activeCompanyId = await getActiveCompanyId(supabase)
+        if (!activeCompanyId) return
+        if (userBranchId) {
+          const { data: branch } = await supabase
+            .from("branches")
+            .select("branch_name")
+            .eq("id", userBranchId)
+            .maybeSingle()
+          setLockedBranchName(branch?.branch_name || '')
+        }
+        if (userCostCenterId) {
+          const { data: cc } = await supabase
+            .from("cost_centers")
+            .select("cost_center_name")
+            .eq("id", userCostCenterId)
+            .maybeSingle()
+          setLockedCostCenterName(cc?.cost_center_name || '')
+        }
+      } catch { /* ignore */ }
+    })()
+  }, [open, isPrivilegedUser, userBranchId, userCostCenterId, supabase])
 
   // 🔄 تحديد مركز التكلفة تلقائياً عند تغيير الفرع (للأدوار المميزة فقط)
   useEffect(() => {
@@ -425,6 +456,25 @@ export function CustomerRefundDialog({
             <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
             <Input value={refundNotes} onChange={(e) => setRefundNotes(e.target.value)} placeholder={appLang==='en' ? 'Optional notes' : 'ملاحظات اختيارية'} />
           </div>
+
+          {/* 🏢 عرض الفرع ومركز التكلفة للمحاسب - قراءة فقط */}
+          {!isPrivilegedUser && (lockedBranchName || lockedCostCenterName) && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg space-y-1 border border-amber-200 dark:border-amber-800">
+              <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                {appLang === 'en' ? '🏢 Branch Assignment (Fixed)' : '🏢 تعيين الفرع (ثابت)'}
+              </p>
+              {lockedBranchName && (
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  {appLang === 'en' ? 'Branch' : 'الفرع'}: <span className="font-semibold">{lockedBranchName}</span>
+                </p>
+              )}
+              {lockedCostCenterName && (
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  {appLang === 'en' ? 'Cost Center' : 'مركز التكلفة'}: <span className="font-semibold">{lockedCostCenterName}</span>
+                </p>
+              )}
+            </div>
+          )}
 
           {/* 🔐 اختيار الفرع ومركز التكلفة - للأدوار المميزة فقط */}
           {isPrivilegedUser && (branches.length > 0 || costCenters.length > 0) && (
