@@ -141,7 +141,7 @@ export default function PaymentsPage() {
   const [accountNames, setAccountNames] = useState<Record<string, string>>({}) // Map bill_id -> purchase_order_id
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchNames, setBranchNames] = useState<Record<string, string>>({})
-  const [invoiceToSalesOrderMap, setInvoiceToSalesOrderMap] = useState<Record<string, { id: string; order_number: string }>>({}) // Map invoice_id -> sales_order
+  const [invoiceToSalesOrderMap, setInvoiceToSalesOrderMap] = useState<Record<string, { id: string; so_number: string }>>({}) // Map invoice_id -> sales_order
   const [loading, setLoading] = useState(true)
 
   // Currency support - using CurrencyService
@@ -696,14 +696,14 @@ export default function PaymentsPage() {
         // جلب بيانات أوامر البيع المرتبطة
         if (salesOrderIds.length > 0) {
           const uniqueSoIds = Array.from(new Set(salesOrderIds))
-          const { data: salesOrders } = await supabase.from("sales_orders").select("id, order_number").in("id", uniqueSoIds)
-          const soMap: Record<string, { id: string; order_number: string }> = {}
+          const { data: salesOrders } = await supabase.from("sales_orders").select("id, so_number").in("id", uniqueSoIds)
+          const soMap: Record<string, { id: string; so_number: string }> = {}
           // ربط الفاتورة بأمر البيع
           ; (invs || []).forEach((inv: any) => {
             if (inv.sales_order_id) {
               const so = (salesOrders || []).find((s: any) => s.id === inv.sales_order_id)
               if (so) {
-                soMap[inv.id] = { id: so.id, order_number: so.order_number }
+                soMap[inv.id] = { id: so.id, so_number: so.so_number }
               }
             }
           })
@@ -2606,7 +2606,7 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">
                         {p.invoice_id && invoiceToSalesOrderMap[p.invoice_id] ? (
                           <Link href={`/sales-orders/${invoiceToSalesOrderMap[p.invoice_id].id}`} className="text-green-600 hover:underline">
-                            {invoiceToSalesOrderMap[p.invoice_id].order_number}
+                            {invoiceToSalesOrderMap[p.invoice_id].so_number}
                           </Link>
                         ) : (
                           <span className="text-gray-400">-</span>
