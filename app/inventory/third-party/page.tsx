@@ -99,7 +99,7 @@ export default function ThirdPartyInventoryPage() {
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>("employee")
-  
+
   // التحقق من صلاحية الوصول لصفحة الفواتير
   const canAccessInvoices = canAccessPage("invoices")
 
@@ -158,10 +158,10 @@ export default function ThirdPartyInventoryPage() {
 
     // تحديث عند ظهور الصفحة
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    
+
     // تحديث عند تغيير حالة الفاتورة (من خلال custom event)
     window.addEventListener('invoice_status_changed', handleInvoiceUpdate)
-    
+
     // تحديث دوري كل 5 ثوانٍ
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
@@ -231,7 +231,7 @@ export default function ThirdPartyInventoryPage() {
       // جلب الموظفين (للمديرين فقط) مع مراعاة صلاحيات الفروع
       const currentRole = userContext?.role || memberData?.role || "staff"
       const accessLevel = getRoleAccessLevel(currentRole)
-      
+
       let membersQuery = supabase
         .from("company_members")
         .select("user_id, role, email, branch_id")
@@ -302,7 +302,7 @@ export default function ThirdPartyInventoryPage() {
         .not("shipping_provider_id", "is", null)
 
       // 🔐 فلترة حسب الدور والفرع
-      if (currentRole === 'manager' || currentRole === 'accountant') {
+      if (currentRole === 'manager' || currentRole === 'accountant' || currentRole === 'store_manager') {
         // 🏢 Branch Manager / Accountant: يرون فرعهم فقط
         if (currentBranchId) {
           invoicesQuery = invoicesQuery.eq("branch_id", currentBranchId)
@@ -355,11 +355,11 @@ export default function ThirdPartyInventoryPage() {
 
       // ✅ حساب مجموع line_totals لكل فاتورة (لأن subtotal قد يكون محفوظ بعد الخصم)
       const invoiceLineTotalsSum: Record<string, number> = {}
-      ;(invoiceItemsData || []).forEach((item: any) => {
-        const invoiceId = item.invoice_id
-        const lineTotal = Number(item.line_total || 0)
-        invoiceLineTotalsSum[invoiceId] = (invoiceLineTotalsSum[invoiceId] || 0) + lineTotal
-      })
+        ; (invoiceItemsData || []).forEach((item: any) => {
+          const invoiceId = item.invoice_id
+          const lineTotal = Number(item.line_total || 0)
+          invoiceLineTotalsSum[invoiceId] = (invoiceLineTotalsSum[invoiceId] || 0) + lineTotal
+        })
 
       // دمج البيانات: ربط third_party_inventory مع بيانات الفاتورة وسعر البيع
       const mergedItems = (thirdPartyData || []).map((tpi: any) => {
@@ -575,7 +575,7 @@ export default function ThirdPartyInventoryPage() {
                     {isAr ? "تتبع البضائع المرسلة لشركات الشحن" : "Track goods sent to shipping companies"}
                   </p>
                   {/* 🔐 Governance Notice */}
-                  {currentUserRole === 'manager' || currentUserRole === 'accountant' ? (
+                  {currentUserRole === 'manager' || currentUserRole === 'accountant' || currentUserRole === 'store_manager' ? (
                     <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                       {isAr ? "🏢 تعرض البضائع الخاصة بفرعك فقط" : "🏢 Showing goods from your branch only"}
                     </p>
@@ -953,7 +953,7 @@ export default function ThirdPartyInventoryPage() {
                               <div className="flex flex-col items-center gap-1">
                                 {/* حالة الدفع الأساسية */}
                                 <StatusBadge status={paymentStatus} lang={appLang} />
-                                
+
                                 {/* حالة المرتجع الجزئي (إن وجد) */}
                                 {hasPartialReturn && (
                                   <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
