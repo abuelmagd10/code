@@ -57,6 +57,9 @@ interface CustomerRefundDialogProps {
   // 🔐 قوائم الفروع ومراكز التكلفة (للأدوار المميزة)
   branches?: Branch[]
   costCenters?: CostCenter[]
+  // 📄 مصدر الفاتورة (اختياري - لربط الصرف بالفاتورة)
+  invoiceId?: string | null
+  invoiceNumber?: string | null
 }
 
 export function CustomerRefundDialog({
@@ -87,7 +90,10 @@ export function CustomerRefundDialog({
   userBranchId = null,
   userCostCenterId = null,
   branches = [],
-  costCenters = []
+  costCenters = [],
+  // 📄 مصدر الفاتورة
+  invoiceId = null,
+  invoiceNumber = null
 }: CustomerRefundDialogProps) {
   const supabase = useSupabase()
   const { toast } = useToast()
@@ -184,14 +190,22 @@ export function CustomerRefundDialog({
       // القيد المحاسبي:
       // مدين: رصيد العميل الدائن (تقليل الالتزام) - customerCredit
       // دائن: النقد/البنك (خروج المبلغ) - refundAccountId
+
+      // 📄 تحديد الوصف مع رقم الفاتورة إن وُجد
+      const descriptionWithInvoice = invoiceNumber
+        ? (appLang === 'en'
+            ? `Customer credit refund - ${customerName} - Invoice #${invoiceNumber}`
+            : `صرف رصيد دائن للعميل - ${customerName} - فاتورة #${invoiceNumber}`)
+        : (refundNotes || (appLang === 'en' ? `Customer credit refund - ${customerName}` : `صرف رصيد دائن للعميل - ${customerName}`))
+
       const { data: entry, error: entryError } = await supabase
         .from("journal_entries")
         .insert({
           company_id: activeCompanyId,
-          reference_type: "customer_credit_refund",
-          reference_id: customerId,
+          reference_type: invoiceId ? "invoice_credit_refund" : "customer_credit_refund",
+          reference_id: invoiceId || customerId,
           entry_date: refundDate,
-          description: refundNotes || (appLang === 'en' ? `Customer credit refund - ${customerName}` : `صرف رصيد دائن للعميل - ${customerName}`),
+          description: descriptionWithInvoice,
           branch_id: finalBranchId,
           cost_center_id: finalCostCenterId
         })
@@ -277,16 +291,27 @@ export function CustomerRefundDialog({
       }
 
       // ===== إنشاء سجل دفعة صرف =====
+      // 📄 تحديد الملاحظات مع رقم الفاتورة إن وُجد
+      const paymentNotes = invoiceNumber
+        ? (appLang === 'en'
+            ? `Credit refund to customer ${customerName} - Invoice #${invoiceNumber}`
+            : `صرف رصيد دائن للعميل ${customerName} - فاتورة #${invoiceNumber}`)
+        : (refundNotes || (appLang === 'en' ? `Credit refund to customer ${customerName}` : `صرف رصيد دائن للعميل ${customerName}`))
+
       const paymentPayload: any = {
         company_id: activeCompanyId,
         customer_id: customerId,
         payment_date: refundDate,
         amount: -refundAmount, // سالب لأنه صرف للعميل
         payment_method: refundMethod === "bank" ? "bank" : "cash",
-        reference_number: `REF-${Date.now()}`,
-        notes: refundNotes || (appLang === 'en' ? `Credit refund to customer ${customerName}` : `صرف رصيد دائن للعميل ${customerName}`),
+        reference_number: invoiceNumber ? `REF-INV-${invoiceNumber}-${Date.now()}` : `REF-${Date.now()}`,
+        notes: paymentNotes,
         branch_id: finalBranchId,
         cost_center_id: finalCostCenterId
+      }
+      // 📄 إضافة invoice_id إن وُجد
+      if (invoiceId) {
+        paymentPayload.invoice_id = invoiceId
       }
       try {
         // محاولة إدراج مع account_id

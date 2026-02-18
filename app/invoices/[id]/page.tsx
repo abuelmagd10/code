@@ -2456,7 +2456,15 @@ export default function InvoiceDetailPage() {
   }
 
   // Calculate totals for payments and returns
-  const totalPaidAmount = invoicePayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+  // 🔧 الدفعات الموجبة = المدفوع للفاتورة، الدفعات السالبة = الصرف للعميل
+  const totalPaidAmount = invoicePayments.reduce((sum, p) => {
+    const amt = Number(p.amount || 0)
+    return sum + (amt > 0 ? amt : 0)  // فقط الدفعات الموجبة
+  }, 0)
+  const totalRefundedToCustomer = invoicePayments.reduce((sum, p) => {
+    const amt = Number(p.amount || 0)
+    return sum + (amt < 0 ? Math.abs(amt) : 0)  // الدفعات السالبة = صرف للعميل
+  }, 0)
   // 🔧 إصلاح: المرتجعات تؤخذ من invoices.returned_amount (المصدر الموثوق)
   // لأن invoice.total_amount أصلاً تم تقليله بقيمة المرتجع
   const totalReturnsAmount = Number((invoice as any).returned_amount || 0)
@@ -2467,7 +2475,9 @@ export default function InvoiceDetailPage() {
   // الإجمالي الأصلي = الحالي + المرتجعات (لحساب الفرق الحقيقي)
   const originalInvoiceTotal = invoice.total_amount + totalReturnsAmount
   const netInvoiceAfterReturns = originalInvoiceTotal - totalReturnsAmount  // = invoice.total_amount
-  const customerCreditAmount = Math.max(0, totalPaidAmount - netInvoiceAfterReturns)
+  // 🛡️ منع الصرف المتكرر: الرصيد المتاح = (المدفوع - صافي الفاتورة) - المصروف مسبقاً
+  const grossCreditAmount = Math.max(0, totalPaidAmount - netInvoiceAfterReturns)
+  const customerCreditAmount = Math.max(0, grossCreditAmount - totalRefundedToCustomer)
 
   // Derive display breakdowns similar to creation page
   const safeItems = Array.isArray(items) ? items : []
@@ -3281,8 +3291,8 @@ export default function InvoiceDetailPage() {
                 {/* ❌ تم إزالة زر "تحديد كمدفوعة" - الحالة تتحدث تلقائياً عند الدفع أو المرتجع */}
               </>
             )}
-            {/* 💰 زر صرف رصيد العميل الدائن - يظهر فقط للفواتير المدفوعة التي بها رصيد دائن */}
-            {customerCreditAmount > 0 && permPayWrite && invoice.customer_id && (invoice.status === "paid" || invoice.status === "fully_returned") ? (
+            {/* 💰 زر صرف رصيد العميل الدائن - يظهر فقط إذا: رصيد > 0، غير ملغاة، غير Draft */}
+            {customerCreditAmount > 0 && permPayWrite && invoice.customer_id && invoice.status !== "cancelled" && invoice.status !== "draft" ? (
               <Button
                 variant="outline"
                 className="border-green-500 text-green-600 hover:bg-green-50"
@@ -3750,6 +3760,8 @@ export default function InvoiceDetailPage() {
               userCostCenterId={userCostCenterId}
               branches={allBranches}
               costCenters={allCostCenters}
+              invoiceId={invoice.id}
+              invoiceNumber={invoice.invoice_number}
             />
           )}
         </div>
