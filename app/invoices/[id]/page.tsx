@@ -2524,15 +2524,11 @@ export default function InvoiceDetailPage() {
   // صافي المتبقي = صافي المستحق - إجمالي المدفوع
   const netRemainingAmount = Math.max(0, netDueAmount - totalPaidAmount)
 
-  // 💰 حساب رصيد العميل الدائن (إذا المدفوع > صافي المستحق بعد المرتجعات)
-  // نعيد استخدام netDueAmount الذي يأخذ نوع الفاتورة بعين الاعتبار
-  // 🛡️ منع الصرف المتكرر: الرصيد المتاح = (المدفوع - صافي المستحق) - المصروف مسبقاً
-  // نستخدم invoice.paid_amount كمصدر احتياطي إذا كانت الدفعات غير مرتبطة بـ invoice_id
-  const effectivePaidAmount = totalPaidAmount > 0 ? totalPaidAmount : Number(invoice.paid_amount || 0)
-  const grossCreditAmount = Math.max(0, effectivePaidAmount - netDueAmount)
-  const calculatedCreditAmount = Math.max(0, grossCreditAmount - totalRefundedToCustomer)
-  // 💰 المصدر الموثوق: قاعدة البيانات (customer_credits) تعكس الرصيد المتاح فعلاً بعد أي صرف
-  const customerCreditAmount = Math.max(calculatedCreditAmount, customerCreditFromDB)
+  // 💰 رصيد العميل الدائن المتاح:
+  // المصدر الوحيد الموثوق هو جدول customer_credits (status='active') لأنه:
+  // 1. يعكس المبالغ المُصرَفة فعلاً (used_amount) حتى لو كانت دفعة الصرف غير مرتبطة بـ invoice_id
+  // 2. يمنع عرض رصيد صُرف سابقاً بسبب خطأ حسابي في totalRefundedToCustomer
+  const customerCreditAmount = customerCreditFromDB
 
   // Derive display breakdowns similar to creation page
   const safeItems = Array.isArray(items) ? items : []
