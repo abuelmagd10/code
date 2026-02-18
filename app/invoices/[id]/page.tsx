@@ -1900,7 +1900,9 @@ export default function InvoiceDetailPage() {
 
       // 2) تحديث الفاتورة (المبلغ المدفوع والحالة)
       const newPaid = Number(invoice.paid_amount || 0) + Number(amount || 0)
-      const remaining = Number(invoice.total_amount || 0) - newPaid
+      // نأخذ المرتجعات بعين الاعتبار: صافي المستحق = الإجمالي - المرتجع
+      const netInvoiceAmount = Number(invoice.total_amount || 0) - Number(invoice.returned_amount || 0)
+      const remaining = netInvoiceAmount - newPaid
       const newStatus = remaining <= 0 ? "paid" : "partially_paid"
       const { error: invErr } = await supabase
         .from("invoices")
