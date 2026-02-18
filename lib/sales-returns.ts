@@ -422,9 +422,18 @@ export async function prepareSalesReturnData(
     const oldReturned = Number(invoiceCheck.returned_amount || 0)
     const newReturned = oldReturned + returnTotal
 
+    // ✅ حساب المستحق الفعلي بعد الإرجاع
+    const effectiveOwed = invoiceTotal - newReturned
+
+    // ✅ تحديد الحالة الجديدة بناءً على المدفوع والمرتجع
     let newStatus = invoiceCheck.status
     if (newReturned >= invoiceTotal) {
       newStatus = 'fully_returned'
+    } else if (paidAmount >= effectiveOwed) {
+      // ✅ المدفوع يغطي المتبقي بعد الإرجاع = مدفوعة بالكامل
+      newStatus = 'paid'
+    } else if (paidAmount > 0) {
+      newStatus = 'partially_paid'
     } else if (newReturned > 0) {
       newStatus = 'partially_returned'
     }
@@ -1031,13 +1040,25 @@ async function updateInvoiceAfterReturn(
 
   const oldTotal = Number(currentData.total_amount || 0)
   const oldReturned = Number(currentData.returned_amount || 0)
+  const paidAmount = Number(currentData.paid_amount || 0)
   const newReturned = oldReturned + returnTotal
 
-  // تحديد الحالة الجديدة
+  // ✅ حساب المستحق الفعلي بعد الإرجاع
+  const effectiveOwed = oldTotal - newReturned
+
+  // ✅ تحديد الحالة الجديدة بناءً على المدفوع والمرتجع
   let newStatus = currentData.status
   if (newReturned >= oldTotal) {
+    // مرتجع بالكامل (100% أو أكثر)
     newStatus = 'fully_returned'
+  } else if (paidAmount >= effectiveOwed) {
+    // ✅ المدفوع يغطي المتبقي بعد الإرجاع = مدفوعة بالكامل
+    newStatus = 'paid'
+  } else if (paidAmount > 0) {
+    // مدفوعة جزئياً
+    newStatus = 'partially_paid'
   } else if (newReturned > 0) {
+    // مرتجعة جزئياً بدون أي دفع
     newStatus = 'partially_returned'
   }
 
@@ -1073,12 +1094,21 @@ async function updateSalesOrderAfterReturn(
   // حساب القيم الجديدة (نفس حسابات الفاتورة)
   const oldTotal = Number(invoiceCheck.total_amount || 0)
   const oldReturned = Number(invoiceCheck.returned_amount || 0)
+  const paidAmount = Number(invoiceCheck.paid_amount || 0)
   const newReturned = oldReturned + returnTotal
 
-  // تحديد الحالة الجديدة (نفس منطق الفاتورة)
+  // ✅ حساب المستحق الفعلي بعد الإرجاع
+  const effectiveOwed = oldTotal - newReturned
+
+  // ✅ تحديد الحالة الجديدة بناءً على المدفوع والمرتجع (نفس منطق الفاتورة)
   let newStatus = invoiceCheck.status
   if (newReturned >= oldTotal) {
     newStatus = 'fully_returned'
+  } else if (paidAmount >= effectiveOwed) {
+    // ✅ المدفوع يغطي المتبقي بعد الإرجاع = مدفوعة بالكامل
+    newStatus = 'paid'
+  } else if (paidAmount > 0) {
+    newStatus = 'partially_paid'
   } else if (newReturned > 0) {
     newStatus = 'partially_returned'
   }
