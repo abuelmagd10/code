@@ -338,7 +338,7 @@ export default function ThirdPartyInventoryPage() {
           customers(name, phone),
           branches(name),
           warehouses(name),
-          sales_orders(created_by_user_id)
+          sales_orders!invoices_sales_order_id_fkey(created_by_user_id)
         `)
         .eq("company_id", companyId)
         .in("status", ["sent", "confirmed", "partially_returned", "partially_paid"])
