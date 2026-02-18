@@ -2517,19 +2517,21 @@ export default function InvoiceDetailPage() {
   // 🔧 إصلاح: المرتجعات تؤخذ من invoices.returned_amount (المصدر الموثوق)
   // لأن invoice.total_amount أصلاً تم تقليله بقيمة المرتجع
   const totalReturnsAmount = Number((invoice as any).returned_amount || 0)
-  // صافي المتبقي = إجمالي الفاتورة الحالي (بعد المرتجعات) - المدفوع
-  const netRemainingAmount = Math.max(0, invoice.total_amount - totalPaidAmount)
+  // صافي المستحق = إجمالي الفاتورة - المرتجعات (مع مراعاة فواتير "sent" التي يُخفَّض total_amount فيها مباشرة)
+  const netDueAmount = (totalReturnsAmount > 0 && invoice.total_amount < totalReturnsAmount)
+    ? invoice.total_amount                                          // total_amount مُخفَّض سابقاً (فواتير sent)
+    : Math.max(0, invoice.total_amount - totalReturnsAmount)        // total_amount أصلي (فواتير paid/partially_paid)
+  // صافي المتبقي = صافي المستحق - إجمالي المدفوع
+  const netRemainingAmount = Math.max(0, netDueAmount - totalPaidAmount)
 
-  // 💰 حساب رصيد العميل الدائن (إذا المدفوع > صافي الفاتورة بعد المرتجعات)
-  // الإجمالي الأصلي = الحالي + المرتجعات (لحساب الفرق الحقيقي)
-  const originalInvoiceTotal = invoice.total_amount + totalReturnsAmount
-  const netInvoiceAfterReturns = originalInvoiceTotal - totalReturnsAmount  // = invoice.total_amount
-  // 🛡️ منع الصرف المتكرر: الرصيد المتاح = (المدفوع - صافي الفاتورة) - المصروف مسبقاً
+  // 💰 حساب رصيد العميل الدائن (إذا المدفوع > صافي المستحق بعد المرتجعات)
+  // نعيد استخدام netDueAmount الذي يأخذ نوع الفاتورة بعين الاعتبار
+  // 🛡️ منع الصرف المتكرر: الرصيد المتاح = (المدفوع - صافي المستحق) - المصروف مسبقاً
   // نستخدم invoice.paid_amount كمصدر احتياطي إذا كانت الدفعات غير مرتبطة بـ invoice_id
   const effectivePaidAmount = totalPaidAmount > 0 ? totalPaidAmount : Number(invoice.paid_amount || 0)
-  const grossCreditAmount = Math.max(0, effectivePaidAmount - netInvoiceAfterReturns)
+  const grossCreditAmount = Math.max(0, effectivePaidAmount - netDueAmount)
   const calculatedCreditAmount = Math.max(0, grossCreditAmount - totalRefundedToCustomer)
-  // 💰 المصدر الموثوق: أعلى قيمة بين الحساب التقديري وما هو مسجل في customer_credits
+  // 💰 المصدر الموثوق: قاعدة البيانات (customer_credits) تعكس الرصيد المتاح فعلاً بعد أي صرف
   const customerCreditAmount = Math.max(calculatedCreditAmount, customerCreditFromDB)
 
   // Derive display breakdowns similar to creation page
