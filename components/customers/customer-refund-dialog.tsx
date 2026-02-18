@@ -12,6 +12,20 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 
+// 🔐 الأدوار المميزة التي يمكنها اختيار الفرع ومركز التكلفة يدوياً
+const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+
+interface Branch {
+  id: string
+  name: string
+}
+
+interface CostCenter {
+  id: string
+  name: string
+  code?: string
+}
+
 interface CustomerRefundDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -35,6 +49,13 @@ interface CustomerRefundDialogProps {
   setRefundNotes: (notes: string) => void
   refundExRate: { rate: number; rateId: string | null; source: string }
   onRefundComplete: () => void
+  // 🔐 ERP Governance - سياق المستخدم
+  userRole?: string
+  userBranchId?: string | null
+  userCostCenterId?: string | null
+  // 🔐 قوائم الفروع ومراكز التكلفة (للأدوار المميزة)
+  branches?: Branch[]
+  costCenters?: CostCenter[]
 }
 
 export function CustomerRefundDialog({
@@ -59,13 +80,32 @@ export function CustomerRefundDialog({
   refundNotes,
   setRefundNotes,
   refundExRate,
-  onRefundComplete
+  onRefundComplete,
+  // 🔐 ERP Governance
+  userRole = 'staff',
+  userBranchId = null,
+  userCostCenterId = null,
+  branches = [],
+  costCenters = []
 }: CustomerRefundDialogProps) {
   const supabase = useSupabase()
   const { toast } = useToast()
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
 
   const [isProcessing, setIsProcessing] = useState(false)
+
+  // 🔐 حالات الفرع ومركز التكلفة
+  const isPrivilegedUser = PRIVILEGED_ROLES.includes(userRole.toLowerCase())
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(userBranchId || '')
+  const [selectedCostCenterId, setSelectedCostCenterId] = useState<string>(userCostCenterId || '')
+
+  // تحديث القيم الافتراضية عند فتح النافذة
+  useEffect(() => {
+    if (open) {
+      setSelectedBranchId(userBranchId || '')
+      setSelectedCostCenterId(userCostCenterId || '')
+    }
+  }, [open, userBranchId, userCostCenterId])
 
 
 
@@ -117,6 +157,10 @@ export function CustomerRefundDialog({
         refundAmount :
         Math.round(refundAmount * refundExRate.rate * 10000) / 10000
 
+      // 🔐 تحديد الفرع ومركز التكلفة للقيد
+      const finalBranchId = isPrivilegedUser ? (selectedBranchId || null) : (userBranchId || null)
+      const finalCostCenterId = isPrivilegedUser ? (selectedCostCenterId || null) : (userCostCenterId || null)
+
       // ===== إنشاء قيد صرف رصيد العميل =====
       // القيد المحاسبي:
       // مدين: رصيد العميل الدائن (تقليل الالتزام) - customerCredit
@@ -129,6 +173,8 @@ export function CustomerRefundDialog({
           reference_id: customerId,
           entry_date: refundDate,
           description: refundNotes || (appLang === 'en' ? `Customer credit refund - ${customerName}` : `صرف رصيد دائن للعميل - ${customerName}`),
+          branch_id: finalBranchId,
+          cost_center_id: finalCostCenterId
         })
         .select()
         .single()
@@ -149,7 +195,9 @@ export function CustomerRefundDialog({
             original_debit: refundAmount,
             original_credit: 0,
             exchange_rate_used: refundExRate.rate,
-            exchange_rate_id: refundExRate.rateId || null
+            exchange_rate_id: refundExRate.rateId || null,
+            branch_id: finalBranchId,
+            cost_center_id: finalCostCenterId
           })
         }
         // دائن: النقد/البنك (خروج المبلغ للعميل)
@@ -163,7 +211,9 @@ export function CustomerRefundDialog({
           original_debit: 0,
           original_credit: refundAmount,
           exchange_rate_used: refundExRate.rate,
-          exchange_rate_id: refundExRate.rateId || null
+          exchange_rate_id: refundExRate.rateId || null,
+          branch_id: finalBranchId,
+          cost_center_id: finalCostCenterId
         })
 
         const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
@@ -216,6 +266,8 @@ export function CustomerRefundDialog({
         payment_method: refundMethod === "bank" ? "bank" : "cash",
         reference_number: `REF-${Date.now()}`,
         notes: refundNotes || (appLang === 'en' ? `Credit refund to customer ${customerName}` : `صرف رصيد دائن للعميل ${customerName}`),
+        branch_id: finalBranchId,
+        cost_center_id: finalCostCenterId
       }
       try {
         // محاولة إدراج مع account_id
@@ -329,6 +381,48 @@ export function CustomerRefundDialog({
             <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
             <Input value={refundNotes} onChange={(e) => setRefundNotes(e.target.value)} placeholder={appLang==='en' ? 'Optional notes' : 'ملاحظات اختيارية'} />
           </div>
+
+          {/* 🔐 اختيار الفرع ومركز التكلفة - للأدوار المميزة فقط */}
+          {isPrivilegedUser && (branches.length > 0 || costCenters.length > 0) && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-3">
+              <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                {appLang === 'en' ? '🏢 Assignment (Admin)' : '🏢 التعيين (المدير)'}
+              </p>
+              {branches.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-sm">{appLang === 'en' ? 'Branch' : 'الفرع'}</Label>
+                  <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={appLang === 'en' ? 'Select branch' : 'اختر الفرع'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">{appLang === 'en' ? '-- No Branch --' : '-- بدون فرع --'}</SelectItem>
+                      {branches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {costCenters.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-sm">{appLang === 'en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
+                  <Select value={selectedCostCenterId} onValueChange={setSelectedCostCenterId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={appLang === 'en' ? 'Select cost center' : 'اختر مركز التكلفة'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">{appLang === 'en' ? '-- No Cost Center --' : '-- بدون مركز تكلفة --'}</SelectItem>
+                      {costCenters.map((cc) => (
+                        <SelectItem key={cc.id} value={cc.id}>{cc.code ? `${cc.code} - ` : ''}{cc.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isProcessing}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
             <Button 

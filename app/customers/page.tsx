@@ -165,6 +165,10 @@ export default function CustomersPage() {
   const [refundExRate, setRefundExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
   const [companyId, setCompanyId] = useState<string | null>(null)
 
+  // 🔐 قوائم الفروع ومراكز التكلفة (للأدوار المميزة - لنافذة صرف الرصيد)
+  const [allBranches, setAllBranches] = useState<{ id: string; name: string }[]>([])
+  const [allCostCenters, setAllCostCenters] = useState<{ id: string; name: string; code?: string }[]>([])
+
   // Pagination state
   const [pageSize, setPageSize] = useState(10)
 
@@ -260,6 +264,28 @@ export default function CustomersPage() {
               })
               setEmployees(employeesList)
             }
+          }
+
+          // 🔐 تحميل الفروع ومراكز التكلفة (للأدوار المميزة فقط)
+          const PRIV_ROLES = ['owner', 'admin', 'general_manager']
+          if (PRIV_ROLES.includes(role.toLowerCase())) {
+            // تحميل الفروع
+            const { data: branchesData } = await supabase
+              .from("branches")
+              .select("id, name")
+              .eq("company_id", activeCompanyId)
+              .eq("status", "active")
+              .order("name")
+            setAllBranches(branchesData || [])
+
+            // تحميل مراكز التكلفة
+            const { data: costCentersData } = await supabase
+              .from("cost_centers")
+              .select("id, name, code")
+              .eq("company_id", activeCompanyId)
+              .eq("is_active", true)
+              .order("name")
+            setAllCostCenters(costCentersData || [])
           }
         }
       }
@@ -1293,6 +1319,12 @@ export default function CustomersPage() {
         setRefundNotes={setRefundNotes}
         refundExRate={refundExRate}
         onRefundComplete={loadCustomers}
+        // 🔐 ERP Governance - سياق المستخدم
+        userRole={currentUserRole}
+        userBranchId={userContext?.branch_id || null}
+        userCostCenterId={userContext?.cost_center_id || null}
+        branches={allBranches}
+        costCenters={allCostCenters}
       />
     </div>
   )
