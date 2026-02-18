@@ -234,8 +234,8 @@ export function CustomerRefundDialog({
         toast({
           title: appLang === 'en' ? 'Account Configuration Error' : 'خطأ في إعداد الحسابات',
           description: appLang === 'en'
-            ? 'No customer credit account (sub_type: customer_credit) found in chart of accounts. Please configure it first.'
-            : 'لم يُعثر على حساب رصيد العملاء الدائن في دليل الحسابات (sub_type: customer_credit). يرجى إضافته أولاً.',
+            ? 'No customer credit/advance account found in chart of accounts. Please add an account with sub_type "customer_credit" or "customer_advance", or name it "Customer Credit Balance" / "Customer Advances".'
+            : 'لم يُعثر على حساب رصيد دائن أو سلفة عملاء في دليل الحسابات. يرجى إضافة حساب بـ sub_type يساوي "customer_credit" أو "customer_advance"، أو تسميته "رصيد العملاء الدائن" أو "سلف العملاء".',
           variant: 'destructive',
         })
         setIsProcessing(false)
