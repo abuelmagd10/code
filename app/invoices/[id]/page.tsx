@@ -3268,22 +3268,6 @@ export default function InvoiceDetailPage() {
                     {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
                   </Button>
                 ) : null}
-                {/* 💰 زر صرف رصيد العميل الدائن - يظهر فقط إذا كان هناك رصيد دائن */}
-                {customerCreditAmount > 0 && permPayWrite && invoice.customer_id ? (
-                  <Button
-                    variant="outline"
-                    className="border-green-500 text-green-600 hover:bg-green-50"
-                    onClick={() => {
-                      setRefundAmount(customerCreditAmount)
-                      setRefundDate(new Date().toISOString().slice(0, 10))
-                      setRefundNotes(appLang === 'en' ? `Credit refund from invoice #${invoice.invoice_number}` : `صرف رصيد دائن من الفاتورة #${invoice.invoice_number}`)
-                      setShowCustomerRefund(true)
-                    }}
-                  >
-                    <DollarSign className="w-4 h-4 ml-2" />
-                    {appLang === 'en' ? 'Refund Customer Credit' : 'صرف رصيد العميل'}
-                  </Button>
-                ) : null}
                 {/* 📌 تم إلغاء زر "إنشاء شحنة" - الوظيفة مدمجة في "تحديد كمرسلة" */}
                 {/* View Shipment Button - if shipment/third party goods exists */}
                 {existingShipment ? (
@@ -3297,6 +3281,22 @@ export default function InvoiceDetailPage() {
                 {/* ❌ تم إزالة زر "تحديد كمدفوعة" - الحالة تتحدث تلقائياً عند الدفع أو المرتجع */}
               </>
             )}
+            {/* 💰 زر صرف رصيد العميل الدائن - يظهر خارج شرط الحالة لأن الرصيد الدائن يحدث عادة للفواتير المدفوعة */}
+            {customerCreditAmount > 0 && permPayWrite && invoice.customer_id && invoice.status !== "cancelled" && invoice.status !== "draft" ? (
+              <Button
+                variant="outline"
+                className="border-green-500 text-green-600 hover:bg-green-50"
+                onClick={() => {
+                  setRefundAmount(customerCreditAmount)
+                  setRefundDate(new Date().toISOString().slice(0, 10))
+                  setRefundNotes(appLang === 'en' ? `Credit refund from invoice #${invoice.invoice_number}` : `صرف رصيد دائن من الفاتورة #${invoice.invoice_number}`)
+                  setShowCustomerRefund(true)
+                }}
+              >
+                <DollarSign className="w-4 h-4 ml-2" />
+                {appLang === 'en' ? 'Refund Customer Credit' : 'صرف رصيد العميل'}
+              </Button>
+            ) : null}
           </div>
 
           {/* Dialog: Receive Payment */}
