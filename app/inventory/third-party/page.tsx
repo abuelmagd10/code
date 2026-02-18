@@ -33,7 +33,7 @@ interface ThirdPartyItem {
   status: string
   shipping_provider_id: string
   created_at: string
-  created_by?: string
+  created_by_user_id?: string | null // منشئ أمر البيع
   invoices?: {
     invoice_number: string
     customer_id: string
@@ -337,7 +337,8 @@ export default function ThirdPartyInventoryPage() {
           returned_amount,
           customers(name, phone),
           branches(name),
-          warehouses(name)
+          warehouses(name),
+          sales_orders(created_by_user_id)
         `)
         .eq("company_id", companyId)
         .in("status", ["sent", "confirmed", "partially_returned", "partially_paid"])
@@ -464,6 +465,8 @@ export default function ThirdPartyInventoryPage() {
           line_total: lineTotal, // قيمة البند بعد خصم البند
           net_line_value: netLineValue, // ✅ القيمة الصافية بعد جميع الخصومات
           item_discount_percent: invoiceItem?.discount_percent || 0,
+          // ✅ منشئ أمر البيع للفلترة حسب الموظف
+          created_by_user_id: invoice?.sales_orders?.created_by_user_id || null,
           invoices: invoice ? {
             invoice_number: invoice.invoice_number,
             customer_id: invoice.customer_id,
@@ -530,9 +533,9 @@ export default function ThirdPartyInventoryPage() {
         if (item.invoices?.branch_id !== filterBranchId) return false
       }
 
-      // فلتر الموظف
+      // فلتر الموظف (منشئ أمر البيع)
       if (canViewAll && filterEmployeeId !== "all") {
-        if (item.created_by !== filterEmployeeId) return false
+        if (item.created_by_user_id !== filterEmployeeId) return false
       }
 
       // فلتر البحث
