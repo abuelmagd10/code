@@ -711,6 +711,7 @@ export default function PaymentsPage() {
 
   // Load invoice numbers, branch_ids and related sales orders for displayed customer payments
   // 🔐 للمستخدم العادي: نجلب بيانات الفواتير من المدفوعات الخام ثم نفلتر
+  // ✅ إصلاح: إزالة customerPayments من dependencies لمنع infinite loop
   useEffect(() => {
     ; (async () => {
       try {
@@ -775,10 +776,12 @@ export default function PaymentsPage() {
         }
       } catch (e) { /* ignore */ }
     })()
-  }, [customerPayments, rawCustomerPayments, pendingBranchFilter, supabase])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawCustomerPayments, pendingBranchFilter, supabase])
 
   // Load bill numbers and branch_ids for displayed supplier payments
   // 🔐 للمستخدم العادي: نجلب بيانات الفواتير من المدفوعات الخام ثم نفلتر
+  // ✅ إصلاح: إزالة supplierPayments من dependencies لمنع infinite loop
   useEffect(() => {
     ; (async () => {
       try {
@@ -837,7 +840,8 @@ export default function PaymentsPage() {
         }
       } catch (e) { /* ignore */ }
     })()
-  }, [supplierPayments, rawSupplierPayments, pendingBranchFilter, supabase])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawSupplierPayments, pendingBranchFilter, supabase])
 
   // Load account names for displayed supplier payments
   useEffect(() => {
