@@ -434,11 +434,59 @@ export default function PaymentsPage() {
           allCustomers = allCust || [];
         }
         setCustomers(allCustomers)
-        const { data: supps, error: suppsErr } = await supabase.from("suppliers").select("id, name").eq("company_id", activeCompanyId)
-        if (suppsErr) {
-          toastActionError(toast, "الجلب", "الموردين", "تعذر جلب قائمة الموردين")
+        // 🔐 ERP Access Control - جلب الموردين مع تطبيق الصلاحيات (نفس منطق العملاء)
+        let allSuppliers: Supplier[] = [];
+        if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+          // موظف عادي: يرى فقط الموردين الذين أنشأهم
+          const { data: ownSupps } = await supabase
+            .from("suppliers")
+            .select("id, name")
+            .eq("company_id", activeCompanyId)
+            .eq("created_by_user_id", accessFilter.createdByUserId);
+          allSuppliers = ownSupps || [];
+          // جلب الموردين المشتركين
+          const { data: sharedPerms } = await supabase
+            .from("permission_sharing")
+            .select("grantor_user_id")
+            .eq("grantee_user_id", user?.id || '')
+            .eq("company_id", activeCompanyId)
+            .eq("is_active", true)
+            .or("resource_type.eq.all,resource_type.eq.suppliers");
+          if (sharedPerms && sharedPerms.length > 0) {
+            const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id);
+            const { data: sharedSupps } = await supabase
+              .from("suppliers")
+              .select("id, name")
+              .eq("company_id", activeCompanyId)
+              .in("created_by_user_id", grantorIds);
+            const existingIds = new Set(allSuppliers.map((s: Supplier) => s.id));
+            (sharedSupps || []).forEach((s: Supplier) => { if (!existingIds.has(s.id)) allSuppliers.push(s); });
+          }
+        } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+          // مدير/محاسب: يرى موردين الفرع + الموردين بدون فرع
+          const { data: branchSupps } = await supabase
+            .from("suppliers")
+            .select("id, name")
+            .eq("company_id", activeCompanyId)
+            .eq("branch_id", accessFilter.branchId);
+          allSuppliers = branchSupps || [];
+          // إضافة الموردين بدون branch_id
+          const { data: nullBranchSupps } = await supabase
+            .from("suppliers")
+            .select("id, name")
+            .eq("company_id", activeCompanyId)
+            .is("branch_id", null);
+          const existingIds = new Set(allSuppliers.map((s: Supplier) => s.id));
+          (nullBranchSupps || []).forEach((s: Supplier) => { if (!existingIds.has(s.id)) allSuppliers.push(s); });
+        } else {
+          // owner/admin: جميع الموردين
+          const { data: supps, error: suppsErr } = await supabase.from("suppliers").select("id, name").eq("company_id", activeCompanyId)
+          if (suppsErr) {
+            toastActionError(toast, "الجلب", "الموردين", "تعذر جلب قائمة الموردين")
+          }
+          allSuppliers = supps || [];
         }
-        setSuppliers(supps || [])
+        setSuppliers(allSuppliers)
         // 🔐 ERP Access Control - جلب الحسابات مع تصفية حسب سياق المستخدم
         let accountsQuery = supabase
           .from("chart_of_accounts")
@@ -564,6 +612,53 @@ export default function PaymentsPage() {
   const reloadPaymentsRef = useRef<() => void>(() => {
     window.location.reload()
   })
+
+  // 🔄 دالة مشتركة لإعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
+  const reloadPaymentsWithFilters = useCallback(async () => {
+    if (!companyId || !userContext) return
+    try {
+      const { buildDataVisibilityFilter } = await import("@/lib/data-visibility-control")
+      const visibilityRules = buildDataVisibilityFilter(userContext)
+
+      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      const canFilterByBranch = PRIVILEGED_ROLES.includes((userContext.role || '').toLowerCase())
+      const selectedBranchId = branchFilter.getFilteredBranchId()
+
+      // جلب مدفوعات العملاء مع فلترة الفرع
+      let custPaysQuery = supabase
+        .from("payments")
+        .select("*, branches(name)")
+        .eq("company_id", companyId)
+        .not("customer_id", "is", null)
+
+      if (canFilterByBranch && selectedBranchId) {
+        custPaysQuery = custPaysQuery.eq("branch_id", selectedBranchId)
+      } else if (!canFilterByBranch && visibilityRules.filterByBranch && visibilityRules.branchId) {
+        custPaysQuery = custPaysQuery.eq("branch_id", visibilityRules.branchId)
+      }
+
+      const { data: custPays } = await custPaysQuery.order("payment_date", { ascending: false })
+      setCustomerPayments(custPays || [])
+
+      // جلب مدفوعات الموردين مع فلترة الفرع
+      let suppPaysQuery = supabase
+        .from("payments")
+        .select("*, branches(name)")
+        .eq("company_id", companyId)
+        .not("supplier_id", "is", null)
+
+      if (canFilterByBranch && selectedBranchId) {
+        suppPaysQuery = suppPaysQuery.eq("branch_id", selectedBranchId)
+      } else if (!canFilterByBranch && visibilityRules.filterByBranch && visibilityRules.branchId) {
+        suppPaysQuery = suppPaysQuery.eq("branch_id", visibilityRules.branchId)
+      }
+
+      const { data: suppPays } = await suppPaysQuery.order("payment_date", { ascending: false })
+      setSupplierPayments(suppPays || [])
+    } catch (err) {
+      console.error("Error reloading payments with filters:", err)
+    }
+  }, [companyId, userContext, branchFilter, supabase])
 
   const handlePaymentsRealtimeEvent = useCallback(() => {
     console.log('🔄 [Payments] Realtime event received, refreshing payments list...')
@@ -891,20 +986,17 @@ export default function PaymentsPage() {
           }
         }
       }
+      const savedCustomerId = newCustPayment.customer_id
+      const savedAmount = newCustPayment.amount
       setNewCustPayment({ customer_id: "", amount: 0, date: newCustPayment.date, method: "cash", ref: "", notes: "", account_id: "" })
       toastActionSuccess(toast, "الإنشاء", "الدفعة")
-      // reload list
-      const { data: custPays } = await supabase
-        .from("payments").select("*")
-        .eq("company_id", companyId)
-        .not("customer_id", "is", null)
-        .order("payment_date", { ascending: false })
-      setCustomerPayments(custPays || [])
+      // 🔐 إعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
+      await reloadPaymentsWithFilters()
       // إذا اختار المستخدم فاتورة من الجدول في النموذج: اربط أحدث دفعة عميل بهذه الفاتورة مباشرة
-      if (selectedFormInvoiceId && custPays && custPays.length > 0) {
-        const latest = custPays.find((p: any) => p.customer_id === newCustPayment.customer_id && !p.invoice_id) || custPays[0]
+      if (selectedFormInvoiceId && customerPayments && customerPayments.length > 0) {
+        const latest = customerPayments.find((p: any) => p.customer_id === savedCustomerId && !p.invoice_id) || customerPayments[0]
         try {
-          await applyPaymentToInvoiceWithOverrides(latest as any, selectedFormInvoiceId, Number(latest?.amount || newCustPayment.amount || 0))
+          await applyPaymentToInvoiceWithOverrides(latest as any, selectedFormInvoiceId, Number(latest?.amount || savedAmount || 0))
         } catch (linkErr) {
           console.error("Error auto-linking payment to invoice:", linkErr)
         }
@@ -1371,12 +1463,8 @@ export default function PaymentsPage() {
         notes: "تطبيق سلفة عميل على فاتورة",
       })
 
-      const { data: custPays } = await supabase
-        .from("payments").select("*")
-        .eq("company_id", mapping.companyId)
-        .not("customer_id", "is", null)
-        .order("payment_date", { ascending: false })
-      setCustomerPayments(custPays || [])
+      // 🔐 إعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
+      await reloadPaymentsWithFilters()
     } catch (err) {
       console.error("Error applying payment to invoice (overrides):", err)
     } finally {
@@ -1746,13 +1834,9 @@ export default function PaymentsPage() {
           setApplyInvoiceOpen(false)
           setSelectedPayment(null)
         })
-        const { data: custPays } = await supabase
-          .from("payments").select("*")
-          .eq("company_id", mapping.companyId)
-          .not("customer_id", "is", null)
-          .order("payment_date", { ascending: false })
+        // 🔐 إعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
+        await reloadPaymentsWithFilters()
         startTransition(() => {
-          setCustomerPayments(custPays || [])
           setSaving(false)
         })
       } catch (err) {
@@ -3190,20 +3274,8 @@ export default function PaymentsPage() {
                   setEditOpen(false)
                   setEditingPayment(null)
 
-                  // إعادة تحميل القوائم
-                  if (!companyId) return
-                  const { data: custPays } = await supabase
-                    .from("payments").select("*")
-                    .eq("company_id", companyId)
-                    .not("customer_id", "is", null)
-                    .order("payment_date", { ascending: false })
-                  setCustomerPayments(custPays || [])
-                  const { data: suppPays } = await supabase
-                    .from("payments").select("*")
-                    .eq("company_id", companyId)
-                    .not("supplier_id", "is", null)
-                    .order("payment_date", { ascending: false })
-                  setSupplierPayments(suppPays || [])
+                  // 🔐 إعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
+                  await reloadPaymentsWithFilters()
                 } catch (err) {
                   console.error("Error updating payment:", err)
                   toastActionError(toast, "التحديث", "الدفعة", "فشل تعديل الدفعة")
@@ -3415,18 +3487,8 @@ export default function PaymentsPage() {
                   setDeleteOpen(false)
                   setDeletingPayment(null)
                   if (!companyId) return
-                  const { data: custPays } = await supabase
-                    .from("payments").select("*")
-                    .eq("company_id", companyId)
-                    .not("customer_id", "is", null)
-                    .order("payment_date", { ascending: false })
-                  setCustomerPayments(custPays || [])
-                  const { data: suppPays } = await supabase
-                    .from("payments").select("*")
-                    .eq("company_id", companyId)
-                    .not("supplier_id", "is", null)
-                    .order("payment_date", { ascending: false })
-                  setSupplierPayments(suppPays || [])
+                  // 🔐 إعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
+                  await reloadPaymentsWithFilters()
                 } catch (err) {
                   console.error("Error deleting payment:", err)
                   toastActionError(toast, "الحذف", "الدفعة", "فشل حذف الدفعة")
