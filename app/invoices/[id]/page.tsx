@@ -2892,8 +2892,10 @@ export default function InvoiceDetailPage() {
                     const totalDiscount = discountBeforeTax + discountAfterTax
                     // صافي الفاتورة بعد المرتجعات = الإجمالي الأصلي - المرتجعات
                     const netInvoiceAfterReturns = originalInvoiceTotal - returnedAmount
-                    // رصيد العميل الدائن = المدفوع - صافي الفاتورة (إذا كان موجباً)
-                    const customerCreditDisplay = Math.max(0, invoice.paid_amount - netInvoiceAfterReturns)
+                    // رصيد العميل الدائن: نستخدم customerCreditAmount من الحالة الخارجية لأنه
+                    // يرجع إلى قاعدة البيانات ويعكس المبالغ المُصرَفة فعلاً (used_amount).
+                    // الحساب المحلي (paid - net) يُظهر الرصيد الإجمالي قبل الصرف وهو مُضلِّل.
+                    const customerCreditDisplay = customerCreditAmount
                     // المتبقي الفعلي للدفع (إذا كان موجباً)
                     const actualRemaining = Math.max(0, netInvoiceAfterReturns - invoice.paid_amount)
 
