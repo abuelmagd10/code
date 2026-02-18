@@ -529,10 +529,10 @@ export default function PaymentsPage() {
         const selectedBranchId = branchFilter.getFilteredBranchId()
 
         // جلب مدفوعات العملاء مع فلترة الفرع
-        // ✅ جلب الفرع من الفاتورة المرتبطة (invoices) لأن payment.branch_id قد يكون null
+        // ✅ جلب branch_id من الفاتورة المرتبطة (invoices) لأن payment.branch_id قد يكون null
         let custPaysQuery = supabase
           .from("payments")
-          .select("*, branches:branch_id(name), invoices:invoice_id(branch_id, branches:branch_id(name))")
+          .select("*, branches:branch_id(name), invoices:invoice_id(branch_id)")
           .eq("company_id", activeCompanyId)
           .not("customer_id", "is", null)
 
@@ -554,10 +554,10 @@ export default function PaymentsPage() {
         setCustomerPayments(custPays || [])
 
         // جلب مدفوعات الموردين مع فلترة الفرع
-        // ✅ جلب الفرع من فاتورة الشراء المرتبطة (bills) لأن payment.branch_id قد يكون null
+        // ✅ جلب branch_id من فاتورة الشراء المرتبطة (bills) لأن payment.branch_id قد يكون null
         let suppPaysQuery = supabase
           .from("payments")
-          .select("*, branches:branch_id(name), bills:bill_id(branch_id, branches:branch_id(name))")
+          .select("*, branches:branch_id(name), bills:bill_id(branch_id)")
           .eq("company_id", activeCompanyId)
           .not("supplier_id", "is", null)
 
@@ -628,10 +628,10 @@ export default function PaymentsPage() {
       const selectedBranchId = branchFilter.getFilteredBranchId()
 
       // جلب مدفوعات العملاء مع فلترة الفرع
-      // ✅ جلب الفرع من الفاتورة المرتبطة (invoices) لأن payment.branch_id قد يكون null
+      // ✅ جلب branch_id من الفاتورة المرتبطة (invoices) لأن payment.branch_id قد يكون null
       let custPaysQuery = supabase
         .from("payments")
-        .select("*, branches:branch_id(name), invoices:invoice_id(branch_id, branches:branch_id(name))")
+        .select("*, branches:branch_id(name), invoices:invoice_id(branch_id)")
         .eq("company_id", companyId)
         .not("customer_id", "is", null)
 
@@ -645,10 +645,10 @@ export default function PaymentsPage() {
       setCustomerPayments(custPays || [])
 
       // جلب مدفوعات الموردين مع فلترة الفرع
-      // ✅ جلب الفرع من فاتورة الشراء المرتبطة (bills) لأن payment.branch_id قد يكون null
+      // ✅ جلب branch_id من فاتورة الشراء المرتبطة (bills) لأن payment.branch_id قد يكون null
       let suppPaysQuery = supabase
         .from("payments")
-        .select("*, branches:branch_id(name), bills:bill_id(branch_id, branches:branch_id(name))")
+        .select("*, branches:branch_id(name), bills:bill_id(branch_id)")
         .eq("company_id", companyId)
         .not("supplier_id", "is", null)
 
@@ -2593,8 +2593,8 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{p.payment_date}</td>
                       <td className="px-2 py-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                          {/* ✅ عرض الفرع من الفاتورة المرتبطة أولاً، ثم من الدفعة، ثم fallback */}
-                          {(p as any).invoices?.branches?.name || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || ((p as any).invoices?.branch_id ? branchNames[(p as any).invoices.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
+                          {/* ✅ عرض الفرع: من الفاتورة المرتبطة (أولوية) → من الدفعة → fallback */}
+                          {((p as any).invoices?.branch_id ? branchNames[(p as any).invoices.branch_id] : null) || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
                         </span>
                       </td>
                       <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
@@ -2825,8 +2825,8 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{p.payment_date}</td>
                       <td className="px-2 py-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
-                          {/* ✅ عرض الفرع من فاتورة الشراء المرتبطة أولاً، ثم من الدفعة، ثم fallback */}
-                          {(p as any).bills?.branches?.name || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || ((p as any).bills?.branch_id ? branchNames[(p as any).bills.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
+                          {/* ✅ عرض الفرع: من فاتورة الشراء المرتبطة (أولوية) → من الدفعة → fallback */}
+                          {((p as any).bills?.branch_id ? branchNames[(p as any).bills.branch_id] : null) || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
                         </span>
                       </td>
                       <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
