@@ -186,14 +186,14 @@ export default function NewPurchaseReturnPage() {
 
   // جلب رصيد كل منتج في جميع المخازن (للمالك/المدير العام فقط)
   useEffect(() => {
-    if (!isPrivileged || !companyId || allWarehouses.length === 0 || items.length === 0) {
+    if (!isPrivileged || !companyId || allWarehouses.length === 0 || !form.bill_id) {
       setAllWarehouseStocks({})
       return
     }
     const productIds = items.filter(i => i.product_id).map(i => i.product_id as string)
-    if (productIds.length === 0) return
+    if (productIds.length === 0) { setAllWarehouseStocks({}); return }
 
-    ; (async () => {
+    ;(async () => {
       const { data } = await supabase
         .from("inventory_transactions")
         .select("product_id, warehouse_id, quantity_change")
@@ -213,7 +213,7 @@ export default function NewPurchaseReturnPage() {
       }
       setAllWarehouseStocks(stocksMap)
     })()
-  }, [isPrivileged, companyId, allWarehouses, items])
+  }, [isPrivileged, companyId, allWarehouses, items, form.bill_id])
 
   // Update exchange rate when currency changes
   useEffect(() => {
@@ -849,107 +849,138 @@ export default function NewPurchaseReturnPage() {
                     ) : null}
                   </div>
                 </div>
+              </div>
+            )}
 
-                {/* 📊 جدول توزيع المخزون على الفروع */}
-                {items.filter(i => i.product_id).length > 0 && allWarehouses.length > 0 && (
-                  <div className="mt-3 border border-amber-200 dark:border-amber-700 rounded-lg overflow-hidden">
-                    <div className="bg-amber-100 dark:bg-amber-900/40 px-3 py-2 flex items-center gap-2">
-                      <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-                        📊 {appLang === 'en' ? 'Stock Distribution Across Branches' : 'توزيع المخزون على الفروع'}
-                      </span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-700">
-                            <th className="text-right p-2 font-medium text-amber-800 dark:text-amber-300 whitespace-nowrap min-w-[140px]">
-                              {appLang === 'en' ? 'Branch / Warehouse' : 'الفرع / المخزن'}
-                            </th>
-                            {items.filter(i => i.product_id).map((it, idx) => (
-                              <th key={idx} className="text-center p-2 font-medium text-amber-800 dark:text-amber-300 whitespace-nowrap">
-                                {it.product_name}
-                              </th>
-                            ))}
-                            <th className="text-center p-2 font-medium text-amber-800 dark:text-amber-300 whitespace-nowrap">
-                              {appLang === 'en' ? 'Total' : 'الإجمالي'}
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {allWarehouses.map(wh => {
-                            const whStocks = allWarehouseStocks[wh.id] || {}
-                            const productsInItems = items.filter(i => i.product_id)
-                            const rowTotal = productsInItems.reduce((sum, it) => sum + (whStocks[it.product_id!] || 0), 0)
-                            const isBillWarehouse = wh.id === bills.find(b => b.id === form.bill_id)?.warehouse_id
-                            const isSelectedWarehouse = wh.id === selectedWarehouseId
-                            return (
-                              <tr
-                                key={wh.id}
-                                className={`border-b border-amber-100 dark:border-amber-800 ${
-                                  isSelectedWarehouse
-                                    ? 'bg-amber-100 dark:bg-amber-900/40'
-                                    : 'hover:bg-amber-50/50 dark:hover:bg-amber-900/10'
-                                }`}
-                              >
-                                <td className="p-2 whitespace-nowrap">
-                                  <div className="flex items-center gap-1">
-                                    {isSelectedWarehouse && <span className="text-amber-600">▶</span>}
-                                    <div>
-                                      <div className="font-medium text-gray-800 dark:text-gray-200">
-                                        {(wh as any).branches?.name || (appLang === 'en' ? 'No Branch' : 'بدون فرع')}
-                                      </div>
-                                      <div className="text-gray-500 dark:text-gray-400 text-[10px]">
-                                        {wh.name}
-                                        {isBillWarehouse && (
-                                          <span className="mr-1 text-blue-600 dark:text-blue-400">
-                                            ({appLang === 'en' ? 'Bill' : 'الفاتورة'})
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </td>
-                                {productsInItems.map((it, idx) => {
-                                  const qty = whStocks[it.product_id!] || 0
-                                  const isShortage = it.quantity > 0 && qty < it.quantity
-                                  return (
-                                    <td key={idx} className="p-2 text-center">
-                                      <span className={`font-semibold ${qty <= 0 ? 'text-gray-400' : isShortage ? 'text-red-600 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
-                                        {qty}
+            {/* 📊 جدول توزيع المخزون على الفروع (للمالك/المدير العام عند اختيار فاتورة) */}
+            {isPrivileged && form.bill_id && items.filter(i => i.product_id).length > 0 && allWarehouses.length > 0 && (
+              <div className="border border-blue-200 dark:border-blue-700 rounded-xl overflow-hidden">
+                <div className="bg-blue-50 dark:bg-blue-900/30 px-4 py-2.5 flex items-center gap-2 border-b border-blue-200 dark:border-blue-700">
+                  <span className="text-sm font-semibold text-blue-800 dark:text-blue-200">
+                    📊 {appLang === 'en' ? 'Stock Distribution Across Branches' : 'توزيع المخزون على الفروع'}
+                  </span>
+                  <span className="text-xs text-blue-500 dark:text-blue-400">
+                    {appLang === 'en' ? '(real-time)' : '(فوري)'}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-blue-50/70 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-700">
+                        <th className="text-right p-2.5 font-semibold text-blue-800 dark:text-blue-300 whitespace-nowrap min-w-[160px]">
+                          {appLang === 'en' ? 'Branch / Warehouse' : 'الفرع / المخزن'}
+                        </th>
+                        {items.filter(i => i.product_id).map((it, idx) => (
+                          <th key={idx} className="text-center p-2.5 font-semibold text-blue-800 dark:text-blue-300 whitespace-nowrap">
+                            {it.product_name}
+                            <div className="text-[10px] font-normal text-blue-500 dark:text-blue-400">
+                              {appLang === 'en' ? `Return: ${it.quantity}` : `مرتجع: ${it.quantity}`}
+                            </div>
+                          </th>
+                        ))}
+                        <th className="text-center p-2.5 font-semibold text-blue-800 dark:text-blue-300 whitespace-nowrap">
+                          {appLang === 'en' ? 'Total' : 'الإجمالي'}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allWarehouses.map(wh => {
+                        const whStocks = allWarehouseStocks[wh.id] || {}
+                        const productsInItems = items.filter(i => i.product_id)
+                        const rowTotal = productsInItems.reduce((sum, it) => sum + (whStocks[it.product_id!] || 0), 0)
+                        const isBillWarehouse = wh.id === bills.find(b => b.id === form.bill_id)?.warehouse_id
+                        const isSelectedWarehouse = wh.id === selectedWarehouseId
+                        const hasShortage = productsInItems.some(it => it.quantity > 0 && (whStocks[it.product_id!] || 0) < it.quantity)
+                        return (
+                          <tr
+                            key={wh.id}
+                            className={`border-b border-blue-100 dark:border-blue-800 transition-colors ${
+                              isSelectedWarehouse
+                                ? 'bg-amber-50 dark:bg-amber-900/30 ring-1 ring-inset ring-amber-300 dark:ring-amber-700'
+                                : 'hover:bg-blue-50/40 dark:hover:bg-blue-900/10'
+                            }`}
+                          >
+                            <td className="p-2.5">
+                              <div className="flex items-center gap-1.5">
+                                {isSelectedWarehouse && <span className="text-amber-500 text-base">▶</span>}
+                                <div>
+                                  <div className="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-1">
+                                    {(wh as any).branches?.name || (appLang === 'en' ? 'No Branch' : 'بدون فرع')}
+                                    {isBillWarehouse && (
+                                      <span className="text-[10px] bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-full">
+                                        {appLang === 'en' ? 'Bill' : 'الفاتورة'}
                                       </span>
-                                    </td>
-                                  )
-                                })}
-                                <td className="p-2 text-center font-bold text-amber-800 dark:text-amber-300">
-                                  {rowTotal}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                          {/* صف مجموع الشركة */}
-                          <tr className="bg-amber-100 dark:bg-amber-900/30 font-bold">
-                            <td className="p-2 text-amber-800 dark:text-amber-200">
-                              🏢 {appLang === 'en' ? 'Company Total' : 'إجمالي الشركة'}
+                                    )}
+                                    {isSelectedWarehouse && (
+                                      <span className="text-[10px] bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded-full">
+                                        {appLang === 'en' ? 'Selected' : 'مختار'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-gray-400 dark:text-gray-500 text-[10px]">{wh.name}</div>
+                                </div>
+                              </div>
                             </td>
-                            {items.filter(i => i.product_id).map((it, idx) => {
-                              const companyTotal = allWarehouses.reduce((sum, wh) => sum + (allWarehouseStocks[wh.id]?.[it.product_id!] || 0), 0)
+                            {productsInItems.map((it, idx) => {
+                              const qty = whStocks[it.product_id!] || 0
+                              const isShortageForProduct = it.quantity > 0 && qty < it.quantity
                               return (
-                                <td key={idx} className="p-2 text-center text-amber-900 dark:text-amber-100">
-                                  {companyTotal}
+                                <td key={idx} className="p-2.5 text-center">
+                                  <span className={`font-bold text-sm ${
+                                    qty <= 0
+                                      ? 'text-gray-300 dark:text-gray-600'
+                                      : isShortageForProduct
+                                        ? 'text-red-600 dark:text-red-400'
+                                        : 'text-green-700 dark:text-green-400'
+                                  }`}>
+                                    {qty}
+                                  </span>
+                                  {isShortageForProduct && (
+                                    <div className="text-[10px] text-red-500 dark:text-red-400">
+                                      {appLang === 'en' ? 'Insufficient' : 'غير كافٍ'}
+                                    </div>
+                                  )}
                                 </td>
                               )
                             })}
-                            <td className="p-2 text-center text-amber-900 dark:text-amber-100">
-                              {items.filter(i => i.product_id).reduce((sum, it) =>
-                                sum + allWarehouses.reduce((ws, wh) => ws + (allWarehouseStocks[wh.id]?.[it.product_id!] || 0), 0), 0
-                              )}
+                            <td className="p-2.5 text-center">
+                              <span className={`font-bold ${rowTotal === 0 ? 'text-gray-300 dark:text-gray-600' : hasShortage ? 'text-red-600 dark:text-red-400' : 'text-blue-700 dark:text-blue-300'}`}>
+                                {rowTotal}
+                              </span>
                             </td>
                           </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
+                        )
+                      })}
+                      {/* صف إجمالي الشركة */}
+                      <tr className="bg-blue-100 dark:bg-blue-900/40 font-bold border-t-2 border-blue-300 dark:border-blue-600">
+                        <td className="p-2.5 text-blue-800 dark:text-blue-200">
+                          🏢 {appLang === 'en' ? 'Company Total' : 'إجمالي الشركة'}
+                        </td>
+                        {items.filter(i => i.product_id).map((it, idx) => {
+                          const companyTotal = allWarehouses.reduce((sum, wh) => sum + (allWarehouseStocks[wh.id]?.[it.product_id!] || 0), 0)
+                          const meetsReturn = companyTotal >= it.quantity
+                          return (
+                            <td key={idx} className="p-2.5 text-center">
+                              <span className={`text-sm ${meetsReturn ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                {companyTotal}
+                              </span>
+                              {!meetsReturn && it.quantity > 0 && (
+                                <div className="text-[10px] text-red-500">
+                                  {appLang === 'en' ? '⚠ Below return qty' : '⚠ أقل من كمية المرتجع'}
+                                </div>
+                              )}
+                            </td>
+                          )
+                        })}
+                        <td className="p-2.5 text-center text-blue-900 dark:text-blue-100 text-sm">
+                          {items.filter(i => i.product_id).reduce((sum, it) =>
+                            sum + allWarehouses.reduce((ws, wh) => ws + (allWarehouseStocks[wh.id]?.[it.product_id!] || 0), 0), 0
+                          )}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 
