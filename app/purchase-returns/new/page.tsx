@@ -115,13 +115,12 @@ export default function NewPurchaseReturnPage() {
       setCurrentUserRole(role)
       setCurrentUserName(user.email || '')
 
-      // جلب جميع المخازن للمالك/المدير العام
+      // جلب جميع المخازن للمالك/المدير العام (بدون فلتر is_active لضمان الشمولية)
       if (PRIVILEGED_ROLES.includes(role.toLowerCase())) {
         const { data: warehousesData } = await supabase
           .from("warehouses")
           .select("id, name, branch_id, branches(name)")
           .eq("company_id", loadedCompanyId)
-          .eq("is_active", true)
         setAllWarehouses((warehousesData || []) as Warehouse[])
       }
 
