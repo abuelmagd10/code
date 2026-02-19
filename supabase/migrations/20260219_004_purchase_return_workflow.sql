@@ -82,11 +82,13 @@ BEGIN
   -- حالة القيد: draft للمعلق، posted للمؤكد
   v_je_status := CASE WHEN v_is_pending THEN 'draft' ELSE 'posted' END;
 
-  -- ===================== التحقق من الفاتورة =====================
-  IF p_bill_id IS NOT NULL THEN
-    IF NOT EXISTS (SELECT 1 FROM bills WHERE id = p_bill_id AND company_id = p_company_id) THEN
-      RAISE EXCEPTION 'Bill not found or does not belong to company: %', p_bill_id;
-    END IF;
+  -- ===================== التحقق من الفاتورة (إلزامية) =====================
+  IF p_bill_id IS NULL THEN
+    RAISE EXCEPTION 'Bill ID is required to create a purchase return';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM bills WHERE id = p_bill_id AND company_id = p_company_id) THEN
+    RAISE EXCEPTION 'Bill not found or does not belong to company: %', p_bill_id;
   END IF;
 
   -- ===================== قفل الصفوف والتحقق (Race Condition Protection) =====================

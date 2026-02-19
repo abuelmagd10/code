@@ -375,7 +375,8 @@ export default function NewPurchaseReturnPage() {
 
       // ===================== تحديد workflow_status =====================
       // إذا اختار المالك/المدير مخزن مختلف عن مخزن الفاتورة → pending_approval
-      const isDifferentWarehouse = isPrivileged && selectedWarehouseId && selectedWarehouseId !== (selectedBill?.warehouse_id || '')
+      // شرط ضروري: يجب أن تكون الفاتورة محددة لتفعيل pending_approval
+      const isDifferentWarehouse = isPrivileged && !!form.bill_id && !!selectedWarehouseId && !!selectedBill && selectedWarehouseId !== (selectedBill.warehouse_id || '')
       const workflowStatus = isDifferentWarehouse ? 'pending_approval' : 'confirmed'
 
       // ===================== التحقق من المخزون (UX pre-check) =====================
@@ -733,7 +734,14 @@ export default function NewPurchaseReturnPage() {
                 <select
                   className={`w-full border rounded px-2 py-2 ${!form.bill_id ? 'border-red-300 dark:border-red-700' : 'border-gray-300 dark:border-gray-600'}`}
                   value={form.bill_id}
-                  onChange={e => setForm({ ...form, bill_id: e.target.value })}
+                  onChange={e => {
+                    const newBillId = e.target.value
+                    setForm({ ...form, bill_id: newBillId })
+                    // إذا تم مسح الفاتورة، نمسح المخزن المختار أيضاً
+                    if (!newBillId) {
+                      setSelectedWarehouseId('')
+                    }
+                  }}
                 >
                   <option value="">{appLang === 'en' ? '— Select Bill —' : '— اختر الفاتورة —'}</option>
                   {filteredBills.map(b => <option key={b.id} value={b.id}>{b.bill_number}</option>)}
@@ -922,20 +930,28 @@ export default function NewPurchaseReturnPage() {
             </div>
 
             <div className="flex justify-end gap-2 items-center">
-              {isPrivileged && selectedWarehouseId && selectedWarehouseId !== (bills.find(b => b.id === form.bill_id)?.warehouse_id) && (
-                <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-3 py-1.5 rounded-lg">
-                  📋 {appLang === 'en' ? 'Will send for approval' : 'سيُرسَل للاعتماد'}
-                </span>
-              )}
-              <Button variant="outline" onClick={() => router.back()}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
-              <Button onClick={saveReturn} disabled={saving || !form.supplier_id || !form.bill_id}>
-                {saving
-                  ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...')
-                  : (isPrivileged && selectedWarehouseId && selectedWarehouseId !== (bills.find(b => b.id === form.bill_id)?.warehouse_id))
-                    ? (appLang === 'en' ? 'Submit for Approval' : 'إرسال للاعتماد')
-                    : (appLang === 'en' ? 'Save Return' : 'حفظ المرتجع')
-                }
-              </Button>
+              {(() => {
+                const currentBill = bills.find(b => b.id === form.bill_id)
+                const isPendingApprovalMode = isPrivileged && !!form.bill_id && !!currentBill && !!selectedWarehouseId && selectedWarehouseId !== currentBill.warehouse_id
+                return (
+                  <>
+                    {isPendingApprovalMode && (
+                      <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-3 py-1.5 rounded-lg">
+                        📋 {appLang === 'en' ? 'Will send for approval' : 'سيُرسَل للاعتماد'}
+                      </span>
+                    )}
+                    <Button variant="outline" onClick={() => router.back()}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
+                    <Button onClick={saveReturn} disabled={saving || !form.supplier_id || !form.bill_id}>
+                      {saving
+                        ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...')
+                        : isPendingApprovalMode
+                          ? (appLang === 'en' ? 'Submit for Approval' : 'إرسال للاعتماد')
+                          : (appLang === 'en' ? 'Save Return' : 'حفظ المرتجع')
+                      }
+                    </Button>
+                  </>
+                )
+              })()}
             </div>
           </CardContent>
         </Card>
