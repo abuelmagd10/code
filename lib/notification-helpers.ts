@@ -208,6 +208,112 @@ export async function notifyVendorCreditCreated(params: {
 }
 
 /**
+ * إشعار إنشاء مرتجع شراء يحتاج اعتماد (للمالك/المدير العام)
+ * يُرسل إلى: مسؤول المخزن المعني + محاسب الفرع
+ */
+export async function notifyPurchaseReturnPendingApproval(params: {
+  companyId: string
+  purchaseReturnId: string
+  returnNumber: string
+  supplierName: string
+  totalAmount: number
+  currency: string
+  warehouseId: string
+  branchId?: string
+  createdBy: string
+  createdByName?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, purchaseReturnId, returnNumber, supplierName, totalAmount, currency,
+    warehouseId, branchId, createdBy, createdByName, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? `Purchase Return Requires Your Approval`
+    : `مرتجع مشتريات يحتاج اعتمادك`
+
+  const message = appLang === 'en'
+    ? `Return #${returnNumber} for supplier ${supplierName} (${totalAmount} ${currency}) requires your confirmation to deliver goods to supplier.`
+    : `مرتجع رقم ${returnNumber} للمورد ${supplierName} (${totalAmount} ${currency}) يحتاج تأكيدك بتسليم البضاعة للمورد.`
+
+  const eventKey = `purchase_return:${purchaseReturnId}:pending_approval`
+
+  // إشعار لمسؤول المخزن
+  await createNotification({
+    companyId,
+    referenceType: 'purchase_return',
+    referenceId: purchaseReturnId,
+    title,
+    message,
+    createdBy,
+    branchId,
+    warehouseId,
+    assignedToRole: 'store_manager',
+    priority: 'high' as NotificationPriority,
+    eventKey: `${eventKey}:store_manager`,
+    severity: 'warning',
+    category: 'inventory',
+  })
+
+  // إشعار لمحاسب الفرع
+  await createNotification({
+    companyId,
+    referenceType: 'purchase_return',
+    referenceId: purchaseReturnId,
+    title: appLang === 'en' ? `Purchase Return Created - Pending Delivery` : `مرتجع مشتريات جديد - بانتظار التسليم`,
+    message: appLang === 'en'
+      ? `Return #${returnNumber} created by ${createdByName || 'Management'} pending warehouse manager confirmation.`
+      : `مرتجع رقم ${returnNumber} أنشأه ${createdByName || 'الإدارة'} في انتظار اعتماد مسؤول المخزن.`,
+    createdBy,
+    branchId,
+    warehouseId,
+    assignedToRole: 'accountant',
+    priority: 'normal' as NotificationPriority,
+    eventKey: `${eventKey}:accountant`,
+    severity: 'info',
+    category: 'inventory',
+  })
+}
+
+/**
+ * إشعار اعتماد تسليم مرتجع المشتريات
+ * يُرسل إلى: المالك / المدير العام الذي أنشأ المرتجع
+ */
+export async function notifyPurchaseReturnConfirmed(params: {
+  companyId: string
+  purchaseReturnId: string
+  returnNumber: string
+  supplierName: string
+  totalAmount: number
+  currency: string
+  confirmedByName?: string
+  createdBy: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, purchaseReturnId, returnNumber, supplierName, totalAmount, currency,
+    confirmedByName, createdBy, appLang = 'ar' } = params
+
+  const title = appLang === 'en' ? `Purchase Return Confirmed` : `تم اعتماد مرتجع المشتريات`
+
+  const message = appLang === 'en'
+    ? `Return #${returnNumber} for ${supplierName} (${totalAmount} ${currency}) has been confirmed and goods delivered to supplier${confirmedByName ? ` by ${confirmedByName}` : ''}.`
+    : `تم اعتماد مرتجع رقم ${returnNumber} للمورد ${supplierName} (${totalAmount} ${currency}) وتسليم البضاعة${confirmedByName ? ` بواسطة ${confirmedByName}` : ''}.`
+
+  await createNotification({
+    companyId,
+    referenceType: 'purchase_return',
+    referenceId: purchaseReturnId,
+    title,
+    message,
+    createdBy,
+    assignedToUser: createdBy,
+    priority: 'normal' as NotificationPriority,
+    eventKey: `purchase_return:${purchaseReturnId}:confirmed`,
+    severity: 'info',
+    category: 'inventory',
+  })
+}
+
+/**
  * إنشاء إشعار عند إنشاء إشعار مدين العميل
  * ✅ محدث: يدعم event_key و severity و category
  */

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
-import { Trash2, Plus } from "lucide-react"
+import { Trash2, Plus, Warehouse, AlertTriangle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
@@ -16,11 +16,13 @@ import { getActiveCompanyId } from "@/lib/company"
 import { canReturnBill, getBillOperationError, billRequiresJournalEntries } from "@/lib/validation"
 import { validatePurchaseReturnStock, formatStockShortageMessage } from "@/lib/purchase-return-validation"
 import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-reversal"
+import { notifyPurchaseReturnPendingApproval } from "@/lib/notification-helpers"
 
 type Supplier = { id: string; name: string; phone?: string | null }
 type Bill = { id: string; bill_number: string; supplier_id: string; total_amount: number; status: string; branch_id?: string | null; cost_center_id?: string | null; warehouse_id?: string | null }
 type BillItem = { id: string; product_id: string | null; quantity: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number; returned_quantity?: number; products?: { name: string; cost_price: number } }
 type Product = { id: string; name: string; cost_price: number; item_type?: 'product' | 'service' }
+type Warehouse = { id: string; name: string; branch_id: string | null; branches?: { name: string } | null }
 
 type ItemRow = {
   bill_item_id: string | null
@@ -33,6 +35,8 @@ type ItemRow = {
   discount_percent: number
   line_total: number
 }
+
+const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
 
 export default function NewPurchaseReturnPage() {
   const supabase = useSupabase()
@@ -50,6 +54,18 @@ export default function NewPurchaseReturnPage() {
   const [billItems, setBillItems] = useState<BillItem[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [companyId, setCompanyId] = useState<string | null>(null)
+
+  // صلاحيات المستخدم
+  const [currentUserRole, setCurrentUserRole] = useState<string>('accountant')
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserName, setCurrentUserName] = useState<string>('')
+  const isPrivileged = PRIVILEGED_ROLES.includes(currentUserRole.toLowerCase())
+
+  // المخازن (للمالك/المدير العام)
+  const [allWarehouses, setAllWarehouses] = useState<Warehouse[]>([])
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('')
+  // رصيد كل منتج في المخزن المختار (productId → stock)
+  const [warehouseStocks, setWarehouseStocks] = useState<Record<string, number>>({})
 
   const [form, setForm] = useState({
     supplier_id: "",
@@ -77,6 +93,39 @@ export default function NewPurchaseReturnPage() {
       if (!loadedCompanyId) return
       setCompanyId(loadedCompanyId)
 
+      // جلب بيانات المستخدم والدور
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setCurrentUserId(user.id)
+
+        const { data: companyData } = await supabase
+          .from("companies").select("user_id").eq("id", loadedCompanyId).single()
+        const { data: memberData } = await supabase
+          .from("company_members")
+          .select("role, full_name")
+          .eq("company_id", loadedCompanyId)
+          .eq("user_id", user.id)
+          .single()
+        const { data: profileData } = await supabase
+          .from("profiles").select("full_name").eq("id", user.id).single()
+
+        const isOwner = companyData?.user_id === user.id
+        const role = isOwner ? "owner" : (memberData?.role || "accountant")
+        const fullName = memberData?.full_name || profileData?.full_name || user.email || ''
+        setCurrentUserRole(role)
+        setCurrentUserName(fullName)
+
+        // جلب جميع المخازن للمالك/المدير العام
+        if (PRIVILEGED_ROLES.includes(role.toLowerCase())) {
+          const { data: warehousesData } = await supabase
+            .from("warehouses")
+            .select("id, name, branch_id, branches(name)")
+            .eq("company_id", loadedCompanyId)
+            .eq("is_active", true)
+          setAllWarehouses((warehousesData || []) as Warehouse[])
+        }
+      }
+
       const [suppRes, billRes, prodRes] = await Promise.all([
         supabase.from("suppliers").select("id, name, phone").eq("company_id", loadedCompanyId),
         supabase.from("bills").select("id, bill_number, supplier_id, total_amount, status, branch_id, cost_center_id, warehouse_id").eq("company_id", loadedCompanyId).in("status", ["paid", "partially_paid", "sent", "received"]),
@@ -94,6 +143,35 @@ export default function NewPurchaseReturnPage() {
     })()
   }, [supabase])
 
+  // جلب رصيد المخزن المختار لكل منتج في بنود المرتجع
+  useEffect(() => {
+    if (!selectedWarehouseId || !companyId || items.length === 0) {
+      setWarehouseStocks({})
+      return
+    }
+    const productIds = items
+      .filter(i => i.product_id)
+      .map(i => i.product_id as string)
+    if (productIds.length === 0) return
+
+    ; (async () => {
+      const { data } = await supabase
+        .from("inventory_transactions")
+        .select("product_id, quantity_change")
+        .eq("company_id", companyId)
+        .eq("warehouse_id", selectedWarehouseId)
+        .in("product_id", productIds)
+        .eq("is_deleted", false)
+
+      const stocks: Record<string, number> = {}
+      for (const pid of productIds) stocks[pid] = 0
+      for (const row of (data || [])) {
+        stocks[row.product_id] = (stocks[row.product_id] || 0) + Number(row.quantity_change)
+      }
+      setWarehouseStocks(stocks)
+    })()
+  }, [selectedWarehouseId, companyId, items])
+
   // Update exchange rate when currency changes
   useEffect(() => {
     const updateRate = async () => {
@@ -107,11 +185,13 @@ export default function NewPurchaseReturnPage() {
     updateRate()
   }, [form.currency, companyId, baseCurrency])
 
-  // Load bill items when bill is selected
+  // Load bill items when bill is selected + تهيئة المخزن الافتراضي
   useEffect(() => {
     if (!form.bill_id) {
       setBillItems([])
       setItems([])
+      setSelectedWarehouseId('')
+      setWarehouseStocks({})
       return
     }
     ; (async () => {
@@ -135,6 +215,12 @@ export default function NewPurchaseReturnPage() {
         discount_percent: Number(item.discount_percent || 0),
         line_total: 0
       })))
+
+      // للمالك/المدير: تعيين مخزن الفاتورة الافتراضي
+      const selectedBill = bills.find(b => b.id === form.bill_id)
+      if (selectedBill?.warehouse_id) {
+        setSelectedWarehouseId(selectedBill.warehouse_id)
+      }
     })()
   }, [form.bill_id, supabase])
 
@@ -234,6 +320,19 @@ export default function NewPurchaseReturnPage() {
       let billCostCenterId = selectedBill?.cost_center_id || null
       let billWarehouseId = selectedBill?.warehouse_id || null
 
+      // للمالك/المدير: استخدام المخزن المختار (قد يختلف عن مخزن الفاتورة)
+      const effectiveWarehouseId = (isPrivileged && selectedWarehouseId) ? selectedWarehouseId : billWarehouseId
+      const selectedWarehouse = isPrivileged ? allWarehouses.find(w => w.id === effectiveWarehouseId) : null
+
+      // إذا اختار المالك/المدير مخزن مختلف، نجلب بيانات فرعه
+      if (isPrivileged && selectedWarehouseId && selectedWarehouseId !== billWarehouseId && selectedWarehouse?.branch_id) {
+        const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+        const altDefaults = await getBranchDefaults(supabase, selectedWarehouse.branch_id)
+        billBranchId = selectedWarehouse.branch_id
+        billWarehouseId = effectiveWarehouseId
+        billCostCenterId = altDefaults.default_cost_center_id
+      }
+
       if (needsJournalEntry && form.bill_id) {
         if (!billBranchId && billWarehouseId) {
           const { data: wh } = await supabase
@@ -256,9 +355,16 @@ export default function NewPurchaseReturnPage() {
         }
       }
 
+      // ===================== تحديد workflow_status =====================
+      // إذا اختار المالك/المدير مخزن مختلف عن مخزن الفاتورة → pending_approval
+      const isDifferentWarehouse = isPrivileged && selectedWarehouseId && selectedWarehouseId !== (selectedBill?.warehouse_id || '')
+      const workflowStatus = isDifferentWarehouse ? 'pending_approval' : 'confirmed'
+
       // ===================== التحقق من المخزون (UX pre-check) =====================
-      if (billWarehouseId) {
-        const stockValidation = await validatePurchaseReturnStock(supabase, validItems, billWarehouseId, companyId)
+      // للمرتجعات المعلقة: التحقق من المخزن المختار
+      const stockCheckWarehouseId = effectiveWarehouseId || billWarehouseId
+      if (stockCheckWarehouseId && workflowStatus === 'confirmed') {
+        const stockValidation = await validatePurchaseReturnStock(supabase, validItems, stockCheckWarehouseId, companyId)
         if (!stockValidation.success) {
           toastActionError(toast, "الحفظ", "المرتجع", formatStockShortageMessage(stockValidation.shortages, appLang))
           return
@@ -421,8 +527,8 @@ export default function NewPurchaseReturnPage() {
       })) : null
 
       // ===================== 🔥 الاستدعاء الأتومي (Transaction واحدة) =====================
-      // يشمل: purchase_return + journal_entry + journal_lines + inventory_transactions
-      //       + purchase_return_items + bill_items update + bills update + vendor_credit
+      // pending_approval: ينشئ المرتجع والقيد (draft) بدون خصم مخزون
+      // confirmed: ينشئ كل شيء فوراً
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
         'process_purchase_return_atomic',
         {
@@ -441,7 +547,7 @@ export default function NewPurchaseReturnPage() {
             notes: form.notes,
             branch_id: billBranchId,
             cost_center_id: billCostCenterId,
-            warehouse_id: billWarehouseId,
+            warehouse_id: effectiveWarehouseId || billWarehouseId,
             original_currency: form.currency,
             original_subtotal: subtotal,
             original_tax_amount: taxAmount,
@@ -468,7 +574,9 @@ export default function NewPurchaseReturnPage() {
           p_journal_lines: (needsJournalEntry && journalLines.length > 0) ? journalLines : null,
           p_vendor_credit: vendorCreditData,
           p_vendor_credit_items: vendorCreditItemsData,
-          p_bill_update: billUpdateData,
+          p_bill_update: workflowStatus === 'pending_approval' ? null : billUpdateData,
+          p_workflow_status: workflowStatus,
+          p_created_by: currentUserId || null,
         }
       )
 
@@ -477,7 +585,38 @@ export default function NewPurchaseReturnPage() {
       }
 
       const purchaseReturnId = (rpcResult as any)?.purchase_return_id
-      console.log(`✅ تم حفظ المرتجع بنجاح (Atomic): ${purchaseReturnId}`)
+      console.log(`✅ تم حفظ المرتجع بنجاح (Atomic): ${purchaseReturnId}, workflow: ${workflowStatus}`)
+
+      // ===================== 🔔 إشعارات (pending_approval) =====================
+      if (workflowStatus === 'pending_approval' && purchaseReturnId) {
+        try {
+          const selectedSupplier = suppliers.find(s => s.id === form.supplier_id)
+          await notifyPurchaseReturnPendingApproval({
+            companyId,
+            purchaseReturnId,
+            returnNumber: form.return_number,
+            supplierName: selectedSupplier?.name || form.supplier_id,
+            totalAmount: finalBaseTotal,
+            currency: baseCurrency,
+            warehouseId: effectiveWarehouseId || billWarehouseId || '',
+            branchId: billBranchId || undefined,
+            createdBy: currentUserId || '',
+            createdByName: currentUserName,
+            appLang,
+          })
+        } catch (notifyErr) {
+          console.warn('⚠️ Notification failed (non-critical):', notifyErr)
+        }
+
+        toast({
+          title: appLang === 'en' ? '📋 Return Created - Pending Approval' : '📋 تم إنشاء المرتجع - بانتظار الاعتماد',
+          description: appLang === 'en'
+            ? 'Warehouse manager has been notified to confirm delivery. Stock will be deducted after approval.'
+            : 'تم إشعار مسؤول المخزن لتأكيد التسليم. سيتم خصم المخزون بعد الاعتماد.',
+        })
+        router.push("/purchase-returns")
+        return
+      }
 
       // ===================== 🔄 FIFO Reversal (post-commit، best-effort) =====================
       // يُنفَّذ بعد commit الـ Transaction الأساسي - الفشل يُظهر تحذيراً فقط
@@ -585,6 +724,63 @@ export default function NewPurchaseReturnPage() {
               </div>
             </div>
 
+            {/* 🏪 اختيار المخزن (للمالك/المدير العام فقط) */}
+            {isPrivileged && allWarehouses.length > 0 && form.bill_id && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Warehouse className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                  <h3 className="font-semibold text-amber-800 dark:text-amber-200">
+                    {appLang === 'en' ? 'Return Warehouse Selection' : 'اختيار مخزن المرتجع'}
+                  </h3>
+                  <span className="text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full">
+                    {appLang === 'en' ? 'Owner / Manager Only' : 'المالك / المدير العام فقط'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-amber-700 dark:text-amber-300">
+                      {appLang === 'en' ? 'Select Warehouse' : 'اختر المخزن'}
+                    </Label>
+                    <select
+                      className="w-full border border-amber-300 rounded px-2 py-2 bg-white dark:bg-slate-800"
+                      value={selectedWarehouseId}
+                      onChange={e => setSelectedWarehouseId(e.target.value)}
+                    >
+                      <option value="">{appLang === 'en' ? 'Select...' : 'اختر المخزن...'}</option>
+                      {allWarehouses.map(w => (
+                        <option key={w.id} value={w.id}>
+                          {w.name}
+                          {(w as any).branches?.name ? ` — ${(w as any).branches.name}` : ''}
+                          {w.id === (bills.find(b => b.id === form.bill_id)?.warehouse_id) ? (appLang === 'en' ? ' (Bill Warehouse)' : ' (مخزن الفاتورة)') : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    {selectedWarehouseId && selectedWarehouseId !== (bills.find(b => b.id === form.bill_id)?.warehouse_id) ? (
+                      <div className="flex items-start gap-2 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg w-full">
+                        <AlertTriangle className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
+                        <div className="text-xs text-orange-700 dark:text-orange-300">
+                          <p className="font-medium">
+                            {appLang === 'en' ? 'Approval Workflow Active' : 'سير عمل الاعتماد مفعّل'}
+                          </p>
+                          <p className="mt-0.5">
+                            {appLang === 'en'
+                              ? 'Stock will be deducted after warehouse manager confirms delivery.'
+                              : 'سيتم خصم المخزون بعد اعتماد مسؤول المخزن.'}
+                          </p>
+                        </div>
+                      </div>
+                    ) : selectedWarehouseId ? (
+                      <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg w-full text-xs text-green-700 dark:text-green-300">
+                        ✅ {appLang === 'en' ? 'Same as bill warehouse — immediate processing.' : 'نفس مخزن الفاتورة — معالجة فورية.'}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <Label>{appLang === 'en' ? 'Settlement Method' : 'طريقة التسوية'}</Label>
@@ -627,7 +823,12 @@ export default function NewPurchaseReturnPage() {
                 <thead>
                   <tr className="text-gray-600 border-b">
                     <th className="text-right p-2">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
-                    <th className="text-right p-2">{appLang === 'en' ? 'Available' : 'المتاح'}</th>
+                    <th className="text-right p-2">{appLang === 'en' ? 'Available in Bill' : 'المتاح من الفاتورة'}</th>
+                    {isPrivileged && selectedWarehouseId && (
+                      <th className="text-right p-2 text-amber-600 dark:text-amber-400">
+                        {appLang === 'en' ? 'Stock in Warehouse' : 'المخزون الفعلي'}
+                      </th>
+                    )}
                     <th className="text-right p-2">{appLang === 'en' ? 'Return Qty' : 'كمية المرتجع'}</th>
                     <th className="text-right p-2">{appLang === 'en' ? 'Price' : 'السعر'}</th>
                     <th className="text-right p-2">{appLang === 'en' ? 'Tax%' : 'الضريبة%'}</th>
@@ -652,6 +853,15 @@ export default function NewPurchaseReturnPage() {
                         )}
                       </td>
                       <td className="p-2 text-center">{it.max_quantity}</td>
+                      {isPrivileged && selectedWarehouseId && (
+                        <td className="p-2 text-center">
+                          {it.product_id ? (
+                            <span className={`font-medium ${(warehouseStocks[it.product_id] ?? 0) < it.quantity ? 'text-red-600' : 'text-amber-700 dark:text-amber-300'}`}>
+                              {warehouseStocks[it.product_id] ?? '—'}
+                            </span>
+                          ) : <span className="text-gray-400">—</span>}
+                        </td>
+                      )}
                       <td className="p-2"><Input type="number" min={0} max={it.max_quantity} value={it.quantity} onChange={e => updateItem(idx, { quantity: Number(e.target.value) })} className="w-20" /></td>
                       <td className="p-2">{it.unit_price.toFixed(2)}</td>
                       <td className="p-2">{it.tax_rate}%</td>
@@ -681,10 +891,20 @@ export default function NewPurchaseReturnPage() {
               <Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
             </div>
 
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 items-center">
+              {isPrivileged && selectedWarehouseId && selectedWarehouseId !== (bills.find(b => b.id === form.bill_id)?.warehouse_id) && (
+                <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-3 py-1.5 rounded-lg">
+                  📋 {appLang === 'en' ? 'Will send for approval' : 'سيُرسَل للاعتماد'}
+                </span>
+              )}
               <Button variant="outline" onClick={() => router.back()}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
               <Button onClick={saveReturn} disabled={saving || !form.supplier_id}>
-                {saving ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save Return' : 'حفظ المرتجع')}
+                {saving
+                  ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...')
+                  : (isPrivileged && selectedWarehouseId && selectedWarehouseId !== (bills.find(b => b.id === form.bill_id)?.warehouse_id))
+                    ? (appLang === 'en' ? 'Submit for Approval' : 'إرسال للاعتماد')
+                    : (appLang === 'en' ? 'Save Return' : 'حفظ المرتجع')
+                }
               </Button>
             </div>
           </CardContent>

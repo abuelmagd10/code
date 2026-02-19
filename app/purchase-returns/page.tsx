@@ -7,15 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
-import { Plus, Search, RotateCcw, Eye } from "lucide-react"
+import { Plus, Search, RotateCcw, Eye, CheckCircle2, Clock, AlertTriangle } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import { TableSkeleton } from "@/components/ui/skeleton"
-import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
-import { StatusBadge } from "@/components/DataTableFormatters"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useToast } from "@/hooks/use-toast"
+import { notifyPurchaseReturnConfirmed } from "@/lib/notification-helpers"
 
 type PurchaseReturn = {
   id: string
@@ -23,30 +23,41 @@ type PurchaseReturn = {
   return_date: string
   total_amount: number
   status: string
+  workflow_status: string
   reason: string
+  settlement_method: string
+  warehouse_id: string | null
+  branch_id: string | null
+  created_by: string | null
   suppliers?: { name: string }
-  bills?: { bill_number: string }
+  bills?: { bill_number: string } | null
+  branches?: { name: string } | null
+  warehouses?: { name: string } | null
 }
+
+const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
 
 export default function PurchaseReturnsPage() {
   const supabase = useSupabase()
   const router = useRouter()
+  const { toast } = useToast()
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [currentUserRole, setCurrentUserRole] = useState<string>('viewer')
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserName, setCurrentUserName] = useState<string>('')
+  const [currentWarehouseId, setCurrentWarehouseId] = useState<string | null>(null) // لمسؤول المخزن
 
   const [returns, setReturns] = useState<PurchaseReturn[]>([])
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
-  // تهيئة اللغة بعد hydration
   useEffect(() => {
     try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
   }, [])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
 
-  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
   const [isPending, startTransition] = useTransition()
 
-  // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
   const branchFilter = useBranchFilter()
 
   const [appCurrency, setAppCurrency] = useState<string>(() => {
@@ -60,7 +71,7 @@ export default function PurchaseReturnsPage() {
 
   useEffect(() => {
     loadReturns()
-  }, [branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
+  }, [branchFilter.selectedBranchId])
 
   const loadReturns = async () => {
     try {
@@ -68,10 +79,15 @@ export default function PurchaseReturnsPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      // 🔐 ERP Access Control - جلب دور المستخدم
       const { data: { user } } = await supabase.auth.getUser()
       let role = 'viewer'
+      let userId = null
+      let userWarehouseId = null
+
       if (user) {
+        userId = user.id
+        setCurrentUserId(user.id)
+
         const { data: companyData } = await supabase
           .from("companies")
           .select("user_id")
@@ -80,53 +96,50 @@ export default function PurchaseReturnsPage() {
 
         const { data: memberData } = await supabase
           .from("company_members")
-          .select("role, branch_id, cost_center_id, warehouse_id")
+          .select("role, branch_id, cost_center_id, warehouse_id, full_name")
           .eq("company_id", companyId)
           .eq("user_id", user.id)
           .single()
 
+        const { data: profileData } = await supabase
+          .from("profiles").select("full_name").eq("id", user.id).single()
+
         const isOwner = companyData?.user_id === user.id
         role = isOwner ? "owner" : (memberData?.role || "viewer")
         setCurrentUserRole(role)
+        userWarehouseId = memberData?.warehouse_id || null
+        setCurrentWarehouseId(userWarehouseId)
+        setCurrentUserName(memberData?.full_name || profileData?.full_name || user.email || '')
 
-        // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-        const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
         const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
         const selectedBranchId = branchFilter.getFilteredBranchId()
 
-        // ===== 🔧 إصلاح: جلب المرتجعات من الفواتير مباشرة =====
-        let billsQuery = supabase
-          .from("bills")
-          .select("id, bill_number, bill_date, returned_amount, return_status, supplier_id, branch_id, suppliers(name), branches(name)")
+        let query = supabase
+          .from("purchase_returns")
+          .select(`
+            id, return_number, return_date, total_amount, status, workflow_status,
+            reason, settlement_method, warehouse_id, branch_id, created_by,
+            suppliers(name),
+            bills(bill_number),
+            branches(name),
+            warehouses(name)
+          `)
           .eq("company_id", companyId)
-          .not("return_status", "is", null)
-          .gt("returned_amount", 0)
 
-        // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
-        if (canFilterByBranch && selectedBranchId) {
-          // المستخدم المميز اختار فرعاً معيناً
-          billsQuery = billsQuery.eq("branch_id", selectedBranchId)
+        // 🔐 فلترة حسب الصلاحيات
+        if (role === 'store_manager' && userWarehouseId) {
+          // مسؤول المخزن: يرى مرتجعات مخزنه فقط (بما فيها pending_approval)
+          query = query.eq("warehouse_id", userWarehouseId)
+        } else if (canFilterByBranch && selectedBranchId) {
+          query = query.eq("branch_id", selectedBranchId)
         } else if (!canFilterByBranch && memberData?.branch_id) {
-          // المستخدم العادي - فلترة بفرعه فقط
-          billsQuery = billsQuery.eq("branch_id", memberData.branch_id)
+          query = query.eq("branch_id", memberData.branch_id)
         }
-        // else: المستخدم المميز بدون فلتر = جميع الفروع
 
-        const { data, error } = await billsQuery.order("bill_date", { ascending: false })
+        const { data, error } = await query.order("return_date", { ascending: false })
 
         if (!error && data) {
-          // تحويل البيانات إلى تنسيق PurchaseReturn
-          const formattedReturns: PurchaseReturn[] = data.map((bill: any) => ({
-            id: bill.id,
-            return_number: bill.bill_number,
-            return_date: bill.bill_date,
-            total_amount: Number(bill.returned_amount || 0),
-            status: 'completed', // المرتجعات المكتملة
-            reason: bill.return_status === 'full' ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل') : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'),
-            suppliers: bill.suppliers ? { name: bill.suppliers.name } : undefined,
-            bills: { bill_number: bill.bill_number }
-          }))
-          setReturns(formattedReturns)
+          setReturns(data as PurchaseReturn[])
         }
       }
     } catch (error) {
@@ -136,12 +149,10 @@ export default function PurchaseReturnsPage() {
     }
   }
 
-  // 🔄 Realtime: تحديث قائمة مرتجعات المشتريات تلقائياً عند أي تغيير
   const loadReturnsRef = useRef(loadReturns)
   loadReturnsRef.current = loadReturns
 
   const handleReturnsRealtimeEvent = useCallback(() => {
-    console.log('🔄 [PurchaseReturns] Realtime event received, refreshing returns list...')
     loadReturnsRef.current()
   }, [])
 
@@ -153,31 +164,106 @@ export default function PurchaseReturnsPage() {
     onDelete: handleReturnsRealtimeEvent,
   })
 
+  // ===================== اعتماد تسليم المرتجع =====================
+  const confirmDelivery = async (pr: PurchaseReturn) => {
+    if (!currentUserId) return
+    setConfirmingId(pr.id)
+    try {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        'confirm_purchase_return_delivery',
+        {
+          p_purchase_return_id: pr.id,
+          p_confirmed_by: currentUserId,
+          p_notes: appLang === 'en'
+            ? `Confirmed by warehouse manager on ${new Date().toLocaleDateString()}`
+            : `تم الاعتماد بواسطة مسؤول المخزن بتاريخ ${new Date().toLocaleDateString('ar-EG')}`,
+        }
+      )
+
+      if (rpcError) {
+        toast({
+          title: appLang === 'en' ? '❌ Confirmation Failed' : '❌ فشل الاعتماد',
+          description: rpcError.message,
+          variant: 'destructive',
+        })
+        return
+      }
+
+      // إشعار للمنشئ (المالك/المدير)
+      if (pr.created_by) {
+        try {
+          const supplierName = (pr.suppliers as any)?.name || ''
+          await notifyPurchaseReturnConfirmed({
+            companyId,
+            purchaseReturnId: pr.id,
+            returnNumber: pr.return_number,
+            supplierName,
+            totalAmount: pr.total_amount,
+            currency: appCurrency,
+            confirmedByName: currentUserName,
+            createdBy: pr.created_by,
+            appLang,
+          })
+        } catch (notifyErr) {
+          console.warn('⚠️ Notification failed (non-critical):', notifyErr)
+        }
+      }
+
+      toast({
+        title: appLang === 'en' ? '✅ Delivery Confirmed' : '✅ تم اعتماد التسليم',
+        description: appLang === 'en'
+          ? `Return ${pr.return_number} has been confirmed. Stock deducted and journal entry posted.`
+          : `تم اعتماد المرتجع ${pr.return_number}. تم خصم المخزون ونشر القيد المحاسبي.`,
+      })
+
+      loadReturns()
+    } catch (err) {
+      console.error("Error confirming delivery:", err)
+      toast({
+        title: appLang === 'en' ? '❌ Error' : '❌ خطأ',
+        description: String(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setConfirmingId(null)
+    }
+  }
+
   const filteredReturns = returns.filter(r =>
     r.return_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.suppliers?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.bills?.bill_number?.toLowerCase().includes(searchTerm.toLowerCase())
+    (r.suppliers as any)?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (r.bills as any)?.bill_number?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const getStatusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      completed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-      pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-      cancelled: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+  const getWorkflowBadge = (wfStatus: string) => {
+    if (wfStatus === 'pending_approval') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+          <Clock className="w-3 h-3" />
+          {appLang === 'en' ? 'Pending' : 'بانتظار الاعتماد'}
+        </span>
+      )
     }
-    const labels: Record<string, Record<string, string>> = {
-      completed: { en: "Completed", ar: "مكتمل" },
-      pending: { en: "Pending", ar: "معلق" },
-      cancelled: { en: "Cancelled", ar: "ملغي" }
+    if (wfStatus === 'confirmed') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+          <CheckCircle2 className="w-3 h-3" />
+          {appLang === 'en' ? 'Confirmed' : 'مؤكد'}
+        </span>
+      )
     }
     return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[status] || styles.pending}`}>
-        {labels[status]?.[appLang] || status}
+      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+        {wfStatus}
       </span>
     )
   }
 
-  // ===== DataTable Columns Definition =====
+  const isStoreManager = currentUserRole === 'store_manager'
+
   const tableColumns: DataTableColumn<PurchaseReturn>[] = useMemo(() => [
     {
       key: 'return_number',
@@ -195,7 +281,7 @@ export default function PurchaseReturnsPage() {
       type: 'text',
       align: 'left',
       width: 'flex-1 min-w-[150px]',
-      format: (value) => value?.name || '—'
+      format: (value) => (value as any)?.name || '—'
     },
     {
       key: 'bills',
@@ -204,23 +290,21 @@ export default function PurchaseReturnsPage() {
       align: 'left',
       width: 'w-32',
       hidden: 'sm',
-      format: (value) => value?.bill_number || '—'
+      format: (value) => (value as any)?.bill_number || '—'
     },
     {
-      key: 'branch_id',
-      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      key: 'warehouses',
+      header: appLang === 'en' ? 'Warehouse' : 'المخزن',
       type: 'text',
       align: 'center',
       hidden: 'md',
-      format: (_, row) => {
-        const branchName = (row as any).branches?.name
-        return branchName ? (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
-            {branchName}
+      format: (value, row) => {
+        const wName = (value as any)?.name
+        return wName ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+            {wName}
           </span>
-        ) : (
-          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
-        )
+        ) : <span className="text-gray-400">—</span>
       }
     },
     {
@@ -245,36 +329,67 @@ export default function PurchaseReturnsPage() {
       )
     },
     {
-      key: 'status',
+      key: 'workflow_status',
       header: appLang === 'en' ? 'Status' : 'الحالة',
       type: 'status',
       align: 'center',
-      width: 'w-28',
-      format: (value) => (
-        <StatusBadge
-          status={value === 'completed' ? 'completed' : value === 'pending' ? 'pending' : 'cancelled'}
-          lang={appLang}
-        />
-      )
+      width: 'w-40',
+      format: (value) => getWorkflowBadge(value as string)
     },
     {
       key: 'id',
       header: appLang === 'en' ? 'Actions' : 'إجراءات',
       type: 'actions',
       align: 'center',
-      width: 'w-24',
-      format: (value) => (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => router.push(`/bills/${value}`)}
-          title={appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}
-        >
-          <Eye className="w-4 h-4" />
-        </Button>
-      )
+      width: 'w-40',
+      format: (value, row) => {
+        const pr = row as PurchaseReturn
+        const isPending = pr.workflow_status === 'pending_approval'
+        const isMyWarehouse = !currentWarehouseId || pr.warehouse_id === currentWarehouseId
+
+        return (
+          <div className="flex items-center gap-1.5 justify-center">
+            {/* زر الاعتماد - لمسؤول المخزن فقط + المرتجعات المعلقة في مخزنه */}
+            {isStoreManager && isPending && isMyWarehouse && (
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 text-white text-xs h-7 px-2"
+                onClick={() => confirmDelivery(pr)}
+                disabled={confirmingId === pr.id}
+                title={appLang === 'en' ? 'Confirm Delivery to Supplier' : 'اعتماد تسليم البضاعة للمورد'}
+              >
+                {confirmingId === pr.id ? (
+                  <span className="animate-spin">⏳</span>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    {appLang === 'en' ? 'Confirm' : 'اعتماد'}
+                  </>
+                )}
+              </Button>
+            )}
+            {pr.bills ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7"
+                onClick={() => router.push(`/bills/${pr.bills ? (pr.bills as any).id || value : value}`)}
+                title={appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}
+              >
+                <Eye className="w-3.5 h-3.5" />
+              </Button>
+            ) : null}
+          </div>
+        )
+      }
     }
-  ], [appLang, currencySymbol, router])
+  ], [appLang, currencySymbol, router, isStoreManager, currentWarehouseId, confirmingId, currentUserId])
+
+  // إحصاءات سريعة
+  const pendingCount = returns.filter(r => r.workflow_status === 'pending_approval').length
+  const myPendingCount = isStoreManager
+    ? returns.filter(r => r.workflow_status === 'pending_approval' && r.warehouse_id === currentWarehouseId).length
+    : pendingCount
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -292,18 +407,20 @@ export default function PurchaseReturnsPage() {
                   <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
                     {appLang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'}
                   </h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                    {appLang === 'en' ? 'Manage supplier returns and refunds' : 'إدارة مرتجعات الموردين والمستردات'}
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1">
+                    {appLang === 'en' ? 'Manage supplier returns and approvals' : 'إدارة مرتجعات الموردين والاعتمادات'}
                   </p>
-                  {/* 🔐 Governance Notice */}
+                  {isStoreManager && myPendingCount > 0 && (
+                    <p className="text-xs font-medium text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      {appLang === 'en'
+                        ? `${myPendingCount} return(s) awaiting your approval`
+                        : `${myPendingCount} مرتجع بانتظار اعتمادك`}
+                    </p>
+                  )}
                   {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
                     <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                       {appLang === 'en' ? '🏢 Showing returns from your branch only' : '🏢 تعرض المرتجعات الخاصة بفرعك فقط'}
-                    </p>
-                  )}
-                  {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
-                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                      {appLang === 'en' ? '👨‍💼 Showing returns you created only' : '👨‍💼 تعرض المرتجعات التي أنشأتها فقط'}
                     </p>
                   )}
                 </div>
@@ -315,17 +432,33 @@ export default function PurchaseReturnsPage() {
             </div>
           </div>
 
+          {/* بانر الاعتماد لمسؤول المخزن */}
+          {isStoreManager && myPendingCount > 0 && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-amber-800 dark:text-amber-200">
+                    {appLang === 'en' ? `${myPendingCount} Purchase Return(s) Require Your Approval` : `${myPendingCount} مرتجع مشتريات يحتاج اعتمادك`}
+                  </p>
+                  <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                    {appLang === 'en'
+                      ? 'These returns were created by management and require your confirmation that goods have been delivered back to the supplier. Stock will only be deducted after your approval.'
+                      : 'هذه المرتجعات أنشأتها الإدارة وتحتاج تأكيدك بتسليم البضاعة للمورد. لن يتم خصم المخزون إلا بعد اعتمادك.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Filters */}
           <Card>
             <CardContent className="pt-6 space-y-4">
-              {/* 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
               <BranchFilter
                 lang={appLang as 'ar' | 'en'}
                 externalHook={branchFilter}
                 className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800"
               />
-
-              {/* Search */}
               <div className="flex items-center gap-2">
                 <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                 <Input
@@ -344,18 +477,25 @@ export default function PurchaseReturnsPage() {
           {/* Returns List */}
           <Card>
             <CardHeader>
-              <CardTitle>{appLang === 'en' ? 'Returns List' : 'قائمة المرتجعات'}</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>{appLang === 'en' ? 'Returns List' : 'قائمة المرتجعات'}</CardTitle>
+                {pendingCount > 0 && !isStoreManager && (
+                  <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 px-2.5 py-1 rounded-full font-medium">
+                    {pendingCount} {appLang === 'en' ? 'pending' : 'بانتظار الاعتماد'}
+                  </span>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <TableSkeleton cols={6} rows={8} className="mt-4" />
+                <TableSkeleton cols={7} rows={8} className="mt-4" />
               ) : (
                 <DataTable
                   columns={tableColumns}
                   data={filteredReturns}
                   keyField="id"
                   lang={appLang}
-                  minWidth="min-w-[500px]"
+                  minWidth="min-w-[600px]"
                   emptyMessage={appLang === 'en' ? 'No purchase returns yet' : 'لا توجد مرتجعات مشتريات حتى الآن'}
                 />
               )}
@@ -366,4 +506,3 @@ export default function PurchaseReturnsPage() {
     </div>
   )
 }
-
