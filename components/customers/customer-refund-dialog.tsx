@@ -308,10 +308,6 @@ export function CustomerRefundDialog({
 
       if (entry?.id) {
         const lines = []
-        // ⚠️ تنبيه للمطورين: لا تُعدِّل هذه السطور يدوياً عبر PowerShell أو أدوات CLI
-        // لأن ترميز ASCII الافتراضي يُخرّب النصوص العربية → "???"
-        // استخدم Supabase Dashboard أو أدوات تدعم UTF-8 صراحةً
-        //
         // مدين: رصيد العميل (نخفض الالتزام تجاه العميل)
         if (customerCredit) {
           lines.push({
