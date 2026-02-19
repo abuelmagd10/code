@@ -138,31 +138,8 @@ export default function NewPurchaseReturnPage() {
       setBills((billRes.data || []) as Bill[])
       setProducts((prodRes.data || []) as Product[])
 
-      // جلب جميع المخازن للمالك/المدير العام
-      // نستخدم IDs المخازن المرجعية في الفواتير لتجاوز أي تعارض في company_id
-      if (isPrivilegedRole) {
-        const billWarehouseIds = [
-          ...new Set(
-            (billRes.data || [])
-              .map((b: any) => b.warehouse_id)
-              .filter(Boolean)
-          )
-        ]
-        if (billWarehouseIds.length > 0) {
-          const { data: warehousesData } = await supabase
-            .from("warehouses")
-            .select("id, name, branch_id, branches(name)")
-            .in("id", billWarehouseIds)
-          setAllWarehouses((warehousesData || []) as Warehouse[])
-        } else {
-          // fallback: جلب كل مخازن الشركة
-          const { data: warehousesData } = await supabase
-            .from("warehouses")
-            .select("id, name, branch_id, branches(name)")
-            .eq("company_id", loadedCompanyId)
-          setAllWarehouses((warehousesData || []) as Warehouse[])
-        }
-      }
+      // ملاحظة: allWarehouses تُبنى ديناميكياً في useEffect الخاص بـ allWarehouseStocks
+      // من خلال inventory_transactions مع join، لتجاوز RLS على جدول warehouses
 
       // Load currencies
       const curr = await getActiveCurrencies(supabase, loadedCompanyId)
@@ -200,39 +177,62 @@ export default function NewPurchaseReturnPage() {
     })()
   }, [selectedWarehouseId, companyId, items])
 
-  // جلب رصيد كل منتج في جميع المخازن (للمالك/المدير العام فقط)
-  // يعتمد على billItems (يُحمَّل فوراً عند اختيار الفاتورة) لا على items
+  // جلب رصيد كل منتج في جميع المخازن + بناء قائمة المخازن ديناميكياً
+  // نستخدم inventory_transactions مع join للمخازن لتجاوز RLS على جدول warehouses
   useEffect(() => {
-    if (!isPrivileged || !companyId || allWarehouses.length === 0 || !form.bill_id) {
+    if (!isPrivileged || !companyId || !form.bill_id) {
       setAllWarehouseStocks({})
+      setAllWarehouses([])
       return
     }
     const productIds = billItems
-      .map(i => i.product_id as string)
+      .map((i: any) => i.product_id as string)
       .filter(Boolean)
-    if (productIds.length === 0) { setAllWarehouseStocks({}); return }
+    if (productIds.length === 0) {
+      setAllWarehouseStocks({})
+      setAllWarehouses([])
+      return
+    }
 
     ;(async () => {
       const { data } = await supabase
         .from("inventory_transactions")
-        .select("product_id, warehouse_id, quantity_change")
+        .select("product_id, warehouse_id, quantity_change, warehouses(id, name, branch_id, branches(name))")
         .eq("company_id", companyId)
         .in("product_id", productIds)
         .eq("is_deleted", false)
 
+      // بناء خريطة المخازن والمخزون من نفس الاستعلام
+      const warehouseMap: Record<string, Warehouse> = {}
       const stocksMap: Record<string, Record<string, number>> = {}
-      for (const wh of allWarehouses) {
-        stocksMap[wh.id] = {}
-        for (const pid of productIds) stocksMap[wh.id][pid] = 0
-      }
+
       for (const row of (data || [])) {
-        if (stocksMap[row.warehouse_id]) {
-          stocksMap[row.warehouse_id][row.product_id] = (stocksMap[row.warehouse_id][row.product_id] || 0) + Number(row.quantity_change)
+        const whId = row.warehouse_id
+        if (!whId) continue
+
+        // استخراج بيانات المخزن من الـ join
+        const whData = (row as any).warehouses
+        if (!warehouseMap[whId]) {
+          warehouseMap[whId] = {
+            id: whId,
+            name: whData?.name || `مخزن`,
+            branch_id: whData?.branch_id || null,
+            branches: whData?.branches || null,
+          } as Warehouse
         }
+
+        // تجميع المخزون
+        if (!stocksMap[whId]) {
+          stocksMap[whId] = {}
+          for (const pid of productIds) stocksMap[whId][pid] = 0
+        }
+        stocksMap[whId][row.product_id] = (stocksMap[whId][row.product_id] || 0) + Number(row.quantity_change)
       }
+
+      setAllWarehouses(Object.values(warehouseMap) as Warehouse[])
       setAllWarehouseStocks(stocksMap)
     })()
-  }, [isPrivileged, companyId, allWarehouses, billItems, form.bill_id])
+  }, [isPrivileged, companyId, billItems, form.bill_id])
 
   // Update exchange rate when currency changes
   useEffect(() => {
