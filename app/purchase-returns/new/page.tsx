@@ -276,8 +276,16 @@ export default function NewPurchaseReturnPage() {
   const saveReturn = async () => {
     try {
       setSaving(true)
-      if (!companyId || !form.supplier_id || items.filter(i => i.quantity > 0).length === 0) {
-        toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Please fill required fields" : "يرجى ملء الحقول المطلوبة")
+      if (!companyId || !form.supplier_id) {
+        toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Please select a supplier" : "يرجى اختيار المورد")
+        return
+      }
+      if (!form.bill_id) {
+        toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "A purchase bill must be selected to create a return" : "يجب تحديد فاتورة شراء لإنشاء المرتجع")
+        return
+      }
+      if (items.filter(i => i.quantity > 0).length === 0) {
+        toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Please enter return quantities" : "يرجى إدخال كميات المرتجع")
         return
       }
 
@@ -718,11 +726,23 @@ export default function NewPurchaseReturnPage() {
                 </select>
               </div>
               <div>
-                <Label>{appLang === 'en' ? 'Bill (Optional)' : 'الفاتورة (اختياري)'}</Label>
-                <select className="w-full border rounded px-2 py-2" value={form.bill_id} onChange={e => setForm({ ...form, bill_id: e.target.value })}>
-                  <option value="">{appLang === 'en' ? 'Without Bill' : 'بدون فاتورة'}</option>
+                <Label className="flex items-center gap-1">
+                  {appLang === 'en' ? 'Purchase Bill' : 'فاتورة الشراء'}
+                  <span className="text-red-500 text-xs">*</span>
+                </Label>
+                <select
+                  className={`w-full border rounded px-2 py-2 ${!form.bill_id ? 'border-red-300 dark:border-red-700' : 'border-gray-300 dark:border-gray-600'}`}
+                  value={form.bill_id}
+                  onChange={e => setForm({ ...form, bill_id: e.target.value })}
+                >
+                  <option value="">{appLang === 'en' ? '— Select Bill —' : '— اختر الفاتورة —'}</option>
                   {filteredBills.map(b => <option key={b.id} value={b.id}>{b.bill_number}</option>)}
                 </select>
+                {!form.supplier_id && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    {appLang === 'en' ? 'Select a supplier first' : 'اختر المورد أولاً'}
+                  </p>
+                )}
               </div>
               <div>
                 <Label>{appLang === 'en' ? 'Return Number' : 'رقم المرتجع'}</Label>
@@ -883,7 +903,7 @@ export default function NewPurchaseReturnPage() {
                   ))}
                 </tbody>
               </table>
-              {!form.bill_id && (
+              {false && (
                 <div className="mt-3"><Button variant="outline" onClick={addManualItem}><Plus className="w-4 h-4 mr-2" /> {appLang === 'en' ? 'Add Item' : 'إضافة بند'}</Button></div>
               )}
             </div>
@@ -908,7 +928,7 @@ export default function NewPurchaseReturnPage() {
                 </span>
               )}
               <Button variant="outline" onClick={() => router.back()}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
-              <Button onClick={saveReturn} disabled={saving || !form.supplier_id}>
+              <Button onClick={saveReturn} disabled={saving || !form.supplier_id || !form.bill_id}>
                 {saving
                   ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...')
                   : (isPrivileged && selectedWarehouseId && selectedWarehouseId !== (bills.find(b => b.id === form.bill_id)?.warehouse_id))
