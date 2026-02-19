@@ -590,7 +590,7 @@ export default function NewPurchaseReturnPage() {
         if (form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer') {
           const cashAcct = findAcct("cash", "نقد")
           const bankAcct = findAcct("bank", "بنك")
-          const refundAcct = form.settlement_method === 'cash' ? (cashAcct || bankAcct) : (bankAcct || cashAcct)
+          const refundAcct = selectedRefundAccountId || (form.settlement_method === 'cash' ? (cashAcct || bankAcct) : (bankAcct || cashAcct))
           if (refundAcct) journalLines.push({ account_id: refundAcct, debit_amount: finalTot, credit_amount: 0,
             description: appLang === 'en' ? 'Refund received from supplier' : 'استرداد مستلم من المورد',
             original_debit: allocTot, original_credit: 0, original_currency: form.currency,
