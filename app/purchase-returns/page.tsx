@@ -30,7 +30,7 @@ type PurchaseReturn = {
   branch_id: string | null
   created_by: string | null
   suppliers?: { name: string }
-  bills?: { bill_number: string } | null
+  bills?: { id: string; bill_number: string } | null
   branches?: { name: string } | null
   warehouses?: { name: string } | null
 }
@@ -117,7 +117,7 @@ export default function PurchaseReturnsPage() {
             id, return_number, return_date, total_amount, status, workflow_status,
             reason, settlement_method, warehouse_id, branch_id, created_by,
             suppliers(name),
-            bills(bill_number),
+            bills(id, bill_number),
             branches(name),
             warehouses(name)
           `)
@@ -370,7 +370,7 @@ export default function PurchaseReturnsPage() {
                 variant="outline"
                 size="sm"
                 className="h-7"
-                onClick={() => router.push(`/bills/${pr.bills ? (pr.bills as any).id || value : value}`)}
+                onClick={() => router.push(`/bills/${pr.bills?.id}`)}
                 title={appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}
               >
                 <Eye className="w-3.5 h-3.5" />
