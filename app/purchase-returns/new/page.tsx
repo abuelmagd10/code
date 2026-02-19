@@ -1709,7 +1709,7 @@ export default function NewPurchaseReturnPage() {
                       </span>
                     )}
                     <Button variant="outline" onClick={() => router.back()}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
-                    <Button onClick={saveReturn} disabled={saving || !form.supplier_id || !form.bill_id}>
+                    <Button onClick={saveReturn} disabled={saving || !form.supplier_id || !form.bill_id || (isPrivileged ? allocTotal : total) === 0}>
                       {saving
                         ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...')
                         : isMultiWarehouse
