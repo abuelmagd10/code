@@ -23,6 +23,7 @@ type Bill = { id: string; bill_number: string; supplier_id: string; total_amount
 type BillItem = { id: string; product_id: string | null; quantity: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number; returned_quantity?: number; products?: { name: string; cost_price: number } }
 type Product = { id: string; name: string; cost_price: number; item_type?: 'product' | 'service' }
 type Warehouse = { id: string; name: string; branch_id: string | null; branches?: { name: string } | null }
+type AccountOption = { id: string; account_code: string | null; account_name: string; sub_type: string | null }
 
 type ItemRow = {
   bill_item_id: string | null
@@ -105,6 +106,10 @@ export default function NewPurchaseReturnPage() {
   const [items, setItems] = useState<ItemRow[]>([])
   const [saving, setSaving] = useState(false)
 
+  // حسابات النقدية والبنوك (لاختيار المستخدم عند الاسترداد النقدي/البنكي)
+  const [cashBankAccounts, setCashBankAccounts] = useState<AccountOption[]>([])
+  const [selectedRefundAccountId, setSelectedRefundAccountId] = useState<string>('')
+
   // Multi-currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [exchangeRate, setExchangeRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
@@ -167,6 +172,14 @@ export default function NewPurchaseReturnPage() {
       const curr = await getActiveCurrencies(supabase, loadedCompanyId)
       if (curr.length > 0) setCurrencies(curr)
       setForm(f => ({ ...f, currency: baseCurrency }))
+
+      // جلب حسابات النقدية والبنوك لاختيار حساب الاسترداد
+      const { data: acctData } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_name, sub_type")
+        .eq("company_id", loadedCompanyId)
+        .in("sub_type", ["cash", "bank"])
+      setCashBankAccounts((acctData || []) as AccountOption[])
     })()
   }, [supabase])
 
@@ -704,6 +717,10 @@ export default function NewPurchaseReturnPage() {
       }
       if (!form.bill_id) {
         toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "A purchase bill must be selected to create a return" : "يجب تحديد فاتورة شراء لإنشاء المرتجع")
+        return
+      }
+      if ((form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer') && !selectedRefundAccountId) {
+        toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Please select the refund account (cash/bank)" : "يرجى اختيار حساب الاسترداد (نقدية/بنك)")
         return
       }
 
@@ -1512,7 +1529,7 @@ export default function NewPurchaseReturnPage() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <Label>{appLang === 'en' ? 'Settlement Method' : 'طريقة التسوية'}</Label>
-                <select className="w-full border rounded px-2 py-2" value={form.settlement_method} onChange={e => setForm({ ...form, settlement_method: e.target.value as any })}>
+                <select className="w-full border rounded px-2 py-2" value={form.settlement_method} onChange={e => { setForm({ ...form, settlement_method: e.target.value as any }); setSelectedRefundAccountId('') }}>
                   <option value="debit_note">{appLang === 'en' ? 'Debit Note' : 'إشعار مدين'}</option>
                   <option value="cash">{appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}</option>
                   <option value="bank_transfer">{appLang === 'en' ? 'Bank Transfer' : 'تحويل بنكي'}</option>
@@ -1538,6 +1555,46 @@ export default function NewPurchaseReturnPage() {
                 <Input value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} placeholder={appLang === 'en' ? 'Return reason...' : 'سبب المرتجع...'} />
               </div>
             </div>
+
+            {/* حساب الاسترداد: يظهر فقط عند اختيار نقدي أو بنكي */}
+            {(form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer') && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label className="flex items-center gap-1">
+                    {appLang === 'en' ? 'Refund Account' : 'حساب الاسترداد'}
+                    <span className="text-red-500">*</span>
+                  </Label>
+                  <select
+                    className="w-full border rounded px-2 py-2"
+                    value={selectedRefundAccountId}
+                    onChange={e => setSelectedRefundAccountId(e.target.value)}
+                  >
+                    <option value="">{appLang === 'en' ? '-- Select account --' : '-- اختر الحساب --'}</option>
+                    {cashBankAccounts
+                      .filter(a => form.settlement_method === 'cash' ? a.sub_type === 'cash' : a.sub_type === 'bank')
+                      .map(a => (
+                        <option key={a.id} value={a.id}>
+                          {a.account_code ? `${a.account_code} - ` : ''}{a.account_name}
+                        </option>
+                      ))}
+                    {/* عرض الحسابات الأخرى كاحتياطي */}
+                    {cashBankAccounts.filter(a => form.settlement_method === 'cash' ? a.sub_type === 'cash' : a.sub_type === 'bank').length === 0 &&
+                      cashBankAccounts.map(a => (
+                        <option key={a.id} value={a.id}>
+                          {a.account_code ? `${a.account_code} - ` : ''}{a.account_name}
+                        </option>
+                      ))}
+                  </select>
+                  {cashBankAccounts.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      {appLang === 'en'
+                        ? 'No cash/bank accounts found. Please add them in Chart of Accounts.'
+                        : 'لا توجد حسابات نقدية/بنكية. يرجى إضافتها في دليل الحسابات.'}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {form.currency !== baseCurrency && (isPrivileged ? allocTotal : total) > 0 && (
               <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
