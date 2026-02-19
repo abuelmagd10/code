@@ -7,33 +7,54 @@
 -- =============================================
 -- FUNCTION 1: Get Retained Earnings Balance
 -- =============================================
+-- يحسب الأرباح المحتجزة المتاحة = رصيد حساب 3200 + صافي ربح/خسارة السنة الجارية
+-- هذا يسمح بتوزيع أرباح السنة الجارية حتى قبل إقفال الفترة المحاسبية
+-- بعد الإقفال: حسابات الإيرادات/المصروفات = 0 → لا يوجد ازدواجية
 CREATE OR REPLACE FUNCTION get_retained_earnings_balance(p_company_id UUID)
-RETURNS DECIMAL AS $$
+RETURNS DECIMAL AS $func$
 DECLARE
-  v_balance DECIMAL := 0;
-  v_retained_earnings_account_id UUID;
+  v_re  DECIMAL := 0;  -- رصيد حساب الأرباح المحتجزة (3200)
+  v_inc DECIMAL := 0;  -- صافي الإيرادات غير المقفلة
+  v_exp DECIMAL := 0;  -- صافي المصروفات غير المقفلة
 BEGIN
-  -- Find retained earnings account (code 3200)
-  SELECT id INTO v_retained_earnings_account_id
-  FROM chart_of_accounts
-  WHERE company_id = p_company_id AND account_code = '3200'
-  LIMIT 1;
-
-  IF v_retained_earnings_account_id IS NULL THEN
-    RETURN 0;
-  END IF;
-
-  -- Calculate balance from journal entries (Credit - Debit for equity accounts)
-  SELECT COALESCE(SUM(credit_amount) - SUM(debit_amount), 0) INTO v_balance
+  -- 1. رصيد حساب الأرباح المحتجزة (equity / sub_type=retained_earnings أو كود 3200)
+  SELECT COALESCE(SUM(jel.credit_amount) - SUM(jel.debit_amount), 0)
+    INTO v_re
   FROM journal_entry_lines jel
   JOIN journal_entries je ON je.id = jel.journal_entry_id
-  WHERE jel.account_id = v_retained_earnings_account_id
+  JOIN chart_of_accounts coa ON coa.id = jel.account_id
+  WHERE coa.company_id = p_company_id
+    AND coa.account_type = 'equity'
+    AND (coa.sub_type = 'retained_earnings' OR coa.account_code = '3200')
     AND je.company_id = p_company_id
-    AND COALESCE(je.status, 'posted') != 'cancelled';
+    AND COALESCE(je.status, 'posted') NOT IN ('cancelled', 'draft');
 
-  RETURN v_balance;
+  -- 2. صافي الإيرادات غير المقفلة (income / revenue) - فقط القيود المرحلة
+  SELECT COALESCE(SUM(jel.credit_amount) - SUM(jel.debit_amount), 0)
+    INTO v_inc
+  FROM journal_entry_lines jel
+  JOIN journal_entries je ON je.id = jel.journal_entry_id
+  JOIN chart_of_accounts coa ON coa.id = jel.account_id
+  WHERE coa.company_id = p_company_id
+    AND coa.account_type IN ('income', 'revenue')
+    AND je.company_id = p_company_id
+    AND je.status = 'posted';
+
+  -- 3. صافي المصروفات غير المقفلة (expense) - فقط القيود المرحلة
+  SELECT COALESCE(SUM(jel.debit_amount) - SUM(jel.credit_amount), 0)
+    INTO v_exp
+  FROM journal_entry_lines jel
+  JOIN journal_entries je ON je.id = jel.journal_entry_id
+  JOIN chart_of_accounts coa ON coa.id = jel.account_id
+  WHERE coa.company_id = p_company_id
+    AND coa.account_type = 'expense'
+    AND je.company_id = p_company_id
+    AND je.status = 'posted';
+
+  -- 4. الإجمالي = أرباح سنوات سابقة + صافي ربح السنة الجارية
+  RETURN v_re + (v_inc - v_exp);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$func$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =============================================
 -- FUNCTION 2: Distribute Dividends (Atomic)
