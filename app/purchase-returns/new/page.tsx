@@ -227,6 +227,12 @@ export default function NewPurchaseReturnPage() {
       const warehouseIdArr = Array.from(warehouseIds)
       const warehouseMap: Record<string, Warehouse> = {}
 
+      if (warehouseIdArr.length === 0) {
+        setAllWarehouses([])
+        setAllWarehouseStocks({})
+        return
+      }
+
       const { data: whData } = await supabase
         .from("warehouses")
         .select("id, name, branch_id")
