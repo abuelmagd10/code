@@ -177,8 +177,8 @@ export default function NewPurchaseReturnPage() {
     })()
   }, [selectedWarehouseId, companyId, items])
 
-  // جلب رصيد كل منتج في جميع المخازن + بناء قائمة المخازن ديناميكياً
-  // نستخدم inventory_transactions مع join للمخازن لتجاوز RLS على جدول warehouses
+  // جلب رصيد كل منتج في جميع المخازن + بناء قائمة المخازن
+  // خطوتان منفصلتان لتجنب مشاكل FK/RLS مع الـ join
   useEffect(() => {
     if (!isPrivileged || !companyId || !form.bill_id) {
       setAllWarehouseStocks({})
@@ -195,38 +195,73 @@ export default function NewPurchaseReturnPage() {
     }
 
     ;(async () => {
-      const { data } = await supabase
+      // الخطوة 1: جلب حركات المخزون بدون join (يعمل دائماً بغض النظر عن RLS)
+      const { data: txData } = await supabase
         .from("inventory_transactions")
-        .select("product_id, warehouse_id, quantity_change, warehouses(id, name, branch_id, branches(name))")
+        .select("product_id, warehouse_id, quantity_change")
         .eq("company_id", companyId)
         .in("product_id", productIds)
         .eq("is_deleted", false)
 
-      // بناء خريطة المخازن والمخزون من نفس الاستعلام
-      const warehouseMap: Record<string, Warehouse> = {}
-      const stocksMap: Record<string, Record<string, number>> = {}
+      if (!txData || txData.length === 0) {
+        setAllWarehouseStocks({})
+        setAllWarehouses([])
+        return
+      }
 
-      for (const row of (data || [])) {
+      // بناء خريطة المخزون وجمع معرّفات المخازن
+      const stocksMap: Record<string, Record<string, number>> = {}
+      const warehouseIds = new Set<string>()
+      for (const row of txData) {
         const whId = row.warehouse_id
         if (!whId) continue
-
-        // استخراج بيانات المخزن من الـ join
-        const whData = (row as any).warehouses
-        if (!warehouseMap[whId]) {
-          warehouseMap[whId] = {
-            id: whId,
-            name: whData?.name || `مخزن`,
-            branch_id: whData?.branch_id || null,
-            branches: whData?.branches || null,
-          } as Warehouse
-        }
-
-        // تجميع المخزون
+        warehouseIds.add(whId)
         if (!stocksMap[whId]) {
           stocksMap[whId] = {}
           for (const pid of productIds) stocksMap[whId][pid] = 0
         }
         stocksMap[whId][row.product_id] = (stocksMap[whId][row.product_id] || 0) + Number(row.quantity_change)
+      }
+
+      // الخطوة 2: جلب أسماء المخازن بشكل منفصل
+      const warehouseIdArr = Array.from(warehouseIds)
+      const warehouseMap: Record<string, Warehouse> = {}
+
+      const { data: whData } = await supabase
+        .from("warehouses")
+        .select("id, name, branch_id")
+        .in("id", warehouseIdArr)
+
+      for (const wh of (whData || [])) {
+        warehouseMap[wh.id] = {
+          id: wh.id,
+          name: wh.name,
+          branch_id: wh.branch_id,
+          branches: null,
+        }
+      }
+
+      // جلب أسماء الفروع بشكل منفصل لتجنب مشاكل الـ nested join
+      const branchIds = [...new Set(Object.values(warehouseMap).map(w => w.branch_id).filter(Boolean))] as string[]
+      if (branchIds.length > 0) {
+        const { data: branchData } = await supabase
+          .from("branches")
+          .select("id, name")
+          .in("id", branchIds)
+        const branchMap = Object.fromEntries((branchData || []).map((b: { id: string; name: string }) => [b.id, b.name]))
+        for (const wh of Object.values(warehouseMap)) {
+          if (wh.branch_id && branchMap[wh.branch_id]) {
+            wh.branches = { name: branchMap[wh.branch_id] }
+          }
+        }
+      }
+
+      // احتياطي للمخازن التي لم تُوجد في قاعدة البيانات
+      let counter = 1
+      for (const whId of warehouseIdArr) {
+        if (!warehouseMap[whId]) {
+          warehouseMap[whId] = { id: whId, name: `مخزن ${counter++}`, branch_id: null, branches: null }
+        }
       }
 
       setAllWarehouses(Object.values(warehouseMap) as Warehouse[])
