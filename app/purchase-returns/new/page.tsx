@@ -185,12 +185,15 @@ export default function NewPurchaseReturnPage() {
   }, [selectedWarehouseId, companyId, items])
 
   // جلب رصيد كل منتج في جميع المخازن (للمالك/المدير العام فقط)
+  // يعتمد على billItems (يُحمَّل فوراً عند اختيار الفاتورة) لا على items
   useEffect(() => {
     if (!isPrivileged || !companyId || allWarehouses.length === 0 || !form.bill_id) {
       setAllWarehouseStocks({})
       return
     }
-    const productIds = items.filter(i => i.product_id).map(i => i.product_id as string)
+    const productIds = billItems
+      .map(i => i.product_id as string)
+      .filter(Boolean)
     if (productIds.length === 0) { setAllWarehouseStocks({}); return }
 
     ;(async () => {
@@ -213,7 +216,7 @@ export default function NewPurchaseReturnPage() {
       }
       setAllWarehouseStocks(stocksMap)
     })()
-  }, [isPrivileged, companyId, allWarehouses, items, form.bill_id])
+  }, [isPrivileged, companyId, allWarehouses, billItems, form.bill_id])
 
   // Update exchange rate when currency changes
   useEffect(() => {
@@ -795,8 +798,9 @@ export default function NewPurchaseReturnPage() {
               </div>
             </div>
 
-            {/* 🏪 اختيار المخزن (للمالك/المدير العام فقط) */}
+            {/* 🏪 اختيار المخزن + 📊 جدول توزيع المخزون (للمالك/المدير العام فقط) */}
             {isPrivileged && allWarehouses.length > 0 && form.bill_id && (
+              <>
               <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <Warehouse className="w-5 h-5 text-amber-600 dark:text-amber-400" />
@@ -850,11 +854,10 @@ export default function NewPurchaseReturnPage() {
                   </div>
                 </div>
               </div>
-            )}
 
-            {/* 📊 جدول توزيع المخزون على الفروع (للمالك/المدير العام عند اختيار فاتورة) */}
-            {isPrivileged && form.bill_id && items.filter(i => i.product_id).length > 0 && allWarehouses.length > 0 && (
-              <div className="border border-blue-200 dark:border-blue-700 rounded-xl overflow-hidden">
+              {/* 📊 جدول توزيع المخزون على الفروع */}
+              {billItems.filter((i: any) => i.product_id).length > 0 && (
+              <div className="border border-blue-200 dark:border-blue-700 rounded-xl overflow-hidden mt-1">
                 <div className="bg-blue-50 dark:bg-blue-900/30 px-4 py-2.5 flex items-center gap-2 border-b border-blue-200 dark:border-blue-700">
                   <span className="text-sm font-semibold text-blue-800 dark:text-blue-200">
                     📊 {appLang === 'en' ? 'Stock Distribution Across Branches' : 'توزيع المخزون على الفروع'}
@@ -870,11 +873,13 @@ export default function NewPurchaseReturnPage() {
                         <th className="text-right p-2.5 font-semibold text-blue-800 dark:text-blue-300 whitespace-nowrap min-w-[160px]">
                           {appLang === 'en' ? 'Branch / Warehouse' : 'الفرع / المخزن'}
                         </th>
-                        {items.filter(i => i.product_id).map((it, idx) => (
+                        {billItems.filter(i => i.product_id).map((it: any, idx: number) => (
                           <th key={idx} className="text-center p-2.5 font-semibold text-blue-800 dark:text-blue-300 whitespace-nowrap">
-                            {it.product_name}
+                            {it.products?.name || '—'}
                             <div className="text-[10px] font-normal text-blue-500 dark:text-blue-400">
-                              {appLang === 'en' ? `Return: ${it.quantity}` : `مرتجع: ${it.quantity}`}
+                              {appLang === 'en'
+                                ? `Available: ${Number(it.quantity) - Number(it.returned_quantity || 0)}`
+                                : `المتاح: ${Number(it.quantity) - Number(it.returned_quantity || 0)}`}
                             </div>
                           </th>
                         ))}
@@ -886,11 +891,10 @@ export default function NewPurchaseReturnPage() {
                     <tbody>
                       {allWarehouses.map(wh => {
                         const whStocks = allWarehouseStocks[wh.id] || {}
-                        const productsInItems = items.filter(i => i.product_id)
-                        const rowTotal = productsInItems.reduce((sum, it) => sum + (whStocks[it.product_id!] || 0), 0)
+                        const productsInBill = billItems.filter((i: any) => i.product_id)
+                        const rowTotal = productsInBill.reduce((sum: number, it: any) => sum + (whStocks[it.product_id] || 0), 0)
                         const isBillWarehouse = wh.id === bills.find(b => b.id === form.bill_id)?.warehouse_id
                         const isSelectedWarehouse = wh.id === selectedWarehouseId
-                        const hasShortage = productsInItems.some(it => it.quantity > 0 && (whStocks[it.product_id!] || 0) < it.quantity)
                         return (
                           <tr
                             key={wh.id}
@@ -921,30 +925,20 @@ export default function NewPurchaseReturnPage() {
                                 </div>
                               </div>
                             </td>
-                            {productsInItems.map((it, idx) => {
-                              const qty = whStocks[it.product_id!] || 0
-                              const isShortageForProduct = it.quantity > 0 && qty < it.quantity
+                            {productsInBill.map((it: any, idx: number) => {
+                              const qty = whStocks[it.product_id] || 0
                               return (
                                 <td key={idx} className="p-2.5 text-center">
                                   <span className={`font-bold text-sm ${
-                                    qty <= 0
-                                      ? 'text-gray-300 dark:text-gray-600'
-                                      : isShortageForProduct
-                                        ? 'text-red-600 dark:text-red-400'
-                                        : 'text-green-700 dark:text-green-400'
+                                    qty <= 0 ? 'text-gray-300 dark:text-gray-600' : 'text-green-700 dark:text-green-400'
                                   }`}>
                                     {qty}
                                   </span>
-                                  {isShortageForProduct && (
-                                    <div className="text-[10px] text-red-500 dark:text-red-400">
-                                      {appLang === 'en' ? 'Insufficient' : 'غير كافٍ'}
-                                    </div>
-                                  )}
                                 </td>
                               )
                             })}
                             <td className="p-2.5 text-center">
-                              <span className={`font-bold ${rowTotal === 0 ? 'text-gray-300 dark:text-gray-600' : hasShortage ? 'text-red-600 dark:text-red-400' : 'text-blue-700 dark:text-blue-300'}`}>
+                              <span className={`font-bold ${rowTotal === 0 ? 'text-gray-300 dark:text-gray-600' : 'text-blue-700 dark:text-blue-300'}`}>
                                 {rowTotal}
                               </span>
                             </td>
@@ -956,25 +950,17 @@ export default function NewPurchaseReturnPage() {
                         <td className="p-2.5 text-blue-800 dark:text-blue-200">
                           🏢 {appLang === 'en' ? 'Company Total' : 'إجمالي الشركة'}
                         </td>
-                        {items.filter(i => i.product_id).map((it, idx) => {
-                          const companyTotal = allWarehouses.reduce((sum, wh) => sum + (allWarehouseStocks[wh.id]?.[it.product_id!] || 0), 0)
-                          const meetsReturn = companyTotal >= it.quantity
+                        {billItems.filter((i: any) => i.product_id).map((it: any, idx: number) => {
+                          const companyTotal = allWarehouses.reduce((sum, wh) => sum + (allWarehouseStocks[wh.id]?.[it.product_id] || 0), 0)
                           return (
                             <td key={idx} className="p-2.5 text-center">
-                              <span className={`text-sm ${meetsReturn ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                {companyTotal}
-                              </span>
-                              {!meetsReturn && it.quantity > 0 && (
-                                <div className="text-[10px] text-red-500">
-                                  {appLang === 'en' ? '⚠ Below return qty' : '⚠ أقل من كمية المرتجع'}
-                                </div>
-                              )}
+                              <span className="text-sm text-green-700 dark:text-green-400">{companyTotal}</span>
                             </td>
                           )
                         })}
                         <td className="p-2.5 text-center text-blue-900 dark:text-blue-100 text-sm">
-                          {items.filter(i => i.product_id).reduce((sum, it) =>
-                            sum + allWarehouses.reduce((ws, wh) => ws + (allWarehouseStocks[wh.id]?.[it.product_id!] || 0), 0), 0
+                          {billItems.filter((i: any) => i.product_id).reduce((sum: number, it: any) =>
+                            sum + allWarehouses.reduce((ws, wh) => ws + (allWarehouseStocks[wh.id]?.[it.product_id] || 0), 0), 0
                           )}
                         </td>
                       </tr>
@@ -982,6 +968,8 @@ export default function NewPurchaseReturnPage() {
                   </table>
                 </div>
               </div>
+              )}
+              </>
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
