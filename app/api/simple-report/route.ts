@@ -163,10 +163,12 @@ export async function GET(request: NextRequest) {
     for (const line of salesLines) {
       const credit = Number(line.credit_amount || 0)
       const debit = Number(line.debit_amount || 0)
-      // الإيرادات تزيد بالدائن
+      // الإيرادات تزيد بالدائن، والمرتجعات تظهر كمدين (تُخصم من المبيعات)
       const amount = credit - debit
+      // ✅ نضيف المبلغ دائماً (موجب للمبيعات، سالب للمرتجعات)
+      totalSales += amount
+      // عدّاد القيود: فقط للمبيعات الفعلية (credit > debit)
       if (amount > 0) {
-        totalSales += amount
         salesEntryIds.add(line.journal_entry_id)
       }
     }

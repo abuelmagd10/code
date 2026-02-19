@@ -379,8 +379,8 @@ export default function SimpleSummaryReport() {
                           <UITooltip>
                             <TooltipTrigger><HelpCircle className="w-4 h-4 text-gray-400" /></TooltipTrigger>
                             <TooltipContent className="max-w-[300px]">
-                              <p>{t('Total value of products sold to customers.',
-                                'إجمالي قيمة المنتجات التي تم بيعها للعملاء.')}</p>
+                              <p>{t('Net sales revenue after deducting any returned products.',
+                                'صافي إيرادات المبيعات بعد خصم المرتجعات من العملاء.')}</p>
                             </TooltipContent>
                           </UITooltip>
                         </TooltipProvider>
@@ -393,7 +393,7 @@ export default function SimpleSummaryReport() {
                     {numberFmt.format(data.sales.total)} <span className="text-lg">{t('EGP', 'ج.م')}</span>
                   </p>
                   <p className="text-sm text-gray-500 mt-1">
-                    🧾 {data.sales.count} {t('paid invoices', 'فاتورة مدفوعة')}
+                    🧾 {data.sales.count} {t('sales invoices', 'فاتورة مبيعات')}
                   </p>
                   {data.sales.pending > 0 && (
                     <p className="text-sm text-amber-600 mt-1">
@@ -401,8 +401,8 @@ export default function SimpleSummaryReport() {
                     </p>
                   )}
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                    💡 {t('Sales represent total revenue from products sold.',
-                      'المبيعات هي إجمالي ما تم بيعه من المنتجات.')}
+                    💡 {t('Net sales after deducting any returns.',
+                      'صافي المبيعات بعد خصم المرتجعات إن وجدت.')}
                   </p>
                 </CardContent>
               </Card>
@@ -484,8 +484,10 @@ export default function SimpleSummaryReport() {
                     </p>
                     <div className="space-y-2 font-mono text-sm">
                       <div className="flex justify-between">
-                        <span>{t('Sales', 'المبيعات')}</span>
-                        <span className="text-green-600">+{numberFmt.format(data.sales.total)}</span>
+                        <span>{t('Net Sales (after returns)', 'صافي المبيعات (بعد المرتجعات)')}</span>
+                        <span className={data.sales.total >= 0 ? 'text-green-600' : 'text-red-600'}>
+                          {data.sales.total >= 0 ? '+' : ''}{numberFmt.format(data.sales.total)}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>{t('Cost of Goods Sold', 'تكلفة البضاعة المباعة')}</span>
