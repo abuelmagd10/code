@@ -115,15 +115,6 @@ export default function NewPurchaseReturnPage() {
       setCurrentUserRole(role)
       setCurrentUserName(user.email || '')
 
-      // جلب جميع المخازن للمالك/المدير العام (بدون فلتر is_active لضمان الشمولية)
-      if (PRIVILEGED_ROLES.includes(role.toLowerCase())) {
-        const { data: warehousesData } = await supabase
-          .from("warehouses")
-          .select("id, name, branch_id, branches(name)")
-          .eq("company_id", loadedCompanyId)
-        setAllWarehouses((warehousesData || []) as Warehouse[])
-      }
-
       // 🔐 بناء استعلام الفواتير حسب الصلاحيات
       const isPrivilegedRole = PRIVILEGED_ROLES.includes(role.toLowerCase())
       let billQuery = supabase
@@ -146,6 +137,32 @@ export default function NewPurchaseReturnPage() {
       setSuppliers((suppRes.data || []) as Supplier[])
       setBills((billRes.data || []) as Bill[])
       setProducts((prodRes.data || []) as Product[])
+
+      // جلب جميع المخازن للمالك/المدير العام
+      // نستخدم IDs المخازن المرجعية في الفواتير لتجاوز أي تعارض في company_id
+      if (isPrivilegedRole) {
+        const billWarehouseIds = [
+          ...new Set(
+            (billRes.data || [])
+              .map((b: any) => b.warehouse_id)
+              .filter(Boolean)
+          )
+        ]
+        if (billWarehouseIds.length > 0) {
+          const { data: warehousesData } = await supabase
+            .from("warehouses")
+            .select("id, name, branch_id, branches(name)")
+            .in("id", billWarehouseIds)
+          setAllWarehouses((warehousesData || []) as Warehouse[])
+        } else {
+          // fallback: جلب كل مخازن الشركة
+          const { data: warehousesData } = await supabase
+            .from("warehouses")
+            .select("id, name, branch_id, branches(name)")
+            .eq("company_id", loadedCompanyId)
+          setAllWarehouses((warehousesData || []) as Warehouse[])
+        }
+      }
 
       // Load currencies
       const curr = await getActiveCurrencies(supabase, loadedCompanyId)
