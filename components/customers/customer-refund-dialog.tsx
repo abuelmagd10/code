@@ -247,6 +247,29 @@ export function CustomerRefundDialog({
         refundAmount :
         Math.round(refundAmount * refundExRate.rate * 10000) / 10000
 
+      // 🔐 التحقق من رصيد حساب الصرف (النقد/البنك) قبل المتابعة
+      // الرصيد = مجموع المدين - مجموع الدائن من journal_entry_lines المرتبطة بقيود مُرحَّلة
+      const { data: balanceLines } = await supabase
+        .from("journal_entry_lines")
+        .select("debit_amount, credit_amount, journal_entries!inner(company_id, status)")
+        .eq("account_id", refundAccountId)
+        .eq("journal_entries.company_id", activeCompanyId)
+        .eq("journal_entries.status", "posted")
+      const accountBalance = (balanceLines || []).reduce((sum: number, line: any) => {
+        return sum + Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
+      }, 0)
+      if (accountBalance < baseRefundAmount) {
+        toast({
+          title: appLang === 'en' ? 'Insufficient Account Balance' : 'رصيد الحساب غير كافٍ',
+          description: appLang === 'en'
+            ? `Account balance (${accountBalance.toFixed(2)}) is less than the refund amount (${baseRefundAmount.toFixed(2)}). Please select a different account or reduce the refund amount.`
+            : `رصيد الحساب (${accountBalance.toFixed(2)}) أقل من مبلغ الصرف (${baseRefundAmount.toFixed(2)}). يرجى اختيار حساب آخر أو تخفيض المبلغ.`,
+          variant: 'destructive',
+        })
+        setIsProcessing(false)
+        return
+      }
+
       // 🔐 تحديد الفرع ومركز التكلفة للقيد (قيمة "none" تعني بدون فرع/مركز تكلفة)
       const finalBranchId = isPrivilegedUser
         ? (selectedBranchId && selectedBranchId !== 'none' ? selectedBranchId : null)
