@@ -24,6 +24,7 @@ interface JournalEntry {
   companies?: { name: string }
   branch_id?: string | null
   cost_center_id?: string | null
+  status?: string | null
 }
 
 interface JournalLine {
@@ -88,7 +89,7 @@ export default function JournalEntryDetailPage() {
         setIsLoading(true)
         const { data: entryData, error: entryErr } = await supabase
           .from("journal_entries")
-          .select("id, entry_date, description, reference_type, reference_id, company_id, branch_id, cost_center_id")
+          .select("id, entry_date, description, reference_type, reference_id, company_id, branch_id, cost_center_id, status")
           .eq("id", entryId)
           .single()
         if (entryErr) {
@@ -596,10 +597,13 @@ export default function JournalEntryDetailPage() {
     "expense",           // سند صرف
   ]
 
-  // 🔐 التحقق من إمكانية التعديل - المالك فقط + القيود غير المحمية
+  // 🔐 التحقق من إمكانية التعديل - المالك فقط + القيود غير المحمية + غير المُرحَّلة
   const canEdit = useMemo(() => {
     // فقط المالك يمكنه تعديل القيود اليومية
     if (!isUserOwner) return false
+
+    // 🔒 منع تعديل القيود المُرحَّلة (posted) — قاعدة البيانات تمنع ذلك أيضاً
+    if (entry?.status === 'posted') return false
 
     // 🔒 منع تعديل القيود المرتبطة بالفواتير والمدفوعات
     if (entry?.reference_type && PROTECTED_REFERENCE_TYPES.includes(entry.reference_type)) {
@@ -607,7 +611,7 @@ export default function JournalEntryDetailPage() {
     }
 
     return true
-  }, [isUserOwner, entry?.reference_type])
+  }, [isUserOwner, entry?.reference_type, entry?.status])
 
   // 🔐 بدء التعديل مع التحقق من الصلاحيات
   const handleStartEdit = () => {
@@ -615,6 +619,14 @@ export default function JournalEntryDetailPage() {
       toastActionError(toast, "التعديل", "القيد", appLang === 'en'
         ? "Only the owner can edit journal entries"
         : "فقط المالك يمكنه تعديل القيود اليومية")
+      return
+    }
+
+    // 🔒 منع تعديل القيود المُرحَّلة (posted) — قاعدة البيانات تمنع ذلك أيضاً
+    if (entry?.status === 'posted') {
+      toastActionError(toast, "التعديل", "القيد", appLang === 'en'
+        ? "Cannot edit a posted journal entry. Please create a reversal entry instead."
+        : "لا يمكن تعديل قيد مُرحَّل (posted). لإجراء تصحيح يرجى إنشاء قيد عكسي بدلاً من ذلك.")
       return
     }
 
@@ -720,7 +732,14 @@ export default function JournalEntryDetailPage() {
       setLines((linesData as JournalLine[]) || [])
       setOriginalLines((linesData as JournalLine[]) || [])
     } catch (err: any) {
-      const message = err?.message ? String(err.message) : "تعذر حفظ القيد"
+      const rawMsg = String(err?.message || err || "تعذر حفظ القيد")
+      // رسالة مخصصة لخطأ trigger المنع من تعديل القيود المُرحَّلة
+      const isPostedError = rawMsg.toLowerCase().includes("posted") || rawMsg.includes("Cannot modify a posted")
+      const message = isPostedError
+        ? (appLang === 'en'
+            ? "Cannot modify a posted journal entry. Create a reversal entry instead."
+            : "لا يمكن تعديل قيد مُرحَّل. لإجراء تصحيح يرجى إنشاء قيد عكسي.")
+        : rawMsg
       toastActionError(toast, "الحفظ", "القيد", message)
     } finally {
       setIsPosting(false)
@@ -818,6 +837,14 @@ export default function JournalEntryDetailPage() {
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs">
                     <FileText className="w-3.5 h-3.5" />
                     <span>{appLang === 'en' ? 'Edit from source document' : 'التعديل من المستند الأصلي'}</span>
+                  </div>
+                )}
+
+                {/* 🔒 رسالة للقيود المُرحَّلة (posted) */}
+                {entry && entry.status === 'posted' && isUserOwner && !PROTECTED_REFERENCE_TYPES.includes(entry.reference_type || '') && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs">
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>{appLang === 'en' ? 'Posted: Create a reversal entry to correct' : 'مُرحَّل: أنشئ قيداً عكسياً للتصحيح'}</span>
                   </div>
                 )}
 
