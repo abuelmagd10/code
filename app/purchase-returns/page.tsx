@@ -15,7 +15,17 @@ import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useToast } from "@/hooks/use-toast"
-import { notifyPurchaseReturnConfirmed } from "@/lib/notification-helpers"
+import { notifyPurchaseReturnConfirmed, notifyWarehouseAllocationConfirmed } from "@/lib/notification-helpers"
+
+type WarehouseAllocation = {
+  id: string
+  warehouse_id: string
+  workflow_status: string
+  confirmed_by: string | null
+  confirmed_at: string | null
+  total_amount: number
+  warehouses?: { name: string } | null
+}
 
 type PurchaseReturn = {
   id: string
@@ -33,6 +43,7 @@ type PurchaseReturn = {
   bills?: { id: string; bill_number: string } | null
   branches?: { name: string } | null
   warehouses?: { name: string } | null
+  allocations?: WarehouseAllocation[]
 }
 
 const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
@@ -81,8 +92,8 @@ export default function PurchaseReturnsPage() {
 
       const { data: { user } } = await supabase.auth.getUser()
       let role = 'viewer'
-      let userId = null
-      let userWarehouseId = null
+      let userId: string | null = null
+      let userWarehouseId: string | null = null
 
       if (user) {
         userId = user.id
@@ -119,14 +130,20 @@ export default function PurchaseReturnsPage() {
             suppliers(name),
             bills(id, bill_number),
             branches(name),
-            warehouses(name)
+            warehouses(name),
+            allocations:purchase_return_warehouse_allocations(
+              id, warehouse_id, workflow_status, confirmed_by, confirmed_at, total_amount,
+              warehouses(name)
+            )
           `)
           .eq("company_id", companyId)
 
         // 🔐 فلترة حسب الصلاحيات
         if (role === 'store_manager' && userWarehouseId) {
-          // مسؤول المخزن: يرى مرتجعات مخزنه فقط (بما فيها pending_approval)
-          query = query.eq("warehouse_id", userWarehouseId)
+          // مسؤول المخزن: نجلب جميع المرتجعات المعلقة والمعتمدة جزئياً
+          // + المرتجعات المرتبطة بمخزنه (Phase 1)
+          // نفلتر client-side على كل من له علاقة بمخزن هذا المسؤول
+          // لا نضع فلتر هنا لكي نشمل Phase 2 (allocation-based)
         } else if (canFilterByBranch && selectedBranchId) {
           query = query.eq("branch_id", selectedBranchId)
         } else if (!canFilterByBranch && memberData?.branch_id) {
@@ -136,7 +153,19 @@ export default function PurchaseReturnsPage() {
         const { data, error } = await query.order("return_date", { ascending: false })
 
         if (!error && data) {
-          setReturns(data as PurchaseReturn[])
+          let filtered = data as PurchaseReturn[]
+
+          // للمسؤول المخزن: فلترة عميل — فقط المرتجعات ذات الصلة بمخزنه
+          if (role === 'store_manager' && userWarehouseId) {
+            filtered = filtered.filter(r =>
+              // Phase 1: مرتجع مخزن واحد
+              r.warehouse_id === userWarehouseId ||
+              // Phase 2: أحد التخصيصات في مخزنه
+              (r.allocations || []).some(a => a.warehouse_id === userWarehouseId)
+            )
+          }
+
+          setReturns(filtered)
         }
       }
     } catch (error) {
@@ -229,18 +258,116 @@ export default function PurchaseReturnsPage() {
     }
   }
 
+  // ===================== اعتماد تخصيص مخزن واحد (Phase 2) =====================
+  const [confirmingAllocationId, setConfirmingAllocationId] = useState<string | null>(null)
+
+  const confirmAllocation = async (pr: PurchaseReturn, alloc: WarehouseAllocation) => {
+    if (!currentUserId) return
+    setConfirmingAllocationId(alloc.id)
+    try {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        'confirm_warehouse_allocation',
+        {
+          p_allocation_id: alloc.id,
+          p_confirmed_by: currentUserId,
+          p_notes: appLang === 'en'
+            ? `Confirmed by warehouse manager on ${new Date().toLocaleDateString()}`
+            : `تم الاعتماد بواسطة مسؤول المخزن بتاريخ ${new Date().toLocaleDateString('ar-EG')}`,
+        }
+      )
+
+      if (rpcError) {
+        toast({
+          title: appLang === 'en' ? '❌ Confirmation Failed' : '❌ فشل الاعتماد',
+          description: rpcError.message,
+          variant: 'destructive',
+        })
+        return
+      }
+
+      const overallStatus = (rpcResult as any)?.overall_status
+      const pendingCount = (rpcResult as any)?.pending_allocations || 0
+      const supplierName = (pr.suppliers as any)?.name || ''
+
+      // إشعار
+      if (pr.created_by) {
+        try {
+          await notifyWarehouseAllocationConfirmed({
+            companyId,
+            purchaseReturnId: pr.id,
+            returnNumber: pr.return_number,
+            supplierName,
+            allocationId: alloc.id,
+            warehouseId: alloc.warehouse_id,
+            warehouseName: (alloc.warehouses as any)?.name || alloc.warehouse_id,
+            totalAmount: alloc.total_amount,
+            currency: appCurrency,
+            pendingAllocations: pendingCount,
+            isFullyConfirmed: overallStatus === 'confirmed',
+            confirmedByName: currentUserName,
+            createdBy: pr.created_by,
+            appLang,
+          })
+        } catch (notifyErr) {
+          console.warn('⚠️ Notification failed (non-critical):', notifyErr)
+        }
+      }
+
+      toast({
+        title: overallStatus === 'confirmed'
+          ? (appLang === 'en' ? '✅ All Warehouses Confirmed' : '✅ اكتمل اعتماد جميع المخازن')
+          : (appLang === 'en' ? '✅ Warehouse Confirmed' : '✅ تم اعتماد المخزن'),
+        description: overallStatus === 'confirmed'
+          ? (appLang === 'en'
+            ? `Return ${pr.return_number} fully confirmed. All stock deducted and journal entries posted.`
+            : `تم اعتماد المرتجع ${pr.return_number} كاملاً. تم خصم المخزون ونشر جميع القيود.`)
+          : (appLang === 'en'
+            ? `Warehouse confirmed. ${pendingCount} warehouse(s) still pending.`
+            : `تم اعتماد المخزن. ${pendingCount} مخزن لا يزال بانتظار الاعتماد.`),
+      })
+
+      loadReturns()
+    } catch (err) {
+      console.error("Error confirming allocation:", err)
+      toast({
+        title: appLang === 'en' ? '❌ Error' : '❌ خطأ',
+        description: String(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setConfirmingAllocationId(null)
+    }
+  }
+
   const filteredReturns = returns.filter(r =>
     r.return_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (r.suppliers as any)?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (r.bills as any)?.bill_number?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const getWorkflowBadge = (wfStatus: string) => {
+  const getWorkflowBadge = (wfStatus: string, row?: PurchaseReturn) => {
+    const allocations = row?.allocations || []
+    const isMultiAlloc = allocations.length > 1
+
     if (wfStatus === 'pending_approval') {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
           <Clock className="w-3 h-3" />
-          {appLang === 'en' ? 'Pending' : 'بانتظار الاعتماد'}
+          {isMultiAlloc
+            ? `0/${allocations.length} ${appLang === 'en' ? 'warehouses' : 'مخازن'}`
+            : (appLang === 'en' ? 'Pending' : 'بانتظار الاعتماد')}
+        </span>
+      )
+    }
+    if (wfStatus === 'partial_approval') {
+      const confirmedCount = allocations.filter(a => a.workflow_status === 'confirmed').length
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+          <Clock className="w-3 h-3" />
+          {confirmedCount}/{allocations.length} {appLang === 'en' ? 'warehouses' : 'مخازن'}
         </span>
       )
     }
@@ -248,7 +375,9 @@ export default function PurchaseReturnsPage() {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
           <CheckCircle2 className="w-3 h-3" />
-          {appLang === 'en' ? 'Confirmed' : 'مؤكد'}
+          {isMultiAlloc
+            ? `${allocations.length}/${allocations.length} ${appLang === 'en' ? 'warehouses' : 'مخازن'}`
+            : (appLang === 'en' ? 'Confirmed' : 'مؤكد')}
         </span>
       )
     }
@@ -331,61 +460,130 @@ export default function PurchaseReturnsPage() {
       type: 'status',
       align: 'center',
       width: 'w-40',
-      format: (value) => getWorkflowBadge(value as string)
+      format: (value, row) => getWorkflowBadge(value as string, row as PurchaseReturn)
     },
     {
       key: 'id',
       header: appLang === 'en' ? 'Actions' : 'إجراءات',
       type: 'actions',
       align: 'center',
-      width: 'w-40',
+      width: 'w-52',
       format: (value, row) => {
         const pr = row as PurchaseReturn
-        const isPending = pr.workflow_status === 'pending_approval'
-        const isMyWarehouse = !currentWarehouseId || pr.warehouse_id === currentWarehouseId
+        const allocations = pr.allocations || []
+        const isMultiAlloc = allocations.length > 1
+        const isPending = pr.workflow_status === 'pending_approval' || pr.workflow_status === 'partial_approval'
+
+        // تخصيصات مخزن هذا المسؤول (Phase 2)
+        const myAllocations = allocations.filter(a =>
+          a.warehouse_id === currentWarehouseId && a.workflow_status === 'pending_approval'
+        )
+
+        // Phase 1: مرتجع مخزن واحد في مخزن المسؤول
+        const isPhase1MyWarehouse = !isMultiAlloc &&
+          (!currentWarehouseId || pr.warehouse_id === currentWarehouseId)
 
         return (
-          <div className="flex items-center gap-1.5 justify-center">
-            {/* زر الاعتماد - لمسؤول المخزن فقط + المرتجعات المعلقة في مخزنه */}
-            {isStoreManager && isPending && isMyWarehouse && (
-              <Button
-                size="sm"
-                className="bg-green-600 hover:bg-green-700 text-white text-xs h-7 px-2"
-                onClick={() => confirmDelivery(pr)}
-                disabled={confirmingId === pr.id}
-                title={appLang === 'en' ? 'Confirm Delivery to Supplier' : 'اعتماد تسليم البضاعة للمورد'}
-              >
-                {confirmingId === pr.id ? (
-                  <span className="animate-spin">⏳</span>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-3 h-3 mr-1" />
-                    {appLang === 'en' ? 'Confirm' : 'اعتماد'}
-                  </>
-                )}
-              </Button>
+          <div className="flex flex-col items-center gap-1">
+            <div className="flex items-center gap-1.5 justify-center">
+              {/* Phase 1: زر اعتماد مرتجع مخزن واحد */}
+              {isStoreManager && isPending && !isMultiAlloc && isPhase1MyWarehouse && (
+                <Button
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-700 text-white text-xs h-7 px-2"
+                  onClick={() => confirmDelivery(pr)}
+                  disabled={confirmingId === pr.id}
+                  title={appLang === 'en' ? 'Confirm Delivery to Supplier' : 'اعتماد تسليم البضاعة للمورد'}
+                >
+                  {confirmingId === pr.id ? (
+                    <span className="animate-spin">⏳</span>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                      {appLang === 'en' ? 'Confirm' : 'اعتماد'}
+                    </>
+                  )}
+                </Button>
+              )}
+              {pr.bills ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => router.push(`/bills/${pr.bills?.id}`)}
+                  title={appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                </Button>
+              ) : null}
+            </div>
+
+            {/* Phase 2: أزرار اعتماد التخصيصات لمسؤول المخزن */}
+            {isStoreManager && isMultiAlloc && myAllocations.length > 0 && (
+              <div className="flex flex-col gap-0.5 w-full">
+                {myAllocations.map(alloc => (
+                  <Button
+                    key={alloc.id}
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 text-white text-xs h-6 px-2 w-full"
+                    onClick={() => confirmAllocation(pr, alloc)}
+                    disabled={confirmingAllocationId === alloc.id}
+                    title={`${appLang === 'en' ? 'Confirm' : 'اعتماد'}: ${(alloc.warehouses as any)?.name || ''}`}
+                  >
+                    {confirmingAllocationId === alloc.id ? (
+                      <span className="animate-spin">⏳</span>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3 h-3 mr-1" />
+                        {appLang === 'en' ? 'Confirm' : 'اعتماد'}{' '}
+                        <span className="opacity-75 truncate max-w-[60px]">{(alloc.warehouses as any)?.name || ''}</span>
+                      </>
+                    )}
+                  </Button>
+                ))}
+              </div>
             )}
-            {pr.bills ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7"
-                onClick={() => router.push(`/bills/${pr.bills?.id}`)}
-                title={appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}
-              >
-                <Eye className="w-3.5 h-3.5" />
-              </Button>
-            ) : null}
+
+            {/* Phase 2 معلومات للمشرفين: حالة كل مخزن */}
+            {isMultiAlloc && !isStoreManager && (
+              <div className="flex flex-wrap gap-0.5 justify-center">
+                {allocations.map(alloc => (
+                  <span
+                    key={alloc.id}
+                    className={`text-[10px] px-1.5 py-0.5 rounded ${
+                      alloc.workflow_status === 'confirmed'
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    }`}
+                    title={(alloc.warehouses as any)?.name || alloc.warehouse_id}
+                  >
+                    {alloc.workflow_status === 'confirmed' ? '✓' : '⏳'} {(alloc.warehouses as any)?.name?.slice(0, 10) || '—'}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )
       }
     }
-  ], [appLang, currencySymbol, router, isStoreManager, currentWarehouseId, confirmingId, currentUserId])
+  ], [appLang, currencySymbol, router, isStoreManager, currentWarehouseId, confirmingId, confirmingAllocationId, currentUserId])
 
   // إحصاءات سريعة
-  const pendingCount = returns.filter(r => r.workflow_status === 'pending_approval').length
+  const pendingCount = returns.filter(r =>
+    r.workflow_status === 'pending_approval' || r.workflow_status === 'partial_approval'
+  ).length
+
   const myPendingCount = isStoreManager
-    ? returns.filter(r => r.workflow_status === 'pending_approval' && r.warehouse_id === currentWarehouseId).length
+    ? returns.filter(r => {
+        const isPending = r.workflow_status === 'pending_approval' || r.workflow_status === 'partial_approval'
+        if (!isPending) return false
+        const allocations = r.allocations || []
+        const isMultiAlloc = allocations.length > 1
+        // Phase 1
+        if (!isMultiAlloc) return r.warehouse_id === currentWarehouseId
+        // Phase 2: هل هناك تخصيص بانتظار اعتمادي؟
+        return allocations.some(a => a.warehouse_id === currentWarehouseId && a.workflow_status === 'pending_approval')
+      }).length
     : pendingCount
 
   return (

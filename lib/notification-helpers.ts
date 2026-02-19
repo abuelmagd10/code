@@ -314,6 +314,78 @@ export async function notifyPurchaseReturnConfirmed(params: {
 }
 
 /**
+ * إشعار اعتماد تخصيص مخزن واحد في مرتجع متعدد المخازن (المرحلة الثانية)
+ * يُرسل إلى: المالك / المدير العام الذي أنشأ المرتجع
+ * - عند الاعتماد الجزئي: يُعلم بالحالة الجزئية
+ * - عند الاعتماد الكامل: يُعلم باكتمال الاعتماد
+ */
+export async function notifyWarehouseAllocationConfirmed(params: {
+  companyId: string
+  purchaseReturnId: string
+  returnNumber: string
+  supplierName: string
+  allocationId: string
+  warehouseId: string
+  warehouseName: string
+  totalAmount: number
+  currency: string
+  pendingAllocations: number
+  isFullyConfirmed: boolean
+  confirmedByName?: string
+  createdBy: string
+  appLang?: 'ar' | 'en'
+}) {
+  const {
+    companyId, purchaseReturnId, returnNumber, supplierName,
+    allocationId, warehouseId, warehouseName, totalAmount, currency,
+    pendingAllocations, isFullyConfirmed, confirmedByName, createdBy, appLang = 'ar'
+  } = params
+
+  if (isFullyConfirmed) {
+    const title = appLang === 'en' ? `Purchase Return Fully Confirmed` : `تم اعتماد مرتجع المشتريات كاملاً`
+    const message = appLang === 'en'
+      ? `All warehouses confirmed. Return #${returnNumber} for ${supplierName} (${totalAmount} ${currency}) is fully processed${confirmedByName ? ` — last confirmed by ${confirmedByName}` : ''}.`
+      : `اعتمدت جميع المخازن. مرتجع #${returnNumber} للمورد ${supplierName} (${totalAmount} ${currency}) مكتمل${confirmedByName ? ` — آخر اعتماد بواسطة ${confirmedByName}` : ''}.`
+
+    await createNotification({
+      companyId,
+      referenceType: 'purchase_return',
+      referenceId: purchaseReturnId,
+      title,
+      message,
+      createdBy,
+      assignedToUser: createdBy,
+      priority: 'normal' as NotificationPriority,
+      eventKey: `purchase_return:${purchaseReturnId}:confirmed`,
+      severity: 'info',
+      category: 'inventory',
+    })
+  } else {
+    const title = appLang === 'en'
+      ? `Warehouse Confirmed — Return Partially Approved`
+      : `تم اعتماد مخزن — مرتجع معتمد جزئياً`
+    const message = appLang === 'en'
+      ? `Warehouse "${warehouseName}" confirmed for Return #${returnNumber}${confirmedByName ? ` by ${confirmedByName}` : ''}. ${pendingAllocations} warehouse(s) still pending.`
+      : `اعتمد المخزن "${warehouseName}" للمرتجع #${returnNumber}${confirmedByName ? ` بواسطة ${confirmedByName}` : ''}. ${pendingAllocations} مخزن لا يزال بانتظار الاعتماد.`
+
+    await createNotification({
+      companyId,
+      referenceType: 'purchase_return',
+      referenceId: purchaseReturnId,
+      title,
+      message,
+      createdBy,
+      assignedToUser: createdBy,
+      warehouseId,
+      priority: 'normal' as NotificationPriority,
+      eventKey: `purchase_return:${purchaseReturnId}:allocation:${allocationId}:confirmed`,
+      severity: 'info',
+      category: 'inventory',
+    })
+  }
+}
+
+/**
  * إنشاء إشعار عند إنشاء إشعار مدين العميل
  * ✅ محدث: يدعم event_key و severity و category
  */

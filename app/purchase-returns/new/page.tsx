@@ -36,6 +36,24 @@ type ItemRow = {
   line_total: number
 }
 
+// المرحلة الثانية: تخصيصات متعددة المخازن
+type WhAllocationItem = {
+  bill_item_id: string | null
+  product_id: string | null
+  product_name: string
+  quantity: number
+  max_quantity: number
+  unit_price: number
+  tax_rate: number
+  discount_percent: number
+}
+
+type WarehouseAllocation = {
+  localId: string           // معرّف محلي للـ React key
+  warehouseId: string
+  items: WhAllocationItem[]
+}
+
 const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
 
 export default function NewPurchaseReturnPage() {
@@ -68,6 +86,10 @@ export default function NewPurchaseReturnPage() {
   const [warehouseStocks, setWarehouseStocks] = useState<Record<string, number>>({})
   // رصيد كل منتج في كل مخزن (warehouseId → productId → stock)
   const [allWarehouseStocks, setAllWarehouseStocks] = useState<Record<string, Record<string, number>>>({})
+
+  // المرحلة الثانية: تخصيصات متعددة المخازن (للمالك/المدير فقط)
+  const [warehouseAllocations, setWarehouseAllocations] = useState<WarehouseAllocation[]>([])
+  const isMultiWarehouse = warehouseAllocations.length > 1
 
   const [form, setForm] = useState({
     supplier_id: "",
@@ -288,13 +310,14 @@ export default function NewPurchaseReturnPage() {
     updateRate()
   }, [form.currency, companyId, baseCurrency])
 
-  // Load bill items when bill is selected + تهيئة المخزن الافتراضي
+  // Load bill items when bill is selected + تهيئة المخزن الافتراضي والتخصيصات
   useEffect(() => {
     if (!form.bill_id) {
       setBillItems([])
       setItems([])
       setSelectedWarehouseId('')
       setWarehouseStocks({})
+      setWarehouseAllocations([])
       return
     }
     ; (async () => {
@@ -306,8 +329,8 @@ export default function NewPurchaseReturnPage() {
       const billItemsData = (data || []) as any[]
       setBillItems(billItemsData)
 
-      // Auto-populate return items
-      setItems(billItemsData.map(item => ({
+      // Auto-populate return items (للمستخدمين غير المميزين)
+      const baseItems = billItemsData.map(item => ({
         bill_item_id: item.id,
         product_id: item.product_id,
         product_name: item.products?.name || "—",
@@ -317,12 +340,31 @@ export default function NewPurchaseReturnPage() {
         tax_rate: Number(item.tax_rate || 0),
         discount_percent: Number(item.discount_percent || 0),
         line_total: 0
-      })))
+      }))
+      setItems(baseItems)
 
-      // للمالك/المدير: تعيين مخزن الفاتورة الافتراضي
+      // للمالك/المدير: تعيين مخزن الفاتورة الافتراضي وتهيئة تخصيص واحد
       const selectedBill = bills.find(b => b.id === form.bill_id)
-      if (selectedBill?.warehouse_id) {
-        setSelectedWarehouseId(selectedBill.warehouse_id)
+      const billWarehouseId = selectedBill?.warehouse_id || ''
+      if (billWarehouseId) {
+        setSelectedWarehouseId(billWarehouseId)
+        // تهيئة تخصيص واحد بمخزن الفاتورة
+        setWarehouseAllocations([{
+          localId: `alloc-${Date.now()}`,
+          warehouseId: billWarehouseId,
+          items: billItemsData.map(item => ({
+            bill_item_id: item.id,
+            product_id: item.product_id,
+            product_name: item.products?.name || "—",
+            quantity: 0,
+            max_quantity: Number(item.quantity) - Number(item.returned_quantity || 0),
+            unit_price: Number(item.unit_price),
+            tax_rate: Number(item.tax_rate || 0),
+            discount_percent: Number(item.discount_percent || 0),
+          }))
+        }])
+      } else {
+        setWarehouseAllocations([])
       }
     })()
   }, [form.bill_id, supabase])
@@ -366,6 +408,293 @@ export default function NewPurchaseReturnPage() {
 
   const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx))
 
+  // ===== دوال مساعدة للتخصيصات متعددة المخازن =====
+
+  // إضافة تخصيص مخزن جديد
+  const addWarehouseAllocation = () => {
+    setWarehouseAllocations(prev => [...prev, {
+      localId: `alloc-${Date.now()}`,
+      warehouseId: '',
+      items: billItems.map(item => ({
+        bill_item_id: item.id,
+        product_id: item.product_id,
+        product_name: (item as any).products?.name || "—",
+        quantity: 0,
+        max_quantity: Number(item.quantity) - Number(item.returned_quantity || 0),
+        unit_price: Number(item.unit_price),
+        tax_rate: Number(item.tax_rate || 0),
+        discount_percent: Number(item.discount_percent || 0),
+      }))
+    }])
+  }
+
+  // حذف تخصيص
+  const removeAllocation = (localId: string) => {
+    setWarehouseAllocations(prev => prev.filter(a => a.localId !== localId))
+  }
+
+  // تغيير مخزن التخصيص
+  const updateAllocationWarehouse = (localId: string, warehouseId: string) => {
+    setWarehouseAllocations(prev => prev.map(a =>
+      a.localId === localId ? { ...a, warehouseId } : a
+    ))
+  }
+
+  // تغيير كمية منتج في تخصيص
+  const updateAllocationItemQty = (localId: string, itemIdx: number, qty: number) => {
+    setWarehouseAllocations(prev => prev.map(a => {
+      if (a.localId !== localId) return a
+      const newItems = [...a.items]
+      const item = newItems[itemIdx]
+      const clampedQty = Math.min(Math.max(0, qty), item.max_quantity)
+      // التحقق من أن الإجمالي عبر جميع التخصيصات لا يتجاوز المتاح
+      const otherAllocsQty = prev
+        .filter(oa => oa.localId !== localId)
+        .reduce((sum, oa) => sum + (oa.items[itemIdx]?.quantity || 0), 0)
+      const maxAllowed = Math.min(clampedQty, item.max_quantity - otherAllocsQty)
+      newItems[itemIdx] = { ...item, quantity: Math.max(0, maxAllowed) }
+      return { ...a, items: newItems }
+    }))
+  }
+
+  // حساب إجمالي التخصيصات
+  const allocSubtotal = warehouseAllocations.reduce((sum, alloc) =>
+    sum + alloc.items.reduce((s, it) => {
+      const gross = it.quantity * it.unit_price
+      const net = gross - (gross * it.discount_percent / 100)
+      return s + net
+    }, 0), 0)
+
+  const allocTaxAmount = warehouseAllocations.reduce((sum, alloc) =>
+    sum + alloc.items.reduce((s, it) => {
+      const gross = it.quantity * it.unit_price
+      const net = gross - (gross * it.discount_percent / 100)
+      return s + (net * it.tax_rate / 100)
+    }, 0), 0)
+
+  const allocTotal = allocSubtotal + allocTaxAmount
+
+  // إجمالي كمية كل منتج عبر كل التخصيصات
+  const allocTotalQtyPerItem = (itemIdx: number) =>
+    warehouseAllocations.reduce((sum, alloc) => sum + (alloc.items[itemIdx]?.quantity || 0), 0)
+
+  // ===== حفظ المرتجع متعدد المخازن (المرحلة الثانية) =====
+  const saveMultiWarehouseReturn = async () => {
+    if (!companyId) return
+
+    // التحقق من أن كل تخصيص له مخزن
+    const missingWarehouse = warehouseAllocations.find(a => !a.warehouseId)
+    if (missingWarehouse) {
+      toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? 'Please select a warehouse for each allocation.' : 'يرجى اختيار مخزن لكل تخصيص.')
+      return
+    }
+
+    // التحقق من عدم تكرار المخزن
+    const whIds = warehouseAllocations.map(a => a.warehouseId)
+    if (new Set(whIds).size !== whIds.length) {
+      toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? 'Duplicate warehouses are not allowed.' : 'لا يمكن تكرار نفس المخزن.')
+      return
+    }
+
+    // التحقق من وجود كميات
+    const hasAnyQty = warehouseAllocations.some(a => a.items.some(it => it.quantity > 0))
+    if (!hasAnyQty) {
+      toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? 'Please enter return quantities.' : 'يرجى إدخال كميات المرتجع.')
+      return
+    }
+
+    // التحقق من الفاتورة
+    const { data: billCheck } = await supabase
+      .from("bills").select("status, paid_amount, total_amount, returned_amount").eq("id", form.bill_id).single()
+
+    if (!canReturnBill(billCheck?.status || null)) {
+      const err = getBillOperationError(billCheck?.status || null, 'return', appLang as 'en' | 'ar')
+      if (err) toastActionError(toast, "الحفظ", "المرتجع", err.description)
+      return
+    }
+
+    // التحقق من الفترة المحاسبية
+    try {
+      const { assertPeriodNotLocked } = await import("@/lib/accounting-period-lock")
+      const { createClient } = await import("@supabase/supabase-js")
+      const periodSupabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+      await assertPeriodNotLocked(periodSupabase, { companyId, date: form.return_date })
+    } catch (lockError: any) {
+      toast({ title: "❌ الفترة المحاسبية مقفلة", description: lockError.message, variant: "destructive" })
+      return
+    }
+
+    // جلب الحسابات
+    const { data: accounts } = await supabase
+      .from("chart_of_accounts").select("id, account_code, account_name, account_type, sub_type").eq("company_id", companyId)
+
+    type AccountRow = { id: string; account_code: string | null; account_name: string; account_type: string; sub_type: string | null }
+    const findAcct = (subType: string, fallback: string) =>
+      (accounts as AccountRow[] | null)?.find(a => a.sub_type === subType)?.id ||
+      (accounts as AccountRow[] | null)?.find(a => a.account_name?.includes(fallback))?.id
+    const apAccount = findAcct("accounts_payable", "دائن")
+    const purchaseAccount = findAcct("purchases", "مشتريات") || findAcct("expense", "مصروف")
+    const inventoryAccount = findAcct("inventory", "مخزون")
+    const vatAccount = findAcct("vat_input", "ضريب")
+    const vendorCreditAccount = findAcct("vendor_credit_liability", "إشعار دائن") || findAcct("ap_contra", "ap contra") || apAccount
+
+    const needsJournalEntry = billCheck?.status === 'paid' || billCheck?.status === 'partially_paid'
+
+    // بناء مجموعات المخازن
+    const warehouseGroups = await Promise.all(warehouseAllocations.map(async (alloc) => {
+      const allocItems = alloc.items.filter(it => it.quantity > 0)
+      if (allocItems.length === 0) return null
+
+      const allocSub = allocItems.reduce((s, it) => {
+        const gross = it.quantity * it.unit_price
+        return s + (gross - (gross * it.discount_percent / 100))
+      }, 0)
+      const allocTax = allocItems.reduce((s, it) => {
+        const gross = it.quantity * it.unit_price
+        const net = gross - (gross * it.discount_percent / 100)
+        return s + (net * it.tax_rate / 100)
+      }, 0)
+      const allocTot = allocSub + allocTax
+
+      const finalSub = form.currency === baseCurrency ? allocSub : Math.round(allocSub * exchangeRate.rate * 10000) / 10000
+      const finalTax = form.currency === baseCurrency ? allocTax : Math.round(allocTax * exchangeRate.rate * 10000) / 10000
+      const finalTot = finalSub + finalTax
+
+      // جلب بيانات الفرع/مركز التكلفة للمخزن
+      let whBranchId: string | null = null
+      let whCostCenterId: string | null = null
+      const { data: whData } = await supabase.from("warehouses").select("branch_id").eq("id", alloc.warehouseId).single()
+      whBranchId = (whData as any)?.branch_id || null
+      if (whBranchId) {
+        const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+        const defaults = await getBranchDefaults(supabase, whBranchId)
+        whCostCenterId = defaults.default_cost_center_id
+      }
+
+      // بناء سطور القيد لهذا التخصيص
+      const journalLines: any[] = []
+      if (needsJournalEntry && finalTot > 0) {
+        if (form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer') {
+          const cashAcct = findAcct("cash", "نقد")
+          const bankAcct = findAcct("bank", "بنك")
+          const refundAcct = form.settlement_method === 'cash' ? (cashAcct || bankAcct) : (bankAcct || cashAcct)
+          if (refundAcct) journalLines.push({ account_id: refundAcct, debit_amount: finalTot, credit_amount: 0,
+            description: appLang === 'en' ? 'Refund received from supplier' : 'استرداد مستلم من المورد',
+            original_debit: allocTot, original_credit: 0, original_currency: form.currency,
+            exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source })
+        } else {
+          if (vendorCreditAccount) journalLines.push({ account_id: vendorCreditAccount, debit_amount: finalTot, credit_amount: 0,
+            description: appLang === 'en' ? 'Reduce AP - Debit Note' : 'تخفيض الموردين - إشعار مدين',
+            original_debit: allocTot, original_credit: 0, original_currency: form.currency,
+            exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source })
+        }
+        const invAcct = inventoryAccount || purchaseAccount
+        if (invAcct && finalSub > 0) journalLines.push({ account_id: invAcct, debit_amount: 0, credit_amount: finalSub,
+          description: appLang === 'en' ? 'Inventory returned to supplier' : 'مخزون مرتجع للمورد',
+          original_debit: 0, original_credit: allocSub, original_currency: form.currency,
+          exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source })
+        if (vatAccount && finalTax > 0) journalLines.push({ account_id: vatAccount, debit_amount: 0, credit_amount: finalTax,
+          description: appLang === 'en' ? 'Reverse VAT' : 'عكس ضريبة المشتريات',
+          original_debit: 0, original_credit: allocTax, original_currency: form.currency,
+          exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source })
+      }
+
+      return {
+        warehouse_id: alloc.warehouseId,
+        branch_id: whBranchId,
+        cost_center_id: whCostCenterId,
+        subtotal: finalSub,
+        tax_amount: finalTax,
+        total_amount: finalTot,
+        journal_entry: needsJournalEntry ? {
+          entry_date: form.return_date,
+          description: `مرتجع مشتريات ${form.return_number} — مخزن ${alloc.warehouseId}`,
+        } : null,
+        journal_lines: needsJournalEntry ? journalLines : null,
+        items: allocItems.map(it => ({
+          bill_item_id: it.bill_item_id,
+          product_id: it.product_id,
+          description: it.product_name,
+          quantity: it.quantity,
+          unit_price: it.unit_price,
+          tax_rate: it.tax_rate,
+          discount_percent: it.discount_percent,
+          line_total: (() => { const g = it.quantity * it.unit_price; return g - (g * it.discount_percent / 100) })(),
+        }))
+      }
+    }))
+
+    const filteredGroups = warehouseGroups.filter(Boolean)
+    if (filteredGroups.length < 2) {
+      toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? 'At least 2 warehouses with quantities are required.' : 'يجب وجود كميات في مخزنين على الأقل.')
+      return
+    }
+
+    const { data: rpcResult, error: rpcError } = await supabase.rpc(
+      'process_purchase_return_multi_warehouse',
+      {
+        p_company_id: companyId,
+        p_supplier_id: form.supplier_id,
+        p_bill_id: form.bill_id,
+        p_purchase_return: {
+          return_number: form.return_number,
+          return_date: form.return_date,
+          status: 'completed',
+          subtotal: filteredGroups.reduce((s, g) => s + (g?.subtotal || 0), 0),
+          tax_amount: filteredGroups.reduce((s, g) => s + (g?.tax_amount || 0), 0),
+          total_amount: filteredGroups.reduce((s, g) => s + (g?.total_amount || 0), 0),
+          settlement_method: form.settlement_method,
+          reason: form.reason,
+          notes: form.notes,
+          original_currency: form.currency,
+          original_subtotal: allocSubtotal,
+          original_tax_amount: allocTaxAmount,
+          original_total_amount: allocTotal,
+          exchange_rate_used: exchangeRate.rate,
+          exchange_rate_id: exchangeRate.rateId || null,
+        },
+        p_warehouse_groups: filteredGroups,
+        p_created_by: currentUserId || null,
+      }
+    )
+
+    if (rpcError) throw new Error(`فشل حفظ المرتجع متعدد المخازن: ${rpcError.message}`)
+
+    const purchaseReturnId = (rpcResult as any)?.purchase_return_id
+    const allocationIds: string[] = (rpcResult as any)?.allocation_ids || []
+
+    // إشعارات لكل مخزن
+    const selectedSupplier = suppliers.find(s => s.id === form.supplier_id)
+    for (const alloc of warehouseAllocations.filter(a => a.warehouseId)) {
+      try {
+        const groupData = filteredGroups.find((g: any) => g?.warehouse_id === alloc.warehouseId)
+        await notifyPurchaseReturnPendingApproval({
+          companyId,
+          purchaseReturnId,
+          returnNumber: form.return_number,
+          supplierName: selectedSupplier?.name || form.supplier_id,
+          totalAmount: groupData?.total_amount || 0,
+          currency: baseCurrency,
+          warehouseId: alloc.warehouseId,
+          branchId: groupData?.branch_id || undefined,
+          createdBy: currentUserId || '',
+          createdByName: currentUserName,
+          appLang,
+        })
+      } catch (notifyErr) {
+        console.warn('⚠️ Multi-warehouse notification failed (non-critical):', notifyErr)
+      }
+    }
+
+    toast({
+      title: appLang === 'en' ? '📋 Multi-Warehouse Return Created' : '📋 تم إنشاء المرتجع متعدد المخازن',
+      description: appLang === 'en'
+        ? `Return ${form.return_number} created for ${filteredGroups.length} warehouses. Each manager will confirm their warehouse.`
+        : `تم إنشاء مرتجع ${form.return_number} لـ ${filteredGroups.length} مخازن. سيعتمد كل مسؤول مخزنه.`,
+    })
+    router.push("/purchase-returns")
+  }
+
   const saveReturn = async () => {
     try {
       setSaving(true)
@@ -377,7 +706,46 @@ export default function NewPurchaseReturnPage() {
         toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "A purchase bill must be selected to create a return" : "يجب تحديد فاتورة شراء لإنشاء المرتجع")
         return
       }
-      if (items.filter(i => i.quantity > 0).length === 0) {
+
+      // ===================== مسار التخصيصات المتعددة (المرحلة الثانية) =====================
+      if (isMultiWarehouse) {
+        await saveMultiWarehouseReturn()
+        return
+      }
+
+      // للمستخدمين المميزين ذوي التخصيص الواحد: استخدام كميات التخصيص مباشرة
+      // (state updates are async, so we use local variables throughout)
+      const singleAllocItems: ItemRow[] = (isPrivileged && warehouseAllocations.length === 1)
+        ? warehouseAllocations[0].items.map(it => {
+            const gross = it.quantity * it.unit_price
+            const net = gross - (gross * it.discount_percent / 100)
+            return {
+              bill_item_id: it.bill_item_id,
+              product_id: it.product_id,
+              product_name: it.product_name,
+              quantity: it.quantity,
+              max_quantity: it.max_quantity,
+              unit_price: it.unit_price,
+              tax_rate: it.tax_rate,
+              discount_percent: it.discount_percent,
+              line_total: Number(net.toFixed(2)),
+            }
+          })
+        : []
+      const singleAllocWarehouseId = (isPrivileged && warehouseAllocations.length === 1)
+        ? warehouseAllocations[0].warehouseId
+        : selectedWarehouseId
+
+      // مصدر البنود الفعّال
+      const effectiveItems = singleAllocItems.length > 0 ? singleAllocItems : items
+      const effectiveSelectedWarehouseId = singleAllocItems.length > 0 ? singleAllocWarehouseId : selectedWarehouseId
+
+      // إجماليات فعّالة (تأخذ في الاعتبار التخصيصات للمالك/المدير)
+      const effectiveSubtotal = effectiveItems.reduce((sum, it) => sum + Number(it.line_total || 0), 0)
+      const effectiveTaxAmount = effectiveItems.reduce((sum, it) => sum + (Number(it.line_total || 0) * Number(it.tax_rate || 0) / 100), 0)
+      const effectiveTotal = effectiveSubtotal + effectiveTaxAmount
+
+      if (effectiveItems.filter(i => i.quantity > 0).length === 0) {
         toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Please enter return quantities" : "يرجى إدخال كميات المرتجع")
         return
       }
@@ -421,7 +789,7 @@ export default function NewPurchaseReturnPage() {
         }
       }
 
-      const validItems = items.filter(i => i.quantity > 0)
+      const validItems = effectiveItems.filter(i => i.quantity > 0)
       const needsJournalEntry = billStatus === 'paid' || billStatus === 'partially_paid'
       const returnMethod = form.settlement_method
 
@@ -432,11 +800,11 @@ export default function NewPurchaseReturnPage() {
       let billWarehouseId = selectedBill?.warehouse_id || null
 
       // للمالك/المدير: استخدام المخزن المختار (قد يختلف عن مخزن الفاتورة)
-      const effectiveWarehouseId = (isPrivileged && selectedWarehouseId) ? selectedWarehouseId : billWarehouseId
+      const effectiveWarehouseId = (isPrivileged && effectiveSelectedWarehouseId) ? effectiveSelectedWarehouseId : billWarehouseId
       const selectedWarehouse = isPrivileged ? allWarehouses.find(w => w.id === effectiveWarehouseId) : null
 
       // إذا اختار المالك/المدير مخزن مختلف، نجلب بيانات فرعه
-      if (isPrivileged && selectedWarehouseId && selectedWarehouseId !== billWarehouseId && selectedWarehouse?.branch_id) {
+      if (isPrivileged && effectiveSelectedWarehouseId && effectiveSelectedWarehouseId !== billWarehouseId && selectedWarehouse?.branch_id) {
         const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
         const altDefaults = await getBranchDefaults(supabase, selectedWarehouse.branch_id)
         billBranchId = selectedWarehouse.branch_id
@@ -469,7 +837,7 @@ export default function NewPurchaseReturnPage() {
       // ===================== تحديد workflow_status =====================
       // إذا اختار المالك/المدير مخزن مختلف عن مخزن الفاتورة → pending_approval
       // شرط ضروري: يجب أن تكون الفاتورة محددة لتفعيل pending_approval
-      const isDifferentWarehouse = isPrivileged && !!form.bill_id && !!selectedWarehouseId && !!selectedBill && selectedWarehouseId !== (selectedBill.warehouse_id || '')
+      const isDifferentWarehouse = isPrivileged && !!form.bill_id && !!effectiveSelectedWarehouseId && !!selectedBill && effectiveSelectedWarehouseId !== (selectedBill.warehouse_id || '')
       const workflowStatus = isDifferentWarehouse ? 'pending_approval' : 'confirmed'
 
       // ===================== التحقق من المخزون (UX pre-check) =====================
@@ -661,9 +1029,9 @@ export default function NewPurchaseReturnPage() {
             cost_center_id: billCostCenterId,
             warehouse_id: effectiveWarehouseId || billWarehouseId,
             original_currency: form.currency,
-            original_subtotal: subtotal,
-            original_tax_amount: taxAmount,
-            original_total_amount: total,
+            original_subtotal: effectiveSubtotal,
+            original_tax_amount: effectiveTaxAmount,
+            original_total_amount: effectiveTotal,
             exchange_rate_used: exchangeRate.rate,
             exchange_rate_id: exchangeRate.rateId || null,
           },
@@ -855,72 +1223,185 @@ export default function NewPurchaseReturnPage() {
               </div>
             </div>
 
-            {/* 🏪 اختيار المخزن + 📊 جدول توزيع المخزون (للمالك/المدير العام فقط) */}
-            {isPrivileged && allWarehouses.length > 0 && form.bill_id && (
+            {/* 🏪 تخصيصات المخازن (للمالك/المدير العام فقط) */}
+            {isPrivileged && form.bill_id && (
               <>
               <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Warehouse className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                  <h3 className="font-semibold text-amber-800 dark:text-amber-200">
-                    {appLang === 'en' ? 'Return Warehouse Selection' : 'اختيار مخزن المرتجع'}
-                  </h3>
-                  <span className="text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full">
-                    {appLang === 'en' ? 'Owner / Manager Only' : 'المالك / المدير العام فقط'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-amber-700 dark:text-amber-300">
-                      {appLang === 'en' ? 'Select Warehouse' : 'اختر المخزن'}
-                    </Label>
-                    <select
-                      className="w-full border border-amber-300 rounded px-2 py-2 bg-white dark:bg-slate-800"
-                      value={selectedWarehouseId}
-                      onChange={e => setSelectedWarehouseId(e.target.value)}
-                    >
-                      <option value="">{appLang === 'en' ? 'Select...' : 'اختر المخزن...'}</option>
-                      {allWarehouses.map(w => (
-                        <option key={w.id} value={w.id}>
-                          {w.name}
-                          {(w as any).branches?.name ? ` — ${(w as any).branches.name}` : ''}
-                          {w.id === (bills.find(b => b.id === form.bill_id)?.warehouse_id) ? (appLang === 'en' ? ' (Bill Warehouse)' : ' (مخزن الفاتورة)') : ''}
-                        </option>
-                      ))}
-                    </select>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Warehouse className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    <h3 className="font-semibold text-amber-800 dark:text-amber-200">
+                      {appLang === 'en' ? 'Warehouse Allocations' : 'تخصيصات المخازن'}
+                    </h3>
+                    <span className="text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full">
+                      {appLang === 'en' ? 'Owner / Manager Only' : 'المالك / المدير العام فقط'}
+                    </span>
+                    {isMultiWarehouse && (
+                      <span className="text-xs bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300 px-2 py-0.5 rounded-full font-semibold">
+                        {warehouseAllocations.length} {appLang === 'en' ? 'warehouses' : 'مخازن'}
+                      </span>
+                    )}
                   </div>
-                  <div className="flex items-end">
-                    {selectedWarehouseId && selectedWarehouseId !== (bills.find(b => b.id === form.bill_id)?.warehouse_id) ? (
-                      <div className="flex items-start gap-2 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg w-full">
-                        <AlertTriangle className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
-                        <div className="text-xs text-orange-700 dark:text-orange-300">
-                          <p className="font-medium">
-                            {appLang === 'en' ? 'Approval Workflow Active' : 'سير عمل الاعتماد مفعّل'}
-                          </p>
-                          <p className="mt-0.5">
-                            {appLang === 'en'
-                              ? 'Stock will be deducted after warehouse manager confirms delivery.'
-                              : 'سيتم خصم المخزون بعد اعتماد مسؤول المخزن.'}
-                          </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addWarehouseAllocation}
+                    className="border-amber-300 text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-300"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    {appLang === 'en' ? 'Add Warehouse' : 'إضافة مخزن'}
+                  </Button>
+                </div>
+
+                {/* رسالة توضيحية عند المخازن المتعددة */}
+                {isMultiWarehouse && (
+                  <div className="flex items-start gap-2 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg">
+                    <AlertTriangle className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
+                    <div className="text-xs text-orange-700 dark:text-orange-300">
+                      <p className="font-semibold">{appLang === 'en' ? 'Multi-Warehouse Approval Workflow' : 'سير عمل الاعتماد متعدد المخازن'}</p>
+                      <p className="mt-0.5">
+                        {appLang === 'en'
+                          ? 'Each warehouse manager will approve their allocation independently. Stock is deducted upon each manager\'s confirmation.'
+                          : 'كل مسؤول مخزن يعتمد تخصيصه باستقلالية. يُخصم المخزون عند اعتماد كل مسؤول.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* صفوف التخصيصات */}
+                <div className="space-y-4">
+                  {warehouseAllocations.map((alloc, allocIdx) => {
+                    const allocSub = alloc.items.reduce((s, it) => {
+                      const g = it.quantity * it.unit_price; return s + (g - (g * it.discount_percent / 100))
+                    }, 0)
+                    const allocTax = alloc.items.reduce((s, it) => {
+                      const g = it.quantity * it.unit_price; const n = g - (g * it.discount_percent / 100); return s + (n * it.tax_rate / 100)
+                    }, 0)
+                    const allocTot = allocSub + allocTax
+                    const billWh = bills.find(b => b.id === form.bill_id)?.warehouse_id || ''
+                    const isDiff = alloc.warehouseId && alloc.warehouseId !== billWh
+
+                    return (
+                      <div key={alloc.localId} className={`border rounded-lg p-3 space-y-2 ${isDiff ? 'border-orange-300 dark:border-orange-700 bg-orange-50/30 dark:bg-orange-900/10' : 'border-amber-200 dark:border-amber-700 bg-white dark:bg-slate-900'}`}>
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1">
+                            <Label className="text-xs text-amber-700 dark:text-amber-300 mb-0.5 block">
+                              {appLang === 'en' ? `Warehouse ${allocIdx + 1}` : `المخزن ${allocIdx + 1}`}
+                              {isDiff && (
+                                <span className="mr-2 text-[10px] text-orange-600 dark:text-orange-400">
+                                  ({appLang === 'en' ? 'pending approval' : 'بانتظار الاعتماد'})
+                                </span>
+                              )}
+                            </Label>
+                            <select
+                              className="w-full border border-amber-300 dark:border-amber-600 rounded px-2 py-1.5 bg-white dark:bg-slate-800 text-sm"
+                              value={alloc.warehouseId}
+                              onChange={e => updateAllocationWarehouse(alloc.localId, e.target.value)}
+                            >
+                              <option value="">{appLang === 'en' ? 'Select Warehouse...' : 'اختر المخزن...'}</option>
+                              {allWarehouses.map(w => (
+                                <option key={w.id} value={w.id}
+                                  disabled={warehouseAllocations.some(a => a.localId !== alloc.localId && a.warehouseId === w.id)}>
+                                  {(w as any).branches?.name ? `${(w as any).branches.name} — ` : ''}{w.name}
+                                  {w.id === billWh ? (appLang === 'en' ? ' (Bill)' : ' (الفاتورة)') : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="text-right min-w-[90px]">
+                            <div className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total' : 'الإجمالي'}</div>
+                            <div className="font-bold text-sm text-amber-800 dark:text-amber-200">{allocTot.toFixed(2)}</div>
+                          </div>
+                          {warehouseAllocations.length > 1 && (
+                            <Button
+                              type="button" variant="ghost" size="sm"
+                              onClick={() => removeAllocation(alloc.localId)}
+                              className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex-shrink-0"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
+
+                        {/* كميات المنتجات لهذا التخصيص */}
+                        {billItems.filter((bi: any) => bi.product_id).length > 0 && (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-gray-500 border-b border-amber-100 dark:border-amber-800">
+                                  <th className="text-right py-1 pr-1 font-medium">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                                  <th className="text-center py-1 font-medium">{appLang === 'en' ? 'Avail.' : 'المتاح'}</th>
+                                  {allWarehouses.length > 0 && (
+                                    <th className="text-center py-1 font-medium text-blue-600 dark:text-blue-400">
+                                      {appLang === 'en' ? 'Stock' : 'المخزون'}
+                                    </th>
+                                  )}
+                                  <th className="text-center py-1 font-medium">{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
+                                  <th className="text-center py-1 font-medium">{appLang === 'en' ? 'Used' : 'المُوزَّع'}</th>
+                                  <th className="text-right py-1 font-medium">{appLang === 'en' ? 'Line Total' : 'الإجمالي'}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {alloc.items.map((it, itemIdx) => {
+                                  const totalQtyThisProduct = allocTotalQtyPerItem(itemIdx)
+                                  const overAllocated = totalQtyThisProduct > it.max_quantity
+                                  const lineGross = it.quantity * it.unit_price
+                                  const lineNet = lineGross - (lineGross * it.discount_percent / 100)
+                                  const stockInThisWh = alloc.warehouseId ? (allWarehouseStocks[alloc.warehouseId]?.[it.product_id!] ?? '—') : '—'
+                                  return (
+                                    <tr key={itemIdx} className="border-b border-amber-50 dark:border-amber-900/30">
+                                      <td className="py-1 pr-1 font-medium truncate max-w-[120px]" title={it.product_name}>{it.product_name}</td>
+                                      <td className="py-1 text-center text-gray-500">{it.max_quantity}</td>
+                                      {allWarehouses.length > 0 && (
+                                        <td className={`py-1 text-center font-medium ${typeof stockInThisWh === 'number' && stockInThisWh <= 0 ? 'text-red-500' : 'text-blue-600 dark:text-blue-400'}`}>
+                                          {stockInThisWh}
+                                        </td>
+                                      )}
+                                      <td className="py-1 text-center">
+                                        <Input
+                                          type="number" min={0} max={it.max_quantity}
+                                          value={it.quantity}
+                                          onChange={e => updateAllocationItemQty(alloc.localId, itemIdx, Number(e.target.value))}
+                                          className={`w-16 h-6 text-center text-xs ${overAllocated ? 'border-red-500 bg-red-50 dark:bg-red-900/20' : ''}`}
+                                        />
+                                      </td>
+                                      <td className={`py-1 text-center font-medium ${overAllocated ? 'text-red-600 dark:text-red-400' : totalQtyThisProduct > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-gray-400'}`}>
+                                        {totalQtyThisProduct}
+                                        {overAllocated && <span className="text-red-500 mr-1">!</span>}
+                                      </td>
+                                      <td className="py-1 text-right font-medium">{lineNet.toFixed(2)}</td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
                       </div>
-                    ) : selectedWarehouseId ? (
-                      <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg w-full text-xs text-green-700 dark:text-green-300">
-                        ✅ {appLang === 'en' ? 'Same as bill warehouse — immediate processing.' : 'نفس مخزن الفاتورة — معالجة فورية.'}
-                      </div>
-                    ) : null}
-                  </div>
+                    )
+                  })}
                 </div>
+
+                {/* ملخص إجمالي التخصيصات */}
+                {isMultiWarehouse && (
+                  <div className="border-t border-amber-200 dark:border-amber-700 pt-2 flex justify-end gap-6 text-xs text-amber-800 dark:text-amber-200">
+                    <span>{appLang === 'en' ? 'Subtotal' : 'المجموع'}: <strong>{allocSubtotal.toFixed(2)}</strong></span>
+                    <span>{appLang === 'en' ? 'Tax' : 'الضريبة'}: <strong>{allocTaxAmount.toFixed(2)}</strong></span>
+                    <span className="text-base font-bold">{appLang === 'en' ? 'Total' : 'الإجمالي'}: {allocTotal.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
 
-              {/* 📊 جدول توزيع المخزون على الفروع */}
-              {billItems.filter((i: any) => i.product_id).length > 0 && (
+              {/* 📊 جدول توزيع المخزون على الفروع (للمرجع) */}
+              {allWarehouses.length > 0 && billItems.filter((i: any) => i.product_id).length > 0 && (
               <div className="border border-blue-200 dark:border-blue-700 rounded-xl overflow-hidden mt-1">
                 <div className="bg-blue-50 dark:bg-blue-900/30 px-4 py-2.5 flex items-center gap-2 border-b border-blue-200 dark:border-blue-700">
                   <span className="text-sm font-semibold text-blue-800 dark:text-blue-200">
                     📊 {appLang === 'en' ? 'Stock Distribution Across Branches' : 'توزيع المخزون على الفروع'}
                   </span>
                   <span className="text-xs text-blue-500 dark:text-blue-400">
-                    {appLang === 'en' ? '(real-time)' : '(فوري)'}
+                    {appLang === 'en' ? '(reference)' : '(للمرجع)'}
                   </span>
                 </div>
                 <div className="overflow-x-auto">
@@ -951,19 +1432,19 @@ export default function NewPurchaseReturnPage() {
                         const productsInBill = billItems.filter((i: any) => i.product_id)
                         const rowTotal = productsInBill.reduce((sum: number, it: any) => sum + (whStocks[it.product_id] || 0), 0)
                         const isBillWarehouse = wh.id === bills.find(b => b.id === form.bill_id)?.warehouse_id
-                        const isSelectedWarehouse = wh.id === selectedWarehouseId
+                        const isAllocated = warehouseAllocations.some(a => a.warehouseId === wh.id)
                         return (
                           <tr
                             key={wh.id}
                             className={`border-b border-blue-100 dark:border-blue-800 transition-colors ${
-                              isSelectedWarehouse
+                              isAllocated
                                 ? 'bg-amber-50 dark:bg-amber-900/30 ring-1 ring-inset ring-amber-300 dark:ring-amber-700'
                                 : 'hover:bg-blue-50/40 dark:hover:bg-blue-900/10'
                             }`}
                           >
                             <td className="p-2.5">
                               <div className="flex items-center gap-1.5">
-                                {isSelectedWarehouse && <span className="text-amber-500 text-base">▶</span>}
+                                {isAllocated && <span className="text-amber-500 text-base">▶</span>}
                                 <div>
                                   <div className="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-1">
                                     {(wh as any).branches?.name || (appLang === 'en' ? 'No Branch' : 'بدون فرع')}
@@ -972,9 +1453,9 @@ export default function NewPurchaseReturnPage() {
                                         {appLang === 'en' ? 'Bill' : 'الفاتورة'}
                                       </span>
                                     )}
-                                    {isSelectedWarehouse && (
+                                    {isAllocated && (
                                       <span className="text-[10px] bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded-full">
-                                        {appLang === 'en' ? 'Selected' : 'مختار'}
+                                        {appLang === 'en' ? 'Allocated' : 'مخصص'}
                                       </span>
                                     )}
                                   </div>
@@ -982,7 +1463,7 @@ export default function NewPurchaseReturnPage() {
                                 </div>
                               </div>
                             </td>
-                            {productsInBill.map((it: any, idx: number) => {
+                            {billItems.filter((i: any) => i.product_id).map((it: any, idx: number) => {
                               const qty = whStocks[it.product_id] || 0
                               return (
                                 <td key={idx} className="p-2.5 text-center">
@@ -1002,7 +1483,6 @@ export default function NewPurchaseReturnPage() {
                           </tr>
                         )
                       })}
-                      {/* صف إجمالي الشركة */}
                       <tr className="bg-blue-100 dark:bg-blue-900/40 font-bold border-t-2 border-blue-300 dark:border-blue-600">
                         <td className="p-2.5 text-blue-800 dark:text-blue-200">
                           🏢 {appLang === 'en' ? 'Company Total' : 'إجمالي الشركة'}
@@ -1066,120 +1546,142 @@ export default function NewPurchaseReturnPage() {
               </div>
             )}
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-gray-600 border-b">
-                    <th className="text-right p-2">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
-                    <th className="text-right p-2">{appLang === 'en' ? 'Available in Bill' : 'المتاح من الفاتورة'}</th>
-                    {isPrivileged && allWarehouses.length > 0 && (
-                      <th className="text-right p-2 text-blue-700 dark:text-blue-300 min-w-[180px]">
-                        {appLang === 'en' ? 'Stock per Warehouse' : 'المخزون في المخازن'}
-                      </th>
-                    )}
-                    {isPrivileged && selectedWarehouseId && allWarehouses.length === 0 && (
-                      <th className="text-right p-2 text-amber-600 dark:text-amber-400">
-                        {appLang === 'en' ? 'Stock in Warehouse' : 'المخزون الفعلي'}
-                      </th>
-                    )}
-                    <th className="text-right p-2">{appLang === 'en' ? 'Return Qty' : 'كمية المرتجع'}</th>
-                    <th className="text-right p-2">{appLang === 'en' ? 'Price' : 'السعر'}</th>
-                    <th className="text-right p-2">{appLang === 'en' ? 'Tax%' : 'الضريبة%'}</th>
-                    <th className="text-right p-2">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((it, idx) => (
-                    <tr key={idx} className="border-b">
-                      <td className="p-2">
-                        {it.bill_item_id ? (
-                          <span className="font-medium">{it.product_name}</span>
-                        ) : (
-                          <select className="w-full border rounded px-2 py-1" value={it.product_id || ""} onChange={e => {
-                            const prod = products.find(p => p.id === e.target.value)
-                            updateItem(idx, { product_id: e.target.value || null, product_name: prod?.name || "", unit_price: prod?.cost_price || 0 })
-                          }}>
-                            <option value="">—</option>
-                            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
+            {/* جدول البنود: للمالك/المدير يُظهر ملخصاً فقط، لغير المميزين يُظهر إدخال الكميات */}
+            {isPrivileged ? (
+              /* للمالك/المدير: جدول ملخص الكميات الإجمالية من التخصيصات */
+              warehouseAllocations.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-600 border-b">
+                        <th className="text-right p-2">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                        <th className="text-right p-2">{appLang === 'en' ? 'Available in Bill' : 'المتاح من الفاتورة'}</th>
+                        {allWarehouses.length > 0 && (
+                          <th className="text-right p-2 text-blue-700 dark:text-blue-300 min-w-[180px]">
+                            {appLang === 'en' ? 'Stock per Warehouse' : 'المخزون في المخازن'}
+                          </th>
                         )}
-                      </td>
-                      <td className="p-2 text-center">{it.max_quantity}</td>
-                      {isPrivileged && allWarehouses.length > 0 && (
-                        <td className="p-2">
-                          {it.product_id ? (
-                            <div className="space-y-0.5">
-                              {allWarehouses.map(wh => {
-                                const qty = allWarehouseStocks[wh.id]?.[it.product_id!] ?? 0
-                                const isBillWh = wh.id === bills.find(b => b.id === form.bill_id)?.warehouse_id
-                                const isSelectedWh = wh.id === selectedWarehouseId
-                                const isLow = it.quantity > 0 && qty < it.quantity
-                                return (
-                                  <div
-                                    key={wh.id}
-                                    className={`flex items-center justify-between gap-2 px-1.5 py-0.5 rounded text-xs ${
-                                      isSelectedWh
-                                        ? 'bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700'
-                                        : 'hover:bg-gray-50 dark:hover:bg-gray-800'
-                                    }`}
-                                  >
-                                    <span className="text-gray-600 dark:text-gray-400 truncate max-w-[110px]" title={`${(wh as any).branches?.name || ''} — ${wh.name}`}>
-                                      {(wh as any).branches?.name || wh.name}
-                                      {isBillWh && <span className="mr-1 text-blue-500">●</span>}
-                                    </span>
-                                    <span className={`font-bold tabular-nums ${
-                                      qty <= 0 ? 'text-gray-300 dark:text-gray-600'
-                                        : isLow ? 'text-red-600 dark:text-red-400'
-                                        : 'text-green-700 dark:text-green-400'
-                                    }`}>
-                                      {qty}
-                                    </span>
+                        <th className="text-right p-2">{appLang === 'en' ? 'Total Return Qty' : 'إجمالي الكمية المرتجعة'}</th>
+                        <th className="text-right p-2">{appLang === 'en' ? 'Price' : 'السعر'}</th>
+                        <th className="text-right p-2">{appLang === 'en' ? 'Tax%' : 'الضريبة%'}</th>
+                        <th className="text-right p-2">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {warehouseAllocations[0].items.map((it, itemIdx) => {
+                        const totalQty = allocTotalQtyPerItem(itemIdx)
+                        const gross = totalQty * it.unit_price
+                        const net = gross - (gross * it.discount_percent / 100)
+                        const tax = net * it.tax_rate / 100
+                        const lineTotal = net + tax
+                        const overAllocated = totalQty > it.max_quantity
+                        return (
+                          <tr key={itemIdx} className="border-b">
+                            <td className="p-2 font-medium">{it.product_name}</td>
+                            <td className="p-2 text-center">{it.max_quantity}</td>
+                            {allWarehouses.length > 0 && (
+                              <td className="p-2">
+                                {it.product_id ? (
+                                  <div className="space-y-0.5">
+                                    {allWarehouses.map(wh => {
+                                      const qty = allWarehouseStocks[wh.id]?.[it.product_id!] ?? 0
+                                      const isBillWh = wh.id === bills.find(b => b.id === form.bill_id)?.warehouse_id
+                                      const isAllocatedWh = warehouseAllocations.some(a => a.warehouseId === wh.id)
+                                      return (
+                                        <div key={wh.id} className={`flex items-center justify-between gap-2 px-1.5 py-0.5 rounded text-xs ${isAllocatedWh ? 'bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+                                          <span className="text-gray-600 dark:text-gray-400 truncate max-w-[110px]" title={`${(wh as any).branches?.name || ''} — ${wh.name}`}>
+                                            {(wh as any).branches?.name || wh.name}
+                                            {isBillWh && <span className="mr-1 text-blue-500">●</span>}
+                                          </span>
+                                          <span className={`font-bold tabular-nums ${qty <= 0 ? 'text-gray-300 dark:text-gray-600' : 'text-green-700 dark:text-green-400'}`}>{qty}</span>
+                                        </div>
+                                      )
+                                    })}
+                                    <div className="flex items-center justify-between gap-2 px-1.5 py-0.5 border-t border-gray-200 dark:border-gray-700 mt-0.5 pt-0.5">
+                                      <span className="text-xs text-gray-500 font-medium">{appLang === 'en' ? 'Total' : 'الإجمالي'}</span>
+                                      <span className="text-xs font-bold text-blue-700 dark:text-blue-300 tabular-nums">{allWarehouses.reduce((s, wh) => s + (allWarehouseStocks[wh.id]?.[it.product_id!] ?? 0), 0)}</span>
+                                    </div>
                                   </div>
-                                )
-                              })}
-                              <div className="flex items-center justify-between gap-2 px-1.5 py-0.5 border-t border-gray-200 dark:border-gray-700 mt-0.5 pt-0.5">
-                                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                                  {appLang === 'en' ? 'Total' : 'الإجمالي'}
-                                </span>
-                                <span className="text-xs font-bold text-blue-700 dark:text-blue-300 tabular-nums">
-                                  {allWarehouses.reduce((s, wh) => s + (allWarehouseStocks[wh.id]?.[it.product_id!] ?? 0), 0)}
-                                </span>
-                              </div>
-                            </div>
-                          ) : <span className="text-gray-400 text-xs">—</span>}
-                        </td>
-                      )}
-                      {isPrivileged && selectedWarehouseId && allWarehouses.length === 0 && (
-                        <td className="p-2 text-center">
-                          {it.product_id ? (
-                            <span className={`font-medium ${(warehouseStocks[it.product_id] ?? 0) < it.quantity ? 'text-red-600' : 'text-amber-700 dark:text-amber-300'}`}>
-                              {warehouseStocks[it.product_id] ?? '—'}
-                            </span>
-                          ) : <span className="text-gray-400">—</span>}
-                        </td>
-                      )}
-                      <td className="p-2"><Input type="number" min={0} max={it.max_quantity} value={it.quantity} onChange={e => updateItem(idx, { quantity: Number(e.target.value) })} className="w-20" /></td>
-                      <td className="p-2">{it.unit_price.toFixed(2)}</td>
-                      <td className="p-2">{it.tax_rate}%</td>
-                      <td className="p-2 font-medium">{it.line_total.toFixed(2)}</td>
-                      <td className="p-2">
-                        {!it.bill_item_id && <Button variant="ghost" size="sm" onClick={() => removeItem(idx)}><Trash2 className="w-4 h-4" /></Button>}
-                      </td>
+                                ) : <span className="text-gray-400 text-xs">—</span>}
+                              </td>
+                            )}
+                            <td className="p-2 text-center">
+                              <span className={`font-bold text-lg ${overAllocated ? 'text-red-600' : totalQty > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-gray-400'}`}>
+                                {totalQty}
+                                {overAllocated && <span className="text-xs mr-1 text-red-500">(!</span>}
+                              </span>
+                            </td>
+                            <td className="p-2">{it.unit_price.toFixed(2)}</td>
+                            <td className="p-2">{it.tax_rate}%</td>
+                            <td className="p-2 font-medium">{lineTotal.toFixed(2)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            ) : (
+              /* للمستخدمين العاديين: جدول إدخال الكميات */
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-600 border-b">
+                      <th className="text-right p-2">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                      <th className="text-right p-2">{appLang === 'en' ? 'Available in Bill' : 'المتاح من الفاتورة'}</th>
+                      <th className="text-right p-2">{appLang === 'en' ? 'Return Qty' : 'كمية المرتجع'}</th>
+                      <th className="text-right p-2">{appLang === 'en' ? 'Price' : 'السعر'}</th>
+                      <th className="text-right p-2">{appLang === 'en' ? 'Tax%' : 'الضريبة%'}</th>
+                      <th className="text-right p-2">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
+                      <th></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              {false && (
-                <div className="mt-3"><Button variant="outline" onClick={addManualItem}><Plus className="w-4 h-4 mr-2" /> {appLang === 'en' ? 'Add Item' : 'إضافة بند'}</Button></div>
-              )}
-            </div>
+                  </thead>
+                  <tbody>
+                    {items.map((it, idx) => (
+                      <tr key={idx} className="border-b">
+                        <td className="p-2">
+                          {it.bill_item_id ? (
+                            <span className="font-medium">{it.product_name}</span>
+                          ) : (
+                            <select className="w-full border rounded px-2 py-1" value={it.product_id || ""} onChange={e => {
+                              const prod = products.find(p => p.id === e.target.value)
+                              updateItem(idx, { product_id: e.target.value || null, product_name: prod?.name || "", unit_price: prod?.cost_price || 0 })
+                            }}>
+                              <option value="">—</option>
+                              {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          )}
+                        </td>
+                        <td className="p-2 text-center">{it.max_quantity}</td>
+                        <td className="p-2"><Input type="number" min={0} max={it.max_quantity} value={it.quantity} onChange={e => updateItem(idx, { quantity: Number(e.target.value) })} className="w-20" /></td>
+                        <td className="p-2">{it.unit_price.toFixed(2)}</td>
+                        <td className="p-2">{it.tax_rate}%</td>
+                        <td className="p-2 font-medium">{it.line_total.toFixed(2)}</td>
+                        <td className="p-2">
+                          {!it.bill_item_id && <Button variant="ghost" size="sm" onClick={() => removeItem(idx)}><Trash2 className="w-4 h-4" /></Button>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             <div className="border-t pt-4">
               <div className="flex flex-col items-end gap-2 text-sm">
-                <div>{appLang === 'en' ? 'Subtotal' : 'المجموع'}: {subtotal.toFixed(2)}</div>
-                <div>{appLang === 'en' ? 'Tax' : 'الضريبة'}: {taxAmount.toFixed(2)}</div>
-                <div className="text-lg font-bold">{appLang === 'en' ? 'Total' : 'الإجمالي'}: {total.toFixed(2)}</div>
+                {isPrivileged ? (
+                  <>
+                    <div>{appLang === 'en' ? 'Subtotal' : 'المجموع'}: {allocSubtotal.toFixed(2)}</div>
+                    <div>{appLang === 'en' ? 'Tax' : 'الضريبة'}: {allocTaxAmount.toFixed(2)}</div>
+                    <div className="text-lg font-bold">{appLang === 'en' ? 'Total' : 'الإجمالي'}: {allocTotal.toFixed(2)}</div>
+                  </>
+                ) : (
+                  <>
+                    <div>{appLang === 'en' ? 'Subtotal' : 'المجموع'}: {subtotal.toFixed(2)}</div>
+                    <div>{appLang === 'en' ? 'Tax' : 'الضريبة'}: {taxAmount.toFixed(2)}</div>
+                    <div className="text-lg font-bold">{appLang === 'en' ? 'Total' : 'الإجمالي'}: {total.toFixed(2)}</div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1188,13 +1690,20 @@ export default function NewPurchaseReturnPage() {
               <Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
             </div>
 
-            <div className="flex justify-end gap-2 items-center">
+            <div className="flex justify-end gap-2 items-center flex-wrap">
               {(() => {
                 const currentBill = bills.find(b => b.id === form.bill_id)
-                const isPendingApprovalMode = isPrivileged && !!form.bill_id && !!currentBill && !!selectedWarehouseId && selectedWarehouseId !== currentBill.warehouse_id
+                const firstAllocWh = warehouseAllocations[0]?.warehouseId || ''
+                const isPendingApprovalMode = isPrivileged && !!form.bill_id && !!currentBill &&
+                  !isMultiWarehouse && !!firstAllocWh && firstAllocWh !== currentBill.warehouse_id
                 return (
                   <>
-                    {isPendingApprovalMode && (
+                    {isMultiWarehouse && (
+                      <span className="text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 px-3 py-1.5 rounded-lg">
+                        🏭 {warehouseAllocations.length} {appLang === 'en' ? 'warehouses — each manager approves independently' : 'مخازن — كل مسؤول يعتمد بشكل مستقل'}
+                      </span>
+                    )}
+                    {isPendingApprovalMode && !isMultiWarehouse && (
                       <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-3 py-1.5 rounded-lg">
                         📋 {appLang === 'en' ? 'Will send for approval' : 'سيُرسَل للاعتماد'}
                       </span>
@@ -1203,9 +1712,11 @@ export default function NewPurchaseReturnPage() {
                     <Button onClick={saveReturn} disabled={saving || !form.supplier_id || !form.bill_id}>
                       {saving
                         ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...')
-                        : isPendingApprovalMode
-                          ? (appLang === 'en' ? 'Submit for Approval' : 'إرسال للاعتماد')
-                          : (appLang === 'en' ? 'Save Return' : 'حفظ المرتجع')
+                        : isMultiWarehouse
+                          ? (appLang === 'en' ? 'Submit Multi-Warehouse Return' : 'إرسال المرتجع متعدد المخازن')
+                          : isPendingApprovalMode
+                            ? (appLang === 'en' ? 'Submit for Approval' : 'إرسال للاعتماد')
+                            : (appLang === 'en' ? 'Save Return' : 'حفظ المرتجع')
                       }
                     </Button>
                   </>
