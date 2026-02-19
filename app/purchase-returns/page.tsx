@@ -96,20 +96,17 @@ export default function PurchaseReturnsPage() {
 
         const { data: memberData } = await supabase
           .from("company_members")
-          .select("role, branch_id, cost_center_id, warehouse_id, full_name")
+          .select("role, branch_id, cost_center_id, warehouse_id")
           .eq("company_id", companyId)
           .eq("user_id", user.id)
           .single()
-
-        const { data: profileData } = await supabase
-          .from("profiles").select("full_name").eq("id", user.id).single()
 
         const isOwner = companyData?.user_id === user.id
         role = isOwner ? "owner" : (memberData?.role || "viewer")
         setCurrentUserRole(role)
         userWarehouseId = memberData?.warehouse_id || null
         setCurrentWarehouseId(userWarehouseId)
-        setCurrentUserName(memberData?.full_name || profileData?.full_name || user.email || '')
+        setCurrentUserName(user.email || '')
 
         const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
         const selectedBranchId = branchFilter.getFilteredBranchId()

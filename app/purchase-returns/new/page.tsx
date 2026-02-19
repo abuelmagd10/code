@@ -102,16 +102,14 @@ export default function NewPurchaseReturnPage() {
           .from("companies").select("user_id").eq("id", loadedCompanyId).single()
         const { data: memberData } = await supabase
           .from("company_members")
-          .select("role, full_name")
+          .select("role")
           .eq("company_id", loadedCompanyId)
           .eq("user_id", user.id)
           .single()
-        const { data: profileData } = await supabase
-          .from("profiles").select("full_name").eq("id", user.id).single()
 
         const isOwner = companyData?.user_id === user.id
         const role = isOwner ? "owner" : (memberData?.role || "accountant")
-        const fullName = memberData?.full_name || profileData?.full_name || user.email || ''
+        const fullName = user.email || ''
         setCurrentUserRole(role)
         setCurrentUserName(fullName)
 
