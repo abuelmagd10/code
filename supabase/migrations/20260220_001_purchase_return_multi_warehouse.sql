@@ -220,14 +220,13 @@ BEGIN
       INSERT INTO journal_entries (
         company_id, branch_id, cost_center_id,
         reference_type, reference_id,
-        entry_date, description, status, validation_status
+        entry_date, description, status
       ) VALUES (
         p_company_id, v_branch_id, v_cost_center_id,
         'purchase_return', v_pr_id,
         (v_group->'journal_entry'->>'entry_date')::DATE,
         v_group->'journal_entry'->>'description',
-        'draft',
-        'pending'
+        'draft'
       ) RETURNING id INTO v_je_id;
 
       IF (v_group->'journal_lines') IS NOT NULL
