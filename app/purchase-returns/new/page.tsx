@@ -13,9 +13,8 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { getActiveCompanyId } from "@/lib/company"
-import { canReturnBill, getBillOperationError, billRequiresJournalEntries, calculatePurchaseReturnEffects } from "@/lib/validation"
+import { canReturnBill, getBillOperationError, billRequiresJournalEntries } from "@/lib/validation"
 import { validatePurchaseReturnStock, formatStockShortageMessage } from "@/lib/purchase-return-validation"
-import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
 import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-reversal"
 
 type Supplier = { id: string; name: string; phone?: string | null }
@@ -186,11 +185,13 @@ export default function NewPurchaseReturnPage() {
         return
       }
 
+      // ===================== التحقق من الفاتورة =====================
       let billStatus: string | null = null
       let billPaidAmount = 0
       let billTotalAmount = 0
+      let billPreviousReturnedAmount = 0
+
       if (form.bill_id) {
-        // التحقق من حالة الفاتورة وجلب البيانات المالية
         const { data: billCheck } = await supabase
           .from("bills")
           .select("status, paid_amount, total_amount, returned_amount")
@@ -200,17 +201,14 @@ export default function NewPurchaseReturnPage() {
         billStatus = billCheck?.status || null
         billPaidAmount = Number(billCheck?.paid_amount || 0)
         billTotalAmount = Number(billCheck?.total_amount || 0)
+        billPreviousReturnedAmount = Number(billCheck?.returned_amount || 0)
 
-        // 🔒 التحقق الموحد: هل يُسمح بالمرتجع لهذه الحالة؟
         if (!canReturnBill(billStatus)) {
           const error = getBillOperationError(billStatus, 'return', appLang as 'en' | 'ar')
-          if (error) {
-            toastActionError(toast, "الحفظ", "المرتجع", error.description)
-          }
+          if (error) toastActionError(toast, "الحفظ", "المرتجع", error.description)
           return
         }
 
-        // للفواتير المدفوعة فقط: التحقق من وجود قيود محاسبية أصلية
         if (billRequiresJournalEntries(billStatus)) {
           const { data: existingBillEntry } = await supabase
             .from("journal_entries")
@@ -227,18 +225,16 @@ export default function NewPurchaseReturnPage() {
       }
 
       const validItems = items.filter(i => i.quantity > 0)
+      const needsJournalEntry = billStatus === 'paid' || billStatus === 'partially_paid'
+      const returnMethod = form.settlement_method
 
-      // Get bill branch/cost center/warehouse for validation
+      // ===================== الحوكمة (الفرع / المخزن / مركز التكلفة) =====================
       const selectedBill = bills.find(b => b.id === form.bill_id)
       let billBranchId = selectedBill?.branch_id || null
       let billCostCenterId = selectedBill?.cost_center_id || null
       let billWarehouseId = selectedBill?.warehouse_id || null
 
-      // ✅ ERP-grade: التحقق من الحوكمة (إلزامي للفواتير المدفوعة)
-      const needsJournalEntry = billStatus === 'paid' || billStatus === 'partially_paid'
-      
       if (needsJournalEntry && form.bill_id) {
-        // للفواتير المدفوعة: الحوكمة إلزامية
         if (!billBranchId && billWarehouseId) {
           const { data: wh } = await supabase
             .from("warehouses")
@@ -248,39 +244,30 @@ export default function NewPurchaseReturnPage() {
             .single()
           billBranchId = (wh as any)?.branch_id || null
         }
-
         if (billBranchId && (!billWarehouseId || !billCostCenterId)) {
           const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
           const defaults = await getBranchDefaults(supabase, billBranchId)
           if (!billWarehouseId) billWarehouseId = defaults.default_warehouse_id
           if (!billCostCenterId) billCostCenterId = defaults.default_cost_center_id
         }
-
-        // ✅ التحقق من الحوكمة قبل المتابعة
         if (!billBranchId || !billWarehouseId || !billCostCenterId) {
           toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? 'Branch, Warehouse, and Cost Center are required for paid bills' : 'الفرع والمخزن ومركز التكلفة مطلوبة للفواتير المدفوعة')
           return
         }
       }
 
-      // 🔍 التحقق من كفاية رصيد المخزن قبل المرتجع
+      // ===================== التحقق من المخزون (UX pre-check) =====================
       if (billWarehouseId) {
-        const stockValidation = await validatePurchaseReturnStock(
-          supabase,
-          validItems,
-          billWarehouseId,
-          companyId
-        )
-
+        const stockValidation = await validatePurchaseReturnStock(supabase, validItems, billWarehouseId, companyId)
         if (!stockValidation.success) {
-          const errorMessage = formatStockShortageMessage(stockValidation.shortages, appLang)
-          toastActionError(toast, "الحفظ", "المرتجع", errorMessage)
+          toastActionError(toast, "الحفظ", "المرتجع", formatStockShortageMessage(stockValidation.shortages, appLang))
           return
         }
       }
 
-      // Get accounts
-      const { data: accounts } = await supabase.from("chart_of_accounts")
+      // ===================== جلب الحسابات =====================
+      const { data: accounts } = await supabase
+        .from("chart_of_accounts")
         .select("id, account_code, account_name, account_type, sub_type")
         .eq("company_id", companyId)
 
@@ -293,140 +280,38 @@ export default function NewPurchaseReturnPage() {
       const purchaseAccount = findAccount("purchases", "مشتريات") || findAccount("expense", "مصروف")
       const inventoryAccount = findAccount("inventory", "مخزون")
       const vatAccount = findAccount("vat_input", "ضريب")
+      const vendorCreditLiability = findAccount("vendor_credit_liability", "إشعار دائن") ||
+        findAccount("ap_contra", "ap contra") || null
 
-      // Calculate base amounts for multi-currency
+      // ===================== حساب المبالغ =====================
       const finalBaseSubtotal = form.currency === baseCurrency ? subtotal : Math.round(subtotal * exchangeRate.rate * 10000) / 10000
       const finalBaseTax = form.currency === baseCurrency ? taxAmount : Math.round(taxAmount * exchangeRate.rate * 10000) / 10000
       const finalBaseTotal = form.currency === baseCurrency ? total : Math.round(total * exchangeRate.rate * 10000) / 10000
 
-      // ✅ ERP-Grade: Period Lock Check - منع تسجيل مرتجع في فترة مغلقة
+      // ===================== التحقق من الفترة المحاسبية =====================
       try {
         const { assertPeriodNotLocked } = await import("@/lib/accounting-period-lock")
         const { createClient } = await import("@supabase/supabase-js")
-        const serviceSupabase = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
-        await assertPeriodNotLocked(serviceSupabase, {
-          companyId,
-          date: form.return_date,
-        })
+        const periodSupabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+        await assertPeriodNotLocked(periodSupabase, { companyId, date: form.return_date })
       } catch (lockError: any) {
-          toast({
-            title: "❌ الفترة المحاسبية مقفلة",
-            description: lockError.message || "لا يمكن تسجيل مرتجع في فترة محاسبية مغلقة",
-            variant: "destructive",
-          })
-          setSaving(false)
-          return
-        }
-
-      // ✅ 1. إنشاء purchase_return record أولاً (مطلوب دائماً)
-      const { data: purchaseReturn, error: prError } = await supabase.from("purchase_returns").insert({
-        company_id: companyId,
-        supplier_id: form.supplier_id,
-        bill_id: form.bill_id || null,
-        return_number: form.return_number,
-        return_date: form.return_date,
-        subtotal: finalBaseSubtotal,
-        tax_amount: finalBaseTax,
-        total_amount: finalBaseTotal,
-        settlement_method: form.settlement_method,
-        status: "completed",
-        reason: form.reason,
-        notes: form.notes,
-        branch_id: billBranchId,
-        cost_center_id: billCostCenterId,
-        warehouse_id: billWarehouseId,
-        // Multi-currency fields
-        original_currency: form.currency,
-        original_subtotal: subtotal,
-        original_tax_amount: taxAmount,
-        original_total_amount: total,
-        exchange_rate_used: exchangeRate.rate,
-        exchange_rate_id: exchangeRate.rateId
-      }).select().single()
-
-      if (prError || !purchaseReturn) {
-        throw new Error(`فشل إنشاء سجل المرتجع: ${prError?.message || 'Unknown error'}`)
+        toast({ title: "❌ الفترة المحاسبية مقفلة", description: lockError.message || "لا يمكن تسجيل مرتجع في فترة محاسبية مغلقة", variant: "destructive" })
+        setSaving(false)
+        return
       }
 
-      // ✅ 2. عكس FIFO و COGS (قبل القيود المحاسبية)
-      const returnItemsForFIFO = validItems
-        .filter((item) => item.product_id && item.quantity > 0)
-        .map((item) => ({
-          productId: item.product_id!,
-          quantity: item.quantity,
-          billItemId: item.bill_item_id || undefined
-        }))
-
-      let fifoReversalResult: any = null
-      let inventoryCostFromFIFO = 0
-
-      if (returnItemsForFIFO.length > 0 && form.bill_id && billBranchId && billWarehouseId && billCostCenterId) {
-        fifoReversalResult = await processPurchaseReturnFIFOReversal(supabase, {
-          billId: form.bill_id,
-          purchaseReturnId: purchaseReturn.id,
-          returnItems: returnItemsForFIFO,
-          companyId: companyId,
-          branchId: billBranchId,
-          costCenterId: billCostCenterId,
-          warehouseId: billWarehouseId
-        })
-
-        if (!fifoReversalResult.success) {
-          console.error("❌ Failed to reverse FIFO/COGS:", fifoReversalResult.error)
-          // لا نوقف العملية، لكن نسجل الخطأ
-        } else {
-          inventoryCostFromFIFO = fifoReversalResult.totalReversedCost
-          console.log(`✅ FIFO/COGS reversed: ${fifoReversalResult.reversedLots} lots, ${fifoReversalResult.reversedCOGSTransactions.length} COGS transactions, Total cost: ${inventoryCostFromFIFO}`)
-        }
-      }
-
-      // ✅ 3. إنشاء القيد المحاسبي (الصحيح حسب طريقة المرتجع)
-      let journalEntryId: string | null = null
-      // debit_note = تخفيض الذمم الدائنة (AP) بدون صرف نقدي فوري
-      // cash/bank_transfer = استرداد نقدي أو بنكي فوري من المورد
-      const returnMethod = form.settlement_method
-
+      // ===================== بناء سطور القيد المحاسبي =====================
+      const journalLines: any[] = []
       if (needsJournalEntry) {
-        // ✅ Fix: reference_id يجب أن يكون purchaseReturn.id (وليس bill_id)
-        const { data: journalEntry, error: entryErr } = await supabase.from("journal_entries").insert({
-          company_id: companyId,
-          reference_type: "purchase_return",
-          reference_id: purchaseReturn.id,
-          entry_date: form.return_date,
-          description: `مرتجع مشتريات رقم ${form.return_number}`,
-          status: "posted",
-          validation_status: "valid",
-          branch_id: billBranchId,
-          cost_center_id: billCostCenterId
-        }).select().single()
-
-        if (entryErr || !journalEntry) {
-          throw new Error(`فشل إنشاء القيد المحاسبي: ${entryErr?.message || 'Unknown error'}`)
-        }
-        journalEntryId = journalEntry.id
-
-        const journalLines: any[] = []
         const invOrExp = inventoryAccount || purchaseAccount
-        const inventoryCost = inventoryCostFromFIFO > 0 ? inventoryCostFromFIFO : finalBaseSubtotal
-
-        // البحث عن حساب Vendor Credit Liability
-        const vendorCreditLiability = findAccount("vendor_credit_liability", "إشعار دائن") || 
-                                     findAccount("ap_contra", "ap contra") || null
+        const inventoryCost = finalBaseSubtotal  // سعر الشراء = القيمة الصحيحة للمرتجع
 
         if (returnMethod === 'cash' || returnMethod === 'bank_transfer') {
-          // ✅ الحالة A: استرداد نقدي أو بنكي - المورد يُعيد المبلغ فوراً
-          // مدين: النقدية أو البنك (نستلم المبلغ)
-          // دائن: المخزون (نُخرج البضاعة المرتجعة)
           const cashAccount = findAccount("cash", "نقد")
           const bankAccount = findAccount("bank", "بنك")
           const refundAccount = returnMethod === 'cash' ? (cashAccount || bankAccount) : (bankAccount || cashAccount)
-
           if (refundAccount && finalBaseTotal > 0) {
             journalLines.push({
-              journal_entry_id: journalEntry.id,
               account_id: refundAccount,
               debit_amount: finalBaseTotal,
               credit_amount: 0,
@@ -439,38 +324,13 @@ export default function NewPurchaseReturnPage() {
               exchange_rate_used: exchangeRate.rate,
               exchange_rate_id: exchangeRate.rateId,
               rate_source: exchangeRate.source,
-              branch_id: billBranchId,
-              cost_center_id: billCostCenterId
-            })
-          }
-
-          if (invOrExp && inventoryCost > 0) {
-            journalLines.push({
-              journal_entry_id: journalEntry.id,
-              account_id: invOrExp,
-              debit_amount: 0,
-              credit_amount: inventoryCost,
-              description: appLang === 'en' ? 'Inventory returned to supplier' : 'مخزون مرتجع للمورد',
-              original_debit: 0,
-              original_credit: subtotal,
-              original_currency: form.currency,
-              exchange_rate_used: exchangeRate.rate,
-              exchange_rate_id: exchangeRate.rateId,
-              rate_source: exchangeRate.source,
-              branch_id: billBranchId,
-              cost_center_id: billCostCenterId
             })
           }
         } else {
-          // ✅ الحالة B: debit_note (إشعار مدين) - تخفيض الذمم الدائنة للمورد
-          // مدين: حساب الموردين (AP) - نُقلل ما ندين به للمورد
-          // دائن: المخزون - نُخرج البضاعة المرتجعة
-          // ملاحظة: لا يوجد تدفق نقدي فوري، يُستخدم رصيد الإشعار للمقاصة لاحقاً
+          // debit_note: تخفيض حساب الموردين (AP)
           const vendorCreditAccount = vendorCreditLiability || apAccount
-
           if (vendorCreditAccount && finalBaseTotal > 0) {
             journalLines.push({
-              journal_entry_id: journalEntry.id,
               account_id: vendorCreditAccount,
               debit_amount: finalBaseTotal,
               credit_amount: 0,
@@ -481,34 +341,27 @@ export default function NewPurchaseReturnPage() {
               exchange_rate_used: exchangeRate.rate,
               exchange_rate_id: exchangeRate.rateId,
               rate_source: exchangeRate.source,
-              branch_id: billBranchId,
-              cost_center_id: billCostCenterId
-            })
-          }
-
-          if (invOrExp && inventoryCost > 0) {
-            journalLines.push({
-              journal_entry_id: journalEntry.id,
-              account_id: invOrExp,
-              debit_amount: 0,
-              credit_amount: inventoryCost,
-              description: appLang === 'en' ? 'Inventory returned to supplier' : 'مخزون مرتجع للمورد',
-              original_debit: 0,
-              original_credit: subtotal,
-              original_currency: form.currency,
-              exchange_rate_used: exchangeRate.rate,
-              exchange_rate_id: exchangeRate.rateId,
-              rate_source: exchangeRate.source,
-              branch_id: billBranchId,
-              cost_center_id: billCostCenterId
             })
           }
         }
 
-        // Credit VAT إذا كان موجوداً
+        if (invOrExp && inventoryCost > 0) {
+          journalLines.push({
+            account_id: invOrExp,
+            debit_amount: 0,
+            credit_amount: inventoryCost,
+            description: appLang === 'en' ? 'Inventory returned to supplier' : 'مخزون مرتجع للمورد',
+            original_debit: 0,
+            original_credit: subtotal,
+            original_currency: form.currency,
+            exchange_rate_used: exchangeRate.rate,
+            exchange_rate_id: exchangeRate.rateId,
+            rate_source: exchangeRate.source,
+          })
+        }
+
         if (vatAccount && finalBaseTax > 0) {
           journalLines.push({
-            journal_entry_id: journalEntry.id,
             account_id: vatAccount,
             debit_amount: 0,
             credit_amount: finalBaseTax,
@@ -519,210 +372,172 @@ export default function NewPurchaseReturnPage() {
             exchange_rate_used: exchangeRate.rate,
             exchange_rate_id: exchangeRate.rateId,
             rate_source: exchangeRate.source,
-            branch_id: billBranchId,
-            cost_center_id: billCostCenterId
-          })
-        }
-
-        if (journalLines.length > 0) {
-          await supabase.from("journal_entry_lines").insert(journalLines)
-        }
-
-        // ✅ تحديث purchase_return record بربطه بالقيد
-        await supabase
-          .from("purchase_returns")
-          .update({ journal_entry_id: journalEntryId })
-          .eq("id", purchaseReturn.id)
-
-        console.log(`✅ تم إنشاء قيد المرتجع للفاتورة المدفوعة ${form.return_number}`)
-      } else {
-        // مرتجع Received: لا قيد محاسبي
-        console.log(`ℹ️ مرتجع على فاتورة مستلمة (received) - لا قيد محاسبي`)
-      }
-
-      // ✅ 4. إنشاء حركات المخزون (خصم الكميات) - لجميع الحالات
-      for (const item of validItems) {
-        if (item.product_id) {
-          await supabase.from("inventory_transactions").insert({
-            company_id: companyId,
-            product_id: item.product_id,
-            transaction_type: "purchase_return",
-            quantity_change: -item.quantity, // سالب لأنه خروج من المخزون
-            reference_id: form.bill_id || purchaseReturn.id,
-            journal_entry_id: journalEntryId,
-            notes: `مرتجع مشتريات ${form.return_number}`,
-            branch_id: billBranchId,
-            cost_center_id: billCostCenterId,
-            warehouse_id: billWarehouseId,
           })
         }
       }
 
-      // Create return items
-      const returnItems = validItems.map(it => ({
-        purchase_return_id: purchaseReturn.id,
-        bill_item_id: it.bill_item_id,
-        product_id: it.product_id,
-        description: it.product_name,
-        quantity: it.quantity,
-        unit_price: it.unit_price,
-        tax_rate: it.tax_rate,
-        discount_percent: it.discount_percent,
-        line_total: it.line_total
-      }))
-      await supabase.from("purchase_return_items").insert(returnItems)
-
-      // Update bill_items returned_quantity
-      for (const item of validItems) {
-        if (item.bill_item_id) {
-          const billItem = billItems.find(bi => bi.id === item.bill_item_id)
-          const newReturned = (Number((billItem as any)?.returned_quantity) || 0) + item.quantity
-          await supabase.from("bill_items").update({ returned_quantity: newReturned }).eq("id", item.bill_item_id)
-        }
-      }
-
-      // ✅ 5. تحديث الفاتورة (ERP-grade: لا تعديل الفاتورة المدفوعة)
+      // ===================== بناء بيانات تحديث الفاتورة =====================
+      let billUpdateData: Record<string, unknown> | null = null
       if (form.bill_id) {
-        const { data: currentBill } = await supabase
-          .from("bills")
-          .select("returned_amount, total_amount, status, paid_amount")
-          .eq("id", form.bill_id)
-          .single()
-        
-        if (currentBill) {
-          const currentReturnedAmount = Number(currentBill.returned_amount || 0)
-          const newReturnedAmount = currentReturnedAmount + finalBaseTotal
-          const billTotal = Number(currentBill.total_amount || 0)
-          const newReturnStatus = newReturnedAmount >= billTotal ? 'full' : 'partial'
-          const billStatus = currentBill.status?.toLowerCase()
-          const isPaid = billStatus === 'paid' || billStatus === 'partially_paid'
+        const newReturnedAmount = billPreviousReturnedAmount + finalBaseTotal
+        const newReturnStatus = newReturnedAmount >= billTotalAmount ? 'full' : 'partial'
+        const isPaidBill = billStatus === 'paid' || billStatus === 'partially_paid'
 
-          if (isPaid) {
-            // ✅ للفواتير المدفوعة: لا تعديل (audit-locked)
-            // فقط تسجيل returned_amount للمرجعية
-            await supabase.from("bills").update({
-              returned_amount: newReturnedAmount,
-              return_status: newReturnStatus
-            }).eq("id", form.bill_id)
-            console.log("✅ Bill returned_amount updated (audit-locked):", { billId: form.bill_id, newReturnedAmount, newReturnStatus })
-          } else {
-            // ✅ للفواتير غير المدفوعة: يمكن تعديل الإجمالي
-            const oldTotal = Number(currentBill.total_amount || 0)
-            const newTotal = Math.max(oldTotal - finalBaseTotal, 0)
-            const newReturnStatus = newTotal === 0 ? 'full' : 'partial'
-
-            let newStatus: string
-            if (newTotal === 0) {
-              newStatus = "fully_returned"
-            } else {
-              newStatus = billStatus || "sent"
-            }
-
-            await supabase.from("bills").update({
-              total_amount: newTotal,
-              returned_amount: newReturnedAmount,
-              return_status: newReturnStatus,
-              status: newStatus
-            }).eq("id", form.bill_id)
-            console.log("✅ Bill updated (non-paid):", { billId: form.bill_id, newTotal, newReturnedAmount, newReturnStatus, newStatus })
+        if (isPaidBill) {
+          billUpdateData = { returned_amount: newReturnedAmount, return_status: newReturnStatus }
+        } else {
+          const newTotal = Math.max(billTotalAmount - finalBaseTotal, 0)
+          billUpdateData = {
+            returned_amount: newReturnedAmount,
+            return_status: newReturnStatus,
+            status: newTotal === 0 ? 'fully_returned' : (billStatus || 'sent'),
+            ...(newTotal === 0 ? {} : { total_amount: newTotal }),
           }
         }
       }
 
-      // ✅ 6. إنشاء Vendor Credit للفواتير المدفوعة (debit_note فقط - لا نقدي/بنكي)
-      // debit_note = المورد مدين لنا برصيد يُستخدم لاحقاً في المقاصة
-      if (needsJournalEntry && returnMethod === 'debit_note' && purchaseReturn?.id && billBranchId && billWarehouseId && billCostCenterId) {
-        console.log(`📋 Creating Vendor Credit for return ${form.return_number} (Bill Status: ${billStatus})`)
+      // ===================== بناء بيانات Vendor Credit =====================
+      const needsVendorCredit = needsJournalEntry && returnMethod === 'debit_note' && finalBaseTotal > 0
+      const vendorCreditData = needsVendorCredit ? {
+        credit_number: `VC-${form.return_number.replace('PRET-', '')}`,
+        credit_date: form.return_date,
+        subtotal: finalBaseSubtotal,
+        tax_amount: finalBaseTax,
+        total_amount: finalBaseTotal,
+        notes: `إشعار دائن تلقائي - ${form.return_number}`,
+        original_currency: form.currency,
+        exchange_rate_used: exchangeRate.rate,
+        exchange_rate_id: exchangeRate.rateId || null,
+      } : null
 
-        const vendorCreditResult = await createVendorCreditForReturn(supabase, {
-          companyId,
-          supplierId: form.supplier_id,
-          billId: form.bill_id,
-          purchaseReturnId: purchaseReturn.id,
-          returnNumber: form.return_number,
-          returnDate: form.return_date,
-          subtotal: finalBaseSubtotal,
-          taxAmount: finalBaseTax,
-          totalAmount: finalBaseTotal,
-          branchId: billBranchId,
-          costCenterId: billCostCenterId,
-          warehouseId: billWarehouseId,
-          journalEntryId: journalEntryId,
-          items: validItems.map(item => ({
-            productId: item.product_id,
+      const vendorCreditItemsData = needsVendorCredit ? validItems.map(item => ({
+        product_id: item.product_id,
+        description: item.product_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        tax_rate: item.tax_rate,
+        discount_percent: item.discount_percent,
+        line_total: item.line_total,
+      })) : null
+
+      // ===================== 🔥 الاستدعاء الأتومي (Transaction واحدة) =====================
+      // يشمل: purchase_return + journal_entry + journal_lines + inventory_transactions
+      //       + purchase_return_items + bill_items update + bills update + vendor_credit
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        'process_purchase_return_atomic',
+        {
+          p_company_id: companyId,
+          p_supplier_id: form.supplier_id,
+          p_bill_id: form.bill_id || null,
+          p_purchase_return: {
+            return_number: form.return_number,
+            return_date: form.return_date,
+            status: 'completed',
+            subtotal: finalBaseSubtotal,
+            tax_amount: finalBaseTax,
+            total_amount: finalBaseTotal,
+            settlement_method: form.settlement_method,
+            reason: form.reason,
+            notes: form.notes,
+            branch_id: billBranchId,
+            cost_center_id: billCostCenterId,
+            warehouse_id: billWarehouseId,
+            original_currency: form.currency,
+            original_subtotal: subtotal,
+            original_tax_amount: taxAmount,
+            original_total_amount: total,
+            exchange_rate_used: exchangeRate.rate,
+            exchange_rate_id: exchangeRate.rateId || null,
+          },
+          p_return_items: validItems.map(item => ({
+            bill_item_id: item.bill_item_id,
+            product_id: item.product_id,
             description: item.product_name,
             quantity: item.quantity,
-            unitPrice: item.unit_price,
-            taxRate: item.tax_rate,
-            discountPercent: item.discount_percent,
-            lineTotal: item.line_total
+            unit_price: item.unit_price,
+            tax_rate: item.tax_rate,
+            discount_percent: item.discount_percent,
+            line_total: item.line_total,
           })),
-          currency: form.currency,
-          exchangeRate: exchangeRate.rate,
-          exchangeRateId: exchangeRate.rateId
-        })
-
-        if (vendorCreditResult.success) {
-          console.log(`✅ Vendor Credit created successfully: ${vendorCreditResult.vendorCreditId}`)
-        } else {
-          console.error(`❌ Failed to create Vendor Credit: ${vendorCreditResult.error}`)
-          // لا نوقف العملية، فقط نسجل الخطأ
+          p_journal_entry: needsJournalEntry ? {
+            entry_date: form.return_date,
+            description: `مرتجع مشتريات رقم ${form.return_number}`,
+            status: 'posted',
+            validation_status: 'valid',
+          } : null,
+          p_journal_lines: (needsJournalEntry && journalLines.length > 0) ? journalLines : null,
+          p_vendor_credit: vendorCreditData,
+          p_vendor_credit_items: vendorCreditItemsData,
+          p_bill_update: billUpdateData,
         }
-      } else {
-        if (needsJournalEntry && returnMethod !== 'debit_note') {
-          console.log(`ℹ️ No Vendor Credit created: Return method is ${returnMethod} (cash/bank transfer - no vendor credit needed)`)
-        } else if (!needsJournalEntry) {
-          console.log(`ℹ️ No Vendor Credit created: Bill status is ${billStatus} (not Paid/Partially Paid)`)
+      )
+
+      if (rpcError) {
+        throw new Error(`فشل حفظ المرتجع: ${rpcError.message}`)
+      }
+
+      const purchaseReturnId = (rpcResult as any)?.purchase_return_id
+      console.log(`✅ تم حفظ المرتجع بنجاح (Atomic): ${purchaseReturnId}`)
+
+      // ===================== 🔄 FIFO Reversal (post-commit، best-effort) =====================
+      // يُنفَّذ بعد commit الـ Transaction الأساسي - الفشل يُظهر تحذيراً فقط
+      if (purchaseReturnId && form.bill_id && billBranchId && billWarehouseId && billCostCenterId) {
+        const returnItemsForFIFO = validItems
+          .filter(item => item.product_id && item.quantity > 0)
+          .map(item => ({
+            productId: item.product_id!,
+            quantity: item.quantity,
+            billItemId: item.bill_item_id || undefined,
+          }))
+
+        if (returnItemsForFIFO.length > 0) {
+          try {
+            const fifoResult = await processPurchaseReturnFIFOReversal(supabase, {
+              billId: form.bill_id,
+              purchaseReturnId,
+              returnItems: returnItemsForFIFO,
+              companyId,
+              branchId: billBranchId,
+              costCenterId: billCostCenterId,
+              warehouseId: billWarehouseId,
+            })
+
+            if (!fifoResult.success) {
+              console.warn("⚠️ FIFO reversal failed (non-critical):", fifoResult.error)
+              toast({
+                title: appLang === 'en' ? "⚠️ Warning" : "⚠️ تنبيه",
+                description: appLang === 'en'
+                  ? "Return saved successfully. FIFO cost adjustment failed — please contact your accountant."
+                  : "تم حفظ المرتجع بنجاح. تسوية تكلفة FIFO لم تكتمل — يرجى مراجعة المحاسب.",
+              })
+            } else {
+              console.log(`✅ FIFO reversed: ${fifoResult.reversedLots} lots, cost: ${fifoResult.totalReversedCost}`)
+            }
+          } catch (fifoErr) {
+            console.warn("⚠️ FIFO reversal exception (non-critical):", fifoErr)
+          }
         }
       }
 
-      // ===== 🔒 منطق Supplier Debit Credit (القديم - للحالات الخاصة) =====
-      // يُستخدم فقط لفواتير received (غير مدفوعة) مع debit_note
-      if (form.settlement_method === "debit_note" && total > 0 && form.bill_id && !needsJournalEntry) {
-        // حساب المرتجع الجديد
-        const { data: currentBillForLegacy } = await supabase
-          .from("bills")
-          .select("returned_amount, total_amount, paid_amount")
-          .eq("id", form.bill_id)
-          .single()
-        
-        const currentReturnedAmountForLegacy = Number(currentBillForLegacy?.returned_amount || 0)
-        const newReturnedAmountForLegacy = currentReturnedAmountForLegacy + finalBaseTotal
-        
-        // المتبقي للمورد قبل هذا المرتجع
-        const previousReturns = newReturnedAmountForLegacy - finalBaseTotal // المرتجعات السابقة
-        const remainingPayable = billTotalAmount - billPaidAmount - previousReturns // المتبقي للمورد
-        const excessReturn = finalBaseTotal - remainingPayable // الفائض من المرتجع
+      // ===================== Legacy: Supplier Debit Credit (للفواتير غير المدفوعة) =====================
+      if (form.settlement_method === "debit_note" && total > 0 && form.bill_id && !needsJournalEntry && purchaseReturnId) {
+        const previousReturns = billPreviousReturnedAmount
+        const remainingPayable = billTotalAmount - billPaidAmount - previousReturns
+        const excessReturn = finalBaseTotal - remainingPayable
 
-        console.log("📊 Supplier Debit Credit Calculation (Legacy):", {
-          billPaidAmount,
-          billTotalAmount,
-          previousReturns,
-          remainingPayable,
-          returnTotal: total,
-          excessReturn
-        })
-
-        // إنشاء Supplier Debit Credit فقط إذا المرتجع > المتبقي
         if (excessReturn > 0) {
-          // المبلغ الذي يُضاف للرصيد المدين = الفائض
-          const debitAmount = excessReturn
-
           await supabase.from("supplier_debit_credits").insert({
             company_id: companyId,
             supplier_id: form.supplier_id,
-            purchase_return_id: purchaseReturn.id,
+            purchase_return_id: purchaseReturnId,
             debit_number: "SD-" + form.return_number,
             debit_date: form.return_date,
-            amount: debitAmount,
+            amount: excessReturn,
             applied_amount: 0,
             status: "active",
             notes: `إشعار مدين للمرتجع ${form.return_number} (المرتجع ${total} > المتبقي ${remainingPayable})`,
-            journal_entry_id: journalEntryId
           })
-          console.log(`✅ Supplier Debit Credit created: ${debitAmount}`)
-        } else {
-          console.log("ℹ️ No Supplier Debit Credit needed: return amount <= remaining payable")
+          console.log(`✅ Supplier Debit Credit created: ${excessReturn}`)
         }
       }
 
