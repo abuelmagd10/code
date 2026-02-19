@@ -1014,7 +1014,12 @@ export default function NewPurchaseReturnPage() {
                   <tr className="text-gray-600 border-b">
                     <th className="text-right p-2">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
                     <th className="text-right p-2">{appLang === 'en' ? 'Available in Bill' : 'المتاح من الفاتورة'}</th>
-                    {isPrivileged && selectedWarehouseId && (
+                    {isPrivileged && allWarehouses.length > 0 && (
+                      <th className="text-right p-2 text-blue-700 dark:text-blue-300 min-w-[180px]">
+                        {appLang === 'en' ? 'Stock per Warehouse' : 'المخزون في المخازن'}
+                      </th>
+                    )}
+                    {isPrivileged && selectedWarehouseId && allWarehouses.length === 0 && (
                       <th className="text-right p-2 text-amber-600 dark:text-amber-400">
                         {appLang === 'en' ? 'Stock in Warehouse' : 'المخزون الفعلي'}
                       </th>
@@ -1043,7 +1048,51 @@ export default function NewPurchaseReturnPage() {
                         )}
                       </td>
                       <td className="p-2 text-center">{it.max_quantity}</td>
-                      {isPrivileged && selectedWarehouseId && (
+                      {isPrivileged && allWarehouses.length > 0 && (
+                        <td className="p-2">
+                          {it.product_id ? (
+                            <div className="space-y-0.5">
+                              {allWarehouses.map(wh => {
+                                const qty = allWarehouseStocks[wh.id]?.[it.product_id!] ?? 0
+                                const isBillWh = wh.id === bills.find(b => b.id === form.bill_id)?.warehouse_id
+                                const isSelectedWh = wh.id === selectedWarehouseId
+                                const isLow = it.quantity > 0 && qty < it.quantity
+                                return (
+                                  <div
+                                    key={wh.id}
+                                    className={`flex items-center justify-between gap-2 px-1.5 py-0.5 rounded text-xs ${
+                                      isSelectedWh
+                                        ? 'bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700'
+                                        : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                                    }`}
+                                  >
+                                    <span className="text-gray-600 dark:text-gray-400 truncate max-w-[110px]" title={`${(wh as any).branches?.name || ''} — ${wh.name}`}>
+                                      {(wh as any).branches?.name || wh.name}
+                                      {isBillWh && <span className="mr-1 text-blue-500">●</span>}
+                                    </span>
+                                    <span className={`font-bold tabular-nums ${
+                                      qty <= 0 ? 'text-gray-300 dark:text-gray-600'
+                                        : isLow ? 'text-red-600 dark:text-red-400'
+                                        : 'text-green-700 dark:text-green-400'
+                                    }`}>
+                                      {qty}
+                                    </span>
+                                  </div>
+                                )
+                              })}
+                              <div className="flex items-center justify-between gap-2 px-1.5 py-0.5 border-t border-gray-200 dark:border-gray-700 mt-0.5 pt-0.5">
+                                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                                  {appLang === 'en' ? 'Total' : 'الإجمالي'}
+                                </span>
+                                <span className="text-xs font-bold text-blue-700 dark:text-blue-300 tabular-nums">
+                                  {allWarehouses.reduce((s, wh) => s + (allWarehouseStocks[wh.id]?.[it.product_id!] ?? 0), 0)}
+                                </span>
+                              </div>
+                            </div>
+                          ) : <span className="text-gray-400 text-xs">—</span>}
+                        </td>
+                      )}
+                      {isPrivileged && selectedWarehouseId && allWarehouses.length === 0 && (
                         <td className="p-2 text-center">
                           {it.product_id ? (
                             <span className={`font-medium ${(warehouseStocks[it.product_id] ?? 0) < it.quantity ? 'text-red-600' : 'text-amber-700 dark:text-amber-300'}`}>
