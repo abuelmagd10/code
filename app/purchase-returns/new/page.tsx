@@ -385,15 +385,20 @@ export default function NewPurchaseReturnPage() {
 
       // ✅ 3. إنشاء القيد المحاسبي (الصحيح حسب طريقة المرتجع)
       let journalEntryId: string | null = null
-      const returnMethod = form.settlement_method || 'credit' // 'credit' | 'cash' | 'bank'
+      // debit_note = تخفيض الذمم الدائنة (AP) بدون صرف نقدي فوري
+      // cash/bank_transfer = استرداد نقدي أو بنكي فوري من المورد
+      const returnMethod = form.settlement_method
 
       if (needsJournalEntry) {
+        // ✅ Fix: reference_id يجب أن يكون purchaseReturn.id (وليس bill_id)
         const { data: journalEntry, error: entryErr } = await supabase.from("journal_entries").insert({
           company_id: companyId,
           reference_type: "purchase_return",
-          reference_id: form.bill_id,
+          reference_id: purchaseReturn.id,
           entry_date: form.return_date,
           description: `مرتجع مشتريات رقم ${form.return_number}`,
+          status: "posted",
+          validation_status: "valid",
           branch_id: billBranchId,
           cost_center_id: billCostCenterId
         }).select().single()
@@ -405,23 +410,29 @@ export default function NewPurchaseReturnPage() {
 
         const journalLines: any[] = []
         const invOrExp = inventoryAccount || purchaseAccount
-        const inventoryCost = inventoryCostFromFIFO > 0 ? inventoryCostFromFIFO : finalBaseSubtotal // استخدام FIFO إذا متاح
+        const inventoryCost = inventoryCostFromFIFO > 0 ? inventoryCostFromFIFO : finalBaseSubtotal
 
         // البحث عن حساب Vendor Credit Liability
         const vendorCreditLiability = findAccount("vendor_credit_liability", "إشعار دائن") || 
                                      findAccount("ap_contra", "ap contra") || null
 
-        if (returnMethod === 'credit') {
-          // ✅ الحالة A: Credit Return - Vendor Credit فقط
-          const vendorCreditAccount = vendorCreditLiability || apAccount
+        if (returnMethod === 'cash' || returnMethod === 'bank_transfer') {
+          // ✅ الحالة A: استرداد نقدي أو بنكي - المورد يُعيد المبلغ فوراً
+          // مدين: النقدية أو البنك (نستلم المبلغ)
+          // دائن: المخزون (نُخرج البضاعة المرتجعة)
+          const cashAccount = findAccount("cash", "نقد")
+          const bankAccount = findAccount("bank", "بنك")
+          const refundAccount = returnMethod === 'cash' ? (cashAccount || bankAccount) : (bankAccount || cashAccount)
 
-          if (vendorCreditAccount && finalBaseTotal > 0) {
+          if (refundAccount && finalBaseTotal > 0) {
             journalLines.push({
               journal_entry_id: journalEntry.id,
-              account_id: vendorCreditAccount,
+              account_id: refundAccount,
               debit_amount: finalBaseTotal,
               credit_amount: 0,
-              description: appLang === 'en' ? 'Vendor Credit Liability (AP Contra)' : 'إشعار دائن المورد (AP Contra)',
+              description: returnMethod === 'cash'
+                ? (appLang === 'en' ? 'Cash refund received from supplier' : 'استرداد نقدي مستلم من المورد')
+                : (appLang === 'en' ? 'Bank transfer refund received' : 'استرداد بنكي مستلم من المورد'),
               original_debit: total,
               original_credit: 0,
               original_currency: form.currency,
@@ -451,20 +462,19 @@ export default function NewPurchaseReturnPage() {
             })
           }
         } else {
-          // ✅ الحالة B: Cash Refund - استرداد نقدي مباشر
-          // نحتاج حساب النقد/البنك
-          const cashAccount = findAccount("cash", "نقد") || findAccount("bank", "بنك")
-          const refundAccount = returnMethod === 'cash' ? cashAccount : findAccount("bank", "بنك")
+          // ✅ الحالة B: debit_note (إشعار مدين) - تخفيض الذمم الدائنة للمورد
+          // مدين: حساب الموردين (AP) - نُقلل ما ندين به للمورد
+          // دائن: المخزون - نُخرج البضاعة المرتجعة
+          // ملاحظة: لا يوجد تدفق نقدي فوري، يُستخدم رصيد الإشعار للمقاصة لاحقاً
+          const vendorCreditAccount = vendorCreditLiability || apAccount
 
-          if (refundAccount && finalBaseTotal > 0) {
+          if (vendorCreditAccount && finalBaseTotal > 0) {
             journalLines.push({
               journal_entry_id: journalEntry.id,
-              account_id: refundAccount,
+              account_id: vendorCreditAccount,
               debit_amount: finalBaseTotal,
               credit_amount: 0,
-              description: returnMethod === 'cash' 
-                ? (appLang === 'en' ? 'Cash refund received' : 'استرداد نقدي مستلم')
-                : (appLang === 'en' ? 'Bank refund received' : 'استرداد بنكي مستلم'),
+              description: appLang === 'en' ? 'Reduce AP - Debit Note to supplier' : 'تخفيض الموردين - إشعار مدين للمورد',
               original_debit: total,
               original_credit: 0,
               original_currency: form.currency,
@@ -619,8 +629,9 @@ export default function NewPurchaseReturnPage() {
         }
       }
 
-      // ✅ 6. إنشاء Vendor Credit للفواتير المدفوعة (Credit Return فقط)
-      if (needsJournalEntry && returnMethod === 'credit' && purchaseReturn?.id && billBranchId && billWarehouseId && billCostCenterId) {
+      // ✅ 6. إنشاء Vendor Credit للفواتير المدفوعة (debit_note فقط - لا نقدي/بنكي)
+      // debit_note = المورد مدين لنا برصيد يُستخدم لاحقاً في المقاصة
+      if (needsJournalEntry && returnMethod === 'debit_note' && purchaseReturn?.id && billBranchId && billWarehouseId && billCostCenterId) {
         console.log(`📋 Creating Vendor Credit for return ${form.return_number} (Bill Status: ${billStatus})`)
 
         const vendorCreditResult = await createVendorCreditForReturn(supabase, {
@@ -658,16 +669,15 @@ export default function NewPurchaseReturnPage() {
           // لا نوقف العملية، فقط نسجل الخطأ
         }
       } else {
-        if (needsJournalEntry && returnMethod !== 'credit') {
-          console.log(`ℹ️ No Vendor Credit created: Return method is ${returnMethod} (not credit)`)
+        if (needsJournalEntry && returnMethod !== 'debit_note') {
+          console.log(`ℹ️ No Vendor Credit created: Return method is ${returnMethod} (cash/bank transfer - no vendor credit needed)`)
         } else if (!needsJournalEntry) {
           console.log(`ℹ️ No Vendor Credit created: Bill status is ${billStatus} (not Paid/Partially Paid)`)
         }
       }
 
       // ===== 🔒 منطق Supplier Debit Credit (القديم - للحالات الخاصة) =====
-      // ملاحظة: هذا المنطق القديم يُستخدم فقط في حالات خاصة
-      // الآن نستخدم Vendor Credit بدلاً منه
+      // يُستخدم فقط لفواتير received (غير مدفوعة) مع debit_note
       if (form.settlement_method === "debit_note" && total > 0 && form.bill_id && !needsJournalEntry) {
         // حساب المرتجع الجديد
         const { data: currentBillForLegacy } = await supabase
