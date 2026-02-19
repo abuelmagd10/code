@@ -66,6 +66,8 @@ export default function NewPurchaseReturnPage() {
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('')
   // رصيد كل منتج في المخزن المختار (productId → stock)
   const [warehouseStocks, setWarehouseStocks] = useState<Record<string, number>>({})
+  // رصيد كل منتج في كل مخزن (warehouseId → productId → stock)
+  const [allWarehouseStocks, setAllWarehouseStocks] = useState<Record<string, Record<string, number>>>({})
 
   const [form, setForm] = useState({
     supplier_id: "",
@@ -181,6 +183,37 @@ export default function NewPurchaseReturnPage() {
       setWarehouseStocks(stocks)
     })()
   }, [selectedWarehouseId, companyId, items])
+
+  // جلب رصيد كل منتج في جميع المخازن (للمالك/المدير العام فقط)
+  useEffect(() => {
+    if (!isPrivileged || !companyId || allWarehouses.length === 0 || items.length === 0) {
+      setAllWarehouseStocks({})
+      return
+    }
+    const productIds = items.filter(i => i.product_id).map(i => i.product_id as string)
+    if (productIds.length === 0) return
+
+    ; (async () => {
+      const { data } = await supabase
+        .from("inventory_transactions")
+        .select("product_id, warehouse_id, quantity_change")
+        .eq("company_id", companyId)
+        .in("product_id", productIds)
+        .eq("is_deleted", false)
+
+      const stocksMap: Record<string, Record<string, number>> = {}
+      for (const wh of allWarehouses) {
+        stocksMap[wh.id] = {}
+        for (const pid of productIds) stocksMap[wh.id][pid] = 0
+      }
+      for (const row of (data || [])) {
+        if (stocksMap[row.warehouse_id]) {
+          stocksMap[row.warehouse_id][row.product_id] = (stocksMap[row.warehouse_id][row.product_id] || 0) + Number(row.quantity_change)
+        }
+      }
+      setAllWarehouseStocks(stocksMap)
+    })()
+  }, [isPrivileged, companyId, allWarehouses, items])
 
   // Update exchange rate when currency changes
   useEffect(() => {
@@ -816,6 +849,107 @@ export default function NewPurchaseReturnPage() {
                     ) : null}
                   </div>
                 </div>
+
+                {/* 📊 جدول توزيع المخزون على الفروع */}
+                {items.filter(i => i.product_id).length > 0 && allWarehouses.length > 0 && (
+                  <div className="mt-3 border border-amber-200 dark:border-amber-700 rounded-lg overflow-hidden">
+                    <div className="bg-amber-100 dark:bg-amber-900/40 px-3 py-2 flex items-center gap-2">
+                      <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                        📊 {appLang === 'en' ? 'Stock Distribution Across Branches' : 'توزيع المخزون على الفروع'}
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-700">
+                            <th className="text-right p-2 font-medium text-amber-800 dark:text-amber-300 whitespace-nowrap min-w-[140px]">
+                              {appLang === 'en' ? 'Branch / Warehouse' : 'الفرع / المخزن'}
+                            </th>
+                            {items.filter(i => i.product_id).map((it, idx) => (
+                              <th key={idx} className="text-center p-2 font-medium text-amber-800 dark:text-amber-300 whitespace-nowrap">
+                                {it.product_name}
+                              </th>
+                            ))}
+                            <th className="text-center p-2 font-medium text-amber-800 dark:text-amber-300 whitespace-nowrap">
+                              {appLang === 'en' ? 'Total' : 'الإجمالي'}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {allWarehouses.map(wh => {
+                            const whStocks = allWarehouseStocks[wh.id] || {}
+                            const productsInItems = items.filter(i => i.product_id)
+                            const rowTotal = productsInItems.reduce((sum, it) => sum + (whStocks[it.product_id!] || 0), 0)
+                            const isBillWarehouse = wh.id === bills.find(b => b.id === form.bill_id)?.warehouse_id
+                            const isSelectedWarehouse = wh.id === selectedWarehouseId
+                            return (
+                              <tr
+                                key={wh.id}
+                                className={`border-b border-amber-100 dark:border-amber-800 ${
+                                  isSelectedWarehouse
+                                    ? 'bg-amber-100 dark:bg-amber-900/40'
+                                    : 'hover:bg-amber-50/50 dark:hover:bg-amber-900/10'
+                                }`}
+                              >
+                                <td className="p-2 whitespace-nowrap">
+                                  <div className="flex items-center gap-1">
+                                    {isSelectedWarehouse && <span className="text-amber-600">▶</span>}
+                                    <div>
+                                      <div className="font-medium text-gray-800 dark:text-gray-200">
+                                        {(wh as any).branches?.name || (appLang === 'en' ? 'No Branch' : 'بدون فرع')}
+                                      </div>
+                                      <div className="text-gray-500 dark:text-gray-400 text-[10px]">
+                                        {wh.name}
+                                        {isBillWarehouse && (
+                                          <span className="mr-1 text-blue-600 dark:text-blue-400">
+                                            ({appLang === 'en' ? 'Bill' : 'الفاتورة'})
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                                {productsInItems.map((it, idx) => {
+                                  const qty = whStocks[it.product_id!] || 0
+                                  const isShortage = it.quantity > 0 && qty < it.quantity
+                                  return (
+                                    <td key={idx} className="p-2 text-center">
+                                      <span className={`font-semibold ${qty <= 0 ? 'text-gray-400' : isShortage ? 'text-red-600 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
+                                        {qty}
+                                      </span>
+                                    </td>
+                                  )
+                                })}
+                                <td className="p-2 text-center font-bold text-amber-800 dark:text-amber-300">
+                                  {rowTotal}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                          {/* صف مجموع الشركة */}
+                          <tr className="bg-amber-100 dark:bg-amber-900/30 font-bold">
+                            <td className="p-2 text-amber-800 dark:text-amber-200">
+                              🏢 {appLang === 'en' ? 'Company Total' : 'إجمالي الشركة'}
+                            </td>
+                            {items.filter(i => i.product_id).map((it, idx) => {
+                              const companyTotal = allWarehouses.reduce((sum, wh) => sum + (allWarehouseStocks[wh.id]?.[it.product_id!] || 0), 0)
+                              return (
+                                <td key={idx} className="p-2 text-center text-amber-900 dark:text-amber-100">
+                                  {companyTotal}
+                                </td>
+                              )
+                            })}
+                            <td className="p-2 text-center text-amber-900 dark:text-amber-100">
+                              {items.filter(i => i.product_id).reduce((sum, it) =>
+                                sum + allWarehouses.reduce((ws, wh) => ws + (allWarehouseStocks[wh.id]?.[it.product_id!] || 0), 0), 0
+                              )}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
