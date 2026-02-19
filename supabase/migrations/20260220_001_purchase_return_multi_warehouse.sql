@@ -104,6 +104,7 @@ DECLARE
   v_alloc_ids      UUID[] := ARRAY[]::UUID[];
   v_result         JSONB := '{}';
   v_group_count    INT;
+  v_qty_check      RECORD;
 BEGIN
   -- التحقق من الفاتورة (إلزامية)
   IF p_bill_id IS NULL THEN
@@ -148,34 +149,31 @@ BEGIN
 
   -- ===================== التحقق من الكميات الإجمالية عبر كل التخصيصات =====================
   -- نتحقق من أن مجموع الكميات لكل bill_item عبر جميع التخصيصات لا يتجاوز المتاح
-  DECLARE
-    v_qty_check RECORD;
-  BEGIN
-    WITH item_totals AS (
-      SELECT
-        NULLIF(v_item->>'bill_item_id', '')::UUID AS bill_item_id,
-        SUM((v_item->>'quantity')::NUMERIC) AS total_qty
-      FROM jsonb_array_elements(p_warehouse_groups) AS g,
-           jsonb_array_elements(g->'items') AS v_item
-      WHERE (v_item->>'quantity')::NUMERIC > 0
-        AND (v_item->>'bill_item_id') IS NOT NULL
-      GROUP BY NULLIF(v_item->>'bill_item_id', '')::UUID
-    )
-    SELECT bi.id, bi.quantity, COALESCE(bi.returned_quantity, 0) AS returned_quantity,
-           it.total_qty
-    INTO v_qty_check
-    FROM item_totals it
-    JOIN bill_items bi ON bi.id = it.bill_item_id
-    WHERE it.total_qty > (bi.quantity - COALESCE(bi.returned_quantity, 0))
-    LIMIT 1;
+  -- ملاحظة: نستخدم alias "itm" بدلاً من v_item لتجنب التعارض مع متغير PL/pgSQL
+  WITH item_totals AS (
+    SELECT
+      NULLIF(itm->>'bill_item_id', '')::UUID AS bill_item_id,
+      SUM((itm->>'quantity')::NUMERIC) AS total_qty
+    FROM jsonb_array_elements(p_warehouse_groups) AS grp,
+         jsonb_array_elements(grp->'items') AS itm
+    WHERE (itm->>'quantity')::NUMERIC > 0
+      AND (itm->>'bill_item_id') IS NOT NULL
+    GROUP BY NULLIF(itm->>'bill_item_id', '')::UUID
+  )
+  SELECT bi.id, bi.quantity, COALESCE(bi.returned_quantity, 0) AS returned_quantity,
+         it.total_qty
+  INTO v_qty_check
+  FROM item_totals it
+  JOIN bill_items bi ON bi.id = it.bill_item_id
+  WHERE it.total_qty > (bi.quantity - COALESCE(bi.returned_quantity, 0))
+  LIMIT 1;
 
-    IF FOUND THEN
-      RAISE EXCEPTION 'Return quantity (%) exceeds available quantity (%) for bill item %',
-        v_qty_check.total_qty,
-        (v_qty_check.quantity - v_qty_check.returned_quantity),
-        v_qty_check.id;
-    END IF;
-  END;
+  IF FOUND THEN
+    RAISE EXCEPTION 'Return quantity (%) exceeds available quantity (%) for bill item %',
+      v_qty_check.total_qty,
+      (v_qty_check.quantity - v_qty_check.returned_quantity),
+      v_qty_check.id;
+  END IF;
 
   -- ===================== إنشاء سجل المرتجع الرئيسي =====================
   INSERT INTO purchase_returns (
