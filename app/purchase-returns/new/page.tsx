@@ -95,38 +95,50 @@ export default function NewPurchaseReturnPage() {
 
       // جلب بيانات المستخدم والدور
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        setCurrentUserId(user.id)
+      if (!user) return
+      setCurrentUserId(user.id)
 
-        const { data: companyData } = await supabase
-          .from("companies").select("user_id").eq("id", loadedCompanyId).single()
-        const { data: memberData } = await supabase
-          .from("company_members")
-          .select("role")
+      const { data: companyData } = await supabase
+        .from("companies").select("user_id").eq("id", loadedCompanyId).single()
+      const { data: memberData } = await supabase
+        .from("company_members")
+        .select("role, branch_id")
+        .eq("company_id", loadedCompanyId)
+        .eq("user_id", user.id)
+        .single()
+
+      const isOwner = companyData?.user_id === user.id
+      const role = isOwner ? "owner" : (memberData?.role || "accountant")
+      const userBranchId = memberData?.branch_id || null
+      setCurrentUserRole(role)
+      setCurrentUserName(user.email || '')
+
+      // جلب جميع المخازن للمالك/المدير العام
+      if (PRIVILEGED_ROLES.includes(role.toLowerCase())) {
+        const { data: warehousesData } = await supabase
+          .from("warehouses")
+          .select("id, name, branch_id, branches(name)")
           .eq("company_id", loadedCompanyId)
-          .eq("user_id", user.id)
-          .single()
+          .eq("is_active", true)
+        setAllWarehouses((warehousesData || []) as Warehouse[])
+      }
 
-        const isOwner = companyData?.user_id === user.id
-        const role = isOwner ? "owner" : (memberData?.role || "accountant")
-        const fullName = user.email || ''
-        setCurrentUserRole(role)
-        setCurrentUserName(fullName)
+      // 🔐 بناء استعلام الفواتير حسب الصلاحيات
+      const isPrivilegedRole = PRIVILEGED_ROLES.includes(role.toLowerCase())
+      let billQuery = supabase
+        .from("bills")
+        .select("id, bill_number, supplier_id, total_amount, status, branch_id, cost_center_id, warehouse_id")
+        .eq("company_id", loadedCompanyId)
+        .in("status", ["paid", "partially_paid", "sent", "received"])
 
-        // جلب جميع المخازن للمالك/المدير العام
-        if (PRIVILEGED_ROLES.includes(role.toLowerCase())) {
-          const { data: warehousesData } = await supabase
-            .from("warehouses")
-            .select("id, name, branch_id, branches(name)")
-            .eq("company_id", loadedCompanyId)
-            .eq("is_active", true)
-          setAllWarehouses((warehousesData || []) as Warehouse[])
-        }
+      // الأدوار العادية (محاسب/مدير فرع/موظف): ترى فواتير فرعها فقط
+      if (!isPrivilegedRole && userBranchId) {
+        billQuery = billQuery.eq("branch_id", userBranchId)
       }
 
       const [suppRes, billRes, prodRes] = await Promise.all([
         supabase.from("suppliers").select("id, name, phone").eq("company_id", loadedCompanyId),
-        supabase.from("bills").select("id, bill_number, supplier_id, total_amount, status, branch_id, cost_center_id, warehouse_id").eq("company_id", loadedCompanyId).in("status", ["paid", "partially_paid", "sent", "received"]),
+        billQuery,
         supabase.from("products").select("id, name, cost_price").eq("company_id", loadedCompanyId)
       ])
 
