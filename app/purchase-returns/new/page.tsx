@@ -1539,10 +1539,10 @@ export default function NewPurchaseReturnPage() {
               </div>
             </div>
 
-            {form.currency !== baseCurrency && total > 0 && (
+            {form.currency !== baseCurrency && (isPrivileged ? allocTotal : total) > 0 && (
               <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
                 <div>{appLang === 'en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {form.currency} = {exchangeRate.rate.toFixed(4)} {baseCurrency}</strong> ({exchangeRate.source})</div>
-                <div>{appLang === 'en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(total * exchangeRate.rate).toFixed(2)} {baseCurrency}</strong></div>
+                <div>{appLang === 'en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{((isPrivileged ? allocTotal : total) * exchangeRate.rate).toFixed(2)} {baseCurrency}</strong></div>
               </div>
             )}
 
