@@ -1,10 +1,14 @@
 /**
  * 🔍 Purchase Return Validation
  * التحقق من صحة مرتجعات الشراء
- * 
+ *
  * يتحقق من:
  * 1. كفاية رصيد المخزن قبل إرجاع البضاعة للمورد
  * 2. ربط المرتجع بنفس الفرع والمخزن الأصلي
+ *
+ * ملاحظة هامة: التحقق يتم على مخزن الفاتورة الأصلي فقط.
+ * إذا تم تحويل كميات من هذا المخزن إلى مخازن أخرى،
+ * يجب إعادة تحويلها للمخزن الأصلي قبل المرتجع.
  */
 
 import { SupabaseClient } from "@supabase/supabase-js"
@@ -15,6 +19,7 @@ export type ProductStockCheck = {
   requested_quantity: number
   available_quantity: number
   is_sufficient: boolean
+  stock_in_other_warehouses?: number
 }
 
 export type StockValidationResult = {
@@ -86,12 +91,42 @@ export async function getProductStockInWarehouse(
 }
 
 /**
+ * حساب رصيد منتج في كل مخازن الشركة (باستثناء مخزن معين)
+ * يُستخدم لإظهار رسالة مفيدة للمستخدم عند نقص المخزون
+ */
+async function getProductStockInOtherWarehouses(
+  supabase: SupabaseClient,
+  productId: string,
+  excludeWarehouseId: string,
+  companyId: string
+): Promise<number> {
+  try {
+    const { data: transactions } = await supabase
+      .from("inventory_transactions")
+      .select("quantity_change, is_deleted")
+      .eq("company_id", companyId)
+      .eq("product_id", productId)
+      .neq("warehouse_id", excludeWarehouseId)
+
+    return Math.max(0, (transactions || [])
+      .filter((t: any) => !t.is_deleted)
+      .reduce((sum: number, t: any) => sum + Number(t.quantity_change || 0), 0))
+  } catch {
+    return 0
+  }
+}
+
+/**
  * التحقق من كفاية رصيد المخزن لمرتجع شراء
+ *
+ * ⚠️ مهم: التحقق يتم على مخزن الفاتورة الأصلي فقط.
+ * إذا تم تحويل كميات إلى مخازن أخرى، يجب إعادتها أولاً.
+ *
  * @param supabase - Supabase client
  * @param items - قائمة المنتجات المراد إرجاعها
- * @param warehouseId - معرف المخزن
+ * @param warehouseId - معرف مخزن الفاتورة
  * @param companyId - معرف الشركة
- * @returns نتيجة التحقق مع قائمة النواقص
+ * @returns نتيجة التحقق مع قائمة النواقص ومعلومات المخازن الأخرى
  */
 export async function validatePurchaseReturnStock(
   supabase: SupabaseClient,
@@ -106,21 +141,17 @@ export async function validatePurchaseReturnStock(
   try {
     const shortages: ProductStockCheck[] = []
 
-    // التحقق من كل منتج
     for (const item of items) {
       if (!item.product_id || item.quantity <= 0) continue
 
-      // جلب بيانات المنتج للتحقق من نوعه
       const { data: product } = await supabase
         .from("products")
         .select("id, name, item_type")
         .eq("id", item.product_id)
         .single()
 
-      // تخطي الخدمات (لا تحتاج رصيد مخزون)
       if (product?.item_type === "service") continue
 
-      // حساب الرصيد المتاح
       const availableStock = await getProductStockInWarehouse(
         supabase,
         item.product_id,
@@ -128,34 +159,45 @@ export async function validatePurchaseReturnStock(
         companyId
       )
 
-      // التحقق من الكفاية
       if (availableStock < item.quantity) {
+        // فحص المخازن الأخرى لإعطاء رسالة أوضح
+        const stockInOtherWarehouses = await getProductStockInOtherWarehouses(
+          supabase,
+          item.product_id,
+          warehouseId,
+          companyId
+        )
+
         shortages.push({
           product_id: item.product_id,
           product_name: item.product_name || product?.name || "غير معروف",
           requested_quantity: item.quantity,
           available_quantity: availableStock,
-          is_sufficient: false
+          is_sufficient: false,
+          stock_in_other_warehouses: stockInOtherWarehouses,
         })
       }
     }
 
     return {
       success: shortages.length === 0,
-      shortages
+      shortages,
     }
   } catch (error: any) {
     console.error("Error validating purchase return stock:", error)
     return {
       success: false,
       shortages: [],
-      error: error.message || "حدث خطأ أثناء التحقق من المخزون"
+      error: error.message || "حدث خطأ أثناء التحقق من المخزون",
     }
   }
 }
 
 /**
  * تنسيق رسالة خطأ نقص المخزون
+ * تُظهر الرصيد المتاح، والمطلوب، وإن وُجد رصيد في مخازن أخرى
+ * تقترح على المستخدم إما تحويل البضاعة أو تقليل الكمية
+ *
  * @param shortages - قائمة النواقص
  * @param lang - اللغة
  * @returns رسالة الخطأ المنسقة
@@ -167,14 +209,22 @@ export function formatStockShortageMessage(
   if (shortages.length === 0) return ""
 
   if (lang === 'en') {
-    const lines = shortages.map(s => 
-      `• ${s.product_name}: Available ${s.available_quantity}, Required ${s.requested_quantity}`
-    )
-    return `Insufficient stock:\n${lines.join('\n')}`
+    const lines = shortages.map(s => {
+      let line = `• ${s.product_name}: Available in bill warehouse ${s.available_quantity}, Required ${s.requested_quantity}`
+      if ((s.stock_in_other_warehouses ?? 0) > 0) {
+        line += ` (${s.stock_in_other_warehouses} units found in other warehouses — transfer back first)`
+      }
+      return line
+    })
+    return `Insufficient stock in bill's warehouse:\n${lines.join('\n')}\n\nTo fix: either reduce the return quantity or transfer stock back to the original warehouse first.`
   }
 
-  const lines = shortages.map(s => 
-    `• ${s.product_name}: المتاح ${s.available_quantity}، المطلوب ${s.requested_quantity}`
-  )
-  return `رصيد المخزن غير كافٍ:\n${lines.join('\n')}`
+  const lines = shortages.map(s => {
+    let line = `• ${s.product_name}: المتاح في مخزن الفاتورة ${s.available_quantity}، المطلوب ${s.requested_quantity}`
+    if ((s.stock_in_other_warehouses ?? 0) > 0) {
+      line += `\n  ⚠️ يوجد ${s.stock_in_other_warehouses} وحدة في مخازن فروع أخرى — قم بتحويلها للمخزن الأصلي أولاً`
+    }
+    return line
+  })
+  return `رصيد مخزن الفاتورة غير كافٍ للمرتجع:\n${lines.join('\n')}\n\n💡 الحل: قلّل كمية المرتجع للكمية المتاحة، أو أنشئ حركة تحويل مخزني من الفرع الآخر أولاً.`
 }
