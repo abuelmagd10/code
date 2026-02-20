@@ -362,8 +362,12 @@ export default function TrialBalancePage() {
                           <td className="px-4 py-3 text-red-600 dark:text-red-400">{numberFmt.format(account.opening_credit)}</td>
                           <td className="px-4 py-3 text-blue-600 dark:text-blue-400">{numberFmt.format(account.period_debit)}</td>
                           <td className="px-4 py-3 text-red-600 dark:text-red-400">{numberFmt.format(account.period_credit)}</td>
-                          <td className={`px-4 py-3 font-semibold ${account.closing_balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                            {numberFmt.format(Math.abs(account.closing_balance))} {account.closing_balance < 0 ? '(Cr)' : '(Dr)'}
+                          <td className={`px-4 py-3 font-semibold ${account.closing_credit > 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                            {account.closing_debit > 0
+                              ? `${numberFmt.format(account.closing_debit)} (Dr)`
+                              : account.closing_credit > 0
+                                ? `${numberFmt.format(account.closing_credit)} (Cr)`
+                                : `${numberFmt.format(0)} (Dr)`}
                           </td>
                         </tr>
                       ))}
@@ -376,8 +380,9 @@ export default function TrialBalancePage() {
                         <td className="px-4 py-4 text-blue-700 dark:text-blue-300">{numberFmt.format(data?.balances.period.total_debit || 0)}</td>
                         <td className="px-4 py-4 text-red-700 dark:text-red-300">{numberFmt.format(data?.balances.period.total_credit || 0)}</td>
                         <td className={`px-4 py-4 ${isBalanced ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
-                          {isBalanced ? '✓ ' : '✗ '}
-                          {(hydrated && appLang === 'en') ? 'Balanced' : 'متوازن'}
+                          {isBalanced
+                            ? `✓ ${(hydrated && appLang === 'en') ? 'Balanced' : 'متوازن'}`
+                            : `✗ ${(hydrated && appLang === 'en') ? 'Unbalanced' : 'غير متوازن'} (${numberFmt.format(data?.balances.closing.difference || 0)})`}
                         </td>
                       </tr>
                     </tfoot>

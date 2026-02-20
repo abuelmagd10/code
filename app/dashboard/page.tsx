@@ -234,11 +234,13 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       // 📌 COGS = SUM(total_cost) FROM cogs_transactions WHERE source_type = 'invoice'
       try {
         const { calculateCOGSTotal } = await import("@/lib/cogs-transactions")
+        const invoiceIds = invoices.map((i: any) => i.id)
         totalCOGS = await calculateCOGSTotal(supabase, {
           companyId: company.id,
           fromDate: fromDate || undefined,
           toDate: toDate || undefined,
-          sourceType: 'invoice'
+          sourceType: 'invoice',
+          sourceIds: invoiceIds, // ✅ تصفية بالفواتير النشطة فقط (تجنب COGS اليتيمة)
         })
         
         // Fallback: إذا لم توجد سجلات COGS (للتوافق مع البيانات القديمة)

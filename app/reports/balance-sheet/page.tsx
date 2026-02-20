@@ -293,7 +293,7 @@ export default function BalanceSheetPage() {
                       <CardContent>
                         <ResponsiveContainer width="100%" height={260}>
                           <PieChart>
-                            <Pie data={[{ name: (hydrated && appLang === 'en') ? 'Assets' : 'الأصول', value: assetsDisplay }, { name: (hydrated && appLang === 'en') ? 'Liabilities + Equity' : 'الالتزامات + حقوق الملكية', value: liabilitiesDisplay + equityDisplay }]} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                            <Pie data={[{ name: (hydrated && appLang === 'en') ? 'Assets' : 'الأصول', value: assetsDisplay }, { name: (hydrated && appLang === 'en') ? 'Liabilities + Equity' : 'الالتزامات + حقوق الملكية', value: Math.abs(liabilitiesActual + equityActual) }]} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
                               {[
                                 { color: '#3b82f6' },
                                 { color: '#ef4444' },

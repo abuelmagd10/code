@@ -180,6 +180,7 @@ export async function calculateCOGSTotal(
     costCenterId?: string
     warehouseId?: string
     sourceType?: string
+    sourceIds?: string[] // تصفية بمعرفات المصادر (الفواتير) المحددة فقط
   }
 ): Promise<number> {
   try {
@@ -205,6 +206,12 @@ export async function calculateCOGSTotal(
     }
     if (params.sourceType) {
       query = query.eq('source_type', params.sourceType)
+    }
+    // ✅ فلترة بمعرفات الفواتير النشطة فقط لتجنب حساب COGS لفواتير محذوفة أو غير موجودة
+    if (params.sourceIds && params.sourceIds.length > 0) {
+      query = query.in('source_id', params.sourceIds)
+    } else if (params.sourceIds && params.sourceIds.length === 0) {
+      return 0
     }
 
     const { data, error } = await query

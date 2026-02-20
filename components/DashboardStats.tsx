@@ -74,10 +74,11 @@ export default function DashboardStats({
     return sum + amount
   }, 0)
 
-  // الربح الإجمالي = المبيعات - تكلفة البضاعة المباعة (COGS) - مصاريف الشحن
-  // إذا لم يتوفر COGS، نستخدم المشتريات كتقدير
-  const totalExpenses = totalCOGS > 0 ? (totalCOGS + totalShipping) : totalPurchases
-  const expectedProfit = totalSales - totalExpenses
+  // صافي الربح الإجمالي = المبيعات - المشتريات
+  // يتطابق مع مخططات لوحة التحكم ويعطي صورة موحدة
+  const expectedProfit = totalSales - totalPurchases
+  // هامش الربح الإجمالي = المبيعات - تكلفة البضاعة المباعة (للعرض المساعد فقط)
+  const grossProfitFromCOGS = totalCOGS > 0 ? (totalSales - totalCOGS - totalShipping) : null
   const invoicesCount = invoicesData.length
 
   const currency = currencySymbols[appCurrency] || appCurrency
@@ -145,19 +146,26 @@ export default function DashboardStats({
         </CardContent>
       </Card>
 
-      {/* الأرباح المتوقعة */}
+      {/* صافي الربح */}
       <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
         <CardContent className="p-6 relative">
           <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-bl-full" />
           <div className="flex items-center justify-between relative z-10">
             <div>
               <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                {appLang === 'en' ? 'Expected Profit' : 'الأرباح المتوقعة'}
+                {appLang === 'en' ? 'Net Profit' : 'صافي الربح'}
               </p>
               <p className={`text-2xl lg:text-3xl font-bold mt-2 ${expectedProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                 {formatNumber(expectedProfit)}
               </p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{currency}</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                {currency}
+                {grossProfitFromCOGS !== null && (
+                  <span className="mr-2 text-gray-400">
+                    {' · '}{appLang === 'en' ? 'Gross' : 'إجمالي'}: {formatNumber(Math.round(grossProfitFromCOGS))}
+                  </span>
+                )}
+              </p>
             </div>
             <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl">
               <BadgeDollarSign className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
