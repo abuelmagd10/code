@@ -27,6 +27,12 @@ type WarehouseAllocation = {
   warehouses?: { name: string } | null
 }
 
+type ReturnItem = {
+  quantity: number
+  warehouse_id: string | null
+  warehouse_allocation_id: string | null
+}
+
 type PurchaseReturn = {
   id: string
   return_number: string
@@ -44,6 +50,7 @@ type PurchaseReturn = {
   branches?: { name: string } | null
   warehouses?: { name: string } | null
   allocations?: WarehouseAllocation[]
+  purchase_return_items?: ReturnItem[]
 }
 
 const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
@@ -56,7 +63,8 @@ export default function PurchaseReturnsPage() {
   const [currentUserRole, setCurrentUserRole] = useState<string>('viewer')
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUserName, setCurrentUserName] = useState<string>('')
-  const [currentWarehouseId, setCurrentWarehouseId] = useState<string | null>(null) // لمسؤول المخزن
+  const [currentWarehouseId, setCurrentWarehouseId] = useState<string | null>(null)
+  const [currentBranchId, setCurrentBranchId] = useState<string | null>(null)
 
   const [returns, setReturns] = useState<PurchaseReturn[]>([])
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
@@ -120,6 +128,7 @@ export default function PurchaseReturnsPage() {
         setCurrentUserRole(role)
         userWarehouseId = memberData?.warehouse_id || null
         setCurrentWarehouseId(userWarehouseId)
+        setCurrentBranchId(memberData?.branch_id || null)
         setCurrentUserName(user.email || '')
 
         const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
@@ -137,7 +146,8 @@ export default function PurchaseReturnsPage() {
             allocations:purchase_return_warehouse_allocations(
               id, warehouse_id, workflow_status, confirmed_by, confirmed_at, total_amount,
               warehouses(name)
-            )
+            ),
+            purchase_return_items(quantity, warehouse_id, warehouse_allocation_id)
           `)
           .eq("company_id", companyId)
 
@@ -390,6 +400,26 @@ export default function PurchaseReturnsPage() {
   }
 
   const isStoreManager = currentUserRole === 'store_manager'
+  const isAccountant = currentUserRole === 'accountant'
+  const isRestrictedRole = isStoreManager || isAccountant
+
+  // حساب الكمية المرتجعة الخاصة بالمستخدم (مخزنه أو فرعه)
+  const getUserQty = (pr: PurchaseReturn): number | null => {
+    const items = pr.purchase_return_items || []
+    if (!items.length) return null
+    if (isStoreManager && currentWarehouseId) {
+      const qty = items
+        .filter(i => i.warehouse_id === currentWarehouseId)
+        .reduce((s, i) => s + Number(i.quantity), 0)
+      return qty > 0 ? qty : null
+    }
+    if (isAccountant && currentBranchId) {
+      // المحاسب يرى إجمالي الكميات في فرعه
+      const qty = items.reduce((s, i) => s + Number(i.quantity), 0)
+      return qty > 0 ? qty : null
+    }
+    return null
+  }
 
   const tableColumns: DataTableColumn<PurchaseReturn>[] = useMemo(() => [
     {
@@ -426,6 +456,17 @@ export default function PurchaseReturnsPage() {
       align: 'center',
       hidden: 'md',
       format: (value, row) => {
+        const pr = row as PurchaseReturn
+        // لمسؤول المخزن: عرض مخزنه فقط من بين التخصيصات
+        if (isStoreManager && currentWarehouseId) {
+          const myAlloc = (pr.allocations || []).find(a => a.warehouse_id === currentWarehouseId)
+          const wName = myAlloc?.warehouses?.name || (value as any)?.name
+          return wName ? (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+              {wName}
+            </span>
+          ) : <span className="text-gray-400">—</span>
+        }
         const wName = (value as any)?.name
         return wName ? (
           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
@@ -443,18 +484,35 @@ export default function PurchaseReturnsPage() {
       hidden: 'md',
       format: (value) => value
     },
-    {
-      key: 'total_amount',
+    // عمود الكمية: للمسؤول المخزن والمحاسب فقط
+    ...(isRestrictedRole ? [{
+      key: 'purchase_return_items' as keyof PurchaseReturn,
+      header: appLang === 'en' ? 'Qty' : 'الكمية',
+      type: 'text' as const,
+      align: 'center' as const,
+      width: 'w-24',
+      format: (_value: unknown, row: unknown) => {
+        const qty = getUserQty(row as PurchaseReturn)
+        return qty !== null ? (
+          <span className="inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
+            {qty} {appLang === 'en' ? 'unit' : 'وحدة'}
+          </span>
+        ) : <span className="text-gray-400">—</span>
+      }
+    }] : []),
+    // عمود المبلغ: للأدوار المميزة فقط
+    ...(!isRestrictedRole ? [{
+      key: 'total_amount' as keyof PurchaseReturn,
       header: appLang === 'en' ? 'Amount' : 'المبلغ',
-      type: 'currency',
-      align: 'right',
+      type: 'currency' as const,
+      align: 'right' as const,
       width: 'w-32',
-      format: (value) => (
+      format: (value: unknown) => (
         <span className="font-semibold text-purple-600 dark:text-purple-400">
           {currencySymbol} {Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </span>
       )
-    },
+    }] : []),
     {
       key: 'workflow_status',
       header: appLang === 'en' ? 'Status' : 'الحالة',
@@ -567,7 +625,7 @@ export default function PurchaseReturnsPage() {
         )
       }
     }
-  ], [appLang, currencySymbol, router, isStoreManager, currentWarehouseId, confirmingId, confirmingAllocationId, currentUserId])
+  ], [appLang, currencySymbol, router, isStoreManager, isAccountant, isRestrictedRole, currentWarehouseId, currentBranchId, confirmingId, confirmingAllocationId, currentUserId])
 
   // إحصاءات سريعة
   const pendingCount = returns.filter(r =>
