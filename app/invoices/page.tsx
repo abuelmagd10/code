@@ -257,15 +257,16 @@ export default function InvoicesPage() {
 
   // Helper: Get display amount (use converted if available)
   // يستخدم المدفوعات الفعلية من جدول payments كأولوية
-  // ملاحظة: total_amount هو المبلغ الحالي بعد خصم المرتجعات
+  // ملاحظة: total_amount هو المبلغ الحالي بعد خصم المرتجعات — يُحدَّث تلقائياً عند كل مرتجع
   const getDisplayAmount = (invoice: Invoice, field: 'total' | 'paid' = 'total'): number => {
     if (field === 'total') {
-      // استخدام total_amount مباشرة لأنه يمثل المبلغ الحالي بعد المرتجعات
-      // display_total يستخدم فقط إذا كانت العملة مختلفة ومحولة
-      if (invoice.display_currency === appCurrency && invoice.display_total != null) {
+      // display_total يُستخدم فقط حين تختلف عملة الفاتورة عن عملة التطبيق (تحويل عملة)
+      // حين تتطابق العملتان: total_amount هو المصدر الموثوق لأنه يتحدث عند كل مرتجع
+      // بينما display_total يُضبط مرة واحدة عند إنشاء الفاتورة ولا يعكس المرتجعات
+      if (invoice.display_currency && invoice.display_currency !== appCurrency && invoice.display_total != null) {
         return invoice.display_total
       }
-      // total_amount هو المبلغ الصحيح (بعد خصم المرتجعات)
+      // total_amount هو المبلغ الصحيح الحالي (بعد خصم جميع المرتجعات)
       return invoice.total_amount
     }
     // For paid amount: استخدام المدفوعات الفعلية من جدول payments أولاً
