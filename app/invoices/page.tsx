@@ -2622,9 +2622,17 @@ export default function InvoicesPage() {
                         footer={{
                           render: () => {
                             const totalInvoices = filteredInvoices.length
-                            const totalAmount = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0)
+                            // إجمالي المرتجعات لجميع الفواتير المفلترة
+                            const totalReturns = filteredInvoices.reduce((sum, i) => sum + Number((i as any).returned_amount || 0), 0)
+                            // الإجمالي الصافي بعد المرتجعات (من getDisplayAmount)
+                            const totalNet = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0)
+                            // الإجمالي الإجمالي قبل المرتجعات
+                            const totalGross = totalNet + totalReturns
                             const totalPaid = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'paid'), 0)
-                            const totalDue = totalAmount - totalPaid
+                            // المستحق لا يكون أبداً سالباً — الزيادة تظهر كرصيد دائن
+                            const totalDue = Math.max(0, totalNet - totalPaid)
+                            const totalCredit = Math.max(0, totalPaid - totalNet)
+                            const fmt = (n: number) => `${currencySymbol}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
                             return (
                               <tr>
@@ -2635,24 +2643,59 @@ export default function InvoicesPage() {
                                 </td>
                                 <td className="px-3 py-4">
                                   <div className="flex flex-col gap-1">
+                                    {/* الإجمالي — يُظهر الإجمالي الخام إذا كانت هناك مرتجعات، وإلا الصافي مباشرةً */}
                                     <div className="flex items-center justify-between gap-4">
-                                      <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total:' : 'الإجمالي:'}</span>
+                                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                                        {appLang === 'en' ? (totalReturns > 0 ? 'Gross Total:' : 'Total:') : (totalReturns > 0 ? 'الإجمالي قبل المرتجعات:' : 'الإجمالي:')}
+                                      </span>
                                       <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                                        {currencySymbol}{totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        {fmt(totalGross)}
                                       </span>
                                     </div>
+                                    {/* صف المرتجعات — يظهر فقط إذا وُجدت */}
+                                    {totalReturns > 0 && (
+                                      <>
+                                        <div className="flex items-center justify-between gap-4">
+                                          <span className="text-sm text-gray-600 dark:text-gray-400">
+                                            {appLang === 'en' ? 'Returns:' : 'المرتجعات:'}
+                                          </span>
+                                          <span className="text-red-500 dark:text-red-400 font-semibold">
+                                            -{fmt(totalReturns)}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 border-t border-gray-200 dark:border-slate-700 pt-1">
+                                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                            {appLang === 'en' ? 'Net Total:' : 'صافي الإجمالي:'}
+                                          </span>
+                                          <span className="text-blue-700 dark:text-blue-300 font-semibold">
+                                            {fmt(totalNet)}
+                                          </span>
+                                        </div>
+                                      </>
+                                    )}
+                                    {/* المدفوع */}
                                     <div className="flex items-center justify-between gap-4">
                                       <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Paid:' : 'المدفوع:'}</span>
                                       <span className="text-green-600 dark:text-green-400 font-semibold">
-                                        {currencySymbol}{totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        {fmt(totalPaid)}
                                       </span>
                                     </div>
+                                    {/* المستحق */}
                                     <div className="flex items-center justify-between gap-4 border-t border-gray-300 dark:border-slate-600 pt-1 mt-1">
                                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Due:' : 'المستحق:'}</span>
-                                      <span className={`font-bold ${totalDue >= 0 ? 'text-orange-600 dark:text-orange-400' : 'text-red-600 dark:text-red-400'}`}>
-                                        {currencySymbol}{totalDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      <span className="font-bold text-orange-600 dark:text-orange-400">
+                                        {fmt(totalDue)}
                                       </span>
                                     </div>
+                                    {/* رصيد دائن — يظهر فقط إذا كان المدفوع أكبر من الصافي */}
+                                    {totalCredit > 0 && (
+                                      <div className="flex items-center justify-between gap-4">
+                                        <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Credit Balance:' : 'رصيد دائن:'}</span>
+                                        <span className="font-semibold text-purple-600 dark:text-purple-400">
+                                          {fmt(totalCredit)}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
