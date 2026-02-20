@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
       .eq("journal_entries.company_id", companyId)
       .neq("journal_entries.is_deleted", true) // ✅ استثناء القيود المحذوفة (is_deleted)
       .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
-      .not("journal_entries.status", "eq", "draft") // ✅ استثناء القيود المسودة
+      .eq("journal_entries.status", "posted") // ✅ posted فقط — متطابق مع income-statement API
       .gte("journal_entries.entry_date", from)
       .lte("journal_entries.entry_date", to)
       .order("id", { ascending: false })

@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
         .eq("journal_entries.company_id", companyId)
         .or("journal_entries.is_deleted.is.null,journal_entries.is_deleted.eq.false")
         .is("journal_entries.deleted_at", null)
-        .not("journal_entries.status", "eq", "draft")
+        .eq("journal_entries.status", "posted")
 
       const totalDebits = (lines || []).reduce((s: number, l: any) => s + Number(l.debit_amount || 0), 0)
       const totalCredits = (lines || []).reduce((s: number, l: any) => s + Number(l.credit_amount || 0), 0)
@@ -101,7 +101,7 @@ export async function GET(req: NextRequest) {
         .eq("company_id", companyId)
         .or("is_deleted.is.null,is_deleted.eq.false")
         .is("deleted_at", null)
-        .not("status", "eq", "draft")
+        .eq("status", "posted")
 
       const entryIds = (journalEntriesData || []).map((je: any) => je.id)
       let journalLines: any[] = []
@@ -215,7 +215,7 @@ export async function GET(req: NextRequest) {
             .eq("company_id", companyId)
             .eq("reference_type", "invoice")
             .in("reference_id", chunk)
-            .not("status", "eq", "draft")
+            .eq("status", "posted")
 
           const journaledSet = new Set((journaledIds || []).map((j: any) => j.reference_id))
           invoicesWithoutJournals += chunk.filter((id) => !journaledSet.has(id)).length
@@ -264,7 +264,7 @@ export async function GET(req: NextRequest) {
             .eq("company_id", companyId)
             .eq("reference_type", "invoice_cogs")
             .in("reference_id", chunk)
-            .not("status", "eq", "draft")
+            .eq("status", "posted")
 
           const cogsSet = new Set((cogsJournals || []).map((j: any) => j.reference_id))
           invoicesWithoutCOGS += chunk.filter((id) => !cogsSet.has(id)).length
@@ -312,7 +312,7 @@ export async function GET(req: NextRequest) {
             .eq("company_id", companyId)
             .eq("reference_type", "sales_return")
             .in("reference_id", chunk)
-            .not("status", "eq", "draft")
+            .eq("status", "posted")
 
           const journaledSet = new Set((journaledReturns || []).map((j: any) => j.reference_id))
           returnsWithoutJournals += chunk.filter((id) => !journaledSet.has(id)).length
@@ -345,7 +345,7 @@ export async function GET(req: NextRequest) {
         .from("journal_entries")
         .select("id")
         .eq("company_id", companyId)
-        .not("status", "eq", "draft")
+        .eq("status", "posted")
         .or("is_deleted.is.null,is_deleted.eq.false")
         .is("deleted_at", null)
         .limit(1000)
@@ -419,7 +419,7 @@ export async function GET(req: NextRequest) {
             .select("reference_id")
             .eq("company_id", companyId)
             .eq("reference_type", "invoice")
-            .not("status", "eq", "draft")
+            .eq("status", "posted")
             .in("reference_id", chunk)
 
           cancelledWithJournals += (journaledCancelled || []).length
@@ -467,7 +467,7 @@ export async function GET(req: NextRequest) {
           .from("journal_entries")
           .select("id")
           .eq("company_id", companyId)
-          .not("status", "eq", "draft")
+          .eq("status", "posted")
           .or("is_deleted.is.null,is_deleted.eq.false")
           .is("deleted_at", null)
 

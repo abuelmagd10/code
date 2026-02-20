@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
       .eq("company_id", companyId)
       .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
       .is("deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
-      .not("status", "eq", "draft") // ✅ استثناء القيود المسودة - تطابق income-statement
+      .eq("status", "posted") // ✅ posted فقط — متطابق مع income-statement API
       .lte("entry_date", asOf)
 
     if (entriesError) {

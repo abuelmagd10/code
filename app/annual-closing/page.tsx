@@ -106,19 +106,42 @@ export default function AnnualClosingPage() {
   // ✅ Validation Guard: منع الإقفال عند وجود أخطاء حرجة
   const [validationBlocker, setValidationBlocker] = useState<{ criticalFailed: number; cachedAt: string } | null>(null)
 
+  // Re-reads localStorage every time the page becomes visible (e.g. user fixed errors
+  // on the validation page and navigated back). A one-time mount-only read would show
+  // stale blocker data even after errors were resolved.
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("accounting_validation_last_result")
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        if (parsed?.summary?.criticalFailed > 0) {
-          setValidationBlocker({
-            criticalFailed: parsed.summary.criticalFailed,
-            cachedAt: parsed._cachedAt || "",
-          })
+    const readBlocker = () => {
+      try {
+        const stored = localStorage.getItem("accounting_validation_last_result")
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          if (parsed?.summary?.criticalFailed > 0) {
+            setValidationBlocker({
+              criticalFailed: parsed.summary.criticalFailed,
+              cachedAt: parsed._cachedAt || "",
+            })
+          } else {
+            // Errors were resolved — clear the blocker
+            setValidationBlocker(null)
+          }
+        } else {
+          setValidationBlocker(null)
         }
+      } catch {
+        setValidationBlocker(null)
       }
-    } catch {}
+    }
+
+    // Read on mount
+    readBlocker()
+
+    // Re-read whenever the tab regains focus (user returning from validation page)
+    document.addEventListener("visibilitychange", readBlocker)
+    window.addEventListener("focus", readBlocker)
+    return () => {
+      document.removeEventListener("visibilitychange", readBlocker)
+      window.removeEventListener("focus", readBlocker)
+    }
   }, [])
 
   useEffect(() => {

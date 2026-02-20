@@ -71,14 +71,16 @@ export async function GET(req: NextRequest) {
     const parentIds = new Set(accounts?.filter((a: any) => a.parent_id).map((a: any) => a.parent_id))
     const leafAccounts = accounts?.filter((a: any) => !parentIds.has(a.id)) || []
 
-    // 2. جلب جميع سطور القيود المرحّلة فقط (تقرير محاسبي - من journal_entries فقط)
-    // ✅ فلتر status='posted' يضمن التوافق مع income-statement و account-balances APIs
+    // 2. جلب سطور القيود المرحّلة فقط (status='posted')
+    // ✅ يجب استخدام eq('status','posted') وليس not('status','draft')
+    // الفرق: not('draft') يشمل 'cancelled' و 'voided' وأي حالة أخرى
+    //         eq('posted') يشمل فقط القيود المرحّلة فعلاً — مطابق لـ income-statement API
     const { data: lines, error: linesError } = await db
       .from("journal_entry_lines")
       .select("journal_entry_id, account_id, debit_amount, credit_amount, journal_entries!inner(is_deleted, deleted_at, status)")
       .neq("journal_entries.is_deleted", true) // ✅ استثناء القيود المحذوفة (is_deleted)
       .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
-      .not("journal_entries.status", "eq", "draft") // ✅ استثناء القيود المسودة
+      .eq("journal_entries.status", "posted") // ✅ posted فقط — متطابق مع income-statement API
 
     if (linesError) return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب القيود", linesError.message)
 
