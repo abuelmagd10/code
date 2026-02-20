@@ -2359,26 +2359,57 @@ export default function InvoiceDetailPage() {
 
   // ===== دالة عكس جميع القيود المحاسبية للفاتورة =====
   // تُستخدم عند إلغاء الفاتورة أو إعادتها لمسودة
+  // ✅ Soft Delete: يتم تعيين is_deleted=true و deleted_at بدلاً من الحذف الدائم
+  // ✅ Audit Trail: البيانات محفوظة للتدقيق - لا حذف نهائي
   const reverseInvoiceJournals = async () => {
     try {
       if (!invoice) return
       const mapping = await findAccountIds()
       if (!mapping) return
 
-      // حذف قيود الفاتورة الأصلية (جميع الأنواع) بما فيها قيد COGS
+      // جلب قيود الفاتورة الأصلية (جميع الأنواع) بما فيها قيد COGS
       const { data: invoiceEntries } = await supabase
         .from("journal_entries")
-        .select("id")
+        .select("id, description, entry_date, reference_type")
         .eq("company_id", mapping.companyId)
         .eq("reference_id", invoiceId)
         .in("reference_type", ["invoice", "invoice_payment", "invoice_ar", "invoice_cogs"])
+        .is("deleted_at", null) // فقط القيود غير المحذوفة سابقاً
 
       if (invoiceEntries && invoiceEntries.length > 0) {
         const entryIds = invoiceEntries.map((e: any) => e.id)
-        // حذف سطور القيود أولاً
-        await supabase.from("journal_entry_lines").delete().in("journal_entry_id", entryIds)
-        // ثم حذف القيود نفسها
-        await supabase.from("journal_entries").delete().in("id", entryIds)
+        const deletedAt = new Date().toISOString()
+
+        // ✅ Soft Delete: تعيين is_deleted=true و deleted_at (للحفاظ على Audit Trail)
+        await supabase
+          .from("journal_entries")
+          .update({ is_deleted: true, deleted_at: deletedAt })
+          .in("id", entryIds)
+
+        // ✅ Audit Log: تسجيل عملية الإلغاء/الإرجاع
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.id && invoice.company_id) {
+          try {
+            await supabase.from("audit_logs").insert({
+              company_id: invoice.company_id,
+              user_id: user.id,
+              action: "SOFT_DELETE",
+              target_table: "journal_entries",
+              record_id: invoiceId,
+              record_identifier: invoice.invoice_number,
+              old_data: {
+                reversed_entries: entryIds.length,
+                entry_types: invoiceEntries.map((e: any) => e.reference_type),
+                reason: "invoice_cancelled_or_reverted_to_draft"
+              },
+              new_data: { is_deleted: true, deleted_at: deletedAt }
+            })
+          } catch (auditErr) {
+            console.warn("Audit log failed (non-blocking):", auditErr)
+          }
+        }
+
+        console.log(`✅ Soft-deleted ${entryIds.length} journal entries for invoice ${invoice.invoice_number}`)
       }
     } catch (err) {
       console.error("Error reversing invoice journals:", err)

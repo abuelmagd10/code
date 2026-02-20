@@ -103,6 +103,24 @@ export default function AnnualClosingPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
 
+  // ✅ Validation Guard: منع الإقفال عند وجود أخطاء حرجة
+  const [validationBlocker, setValidationBlocker] = useState<{ criticalFailed: number; cachedAt: string } | null>(null)
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("accounting_validation_last_result")
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (parsed?.summary?.criticalFailed > 0) {
+          setValidationBlocker({
+            criticalFailed: parsed.summary.criticalFailed,
+            cachedAt: parsed._cachedAt || "",
+          })
+        }
+      }
+    } catch {}
+  }, [])
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -291,8 +309,41 @@ export default function AnnualClosingPage() {
             </CardContent>
           </Card>
 
+          {/* ✅ Validation Guard Banner */}
+          {hydrated && validationBlocker && (
+            <Card className="border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-900/20">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-red-800 dark:text-red-200 text-sm">
+                      {appLang === 'en'
+                        ? `Annual Closing Blocked — ${validationBlocker.criticalFailed} Critical Error(s) in Accounting Validation`
+                        : `الإقفال السنوي محظور — ${validationBlocker.criticalFailed} خطأ حرج في اختبارات التحقق المحاسبي`}
+                    </p>
+                    <p className="text-xs text-red-600 dark:text-red-300 mt-1">
+                      {appLang === 'en'
+                        ? 'Resolve all critical accounting validation errors before executing the annual closing. Last validation: '
+                        : 'يجب حل جميع الأخطاء الحرجة في اختبارات التحقق قبل تنفيذ الإقفال السنوي. آخر فحص: '}
+                      {validationBlocker.cachedAt
+                        ? new Date(validationBlocker.cachedAt).toLocaleString(appLang === 'ar' ? 'ar-SA' : 'en-US')
+                        : '—'}
+                    </p>
+                  </div>
+                  <a
+                    href="/reports/accounting-validation"
+                    className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+                  >
+                    {appLang === 'en' ? 'Fix Errors' : 'إصلاح الأخطاء'}
+                    <ArrowRight className="h-3 w-3" />
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Closing Form */}
-          <Card>
+          <Card className={validationBlocker ? "opacity-60 pointer-events-none" : ""}>
             <CardHeader>
               <CardTitle suppressHydrationWarning>
                 {(hydrated && appLang === 'en') ? 'Closing Parameters' : 'بيانات الإقفال'}

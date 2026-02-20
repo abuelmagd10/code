@@ -6,8 +6,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { CheckCircle, XCircle, AlertTriangle, RefreshCw, ShieldCheck, ShieldAlert } from "lucide-react"
+import {
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  RefreshCw,
+  ShieldCheck,
+  ShieldAlert,
+  Clock,
+  Lock,
+  ArrowRight,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import Link from "next/link"
 
 interface ValidationTest {
   id: string
@@ -33,11 +44,108 @@ interface ValidationResult {
   success: boolean
   summary: ValidationSummary
   tests: ValidationTest[]
+  generatedAt?: string
+}
+
+const STORAGE_KEY = "accounting_validation_last_result"
+
+/** Format a number with 2 decimal places, add sign if positive */
+function fmtDiff(val: number, showSign = false) {
+  const abs = Math.abs(val).toFixed(2)
+  if (!showSign) return abs
+  return val >= 0 ? `+${abs}` : `-${abs}`
+}
+
+/** Build a human-readable numeric diff row for failed tests */
+function NumericDiff({ test }: { test: ValidationTest }) {
+  if (!test.data || test.passed) return null
+  const d = test.data
+
+  // Trial balance
+  if (test.id === "trial_balance") {
+    return (
+      <div className="mt-2 grid grid-cols-3 gap-2 text-xs font-mono">
+        <div className="bg-blue-50 rounded p-2 text-center">
+          <div className="text-gray-500">Debits</div>
+          <div className="font-bold text-blue-700">{Number(d.totalDebits).toLocaleString("en", { minimumFractionDigits: 2 })}</div>
+        </div>
+        <div className="bg-blue-50 rounded p-2 text-center">
+          <div className="text-gray-500">Credits</div>
+          <div className="font-bold text-blue-700">{Number(d.totalCredits).toLocaleString("en", { minimumFractionDigits: 2 })}</div>
+        </div>
+        <div className="bg-red-50 rounded p-2 text-center">
+          <div className="text-gray-500">Δ Gap</div>
+          <div className="font-bold text-red-700">{Number(d.difference).toLocaleString("en", { minimumFractionDigits: 2 })}</div>
+        </div>
+      </div>
+    )
+  }
+
+  // Balance sheet
+  if (test.id === "balance_sheet") {
+    return (
+      <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-mono">
+        <div className="bg-blue-50 rounded p-2">
+          <div className="text-gray-500">Assets</div>
+          <div className="font-bold">{Number(d.assets).toLocaleString("en", { minimumFractionDigits: 2 })}</div>
+        </div>
+        <div className="bg-blue-50 rounded p-2">
+          <div className="text-gray-500">L + E + NI</div>
+          <div className="font-bold">{Number(d.totalLiabEquity).toLocaleString("en", { minimumFractionDigits: 2 })}</div>
+        </div>
+        <div className="bg-red-50 rounded p-2 col-span-2">
+          <div className="text-gray-500">Imbalance Δ</div>
+          <div className="font-bold text-red-700">{Number(d.difference).toLocaleString("en", { minimumFractionDigits: 2 })}</div>
+        </div>
+      </div>
+    )
+  }
+
+  // Inventory GL vs FIFO
+  if (test.id === "inventory_fifo_vs_gl") {
+    const gap = Number(d.glInventoryValue) - Number(d.fifoInventoryValue)
+    return (
+      <div className="mt-2 grid grid-cols-3 gap-2 text-xs font-mono">
+        <div className="bg-blue-50 rounded p-2 text-center">
+          <div className="text-gray-500">GL Balance</div>
+          <div className="font-bold text-blue-700">{Number(d.glInventoryValue).toLocaleString("en", { minimumFractionDigits: 2 })}</div>
+        </div>
+        <div className="bg-purple-50 rounded p-2 text-center">
+          <div className="text-gray-500">FIFO Engine</div>
+          <div className="font-bold text-purple-700">{Number(d.fifoInventoryValue).toLocaleString("en", { minimumFractionDigits: 2 })}</div>
+        </div>
+        <div className="bg-red-50 rounded p-2 text-center">
+          <div className="text-gray-500">Δ Gap</div>
+          <div className={`font-bold ${Math.abs(gap) > 0.01 ? "text-red-700" : "text-green-700"}`}>
+            {gap >= 0 ? "+" : ""}{Number(gap).toLocaleString("en", { minimumFractionDigits: 2 })}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Generic numeric data display
+  const numericKeys = Object.keys(d).filter(
+    (k) => typeof d[k] === "number" && k !== "samples"
+  )
+  if (numericKeys.length === 0) return null
+
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-mono">
+      {numericKeys.map((k) => (
+        <div key={k} className="bg-gray-50 rounded p-2">
+          <div className="text-gray-400 capitalize">{k.replace(/_/g, " ")}</div>
+          <div className="font-bold">{Number(d[k]).toLocaleString("en", { minimumFractionDigits: 2 })}</div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export default function AccountingValidationPage() {
   const supabase = useSupabase()
   const [result, setResult] = useState<ValidationResult | null>(null)
+  const [lastTimestamp, setLastTimestamp] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [appLang, setAppLang] = useState<"ar" | "en">("ar")
@@ -48,6 +156,14 @@ export default function AccountingValidationPage() {
     try {
       const v = localStorage.getItem("app_language") || "ar"
       setAppLang(v === "en" ? "en" : "ar")
+
+      // Restore last cached result
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored) as ValidationResult & { _cachedAt: string }
+        setResult(parsed)
+        setLastTimestamp(parsed._cachedAt)
+      }
     } catch {}
     const handler = () => {
       try {
@@ -74,7 +190,17 @@ export default function AccountingValidationPage() {
         setError(data.error || (appLang === "en" ? "Validation failed" : "فشل التحقق"))
         return
       }
+
+      const cachedAt = new Date().toISOString()
+      const resultWithCache = { ...data, _cachedAt: cachedAt }
+
       setResult(data)
+      setLastTimestamp(cachedAt)
+
+      // Persist to localStorage for future visits
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(resultWithCache))
+      } catch {}
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -112,9 +238,25 @@ export default function AccountingValidationPage() {
     )
   }
 
+  const formatTimestamp = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString(appLang === "ar" ? "ar-SA" : "en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+    } catch {
+      return iso
+    }
+  }
+
   if (!hydrated) return null
 
   const dir = appLang === "ar" ? "rtl" : "ltr"
+  const hasCriticalErrors = result && result.summary.criticalFailed > 0
 
   return (
     <div className="flex min-h-screen bg-gray-50" dir={dir}>
@@ -129,9 +271,18 @@ export default function AccountingValidationPage() {
               </h1>
               <p className="text-sm text-gray-500 mt-1">
                 {appLang === "en"
-                  ? "Automated checks to ensure data integrity across all financial reports"
-                  : "فحوصات آلية لضمان تكامل البيانات في جميع التقارير المالية"}
+                  ? "9 automated checks ensuring GL integrity across all financial reports"
+                  : "9 اختبارات آلية تضمن تكامل دفتر الأستاذ في جميع التقارير المالية"}
               </p>
+              {lastTimestamp && (
+                <div className="flex items-center gap-1.5 mt-1.5 text-xs text-gray-400">
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>
+                    {appLang === "en" ? "Last run: " : "آخر فحص: "}
+                    {formatTimestamp(lastTimestamp)}
+                  </span>
+                </div>
+              )}
             </div>
             <Button onClick={runValidation} disabled={loading} className="gap-2">
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
@@ -158,7 +309,7 @@ export default function AccountingValidationPage() {
             <>
               {/* Summary Banner */}
               <Card
-                className={`mb-6 border-2 ${result.summary.isProductionReady ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}
+                className={`mb-4 border-2 ${result.summary.isProductionReady ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}
               >
                 <CardContent className="pt-5 pb-5">
                   <div className="flex items-center gap-4">
@@ -176,8 +327,8 @@ export default function AccountingValidationPage() {
                             ? "System is Production Ready"
                             : "النظام جاهز للإنتاج"
                           : appLang === "en"
-                            ? "Critical Issues Detected"
-                            : "تم اكتشاف مشكلات حرجة"}
+                            ? "Critical Issues Detected — Annual Closing Blocked"
+                            : "تم اكتشاف مشكلات حرجة — الإقفال السنوي محظور"}
                       </h2>
                       <p className={`text-sm mt-1 ${result.summary.isProductionReady ? "text-green-700" : "text-red-700"}`}>
                         {appLang === "en"
@@ -202,9 +353,55 @@ export default function AccountingValidationPage() {
                 </CardContent>
               </Card>
 
+              {/* Annual Closing Block / Allow */}
+              <Card
+                className={`mb-6 ${hasCriticalErrors ? "border-red-200 bg-red-50" : "border-green-200 bg-green-50"}`}
+              >
+                <CardContent className="py-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    {hasCriticalErrors ? (
+                      <Lock className="h-5 w-5 text-red-500 flex-shrink-0" />
+                    ) : (
+                      <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
+                    )}
+                    <div>
+                      <p className={`text-sm font-medium ${hasCriticalErrors ? "text-red-700" : "text-green-700"}`}>
+                        {hasCriticalErrors
+                          ? appLang === "en"
+                            ? "Annual Closing is blocked until all critical errors are resolved"
+                            : "الإقفال السنوي محظور حتى يتم حل جميع الأخطاء الحرجة"
+                          : appLang === "en"
+                            ? "All critical checks passed — Annual Closing is allowed"
+                            : "اجتازت جميع الفحوصات الحرجة — الإقفال السنوي مسموح"}
+                      </p>
+                      {hasCriticalErrors && (
+                        <p className="text-xs text-red-500 mt-0.5">
+                          {appLang === "en"
+                            ? `${result.summary.criticalFailed} critical issue(s) must be resolved first`
+                            : `يجب حل ${result.summary.criticalFailed} مشكلة حرجة أولاً`}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {!hasCriticalErrors ? (
+                    <Link href="/reports/fiscal-year-closing">
+                      <Button size="sm" className="gap-1.5 bg-green-600 hover:bg-green-700 text-white">
+                        {appLang === "en" ? "Go to Annual Closing" : "الانتقال للإقفال السنوي"}
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </Link>
+                  ) : (
+                    <Button size="sm" disabled className="gap-1.5 opacity-50 cursor-not-allowed">
+                      <Lock className="h-3.5 w-3.5" />
+                      {appLang === "en" ? "Closing Blocked" : "الإقفال محظور"}
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* Test Results */}
               <div className="space-y-3">
-                {result.tests.map((test) => (
+                {result.tests.map((test, idx) => (
                   <Card
                     key={test.id}
                     className={`border ${test.passed ? "border-green-200" : test.severity === "critical" ? "border-red-200" : "border-amber-200"}`}
@@ -222,6 +419,7 @@ export default function AccountingValidationPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs text-gray-400 font-mono">#{idx + 1}</span>
                             <span className={`font-medium text-sm ${getSeverityColor(test.severity, test.passed)}`}>
                               {appLang === "en" ? test.name : test.nameAr}
                             </span>
@@ -235,28 +433,22 @@ export default function AccountingValidationPage() {
                           <p className="text-xs text-gray-500 mt-1">
                             {appLang === "en" ? test.details : test.detailsAr}
                           </p>
-                          {/* Extra data for failed tests */}
-                          {!test.passed && test.data && Object.keys(test.data).length > 0 && (
-                            <div className="mt-2 bg-gray-50 rounded p-2 text-xs font-mono text-gray-600 space-y-1">
-                              {Object.entries(test.data)
-                                .filter(([k]) => k !== "samples")
-                                .map(([k, v]) => (
-                                  <div key={k}>
-                                    <span className="text-gray-400">{k}: </span>
-                                    <span>{typeof v === "number" ? v.toFixed(2) : String(v)}</span>
-                                  </div>
-                                ))}
-                              {test.data.samples && Array.isArray(test.data.samples) && test.data.samples.length > 0 && (
-                                <div className="mt-1 pt-1 border-t border-gray-200">
-                                  <span className="text-gray-400">{appLang === "en" ? "Sample IDs: " : "أمثلة: "}</span>
-                                  {test.data.samples.slice(0, 3).map((s: any) => (
-                                    <div key={s.entry_id} className="text-gray-500">
-                                      {s.entry_id?.slice(0, 8)}... (D:{Number(s.debit).toFixed(2)} C:
-                                      {Number(s.credit).toFixed(2)} Δ:{Number(s.diff).toFixed(2)})
-                                    </div>
-                                  ))}
+
+                          {/* Numeric diff for failed tests */}
+                          {!test.passed && <NumericDiff test={test} />}
+
+                          {/* Unbalanced entries samples */}
+                          {!test.passed && test.data?.samples && Array.isArray(test.data.samples) && test.data.samples.length > 0 && (
+                            <div className="mt-2 bg-gray-50 rounded p-2 text-xs font-mono text-gray-600 border border-gray-100">
+                              <div className="text-gray-400 mb-1">{appLang === "en" ? "Unbalanced entry samples:" : "أمثلة على القيود غير المتوازنة:"}</div>
+                              {test.data.samples.slice(0, 3).map((s: any) => (
+                                <div key={s.entry_id} className="flex justify-between py-0.5 border-b border-gray-100 last:border-0">
+                                  <span className="text-gray-500">{s.entry_id?.slice(0, 8)}…</span>
+                                  <span>D: {Number(s.debit).toFixed(2)}</span>
+                                  <span>C: {Number(s.credit).toFixed(2)}</span>
+                                  <span className="text-red-600">Δ: {Number(s.diff).toFixed(2)}</span>
                                 </div>
-                              )}
+                              ))}
                             </div>
                           )}
                         </div>
@@ -279,16 +471,16 @@ export default function AccountingValidationPage() {
                       <XCircle className="h-4 w-4 text-red-500" />
                       <span>
                         {appLang === "en"
-                          ? "Critical: Must be fixed before production"
-                          : "حرج: يجب إصلاحه قبل الإنتاج"}
+                          ? "Critical: Blocks annual closing & production sign-off"
+                          : "حرج: يمنع الإقفال السنوي وإجازة الإنتاج"}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 text-amber-500" />
                       <span>
                         {appLang === "en"
-                          ? "Warning: Affects data quality"
-                          : "تحذير: يؤثر على جودة البيانات"}
+                          ? "Warning: Affects data quality, does not block closing"
+                          : "تحذير: يؤثر على جودة البيانات ولا يمنع الإقفال"}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -298,11 +490,11 @@ export default function AccountingValidationPage() {
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <ShieldCheck className="h-4 w-4 text-green-600" />
+                      <Clock className="h-4 w-4 text-gray-400" />
                       <span>
                         {appLang === "en"
-                          ? "Production Ready: All critical tests passed"
-                          : "جاهز للإنتاج: جميع الاختبارات الحرجة اجتازت"}
+                          ? "Results cached in browser — re-run to refresh"
+                          : "النتائج محفوظة في المتصفح — أعد التشغيل للتحديث"}
                       </span>
                     </div>
                   </div>

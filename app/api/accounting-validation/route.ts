@@ -445,6 +445,88 @@ export async function GET(req: NextRequest) {
     }
 
     // ─────────────────────────────────────────
+    // اختبار 9 (جوهري): تطابق قيمة المخزون بين GL و FIFO Engine
+    // قيمة المخزون في GL = مجموع الأرصدة في حسابات المخزون
+    // قيمة المخزون في FIFO = مجموع (الكمية المتبقية × التكلفة) من fifo_cost_lots
+    // ─────────────────────────────────────────
+    {
+      // 1. جلب حسابات المخزون من دليل الحسابات
+      const { data: inventoryAccounts } = await supabase
+        .from("chart_of_accounts")
+        .select("id")
+        .eq("company_id", companyId)
+        .in("sub_type", ["inventory", "stock"])
+        .eq("is_active", true)
+
+      const inventoryAccountIds = (inventoryAccounts || []).map((a: any) => a.id)
+
+      // 2. حساب رصيد GL للمخزون من القيود المرحّلة
+      let glInventoryValue = 0
+      if (inventoryAccountIds.length > 0) {
+        const { data: postedInventoryEntries } = await supabase
+          .from("journal_entries")
+          .select("id")
+          .eq("company_id", companyId)
+          .not("status", "eq", "draft")
+          .or("is_deleted.is.null,is_deleted.eq.false")
+          .is("deleted_at", null)
+
+        const postedIds = (postedInventoryEntries || []).map((e: any) => e.id)
+        if (postedIds.length > 0) {
+          const { data: inventoryLines } = await supabase
+            .from("journal_entry_lines")
+            .select("account_id, debit_amount, credit_amount")
+            .in("journal_entry_id", postedIds)
+            .in("account_id", inventoryAccountIds)
+
+          for (const line of inventoryLines || []) {
+            // حسابات الأصول: رصيدها مدين (debit - credit)
+            glInventoryValue += Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
+          }
+        }
+      }
+
+      // 3. حساب قيمة المخزون من FIFO lots (remaining_qty × cost_per_unit)
+      const { data: fifoLots } = await supabase
+        .from("fifo_cost_lots")
+        .select("remaining_qty, cost_per_unit, product_id, products!inner(company_id)")
+        .eq("products.company_id", companyId)
+        .gt("remaining_qty", 0)
+
+      let fifoInventoryValue = 0
+      for (const lot of fifoLots || []) {
+        fifoInventoryValue += Number(lot.remaining_qty || 0) * Number(lot.cost_per_unit || 0)
+      }
+
+      const inventoryDiff = Math.abs(glInventoryValue - fifoInventoryValue)
+      // نسبة التفاوت المقبولة: 0.5% (تقريبية لأخطاء التقريب)
+      const inventoryTolerance = Math.max(fifoInventoryValue * 0.005, 1)
+      const passed = inventoryDiff <= inventoryTolerance
+
+      tests.push({
+        id: "inventory_fifo_vs_gl",
+        name: "Inventory GL Balance = FIFO Engine Valuation",
+        nameAr: "تطابق رصيد المخزون في GL مع FIFO Engine",
+        passed,
+        severity: "critical",
+        details: passed
+          ? `GL Inventory=${glInventoryValue.toFixed(2)}, FIFO Value=${fifoInventoryValue.toFixed(2)}, Difference=${inventoryDiff.toFixed(2)} (within tolerance)`
+          : `CRITICAL MISMATCH: GL Inventory=${glInventoryValue.toFixed(2)}, FIFO Engine=${fifoInventoryValue.toFixed(2)}, Difference=${inventoryDiff.toFixed(2)}. Investigate inventory transactions.`,
+        detailsAr: passed
+          ? `رصيد GL=${glInventoryValue.toFixed(2)}، FIFO Engine=${fifoInventoryValue.toFixed(2)}، الفرق=${inventoryDiff.toFixed(2)} (ضمن الهامش المقبول)`
+          : `تضارب حرج: رصيد GL=${glInventoryValue.toFixed(2)}، FIFO Engine=${fifoInventoryValue.toFixed(2)}، الفرق=${inventoryDiff.toFixed(2)}. يجب مراجعة معاملات المخزون.`,
+        data: {
+          glInventoryValue,
+          fifoInventoryValue,
+          difference: inventoryDiff,
+          tolerance: inventoryTolerance,
+          inventoryAccountsFound: inventoryAccountIds.length,
+          fifoLotsCount: (fifoLots || []).length,
+        },
+      })
+    }
+
+    // ─────────────────────────────────────────
     // ملخص النتائج
     // ─────────────────────────────────────────
     const criticalFailed = tests.filter((t) => !t.passed && t.severity === "critical").length
@@ -463,6 +545,7 @@ export async function GET(req: NextRequest) {
         isProductionReady,
       },
       tests,
+      generatedAt: new Date().toISOString(),
     })
   } catch (e: any) {
     console.error("Accounting validation error:", e)
