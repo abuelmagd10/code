@@ -235,7 +235,7 @@ BEGIN
           journal_entry_id, account_id, debit_amount, credit_amount, description,
           branch_id, cost_center_id,
           original_debit, original_credit, original_currency,
-          exchange_rate_used, exchange_rate_id, rate_source
+          exchange_rate_used, exchange_rate_id
         )
         SELECT
           v_je_id,
@@ -248,8 +248,7 @@ BEGIN
           COALESCE((l->>'original_credit')::NUMERIC, 0),
           COALESCE(NULLIF(l->>'original_currency', ''), 'EGP'),
           COALESCE((l->>'exchange_rate_used')::NUMERIC, 1),
-          NULLIF(l->>'exchange_rate_id', '')::UUID,
-          l->>'rate_source'
+          NULLIF(l->>'exchange_rate_id', '')::UUID
         FROM jsonb_array_elements(v_group->'journal_lines') AS l;
       END IF;
     END IF;
@@ -432,7 +431,7 @@ BEGIN
   -- ===================== نشر القيد المحاسبي =====================
   IF v_alloc.journal_entry_id IS NOT NULL THEN
     UPDATE journal_entries
-    SET status = 'posted', validation_status = 'valid', updated_at = NOW()
+    SET status = 'posted', updated_at = NOW()
     WHERE id = v_alloc.journal_entry_id AND status = 'draft';
   END IF;
 
