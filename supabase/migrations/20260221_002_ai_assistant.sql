@@ -33,7 +33,7 @@ CREATE POLICY "company_ai_settings_select" ON public.company_ai_settings
   FOR SELECT USING (
     company_id IN (
       SELECT company_id FROM public.company_members
-      WHERE user_id = auth.uid() AND status = 'active'
+      WHERE user_id = auth.uid()
     )
   );
 
@@ -41,7 +41,7 @@ CREATE POLICY "company_ai_settings_upsert" ON public.company_ai_settings
   FOR ALL USING (
     company_id IN (
       SELECT company_id FROM public.company_members
-      WHERE user_id = auth.uid() AND status = 'active'
+      WHERE user_id = auth.uid()
     )
   );
 
