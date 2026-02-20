@@ -414,16 +414,23 @@ export default function PurchaseReturnsPage() {
       return qty > 0 ? qty : null
     }
     if (isAccountant && currentBranchId) {
+      const allocations = pr.allocations || []
       // بناء مجموعة warehouse IDs التي تنتمي لفرع المحاسب عبر بيانات التخصيصات
       const branchWarehouseIds = new Set(
-        (pr.allocations || [])
+        allocations
           .filter(a => a.warehouses?.branch_id === currentBranchId)
           .map(a => a.warehouse_id)
       )
-      // للمرتجعات ذات الفرع الواحد (Phase 1): warehouse_id قد يكون null في الأصناف
-      const isSingleBranchReturn = pr.branch_id === currentBranchId
+      // مرتجع فرع واحد إذا:
+      // 1) branch_id مطابق صراحةً (Phase 1 عادي)
+      // 2) لا توجد تخصيصات (Phase 1 قديم - الأصناف قد يكون warehouse_id=null)
+      // 3) تخصيص واحد فقط وهو تابع لفرع المحاسب (Phase 2 بمخزن واحد في فرعه)
+      const isSingleBranchReturn =
+        pr.branch_id === currentBranchId ||
+        allocations.length === 0 ||
+        (allocations.length === 1 && allocations[0].warehouses?.branch_id === currentBranchId)
       const qty = items
-        .filter(i => isSingleBranchReturn || (i.warehouse_id && branchWarehouseIds.has(i.warehouse_id)))
+        .filter(i => isSingleBranchReturn || (i.warehouse_id !== null && branchWarehouseIds.has(i.warehouse_id!)))
         .reduce((s, i) => s + Number(i.quantity), 0)
       return qty > 0 ? qty : null
     }
