@@ -1365,18 +1365,38 @@ export default function ShareholdersPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="distribution_amount" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total profit to distribute' : 'إجمالي الأرباح للتوزيع'}</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="distribution_amount" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total profit to distribute' : 'إجمالي الأرباح للتوزيع'}</Label>
+                    {retainedEarningsBalance > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setDistributionAmount(retainedEarningsBalance)}
+                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
+                        suppressHydrationWarning
+                      >
+                        {(hydrated && appLang === 'en') ? 'Use available' : 'استخدام المتاح'}
+                      </button>
+                    )}
+                  </div>
                   <NumericInput
                     id="distribution_amount"
                     step="0.01"
                     min={0}
+                    max={retainedEarningsBalance > 0 ? retainedEarningsBalance : undefined}
                     value={distributionAmount}
                     onChange={(val) => setDistributionAmount(val)}
                     decimalPlaces={2}
                   />
+                  {distributionAmount > retainedEarningsBalance && retainedEarningsBalance > 0 && (
+                    <p className="text-xs text-red-500 mt-1" suppressHydrationWarning>
+                      {(hydrated && appLang === 'en')
+                        ? `Amount exceeds available retained earnings (${retainedEarningsBalance.toFixed(2)})`
+                        : `المبلغ يتجاوز الأرباح المحتجزة المتاحة (${retainedEarningsBalance.toFixed(2)})`}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-end">
-                  <Button onClick={distributeProfit} disabled={distributionSaving || distributionAmount <= 0 || Math.round(totalPercentage) !== 100}>
+                  <Button onClick={distributeProfit} disabled={distributionSaving || distributionAmount <= 0 || Math.round(totalPercentage) !== 100 || distributionAmount > retainedEarningsBalance}>
                     {distributionSaving ? ((hydrated && appLang === 'en') ? 'Saving...' : 'جاري الحفظ...') : ((hydrated && appLang === 'en') ? 'Record distribution' : 'تسجيل توزيع')}
                   </Button>
                 </div>
