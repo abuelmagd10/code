@@ -216,7 +216,7 @@ export default function InvoicesPage() {
     invoices.forEach((inv) => {
       // حساب الحالة الفعلية (مثل منطق الفلترة)
       const actualPaid = paidByInvoice[inv.id] || 0
-      const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
+      const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency !== appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
       const returnedAmount = Number(inv.returned_amount || 0)
       const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : Number(inv.total_amount || 0))
       const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
@@ -277,8 +277,8 @@ export default function InvoicesPage() {
     if (actualPaid > 0) {
       return actualPaid
     }
-    // display_paid يُستخدم حين تتطابق العملتان (للتوافق مع منطق العرض الأصلي)
-    if (invoice.display_currency === appCurrency && invoice.display_paid != null) {
+    // display_paid يُستخدم فقط حين تختلف العملتان (تحويل عملة)
+    if (invoice.display_currency !== appCurrency && invoice.display_paid != null) {
       return invoice.display_paid
     }
     return invoice.paid_amount
@@ -787,7 +787,7 @@ export default function InvoicesPage() {
         // فقط إذا كان صافي الفاتورة موجب
         if (netInvoiceAmount > 0) {
           const actualPaid = paidByInvoice[inv.id] || 0
-          const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
+          const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency !== appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
           hasCredit = paidAmount > netInvoiceAmount
         }
       }
@@ -799,7 +799,7 @@ export default function InvoicesPage() {
 
         // ✅ حساب الحالة الفعلية للفاتورة (مثل ما يحدث في العرض)
         const actualPaid = paidByInvoice[inv.id] || 0
-        const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
+        const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency !== appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
         const returnedAmount = Number(inv.returned_amount || 0)
         // ✅ استخدام original_total إذا كان موجوداً، وإلا استخدام display_total أو total_amount (مثل منطق hasCredit)
         const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : Number(inv.total_amount || 0))
