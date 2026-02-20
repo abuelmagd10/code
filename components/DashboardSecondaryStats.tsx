@@ -58,10 +58,15 @@ export default function DashboardSecondaryStats({
   const currency = currencySymbols[appCurrency] || appCurrency
   const formatNumber = (n: number) => n.toLocaleString('en-US')
   
-  // الذمم المدينة = ما لم يُسدَّد من الفواتير غير المدفوعة/الملغاة
-  // يشمل الفواتير في حالات: sent, partially_paid, overdue
+  // الحالات المستثناة من جميع المقاييس المالية — متسقة عبر كل الحسابات
+  // draft: غير ملزم بعد | cancelled/voided: ملغى | paid: مسدد بالكامل
+  const EXCLUDED_INVOICE_STATUSES = ["draft", "paid", "cancelled", "voided"]
+  const EXCLUDED_BILL_STATUSES    = ["draft", "paid", "cancelled", "voided"]
+
+  // الذمم المدينة = ما لم يُسدَّد من الفواتير المرسلة/المتأخرة/المدفوعة جزئياً
+  // draft مستثنى لأنه لم يُرسل للعميل بعد ولا يمثل مطالبة حقيقية
   const receivablesOutstanding = invoicesData
-    .filter((i) => !["paid", "cancelled", "voided"].includes(String(i.status || "").toLowerCase()))
+    .filter((i) => !EXCLUDED_INVOICE_STATUSES.includes(String(i.status || "").toLowerCase()))
     .reduce((sum, i) => {
       const total = getDisplayAmount(i.total_amount || 0, i.display_total, i.display_currency, appCurrency)
       const paid = Number(i.paid_amount || 0)
@@ -69,9 +74,10 @@ export default function DashboardSecondaryStats({
       return sum + Math.max(total - paid - returned, 0)
     }, 0)
 
-  // الذمم الدائنة = ما لم يُسدَّد لصالح الموردين من الفواتير غير المدفوعة
+  // الذمم الدائنة = ما لم يُسدَّد للموردين من الفواتير المرسلة/المتأخرة/المدفوعة جزئياً
+  // draft مستثنى لأنه لا يمثل التزاماً مالياً بعد
   const payablesOutstanding = billsData
-    .filter((b) => !["paid", "cancelled", "voided"].includes(String(b.status || "").toLowerCase()))
+    .filter((b) => !EXCLUDED_BILL_STATUSES.includes(String(b.status || "").toLowerCase()))
     .reduce((sum, b) => {
       const total = getDisplayAmount(b.total_amount || 0, b.display_total, b.display_currency, appCurrency)
       const paid = Number(b.paid_amount || 0)
@@ -79,12 +85,12 @@ export default function DashboardSecondaryStats({
       return sum + Math.max(total - paid - returned, 0)
     }, 0)
 
-  // عدد الفواتير المعلقة (لم تُسدَّد كلياً) لإظهار مؤشر توضيحي
+  // عدد المستندات المعلقة — يستخدم نفس فلتر الذمم لضمان التوافق
   const pendingInvoicesCount = invoicesData.filter(
-    (i) => !["paid", "cancelled", "voided"].includes(String(i.status || "").toLowerCase())
+    (i) => !EXCLUDED_INVOICE_STATUSES.includes(String(i.status || "").toLowerCase())
   ).length
   const pendingBillsCount = billsData.filter(
-    (b) => !["paid", "cancelled", "voided"].includes(String(b.status || "").toLowerCase())
+    (b) => !EXCLUDED_BILL_STATUSES.includes(String(b.status || "").toLowerCase())
   ).length
 
   const now = new Date()
