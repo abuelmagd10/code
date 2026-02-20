@@ -53,28 +53,101 @@ export const AI_SEEN_PAGES_KEY = "ai_seen_pages_v1"
  * Order matters: more specific paths must come before shorter ones.
  */
 export const PAGE_KEY_MAP: Array<{ prefix: string; key: string }> = [
+  // ── Dashboard ────────────────────────────────────────────────────────────
   { prefix: "/dashboard", key: "dashboard" },
+
+  // ── Sales flow ───────────────────────────────────────────────────────────
   { prefix: "/invoices", key: "invoices" },
+  { prefix: "/sales-orders", key: "sales_orders" },
+  { prefix: "/sales-returns", key: "sales_returns" },
+  { prefix: "/sent-invoice-returns", key: "invoices" },
+  { prefix: "/estimates", key: "estimates" },
+  { prefix: "/customer-debit-notes", key: "customer_debit_notes" },
+
+  // ── Purchase flow ────────────────────────────────────────────────────────
   { prefix: "/bills", key: "bills" },
+  { prefix: "/purchase-orders", key: "purchase_orders" },
+  { prefix: "/purchase-returns", key: "purchase_returns" },
+  { prefix: "/vendor-credits", key: "vendor_credits" },
+
+  // ── Stakeholders ─────────────────────────────────────────────────────────
   { prefix: "/customers", key: "customers" },
   { prefix: "/suppliers", key: "suppliers" },
+  { prefix: "/shareholders", key: "shareholders" },
+
+  // ── Products & inventory ──────────────────────────────────────────────────
   { prefix: "/products", key: "products" },
+  { prefix: "/inventory-transfers", key: "inventory_transfers" },
   { prefix: "/inventory", key: "inventory" },
-  { prefix: "/expenses", key: "expenses" },
-  { prefix: "/payments", key: "payments" },
-  { prefix: "/journal", key: "journal" },
+
+  // ── Accounting ───────────────────────────────────────────────────────────
+  // FIX: route is /journal-entries, not /journal
+  { prefix: "/journal-entries", key: "journal" },
+  { prefix: "/chart-of-accounts", key: "chart_of_accounts" },
+  { prefix: "/accounting", key: "accounting_periods" },
+
+  // ── Specific report pages (most specific first, then catch-all) ───────────
   { prefix: "/reports/income-statement", key: "income_statement" },
+  { prefix: "/reports/balance-sheet-audit", key: "balance_sheet" },
   { prefix: "/reports/balance-sheet", key: "balance_sheet" },
   { prefix: "/reports/accounting-validation", key: "accounting_validation" },
   { prefix: "/reports/trial-balance", key: "trial_balance" },
+  { prefix: "/reports/bank-reconciliation", key: "banking" },
+  { prefix: "/reports/bank-accounts-by-branch", key: "banking" },
+  { prefix: "/reports/bank-transactions", key: "banking" },
+  { prefix: "/reports/aging-ar", key: "customers" },
+  { prefix: "/reports/aging-ap", key: "suppliers" },
+  { prefix: "/reports/inventory-audit", key: "inventory" },
+  { prefix: "/reports/inventory-count", key: "inventory" },
+  { prefix: "/reports/inventory-valuation", key: "inventory" },
+  { prefix: "/reports/warehouse-inventory", key: "inventory" },
+  { prefix: "/reports/product-expiry", key: "products" },
+  { prefix: "/reports/top-products", key: "products" },
+  { prefix: "/reports/sales-by-product", key: "products" },
+  { prefix: "/reports/sales", key: "invoices" },
+  { prefix: "/reports/sales-invoices-detail", key: "invoices" },
+  { prefix: "/reports/sales-discounts", key: "invoices" },
+  { prefix: "/reports/invoices", key: "invoices" },
+  { prefix: "/reports/purchases", key: "bills" },
+  { prefix: "/reports/purchase-bills-detail", key: "bills" },
+  { prefix: "/reports/purchase-orders-status", key: "purchase_orders" },
+  { prefix: "/reports/purchase-prices-by-period", key: "bills" },
+  { prefix: "/reports/supplier-price-comparison", key: "suppliers" },
+  { prefix: "/reports/daily-payments-receipts", key: "payments" },
+  { prefix: "/reports/dashboard", key: "dashboard" },
+  { prefix: "/reports/branch-cost-center", key: "cost_centers" },
+  { prefix: "/reports/cost-center-analysis", key: "cost_centers" },
+  { prefix: "/reports/sales-bonuses", key: "payroll" },
+  { prefix: "/reports/login-activity", key: "settings" },
+  { prefix: "/reports/update-account-balances", key: "chart_of_accounts" },
+  // Catch-all for any remaining /reports/* pages
+  { prefix: "/reports", key: "reports" },
+
+  // ── Closing & finance ────────────────────────────────────────────────────
   { prefix: "/annual-closing", key: "annual_closing" },
-  { prefix: "/shareholders", key: "shareholders" },
+  { prefix: "/drawings", key: "drawings" },
+
+  // ── Payments & banking ───────────────────────────────────────────────────
+  { prefix: "/payments", key: "payments" },
+  { prefix: "/banking", key: "banking" },
+
+  // ── Expenses ─────────────────────────────────────────────────────────────
+  { prefix: "/expenses", key: "expenses" },
+
+  // ── HR (specific before generic) ─────────────────────────────────────────
   { prefix: "/hr/payroll", key: "payroll" },
   { prefix: "/hr/employees", key: "employees" },
+  { prefix: "/hr/attendance", key: "employees" },
+  { prefix: "/hr/instant-payouts", key: "payroll" },
   { prefix: "/hr", key: "employees" },
-  { prefix: "/chart-of-accounts", key: "chart_of_accounts" },
-  { prefix: "/purchase-orders", key: "purchase_orders" },
-  { prefix: "/banking", key: "banking" },
+
+  // ── Fixed assets ─────────────────────────────────────────────────────────
+  { prefix: "/fixed-assets", key: "fixed_assets" },
+
+  // ── Configuration ────────────────────────────────────────────────────────
+  { prefix: "/branches", key: "branches" },
+  { prefix: "/warehouses", key: "warehouses" },
+  { prefix: "/cost-centers", key: "cost_centers" },
   { prefix: "/settings", key: "settings" },
 ]
 
@@ -83,6 +156,13 @@ export const EXCLUDED_PREFIXES = [
   "/auth/",
   "/onboarding",
   "/invitations/",
+  "/admin/",
+  "/no-access",
+  "/no-permissions",
+  "/system-status",
+  "/test-tooltips",
+  "/fix-inv",
+  "/fix-invoice",
 ]
 
 /**
