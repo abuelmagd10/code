@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import Script from "next/script"
+import dynamic from "next/dynamic"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -13,6 +14,12 @@ import { PermissionsProvider } from "@/lib/permissions-context"
 import { AccessProvider } from "@/lib/access-context"
 import { RealtimeProvider } from "@/lib/realtime-provider"
 import { AppShell } from "@/components/app-shell"
+
+// ✅ Lazy-loaded AI assistant (client-only, zero SSR overhead)
+const FloatingAIAssistant = dynamic(
+  () => import("@/components/ai-assistant"),
+  { ssr: false }
+)
 
 const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
@@ -116,6 +123,7 @@ export default function RootLayout({
                         {children}
                       </ErrorBoundary>
                     </AppShell>
+                    <FloatingAIAssistant />
                     <Toaster />
                     {process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true" ? <Analytics /> : null}
                   </RealtimeProvider>

@@ -18,7 +18,8 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
-import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Save, History, Download, UploadCloud, Database, FileJson, CheckCircle2, AlertCircle, Loader2, HardDrive, RefreshCcw, Calendar, FileText, Package, ShoppingCart, Truck, CreditCard, BookOpen, Users2, Coins, Eye } from "lucide-react"
+import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Save, History, Download, UploadCloud, Database, FileJson, CheckCircle2, AlertCircle, Loader2, HardDrive, RefreshCcw, Calendar, FileText, Package, ShoppingCart, Truck, CreditCard, BookOpen, Users2, Coins, Eye, Bot } from "lucide-react"
+import { type AISettings, DEFAULT_AI_SETTINGS, fetchAISettings, saveAISettings } from "@/lib/page-guides"
 import { Progress } from "@/components/ui/progress"
 import { getActiveCurrencies, type Currency } from "@/lib/currency-service"
 
@@ -207,6 +208,11 @@ export default function SettingsPage() {
     bonus_payout_mode: 'payroll'
   })
   const [savingBonus, setSavingBonus] = useState(false)
+
+  // ─── AI Assistant Settings ──────────────────────────────────────────────
+  const [aiSettings, setAiSettings] = useState<AISettings>(DEFAULT_AI_SETTINGS)
+  const [savingAI, setSavingAI] = useState(false)
+  const [aiSettingsLoaded, setAiSettingsLoaded] = useState(false)
 
   // Backup states
   const [isExporting, setIsExporting] = useState(false)
@@ -670,6 +676,38 @@ export default function SettingsPage() {
     }
     loadCompany()
   }, [supabase])
+
+  // ─── Load AI Settings when companyId is available ──────────────────────
+  useEffect(() => {
+    const loadAI = async () => {
+      if (!companyId || aiSettingsLoaded) return
+      try {
+        const fetched = await fetchAISettings(supabase, companyId)
+        setAiSettings(fetched)
+        setAiSettingsLoaded(true)
+      } catch {}
+    }
+    loadAI()
+  }, [companyId, supabase, aiSettingsLoaded])
+
+  const handleSaveAISettings = async () => {
+    if (!companyId) return
+    try {
+      setSavingAI(true)
+      const { error } = await saveAISettings(supabase, companyId, aiSettings)
+      if (error) {
+        toastActionError(toast, language === 'en' ? 'Save' : 'حفظ', language === 'en' ? 'AI Assistant Settings' : 'إعدادات المساعد الذكي', error)
+      } else {
+        // Notify the floating assistant to reload its settings
+        window.dispatchEvent(new Event('ai_settings_changed'))
+        toastActionSuccess(toast, language === 'en' ? 'Save' : 'حفظ', language === 'en' ? 'AI Assistant Settings' : 'إعدادات المساعد الذكي')
+      }
+    } catch (err: any) {
+      toastActionError(toast, language === 'en' ? 'Save' : 'حفظ', language === 'en' ? 'AI Assistant Settings' : 'إعدادات المساعد الذكي', err?.message)
+    } finally {
+      setSavingAI(false)
+    }
+  }
 
   // Load bonus settings when companyId changes
   useEffect(() => {
@@ -1241,6 +1279,120 @@ export default function SettingsPage() {
             </Card>
           </div>
         </div>
+
+        {/* ─── AI Assistant Settings ──────────────────────────────────────── */}
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                <Bot className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <CardTitle className="text-base">
+                  {language === 'en' ? 'AI Assistant Settings' : 'إعدادات المساعد الذكي'}
+                </CardTitle>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {language === 'en'
+                    ? 'Context-aware page guide displayed as a floating help button'
+                    : 'دليل استخدام ذكي مرتبط بالصفحة الحالية يظهر كزر مساعدة عائم'}
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-5 space-y-5">
+            {/* Enable / Disable toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                  {language === 'en' ? 'Enable AI Assistant' : 'تفعيل المساعد الذكي'}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {language === 'en'
+                    ? 'Show a floating help button on every page'
+                    : 'عرض زر المساعدة العائم في كل صفحة'}
+                </p>
+              </div>
+              <Switch
+                checked={aiSettings.ai_assistant_enabled}
+                onCheckedChange={(v) => setAiSettings(s => ({ ...s, ai_assistant_enabled: v }))}
+              />
+            </div>
+
+            {/* Mode selector */}
+            <div className="space-y-1.5">
+              <Label className="text-sm text-gray-700 dark:text-gray-300">
+                {language === 'en' ? 'Display Mode' : 'وضع العرض'}
+              </Label>
+              <Select
+                value={aiSettings.ai_mode}
+                onValueChange={(v) => setAiSettings(s => ({ ...s, ai_mode: v as AISettings['ai_mode'] }))}
+                disabled={!aiSettings.ai_assistant_enabled}
+              >
+                <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="disabled">
+                    {language === 'en' ? 'Disabled — hide button completely' : 'معطّل — إخفاء الزر كلياً'}
+                  </SelectItem>
+                  <SelectItem value="manual">
+                    {language === 'en' ? 'Manual — show button, open on click' : 'يدوي — يظهر الزر ويُفتح عند الضغط'}
+                  </SelectItem>
+                  <SelectItem value="auto">
+                    {language === 'en' ? 'Auto — open guide automatically on first visit' : 'تلقائي — يفتح الدليل تلقائياً عند أول زيارة للصفحة'}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Language mode selector */}
+            <div className="space-y-1.5">
+              <Label className="text-sm text-gray-700 dark:text-gray-300">
+                {language === 'en' ? 'Guide Language' : 'لغة الدليل'}
+              </Label>
+              <Select
+                value={aiSettings.ai_language_mode}
+                onValueChange={(v) => setAiSettings(s => ({ ...s, ai_language_mode: v as AISettings['ai_language_mode'] }))}
+                disabled={!aiSettings.ai_assistant_enabled}
+              >
+                <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="follow_app_language">
+                    {language === 'en' ? 'Follow app language (recommended)' : 'تتبع لغة التطبيق (موصى به)'}
+                  </SelectItem>
+                  <SelectItem value="custom">
+                    {language === 'en' ? 'Custom (always use guide language setting)' : 'مخصص (استخدم لغة الدليل دائماً)'}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Info note */}
+            <div className="text-xs text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2.5 border border-blue-100 dark:border-blue-800/40">
+              {language === 'en'
+                ? 'The AI assistant provides read-only page guides. It cannot execute financial operations or modify any data.'
+                : 'يقدم المساعد الذكي أدلة استخدام للقراءة فقط. لا يمكنه تنفيذ عمليات مالية أو تعديل أي بيانات.'}
+            </div>
+
+            <Button
+              onClick={handleSaveAISettings}
+              disabled={savingAI || !companyId}
+              className="gap-2"
+              size="sm"
+            >
+              {savingAI ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              {savingAI
+                ? (language === 'en' ? 'Saving...' : 'جاري الحفظ...')
+                : (language === 'en' ? 'Save AI Settings' : 'حفظ إعدادات المساعد')}
+            </Button>
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* إعدادات الحساب */}
