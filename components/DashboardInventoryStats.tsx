@@ -72,91 +72,89 @@ export default function DashboardInventoryStats({
       const effectiveBranchId = branchId || String(userContext.branch_id || "")
       const warehouseId = String(userContext.warehouse_id || "")
       const costCenterId = String(userContext.cost_center_id || "")
-      if (!effectiveBranchId || !warehouseId || !costCenterId) return
 
       // ✅ ERP Professional: حساب قيمة المخزون من FIFO Lots (المصدر الوحيد للحقيقة)
-      // 📌 يمنع استخدام products.cost_price في التقارير الرسمية
-      // 📌 FIFO Engine هو الجهة الوحيدة المخولة بتحديد unit_cost
-
-      // 1. حساب الكميات من inventory_transactions
-      let transactionsQuery = supabase
-        .from('inventory_transactions')
-        .select('product_id, quantity_change')
-        .eq('company_id', companyId)
-        .eq('branch_id', effectiveBranchId)
-        .eq('warehouse_id', warehouseId)
-        .eq('cost_center_id', costCenterId)
-        .or('is_deleted.is.null,is_deleted.eq.false')
-
-      const { data: transactions } = await transactionsQuery
-
-      const qtyByProduct: Record<string, number> = {}
-      
-      for (const t of (transactions || [])) {
-        const pid = String(t.product_id)
-        qtyByProduct[pid] = (qtyByProduct[pid] || 0) + Number(t.quantity_change || 0)
-      }
-
-      // 2. ✅ حساب قيمة المخزون من FIFO Lots (بقايا المخزون الحالية)
-      // جلب جميع FIFO lots للمنتجات الموجودة في inventory_transactions
-      const productIds = Object.keys(qtyByProduct)
+      // ⚠️ يتطلب branch + warehouse + cost_center — إذا لم تكن متاحة يبقى الرقم صفرًا
       let inventoryValue = 0
       let lowStockCount = 0
 
-      // جلب بيانات reorder_level للمنتجات
-      const { data: products } = await supabase
-        .from('products')
-        .select('id, reorder_level, item_type')
-        .eq('company_id', companyId)
-        .in('id', productIds)
-        .or('item_type.is.null,item_type.eq.product')
-
-      const productMap = new Map((products || []).map((p: any) => [p.id, { reorder_level: p.reorder_level }]))
-
-      // حساب قيمة المخزون من FIFO Lots لكل منتج
-      for (const [pid, qty] of Object.entries(qtyByProduct)) {
-        const actualQty = Math.max(0, qty)
-        
-        // ✅ حساب FIFO value للمنتج
-        const { data: productFifoLots } = await supabase
-          .from('fifo_cost_lots')
-          .select('remaining_quantity, unit_cost')
+      if (effectiveBranchId && warehouseId && costCenterId) {
+        // 1. حساب الكميات من inventory_transactions
+        const { data: transactions } = await supabase
+          .from('inventory_transactions')
+          .select('product_id, quantity_change')
           .eq('company_id', companyId)
-          .eq('product_id', pid)
-          .gt('remaining_quantity', 0)
+          .eq('branch_id', effectiveBranchId)
+          .eq('warehouse_id', warehouseId)
+          .eq('cost_center_id', costCenterId)
+          .or('is_deleted.is.null,is_deleted.eq.false')
 
-        let productFifoValue = 0
-        let productFifoQty = 0
-        
-        for (const lot of (productFifoLots || [])) {
-          const lotQty = Number(lot.remaining_quantity || 0)
-          const lotCost = Number(lot.unit_cost || 0)
-          productFifoQty += lotQty
-          productFifoValue += lotQty * lotCost
+        const qtyByProduct: Record<string, number> = {}
+        for (const t of (transactions || [])) {
+          const pid = String(t.product_id)
+          qtyByProduct[pid] = (qtyByProduct[pid] || 0) + Number(t.quantity_change || 0)
         }
 
-        // ✅ حساب قيمة المخزون بناءً على FIFO weighted average
-        if (productFifoQty > 0 && actualQty > 0) {
-          const avgFifoCost = productFifoValue / productFifoQty
-          // استخدام الحد الأدنى بين الكمية الفعلية وكمية FIFO المتاحة
-          const qtyToValue = Math.min(actualQty, productFifoQty)
-          inventoryValue += qtyToValue * avgFifoCost
-        }
-        // إذا لم توجد FIFO lots، لا نضيف قيمة (ممنوع استخدام cost_price)
+        const productIds = Object.keys(qtyByProduct)
+        if (productIds.length > 0) {
+          // جلب بيانات reorder_level للمنتجات
+          const { data: products } = await supabase
+            .from('products')
+            .select('id, reorder_level, item_type')
+            .eq('company_id', companyId)
+            .in('id', productIds)
+            .or('item_type.is.null,item_type.eq.product')
 
-        // حساب low stock count
-        const product = productMap.get(pid) as { reorder_level?: number } | undefined
-        if (product && qty < (product.reorder_level || 5)) {
-          lowStockCount++
+          const productMap = new Map((products || []).map((p: any) => [p.id, { reorder_level: p.reorder_level }]))
+
+          // حساب قيمة المخزون من FIFO Lots لكل منتج
+          for (const [pid, qty] of Object.entries(qtyByProduct)) {
+            const actualQty = Math.max(0, qty)
+
+            const { data: productFifoLots } = await supabase
+              .from('fifo_cost_lots')
+              .select('remaining_quantity, unit_cost')
+              .eq('company_id', companyId)
+              .eq('product_id', pid)
+              .gt('remaining_quantity', 0)
+
+            let productFifoValue = 0
+            let productFifoQty = 0
+
+            for (const lot of (productFifoLots || [])) {
+              const lotQty = Number(lot.remaining_quantity || 0)
+              const lotCost = Number(lot.unit_cost || 0)
+              productFifoQty += lotQty
+              productFifoValue += lotQty * lotCost
+            }
+
+            if (productFifoQty > 0 && actualQty > 0) {
+              const avgFifoCost = productFifoValue / productFifoQty
+              const qtyToValue = Math.min(actualQty, productFifoQty)
+              inventoryValue += qtyToValue * avgFifoCost
+            }
+
+            const product = productMap.get(pid) as { reorder_level?: number } | undefined
+            if (product && qty < (product.reorder_level || 5)) {
+              lowStockCount++
+            }
+          }
         }
       }
 
-      // 2. حساب إجمالي الضرائب المحصلة من الفواتير المدفوعة
+      // ─── الإحصائيات المالية ─────────────────────────────────────────────────
+      // 🔐 تُطبَّق فلترة الفرع هنا دائمًا عند وجود effectiveBranchId
+      // حساب إجمالي الضرائب المحصلة والمدفوعات المستلمة ونسبة التحصيل
       let invoicesQuery = supabase
         .from('invoices')
         .select('tax_amount, paid_amount, total_amount, status, invoice_date')
         .eq('company_id', companyId)
         .in('status', ['sent', 'partially_paid', 'paid'])
+
+      // 🔐 Dashboard Governance: فلترة حسب الفرع
+      if (effectiveBranchId) {
+        invoicesQuery = invoicesQuery.eq('branch_id', effectiveBranchId)
+      }
 
       if (fromDate) invoicesQuery = invoicesQuery.gte('invoice_date', fromDate)
       if (toDate) invoicesQuery = invoicesQuery.lte('invoice_date', toDate)
@@ -167,7 +165,6 @@ export default function DashboardInventoryStats({
         return sum + Number(inv.tax_amount || 0)
       }, 0)
 
-      // 3. حساب إجمالي المدفوعات المستلمة ونسبة التحصيل
       const totalPaymentsReceived = (invoices || []).reduce((sum: number, inv: any) => {
         return sum + Number(inv.paid_amount || 0)
       }, 0)
@@ -180,12 +177,17 @@ export default function DashboardInventoryStats({
         ? (totalPaymentsReceived / totalInvoicesAmount) * 100
         : 0
 
-      // 4. حساب المدفوعات المرسلة للموردين
+      // حساب المدفوعات المرسلة للموردين
       let billsQuery = supabase
         .from('bills')
         .select('paid_amount, bill_date')
         .eq('company_id', companyId)
         .in('status', ['sent', 'partially_paid', 'paid'])
+
+      // 🔐 Dashboard Governance: فلترة حسب الفرع
+      if (effectiveBranchId) {
+        billsQuery = billsQuery.eq('branch_id', effectiveBranchId)
+      }
 
       if (fromDate) billsQuery = billsQuery.gte('bill_date', fromDate)
       if (toDate) billsQuery = billsQuery.lte('bill_date', toDate)
