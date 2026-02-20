@@ -439,14 +439,17 @@ BEGIN
     WHERE id = v_alloc.journal_entry_id AND status = 'draft';
   END IF;
 
-  -- ===================== إنشاء Vendor Credit (للإشعار الدائن) =====================
+  -- ===================== إنشاء/تحديث Vendor Credit (للإشعار الدائن) =====================
+  -- نستخدم نمط INSERT-or-UPDATE لأن الـ unique constraint يسمح بإشعار دائن واحد فقط
+  -- لكل مرتجع (source_purchase_return_id). عند مخازن متعددة نضيف المبالغ للإشعار الموجود.
   IF v_pr.settlement_method = 'debit_note' AND v_alloc.total_amount > 0 THEN
-    IF NOT EXISTS (
-      SELECT 1 FROM vendor_credits
-      WHERE source_purchase_return_id = v_pr.id
-        AND branch_id = v_alloc.branch_id
-        AND cost_center_id IS NOT DISTINCT FROM v_alloc.cost_center_id
-    ) THEN
+    -- التحقق من وجود إشعار دائن مسبق لهذا المرتجع (بغض النظر عن الفرع/مركز التكلفة)
+    SELECT id INTO v_vc_id
+    FROM vendor_credits
+    WHERE source_purchase_return_id = v_pr.id;
+
+    IF v_vc_id IS NULL THEN
+      -- إنشاء إشعار دائن جديد (أول تخصيص مُعتمد)
       INSERT INTO vendor_credits (
         company_id, supplier_id, bill_id,
         source_purchase_return_id, source_purchase_invoice_id, journal_entry_id,
@@ -457,23 +460,30 @@ BEGIN
       ) VALUES (
         v_pr.company_id, v_pr.supplier_id, v_pr.bill_id,
         v_pr.id, v_pr.bill_id, v_alloc.journal_entry_id,
-        'VC-' || REPLACE(v_pr.return_number, 'PRET-', '') || '-' || LEFT(v_alloc.warehouse_id::text, 8),
+        'VC-' || REPLACE(v_pr.return_number, 'PRET-', ''),
         v_pr.return_date, 'open',
         v_alloc.subtotal, v_alloc.tax_amount, v_alloc.total_amount, 0,
         v_alloc.branch_id, v_alloc.cost_center_id,
-        'إشعار دائن تلقائي — مرتجع ' || v_pr.return_number || ' / مخزن ' || v_alloc.warehouse_id::text
+        'إشعار دائن تلقائي — مرتجع ' || v_pr.return_number
       ) RETURNING id INTO v_vc_id;
-
-      -- بنود الإشعار الدائن من بنود هذا التخصيص
-      INSERT INTO vendor_credit_items (
-        vendor_credit_id, product_id, description,
-        quantity, unit_price, tax_rate, discount_percent, line_total
-      )
-      SELECT v_vc_id, pri.product_id, pri.description,
-        pri.quantity, pri.unit_price, pri.tax_rate, pri.discount_percent, pri.line_total
-      FROM purchase_return_items pri
-      WHERE pri.warehouse_allocation_id = p_allocation_id;
+    ELSE
+      -- تحديث الإشعار الدائن الموجود بإضافة مبالغ هذا التخصيص
+      UPDATE vendor_credits SET
+        subtotal     = subtotal + v_alloc.subtotal,
+        tax_amount   = tax_amount + v_alloc.tax_amount,
+        total_amount = total_amount + v_alloc.total_amount
+      WHERE id = v_vc_id;
     END IF;
+
+    -- إضافة بنود هذا التخصيص للإشعار الدائن (سواء كان جديداً أو موجوداً)
+    INSERT INTO vendor_credit_items (
+      vendor_credit_id, product_id, description,
+      quantity, unit_price, tax_rate, discount_percent, line_total
+    )
+    SELECT v_vc_id, pri.product_id, pri.description,
+      pri.quantity, pri.unit_price, pri.tax_rate, pri.discount_percent, pri.line_total
+    FROM purchase_return_items pri
+    WHERE pri.warehouse_allocation_id = p_allocation_id;
   END IF;
 
   -- ===================== تحديث حالة التخصيص =====================

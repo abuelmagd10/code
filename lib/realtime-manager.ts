@@ -1082,25 +1082,6 @@ class RealtimeManager {
           (payload: RealtimePostgresChangesPayload<any>) => this.handleGovernanceEvent('permissions', payload)
         )
 
-      // ✅ إضافة listener عام لجميع الأحداث على القناة (للتشخيص)
-      // ✅ هذا يساعد في معرفة إذا كانت الأحداث تصل من Supabase ولكن يتم تجاهلها
-      channel.on('postgres_changes', { event: '*', schema: 'public' }, (payload: any) => {
-        const newRecord = payload.new as any
-        const oldRecord = payload.old as any
-        console.log('🔍 [RealtimeManager] Raw Realtime event received (diagnostic - all tables):', {
-          eventType: payload.eventType,
-          schema: payload.schema,
-          table: payload.table,
-          newKeys: payload.new ? Object.keys(payload.new) : null,
-          oldKeys: payload.old ? Object.keys(payload.old) : null,
-          hasNew: !!payload.new,
-          hasOld: !!payload.old,
-          currentUserId: this.context?.userId,
-          currentRole: this.context?.role,
-          recordUserId: newRecord?.user_id || oldRecord?.user_id,
-          recordCompanyId: newRecord?.company_id || oldRecord?.company_id,
-        })
-      })
       
       // ✅ Validation: التأكد من أن الفلاتر صحيحة قبل الاشتراك
       // ✅ استخدام المتغيرات المعرفة سابقاً (isFilterValid و isUserBranchAccessFilterValid)
