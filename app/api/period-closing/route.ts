@@ -66,20 +66,21 @@ export async function POST(req: NextRequest) {
       p_year: periodYear
     })
 
-    if (yearCheckResult) {
-      // نمنع الإقفال فقط عند وجود مشاكل محاسبية حرجة (قيود غير متوازنة أو مكررة)
-      // OPEN_PERIODS مقبول عند إقفال فترة واحدة من السنة — لا يُعتبر خطأً هنا
-      const CRITICAL_CODES = ['UNBALANCED_ENTRIES', 'DUPLICATE_ENTRIES']
-      const criticalIssues = (yearCheckResult.blocking_issues || [])
-        .filter((issue: any) => CRITICAL_CODES.includes(issue.code))
+    if (yearCheckResult && !yearCheckResult.can_close) {
+      // يحترم can_close كمرجع رئيسي من الـ RPC (لا قائمة ثابتة)
+      // الاستثناء الوحيد: OPEN_PERIODS — مقبول عند إقفال فترة منفردة من السنة
+      // أي نوع blocking آخر يُضاف مستقبلاً للـ RPC سيُمنع تلقائياً
+      const nonPeriodIssues = (yearCheckResult.blocking_issues || [])
+        .filter((issue: any) => issue.code !== 'OPEN_PERIODS')
 
-      if (criticalIssues.length > 0) {
-        const messages = criticalIssues.map((issue: any) => issue.message).join(' | ')
+      if (nonPeriodIssues.length > 0) {
+        const messages = nonPeriodIssues.map((issue: any) => issue.message).join(' | ')
         return NextResponse.json(
-          { success: false, error: `لا يمكن الإقفال: ${messages}`, blocking_issues: criticalIssues },
+          { success: false, error: `لا يمكن الإقفال: ${messages}`, blocking_issues: nonPeriodIssues },
           { status: 400 }
         )
       }
+      // can_close = false ولكن السبب الوحيد هو OPEN_PERIODS → نسمح بإقفال هذه الفترة
     }
 
     // ✅ إنشاء قيد إقفال الفترة
