@@ -26,6 +26,18 @@
 -- بدونه لن يتضمن payload.old حقل user_id الضروري لتحديد هوية المستخدم
 ALTER TABLE public.company_members REPLICA IDENTITY FULL;
 
--- الخطوة 2: إضافة الجدول لـ Supabase Realtime publication
+-- الخطوة 2: إضافة الجدول لـ Supabase Realtime publication (إذا لم يكن موجوداً)
 -- يُدرج الجدول في نظام Realtime ليستقبل التطبيق أحداث INSERT/UPDATE/DELETE
-ALTER PUBLICATION supabase_realtime ADD TABLE public.company_members;
+-- ملاحظة: company_members قد يكون مضافاً بالفعل في بعض البيئات
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public'
+      AND tablename = 'company_members'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.company_members;
+  END IF;
+END;
+$$;
