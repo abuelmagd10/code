@@ -9,6 +9,7 @@ interface Invoice {
   id: string
   total_amount: number
   paid_amount?: number
+  returned_amount?: number
   invoice_date?: string
   status?: string
   display_total?: number | null
@@ -19,6 +20,7 @@ interface Bill {
   id: string
   total_amount: number
   paid_amount?: number
+  returned_amount?: number
   bill_date?: string
   status?: string
   display_total?: number | null
@@ -64,14 +66,18 @@ export default function DashboardStats({
   }, [])
 
   // Calculate totals using display amounts when available
+  // صافي المبيعات = إجمالي الفواتير − المرتجعات (مرتجعات البيع)
   const totalSales = invoicesData.reduce((sum, inv) => {
-    const amount = getDisplayAmount(inv.total_amount || 0, inv.display_total, inv.display_currency, appCurrency)
-    return sum + amount
+    const gross = getDisplayAmount(inv.total_amount || 0, inv.display_total, inv.display_currency, appCurrency)
+    const returned = Number(inv.returned_amount || 0)
+    return sum + Math.max(gross - returned, 0)
   }, 0)
 
+  // صافي المشتريات = إجمالي فواتير الموردين − المرتجعات (مرتجعات الشراء)
   const totalPurchases = billsData.reduce((sum, bill) => {
-    const amount = getDisplayAmount(bill.total_amount || 0, bill.display_total, bill.display_currency, appCurrency)
-    return sum + amount
+    const gross = getDisplayAmount(bill.total_amount || 0, bill.display_total, bill.display_currency, appCurrency)
+    const returned = Number(bill.returned_amount || 0)
+    return sum + Math.max(gross - returned, 0)
   }, 0)
 
   // صافي الربح الإجمالي = المبيعات - المشتريات

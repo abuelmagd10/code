@@ -206,7 +206,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     // Sum invoices total_amount (exclude draft/cancelled) & count within date range
     let invQuery = supabase
       .from("invoices")
-      .select("id, customer_id, invoice_number, total_amount, paid_amount, invoice_date, status, shipping, tax_amount, display_total, display_currency, display_rate, branch_id")
+      .select("id, customer_id, invoice_number, total_amount, paid_amount, returned_amount, invoice_date, status, shipping, tax_amount, display_total, display_currency, display_rate, branch_id")
       .eq("company_id", company.id)
       .in("status", ["sent", "partially_paid", "paid"])
 
@@ -282,7 +282,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     // Bills data for dashboard (includes display fields for currency conversion)
     let billsQuery = supabase
       .from("bills")
-      .select("id, supplier_id, bill_number, total_amount, paid_amount, bill_date, status, display_total, display_currency, display_rate, branch_id")
+      .select("id, supplier_id, bill_number, total_amount, paid_amount, returned_amount, bill_date, status, display_total, display_currency, display_rate, branch_id")
       .eq("company_id", company.id)
       .in("status", ["sent", "partially_paid", "paid"]) // exclude draft/cancelled/voided from dashboard metrics
 

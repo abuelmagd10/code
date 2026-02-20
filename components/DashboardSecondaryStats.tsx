@@ -84,19 +84,22 @@ export default function DashboardSecondaryStats({
   const now = new Date()
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
   
+  // دخل الشهر = مجموع الفواتير − مرتجعات البيع
   const incomeThisMonth = invoicesData
     .filter((i) => String(i.invoice_date || "").startsWith(ym))
     .reduce((sum, i) => {
-      const amount = getDisplayAmount(i.total_amount || 0, i.display_total, i.display_currency, appCurrency)
-      return sum + amount
+      const gross = getDisplayAmount(i.total_amount || 0, i.display_total, i.display_currency, appCurrency)
+      const returned = Number(i.returned_amount || 0)
+      return sum + Math.max(gross - returned, 0)
     }, 0)
   
-  // Expense this month
+  // مصروف الشهر = مجموع فواتير الموردين − مرتجعات الشراء
   const expenseThisMonth = billsData
     .filter((b) => String(b.bill_date || "").startsWith(ym) && !["draft", "cancelled", "voided"].includes(String(b.status || "").toLowerCase()))
     .reduce((sum, b) => {
-      const amount = getDisplayAmount(b.total_amount || 0, b.display_total, b.display_currency, appCurrency)
-      return sum + amount
+      const gross = getDisplayAmount(b.total_amount || 0, b.display_total, b.display_currency, appCurrency)
+      const returned = Number(b.returned_amount || 0)
+      return sum + Math.max(gross - returned, 0)
     }, 0)
   
   return (
