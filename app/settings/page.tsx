@@ -1363,11 +1363,37 @@ export default function SettingsPage() {
                     {language === 'en' ? 'Follow app language (recommended)' : 'تتبع لغة التطبيق (موصى به)'}
                   </SelectItem>
                   <SelectItem value="custom">
-                    {language === 'en' ? 'Custom (always use guide language setting)' : 'مخصص (استخدم لغة الدليل دائماً)'}
+                    {language === 'en' ? 'Custom — always use a fixed language' : 'مخصص — استخدم لغة ثابتة دائماً'}
                   </SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Custom language picker — only shown when mode = custom */}
+            {aiSettings.ai_language_mode === 'custom' && (
+              <div className="space-y-1.5">
+                <Label className="text-sm text-gray-700 dark:text-gray-300">
+                  {language === 'en' ? 'Fixed Guide Language' : 'لغة الدليل الثابتة'}
+                </Label>
+                <Select
+                  value={aiSettings.ai_custom_language}
+                  onValueChange={(v) => setAiSettings(s => ({ ...s, ai_custom_language: v as AISettings['ai_custom_language'] }))}
+                  disabled={!aiSettings.ai_assistant_enabled}
+                >
+                  <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ar">
+                      {language === 'en' ? 'Arabic (العربية)' : 'العربية'}
+                    </SelectItem>
+                    <SelectItem value="en">
+                      {language === 'en' ? 'English' : 'الإنجليزية'}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Info note */}
             <div className="text-xs text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2.5 border border-blue-100 dark:border-blue-800/40">

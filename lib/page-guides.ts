@@ -19,6 +19,8 @@ export interface AISettings {
   ai_assistant_enabled: boolean
   ai_mode: "disabled" | "manual" | "auto"
   ai_language_mode: "follow_app_language" | "custom"
+  /** Only used when ai_language_mode = 'custom' */
+  ai_custom_language: "ar" | "en"
 }
 
 export interface PageGuide {
@@ -33,6 +35,7 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   ai_assistant_enabled: true,
   ai_mode: "manual",
   ai_language_mode: "follow_app_language",
+  ai_custom_language: "ar",
 }
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
@@ -226,7 +229,7 @@ export async function fetchAISettings(
   try {
     const { data, error } = await supabase
       .from("company_ai_settings")
-      .select("ai_assistant_enabled, ai_mode, ai_language_mode")
+      .select("ai_assistant_enabled, ai_mode, ai_language_mode, ai_custom_language")
       .eq("company_id", companyId)
       .maybeSingle()
 
@@ -236,6 +239,7 @@ export async function fetchAISettings(
       ai_assistant_enabled: Boolean(data.ai_assistant_enabled),
       ai_mode: (data.ai_mode ?? "manual") as AISettings["ai_mode"],
       ai_language_mode: (data.ai_language_mode ?? "follow_app_language") as AISettings["ai_language_mode"],
+      ai_custom_language: ((data.ai_custom_language === "en" ? "en" : "ar")) as AISettings["ai_custom_language"],
     }
   } catch {
     return { ...DEFAULT_AI_SETTINGS }
@@ -259,6 +263,7 @@ export async function saveAISettings(
           ai_assistant_enabled: settings.ai_assistant_enabled,
           ai_mode: settings.ai_mode,
           ai_language_mode: settings.ai_language_mode,
+          ai_custom_language: settings.ai_custom_language,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "company_id" }

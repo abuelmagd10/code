@@ -53,11 +53,14 @@ export function useAIAssistant(): UseAIAssistantReturn {
   const [guide, setGuide] = useState<PageGuide | null>(null)
   const [isOpen, setIsOpen] = useState(false)
   const [isLoadingGuide, setIsLoadingGuide] = useState(false)
-  const [lang, setLang] = useState<"ar" | "en">("ar")
+  // appLang tracks the app's UI language from localStorage
+  const [appLang, setAppLang] = useState<"ar" | "en">("ar")
 
   const autoOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const companyIdRef = useRef<string | null>(null)
   const settingsLoadedRef = useRef(false)
+  // Bug 2 fix: stable ref so the auto-open timer always calls the latest openGuide
+  const openGuideRef = useRef<() => void>(() => {})
 
   // Derive page key from current pathname
   const pageKey = getPageKeyFromPath(pathname)
@@ -68,12 +71,20 @@ export function useAIAssistant(): UseAIAssistantReturn {
     pathname === "/" ||
     EXCLUDED_PREFIXES.some((p) => pathname.startsWith(p))
 
-  // Resolve language from localStorage (mirrors what pages do)
+  // Bug 1 fix: compute the effective guide language by consulting ai_language_mode.
+  // When mode is 'custom', use the stored ai_custom_language preference;
+  // otherwise follow the app's UI language.
+  const lang: "ar" | "en" =
+    settings.ai_language_mode === "custom"
+      ? settings.ai_custom_language
+      : appLang
+
+  // Track the app UI language from localStorage
   useEffect(() => {
     const readLang = () => {
       try {
         const v = localStorage.getItem("app_language") || "ar"
-        setLang(v === "en" ? "en" : "ar")
+        setAppLang(v === "en" ? "en" : "ar")
       } catch {}
     }
     readLang()
@@ -143,7 +154,10 @@ export function useAIAssistant(): UseAIAssistantReturn {
     }
   }, [pathname])
 
-  // Auto-mode: open guide 800ms after navigation if not yet seen
+  // Auto-mode: open guide 800ms after navigation if not yet seen.
+  // Bug 2 fix: the timer calls openGuideRef.current() instead of the captured
+  // openGuide closure, so language/guide changes that happen between scheduling
+  // and firing always use the latest version of the function.
   useEffect(() => {
     if (isExcludedPage) return
     if (!pageKey) return
@@ -152,14 +166,12 @@ export function useAIAssistant(): UseAIAssistantReturn {
     if (isPageSeen(pageKey)) return
 
     autoOpenTimerRef.current = setTimeout(() => {
-      openGuide()
+      openGuideRef.current()
     }, 800)
 
     return () => {
       if (autoOpenTimerRef.current) clearTimeout(autoOpenTimerRef.current)
     }
-    // openGuide is stable (useCallback), pageKey and settings included
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, pageKey, settings.ai_mode, settings.ai_assistant_enabled, isExcludedPage])
 
   // ─── Lazy guide fetch ────────────────────────────────────────────────────
@@ -181,6 +193,11 @@ export function useAIAssistant(): UseAIAssistantReturn {
       setIsLoadingGuide(false)
     }
   }, [guide, pageKey, supabase, lang])
+
+  // Keep the ref in sync so the auto-open timer always invokes the latest version
+  useEffect(() => {
+    openGuideRef.current = openGuide
+  }, [openGuide])
 
   const closeGuide = useCallback(() => {
     setIsOpen(false)
