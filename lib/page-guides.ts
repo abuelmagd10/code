@@ -23,12 +23,34 @@ export interface AISettings {
   ai_custom_language: "ar" | "en"
 }
 
+export interface AccountingEntry {
+  account: string
+  /** "debit" | "credit" — UI translates to مدين/دائن or Dr/Cr */
+  side: "debit" | "credit"
+}
+
+export interface AccountingImpact {
+  assets?: string
+  liabilities?: string
+  equity?: string
+  pl?: string
+}
+
+/** Structured accounting pattern returned by fetchPageGuide */
+export interface AccountingPattern {
+  event: string
+  entries: AccountingEntry[]
+  impact: AccountingImpact
+}
+
 export interface PageGuide {
   page_key: string
   title: string
   description: string
   steps: string[]
   tips: string[]
+  /** Null when the page has no accounting pattern (e.g. pure reporting pages) */
+  accounting_pattern: AccountingPattern | null
 }
 
 export const DEFAULT_AI_SETTINGS: AISettings = {
@@ -210,7 +232,11 @@ export async function fetchPageGuide(
   try {
     const { data, error } = await supabase
       .from("page_guides")
-      .select("page_key, title_ar, title_en, description_ar, description_en, steps_ar, steps_en, tips_ar, tips_en")
+      .select(
+        "page_key, title_ar, title_en, description_ar, description_en, " +
+        "steps_ar, steps_en, tips_ar, tips_en, " +
+        "accounting_pattern_ar, accounting_pattern_en"
+      )
       .eq("page_key", pageKey)
       .eq("is_active", true)
       .single()
@@ -218,6 +244,8 @@ export async function fetchPageGuide(
     if (error || !data) return null
 
     const isAr = lang === "ar"
+    const rawPattern = isAr ? data.accounting_pattern_ar : data.accounting_pattern_en
+
     return {
       page_key: data.page_key,
       title: isAr ? data.title_ar : data.title_en,
@@ -228,6 +256,7 @@ export async function fetchPageGuide(
       tips: Array.isArray(isAr ? data.tips_ar : data.tips_en)
         ? (isAr ? data.tips_ar : data.tips_en)
         : [],
+      accounting_pattern: rawPattern ?? null,
     }
   } catch {
     return null
