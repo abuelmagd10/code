@@ -68,8 +68,12 @@ export default function DashboardInventoryStats({
     try {
       if (!userContext || userContext.company_id !== companyId) return
 
-      // 🔐 Dashboard Governance: استخدام branchId من props إذا وُجد، وإلا من userContext
+      // 🔐 Dashboard Governance:
+      // effectiveBranchId: لحساب المخزون — يرجع لفرع المستخدم كـ fallback (المخزون دائمًا branch-scoped)
+      // financialBranchId: للإحصائيات المالية — يُفلتر فقط عند وجود branchId صريح (وضع الفرع)
+      //   إذا كان branchId === undefined فهذا يعني عرض الشركة → لا فلترة فرع → بيانات كل الفروع
       const effectiveBranchId = branchId || String(userContext.branch_id || "")
+      const financialBranchId = (typeof branchId === 'string' && branchId) ? branchId : null
       const warehouseId = String(userContext.warehouse_id || "")
       const costCenterId = String(userContext.cost_center_id || "")
 
@@ -151,9 +155,9 @@ export default function DashboardInventoryStats({
         .eq('company_id', companyId)
         .in('status', ['sent', 'partially_paid', 'paid'])
 
-      // 🔐 Dashboard Governance: فلترة حسب الفرع
-      if (effectiveBranchId) {
-        invoicesQuery = invoicesQuery.eq('branch_id', effectiveBranchId)
+      // 🔐 Dashboard Governance: فلترة حسب الفرع فقط في وضع الفرع (financialBranchId = null في وضع الشركة)
+      if (financialBranchId) {
+        invoicesQuery = invoicesQuery.eq('branch_id', financialBranchId)
       }
 
       if (fromDate) invoicesQuery = invoicesQuery.gte('invoice_date', fromDate)
@@ -184,9 +188,9 @@ export default function DashboardInventoryStats({
         .eq('company_id', companyId)
         .in('status', ['sent', 'partially_paid', 'paid'])
 
-      // 🔐 Dashboard Governance: فلترة حسب الفرع
-      if (effectiveBranchId) {
-        billsQuery = billsQuery.eq('branch_id', effectiveBranchId)
+      // 🔐 Dashboard Governance: فلترة حسب الفرع فقط في وضع الفرع
+      if (financialBranchId) {
+        billsQuery = billsQuery.eq('branch_id', financialBranchId)
       }
 
       if (fromDate) billsQuery = billsQuery.gte('bill_date', fromDate)
