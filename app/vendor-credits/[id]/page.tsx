@@ -11,6 +11,7 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { ArrowRight, FileCheck } from "lucide-react"
 
 type VendorCredit = {
   id: string
@@ -199,10 +200,51 @@ export default function VendorCreditViewPage() {
       <Sidebar />
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <h1 className="text-lg sm:text-2xl font-bold truncate">{appLang === 'en' ? 'Vendor Credit' : 'إشعار دائن'}</h1>
-          <div className="flex gap-2">
-            <Link href="/vendor-credits"><Button variant="outline" size="sm" className="text-xs sm:text-sm">{appLang === 'en' ? 'Back' : 'رجوع'}</Button></Link>
+
+        {/* Header */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="p-2 sm:p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
+                <FileCheck className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
+                  {appLang === 'en' ? 'Vendor Credit' : 'إشعار دائن'}
+                  {credit.credit_number && (
+                    <span className="text-gray-400 dark:text-gray-500 font-normal mr-2 text-base sm:text-lg">
+                      #{credit.credit_number}
+                    </span>
+                  )}
+                </h1>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1">
+                  {appLang === 'en'
+                    ? 'View credit note details and apply it to outstanding supplier bills'
+                    : 'عرض تفاصيل الإشعار الدائن وتطبيقه على فواتير المورد المستحقة'}
+                </p>
+                {credit.status === 'open' && (
+                  <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-1">
+                    {appLang === 'en' ? '✅ Credit available for use' : '✅ الإشعار متاح للاستخدام'}
+                  </p>
+                )}
+                {credit.status === 'partially_applied' && (
+                  <p className="text-xs font-medium text-amber-600 dark:text-amber-400 mt-1">
+                    {appLang === 'en' ? '⏳ Credit partially applied' : '⏳ الإشعار مطبّق جزئياً'}
+                  </p>
+                )}
+                {credit.status === 'applied' && (
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mt-1">
+                    {appLang === 'en' ? '🔒 Credit fully applied' : '🔒 الإشعار مطبّق بالكامل'}
+                  </p>
+                )}
+              </div>
+            </div>
+            <Link href="/vendor-credits" className="self-start sm:self-auto">
+              <Button variant="outline" size="sm" className="text-xs sm:text-sm flex items-center gap-1.5">
+                <ArrowRight className="w-3.5 h-3.5" />
+                {appLang === 'en' ? 'Back to Credits' : 'العودة للإشعارات'}
+              </Button>
+            </Link>
           </div>
         </div>
 
