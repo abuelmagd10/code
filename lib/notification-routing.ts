@@ -9,6 +9,7 @@ export type ReferenceType =
   | 'invoice'
   | 'bill'
   | 'purchase_order'
+  | 'purchase_return'
   | 'sales_order'
   | 'inventory_transfer'
   | 'approval_request'
@@ -51,6 +52,7 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   },
   'purchase_order': (id) => `/purchase-orders/${id}`,
   'purchase_approval': (id) => `/bills/${id}`, // ✅ إضافة route لموافقات المشتريات
+  'purchase_return': (id) => `/purchase-returns?highlight=${id}`, // ✅ مرتجعات المشتريات
   'vendor_credit': (id) => `/vendor-credits?highlight=${id}`,
   'supplier_debit_receipt': (id) => `/suppliers?highlight=receipt-${id}`,
 

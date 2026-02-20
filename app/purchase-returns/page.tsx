@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Plus, Search, RotateCcw, Eye, CheckCircle2, Clock, AlertTriangle } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import { TableSkeleton } from "@/components/ui/skeleton"
@@ -68,6 +68,9 @@ export default function PurchaseReturnsPage() {
   const [searchTerm, setSearchTerm] = useState("")
 
   const [isPending, startTransition] = useTransition()
+
+  const searchParams = useSearchParams()
+  const highlightId = searchParams.get('highlight')
 
   const branchFilter = useBranchFilter()
 
@@ -690,6 +693,11 @@ export default function PurchaseReturnsPage() {
                   lang={appLang}
                   minWidth="min-w-[600px]"
                   emptyMessage={appLang === 'en' ? 'No purchase returns yet' : 'لا توجد مرتجعات مشتريات حتى الآن'}
+                  rowClassName={(row: PurchaseReturn) =>
+                    highlightId && row.id === highlightId
+                      ? 'ring-2 ring-purple-400 bg-purple-50 dark:bg-purple-900/20 animate-pulse'
+                      : ''
+                  }
                 />
               )}
             </CardContent>

@@ -176,6 +176,7 @@ export function DataTable<T = any>({
             return (
               <tr
                 key={rowKey}
+                id={`row-${rowKey}`}
                 className={`border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 ${onRowClick ? 'cursor-pointer' : ''} ${computedRowClassName}`}
                 onClick={() => onRowClick?.(row)}
               >
