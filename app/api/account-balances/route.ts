@@ -78,13 +78,15 @@ export async function GET(req: NextRequest) {
       return serverError(`خطأ في جلب بيانات الحسابات: ${accountsError.message}`)
     }
 
-    // ✅ جلب جميع القيود (معظم القيود ليس لها status)
+    // ✅ جلب القيود المرحّلة فقط (status='posted') لضمان التوافق مع income-statement API
+    // ✅ القيود بـ status='draft' يجب ألا تؤثر على الميزانية العمومية
     const { data: journalEntriesData, error: entriesError } = await supabase
       .from("journal_entries")
       .select("id")
       .eq("company_id", companyId)
       .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء القيود المحذوفة (is_deleted)
       .is("deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
+      .not("status", "eq", "draft") // ✅ استثناء القيود المسودة - تطابق income-statement
       .lte("entry_date", asOf)
 
     if (entriesError) {

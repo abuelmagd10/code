@@ -1581,15 +1581,61 @@ export default function InvoiceDetailPage() {
           })
         }
 
+        // ===== قيد عكس COGS (Debit Inventory / Credit COGS) =====
+        // عند مرتجع البيع: نعكس تكلفة البضاعة بنسبة الكمية المرتجعة
+        if (mapping.inventory && mapping.cogs) {
+          try {
+            const { getCOGSByInvoice } = await import("@/lib/cogs-transactions")
+            const originalCOGSRecords = await getCOGSByInvoice(supabase, invoice.id)
+
+            let totalCOGSToReverse = 0
+            for (const returnItem of returnItems.filter(it => it.return_qty > 0 && it.product_id)) {
+              const productCOGS = originalCOGSRecords.filter(
+                (ct: any) => ct.product_id === returnItem.product_id
+              )
+              const originalItem = items.find(i => i.id === returnItem.item_id)
+              const originalQty = Number(originalItem?.quantity || 0)
+              if (originalQty > 0 && productCOGS.length > 0) {
+                const totalProductCOGS = productCOGS.reduce((sum: number, ct: any) => sum + Number(ct.total_cost || 0), 0)
+                const returnRatio = returnItem.return_qty / originalQty
+                totalCOGSToReverse += totalProductCOGS * returnRatio
+              }
+            }
+
+            if (totalCOGSToReverse > 0.01) {
+              // Debit Inventory (restore inventory asset at original cost)
+              lines.push({
+                journal_entry_id: entry.id,
+                branch_id: invoice.branch_id || null,
+                cost_center_id: invoice.cost_center_id || null,
+                account_id: mapping.inventory,
+                debit_amount: Math.round(totalCOGSToReverse * 100) / 100,
+                credit_amount: 0,
+                description: appLang === 'en' ? 'Sales return - Inventory restoration' : 'مرتجع مبيعات - استعادة المخزون بالتكلفة',
+              })
+              // Credit COGS (reduce cost of goods sold)
+              lines.push({
+                journal_entry_id: entry.id,
+                branch_id: invoice.branch_id || null,
+                cost_center_id: invoice.cost_center_id || null,
+                account_id: mapping.cogs,
+                debit_amount: 0,
+                credit_amount: Math.round(totalCOGSToReverse * 100) / 100,
+                description: appLang === 'en' ? 'Sales return - COGS reversal' : 'مرتجع مبيعات - عكس تكلفة البضاعة المباعة',
+              })
+              console.log(`✅ COGS reversal: ${totalCOGSToReverse.toFixed(2)} للفاتورة ${invoice.invoice_number}`)
+            }
+          } catch (cogsErr) {
+            console.warn("⚠️ تعذر حساب COGS للمرتجع (لن يمنع إتمام المرتجع):", cogsErr)
+          }
+        }
+
         if (lines.length > 0) {
           const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
           if (linesErr) throw linesErr
         }
 
-        // ===== 📌 النمط المحاسبي الصارم: لا COGS Reversal =====
-        // حسب المواصفات: لا قيد COGS في أي مرحلة
-        // لذلك لا نحتاج لعكس COGS عند المرتجع
-        console.log(`✅ تم إنشاء قيد المرتجع (بدون COGS) للفاتورة ${invoice.invoice_number}`)
+        console.log(`✅ تم إنشاء قيد المرتجع مع عكس COGS للفاتورة ${invoice.invoice_number}`)
       }
 
       // Update invoice_items returned_quantity
@@ -2319,14 +2365,13 @@ export default function InvoiceDetailPage() {
       const mapping = await findAccountIds()
       if (!mapping) return
 
-      // حذف قيود الفاتورة الأصلية (جميع الأنواع)
-      // 📌 النمط المحاسبي الصارم: لا invoice_cogs
+      // حذف قيود الفاتورة الأصلية (جميع الأنواع) بما فيها قيد COGS
       const { data: invoiceEntries } = await supabase
         .from("journal_entries")
         .select("id")
         .eq("company_id", mapping.companyId)
         .eq("reference_id", invoiceId)
-        .in("reference_type", ["invoice", "invoice_payment", "invoice_ar"])
+        .in("reference_type", ["invoice", "invoice_payment", "invoice_ar", "invoice_cogs"])
 
       if (invoiceEntries && invoiceEntries.length > 0) {
         const entryIds = invoiceEntries.map((e: any) => e.id)
