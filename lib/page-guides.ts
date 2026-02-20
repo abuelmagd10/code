@@ -40,8 +40,9 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
 
-export const AI_SETTINGS_CACHE_KEY = "ai_assistant_settings_v1"
-export const AI_SETTINGS_CACHE_TS_KEY = "ai_assistant_settings_ts"
+// v2 — bumped when AISettings gained ai_custom_language to evict stale v1 entries
+export const AI_SETTINGS_CACHE_KEY = "ai_assistant_settings_v2"
+export const AI_SETTINGS_CACHE_TS_KEY = "ai_assistant_settings_ts_v2"
 export const AI_SETTINGS_CACHE_TTL = 60 * 60 * 1000 // 1 hour
 export const AI_SEEN_PAGES_KEY = "ai_seen_pages_v1"
 
@@ -166,7 +167,10 @@ export function getAISettingsFromCache(): AISettings | null {
     if (Date.now() - Number(ts) > AI_SETTINGS_CACHE_TTL) return null
     const raw = localStorage.getItem(AI_SETTINGS_CACHE_KEY)
     if (!raw) return null
-    return JSON.parse(raw) as AISettings
+    // Merge with DEFAULT_AI_SETTINGS so any field added in a future schema
+    // update always has a safe fallback rather than returning undefined.
+    const parsed = JSON.parse(raw) as Partial<AISettings>
+    return { ...DEFAULT_AI_SETTINGS, ...parsed }
   } catch {
     return null
   }
