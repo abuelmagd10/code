@@ -78,12 +78,13 @@ export default function DashboardInventoryStats({
       const costCenterId = String(userContext.cost_center_id || "")
 
       // ✅ ERP Professional: حساب قيمة المخزون من FIFO Lots (المصدر الوحيد للحقيقة)
-      // ⚠️ يتطلب branch + warehouse + cost_center — إذا لم تكن متاحة يبقى الرقم صفرًا
+      // المسار 1 (الأدق): مع branch + warehouse + cost_center
+      // المسار 2 (Fallback): على مستوى الشركة من fifo_cost_lots مباشرة
       let inventoryValue = 0
       let lowStockCount = 0
 
       if (effectiveBranchId && warehouseId && costCenterId) {
-        // 1. حساب الكميات من inventory_transactions
+        // ─── المسار 1: حساب دقيق بحسب الفرع/المستودع/مركز التكلفة ──────────
         const { data: transactions } = await supabase
           .from('inventory_transactions')
           .select('product_id, quantity_change')
@@ -101,7 +102,6 @@ export default function DashboardInventoryStats({
 
         const productIds = Object.keys(qtyByProduct)
         if (productIds.length > 0) {
-          // جلب بيانات reorder_level للمنتجات
           const { data: products } = await supabase
             .from('products')
             .select('id, reorder_level, item_type')
@@ -111,7 +111,6 @@ export default function DashboardInventoryStats({
 
           const productMap = new Map((products || []).map((p: any) => [p.id, { reorder_level: p.reorder_level }]))
 
-          // حساب قيمة المخزون من FIFO Lots لكل منتج
           for (const [pid, qty] of Object.entries(qtyByProduct)) {
             const actualQty = Math.max(0, qty)
 
@@ -144,22 +143,59 @@ export default function DashboardInventoryStats({
             }
           }
         }
+      } else {
+        // ─── المسار 2 (Fallback): قيمة المخزون على مستوى الشركة من FIFO Lots ──
+        // يُستخدم عندما لا تتوفر بيانات الفرع/المستودع/مركز التكلفة
+        const { data: allFifoLots } = await supabase
+          .from('fifo_cost_lots')
+          .select('remaining_quantity, unit_cost')
+          .eq('company_id', companyId)
+          .gt('remaining_quantity', 0)
+
+        inventoryValue = (allFifoLots || []).reduce((sum: number, lot: any) => {
+          return sum + Number(lot.remaining_quantity || 0) * Number(lot.unit_cost || 0)
+        }, 0)
+
+        // حساب المنتجات منخفضة المخزون على مستوى الشركة
+        const { data: companyTxns } = await supabase
+          .from('inventory_transactions')
+          .select('product_id, quantity_change')
+          .eq('company_id', companyId)
+          .or('is_deleted.is.null,is_deleted.eq.false')
+
+        const companyQtyMap: Record<string, number> = {}
+        for (const t of (companyTxns || [])) {
+          const pid = String(t.product_id)
+          companyQtyMap[pid] = (companyQtyMap[pid] || 0) + Number(t.quantity_change || 0)
+        }
+
+        const lowStockProductIds = Object.keys(companyQtyMap)
+        if (lowStockProductIds.length > 0) {
+          const { data: companyProducts } = await supabase
+            .from('products')
+            .select('id, reorder_level')
+            .eq('company_id', companyId)
+            .in('id', lowStockProductIds)
+
+          for (const prod of (companyProducts || [])) {
+            const qty = companyQtyMap[prod.id] || 0
+            if (qty < (prod.reorder_level || 5)) lowStockCount++
+          }
+        }
       }
 
       // ─── الإحصائيات المالية ─────────────────────────────────────────────────
-      // 🔐 تُطبَّق فلترة الفرع هنا دائمًا عند وجود effectiveBranchId
-      // حساب إجمالي الضرائب المحصلة والمدفوعات المستلمة ونسبة التحصيل
+      // الضرائب المحصلة: من جدول الفواتير (tax_amount)
+      // نسبة التحصيل: الفواتير الإجمالية مقارنة بما تم تحصيله فعلياً
       let invoicesQuery = supabase
         .from('invoices')
-        .select('tax_amount, paid_amount, total_amount, status, invoice_date')
+        .select('tax_amount, total_amount, invoice_date, status')
         .eq('company_id', companyId)
-        .in('status', ['sent', 'partially_paid', 'paid'])
+        .not('status', 'in', '("draft","cancelled","voided")')
 
-      // 🔐 Dashboard Governance: فلترة حسب الفرع فقط في وضع الفرع (financialBranchId = null في وضع الشركة)
       if (financialBranchId) {
         invoicesQuery = invoicesQuery.eq('branch_id', financialBranchId)
       }
-
       if (fromDate) invoicesQuery = invoicesQuery.gte('invoice_date', fromDate)
       if (toDate) invoicesQuery = invoicesQuery.lte('invoice_date', toDate)
 
@@ -169,38 +205,41 @@ export default function DashboardInventoryStats({
         return sum + Number(inv.tax_amount || 0)
       }, 0)
 
-      const totalPaymentsReceived = (invoices || []).reduce((sum: number, inv: any) => {
-        return sum + Number(inv.paid_amount || 0)
-      }, 0)
-
       const totalInvoicesAmount = (invoices || []).reduce((sum: number, inv: any) => {
         return sum + Number(inv.total_amount || 0)
       }, 0)
 
-      const collectionRate = totalInvoicesAmount > 0
-        ? (totalPaymentsReceived / totalInvoicesAmount) * 100
-        : 0
-
-      // حساب المدفوعات المرسلة للموردين
-      let billsQuery = supabase
-        .from('bills')
-        .select('paid_amount, bill_date')
+      // ─── المدفوعات المستلمة والمرسلة: من جدول payments الفعلي ───────────────
+      // ✅ هذا هو المصدر الصحيح — يعكس المدفوعات المسجلة فعلياً
+      // ❌ السابق: كان يقرأ paid_amount من الفواتير وهو غير موثوق إذا تم تعيين الحالة يدوياً
+      let paymentsQuery = supabase
+        .from('payments')
+        .select('amount, payment_date, customer_id, supplier_id')
         .eq('company_id', companyId)
-        .in('status', ['sent', 'partially_paid', 'paid'])
+        .or('is_deleted.is.null,is_deleted.eq.false')
 
-      // 🔐 Dashboard Governance: فلترة حسب الفرع فقط في وضع الفرع
       if (financialBranchId) {
-        billsQuery = billsQuery.eq('branch_id', financialBranchId)
+        paymentsQuery = paymentsQuery.eq('branch_id', financialBranchId)
       }
+      if (fromDate) paymentsQuery = paymentsQuery.gte('payment_date', fromDate)
+      if (toDate) paymentsQuery = paymentsQuery.lte('payment_date', toDate)
 
-      if (fromDate) billsQuery = billsQuery.gte('bill_date', fromDate)
-      if (toDate) billsQuery = billsQuery.lte('bill_date', toDate)
+      const { data: allPayments } = await paymentsQuery
 
-      const { data: bills } = await billsQuery
+      // المدفوعات المستلمة = مدفوعات العملاء (customer_id موجود)
+      const totalPaymentsReceived = (allPayments || [])
+        .filter((p: any) => p.customer_id !== null && p.customer_id !== undefined)
+        .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
 
-      const totalPaymentsSent = (bills || []).reduce((sum: number, bill: any) => {
-        return sum + Number(bill.paid_amount || 0)
-      }, 0)
+      // المدفوعات المرسلة = مدفوعات الموردين (supplier_id موجود)
+      const totalPaymentsSent = (allPayments || [])
+        .filter((p: any) => p.supplier_id !== null && p.supplier_id !== undefined)
+        .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
+
+      // نسبة التحصيل = المحصّل فعلياً ÷ إجمالي الفواتير
+      const collectionRate = totalInvoicesAmount > 0
+        ? Math.min((totalPaymentsReceived / totalInvoicesAmount) * 100, 100)
+        : 0
 
       setStats({
         inventoryValue,

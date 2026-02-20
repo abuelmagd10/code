@@ -80,11 +80,17 @@ export default function DashboardStats({
     return sum + Math.max(gross - returned, 0)
   }, 0)
 
-  // صافي الربح الإجمالي = المبيعات - المشتريات
-  // يتطابق مع مخططات لوحة التحكم ويعطي صورة موحدة
-  const expectedProfit = totalSales - totalPurchases
-  // هامش الربح الإجمالي = المبيعات - تكلفة البضاعة المباعة (للعرض المساعد فقط)
+  // هامش الربح الإجمالي من COGS = المبيعات − تكلفة البضاعة المباعة الفعلية (الأدق محاسبياً)
+  // يعتمد على قيود دفتر الأستاذ العام (GL)، يستبعد المشتريات المخزنة غير المباعة
   const grossProfitFromCOGS = totalCOGS > 0 ? (totalSales - totalCOGS - totalShipping) : null
+
+  // تقدير بديل = المبيعات − إجمالي المشتريات (يشمل ما لم يُبَع بعد)
+  const estimatedProfit = totalSales - totalPurchases
+
+  // القيمة المعروضة للمستخدم: COGS-based عند توفر البيانات، وإلا التقدير البديل
+  const displayProfit = grossProfitFromCOGS !== null ? grossProfitFromCOGS : estimatedProfit
+  const isCOGSBased = grossProfitFromCOGS !== null
+
   const invoicesCount = invoicesData.length
 
   const currency = currencySymbols[appCurrency] || appCurrency
@@ -139,15 +145,23 @@ export default function DashboardStats({
             </div>
           </div>
           <div className="flex items-center gap-1 mt-3">
-            {expenseChangePct >= 0 ? (
-              <ArrowUpRight className="w-4 h-4 text-red-500" />
+            {totalPurchases === 0 ? (
+              <span className="text-xs text-gray-400 dark:text-gray-500 italic">
+                {appLang === 'en' ? 'No purchases this month' : 'لا مشتريات هذا الشهر'}
+              </span>
             ) : (
-              <ArrowDownRight className="w-4 h-4 text-emerald-500" />
+              <>
+                {expenseChangePct >= 0 ? (
+                  <ArrowUpRight className="w-4 h-4 text-red-500" />
+                ) : (
+                  <ArrowDownRight className="w-4 h-4 text-emerald-500" />
+                )}
+                <span className={`text-sm font-medium ${expenseChangePct >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                  {expenseChangePct >= 0 ? '+' : ''}{expenseChangePct.toFixed(1)}%
+                </span>
+                <span className="text-xs text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
+              </>
             )}
-            <span className={`text-sm font-medium ${expenseChangePct >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-              {expenseChangePct >= 0 ? '+' : ''}{expenseChangePct.toFixed(1)}%
-            </span>
-            <span className="text-xs text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
           </div>
         </CardContent>
       </Card>
@@ -159,16 +173,19 @@ export default function DashboardStats({
           <div className="flex items-center justify-between relative z-10">
             <div>
               <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                {appLang === 'en' ? 'Net Profit' : 'صافي الربح'}
+                {isCOGSBased
+                  ? (appLang === 'en' ? 'Gross Profit (COGS)' : 'هامش الربح الإجمالي')
+                  : (appLang === 'en' ? 'Net Profit' : 'صافي الربح')
+                }
               </p>
-              <p className={`text-2xl lg:text-3xl font-bold mt-2 ${expectedProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                {formatNumber(expectedProfit)}
+              <p className={`text-2xl lg:text-3xl font-bold mt-2 ${displayProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                {formatNumber(Math.round(displayProfit))}
               </p>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                 {currency}
-                {grossProfitFromCOGS !== null && (
-                  <span className="mr-2 text-gray-400">
-                    {' · '}{appLang === 'en' ? 'Gross' : 'إجمالي'}: {formatNumber(Math.round(grossProfitFromCOGS))}
+                {isCOGSBased && (
+                  <span className="mr-2 text-gray-400" title={appLang === 'en' ? 'Sales minus all purchases (incl. unsold stock)' : 'المبيعات ناقص إجمالي المشتريات (يشمل المخزون)'}>
+                    {' · '}{appLang === 'en' ? 'vs. purchases' : 'مقارنة بالمشتريات'}: {formatNumber(estimatedProfit)}
                   </span>
                 )}
               </p>

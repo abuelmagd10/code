@@ -243,18 +243,21 @@ export async function fetchPageGuide(
 
     if (error || !data) return null
 
+    // Supabase types may not include recently-added columns (accounting_pattern_ar/en).
+    // Cast to any to avoid generated-type mismatch until types are regenerated.
+    const row = data as any
     const isAr = lang === "ar"
-    const rawPattern = isAr ? data.accounting_pattern_ar : data.accounting_pattern_en
+    const rawPattern = isAr ? row.accounting_pattern_ar : row.accounting_pattern_en
 
     return {
-      page_key: data.page_key,
-      title: isAr ? data.title_ar : data.title_en,
-      description: isAr ? data.description_ar : data.description_en,
-      steps: Array.isArray(isAr ? data.steps_ar : data.steps_en)
-        ? (isAr ? data.steps_ar : data.steps_en)
+      page_key: row.page_key,
+      title: isAr ? row.title_ar : row.title_en,
+      description: isAr ? row.description_ar : row.description_en,
+      steps: Array.isArray(isAr ? row.steps_ar : row.steps_en)
+        ? (isAr ? row.steps_ar : row.steps_en)
         : [],
-      tips: Array.isArray(isAr ? data.tips_ar : data.tips_en)
-        ? (isAr ? data.tips_ar : data.tips_en)
+      tips: Array.isArray(isAr ? row.tips_ar : row.tips_en)
+        ? (isAr ? row.tips_ar : row.tips_en)
         : [],
       accounting_pattern: rawPattern ?? null,
     }

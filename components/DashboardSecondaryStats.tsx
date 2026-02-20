@@ -58,42 +58,48 @@ export default function DashboardSecondaryStats({
   const currency = currencySymbols[appCurrency] || appCurrency
   const formatNumber = (n: number) => n.toLocaleString('en-US')
   
-  // Calculate receivables outstanding (including returns)
+  // الذمم المدينة = ما لم يُسدَّد من الفواتير غير المدفوعة/الملغاة
+  // يشمل الفواتير في حالات: sent, partially_paid, overdue
   const receivablesOutstanding = invoicesData
-    .filter((i) => !["paid", "cancelled"].includes(String(i.status || "").toLowerCase()))
+    .filter((i) => !["paid", "cancelled", "voided"].includes(String(i.status || "").toLowerCase()))
     .reduce((sum, i) => {
       const total = getDisplayAmount(i.total_amount || 0, i.display_total, i.display_currency, appCurrency)
-      const paid = i.paid_amount || 0
-      const returned = i.returned_amount || 0
-      // صافي المتبقي = الإجمالي - المدفوع - المرتجعات
+      const paid = Number(i.paid_amount || 0)
+      const returned = Number(i.returned_amount || 0)
       return sum + Math.max(total - paid - returned, 0)
     }, 0)
 
-  // Calculate payables outstanding (including returns)
+  // الذمم الدائنة = ما لم يُسدَّد لصالح الموردين من الفواتير غير المدفوعة
   const payablesOutstanding = billsData
     .filter((b) => !["paid", "cancelled", "voided"].includes(String(b.status || "").toLowerCase()))
     .reduce((sum, b) => {
       const total = getDisplayAmount(b.total_amount || 0, b.display_total, b.display_currency, appCurrency)
-      const paid = b.paid_amount || 0
-      const returned = b.returned_amount || 0
-      // صافي المتبقي = الإجمالي - المدفوع - المرتجعات
+      const paid = Number(b.paid_amount || 0)
+      const returned = Number(b.returned_amount || 0)
       return sum + Math.max(total - paid - returned, 0)
     }, 0)
-  
-  // Income this month
+
+  // عدد الفواتير المعلقة (لم تُسدَّد كلياً) لإظهار مؤشر توضيحي
+  const pendingInvoicesCount = invoicesData.filter(
+    (i) => !["paid", "cancelled", "voided"].includes(String(i.status || "").toLowerCase())
+  ).length
+  const pendingBillsCount = billsData.filter(
+    (b) => !["paid", "cancelled", "voided"].includes(String(b.status || "").toLowerCase())
+  ).length
+
   const now = new Date()
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-  
-  // دخل الشهر = مجموع الفواتير − مرتجعات البيع
+
+  // دخل الشهر = مجموع الفواتير − مرتجعات البيع (للشهر الحالي فقط)
   const incomeThisMonth = invoicesData
-    .filter((i) => String(i.invoice_date || "").startsWith(ym))
+    .filter((i) => String(i.invoice_date || "").startsWith(ym) && !["cancelled", "voided"].includes(String(i.status || "").toLowerCase()))
     .reduce((sum, i) => {
       const gross = getDisplayAmount(i.total_amount || 0, i.display_total, i.display_currency, appCurrency)
       const returned = Number(i.returned_amount || 0)
       return sum + Math.max(gross - returned, 0)
     }, 0)
-  
-  // مصروف الشهر = مجموع فواتير الموردين − مرتجعات الشراء
+
+  // مصروف الشهر = مجموع فواتير الموردين − مرتجعات الشراء (للشهر الحالي فقط)
   const expenseThisMonth = billsData
     .filter((b) => String(b.bill_date || "").startsWith(ym) && !["draft", "cancelled", "voided"].includes(String(b.status || "").toLowerCase()))
     .reduce((sum, b) => {
@@ -116,7 +122,19 @@ export default function DashboardSecondaryStats({
             </span>
           </div>
           <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{formatNumber(receivablesOutstanding)}</p>
-          <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">{currency}</p>
+          <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">
+            {currency}
+            {pendingInvoicesCount > 0 && (
+              <span className="mr-1 text-blue-400">
+                · {pendingInvoicesCount} {appLang === 'en' ? 'pending' : 'فاتورة معلقة'}
+              </span>
+            )}
+            {receivablesOutstanding === 0 && pendingInvoicesCount === 0 && (
+              <span className="mr-1 text-emerald-500">
+                · {appLang === 'en' ? 'All invoices settled' : 'جميع الفواتير مسددة'}
+              </span>
+            )}
+          </p>
         </CardContent>
       </Card>
 
@@ -132,7 +150,19 @@ export default function DashboardSecondaryStats({
             </span>
           </div>
           <p className="text-2xl font-bold text-red-700 dark:text-red-300">{formatNumber(payablesOutstanding)}</p>
-          <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-1">{currency}</p>
+          <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-1">
+            {currency}
+            {pendingBillsCount > 0 && (
+              <span className="mr-1 text-red-400">
+                · {pendingBillsCount} {appLang === 'en' ? 'pending' : 'فاتورة معلقة'}
+              </span>
+            )}
+            {payablesOutstanding === 0 && pendingBillsCount === 0 && (
+              <span className="mr-1 text-emerald-500">
+                · {appLang === 'en' ? 'All bills settled' : 'جميع الفواتير مسددة'}
+              </span>
+            )}
+          </p>
         </CardContent>
       </Card>
 

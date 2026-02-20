@@ -11,7 +11,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
-import { reverseCOGSTransaction, getCOGSByBill, createCOGSTransaction } from './cogs-transactions'
+import { getCOGSByBill, createCOGSTransaction } from './cogs-transactions'
 
 export interface PurchaseReturnItem {
   productId: string
