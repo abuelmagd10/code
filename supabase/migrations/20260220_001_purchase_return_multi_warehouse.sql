@@ -444,25 +444,24 @@ BEGIN
     IF NOT EXISTS (
       SELECT 1 FROM vendor_credits
       WHERE source_purchase_return_id = v_pr.id
-        AND warehouse_id = v_alloc.warehouse_id
+        AND branch_id = v_alloc.branch_id
+        AND cost_center_id IS NOT DISTINCT FROM v_alloc.cost_center_id
     ) THEN
       INSERT INTO vendor_credits (
         company_id, supplier_id, bill_id,
         source_purchase_return_id, source_purchase_invoice_id, journal_entry_id,
         credit_number, credit_date, status,
         subtotal, tax_amount, total_amount, applied_amount,
-        branch_id, cost_center_id, warehouse_id,
-        notes, original_currency, exchange_rate_used
+        branch_id, cost_center_id,
+        notes
       ) VALUES (
         v_pr.company_id, v_pr.supplier_id, v_pr.bill_id,
         v_pr.id, v_pr.bill_id, v_alloc.journal_entry_id,
         'VC-' || REPLACE(v_pr.return_number, 'PRET-', '') || '-' || LEFT(v_alloc.warehouse_id::text, 8),
         v_pr.return_date, 'open',
         v_alloc.subtotal, v_alloc.tax_amount, v_alloc.total_amount, 0,
-        v_alloc.branch_id, v_alloc.cost_center_id, v_alloc.warehouse_id,
-        'إشعار دائن تلقائي — مرتجع ' || v_pr.return_number || ' / مخزن ' || v_alloc.warehouse_id::text,
-        COALESCE(v_pr.original_currency, 'EGP'),
-        COALESCE(v_pr.exchange_rate_used, 1)
+        v_alloc.branch_id, v_alloc.cost_center_id,
+        'إشعار دائن تلقائي — مرتجع ' || v_pr.return_number || ' / مخزن ' || v_alloc.warehouse_id::text
       ) RETURNING id INTO v_vc_id;
 
       -- بنود الإشعار الدائن من بنود هذا التخصيص
@@ -539,6 +538,51 @@ $$;
 
 COMMENT ON FUNCTION confirm_warehouse_allocation IS
   'اعتماد تخصيص مخزن واحد في مرتجع متعدد المخازن — يُنفذ الخصم والقيد لهذا المخزن فقط.';
+
+-- ====================================================================
+-- 5b. إصلاح دالة auto_inventory_for_vendor_credit
+-- ====================================================================
+-- المشكلة: كانت الدالة تُدرج حركة مخزون تلقائية عند إدراج vendor_credit_item
+-- حتى عندما يكون الإشعار الدائن مرتبطاً بمرتجع مشتريات (source_purchase_return_id IS NOT NULL)
+-- مما يُسبب تكراراً في حركات المخزون وخطأ "Branch does not belong to company"
+-- لأن الحركة المُدرجة تلقائياً لا تحتوي على branch_id/warehouse_id.
+--
+-- الحل: تجاهل الإدراج التلقائي إذا كان الإشعار مرتبطاً بمرتجع مشتريات
+-- لأن confirm_warehouse_allocation يتولى بالفعل حركات المخزون بشكل صحيح.
+CREATE OR REPLACE FUNCTION auto_inventory_for_vendor_credit()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $$
+DECLARE
+  vc_record RECORD;
+BEGIN
+  -- Get vendor credit info
+  SELECT company_id, journal_entry_id, credit_number, source_purchase_return_id
+  INTO vc_record
+  FROM vendor_credits WHERE id = NEW.vendor_credit_id;
+
+  -- Skip if linked to purchase return — inventory transactions are already created
+  -- by confirm_warehouse_allocation to avoid duplicates and missing branch_id issues
+  IF vc_record.source_purchase_return_id IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- Create inventory transaction (return to supplier = negative quantity)
+  IF NEW.product_id IS NOT NULL AND vc_record.journal_entry_id IS NOT NULL THEN
+    INSERT INTO inventory_transactions (
+      company_id, product_id, transaction_type, quantity_change,
+      reference_id, journal_entry_id, notes
+    ) VALUES (
+      vc_record.company_id, NEW.product_id, 'purchase_return',
+      -NEW.quantity, NEW.vendor_credit_id, vc_record.journal_entry_id,
+      'مرتجع مشتريات - إشعار دائن ' || vc_record.credit_number
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
 
 -- ====================================================================
 -- 6. RLS للجدول الجديد

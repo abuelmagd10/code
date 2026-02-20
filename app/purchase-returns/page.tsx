@@ -68,6 +68,7 @@ export default function PurchaseReturnsPage() {
 
   const [returns, setReturns] = useState<PurchaseReturn[]>([])
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [managedWarehouseIds, setManagedWarehouseIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
@@ -130,6 +131,17 @@ export default function PurchaseReturnsPage() {
         setCurrentWarehouseId(userWarehouseId)
         setCurrentBranchId(memberData?.branch_id || null)
         setCurrentUserName(user.email || '')
+
+        // تحميل المخازن التي لديها مسؤول مخزن مُعيَّن
+        const { data: managersData } = await supabase
+          .from('company_members')
+          .select('warehouse_id')
+          .eq('company_id', companyId)
+          .eq('role', 'store_manager')
+          .not('warehouse_id', 'is', null)
+        setManagedWarehouseIds(new Set(
+          (managersData || []).map((m: { warehouse_id: string | null }) => m.warehouse_id).filter(Boolean) as string[]
+        ))
 
         const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
         const selectedBranchId = branchFilter.getFilteredBranchId()
@@ -548,6 +560,7 @@ export default function PurchaseReturnsPage() {
         const allocations = pr.allocations || []
         const isMultiAlloc = allocations.length > 1
         const isPending = pr.workflow_status === 'pending_approval' || pr.workflow_status === 'partial_approval'
+        const isPrivileged = PRIVILEGED_ROLES.includes(currentUserRole)
 
         // تخصيصات مخزن هذا المسؤول (Phase 2)
         const myAllocations = allocations.filter(a =>
@@ -558,10 +571,14 @@ export default function PurchaseReturnsPage() {
         const isPhase1MyWarehouse = !isMultiAlloc &&
           (!currentWarehouseId || pr.warehouse_id === currentWarehouseId)
 
+        // Phase 1 بدون مسؤول مخزن: warehouse_id غير مُدار أو لا يوجد warehouse_id
+        const isPhase1UnmanagedWarehouse = isPrivileged && isPending && !isMultiAlloc &&
+          (!pr.warehouse_id || !managedWarehouseIds.has(pr.warehouse_id))
+
         return (
           <div className="flex flex-col items-center gap-1">
             <div className="flex items-center gap-1.5 justify-center">
-              {/* Phase 1: زر اعتماد مرتجع مخزن واحد */}
+              {/* Phase 1: زر اعتماد مرتجع مخزن واحد لمسؤول المخزن */}
               {isStoreManager && isPending && !isMultiAlloc && isPhase1MyWarehouse && (
                 <Button
                   size="sm"
@@ -580,6 +597,27 @@ export default function PurchaseReturnsPage() {
                   )}
                 </Button>
               )}
+
+              {/* Phase 1: زر اعتماد للأدوار العليا عند غياب مسؤول المخزن */}
+              {isPhase1UnmanagedWarehouse && !isMultiAlloc && (
+                <Button
+                  size="sm"
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-7 px-2"
+                  onClick={() => confirmDelivery(pr)}
+                  disabled={confirmingId === pr.id}
+                  title={appLang === 'en' ? 'Confirm (no warehouse manager assigned)' : 'اعتماد (لا يوجد مسؤول مخزن)'}
+                >
+                  {confirmingId === pr.id ? (
+                    <span className="animate-spin">⏳</span>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                      {appLang === 'en' ? 'Confirm' : 'اعتماد'}
+                    </>
+                  )}
+                </Button>
+              )}
+
               {pr.bills ? (
                 <Button
                   variant="outline"
@@ -619,29 +657,60 @@ export default function PurchaseReturnsPage() {
               </div>
             )}
 
-            {/* Phase 2 معلومات للمشرفين: حالة كل مخزن */}
+            {/* Phase 2 معلومات ومخازن قابلة للاعتماد للأدوار العليا */}
             {isMultiAlloc && !isStoreManager && (
               <div className="flex flex-wrap gap-0.5 justify-center">
-                {allocations.map(alloc => (
-                  <span
-                    key={alloc.id}
-                    className={`text-[10px] px-1.5 py-0.5 rounded ${
-                      alloc.workflow_status === 'confirmed'
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                    }`}
-                    title={(alloc.warehouses as any)?.name || alloc.warehouse_id}
-                  >
-                    {alloc.workflow_status === 'confirmed' ? '✓' : '⏳'} {(alloc.warehouses as any)?.name?.slice(0, 10) || '—'}
-                  </span>
-                ))}
+                {allocations.map(alloc => {
+                  const isConfirmed = alloc.workflow_status === 'confirmed'
+                  const isUnmanaged = !managedWarehouseIds.has(alloc.warehouse_id)
+                  const canApprove = isPrivileged && !isConfirmed && isUnmanaged && isPending
+
+                  if (canApprove) {
+                    return (
+                      <Button
+                        key={alloc.id}
+                        size="sm"
+                        className="bg-amber-600 hover:bg-amber-700 text-white text-[10px] h-6 px-1.5"
+                        onClick={() => confirmAllocation(pr, alloc)}
+                        disabled={confirmingAllocationId === alloc.id}
+                        title={appLang === 'en'
+                          ? `Confirm (no warehouse manager): ${(alloc.warehouses as any)?.name || ''}`
+                          : `اعتماد (لا يوجد مسؤول مخزن): ${(alloc.warehouses as any)?.name || ''}`
+                        }
+                      >
+                        {confirmingAllocationId === alloc.id ? (
+                          <span className="animate-spin">⏳</span>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3 h-3 mr-0.5" />
+                            <span className="truncate max-w-[55px]">{(alloc.warehouses as any)?.name?.slice(0, 8) || '—'}</span>
+                          </>
+                        )}
+                      </Button>
+                    )
+                  }
+
+                  return (
+                    <span
+                      key={alloc.id}
+                      className={`text-[10px] px-1.5 py-0.5 rounded ${
+                        isConfirmed
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                      }`}
+                      title={(alloc.warehouses as any)?.name || alloc.warehouse_id}
+                    >
+                      {isConfirmed ? '✓' : '⏳'} {(alloc.warehouses as any)?.name?.slice(0, 10) || '—'}
+                    </span>
+                  )
+                })}
               </div>
             )}
           </div>
         )
       }
     }
-  ], [appLang, currencySymbol, router, isStoreManager, isAccountant, isRestrictedRole, currentWarehouseId, currentBranchId, confirmingId, confirmingAllocationId, currentUserId])
+  ], [appLang, currencySymbol, router, isStoreManager, isAccountant, isRestrictedRole, currentWarehouseId, currentBranchId, confirmingId, confirmingAllocationId, currentUserId, currentUserRole, managedWarehouseIds])
 
   // إحصاءات سريعة
   const pendingCount = returns.filter(r =>
