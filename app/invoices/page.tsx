@@ -216,7 +216,7 @@ export default function InvoicesPage() {
     invoices.forEach((inv) => {
       // حساب الحالة الفعلية (مثل منطق الفلترة)
       const actualPaid = paidByInvoice[inv.id] || 0
-      const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency && inv.display_currency !== appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
+      const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
       const returnedAmount = Number(inv.returned_amount || 0)
       const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : Number(inv.total_amount || 0))
       const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
@@ -257,16 +257,15 @@ export default function InvoicesPage() {
 
   // Helper: Get display amount (use converted if available)
   // يستخدم المدفوعات الفعلية من جدول payments كأولوية
-  // ملاحظة: total_amount هو المبلغ الحالي بعد خصم المرتجعات — يُحدَّث تلقائياً عند كل مرتجع
+  // ملاحظة: total_amount هو المبلغ الحالي بعد خصم المرتجعات
   const getDisplayAmount = (invoice: Invoice, field: 'total' | 'paid' = 'total'): number => {
     if (field === 'total') {
-      // display_total يُستخدم فقط حين تختلف عملة الفاتورة عن عملة التطبيق (تحويل عملة)
-      // حين تتطابق العملتان: total_amount هو المصدر الموثوق لأنه يتحدث عند كل مرتجع
-      // بينما display_total يُضبط مرة واحدة عند إنشاء الفاتورة ولا يعكس المرتجعات
-      if (invoice.display_currency && invoice.display_currency !== appCurrency && invoice.display_total != null) {
+      // استخدام total_amount مباشرة لأنه يمثل المبلغ الحالي بعد المرتجعات
+      // display_total يستخدم فقط إذا كانت العملة مختلفة ومحولة
+      if (invoice.display_currency === appCurrency && invoice.display_total != null) {
         return invoice.display_total
       }
-      // total_amount هو المبلغ الصحيح الحالي (بعد خصم جميع المرتجعات)
+      // total_amount هو المبلغ الصحيح (بعد خصم المرتجعات)
       return invoice.total_amount
     }
     // For paid amount: استخدام المدفوعات الفعلية من جدول payments أولاً
@@ -274,9 +273,8 @@ export default function InvoicesPage() {
     if (actualPaid > 0) {
       return actualPaid
     }
-    // Fallback: display_paid فقط حين تختلف العملتان (تحويل عملة حقيقي)
-    // حين تتطابقان: paid_amount هو المصدر الموثوق (يُحدَّث عند المرتجعات والتسويات)
-    if (invoice.display_currency && invoice.display_currency !== appCurrency && invoice.display_paid != null) {
+    // Fallback to stored paid_amount
+    if (invoice.display_currency === appCurrency && invoice.display_paid != null) {
       return invoice.display_paid
     }
     return invoice.paid_amount
@@ -785,7 +783,7 @@ export default function InvoicesPage() {
         // فقط إذا كان صافي الفاتورة موجب
         if (netInvoiceAmount > 0) {
           const actualPaid = paidByInvoice[inv.id] || 0
-          const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency && inv.display_currency !== appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
+          const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
           hasCredit = paidAmount > netInvoiceAmount
         }
       }
@@ -797,7 +795,7 @@ export default function InvoicesPage() {
 
         // ✅ حساب الحالة الفعلية للفاتورة (مثل ما يحدث في العرض)
         const actualPaid = paidByInvoice[inv.id] || 0
-        const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency && inv.display_currency !== appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
+        const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
         const returnedAmount = Number(inv.returned_amount || 0)
         // ✅ استخدام original_total إذا كان موجوداً، وإلا استخدام display_total أو total_amount (مثل منطق hasCredit)
         const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : Number(inv.total_amount || 0))
