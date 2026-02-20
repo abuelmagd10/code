@@ -31,6 +31,7 @@ type ReturnItem = {
   quantity: number
   warehouse_id: string | null
   warehouse_allocation_id: string | null
+  branch_id: string | null
 }
 
 type PurchaseReturn = {
@@ -414,8 +415,9 @@ export default function PurchaseReturnsPage() {
       return qty > 0 ? qty : null
     }
     if (isAccountant && currentBranchId) {
-      // المحاسب يرى إجمالي الكميات في فرعه
-      const qty = items.reduce((s, i) => s + Number(i.quantity), 0)
+      const qty = items
+        .filter(i => i.branch_id === currentBranchId)
+        .reduce((s, i) => s + Number(i.quantity), 0)
       return qty > 0 ? qty : null
     }
     return null
