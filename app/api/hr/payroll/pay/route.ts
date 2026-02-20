@@ -134,7 +134,8 @@ export async function POST(req: NextRequest) {
       total: result?.total,
       entry_id: result?.entry_id,
       idempotent: result?.idempotent || false,
-      message: result?.message
+      // RPC يُرجع 'description' وليس 'message' — نحافظ على التوافق مع الحالتين
+      message: result?.description ?? result?.message ?? null
     })
 
   } catch (e: any) {

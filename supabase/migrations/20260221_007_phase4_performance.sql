@@ -160,6 +160,7 @@ DECLARE
   v_offset         INT;
   v_total_count    BIGINT;
   v_opening_bal    NUMERIC(15,2) := 0;
+  v_page_opening   NUMERIC(15,2) := 0;
   v_transactions   JSONB;
   v_account_info   JSONB;
 BEGIN
@@ -209,58 +210,64 @@ BEGIN
     AND je.deleted_at IS NULL
     AND je.entry_date BETWEEN p_from_date AND p_to_date;
 
-  -- جلب السطور مع الرصيد الجاري محسوباً في DB
-  SELECT jsonb_agg(t ORDER BY t->>'date', t->>'entry_number') INTO v_transactions
+  -- الرصيد عند بداية الصفحة: مجموع السطور قبل OFFSET (بدون self-join)
+  -- يُمرَّر للعميل ليحسب الرصيد الجاري لكل سطر في الصفحة
+  SELECT ROUND((
+    v_opening_bal +
+    COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0)
+  )::NUMERIC, 2) INTO v_page_opening
   FROM (
-    SELECT jsonb_build_object(
-      'line_id',       jel.id,
-      'date',          je.entry_date,
-      'entry_number',  je.entry_number,
-      'description',   COALESCE(jel.description, je.description, ''),
-      'reference_type', je.reference_type,
-      'reference_id',  je.reference_id,
-      'debit',         ROUND(COALESCE(jel.debit_amount, 0)::NUMERIC, 2),
-      'credit',        ROUND(COALESCE(jel.credit_amount, 0)::NUMERIC, 2),
-      'running_balance', ROUND((
-        v_opening_bal +
-        SUM(jel2.debit_amount - jel2.credit_amount) OVER (
-          ORDER BY je2.entry_date, je2.entry_number, jel2.id
-          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        )
-      )::NUMERIC, 2)
-    ) AS t
+    SELECT jel.debit_amount, jel.credit_amount
     FROM public.journal_entry_lines jel
     JOIN public.journal_entries je ON je.id = jel.journal_entry_id
-    -- Self-join for running balance window
-    JOIN public.journal_entry_lines jel2 ON jel2.account_id = p_account_id
-    JOIN public.journal_entries je2 ON je2.id = jel2.journal_entry_id
-      AND je2.company_id = p_company_id
-      AND je2.status = 'posted'
-      AND (je2.is_deleted IS NULL OR je2.is_deleted = FALSE)
-      AND je2.deleted_at IS NULL
-      AND je2.entry_date BETWEEN p_from_date AND p_to_date
     WHERE jel.account_id = p_account_id
       AND je.company_id = p_company_id
       AND je.status = 'posted'
       AND (je.is_deleted IS NULL OR je.is_deleted = FALSE)
       AND je.deleted_at IS NULL
       AND je.entry_date BETWEEN p_from_date AND p_to_date
-      AND jel.id = jel2.id  -- اشتراط تطابق السطر
+    ORDER BY je.entry_date, je.entry_number, jel.id
+    LIMIT v_offset
+  ) pre_page;
+
+  -- جلب سطور الصفحة فقط — بدون self-join أو window على الجدول كله
+  -- الرصيد الجاري يُحسب من page_opening_balance على جانب العميل
+  SELECT jsonb_agg(row_data ORDER BY row_data->>'date', row_data->>'entry_number') INTO v_transactions
+  FROM (
+    SELECT jsonb_build_object(
+      'line_id',        jel.id,
+      'date',           je.entry_date,
+      'entry_number',   COALESCE(je.entry_number, 'JE-' || LEFT(je.id::TEXT, 8)),
+      'description',    COALESCE(jel.description, je.description, ''),
+      'reference_type', je.reference_type,
+      'reference_id',   je.reference_id,
+      'debit',          ROUND(COALESCE(jel.debit_amount,  0)::NUMERIC, 2),
+      'credit',         ROUND(COALESCE(jel.credit_amount, 0)::NUMERIC, 2)
+    ) AS row_data
+    FROM public.journal_entry_lines jel
+    JOIN public.journal_entries je ON je.id = jel.journal_entry_id
+    WHERE jel.account_id = p_account_id
+      AND je.company_id = p_company_id
+      AND je.status = 'posted'
+      AND (je.is_deleted IS NULL OR je.is_deleted = FALSE)
+      AND je.deleted_at IS NULL
+      AND je.entry_date BETWEEN p_from_date AND p_to_date
     ORDER BY je.entry_date, je.entry_number, jel.id
     LIMIT p_page_size OFFSET v_offset
-  ) sub;
+  ) page_rows;
 
   RETURN jsonb_build_object(
-    'account',          v_account_info,
-    'opening_balance',  v_opening_bal,
-    'transactions',     COALESCE(v_transactions, '[]'::JSONB),
+    'account',              v_account_info,
+    'opening_balance',      v_opening_bal,
+    'page_opening_balance', COALESCE(v_page_opening, v_opening_bal),
+    'transactions',         COALESCE(v_transactions, '[]'::JSONB),
     'pagination', jsonb_build_object(
-      'page',       p_page,
-      'page_size',  p_page_size,
-      'total',      v_total_count,
-      'pages',      CEIL(v_total_count::NUMERIC / p_page_size),
-      'has_next',   v_offset + p_page_size < v_total_count,
-      'has_prev',   p_page > 1
+      'page',      p_page,
+      'page_size', p_page_size,
+      'total',     v_total_count,
+      'pages',     CEIL(v_total_count::NUMERIC / p_page_size),
+      'has_next',  v_offset + p_page_size < v_total_count,
+      'has_prev',  p_page > 1
     ),
     'period', jsonb_build_object(
       'from', p_from_date,

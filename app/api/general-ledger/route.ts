@@ -84,7 +84,14 @@ export async function GET(req: NextRequest) {
 
       if (rpcErr) {
         // fallback إذا لم تكن الدالة موجودة بعد (backward compatibility)
-        if (rpcErr.code === "42883" || rpcErr.message?.includes("does not exist")) {
+        // PGRST202: PostgREST "Could not find the function"
+        // 42883:    PostgreSQL "undefined_function"
+        const isFunctionMissing =
+          rpcErr.code === "PGRST202" ||
+          rpcErr.code === "42883"    ||
+          rpcErr.message?.includes("Could not find the function") ||
+          rpcErr.message?.includes("does not exist")
+        if (isFunctionMissing) {
           return legacySingleAccountGL(supabase, companyId, accountId, from, to)
         }
         return serverError(`خطأ في جلب دفتر الأستاذ: ${rpcErr.message}`)
@@ -116,7 +123,12 @@ export async function GET(req: NextRequest) {
 
     if (summaryErr) {
       // fallback إذا لم تكن الدالة موجودة
-      if (summaryErr.code === "42883" || summaryErr.message?.includes("does not exist")) {
+      const isFunctionMissing =
+        summaryErr.code === "PGRST202" ||
+        summaryErr.code === "42883"    ||
+        summaryErr.message?.includes("Could not find the function") ||
+        summaryErr.message?.includes("does not exist")
+      if (isFunctionMissing) {
         return legacyAllAccountsGL(supabase, companyId, from, to, accountId)
       }
       return serverError(`خطأ في جلب ملخص دفتر الأستاذ: ${summaryErr.message}`)

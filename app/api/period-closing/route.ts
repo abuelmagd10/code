@@ -66,13 +66,17 @@ export async function POST(req: NextRequest) {
       p_year: periodYear
     })
 
-    if (yearCheckResult && !yearCheckResult.can_close) {
-      const blockingIssues = (yearCheckResult.blocking_issues || [])
-        .filter((issue: any) => issue.code !== 'OPEN_PERIODS') // نتجاهل OPEN_PERIODS عند إقفال فترة واحدة
-      if (blockingIssues.length > 0) {
-        const messages = blockingIssues.map((issue: any) => issue.message).join(' | ')
+    if (yearCheckResult) {
+      // نمنع الإقفال فقط عند وجود مشاكل محاسبية حرجة (قيود غير متوازنة أو مكررة)
+      // OPEN_PERIODS مقبول عند إقفال فترة واحدة من السنة — لا يُعتبر خطأً هنا
+      const CRITICAL_CODES = ['UNBALANCED_ENTRIES', 'DUPLICATE_ENTRIES']
+      const criticalIssues = (yearCheckResult.blocking_issues || [])
+        .filter((issue: any) => CRITICAL_CODES.includes(issue.code))
+
+      if (criticalIssues.length > 0) {
+        const messages = criticalIssues.map((issue: any) => issue.message).join(' | ')
         return NextResponse.json(
-          { success: false, error: `لا يمكن الإقفال: ${messages}`, blocking_issues: blockingIssues },
+          { success: false, error: `لا يمكن الإقفال: ${messages}`, blocking_issues: criticalIssues },
           { status: 400 }
         )
       }

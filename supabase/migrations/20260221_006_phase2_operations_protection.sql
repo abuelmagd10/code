@@ -81,19 +81,18 @@ BEGIN
 
     -- إذا كانت العملية في معالجة → رفض (منع التكرار المتزامن)
     IF v_existing.status = 'processing' THEN
-      -- إذا كانت قديمة أكثر من 5 دقائق، اعتبرها فاشلة
+      -- إذا كانت قديمة أكثر من 5 دقائق، اعتبرها فاشلة واسمح بإعادة المحاولة فوراً
       IF v_existing.created_at < NOW() - INTERVAL '5 minutes' THEN
-        UPDATE public.idempotency_keys
-        SET status = 'failed', completed_at = NOW()
-        WHERE id = v_existing.id;
+        -- حذف السجل الفاشل مباشرةً بدلاً من التحديث ثم الحذف
+        -- (تجنب مشكلة: v_existing.status لا يتحدث بعد UPDATE)
+        DELETE FROM public.idempotency_keys WHERE id = v_existing.id;
+        -- الخروج من الـ IF block والمتابعة لإنشاء مفتاح جديد
       ELSE
         RAISE EXCEPTION 'IDEMPOTENCY_IN_FLIGHT: العملية جارية بالفعل. انتظر اكتمالها. Key: %', p_idempotency_key
           USING ERRCODE = 'P0001';
       END IF;
-    END IF;
-
     -- إذا كانت فاشلة → اسمح بإعادة المحاولة (أنشئ جديدة)
-    IF v_existing.status = 'failed' THEN
+    ELSIF v_existing.status = 'failed' THEN
       DELETE FROM public.idempotency_keys WHERE id = v_existing.id;
     END IF;
   END IF;
