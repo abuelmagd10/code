@@ -24,14 +24,13 @@ type WarehouseAllocation = {
   confirmed_by: string | null
   confirmed_at: string | null
   total_amount: number
-  warehouses?: { name: string } | null
+  warehouses?: { name: string; branch_id: string | null } | null
 }
 
 type ReturnItem = {
   quantity: number
   warehouse_id: string | null
   warehouse_allocation_id: string | null
-  branch_id: string | null
 }
 
 type PurchaseReturn = {
@@ -146,7 +145,7 @@ export default function PurchaseReturnsPage() {
             warehouses(name),
             allocations:purchase_return_warehouse_allocations(
               id, warehouse_id, workflow_status, confirmed_by, confirmed_at, total_amount,
-              warehouses(name)
+              warehouses(name, branch_id)
             ),
             purchase_return_items(quantity, warehouse_id, warehouse_allocation_id)
           `)
@@ -415,8 +414,16 @@ export default function PurchaseReturnsPage() {
       return qty > 0 ? qty : null
     }
     if (isAccountant && currentBranchId) {
+      // بناء مجموعة warehouse IDs التي تنتمي لفرع المحاسب عبر بيانات التخصيصات
+      const branchWarehouseIds = new Set(
+        (pr.allocations || [])
+          .filter(a => a.warehouses?.branch_id === currentBranchId)
+          .map(a => a.warehouse_id)
+      )
+      // للمرتجعات ذات الفرع الواحد (Phase 1): warehouse_id قد يكون null في الأصناف
+      const isSingleBranchReturn = pr.branch_id === currentBranchId
       const qty = items
-        .filter(i => i.branch_id === currentBranchId)
+        .filter(i => isSingleBranchReturn || (i.warehouse_id && branchWarehouseIds.has(i.warehouse_id)))
         .reduce((s, i) => s + Number(i.quantity), 0)
       return qty > 0 ? qty : null
     }
