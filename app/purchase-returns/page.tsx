@@ -140,14 +140,12 @@ export default function PurchaseReturnsPage() {
 
         // 🔐 فلترة حسب الصلاحيات
         if (role === 'store_manager' && userWarehouseId) {
-          // مسؤول المخزن: نجلب جميع المرتجعات المعلقة والمعتمدة جزئياً
-          // + المرتجعات المرتبطة بمخزنه (Phase 1)
-          // نفلتر client-side على كل من له علاقة بمخزن هذا المسؤول
-          // لا نضع فلتر هنا لكي نشمل Phase 2 (allocation-based)
+          // مسؤول المخزن: لا نفلتر هنا — نفلتر client-side لشمل Phase 1 و Phase 2
         } else if (canFilterByBranch && selectedBranchId) {
-          query = query.eq("branch_id", selectedBranchId)
+          // المرتجعات المتعددة المخازن لها branch_id = NULL، نُدرجها دائماً
+          query = query.or(`branch_id.eq.${selectedBranchId},branch_id.is.null`)
         } else if (!canFilterByBranch && memberData?.branch_id) {
-          query = query.eq("branch_id", memberData.branch_id)
+          query = query.or(`branch_id.eq.${memberData.branch_id},branch_id.is.null`)
         }
 
         const { data, error } = await query.order("return_date", { ascending: false })
