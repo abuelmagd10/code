@@ -91,8 +91,9 @@ export default function DashboardSecondaryStats({
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
 
   // دخل الشهر = مجموع الفواتير − مرتجعات البيع (للشهر الحالي فقط)
+  // يستثني draft تماشياً مع expenseThisMonth لضمان تماثل المنطق
   const incomeThisMonth = invoicesData
-    .filter((i) => String(i.invoice_date || "").startsWith(ym) && !["cancelled", "voided"].includes(String(i.status || "").toLowerCase()))
+    .filter((i) => String(i.invoice_date || "").startsWith(ym) && !["draft", "cancelled", "voided"].includes(String(i.status || "").toLowerCase()))
     .reduce((sum, i) => {
       const gross = getDisplayAmount(i.total_amount || 0, i.display_total, i.display_currency, appCurrency)
       const returned = Number(i.returned_amount || 0)

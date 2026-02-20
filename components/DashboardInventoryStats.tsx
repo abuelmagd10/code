@@ -226,14 +226,21 @@ export default function DashboardInventoryStats({
 
       const { data: allPayments } = await paymentsQuery
 
-      // المدفوعات المستلمة = مدفوعات العملاء (customer_id موجود)
+      // المدفوعات المستلمة = مدفوعات العملاء حصراً (customer_id موجود وsupplier_id غائب)
+      // التحقق من الحصرية يمنع احتساب سجل يحمل الحقلين في كلا المقياسين
       const totalPaymentsReceived = (allPayments || [])
-        .filter((p: any) => p.customer_id !== null && p.customer_id !== undefined)
+        .filter((p: any) =>
+          (p.customer_id !== null && p.customer_id !== undefined) &&
+          (p.supplier_id === null || p.supplier_id === undefined)
+        )
         .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
 
-      // المدفوعات المرسلة = مدفوعات الموردين (supplier_id موجود)
+      // المدفوعات المرسلة = مدفوعات الموردين حصراً (supplier_id موجود وcustomer_id غائب)
       const totalPaymentsSent = (allPayments || [])
-        .filter((p: any) => p.supplier_id !== null && p.supplier_id !== undefined)
+        .filter((p: any) =>
+          (p.supplier_id !== null && p.supplier_id !== undefined) &&
+          (p.customer_id === null || p.customer_id === undefined)
+        )
         .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
 
       // نسبة التحصيل = المحصّل فعلياً ÷ إجمالي الفواتير
