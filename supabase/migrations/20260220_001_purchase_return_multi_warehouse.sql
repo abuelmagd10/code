@@ -414,14 +414,13 @@ BEGIN
       INSERT INTO inventory_transactions (
         company_id, product_id, transaction_type, quantity_change,
         reference_id, reference_type, journal_entry_id, notes,
-        branch_id, cost_center_id, warehouse_id, transaction_date
+        branch_id, cost_center_id, warehouse_id
       ) VALUES (
         v_pr.company_id, v_item.product_id,
         'purchase_return', -v_item.quantity,
         v_pr.id, 'purchase_return', v_alloc.journal_entry_id,
         'مرتجع مشتريات ' || v_pr.return_number || ' — ' || v_alloc.warehouse_id::text,
-        v_alloc.branch_id, v_alloc.cost_center_id, v_alloc.warehouse_id,
-        v_pr.return_date
+        v_alloc.branch_id, v_alloc.cost_center_id, v_alloc.warehouse_id
       );
     END IF;
 
