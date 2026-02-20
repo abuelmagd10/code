@@ -28,7 +28,9 @@ type VendorCredit = {
   applied_amount: number
   status: string
   created_by: string
-  approval_status?: string
+  branch_id?: string
+  cost_center_id?: string
+  source_purchase_return_id?: string
 }
 
 type Supplier = { id: string; name: string }
@@ -204,7 +206,7 @@ export default function VendorCreditsPage() {
 
     let creditsQuery = supabase
       .from("vendor_credits")
-      .select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status, created_by, approval_status, branch_id, branches(name)")
+      .select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status, created_by, branch_id, cost_center_id, source_purchase_return_id, branches(name)")
       .eq("company_id", visibilityRules.companyId)
 
     // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
