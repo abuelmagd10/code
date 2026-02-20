@@ -58,15 +58,20 @@ export default function DashboardSecondaryStats({
   const currency = currencySymbols[appCurrency] || appCurrency
   const formatNumber = (n: number) => n.toLocaleString('en-US')
   
-  // الحالات المستثناة من جميع المقاييس المالية — متسقة عبر كل الحسابات
-  // draft: غير ملزم بعد | cancelled/voided: ملغى | paid: مسدد بالكامل
-  const EXCLUDED_INVOICE_STATUSES = ["draft", "paid", "cancelled", "voided"]
-  const EXCLUDED_BILL_STATUSES    = ["draft", "paid", "cancelled", "voided"]
+  // ─── ثوابت الحالات المستثناة ────────────────────────────────────────────────
+  // للذمم (receivables/payables): يُستثنى "paid" أيضاً لأن الفاتورة المسددة
+  //   لا تمثل مبلغاً معلقاً — المديونية صفر بالفعل.
+  const OUTSTANDING_INVOICE_EXCLUDED = ["draft", "paid", "cancelled", "voided"]
+  const OUTSTANDING_BILL_EXCLUDED    = ["draft", "paid", "cancelled", "voided"]
+
+  // للإجماليات الشهرية (income/expense): "paid" مُدرَج لأن الفاتورة المسددة
+  //   هي إيراد/مصروف حقيقي. يُستثنى فقط ما لم يُلزَم (draft) أو أُلغي.
+  const MONTHLY_INVOICE_EXCLUDED = ["draft", "cancelled", "voided"]
+  const MONTHLY_BILL_EXCLUDED    = ["draft", "cancelled", "voided"]
 
   // الذمم المدينة = ما لم يُسدَّد من الفواتير المرسلة/المتأخرة/المدفوعة جزئياً
-  // draft مستثنى لأنه لم يُرسل للعميل بعد ولا يمثل مطالبة حقيقية
   const receivablesOutstanding = invoicesData
-    .filter((i) => !EXCLUDED_INVOICE_STATUSES.includes(String(i.status || "").toLowerCase()))
+    .filter((i) => !OUTSTANDING_INVOICE_EXCLUDED.includes(String(i.status || "").toLowerCase()))
     .reduce((sum, i) => {
       const total = getDisplayAmount(i.total_amount || 0, i.display_total, i.display_currency, appCurrency)
       const paid = Number(i.paid_amount || 0)
@@ -75,9 +80,8 @@ export default function DashboardSecondaryStats({
     }, 0)
 
   // الذمم الدائنة = ما لم يُسدَّد للموردين من الفواتير المرسلة/المتأخرة/المدفوعة جزئياً
-  // draft مستثنى لأنه لا يمثل التزاماً مالياً بعد
   const payablesOutstanding = billsData
-    .filter((b) => !EXCLUDED_BILL_STATUSES.includes(String(b.status || "").toLowerCase()))
+    .filter((b) => !OUTSTANDING_BILL_EXCLUDED.includes(String(b.status || "").toLowerCase()))
     .reduce((sum, b) => {
       const total = getDisplayAmount(b.total_amount || 0, b.display_total, b.display_currency, appCurrency)
       const paid = Number(b.paid_amount || 0)
@@ -87,19 +91,19 @@ export default function DashboardSecondaryStats({
 
   // عدد المستندات المعلقة — يستخدم نفس فلتر الذمم لضمان التوافق
   const pendingInvoicesCount = invoicesData.filter(
-    (i) => !EXCLUDED_INVOICE_STATUSES.includes(String(i.status || "").toLowerCase())
+    (i) => !OUTSTANDING_INVOICE_EXCLUDED.includes(String(i.status || "").toLowerCase())
   ).length
   const pendingBillsCount = billsData.filter(
-    (b) => !EXCLUDED_BILL_STATUSES.includes(String(b.status || "").toLowerCase())
+    (b) => !OUTSTANDING_BILL_EXCLUDED.includes(String(b.status || "").toLowerCase())
   ).length
 
   const now = new Date()
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
 
   // دخل الشهر = مجموع الفواتير − مرتجعات البيع (للشهر الحالي فقط)
-  // يستثني draft تماشياً مع expenseThisMonth لضمان تماثل المنطق
+  // يشمل الفواتير المسددة (paid) لأنها إيراد حقيقي محقق
   const incomeThisMonth = invoicesData
-    .filter((i) => String(i.invoice_date || "").startsWith(ym) && !["draft", "cancelled", "voided"].includes(String(i.status || "").toLowerCase()))
+    .filter((i) => String(i.invoice_date || "").startsWith(ym) && !MONTHLY_INVOICE_EXCLUDED.includes(String(i.status || "").toLowerCase()))
     .reduce((sum, i) => {
       const gross = getDisplayAmount(i.total_amount || 0, i.display_total, i.display_currency, appCurrency)
       const returned = Number(i.returned_amount || 0)
@@ -107,8 +111,9 @@ export default function DashboardSecondaryStats({
     }, 0)
 
   // مصروف الشهر = مجموع فواتير الموردين − مرتجعات الشراء (للشهر الحالي فقط)
+  // يشمل الفواتير المسددة (paid) لأنها مصروف حقيقي محقق
   const expenseThisMonth = billsData
-    .filter((b) => String(b.bill_date || "").startsWith(ym) && !["draft", "cancelled", "voided"].includes(String(b.status || "").toLowerCase()))
+    .filter((b) => String(b.bill_date || "").startsWith(ym) && !MONTHLY_BILL_EXCLUDED.includes(String(b.status || "").toLowerCase()))
     .reduce((sum, b) => {
       const gross = getDisplayAmount(b.total_amount || 0, b.display_total, b.display_currency, appCurrency)
       const returned = Number(b.returned_amount || 0)
