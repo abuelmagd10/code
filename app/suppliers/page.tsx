@@ -344,41 +344,26 @@ export default function SuppliersPage() {
         console.log(`📋 ${supplier.name}: ${bills.length} فاتورة، ذمم: ${payables.toFixed(2)}`)
       }
 
-      // حساب الأرصدة المدينة (من مرتجعات المشتريات)
+      // حساب الرصيد المدين من إشعارات الدائن (vendor_credits)
       let debitCreditsTotal = 0
       try {
-        const { data: debitCredits, error: debitCreditsError } = await supabase
-          .from("supplier_debit_credits")
-          .select("amount, used_amount, applied_amount")
+        const { data: vendorCredits, error: vendorCreditsError } = await supabase
+          .from("vendor_credits")
+          .select("total_amount, applied_amount, status")
           .eq("company_id", companyId)
           .eq("supplier_id", supplier.id)
-          .eq("status", "active")
+          .eq("status", "open")
 
-        if (debitCreditsError) {
-          // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
-          if (debitCreditsError.code === 'PGRST116' || debitCreditsError.code === 'PGRST205') {
-            const errorMsg = appLang === 'en'
-              ? 'System not initialized: supplier_debit_credits table is missing. Please run SQL migration script: scripts/090_supplier_debit_credits.sql'
-              : 'النظام غير مهيأ: جدول أرصدة الموردين المدينة مفقود. يرجى تشغيل سكربت SQL: scripts/090_supplier_debit_credits.sql'
-            console.error("ERP System Error:", errorMsg, debitCreditsError)
-            // لا نوقف العملية، فقط نسجل الخطأ
-            // لأن هذا الجدول اختياري (لحساب الأرصدة فقط)
-          } else {
-            console.error("Error loading supplier debit credits:", debitCreditsError)
-          }
-        } else if (debitCredits) {
-          for (const dc of debitCredits) {
-            const available = Number(dc.amount || 0) - Number(dc.used_amount || 0) - Number(dc.applied_amount || 0)
+        if (vendorCreditsError) {
+          console.error("Error loading vendor credits:", vendorCreditsError)
+        } else if (vendorCredits) {
+          for (const vc of vendorCredits) {
+            const available = Number(vc.total_amount || 0) - Number(vc.applied_amount || 0)
             debitCreditsTotal += Math.max(0, available)
           }
         }
       } catch (error: any) {
-        // معالجة الأخطاء الأخرى
-        if (error?.code === 'PGRST116' || error?.code === 'PGRST205') {
-          console.warn("supplier_debit_credits table not found, skipping debit credits calculation")
-        } else {
-          console.error("Error calculating supplier debit credits:", error)
-        }
+        console.error("Error calculating supplier debit credits:", error)
       }
 
       newBalances[supplier.id] = {
