@@ -10,6 +10,7 @@ import {
   validateGovernanceData,
   addGovernanceData
 } from "@/lib/governance-middleware"
+import { checkPeriodLock } from "@/lib/accounting-period-lock"
 
 export async function GET(request: NextRequest) {
   try {
@@ -62,6 +63,20 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
+
+    // Phase 2: Period Lock Check
+    const paymentDate = dataWithGovernance.payment_date || new Date().toISOString().slice(0, 10)
+    if (paymentDate && governance.companyId) {
+      const lockResult = await checkPeriodLock(supabase, {
+        companyId: governance.companyId,
+        date: paymentDate
+      })
+      if (lockResult.isLocked) {
+        return NextResponse.json({
+          error: lockResult.error || `الفترة المحاسبية "${lockResult.periodName}" مقفلة. لا يمكن إضافة دفعة.`
+        }, { status: 400 })
+      }
+    }
 
     // ✅ استخدام الخدمة الذرية (Atomic Service)
     const { AccountingTransactionService } = await import("@/lib/accounting-transaction-service")

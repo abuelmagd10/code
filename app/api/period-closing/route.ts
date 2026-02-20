@@ -59,6 +59,25 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Phase 2: التحقق من اجتياز الاختبارات المحاسبية الحرجة قبل الإقفال
+    const periodYear = new Date(periodStart).getFullYear()
+    const { data: yearCheckResult } = await supabase.rpc('can_close_accounting_year', {
+      p_company_id: companyId,
+      p_year: periodYear
+    })
+
+    if (yearCheckResult && !yearCheckResult.can_close) {
+      const blockingIssues = (yearCheckResult.blocking_issues || [])
+        .filter((issue: any) => issue.code !== 'OPEN_PERIODS') // نتجاهل OPEN_PERIODS عند إقفال فترة واحدة
+      if (blockingIssues.length > 0) {
+        const messages = blockingIssues.map((issue: any) => issue.message).join(' | ')
+        return NextResponse.json(
+          { success: false, error: `لا يمكن الإقفال: ${messages}`, blocking_issues: blockingIssues },
+          { status: 400 }
+        )
+      }
+    }
+
     // ✅ إنشاء قيد إقفال الفترة
     const result = await createPeriodClosingEntry(supabase, {
       companyId,

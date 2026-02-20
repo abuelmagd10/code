@@ -17,6 +17,7 @@ import AdvancedDashboardCharts from "@/components/charts/AdvancedDashboardCharts
 import { canAccessPage, getFirstAllowedPage } from "@/lib/authz"
 import { CurrencyMismatchAlert } from "@/components/CurrencyMismatchAlert"
 import DashboardScopeSwitcher from "@/components/DashboardScopeSwitcher"
+import DashboardDataSourceBanner from "@/components/DashboardDataSourceBanner"
 import {
   buildDashboardVisibilityRules,
   type DashboardScope,
@@ -282,7 +283,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     // Bills data for dashboard (includes display fields for currency conversion)
     let billsQuery = supabase
       .from("bills")
-      .select("id, supplier_id, bill_number, total_amount, paid_amount, returned_amount, bill_date, status, display_total, display_currency, display_rate, branch_id")
+      .select("id, supplier_id, bill_number, total_amount, paid_amount, bill_date, status, display_total, display_currency, display_rate, branch_id")
       .eq("company_id", company.id)
       .in("status", ["sent", "partially_paid", "paid"]) // exclude draft/cancelled/voided from dashboard metrics
 
@@ -574,6 +575,25 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               </div>
             </div>
           </div>
+
+          {/* Phase 3: Banner مصدر البيانات - يُظهر طبيعة الأرقام ومقارنة GL */}
+          {company && (
+            <DashboardDataSourceBanner
+              period="month"
+              fromDate={fromDate || undefined}
+              toDate={toDate || undefined}
+              currency={currencyCode}
+              operationalNetProfit={
+                (() => {
+                  // حساب صافي الربح التشغيلي تقريبياً من الفواتير
+                  const paid = invoicesData
+                    .filter((i: any) => i.status === "paid" || i.status === "partially_paid")
+                    .reduce((s: number, i: any) => s + Number(i.paid_amount || 0), 0)
+                  return paid - totalCOGS
+                })()
+              }
+            />
+          )}
 
           {/* بطاقات الإحصائيات الرئيسية - Client Component for currency conversion */}
           <DashboardStats

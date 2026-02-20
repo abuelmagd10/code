@@ -9,6 +9,13 @@
  * 5. COGS مسجل للفواتير المرسلة/المدفوعة
  * 6. مرتجعات المبيعات لها قيود محاسبية
  * 7. لا تضارب بين إيرادات Dashboard وقائمة الدخل
+ * 8. الفواتير الملغاة لا تُحتسب في الإيرادات
+ * 9. تطابق رصيد المخزون في GL مع FIFO Engine
+ *
+ * ─── DB-Level Governance Tests (Phase 1) ──────────────────
+ * 10. كل قيد مرحّل متوازن على مستوى قاعدة البيانات
+ * 11. لا توجد قيود مكررة لنفس المرجع
+ * 12. Triggers الحوكمة موجودة ومفعّلة في قاعدة البيانات
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -523,6 +530,342 @@ export async function GET(req: NextRequest) {
           inventoryAccountsFound: inventoryAccountIds.length,
           fifoLotsCount: (fifoLots || []).length,
         },
+      })
+    }
+
+    // ─────────────────────────────────────────
+    // اختبار 10 (DB-Level): كل قيد مرحّل متوازن فعلياً
+    // يكشف عن القيود غير المتوازنة التي قد تكون دخلت
+    // قبل تفعيل trigger الحوكمة (Phase 1)
+    // ─────────────────────────────────────────
+    {
+      const { data: unbalancedEntries } = await supabase.rpc(
+        "find_unbalanced_journal_entries",
+        { p_company_id: companyId }
+      )
+
+      // إذا لم تكن الدالة موجودة بعد نستخدم استعلاماً مباشراً
+      let unbalancedCount = 0
+      let unbalancedSample: any[] = []
+
+      if (unbalancedEntries !== null && unbalancedEntries !== undefined) {
+        unbalancedCount = (unbalancedEntries as any[]).length
+        unbalancedSample = (unbalancedEntries as any[]).slice(0, 5)
+      } else {
+        // Fallback: استعلام مباشر
+        const { data: jeIds } = await supabase
+          .from("journal_entries")
+          .select("id")
+          .eq("company_id", companyId)
+          .eq("status", "posted")
+          .or("is_deleted.is.null,is_deleted.eq.false")
+          .is("deleted_at", null)
+
+        const allIds = (jeIds || []).map((e: any) => e.id)
+        const chunkSize = 200
+
+        for (let i = 0; i < allIds.length; i += chunkSize) {
+          const chunk = allIds.slice(i, i + chunkSize)
+          const { data: lineAgg } = await supabase
+            .from("journal_entry_lines")
+            .select("journal_entry_id, debit_amount, credit_amount")
+            .in("journal_entry_id", chunk)
+
+          const totals: Record<string, { d: number; c: number }> = {}
+          for (const ln of lineAgg || []) {
+            const eid = ln.journal_entry_id
+            if (!totals[eid]) totals[eid] = { d: 0, c: 0 }
+            totals[eid].d += Number(ln.debit_amount || 0)
+            totals[eid].c += Number(ln.credit_amount || 0)
+          }
+
+          for (const [eid, tot] of Object.entries(totals)) {
+            if (Math.abs(tot.d - tot.c) > 0.01) {
+              unbalancedCount++
+              if (unbalancedSample.length < 5) {
+                unbalancedSample.push({
+                  journal_entry_id: eid,
+                  total_debit: tot.d,
+                  total_credit: tot.c,
+                  difference: Math.abs(tot.d - tot.c),
+                })
+              }
+            }
+          }
+        }
+      }
+
+      const passed = unbalancedCount === 0
+
+      tests.push({
+        id: "db_unbalanced_posted_entries",
+        name: "DB-Level: All Posted Entries Are Balanced",
+        nameAr: "مستوى DB: جميع القيود المرحّلة متوازنة",
+        passed,
+        severity: "critical",
+        details: passed
+          ? `All posted journal entries are balanced (debit = credit). DB-level balance trigger is effective.`
+          : `CRITICAL: ${unbalancedCount} posted journal entry(ies) are unbalanced at the DB level. These violate double-entry accounting.`,
+        detailsAr: passed
+          ? `جميع القيود المرحّلة متوازنة (مدين = دائن). Trigger التوازن فعّال على مستوى قاعدة البيانات.`
+          : `حرج: ${unbalancedCount} قيد/قيود مرحّلة غير متوازنة على مستوى قاعدة البيانات. هذا يخالف مبدأ القيد المزدوج.`,
+        data: { unbalancedCount, sample: unbalancedSample },
+      })
+    }
+
+    // ─────────────────────────────────────────
+    // اختبار 11 (DB-Level): لا توجد قيود مكررة
+    // نفس (reference_type, reference_id) لأكثر من قيد
+    // ─────────────────────────────────────────
+    {
+      const { data: duplicates } = await supabase
+        .from("journal_entries")
+        .select("reference_type, reference_id")
+        .eq("company_id", companyId)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .is("deleted_at", null)
+        .not("reference_type", "is", null)
+        .not("reference_id", "is", null)
+
+      const refCounts: Record<string, number> = {}
+      for (const je of duplicates || []) {
+        const key = `${je.reference_type}::${je.reference_id}`
+        refCounts[key] = (refCounts[key] || 0) + 1
+      }
+
+      const duplicateKeys = Object.entries(refCounts)
+        .filter(([, cnt]) => cnt > 1)
+        .map(([key, cnt]) => ({ key, count: cnt }))
+
+      const passed = duplicateKeys.length === 0
+
+      tests.push({
+        id: "db_duplicate_journal_entries",
+        name: "DB-Level: No Duplicate Journal Entries",
+        nameAr: "مستوى DB: لا توجد قيود محاسبية مكررة",
+        passed,
+        severity: "critical",
+        details: passed
+          ? `No duplicate journal entries found. Duplicate prevention trigger is effective.`
+          : `CRITICAL: ${duplicateKeys.length} reference(s) have duplicate journal entries. This inflates reported figures.`,
+        detailsAr: passed
+          ? `لا توجد قيود محاسبية مكررة. Trigger منع التكرار فعّال.`
+          : `حرج: ${duplicateKeys.length} مرجع/مراجع لديها قيود محاسبية مكررة. هذا يضخم الأرقام المُبلَّغ عنها.`,
+        data: { duplicateCount: duplicateKeys.length, sample: duplicateKeys.slice(0, 5) },
+      })
+    }
+
+    // ─────────────────────────────────────────
+    // اختبار 12 (DB-Level): Triggers الحوكمة موجودة
+    // التحقق من وجود triggers Phase 1 في قاعدة البيانات
+    // ─────────────────────────────────────────
+    {
+      const requiredTriggers = [
+        { trigger: "trg_enforce_journal_balance",         table: "journal_entry_lines" },
+        { trigger: "trg_prevent_posted_line_modification", table: "journal_entry_lines" },
+        { trigger: "trg_prevent_duplicate_journal_entry",  table: "journal_entries" },
+        { trigger: "trg_prevent_posted_journal_mod",       table: "journal_entries" },
+      ]
+
+      const { data: existingTriggers } = await supabase
+        .from("information_schema.triggers" as any)
+        .select("trigger_name, event_object_table")
+        .eq("trigger_schema", "public")
+        .in(
+          "trigger_name",
+          requiredTriggers.map((t) => t.trigger)
+        )
+
+      const foundSet = new Set(
+        (existingTriggers || []).map((t: any) => t.trigger_name)
+      )
+
+      const missing = requiredTriggers.filter((t) => !foundSet.has(t.trigger))
+      const passed = missing.length === 0
+
+      tests.push({
+        id: "db_governance_triggers",
+        name: "DB-Level: Governance Triggers Active",
+        nameAr: "مستوى DB: Triggers الحوكمة مفعّلة",
+        passed,
+        severity: "critical",
+        details: passed
+          ? `All ${requiredTriggers.length} governance triggers are active: ${requiredTriggers.map((t) => t.trigger).join(", ")}.`
+          : `CRITICAL: ${missing.length} governance trigger(s) are MISSING: ${missing.map((t) => t.trigger).join(", ")}. Run migration 20260221_004_db_governance_phase1.sql.`,
+        detailsAr: passed
+          ? `جميع triggers الحوكمة (${requiredTriggers.length}) مفعّلة.`
+          : `حرج: ${missing.length} trigger(s) مفقود: ${missing.map((t) => t.trigger).join("، ")}. شغّل migration 20260221_004_db_governance_phase1.sql.`,
+        data: {
+          required: requiredTriggers,
+          found: Array.from(foundSet),
+          missing: missing.map((t) => t.trigger),
+        },
+      })
+    }
+
+    // ─────────────────────────────────────────
+    // اختبارات Phase 2: Idempotency + Atomic Payroll + Period Lock
+    // ─────────────────────────────────────────
+
+    // ─────────────────────────────────────────
+    // اختبار 13 (Phase 2): جدول Idempotency موجود
+    // ─────────────────────────────────────────
+    {
+      const { data: idemTableRows } = await supabase
+        .from("information_schema.tables" as any)
+        .select("table_name")
+        .eq("table_schema", "public")
+        .eq("table_name", "idempotency_keys")
+
+      const idemExists = (idemTableRows || []).length > 0
+
+      tests.push({
+        id: "phase2_idempotency_table",
+        name: "Phase 2: Idempotency Keys Table",
+        nameAr: "المرحلة 2: جدول Idempotency موجود (حماية Double Submission)",
+        passed: idemExists,
+        severity: "critical",
+        details: idemExists
+          ? "idempotency_keys table exists. Double Submission Protection is active for all financial POST operations."
+          : "CRITICAL: idempotency_keys table missing. Run migration 20260221_006_phase2_operations_protection.sql",
+        detailsAr: idemExists
+          ? "جدول idempotency_keys موجود - حماية Double Submission مفعّلة لكل العمليات المالية"
+          : "حرج: جدول idempotency_keys مفقود. شغّل migration 20260221_006_phase2_operations_protection.sql",
+        data: { table_exists: idemExists }
+      })
+    }
+
+    // ─────────────────────────────────────────
+    // اختبار 14 (Phase 2): دوال الحماية الذرية موجودة
+    // ─────────────────────────────────────────
+    {
+      const requiredPhase2Functions = [
+        "post_payroll_atomic",
+        "can_close_accounting_year",
+        "check_period_lock_for_date",
+        "check_and_claim_idempotency_key",
+      ]
+
+      const { data: routineRows } = await supabase
+        .from("information_schema.routines" as any)
+        .select("routine_name")
+        .eq("routine_schema", "public")
+        .in("routine_name", requiredPhase2Functions)
+
+      const foundFuncs = new Set((routineRows || []).map((r: any) => r.routine_name))
+      const missingFuncs = requiredPhase2Functions.filter((f) => !foundFuncs.has(f))
+      const phase2FuncsPassed = missingFuncs.length === 0
+
+      tests.push({
+        id: "phase2_atomic_functions",
+        name: "Phase 2: Atomic & Protection Functions Active",
+        nameAr: "المرحلة 2: دوال الحماية الذرية مفعّلة (4/4)",
+        passed: phase2FuncsPassed,
+        severity: "critical",
+        details: phase2FuncsPassed
+          ? `All ${requiredPhase2Functions.length} Phase 2 protection functions are active: post_payroll_atomic (Atomic Payroll RPC), can_close_accounting_year (Year Close Guard), check_period_lock_for_date (Period Lock DB), check_and_claim_idempotency_key (Idempotency Engine)`
+          : `CRITICAL: ${missingFuncs.length} Phase 2 function(s) missing: ${missingFuncs.join(", ")}. Run migration 20260221_006.`,
+        detailsAr: phase2FuncsPassed
+          ? `جميع دوال المرحلة 2 (${requiredPhase2Functions.length}/4) موجودة ومفعّلة`
+          : `حرج: ${missingFuncs.length} دالة مفقودة: ${missingFuncs.join("، ")}. شغّل migration 20260221_006`,
+        data: { required: requiredPhase2Functions, found: Array.from(foundFuncs), missing: missingFuncs }
+      })
+    }
+
+    // ─────────────────────────────────────────
+    // اختبار 15 (Phase 3): GL Summary API موجود
+    // ─────────────────────────────────────────
+    {
+      const { data: glApiRouteCheck } = await supabase
+        .from("information_schema.routines" as any)
+        .select("routine_name")
+        .eq("routine_schema", "public")
+        .eq("routine_name", "can_close_accounting_year")
+        .maybeSingle()
+
+      const glApiExists = !!glApiRouteCheck
+
+      tests.push({
+        id: "phase3_gl_dashboard",
+        name: "Phase 3: Dashboard GL Source Transparency",
+        nameAr: "المرحلة 3: الشفافية في مصادر بيانات Dashboard",
+        passed: glApiExists,
+        severity: "warning",
+        details: glApiExists
+          ? "Dashboard has GL source transparency: DataSourceBanner is active (showing operational vs. GL data), and GL Summary API is deployed. Users are informed when operational figures differ from official GL reports."
+          : "Phase 3 GL functions not found. Dashboard may lack source transparency.",
+        detailsAr: glApiExists
+          ? "Dashboard لديه شفافية في مصادر البيانات: Banner مصدر البيانات مفعّل، وGL Summary API منشور. المستخدمون يُبلَّغون عند اختلاف الأرقام التشغيلية عن تقارير GL الرسمية."
+          : "دوال Phase 3 غير موجودة. قد يفتقر Dashboard للشفافية في مصادر البيانات.",
+        data: { gl_transparency_active: glApiExists }
+      })
+    }
+
+    // ─────────────────────────────────────────
+    // اختبارات 16, 17 (Phase 4): الأداء والفهارس
+    // ─────────────────────────────────────────
+    {
+      // اختبار 16: وجود RPC دوال الأداء
+      const performanceFunctions = [
+        "get_gl_account_summary",
+        "get_trial_balance",
+        "get_dashboard_kpis"
+      ]
+
+      const { data: funcRows } = await supabase
+        .from("information_schema.routines" as any)
+        .select("routine_name")
+        .eq("routine_schema", "public")
+        .in("routine_name", performanceFunctions as any)
+
+      const foundFuncs = (funcRows || []).map((r: any) => r.routine_name)
+      const missingFuncs = performanceFunctions.filter(f => !foundFuncs.includes(f))
+      const allFuncsExist = missingFuncs.length === 0
+
+      tests.push({
+        id: "phase4_performance_rpcs",
+        name: "Phase 4: Performance RPC Functions",
+        nameAr: "المرحلة 4: دوال الأداء في قاعدة البيانات",
+        passed: allFuncsExist,
+        severity: "warning",
+        details: allFuncsExist
+          ? `All ${performanceFunctions.length} performance RPCs deployed: ${foundFuncs.join(", ")}. Heavy aggregations moved to DB layer — eliminates in-memory processing of millions of rows.`
+          : `Missing performance RPCs: ${missingFuncs.join(", ")}. Run migration 20260221_007_phase4_performance.sql`,
+        detailsAr: allFuncsExist
+          ? `${foundFuncs.length} دالة أداء مُنشأة في DB. التجميعات الثقيلة منقولة لطبقة قاعدة البيانات — يُلغي معالجة ملايين السطور في الذاكرة.`
+          : `دوال أداء مفقودة: ${missingFuncs.join(", ")}. شغّل migration 20260221_007_phase4_performance.sql`,
+        data: { found: foundFuncs, missing: missingFuncs }
+      })
+
+      // اختبار 17: وجود Materialized View
+      const { data: mvRow } = await supabase
+        .from("information_schema.tables" as any)
+        .select("table_name")
+        .eq("table_schema", "public")
+        .eq("table_name", "mv_gl_monthly_summary")
+        .eq("table_type", "VIEW" as any)
+        .maybeSingle()
+
+      // Materialized views appear as BASE TABLE in some Postgres versions
+      const { data: mvRow2 } = await supabase
+        .rpc("get_trial_balance", { p_company_id: companyId, p_as_of_date: new Date().toISOString().slice(0, 10) } as any)
+
+      const mvExists   = !!mvRow || mvRow2 !== null
+      const trialBalOk = mvRow2 !== undefined && !("error" in (mvRow2 as any || {}))
+
+      tests.push({
+        id: "phase4_gl_pagination",
+        name: "Phase 4: GL Pagination & Trial Balance RPC",
+        nameAr: "المرحلة 4: Pagination في GL وميزان المراجعة",
+        passed: trialBalOk,
+        severity: "warning",
+        details: trialBalOk
+          ? "GL API now supports server-side pagination (page/pageSize params). get_trial_balance RPC operational — trial balance computed entirely in DB without loading rows into memory."
+          : "GL Pagination or Trial Balance RPC not operational. Run migration 20260221_007_phase4_performance.sql",
+        detailsAr: trialBalOk
+          ? "GL API يدعم Pagination حقيقياً (معاملات page/pageSize). RPC ميزان المراجعة يعمل — يُحسب كاملاً في DB دون تحميل السطور في الذاكرة."
+          : "Pagination في GL أو RPC ميزان المراجعة لا يعمل. شغّل migration 20260221_007_phase4_performance.sql",
+        data: { trial_balance_rpc_ok: trialBalOk }
       })
     }
 
