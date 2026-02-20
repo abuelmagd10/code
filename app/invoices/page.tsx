@@ -218,7 +218,7 @@ export default function InvoicesPage() {
       const actualPaid = paidByInvoice[inv.id] || 0
       const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency !== appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
       const returnedAmount = Number(inv.returned_amount || 0)
-      const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : Number(inv.total_amount || 0))
+      const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency !== appCurrency && inv.display_total != null ? inv.display_total : Number(inv.total_amount || 0))
       const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
 
       let actualStatus: string
@@ -264,10 +264,10 @@ export default function InvoicesPage() {
       // هذا النمط يتطابق مع عارض الأعمدة ويعمل بصرف النظر عما إذا كانت
       // total_amount قد تحدّثت عبر المسار المباشر (sent) أو مسار RPC (paid)
       const returnedAmount = Number((invoice as any).returned_amount || 0)
-      // أفضل مصدر للمبلغ الأصلي: original_total → display_total (لنفس العملة) → total_amount
+      // أفضل مصدر للمبلغ الأصلي: original_total → display_total (لعملة مختلفة) → total_amount
       const grossAmount = (invoice as any).original_total
         ? Number((invoice as any).original_total)
-        : (invoice.display_currency === appCurrency && invoice.display_total != null
+        : (invoice.display_currency !== appCurrency && invoice.display_total != null
             ? invoice.display_total
             : invoice.total_amount)
       return Math.max(grossAmount - returnedAmount, 0)
@@ -782,7 +782,7 @@ export default function InvoicesPage() {
       if (inv.status !== 'cancelled' && inv.status !== 'fully_returned') {
         const returnedAmount = Number(inv.returned_amount || 0)
         // استخدام الإجمالي الأصلي للحساب الصحيح
-        const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : inv.total_amount)
+        const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency !== appCurrency && inv.display_total != null ? inv.display_total : inv.total_amount)
         const netInvoiceAmount = originalTotal - returnedAmount
         // فقط إذا كان صافي الفاتورة موجب
         if (netInvoiceAmount > 0) {
@@ -802,7 +802,7 @@ export default function InvoicesPage() {
         const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency !== appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
         const returnedAmount = Number(inv.returned_amount || 0)
         // ✅ استخدام original_total إذا كان موجوداً، وإلا استخدام display_total أو total_amount (مثل منطق hasCredit)
-        const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : Number(inv.total_amount || 0))
+        const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency !== appCurrency && inv.display_total != null ? inv.display_total : Number(inv.total_amount || 0))
         const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
 
         // ✅ تحديد الحالة الفعلية بناءً على المنطق نفسه في العرض
