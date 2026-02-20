@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS purchase_return_warehouse_allocations (
   created_at         TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- FK لـ warehouse_id حتى يتعرف PostgREST على العلاقة
+ALTER TABLE purchase_return_warehouse_allocations
+  ADD CONSTRAINT fk_prwa_warehouse
+  FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE RESTRICT;
+
 -- منع تكرار نفس المخزن في نفس المرتجع
 CREATE UNIQUE INDEX IF NOT EXISTS idx_prwa_unique_return_warehouse
   ON purchase_return_warehouse_allocations(purchase_return_id, warehouse_id);
