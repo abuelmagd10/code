@@ -306,6 +306,35 @@ export default function SuppliersPage() {
     onDelete: handleSuppliersRealtimeEvent,
   })
 
+  // refs للأرصدة (تُحدَّث بعد تعريف loadSupplierBalances أدناه)
+  const loadBalancesRef = useRef<(companyId: string, suppliersList: Supplier[]) => Promise<void>>(async () => {})
+  const suppliersRef = useRef(suppliers)
+  useEffect(() => { suppliersRef.current = suppliers }, [suppliers])
+
+  const handleBalancesRealtimeEvent = useCallback(async () => {
+    console.log('🔄 [Suppliers] Balance-related table changed, refreshing balances...')
+    const companyId = await getActiveCompanyId(supabase)
+    if (companyId && suppliersRef.current.length > 0) {
+      await loadBalancesRef.current(companyId, suppliersRef.current)
+    }
+  }, [supabase])
+
+  useRealtimeTable({
+    table: 'vendor_credits',
+    enabled: true,
+    onInsert: handleBalancesRealtimeEvent,
+    onUpdate: handleBalancesRealtimeEvent,
+    onDelete: handleBalancesRealtimeEvent,
+  })
+
+  useRealtimeTable({
+    table: 'bills',
+    enabled: true,
+    onInsert: handleBalancesRealtimeEvent,
+    onUpdate: handleBalancesRealtimeEvent,
+    onDelete: handleBalancesRealtimeEvent,
+  })
+
   // دالة تحميل أرصدة الموردين
   const loadSupplierBalances = async (companyId: string, suppliersList: Supplier[]) => {
     try {
@@ -386,6 +415,9 @@ export default function SuppliersPage() {
       console.error("❌ خطأ في تحميل أرصدة الموردين:", error)
     }
   }
+
+  // ربط الـ ref بالدالة الحالية لضمان استخدامها في Realtime handlers
+  loadBalancesRef.current = loadSupplierBalances
 
   // تحديث سعر الصرف عند تغيير العملة
   useEffect(() => {
