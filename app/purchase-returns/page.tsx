@@ -213,6 +213,15 @@ export default function PurchaseReturnsPage() {
     onDelete: handleReturnsRealtimeEvent,
   })
 
+  // 🔄 Realtime: تحديث فوري عند تغيير حالة تخصيص أي مخزن (اعتماد/رفض)
+  useRealtimeTable({
+    table: 'purchase_return_warehouse_allocations',
+    enabled: true,
+    onInsert: handleReturnsRealtimeEvent,
+    onUpdate: handleReturnsRealtimeEvent,
+    onDelete: handleReturnsRealtimeEvent,
+  })
+
   // ===================== اعتماد تسليم المرتجع =====================
   const confirmDelivery = async (pr: PurchaseReturn) => {
     if (!currentUserId) return

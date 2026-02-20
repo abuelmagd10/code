@@ -60,6 +60,7 @@ export type RealtimeTable =
   | 'payments' // ✅ المدفوعات
   | 'journal_entries' // ✅ القيود المحاسبية
   | 'purchase_returns' // ✅ مرتجعات المشتريات
+  | 'purchase_return_warehouse_allocations' // ✅ تخصيصات مخازن مرتجعات المشتريات
   | 'sales_returns' // ✅ مرتجعات المبيعات
   | 'vendor_credits' // ✅ أرصدة الموردين
   | 'customer_debit_notes' // ✅ إشعارات مدين العملاء
@@ -306,6 +307,7 @@ class RealtimeManager {
       'payments': 'payments',
       'journal_entries': 'journal_entries',
       'purchase_returns': 'purchase_returns',
+      'purchase_return_warehouse_allocations': 'purchase_return_warehouse_allocations',
       'sales_returns': 'sales_returns',
       'vendor_credits': 'vendor_credits',
       'customer_debit_notes': 'customer_debit_notes',
@@ -480,6 +482,7 @@ class RealtimeManager {
       case 'payments':
       case 'journal_entries':
       case 'purchase_returns':
+      case 'purchase_return_warehouse_allocations':
       case 'sales_returns':
       case 'vendor_credits':
       case 'customer_debit_notes':
