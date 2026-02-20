@@ -121,6 +121,12 @@ export default function ShareholdersPage() {
   const [paymentReferenceNumber, setPaymentReferenceNumber] = useState<string>("")
   const [isPayingSaving, setIsPayingSaving] = useState<boolean>(false)
 
+  // === Immediate Payment (توزيع وصرف فوري) ===
+  const [immediatePayment, setImmediatePayment] = useState<boolean>(false)
+  const [immediatePaymentAccountId, setImmediatePaymentAccountId] = useState<string>("")
+  const [immediatePaymentMethod, setImmediatePaymentMethod] = useState<'cash' | 'bank_transfer' | 'check'>('cash')
+  const [immediatePaymentReference, setImmediatePaymentReference] = useState<string>("")
+
   // === إصلاح أمني: صلاحيات المساهمين ===
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
@@ -791,6 +797,18 @@ export default function ShareholdersPage() {
       return
     }
 
+    // Governance Check 3: If immediate payment, payment account is required
+    if (immediatePayment && !immediatePaymentAccountId) {
+      toast({
+        title: appLang === 'en' ? "Incomplete Data" : "بيانات غير مكتملة",
+        description: appLang === 'en'
+          ? "Please select a payment account (Bank or Cash) for immediate payment"
+          : "يرجى اختيار حساب الصرف (بنك أو خزنة) للدفع الفوري",
+        variant: "destructive"
+      })
+      return
+    }
+
     try {
       setDistributionSaving(true)
 
@@ -822,7 +840,6 @@ export default function ShareholdersPage() {
       })
 
       if (!result.success) {
-        // Governance Error (e.g., insufficient retained earnings)
         toast({
           title: appLang === 'en' ? "Distribution Failed" : "فشل التوزيع",
           description: result.error || (appLang === 'en' ? "Distribution validation failed" : "فشل التحقق من صلاحية التوزيع"),
@@ -831,17 +848,73 @@ export default function ShareholdersPage() {
         return
       }
 
-      // Success - refresh data
-      setDistributionAmount(0)
-      await loadPendingDividends(companyId) // Refresh pending dividends
-      await checkRetainedEarningsBalance(companyId) // Refresh balance
+      // === Immediate Payment: صرف فوري بعد تسجيل التوزيع ===
+      if (immediatePayment && immediatePaymentAccountId && result.distributionId) {
+        const { data: distLines, error: linesErr } = await supabase
+          .from('profit_distribution_lines')
+          .select('id, shareholder_id, amount')
+          .eq('distribution_id', result.distributionId)
 
-      toast({
-        title: appLang === 'en' ? "Distribution Recorded" : "تم تسجيل التوزيع",
-        description: appLang === 'en'
-          ? `Dividend of ${distributionAmount.toFixed(2)} distributed successfully. Available for payment.`
-          : `تم توزيع أرباح بمبلغ ${distributionAmount.toFixed(2)} بنجاح. متاح للصرف الآن.`,
-      })
+        if (!linesErr && distLines && distLines.length > 0) {
+          const payErrors: string[] = []
+
+          for (const line of distLines) {
+            const payResult = await service.payDividend({
+              companyId,
+              distributionLineId: line.id,
+              amount: line.amount,
+              paymentDate: distributionDate,
+              paymentAccountId: immediatePaymentAccountId,
+              dividendsPayableAccountId: settings.dividends_payable_account_id!,
+              paymentMethod: immediatePaymentMethod,
+              referenceNumber: immediatePaymentReference || undefined,
+              branchId: branchId || undefined,
+              costCenterId: costCenterId || undefined,
+              userId: user?.id
+            })
+            if (!payResult.success) {
+              payErrors.push(payResult.error || 'خطأ في الصرف')
+            }
+          }
+
+          if (payErrors.length > 0) {
+            toast({
+              title: appLang === 'en' ? "Warning: Partial Payment" : "تحذير: صرف جزئي",
+              description: appLang === 'en'
+                ? `Distribution recorded but some payments failed: ${payErrors.join(', ')}`
+                : `تم تسجيل التوزيع ولكن فشل صرف بعض الأرباح: ${payErrors.join(', ')}`,
+              variant: "destructive"
+            })
+          } else {
+            toast({
+              title: appLang === 'en' ? "Distribution & Payment Recorded" : "تم التوزيع والصرف",
+              description: appLang === 'en'
+                ? `${distributionAmount.toFixed(2)} distributed and paid to all shareholders successfully.`
+                : `تم توزيع وصرف ${distributionAmount.toFixed(2)} لجميع المساهمين بنجاح.`,
+            })
+          }
+        } else {
+          toast({
+            title: appLang === 'en' ? "Distribution Recorded" : "تم تسجيل التوزيع",
+            description: appLang === 'en'
+              ? `Distribution recorded. Could not retrieve lines for immediate payment.`
+              : `تم تسجيل التوزيع. تعذر استرداد سطور الصرف الفوري.`,
+          })
+        }
+      } else {
+        toast({
+          title: appLang === 'en' ? "Distribution Recorded" : "تم تسجيل التوزيع",
+          description: appLang === 'en'
+            ? `Dividend of ${distributionAmount.toFixed(2)} distributed successfully. Available for payment.`
+            : `تم توزيع أرباح بمبلغ ${distributionAmount.toFixed(2)} بنجاح. متاح للصرف الآن.`,
+        })
+      }
+
+      // Refresh data
+      setDistributionAmount(0)
+      setImmediatePaymentReference("")
+      await loadPendingDividends(companyId)
+      await checkRetainedEarningsBalance(companyId)
 
     } catch (error: any) {
       console.error("Error distributing profit:", error)
@@ -1354,7 +1427,7 @@ export default function ShareholdersPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="distribution_date" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Distribution date' : 'تاريخ التوزيع'}</Label>
                   <Input
@@ -1395,11 +1468,6 @@ export default function ShareholdersPage() {
                     </p>
                   )}
                 </div>
-                <div className="flex items-end">
-                  <Button onClick={distributeProfit} disabled={distributionSaving || distributionAmount <= 0 || Math.round(totalPercentage) !== 100 || distributionAmount > retainedEarningsBalance}>
-                    {distributionSaving ? ((hydrated && appLang === 'en') ? 'Saving...' : 'جاري الحفظ...') : ((hydrated && appLang === 'en') ? 'Record distribution' : 'تسجيل توزيع')}
-                  </Button>
-                </div>
               </div>
 
               {/* Branch and Cost Center Selection */}
@@ -1416,6 +1484,129 @@ export default function ShareholdersPage() {
                   showLabels={true}
                   showWarehouse={false}
                 />
+              </div>
+
+              {/* === Immediate Payment Toggle (دفع فوري) === */}
+              <div className="mt-4 border border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-4 space-y-4">
+                <div className="flex items-center gap-3">
+                  <input
+                    id="immediate_payment_toggle"
+                    type="checkbox"
+                    checked={immediatePayment}
+                    onChange={(e) => setImmediatePayment(e.target.checked)}
+                    className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                  />
+                  <label htmlFor="immediate_payment_toggle" className="cursor-pointer select-none" suppressHydrationWarning>
+                    <span className="font-semibold text-gray-800 dark:text-gray-100">
+                      {(hydrated && appLang === 'en') ? 'Immediate Payment' : 'دفع فوري'}
+                    </span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5" suppressHydrationWarning>
+                      {(hydrated && appLang === 'en')
+                        ? 'Record distribution and pay shareholders immediately in one step'
+                        : 'تسجيل التوزيع وصرف الأرباح للمساهمين فوراً في خطوة واحدة'}
+                    </span>
+                  </label>
+                </div>
+
+                {immediatePayment && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-gray-200 dark:border-gray-700">
+                    <div className="space-y-2">
+                      <Label suppressHydrationWarning>
+                        {(hydrated && appLang === 'en') ? 'Payment Account *' : 'حساب الصرف *'}
+                      </Label>
+                      {cashBankAccounts.length === 0 ? (
+                        <p className="text-xs text-yellow-600 dark:text-yellow-400 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded" suppressHydrationWarning>
+                          {(hydrated && appLang === 'en')
+                            ? 'No bank/cash accounts found'
+                            : 'لا توجد حسابات بنكية أو خزائن'}
+                        </p>
+                      ) : (
+                        <Select value={immediatePaymentAccountId} onValueChange={setImmediatePaymentAccountId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder={(hydrated && appLang === 'en') ? 'Select account' : 'اختر حساب الصرف'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {cashBankAccounts.map((acc) => (
+                              <SelectItem key={acc.id} value={acc.id}>
+                                {acc.account_code} - {acc.account_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <p className="text-xs text-gray-500" suppressHydrationWarning>
+                        {(hydrated && appLang === 'en') ? 'Bank or cash account to pay from' : 'البنك أو الخزنة التي يخرج منها المبلغ'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label suppressHydrationWarning>
+                        {(hydrated && appLang === 'en') ? 'Payment Method *' : 'طريقة الدفع *'}
+                      </Label>
+                      <Select value={immediatePaymentMethod} onValueChange={(v) => setImmediatePaymentMethod(v as any)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="cash">
+                            {(hydrated && appLang === 'en') ? '💵 Cash' : '💵 نقدي'}
+                          </SelectItem>
+                          <SelectItem value="bank_transfer">
+                            {(hydrated && appLang === 'en') ? '🏦 Bank Transfer' : '🏦 تحويل بنكي'}
+                          </SelectItem>
+                          <SelectItem value="check">
+                            {(hydrated && appLang === 'en') ? '📄 Check' : '📄 شيك'}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {immediatePaymentMethod !== 'cash' && (
+                      <div className="space-y-2">
+                        <Label suppressHydrationWarning>
+                          {(hydrated && appLang === 'en') ? 'Reference Number' : 'رقم المرجع'}
+                        </Label>
+                        <Input
+                          value={immediatePaymentReference}
+                          onChange={(e) => setImmediatePaymentReference(e.target.value)}
+                          placeholder={(hydrated && appLang === 'en') ? 'Check / Transfer No.' : 'رقم الشيك / التحويل'}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {immediatePayment && immediatePaymentAccountId && (
+                  <div className="flex items-center gap-2 text-xs text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2">
+                    <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                    <span suppressHydrationWarning>
+                      {(hydrated && appLang === 'en')
+                        ? 'Journal entries: Dr. Retained Earnings → Cr. Dividends Payable → Dr. Dividends Payable → Cr. Bank/Cash'
+                        : 'القيود: م. الأرباح المحتجزة ← د. أرباح موزعة مستحقة ← م. أرباح موزعة مستحقة ← د. البنك/الخزنة'}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Record Distribution Button */}
+              <div className="flex justify-end">
+                <Button
+                  onClick={distributeProfit}
+                  disabled={
+                    distributionSaving ||
+                    distributionAmount <= 0 ||
+                    Math.round(totalPercentage) !== 100 ||
+                    distributionAmount > retainedEarningsBalance ||
+                    (immediatePayment && !immediatePaymentAccountId)
+                  }
+                  className="min-w-[160px]"
+                >
+                  {distributionSaving
+                    ? ((hydrated && appLang === 'en') ? 'Processing...' : 'جاري المعالجة...')
+                    : immediatePayment
+                      ? ((hydrated && appLang === 'en') ? 'Distribute & Pay Now' : 'توزيع وصرف فوري')
+                      : ((hydrated && appLang === 'en') ? 'Record Distribution' : 'تسجيل التوزيع')}
+                </Button>
               </div>
 
               {distributionAmount > 0 && shareholders.length > 0 && (
