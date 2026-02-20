@@ -910,8 +910,11 @@ export default function ShareholdersPage() {
         })
       }
 
-      // Refresh data
+      // Refresh data — reset ALL immediate payment state to prevent unintended repeat payments
       setDistributionAmount(0)
+      setImmediatePayment(false)
+      setImmediatePaymentAccountId("")
+      setImmediatePaymentMethod('cash')
       setImmediatePaymentReference("")
       await loadPendingDividends(companyId)
       await checkRetainedEarningsBalance(companyId)
