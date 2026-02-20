@@ -235,7 +235,9 @@ export async function notifyPurchaseReturnPendingApproval(params: {
     ? `Return #${returnNumber} for supplier ${supplierName} (${totalAmount} ${currency}) requires your confirmation to deliver goods to supplier.`
     : `مرتجع رقم ${returnNumber} للمورد ${supplierName} (${totalAmount} ${currency}) يحتاج تأكيدك بتسليم البضاعة للمورد.`
 
-  const eventKey = `purchase_return:${purchaseReturnId}:pending_approval`
+  // نضمّن warehouse_id في event_key لتجنب الدمج بين إشعارات مخازن مختلفة
+  const warehouseSuffix = warehouseId ? `:${warehouseId}` : ''
+  const eventKey = `purchase_return:${purchaseReturnId}:pending_approval${warehouseSuffix}`
 
   // إشعار لمسؤول المخزن
   await createNotification({
