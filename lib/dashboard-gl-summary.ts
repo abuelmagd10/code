@@ -19,6 +19,8 @@ export interface GLSummaryResult {
   topRevenue: { name: string; amount: number }[]
   topExpenses: { name: string; amount: number }[]
   journalLinesCount: number
+  /** تجميع شهري من GL للرسم البياني — YYYY-MM → { revenue, expense } */
+  monthlyBreakdown: Record<string, { revenue: number; expense: number }>
 }
 
 export interface GetGLSummaryOptions {
@@ -75,6 +77,8 @@ export async function getGLSummary(
 
   const revenueByAccount: Record<string, number> = {}
   const expenseByAccount: Record<string, number> = {}
+  /** YYYY-MM → { revenue, expense } — للرسم البياني الشهري من GL */
+  const monthlyBreakdown: Record<string, { revenue: number; expense: number }> = {}
 
   for (const line of glLines || []) {
     const coa = (line as any).chart_of_accounts
@@ -85,19 +89,33 @@ export async function getGLSummary(
     const credit = Number(line.credit_amount || 0)
     const net = debit - credit
     const accountName = coa?.account_name || accountCode
+    // YYYY-MM من تاريخ القيد للتجميع الشهري
+    const entryMonth: string = String((line as any).journal_entries?.entry_date || "").slice(0, 7)
 
     if (accountType === "income" || accountType === "revenue") {
       const amount = credit - debit
       totalRevenue += amount
       revenueByAccount[accountName] = (revenueByAccount[accountName] || 0) + amount
+      if (entryMonth) {
+        if (!monthlyBreakdown[entryMonth]) monthlyBreakdown[entryMonth] = { revenue: 0, expense: 0 }
+        monthlyBreakdown[entryMonth].revenue += amount
+      }
     } else if (
       accountType === "expense" &&
       (accountCode === "5000" || subType === "cogs" || subType === "cost_of_goods_sold")
     ) {
       totalCOGS += net
+      if (entryMonth) {
+        if (!monthlyBreakdown[entryMonth]) monthlyBreakdown[entryMonth] = { revenue: 0, expense: 0 }
+        monthlyBreakdown[entryMonth].expense += net
+      }
     } else if (accountType === "expense") {
       totalExpenses += net
       expenseByAccount[accountName] = (expenseByAccount[accountName] || 0) + net
+      if (entryMonth) {
+        if (!monthlyBreakdown[entryMonth]) monthlyBreakdown[entryMonth] = { revenue: 0, expense: 0 }
+        monthlyBreakdown[entryMonth].expense += net
+      }
     } else if (accountType === "asset") {
       totalAssets += net
     } else if (accountType === "liability") {
@@ -134,5 +152,6 @@ export async function getGLSummary(
     topRevenue,
     topExpenses,
     journalLinesCount: (glLines || []).length,
+    monthlyBreakdown,
   }
 }

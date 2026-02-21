@@ -1099,7 +1099,7 @@ export default function PaymentsPage() {
               reference_id: null,
               entry_date: newCustPayment.date,
               description: `سداد عميل كسلفة(${newCustPayment.method})`,
-              branch_id: mapping.branchId || null,
+              branch_id: mapping.branchId!,
               cost_center_id: mapping.costCenterId || null,
             }).select().single()
           if (entry?.id) {
@@ -1272,7 +1272,7 @@ export default function PaymentsPage() {
               reference_id: insertedPayment?.id || null,
               entry_date: newSuppPayment.date,
               description: `سداد مورّد كسلفة (${newSuppPayment.method})`,
-              branch_id: mapping.branchId || null,
+              branch_id: mapping.branchId!,
               cost_center_id: mapping.costCenterId || null,
             }).select().single()
           if (entry?.id) {
@@ -1376,6 +1376,21 @@ export default function PaymentsPage() {
       byNameIncludes("deposit") ||
       byType("liability")
 
+    // branch_id إجباري لـ journal_entries: استخدام فرع المستخدم أو الفرع الافتراضي للشركة
+    let branchId = userContext?.branch_id ?? null
+    if (!branchId) {
+      const { data: defBranch } = await supabase
+        .from("branches")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("is_main", { ascending: false })
+        .order("name")
+        .limit(1)
+        .maybeSingle()
+      branchId = defBranch?.id ?? null
+    }
+
     return { 
       companyId, 
       ar, 
@@ -1389,7 +1404,7 @@ export default function PaymentsPage() {
       shippingAccount, 
       supplierAdvance, 
       customerAdvance,
-      branchId: userContext?.branch_id || null,
+      branchId,
       costCenterId: userContext?.cost_center_id || null
     }
   }
@@ -1637,7 +1652,7 @@ export default function PaymentsPage() {
           reference_id: inv.id,
           entry_date: inv.invoice_date || new Date().toISOString().slice(0, 10),
           description: `فاتورة مبيعات ${inv.invoice_number}`,
-          branch_id: invoiceData?.branch_id || null,
+          branch_id: invoiceData?.branch_id || mapping.branchId!,
           cost_center_id: invoiceData?.cost_center_id || null,
         })
         .select()
@@ -1645,8 +1660,8 @@ export default function PaymentsPage() {
 
       if (!invError && invEntry) {
         await supabase.from("journal_entry_lines").insert([
-          { journal_entry_id: invEntry.id, account_id: mapping.ar, debit_amount: Number(inv.total_amount || 0), credit_amount: 0, description: "الذمم المدينة", branch_id: invoiceData?.branch_id || null, cost_center_id: invoiceData?.cost_center_id || null },
-          { journal_entry_id: invEntry.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: Number(inv.total_amount || 0), description: "إيرادات المبيعات", branch_id: invoiceData?.branch_id || null, cost_center_id: invoiceData?.cost_center_id || null },
+          { journal_entry_id: invEntry.id, account_id: mapping.ar, debit_amount: Number(inv.total_amount || 0), credit_amount: 0, description: "الذمم المدينة", branch_id: invoiceData?.branch_id || mapping.branchId!, cost_center_id: invoiceData?.cost_center_id || null },
+          { journal_entry_id: invEntry.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: Number(inv.total_amount || 0), description: "إيرادات المبيعات", branch_id: invoiceData?.branch_id || mapping.branchId!, cost_center_id: invoiceData?.cost_center_id || null },
         ])
         console.log(`✅ تم إنشاء قيد الفاتورة ${inv.invoice_number} عند الدفع الأول - مبلغ: ${inv.total_amount}`)
       }
@@ -1688,7 +1703,7 @@ export default function PaymentsPage() {
           reference_id: bill.id,
           entry_date: bill.bill_date,
           description: `فاتورة شراء ${bill.bill_number}`,
-          branch_id: bill.branch_id || null,
+          branch_id: bill.branch_id || mapping.branchId!,
           cost_center_id: bill.cost_center_id || null,
         }).select().single()
 
@@ -1824,7 +1839,7 @@ export default function PaymentsPage() {
           reference_id: inv.id,
           entry_date: paymentDate,
           description: `دفعة على فاتورة ${inv.invoice_number}`,
-          branch_id: invoiceData?.branch_id || null,
+          branch_id: invoiceData?.branch_id || mapping.branchId!,
           cost_center_id: invoiceData?.cost_center_id || null,
         })
         .select()
@@ -1833,8 +1848,8 @@ export default function PaymentsPage() {
       if (!payError && payEntry) {
         // قيد السداد: Debit Cash / Credit AR
         await supabase.from("journal_entry_lines").insert([
-          { journal_entry_id: payEntry.id, account_id: cashAccountId, debit_amount: paymentAmount, credit_amount: 0, description: "نقد/بنك", branch_id: invoiceData?.branch_id || null, cost_center_id: invoiceData?.cost_center_id || null },
-          { journal_entry_id: payEntry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: paymentAmount, description: "الذمم المدينة", branch_id: invoiceData?.branch_id || null, cost_center_id: invoiceData?.cost_center_id || null },
+          { journal_entry_id: payEntry.id, account_id: cashAccountId, debit_amount: paymentAmount, credit_amount: 0, description: "نقد/بنك", branch_id: invoiceData?.branch_id || mapping.branchId!, cost_center_id: invoiceData?.cost_center_id || null },
+          { journal_entry_id: payEntry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: paymentAmount, description: "الذمم المدينة", branch_id: invoiceData?.branch_id || mapping.branchId!, cost_center_id: invoiceData?.cost_center_id || null },
         ])
         console.log(`✅ تم إنشاء قيد السداد للفاتورة ${inv.invoice_number} - مبلغ: ${paymentAmount}`)
       }
@@ -2003,7 +2018,7 @@ export default function PaymentsPage() {
           reference_id: po.id,
           entry_date: selectedPayment.payment_date,
           description: `سداد مرتبط بأمر شراء ${po.po_number}`,
-          branch_id: po.branch_id || null,
+          branch_id: po.branch_id || mapping.branchId!,
           cost_center_id: po.cost_center_id || null,
         }).select().single()
       if (entryErr) throw entryErr
@@ -2130,7 +2145,7 @@ export default function PaymentsPage() {
             reference_id: bill.id,
             entry_date: bill.bill_date,
             description: `فاتورة شراء ${bill.bill_number}`,
-            branch_id: bill.branch_id || null,
+            branch_id: bill.branch_id || mapping.branchId!,
             cost_center_id: bill.cost_center_id || null,
           }).select().single()
         if (billEntryErr) throw billEntryErr
@@ -2254,7 +2269,7 @@ export default function PaymentsPage() {
           reference_id: bill.id,
           entry_date: selectedPayment.payment_date,
           description: `سداد فاتورة مورد ${bill.bill_number}`,
-          branch_id: bill.branch_id || null,
+          branch_id: bill.branch_id || mapping.branchId!,
           cost_center_id: bill.cost_center_id || null,
         }).select().single()
       if (payEntryErr) throw payEntryErr
@@ -2421,7 +2436,7 @@ export default function PaymentsPage() {
           reference_id: bill.id,
           entry_date: payment.payment_date,
           description: `سداد فاتورة مورد ${bill.bill_number}`,
-          branch_id: bill.branch_id || null,
+          branch_id: bill.branch_id || mapping.branchId!,
           cost_center_id: bill.cost_center_id || null,
         }).select().single()
       if (payEntryErr) throw payEntryErr
@@ -3095,7 +3110,7 @@ export default function PaymentsPage() {
                           reference_id: null,
                           entry_date: new Date().toISOString().slice(0, 10),
                           description: isCustomer ? "عكس دفعة عميل غير مرتبطة" : "عكس دفعة مورد غير مرتبطة",
-                          branch_id: mapping.branchId || null,
+                          branch_id: mapping.branchId!,
                           cost_center_id: mapping.costCenterId || null,
                         }).select().single()
                       if (revEntry?.id) {
@@ -3151,7 +3166,7 @@ export default function PaymentsPage() {
                           reference_id: null,
                           entry_date: editFields.payment_date || editingPayment.payment_date,
                           description: isCustomer ? `سداد عميل (${editFields.payment_method || editingPayment.payment_method || "cash"})` : `سداد مورّد (${editFields.payment_method || editingPayment.payment_method || "cash"})`,
-                          branch_id: mapping.branchId || null,
+                          branch_id: mapping.branchId!,
                           cost_center_id: mapping.costCenterId || null,
                         }).select().single()
                       if (newEntry?.id) {
@@ -3262,7 +3277,7 @@ export default function PaymentsPage() {
                             description: isCustomer 
                               ? `عكس قيد سداد فاتورة (تغيير حساب الدفع)`
                               : `عكس قيد سداد فاتورة مورد (تغيير حساب الدفع)`,
-                          branch_id: mapping.branchId || null,
+                          branch_id: mapping.branchId!,
                           cost_center_id: mapping.costCenterId || null,
                         }).select().single()
                         
@@ -3278,7 +3293,7 @@ export default function PaymentsPage() {
                             original_credit: line.original_debit || 0,
                             original_currency: line.original_currency || paymentCurrency,
                             exchange_rate_used: line.exchange_rate_used || paymentExRate,
-                            branch_id: line.branch_id || null,
+                            branch_id: line.branch_id || mapping.branchId!,
                             cost_center_id: line.cost_center_id || null,
                           }))
                           
@@ -3325,7 +3340,7 @@ export default function PaymentsPage() {
                           description: isCustomer 
                             ? `سداد فاتورة (حساب دفع محدث)`
                             : `سداد فاتورة مورد (حساب دفع محدث)`,
-                          branch_id: branchId,
+                          branch_id: branchId || mapping.branchId!,
                           cost_center_id: costCenterId,
                         }).select().single()
                       
@@ -3467,7 +3482,7 @@ export default function PaymentsPage() {
                           reference_id: inv.id,
                           entry_date: new Date().toISOString().slice(0, 10),
                           description: `عكس تطبيق دفعة على فاتورة ${inv.invoice_number}`,
-                          branch_id: inv.branch_id || mapping.branchId || null,
+                          branch_id: inv.branch_id || mapping.branchId!,
                           cost_center_id: inv.cost_center_id || mapping.costCenterId || null,
                         }).select().single()
                       if (revEntry?.id) {
@@ -3496,7 +3511,7 @@ export default function PaymentsPage() {
                           reference_id: inv.id,
                           entry_date: new Date().toISOString().slice(0, 10),
                           description: `عكس دفع مباشر للفاتورة ${inv.invoice_number}`,
-                          branch_id: inv.branch_id || mapping.branchId || null,
+                          branch_id: inv.branch_id || mapping.branchId!,
                           cost_center_id: inv.cost_center_id || mapping.costCenterId || null,
                         }).select().single()
                       if (revEntryDirect?.id && cashAccountId) {
@@ -3532,7 +3547,7 @@ export default function PaymentsPage() {
                           reference_id: bill.id,
                           entry_date: new Date().toISOString().slice(0, 10),
                           description: `عكس تطبيق دفعة على فاتورة مورد ${bill.bill_number}`,
-                          branch_id: bill.branch_id || mapping.branchId || null,
+                          branch_id: bill.branch_id || mapping.branchId!,
                           cost_center_id: bill.cost_center_id || mapping.costCenterId || null,
                         }).select().single()
                       if (revEntry?.id) {
@@ -3561,7 +3576,7 @@ export default function PaymentsPage() {
                           reference_id: po.id,
                           entry_date: new Date().toISOString().slice(0, 10),
                           description: `عكس تطبيق دفعة على أمر شراء ${po.po_number}`,
-                          branch_id: (po as any).branch_id || mapping.branchId || null,
+                          branch_id: (po as any).branch_id || mapping.branchId!,
                           cost_center_id: (po as any).cost_center_id || mapping.costCenterId || null,
                         }).select().single()
                       if (revEntry?.id && cashAccountId && mapping.supplierAdvance) {
@@ -3588,7 +3603,7 @@ export default function PaymentsPage() {
                         reference_id: deletingPayment.id,
                         entry_date: new Date().toISOString().slice(0, 10),
                         description: isCustomer ? "حذف دفعة عميل" : "حذف دفعة مورد",
-                        branch_id: mapping.branchId || null,
+                        branch_id: mapping.branchId!,
                         cost_center_id: mapping.costCenterId || null,
                       }).select().single()
                     if (revEntryBase?.id) {

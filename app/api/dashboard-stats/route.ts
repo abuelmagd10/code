@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security-enhanced"
 import { serverError, badRequestError } from "@/lib/api-security-enhanced"
-import { checkBranchAccess, buildBranchFilter } from "@/lib/branch-access-control"
+import { buildBranchFilter } from "@/lib/branch-access-control"
+import { getGLSummary } from "@/lib/dashboard-gl-summary"
 
-// API شامل لإحصائيات لوحة التحكم - يقرأ البيانات الفعلية مباشرة
+// API إحصائيات لوحة التحكم — GL-Driven: الأرقام المالية من دفتر الأستاذ العام فقط (Zero Financial Numbers Outside GL)
 export async function GET(request: NextRequest) {
   try {
     // ✅ إنشاء supabase client للمصادقة
@@ -49,11 +50,19 @@ export async function GET(request: NextRequest) {
       toDate = now.toISOString().slice(0, 10)
     }
 
-    // بناء فلتر الفرع حسب صلاحيات المستخدم
     const branchFilter = buildBranchFilter(branchId!, member.role)
 
     // =============================================
-    // 1. إحصائيات المبيعات من جدول invoices (مفلترة حسب الفرع)
+    // 1. GL-Driven: الإيرادات، COGS، المصروفات، صافي الربح من دفتر الأستاذ فقط
+    // =============================================
+    const glData = await getGLSummary(supabase, companyId, fromDate, toDate, { branchId: branchId || undefined })
+    const totalCOGS = glData.cogs
+    const totalExpenses = glData.operatingExpenses
+    const grossProfit = glData.grossProfit
+    const netProfit = glData.netProfit
+
+    // =============================================
+    // 2. إحصائيات تشغيلية (عدد الفواتير/الحالات) من invoices — للأعداد فقط وليس للأرقام المالية
     // =============================================
     const { data: invoices } = await supabase
       .from("invoices")
@@ -76,7 +85,6 @@ export async function GET(request: NextRequest) {
       taxCollected: 0,
       shipping: 0
     }
-
     for (const inv of invoices || []) {
       if (inv.status === "paid" || inv.status === "partially_paid") {
         salesStats.total += Number(inv.total_amount || 0)
@@ -88,81 +96,13 @@ export async function GET(request: NextRequest) {
         salesStats.total += Number(inv.total_amount || 0)
         salesStats.unpaid += Number(inv.total_amount || 0) - Number(inv.paid_amount || 0)
         salesStats.sentCount++
-      } else if (inv.status === "draft") {
-        salesStats.draftCount++
-      } else if (inv.status === "cancelled") {
-        salesStats.cancelledCount++
-      }
+      } else if (inv.status === "draft") salesStats.draftCount++
+      else if (inv.status === "cancelled") salesStats.cancelledCount++
       salesStats.count++
     }
 
     // =============================================
-    // 2. ✅ ERP Professional: حساب COGS من cogs_transactions (المصدر الوحيد للحقيقة)
-    // =============================================
-    // 📌 يمنع استخدام products.cost_price في التقارير الرسمية
-    // 📌 FIFO Engine هو الجهة الوحيدة المخولة بتحديد unit_cost
-    // 📌 COGS = SUM(total_cost) FROM cogs_transactions WHERE source_type = 'invoice'
-    let totalCOGS = 0
-
-    try {
-      const { calculateCOGSTotal } = await import("@/lib/cogs-transactions")
-      totalCOGS = await calculateCOGSTotal(supabase, {
-        companyId,
-        fromDate,
-        toDate,
-        branchId: branchId || undefined,
-        sourceType: 'invoice'
-      })
-      
-      // Fallback: إذا لم توجد سجلات COGS (للتوافق مع البيانات القديمة)
-      if (totalCOGS === 0) {
-        console.warn("⚠️ No COGS transactions found, falling back to cost_price calculation (deprecated)")
-        const { data: invoiceItems } = await supabase
-          .from("invoice_items")
-          .select(`
-            quantity,
-            product_id,
-            invoices!inner(company_id, status, invoice_date),
-            products(cost_price, item_type)
-          `)
-          .eq("invoices.company_id", companyId)
-          .in("invoices.status", ["sent", "partially_paid", "paid"])
-          .gte("invoices.invoice_date", fromDate)
-          .lte("invoices.invoice_date", toDate)
-
-        for (const item of invoiceItems || []) {
-          const prod = item.products as any
-          if (prod?.item_type !== 'service') {
-            totalCOGS += Number(item.quantity || 0) * Number(prod?.cost_price || 0)
-          }
-        }
-      }
-    } catch (error: any) {
-      console.error("Error calculating COGS from transactions:", error)
-      // Fallback to cost_price in case of error
-      const { data: invoiceItems } = await supabase
-        .from("invoice_items")
-        .select(`
-          quantity,
-          product_id,
-          invoices!inner(company_id, status, invoice_date),
-          products(cost_price, item_type)
-        `)
-        .eq("invoices.company_id", companyId)
-        .in("invoices.status", ["sent", "partially_paid", "paid"])
-        .gte("invoices.invoice_date", fromDate)
-        .lte("invoices.invoice_date", toDate)
-
-      for (const item of invoiceItems || []) {
-        const prod = item.products as any
-        if (prod?.item_type !== 'service') {
-          totalCOGS += Number(item.quantity || 0) * Number(prod?.cost_price || 0)
-        }
-      }
-    }
-
-    // =============================================
-    // 3. إحصائيات المشتريات من جدول bills
+    // 3. إحصائيات تشغيلية للمشتريات (عدد الفواتير فقط — لا تُستخدم للأرقام المالية)
     // =============================================
     const { data: bills } = await supabase
       .from("bills")
@@ -171,46 +111,13 @@ export async function GET(request: NextRequest) {
       .gte("bill_date", fromDate)
       .lte("bill_date", toDate)
 
-    const purchasesStats = {
-      total: 0,
-      paid: 0,
-      unpaid: 0,
-      count: 0
-    }
-
+    const purchasesStats = { total: 0, paid: 0, unpaid: 0, count: 0 }
     for (const bill of bills || []) {
       if (bill.status !== "draft" && bill.status !== "cancelled") {
         purchasesStats.total += Number(bill.total_amount || 0)
         purchasesStats.paid += Number(bill.paid_amount || 0)
         purchasesStats.unpaid += Number(bill.total_amount || 0) - Number(bill.paid_amount || 0)
         purchasesStats.count++
-      }
-    }
-
-    // =============================================
-    // 4. إحصائيات المصروفات من journal_entries (باستثناء COGS)
-    // =============================================
-    const { data: expenseEntries } = await supabase
-      .from("journal_entry_lines")
-      .select("debit_amount, credit_amount, chart_of_accounts!inner(account_type, account_code, sub_type, company_id), journal_entries!inner(entry_date, company_id)")
-      .eq("chart_of_accounts.account_type", "expense")
-      .eq("chart_of_accounts.company_id", companyId)
-
-    let totalExpenses = 0
-    for (const line of expenseEntries || []) {
-      const entryDate = (line as any).journal_entries?.entry_date
-      const coa = (line as any).chart_of_accounts
-      const subType = coa?.sub_type || ""
-      const accountCode = coa?.account_code || ""
-
-      // ✅ استثناء COGS من المصروفات التشغيلية
-      // COGS يُحسب بشكل منفصل ولا يجب أن يُضاف للمصروفات
-      if (accountCode === "5000" || subType === "cogs" || subType === "cost_of_goods_sold") {
-        continue // تجاهل COGS
-      }
-
-      if (entryDate >= fromDate && entryDate <= toDate) {
-        totalExpenses += Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
       }
     }
 
@@ -343,15 +250,6 @@ export async function GET(request: NextRequest) {
       payables += Number(bill.total_amount || 0) - Number(bill.paid_amount || 0)
     }
 
-    // =============================================
-    // 8. حساب الربح الصحيح
-    // =============================================
-    // الربح الإجمالي = المبيعات المدفوعة - تكلفة البضاعة المباعة
-    const grossProfit = salesStats.paid - totalCOGS
-    // صافي الربح = الربح الإجمالي - المصروفات (بدون COGS لأنه محسوب)
-    const operatingExpenses = totalExpenses - totalCOGS // المصروفات بدون COGS
-    const netProfit = grossProfit - Math.max(0, operatingExpenses)
-
     return NextResponse.json({
       success: true,
       data: {
@@ -361,24 +259,18 @@ export async function GET(request: NextRequest) {
         branchId,
         costCenterId: effectiveCostCenterId,
         warehouseId: effectiveWarehouseId,
+        source: "GL",
 
-        // المبيعات
         sales: salesStats,
 
-        // تكلفة البضاعة المباعة
         cogs: totalCOGS,
-
-        // المشتريات
         purchases: purchasesStats,
-
-        // المصروفات
         expenses: totalExpenses,
-        operatingExpenses: Math.max(0, operatingExpenses),
+        operatingExpenses: totalExpenses,
 
-        // الأرباح
         grossProfit,
         netProfit,
-        profitMargin: salesStats.paid > 0 ? ((grossProfit / salesStats.paid) * 100).toFixed(1) : 0,
+        profitMargin: glData.profitMargin.toFixed(1),
 
         // المخزون
         inventory: {

@@ -310,15 +310,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
         .sort((a: any, b: any) => String(b.bill_date || "").localeCompare(String(a.bill_date || "")))
     }
 
-    // بناء سلسلة 12 شهراً للرسم البياني (مبيعات/مشتريات من الفواتير)
+    // بناء سلسلة 12 شهراً للرسم البياني — من GL فقط (monthlyBreakdown)
     const now = new Date()
     const months: { key: string; label: string }[] = []
-
-    // أسماء الأشهر الثابتة لتجنب hydration mismatch
     const monthNamesAr = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
     const monthNamesEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     const monthNames = appLang === 'en' ? monthNamesEn : monthNamesAr
-
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
@@ -326,39 +323,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       months.push({ key, label })
     }
 
-    const salesByMonth = new Map<string, number>()
-    for (const i of invoicesData || []) {
-      const key = String(i.invoice_date || "").slice(0, 7)
-      if (!key) continue
-      salesByMonth.set(key, (salesByMonth.get(key) || 0) + Number(i.total_amount || 0))
-    }
-
-    const purchasesByMonth = new Map<string, number>()
-    for (const b of billsData || []) {
-      const key = String(b.bill_date || "").slice(0, 7)
-      if (!key) continue
-      purchasesByMonth.set(key, (purchasesByMonth.get(key) || 0) + Number(b.total_amount || 0))
-    }
-
-    monthlyData = months.map(({ key, label }) => ({
-      month: label,
-      revenue: salesByMonth.get(key) || 0,
-      expense: purchasesByMonth.get(key) || 0,
-    }))
-
-    const prevKey = months.length > 1 ? months[months.length - 2].key : ""
-    const curKey = months.length > 0 ? months[months.length - 1].key : ""
-    const incomePrev = prevKey ? (salesByMonth.get(prevKey) || 0) : 0
-    const expensePrev = prevKey ? (purchasesByMonth.get(prevKey) || 0) : 0
-    const incomeCur = curKey ? (salesByMonth.get(curKey) || 0) : 0
-    const expenseCur = curKey ? (purchasesByMonth.get(curKey) || 0) : 0
-    incomeChangePct = incomePrev === 0 ? (incomeCur > 0 ? 100 : 0) : ((incomeCur - incomePrev) / Math.abs(incomePrev)) * 100
-    expenseChangePct = expensePrev === 0 ? (expenseCur > 0 ? 100 : 0) : ((expenseCur - expensePrev) / Math.abs(expensePrev)) * 100
-    const profitPrev = incomePrev - expensePrev
-    const profitCur = incomeCur - expenseCur
-    profitChangePct = profitPrev === 0 ? (profitCur > 0 ? 100 : 0) : ((profitCur - profitPrev) / Math.abs(profitPrev)) * 100
-
-    // ── GL-First: إحصائيات رئيسية من دفتر الأستاذ العام (المصدر الوحيد للحقيقة) ──
+    // ── GL-First: إحصائيات رئيسية + الرسم البياني من دفتر الأستاذ العام (المصدر الوحيد للحقيقة) ──
     try {
       const nowDate = new Date()
       const curYmStart = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}-01`
@@ -366,14 +331,23 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       const prevMonth = new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1)
       const prevYmStart = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}-01`
       const prevYmEnd = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0).toISOString().split('T')[0]
+      const twelveMonthsAgo = new Date(nowDate.getFullYear(), nowDate.getMonth() - 11, 1)
+      const twelveMonthsStart = `${twelveMonthsAgo.getFullYear()}-${String(twelveMonthsAgo.getMonth() + 1).padStart(2, "0")}-01`
 
       const from = fromDate || curYmStart
       const to = toDate || curYmEnd
 
-      // 🔐 فلترة بالفرع عند scope=branch (مع مراعاة الصلاحيات من visibilityRules)
       const glBranchId = visibilityRules?.scope === 'branch' && visibilityRules.branchId
         ? visibilityRules.branchId
         : undefined
+
+      // استدعاء واحد لآخر 12 شهر لبناء الرسم البياني من GL فقط (Zero Financial Numbers Outside GL)
+      const glSummary12 = await getGLSummary(supabase, company.id, twelveMonthsStart, to, { branchId: glBranchId })
+      monthlyData = months.map(({ key, label }) => ({
+        month: label,
+        revenue: glSummary12.monthlyBreakdown[key]?.revenue ?? 0,
+        expense: glSummary12.monthlyBreakdown[key]?.expense ?? 0,
+      }))
 
       const glCurrent = await getGLSummary(supabase, company.id, from, to, { branchId: glBranchId })
       glRevenue = glCurrent.revenue
@@ -383,7 +357,6 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       glMonthlyRevenue = glCurrent.revenue
       glMonthlyExpense = glCurrent.cogs + glCurrent.operatingExpenses
 
-      // نسب التغيير: مقارنة بالفترة السابقة (نفس الفرع)
       try {
         const glPrev = await getGLSummary(supabase, company.id, prevYmStart, prevYmEnd, { branchId: glBranchId })
         const prevRev = glPrev.revenue
@@ -393,10 +366,11 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
         expenseChangePct = prevExp === 0 ? (glMonthlyExpense > 0 ? 100 : 0) : ((glMonthlyExpense - prevExp) / Math.abs(prevExp)) * 100
         profitChangePct = prevProf === 0 ? (glNetProfit > 0 ? 100 : 0) : ((glNetProfit - prevProf) / Math.abs(prevProf)) * 100
       } catch {
-        // احتفاظ بنسب التغيير من المبيعات/المشتريات إذا فشل جلب GL السابق
+        // احتفاظ بنسب التغيير الافتراضية إذا فشل جلب GL السابق
       }
     } catch (glErr) {
-      console.warn('[Dashboard] GL summary failed, using operational fallback:', glErr)
+      console.warn('[Dashboard] GL summary failed:', glErr)
+      monthlyData = months.map(({ key, label }) => ({ month: label, revenue: 0, expense: 0 }))
     }
 
     // 🔐 Dashboard Governance: النقد والبنك

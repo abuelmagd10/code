@@ -71,9 +71,15 @@ async function runTests() {
 
     // 3. Test Deletion with Transactions
     console.log('\n--- 3. Testing Deletion Validation ---')
-    // Create Journal Entry using B
+    const { data: defaultBranch } = await supabase.from('branches').select('id').eq('company_id', companyId).eq('is_active', true).limit(1).maybeSingle()
+    const branchId = defaultBranch?.id
+    if (!branchId) {
+        console.error('Company has no branch; journal_entries.branch_id is required. Create a branch first.')
+        return
+    }
     const { data: je, error: errJe } = await supabase.from('journal_entries').insert({
         company_id: companyId,
+        branch_id: branchId,
         entry_date: '2024-01-01',
         description: 'Test Entry',
         reference_type: 'manual',

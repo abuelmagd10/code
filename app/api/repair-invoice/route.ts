@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { requireOwnerOrAdmin } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, notFoundError, validationError } from "@/lib/api-error-handler"
+import { getDefaultBranchIdForCompany } from "@/lib/get-default-branch"
 
 // =====================================================
 // 📌 CANONICAL ACCOUNTING/INVENTORY REPAIR – MANDATORY SPECIFICATION
@@ -325,12 +326,17 @@ async function handle(request: NextRequest) {
       })
     }
 
-    // 2) جلب الحسابات
+    // 2) جلب الحسابات والفرع الافتراضي (مطلوب لـ journal_entries.branch_id NOT NULL)
     const { data: accounts } = await supabase
       .from("chart_of_accounts")
       .select("id, account_code, account_name, account_type, sub_type, parent_id")
       .eq("company_id", companyId)
     const mapping = mapAccounts(accounts || [])
+    const defaultBranchId = await getDefaultBranchIdForCompany(supabase, companyId)
+    const effectiveBranchId = (invoice as any).branch_id ?? defaultBranchId
+    if (!effectiveBranchId) {
+      return validationError("لا يوجد فرع للشركة أو للفاتورة. يرجى إنشاء فرع وتعيينه للفاتورة ثم إعادة المحاولة.")
+    }
 
     // 📌 النمط المحاسبي الصارم: لا COGS
     const summary: ResultSummary = {
@@ -502,6 +508,7 @@ async function handle(request: NextRequest) {
             reference_id: invoice.id,
             entry_date: invoice.invoice_date,
             description: `فاتورة مبيعات ${invoice_number}`,
+            branch_id: effectiveBranchId,
           })
           .select()
           .single()
@@ -564,6 +571,7 @@ async function handle(request: NextRequest) {
             reference_id: invoice.id,
             entry_date: paymentDate,
             description: `دفعة للفاتورة ${invoice_number}`,
+            branch_id: effectiveBranchId,
           })
           .select()
           .single()
@@ -685,6 +693,7 @@ async function handle(request: NextRequest) {
             reference_id: salesReturnId, // ✅ استخدام sales_return.id
             entry_date: invoice.invoice_date,
             description: `مرتجع مبيعات ${invoice_number}${returnStatus === "partial" ? " (جزئي)" : " (كامل)"}`,
+            branch_id: effectiveBranchId,
           })
           .select()
           .single()
@@ -803,6 +812,7 @@ async function handle(request: NextRequest) {
             reference_id: invoice.id,
             entry_date: invoice.invoice_date,
             description: `مرتجع مشتريات ${invoice_number}`,
+            branch_id: effectiveBranchId,
           })
           .select()
           .single()
@@ -872,7 +882,8 @@ async function handle(request: NextRequest) {
             reference_type: "purchase_return_refund",
             reference_id: invoice.id,
             entry_date: invoice.invoice_date,
-            description: `استرداد نقدي من المورد - الفاتورة ${invoice_number}`
+            description: `استرداد نقدي من المورد - الفاتورة ${invoice_number}`,
+            branch_id: effectiveBranchId,
           }).select().single()
 
           if (refundEntry?.id) {
@@ -912,6 +923,7 @@ async function handle(request: NextRequest) {
             reference_id: invoice.id,
             entry_date: invoice.invoice_date,
             description: `فاتورة مشتريات ${invoice_number}`,
+            branch_id: effectiveBranchId,
           })
           .select()
           .single()
@@ -954,6 +966,7 @@ async function handle(request: NextRequest) {
             reference_id: invoice.id,
             entry_date: new Date().toISOString().slice(0, 10),
             description: `دفعة لمورد - فاتورة ${invoice_number}`,
+            branch_id: effectiveBranchId,
           })
           .select()
           .single()

@@ -19,6 +19,8 @@
     "audit:comprehensive": "node scripts/comprehensive-audit-simple.js",
     "audit:quick": "node scripts/quick-audit.js",
     "load-test": "npx tsx scripts/load-test.ts",
+    "test:coa-constraints": "npx tsx scripts/test-coa-constraints.ts",
+    "test:period-closing": "npx tsx scripts/test-period-closing.ts",
     "audit:fix": "node scripts/fix-missing-journals.js",
     "inventory:audit": "node scripts/inventory-audit.js",
     "inventory:fix": "node scripts/fix-inventory-issues.js",

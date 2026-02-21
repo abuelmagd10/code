@@ -59,9 +59,14 @@ async function runTest() {
         if (pError) throw pError
         console.log(`✅ Created Test Period: ${period.period_name} (${period.id})`)
 
+        const { data: defaultBranch } = await supabase.from('branches').select('id').eq('company_id', companyId).eq('is_active', true).limit(1).maybeSingle()
+        const branchId = defaultBranch?.id
+        if (!branchId) throw new Error('Company has no branch; create one branch for journal_entries.branch_id NOT NULL')
+
         // 3. Insert some Transactions
         const { data: je, error: jeError } = await supabase.from('journal_entries').insert({
             company_id: companyId,
+            branch_id: branchId,
             entry_date: `${testYear}-${monthStr}-15`,
             description: 'Test Revenue',
             reference_type: 'manual_entry',

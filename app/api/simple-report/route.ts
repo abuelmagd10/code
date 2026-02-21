@@ -174,12 +174,7 @@ export async function GET(request: NextRequest) {
     }
     salesCount = salesEntryIds.size
 
-    // ✅ حساب المشتريات
-    // ✅ المستوى المحاسبي: من حسابات expense مع sub_type = 'purchases' أو account_code = '5110' (إن وُجدت)
-    // ✅ المستوى التشغيلي (للتقرير المبسط): من فواتير الشراء (bills) خلال الفترة
-    // 🎯 الهدف: عدم إظهار مشتريات = 0 إذا كانت هناك مشتريات فعلية (فواتير شراء أو قيود شراء)
-
-    // 1) مشتريات من القيود المحاسبية (حسابات المشتريات التقليدية إن وُجدت)
+    // ✅ حساب المشتريات — من GL فقط (Zero Financial Numbers Outside GL، لا fallback إلى bills)
     let journalPurchasesTotal = 0
     let journalPurchasesCount = 0
     const purchasesLines = periodLines.filter((line: any) => {
@@ -217,51 +212,9 @@ export async function GET(request: NextRequest) {
     
     journalPurchasesCount = purchasesEntryIds.size
 
-    // 2) مشتريات من فواتير الشراء (bills) - مصدر تشغيلي موثوق للحركة الفعلية
-    let billsPurchasesTotal = 0
-    let billsPurchasesCount = 0
-    try {
-      const { data: purchasesBills, error: billsError } = await supabase
-        .from("bills")
-        .select("id, total_amount, status, bill_date, is_deleted")
-        .eq("company_id", companyId)
-        .or("is_deleted.is.null,is_deleted.eq.false")
-        .gte("bill_date", fromDate)
-        .lte("bill_date", toDate)
-        .in("status", ["received", "partially_paid", "paid"]) // ✅ استخدام "received" للـ bills (ليس "sent" الذي هو للـ invoices)
-
-      if (billsError) {
-        console.warn("Could not load purchase bills in simple-report:", billsError)
-      } else {
-        billsPurchasesTotal = (purchasesBills || []).reduce(
-          (sum, bill: any) => sum + Number(bill.total_amount || 0),
-          0
-        )
-        billsPurchasesCount = (purchasesBills || []).length
-      }
-    } catch (e: any) {
-      console.warn("Error loading purchase bills in simple-report:", e)
-    }
-
-    // 3) اختيار المصدر النهائي للمشتريات في التقرير المبسط
-    // ✅ إذا وُجدت مشتريات محاسبية (journalPurchasesTotal > 0) نستخدمها
-    // ✅ إذا لم توجد مشتريات محاسبية لكن توجد فواتير شراء بمبلغ فعلي (billsPurchasesTotal >= 0.01) نستخدم فواتير الشراء
-    // ✅ لا يُسمح بعرض مشتريات = 0 إذا وُجدت فواتير شراء فعلية بمبلغ فعلي داخل الفترة
-    let totalPurchases = journalPurchasesTotal
-    let purchasesCount = journalPurchasesCount
-
-    if (totalPurchases < 0.01 && billsPurchasesTotal >= 0.01) {
-      // ✅ استخدام فواتير الشراء إذا وُجدت بمبلغ فعلي (>= 0.01)
-      totalPurchases = billsPurchasesTotal
-      purchasesCount = billsPurchasesCount
-    }
-
-    // تحقق إضافي: إذا وُجدت فواتير شراء بمبلغ فعلي لكن النتيجة لا تزال 0 → تحذير نظام
-    // ✅ هذا يعني أن هناك مشكلة في المنطق (مثلاً: فواتير بمبلغ لكن لم تُستخدم)
-    if (billsPurchasesTotal >= 0.01 && totalPurchases < 0.01) {
-      console.error("🚨 SYSTEM ERROR: Purchases bills with actual amounts exist but simple-report shows purchases = 0")
-      console.error(`BillsPurchasesTotal=${billsPurchasesTotal}, BillsCount=${billsPurchasesCount}, JournalPurchasesTotal=${journalPurchasesTotal}, JournalPurchasesCount=${journalPurchasesCount}`)
-    }
+    // GL-Only: لا fallback إلى bills — المشتريات من القيود فقط (Zero Financial Numbers Outside GL)
+    const totalPurchases = journalPurchasesTotal
+    const purchasesCount = journalPurchasesCount
 
     // ✅ حساب COGS (من journal_entries فقط)
     let totalCOGS = 0
