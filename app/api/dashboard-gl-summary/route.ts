@@ -68,15 +68,11 @@ export async function GET(request: NextRequest) {
         journal_entries!inner (
           entry_date,
           status,
-          company_id,
-          is_deleted,
-          deleted_at
+          company_id
         )
       `)
       .eq("journal_entries.company_id", companyId)
       .eq("journal_entries.status", "posted")
-      .or("journal_entries.is_deleted.is.null,journal_entries.is_deleted.eq.false")
-      .is("journal_entries.deleted_at", null)
       .gte("journal_entries.entry_date", fromDate)
       .lte("journal_entries.entry_date", toDate)
 
