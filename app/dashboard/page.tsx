@@ -162,6 +162,9 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   let profitChangePct = 0
   let totalCOGS = 0 // تكلفة البضاعة المباعة
   let totalShipping = 0 // إجمالي مصاريف الشحن
+  // Phase 4: GL-based monthly metrics (Single Source of Truth)
+  let glMonthlyRevenue = 0  // إيرادات الشهر من GL (حسابات 4xxx)
+  let glMonthlyExpense = 0  // مصروفات الشهر من GL (حسابات 5xxx)
 
   // Date filters from querystring
 
@@ -350,6 +353,46 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     const profitPrev = incomePrev - expensePrev
     const profitCur = incomeCur - expenseCur
     profitChangePct = profitPrev === 0 ? (profitCur > 0 ? 100 : 0) : ((profitCur - profitPrev) / Math.abs(profitPrev)) * 100
+
+    // ── Phase 4: GL-based monthly revenue & expense (Single Source of Truth) ──
+    // يستخدم GL مباشرةً بدلاً من الجداول التشغيلية لضمان الدقة المحاسبية
+    try {
+      const nowDate   = new Date()
+      const ymStart   = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}-01`
+      const ymEnd     = new Date(nowDate.getFullYear(), nowDate.getMonth() + 1, 0)
+                          .toISOString().split('T')[0]
+
+      // GL Revenue (accounts of type 'revenue') for current month
+      const { data: glRevRows } = await supabase
+        .from("journal_entry_lines")
+        .select("credit_amount, debit_amount, journal_entries!inner(company_id, status, entry_date), chart_of_accounts!inner(account_type)")
+        .eq("journal_entries.company_id", company.id)
+        .eq("journal_entries.status",     "posted")
+        .eq("chart_of_accounts.account_type", "revenue")
+        .gte("journal_entries.entry_date", ymStart)
+        .lte("journal_entries.entry_date", ymEnd)
+        .limit(2000)
+
+      glMonthlyRevenue = (glRevRows || []).reduce((s: number, r: any) =>
+        s + Number(r.credit_amount || 0) - Number(r.debit_amount || 0), 0)
+
+      // GL Expense (accounts of type 'expense') for current month
+      const { data: glExpRows } = await supabase
+        .from("journal_entry_lines")
+        .select("credit_amount, debit_amount, journal_entries!inner(company_id, status, entry_date), chart_of_accounts!inner(account_type)")
+        .eq("journal_entries.company_id", company.id)
+        .eq("journal_entries.status",     "posted")
+        .eq("chart_of_accounts.account_type", "expense")
+        .gte("journal_entries.entry_date", ymStart)
+        .lte("journal_entries.entry_date", ymEnd)
+        .limit(2000)
+
+      glMonthlyExpense = (glExpRows || []).reduce((s: number, r: any) =>
+        s + Number(r.debit_amount || 0) - Number(r.credit_amount || 0), 0)
+
+    } catch (glErr) {
+      console.warn('[Dashboard] GL monthly query failed, using operational fallback:', glErr)
+    }
 
     // 🔐 Dashboard Governance: النقد والبنك
     // Bank & cash balances: opening_balance + sum(debits - credits)
@@ -614,6 +657,8 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
             billsData={billsData}
             defaultCurrency={currencyCode}
             appLang={appLang}
+            glMonthlyRevenue={glMonthlyRevenue}
+            glMonthlyExpense={glMonthlyExpense}
           />
 
           {/* بطاقات المخزون والضرائب والمدفوعات */}

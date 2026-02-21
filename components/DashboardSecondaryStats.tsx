@@ -32,13 +32,18 @@ interface DashboardSecondaryStatsProps {
   billsData: Bill[]
   defaultCurrency: string
   appLang: string
+  // Phase 4: GL-based monthly metrics (Single Source of Truth)
+  glMonthlyRevenue?: number
+  glMonthlyExpense?: number
 }
 
 export default function DashboardSecondaryStats({
   invoicesData,
   billsData,
   defaultCurrency,
-  appLang
+  appLang,
+  glMonthlyRevenue,
+  glMonthlyExpense
 }: DashboardSecondaryStatsProps) {
   const [appCurrency, setAppCurrency] = useState(defaultCurrency)
   
@@ -178,35 +183,83 @@ export default function DashboardSecondaryStats({
         </CardContent>
       </Card>
 
-      {/* دخل هذا الشهر */}
+      {/* إيرادات هذا الشهر — GL هو المصدر الحقيقي */}
       <Card className="bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/50 dark:to-green-950/50 border border-emerald-100 dark:border-emerald-900 shadow-sm">
         <CardContent className="p-5">
           <div className="flex items-center gap-3 mb-3">
             <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
               <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
             </div>
-            <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-              {appLang==='en' ? 'Income This Month' : 'دخل الشهر'}
-            </span>
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300 block truncate">
+                {appLang==='en' ? 'Revenue This Month' : 'إيرادات الشهر'}
+              </span>
+              {/* GL badge: shows source */}
+              {glMonthlyRevenue !== undefined && (
+                <span className="text-[10px] font-semibold bg-emerald-200 dark:bg-emerald-800 text-emerald-800 dark:text-emerald-200 px-1.5 py-0.5 rounded">
+                  GL
+                </span>
+              )}
+            </div>
           </div>
-          <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{formatNumber(incomeThisMonth)}</p>
-          <p className="text-xs text-emerald-600/70 dark:text-emerald-400/70 mt-1">{currency}</p>
+          {/* Primary: GL value */}
+          {glMonthlyRevenue !== undefined ? (
+            <>
+              <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{formatNumber(glMonthlyRevenue)}</p>
+              <p className="text-xs text-emerald-600/70 dark:text-emerald-400/70 mt-1">{currency}</p>
+              {/* Secondary: operational value for cross-reference */}
+              {Math.abs(glMonthlyRevenue - incomeThisMonth) > 1 && (
+                <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 truncate" title={appLang === 'en' ? `Operational (invoices): ${currency}${formatNumber(incomeThisMonth)}` : `تشغيلي (فواتير): ${currency}${formatNumber(incomeThisMonth)}`}>
+                  ⚡ {appLang === 'en' ? 'Operational:' : 'تشغيلي:'} {currency}{formatNumber(incomeThisMonth)}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{formatNumber(incomeThisMonth)}</p>
+              <p className="text-xs text-amber-600/70 mt-0.5">{appLang === 'en' ? '⚡ Operational' : '⚡ تشغيلي'}</p>
+            </>
+          )}
         </CardContent>
       </Card>
 
-      {/* مصروف هذا الشهر */}
+      {/* مصروفات هذا الشهر — GL هو المصدر الحقيقي */}
       <Card className="bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-950/50 dark:to-yellow-950/50 border border-amber-100 dark:border-amber-900 shadow-sm">
         <CardContent className="p-5">
           <div className="flex items-center gap-3 mb-3">
             <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg">
               <TrendingDown className="w-5 h-5 text-amber-600 dark:text-amber-400" />
             </div>
-            <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
-              {appLang==='en' ? 'Expense This Month' : 'مصروف الشهر'}
-            </span>
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium text-amber-700 dark:text-amber-300 block truncate">
+                {appLang==='en' ? 'Expenses This Month' : 'مصروفات الشهر'}
+              </span>
+              {/* GL badge: shows source */}
+              {glMonthlyExpense !== undefined && (
+                <span className="text-[10px] font-semibold bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded">
+                  GL
+                </span>
+              )}
+            </div>
           </div>
-          <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">{formatNumber(expenseThisMonth)}</p>
-          <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-1">{currency}</p>
+          {/* Primary: GL value (includes COGS + all expenses) */}
+          {glMonthlyExpense !== undefined ? (
+            <>
+              <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">{formatNumber(glMonthlyExpense)}</p>
+              <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-1">{currency}</p>
+              {/* Secondary: operational value for cross-reference */}
+              {Math.abs(glMonthlyExpense - expenseThisMonth) > 1 && (
+                <p className="text-[10px] text-blue-600 dark:text-blue-400 mt-1 truncate" title={appLang === 'en' ? `Operational (bills): ${currency}${formatNumber(expenseThisMonth)}` : `تشغيلي (مشتريات): ${currency}${formatNumber(expenseThisMonth)}`}>
+                  ⚡ {appLang === 'en' ? 'Purchases:' : 'مشتريات:'} {currency}{formatNumber(expenseThisMonth)}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">{formatNumber(expenseThisMonth)}</p>
+              <p className="text-xs text-blue-600/70 mt-0.5">{appLang === 'en' ? '⚡ Operational (bills only)' : '⚡ تشغيلي (مشتريات فقط)'}</p>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
