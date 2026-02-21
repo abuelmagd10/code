@@ -17,7 +17,7 @@ import AdvancedDashboardCharts from "@/components/charts/AdvancedDashboardCharts
 import { canAccessPage, getFirstAllowedPage } from "@/lib/authz"
 import { CurrencyMismatchAlert } from "@/components/CurrencyMismatchAlert"
 import DashboardScopeSwitcher from "@/components/DashboardScopeSwitcher"
-import DashboardDataSourceBanner from "@/components/DashboardDataSourceBanner"
+import { getGLSummary } from "@/lib/dashboard-gl-summary"
 import {
   buildDashboardVisibilityRules,
   type DashboardScope,
@@ -162,9 +162,13 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   let profitChangePct = 0
   let totalCOGS = 0 // تكلفة البضاعة المباعة
   let totalShipping = 0 // إجمالي مصاريف الشحن
-  // Phase 4: GL-based monthly metrics (Single Source of Truth)
-  let glMonthlyRevenue = 0  // إيرادات الشهر من GL (حسابات 4xxx)
-  let glMonthlyExpense = 0  // مصروفات الشهر من GL (حسابات 5xxx)
+  // GL-First: إحصائيات من دفتر الأستاذ العام
+  let glMonthlyRevenue: number | undefined
+  let glMonthlyExpense: number | undefined
+  let glRevenue = 0
+  let glCogs = 0
+  let glExpenses = 0
+  let glNetProfit = 0
 
   // Date filters from querystring
 
@@ -354,44 +358,40 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     const profitCur = incomeCur - expenseCur
     profitChangePct = profitPrev === 0 ? (profitCur > 0 ? 100 : 0) : ((profitCur - profitPrev) / Math.abs(profitPrev)) * 100
 
-    // ── Phase 4: GL-based monthly revenue & expense (Single Source of Truth) ──
-    // يستخدم GL مباشرةً بدلاً من الجداول التشغيلية لضمان الدقة المحاسبية
+    // ── GL-First: إحصائيات رئيسية من دفتر الأستاذ العام (المصدر الوحيد للحقيقة) ──
     try {
-      const nowDate   = new Date()
-      const ymStart   = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}-01`
-      const ymEnd     = new Date(nowDate.getFullYear(), nowDate.getMonth() + 1, 0)
-                          .toISOString().split('T')[0]
+      const nowDate = new Date()
+      const curYmStart = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}-01`
+      const curYmEnd = new Date(nowDate.getFullYear(), nowDate.getMonth() + 1, 0).toISOString().split('T')[0]
+      const prevMonth = new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1)
+      const prevYmStart = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}-01`
+      const prevYmEnd = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0).toISOString().split('T')[0]
 
-      // GL Revenue (accounts of type 'revenue') for current month
-      const { data: glRevRows } = await supabase
-        .from("journal_entry_lines")
-        .select("credit_amount, debit_amount, journal_entries!inner(company_id, status, entry_date), chart_of_accounts!inner(account_type)")
-        .eq("journal_entries.company_id", company.id)
-        .eq("journal_entries.status",     "posted")
-        .eq("chart_of_accounts.account_type", "revenue")
-        .gte("journal_entries.entry_date", ymStart)
-        .lte("journal_entries.entry_date", ymEnd)
-        .limit(2000)
+      const from = fromDate || curYmStart
+      const to = toDate || curYmEnd
 
-      glMonthlyRevenue = (glRevRows || []).reduce((s: number, r: any) =>
-        s + Number(r.credit_amount || 0) - Number(r.debit_amount || 0), 0)
+      const glCurrent = await getGLSummary(supabase, company.id, from, to)
+      glRevenue = glCurrent.revenue
+      glCogs = glCurrent.cogs
+      glExpenses = glCurrent.operatingExpenses
+      glNetProfit = glCurrent.netProfit
+      glMonthlyRevenue = glCurrent.revenue
+      glMonthlyExpense = glCurrent.cogs + glCurrent.operatingExpenses
 
-      // GL Expense (accounts of type 'expense') for current month
-      const { data: glExpRows } = await supabase
-        .from("journal_entry_lines")
-        .select("credit_amount, debit_amount, journal_entries!inner(company_id, status, entry_date), chart_of_accounts!inner(account_type)")
-        .eq("journal_entries.company_id", company.id)
-        .eq("journal_entries.status",     "posted")
-        .eq("chart_of_accounts.account_type", "expense")
-        .gte("journal_entries.entry_date", ymStart)
-        .lte("journal_entries.entry_date", ymEnd)
-        .limit(2000)
-
-      glMonthlyExpense = (glExpRows || []).reduce((s: number, r: any) =>
-        s + Number(r.debit_amount || 0) - Number(r.credit_amount || 0), 0)
-
+      // نسب التغيير: مقارنة بالفترة السابقة
+      try {
+        const glPrev = await getGLSummary(supabase, company.id, prevYmStart, prevYmEnd)
+        const prevRev = glPrev.revenue
+        const prevExp = glPrev.cogs + glPrev.operatingExpenses
+        const prevProf = glPrev.netProfit
+        incomeChangePct = prevRev === 0 ? (glRevenue > 0 ? 100 : 0) : ((glRevenue - prevRev) / Math.abs(prevRev)) * 100
+        expenseChangePct = prevExp === 0 ? (glMonthlyExpense > 0 ? 100 : 0) : ((glMonthlyExpense - prevExp) / Math.abs(prevExp)) * 100
+        profitChangePct = prevProf === 0 ? (glNetProfit > 0 ? 100 : 0) : ((glNetProfit - prevProf) / Math.abs(prevProf)) * 100
+      } catch {
+        // احتفاظ بنسب التغيير من المبيعات/المشتريات إذا فشل جلب GL السابق
+      }
     } catch (glErr) {
-      console.warn('[Dashboard] GL monthly query failed, using operational fallback:', glErr)
+      console.warn('[Dashboard] GL summary failed, using operational fallback:', glErr)
     }
 
     // 🔐 Dashboard Governance: النقد والبنك
@@ -619,39 +619,21 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
             </div>
           </div>
 
-          {/* Phase 3: Banner مصدر البيانات - يُظهر طبيعة الأرقام ومقارنة GL */}
-          {company && (
-            <DashboardDataSourceBanner
-              period="month"
-              fromDate={fromDate || undefined}
-              toDate={toDate || undefined}
-              currency={currencyCode}
-              operationalNetProfit={
-                (() => {
-                  // حساب صافي الربح التشغيلي تقريبياً من الفواتير
-                  const paid = invoicesData
-                    .filter((i: any) => i.status === "paid" || i.status === "partially_paid")
-                    .reduce((s: number, i: any) => s + Number(i.paid_amount || 0), 0)
-                  return paid - totalCOGS
-                })()
-              }
-            />
-          )}
-
-          {/* بطاقات الإحصائيات الرئيسية - Client Component for currency conversion */}
+          {/* بطاقات الإحصائيات الرئيسية - GL-First */}
           <DashboardStats
-            invoicesData={invoicesData}
-            billsData={billsData}
+            glRevenue={glRevenue}
+            glCogs={glCogs}
+            glExpenses={glExpenses}
+            glNetProfit={glNetProfit}
+            invoicesCount={invoicesData.length}
             defaultCurrency={currencyCode}
             appLang={appLang}
             incomeChangePct={incomeChangePct}
             expenseChangePct={expenseChangePct}
             profitChangePct={profitChangePct}
-            totalCOGS={totalCOGS}
-            totalShipping={totalShipping}
           />
 
-          {/* بطاقات الذمم والشهر الحالي - Client Component for currency conversion */}
+          {/* بطاقات الذمم والشهر الحالي - الذمم من الفواتير، إيرادات/مصروفات الشهر من GL */}
           <DashboardSecondaryStats
             invoicesData={invoicesData}
             billsData={billsData}

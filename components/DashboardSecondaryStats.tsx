@@ -32,7 +32,7 @@ interface DashboardSecondaryStatsProps {
   billsData: Bill[]
   defaultCurrency: string
   appLang: string
-  // Phase 4: GL-based monthly metrics (Single Source of Truth)
+  // GL-First: إيرادات/مصروفات الشهر من دفتر الأستاذ العام
   glMonthlyRevenue?: number
   glMonthlyExpense?: number
 }
