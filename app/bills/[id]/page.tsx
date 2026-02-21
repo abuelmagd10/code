@@ -2529,7 +2529,7 @@ export default function BillViewPage() {
                       {(vendorCredits.length > 0 || ((bill as any).return_status === 'partial' || (bill as any).return_status === 'full' || Number((bill as any).returned_amount || 0) > 0)) && (
                         <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg flex justify-between items-center">
                           <span className="font-semibold text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Total Returns' : 'إجمالي المرتجعات'}</span>
-                          <span className="font-bold text-orange-600 dark:text-orange-400">{currencySymbol}{(vendorCredits.length > 0 ? vendorCredits.reduce((sum, vc) => sum + Number(vc.total_amount || 0), 0) : Number((bill as any).returned_amount || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span className="font-bold text-orange-600 dark:text-orange-400">{currencySymbol}{(Number((bill as any).returned_amount || 0) || vendorCredits.reduce((sum, vc) => sum + Number(vc.total_amount || 0), 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         </div>
                       )}
                     </div>
