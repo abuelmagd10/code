@@ -1270,11 +1270,39 @@ export default function InvoicesPage() {
     const partiallyPaid = filteredInvoices.filter(i => i.status === 'partially_paid').length
     const paid = filteredInvoices.filter(i => i.status === 'paid').length
     const cancelled = filteredInvoices.filter(i => i.status === 'cancelled').length
-    // استخدام getDisplayAmount للحصول على القيم الصحيحة حسب العملة المعروضة
-    const totalAmount = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0)
-    const totalPaid = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'paid'), 0)
-    const totalRemaining = totalAmount - totalPaid
-    return { total, draft, sent, partiallyPaid, paid, cancelled, totalAmount, totalPaid, totalRemaining }
+
+    // ✅ الفواتير النشطة فقط — تستثني الملغاة من الإحصائيات المالية
+    // (الفواتير الملغاة ليس لها أثر مالي حقيقي ويجب ألا تُضاف إلى المجاميع)
+    const activeInvoices = filteredInvoices.filter(i => i.status !== 'cancelled')
+
+    // إجمالي المبيعات الخام قبل أي مرتجعات (Gross Sales)
+    const grossSales = activeInvoices.reduce((sum, i) => {
+      const originalTotal = (i as any).original_total
+        ? Number((i as any).original_total)
+        : (i.display_currency !== appCurrency && i.display_total != null
+            ? i.display_total
+            : i.total_amount)
+      return sum + Math.max(Number(originalTotal) || 0, 0)
+    }, 0)
+
+    // إجمالي المرتجعات لجميع الفواتير النشطة
+    const totalReturned = activeInvoices.reduce((sum, i) => {
+      return sum + Number((i as any).returned_amount || 0)
+    }, 0)
+
+    // ✅ صافي المبيعات = الإجمالي الخام − المرتجعات (Net Sales = Gross − Returns)
+    const netSales = Math.max(grossSales - totalReturned, 0)
+
+    // إجمالي المحصّل — للفواتير النشطة فقط
+    const totalPaid = activeInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'paid'), 0)
+
+    // المتبقي (Outstanding) = صافي المبيعات − المحصّل
+    const totalRemaining = Math.max(netSales - totalPaid, 0)
+
+    // للتوافق مع المراجع الموجودة
+    const totalAmount = netSales
+
+    return { total, draft, sent, partiallyPaid, paid, cancelled, grossSales, totalReturned, netSales, totalAmount, totalPaid, totalRemaining }
   }, [filteredInvoices, appCurrency, paidByInvoice])
 
   // مسح جميع الفلاتر
@@ -2362,9 +2390,16 @@ export default function InvoicesPage() {
                     <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
                       <CreditCard className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total Amount' : 'إجمالي المبلغ'}</p>
-                      <p className="text-lg font-bold text-purple-600">{currencySymbol}{stats.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 0 })}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Net Sales' : 'صافي المبيعات'}</p>
+                      <p className="text-lg font-bold text-purple-600">{currencySymbol}{stats.netSales.toLocaleString('en-US', { minimumFractionDigits: 0 })}</p>
+                      {stats.totalReturned > 0 && (
+                        <p className="text-xs text-red-500 truncate" title={appLang === 'en' ? `Gross: ${currencySymbol}${stats.grossSales.toLocaleString('en-US', { minimumFractionDigits: 0 })} | Returns: −${currencySymbol}${stats.totalReturned.toLocaleString('en-US', { minimumFractionDigits: 0 })}` : `الإجمالي: ${currencySymbol}${stats.grossSales.toLocaleString('en-US', { minimumFractionDigits: 0 })} | مرتجعات: −${currencySymbol}${stats.totalReturned.toLocaleString('en-US', { minimumFractionDigits: 0 })}`}>
+                          {appLang === 'en'
+                            ? `↩ −${currencySymbol}${stats.totalReturned.toLocaleString('en-US', { minimumFractionDigits: 0 })} returns`
+                            : `↩ مرتجعات −${currencySymbol}${stats.totalReturned.toLocaleString('en-US', { minimumFractionDigits: 0 })}`}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -2622,13 +2657,22 @@ export default function InvoicesPage() {
                         footer={{
                           render: () => {
                             const totalInvoices = filteredInvoices.length
-                            // إجمالي المرتجعات لجميع الفواتير المفلترة
-                            const totalReturns = filteredInvoices.reduce((sum, i) => sum + Number((i as any).returned_amount || 0), 0)
-                            // الإجمالي الصافي بعد المرتجعات (من getDisplayAmount)
-                            const totalNet = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0)
-                            // الإجمالي الإجمالي قبل المرتجعات
-                            const totalGross = totalNet + totalReturns
-                            const totalPaid = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'paid'), 0)
+                            // ✅ الفواتير النشطة فقط — تستثني الملغاة من الإجماليات المالية
+                            const activeFooterInvoices = filteredInvoices.filter(i => i.status !== 'cancelled')
+                            // إجمالي المرتجعات للفواتير النشطة فقط
+                            const totalReturns = activeFooterInvoices.reduce((sum, i) => sum + Number((i as any).returned_amount || 0), 0)
+                            // إجمالي المبيعات الخام (قبل المرتجعات) للفواتير النشطة
+                            const totalGross = activeFooterInvoices.reduce((sum, i) => {
+                              const originalTotal = (i as any).original_total
+                                ? Number((i as any).original_total)
+                                : (i.display_currency !== appCurrency && i.display_total != null
+                                    ? i.display_total
+                                    : i.total_amount)
+                              return sum + Math.max(Number(originalTotal) || 0, 0)
+                            }, 0)
+                            // صافي المبيعات = الإجمالي الخام − المرتجعات
+                            const totalNet = Math.max(totalGross - totalReturns, 0)
+                            const totalPaid = activeFooterInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'paid'), 0)
                             // المستحق لا يكون أبداً سالباً — الزيادة تظهر كرصيد دائن
                             const totalDue = Math.max(0, totalNet - totalPaid)
                             const totalCredit = Math.max(0, totalPaid - totalNet)
