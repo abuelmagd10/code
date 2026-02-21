@@ -2656,9 +2656,10 @@ export default function InvoicesPage() {
                         emptyMessage={appLang === 'en' ? 'No invoices found' : 'لا توجد فواتير'}
                         footer={{
                           render: () => {
-                            const totalInvoices = filteredInvoices.length
                             // ✅ الفواتير النشطة فقط — تستثني الملغاة من الإجماليات المالية
                             const activeFooterInvoices = filteredInvoices.filter(i => i.status !== 'cancelled')
+                            // العدد يعكس الفواتير المُجمَّعة فعلاً (النشطة فقط)
+                            const totalInvoices = activeFooterInvoices.length
                             // إجمالي المرتجعات للفواتير النشطة فقط
                             const totalReturns = activeFooterInvoices.reduce((sum, i) => sum + Number((i as any).returned_amount || 0), 0)
                             // إجمالي المبيعات الخام (قبل المرتجعات) للفواتير النشطة
