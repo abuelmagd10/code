@@ -528,8 +528,8 @@ export default function BillViewPage() {
     const billCurrency = bill.currency_code || appCurrency
     setReturnCurrency(billCurrency)
 
-    // Store bill financial details for display in form
-    const originalTotal = Number(bill.total_amount || 0) + Number((bill as any).returned_amount || 0)
+    // total_amount على الفواتير لا يُخفَّض بعد المرتجعات — هو دائماً الإجمالي الأصلي الخام
+    const originalTotal = Number(bill.total_amount || 0)
     const paidAmount = Number((bill as any).paid_amount || paidTotal || 0)
     const previouslyReturned = Number((bill as any).returned_amount || 0)
     const remainingAmount = Math.max(0, Number(bill.total_amount || 0) - paidAmount)
@@ -2156,7 +2156,7 @@ export default function BillViewPage() {
                         <>
                           <div className="flex items-center justify-between text-gray-500">
                             <span>{appLang === 'en' ? 'Original Total' : 'الإجمالي الأصلي'}</span>
-                            <span>{((bill as any).original_total || (bill.total_amount + Number((bill as any).returned_amount || 0))).toFixed(2)}</span>
+                            <span>{((bill as any).original_total || bill.total_amount).toFixed(2)}</span>
                           </div>
                           <div className="flex items-center justify-between text-orange-600 dark:text-orange-400">
                             <span>{appLang === 'en' ? 'Returns' : 'المرتجعات'}</span>
@@ -2529,7 +2529,7 @@ export default function BillViewPage() {
                       {(vendorCredits.length > 0 || ((bill as any).return_status === 'partial' || (bill as any).return_status === 'full' || Number((bill as any).returned_amount || 0) > 0)) && (
                         <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg flex justify-between items-center">
                           <span className="font-semibold text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Total Returns' : 'إجمالي المرتجعات'}</span>
-                          <span className="font-bold text-orange-600 dark:text-orange-400">{currencySymbol}{(Number((bill as any).returned_amount || 0) + vendorCredits.reduce((sum, vc) => sum + Number(vc.total_amount || 0), 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span className="font-bold text-orange-600 dark:text-orange-400">{currencySymbol}{(vendorCredits.length > 0 ? vendorCredits.reduce((sum, vc) => sum + Number(vc.total_amount || 0), 0) : Number((bill as any).returned_amount || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         </div>
                       )}
                     </div>
