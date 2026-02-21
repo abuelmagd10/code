@@ -370,7 +370,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       const from = fromDate || curYmStart
       const to = toDate || curYmEnd
 
-      const glCurrent = await getGLSummary(supabase, company.id, from, to)
+      // 🔐 فلترة بالفرع عند scope=branch (مع مراعاة الصلاحيات من visibilityRules)
+      const glBranchId = visibilityRules?.scope === 'branch' && visibilityRules.branchId
+        ? visibilityRules.branchId
+        : undefined
+
+      const glCurrent = await getGLSummary(supabase, company.id, from, to, { branchId: glBranchId })
       glRevenue = glCurrent.revenue
       glCogs = glCurrent.cogs
       glExpenses = glCurrent.operatingExpenses
@@ -378,9 +383,9 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       glMonthlyRevenue = glCurrent.revenue
       glMonthlyExpense = glCurrent.cogs + glCurrent.operatingExpenses
 
-      // نسب التغيير: مقارنة بالفترة السابقة
+      // نسب التغيير: مقارنة بالفترة السابقة (نفس الفرع)
       try {
-        const glPrev = await getGLSummary(supabase, company.id, prevYmStart, prevYmEnd)
+        const glPrev = await getGLSummary(supabase, company.id, prevYmStart, prevYmEnd, { branchId: glBranchId })
         const prevRev = glPrev.revenue
         const prevExp = glPrev.cogs + glPrev.operatingExpenses
         const prevProf = glPrev.netProfit

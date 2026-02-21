@@ -2,19 +2,23 @@
  * Dashboard GL Summary API
  * GL-First: يجلب الأرقام مباشرة من General Ledger
  *
- * يستخدم lib/dashboard-gl-summary للمنطق المشترك مع page.tsx
+ * يدعم فلترة الفرع مع التحقق من الصلاحيات:
+ * - الأدوار المميزة (owner/admin/general_manager): يمكنهم طلب أي فرع أو الشركة كاملة
+ * - باقي الأدوار: فرعهم فقط (branch_id من العضوية)
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
-import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { secureApiRequest, serverError, badRequestError, forbiddenError } from "@/lib/api-security-enhanced"
 import { getGLSummary } from "@/lib/dashboard-gl-summary"
+
+const PRIVILEGED_ROLES = ["owner", "admin", "general_manager"]
 
 export async function GET(request: NextRequest) {
   try {
     const authSupabase = await createServerClient()
 
-    const { companyId, error } = await secureApiRequest(request, {
+    const { companyId, branchId: memberBranchId, member, error } = await secureApiRequest(request, {
       requireAuth: true,
       requireCompany: true,
       requireBranch: false,
@@ -49,7 +53,36 @@ export async function GET(request: NextRequest) {
     if (customFrom) fromDate = customFrom
     if (customTo) toDate = customTo
 
-    const glData = await getGLSummary(supabase, companyId, fromDate, toDate)
+    // 🔐 فلترة الفرع مع التحقق من الصلاحيات
+    const requestedBranchId = searchParams.get("branch") || undefined
+    let effectiveBranchId: string | null = null
+
+    if (requestedBranchId) {
+      const isPrivileged = PRIVILEGED_ROLES.includes(member?.role || "")
+      const canAccessBranch =
+        isPrivileged || memberBranchId === requestedBranchId
+
+      if (!canAccessBranch) {
+        return forbiddenError("لا تملك صلاحية لعرض بيانات هذا الفرع")
+      }
+
+      const { data: branch } = await supabase
+        .from("branches")
+        .select("id")
+        .eq("id", requestedBranchId)
+        .eq("company_id", companyId)
+        .maybeSingle()
+
+      if (!branch) {
+        return badRequestError("الفرع غير موجود أو لا ينتمي للشركة")
+      }
+
+      effectiveBranchId = requestedBranchId
+    }
+
+    const glData = await getGLSummary(supabase, companyId, fromDate, toDate, {
+      branchId: effectiveBranchId,
+    })
 
     return NextResponse.json({
       success: true,
@@ -58,15 +91,11 @@ export async function GET(request: NextRequest) {
       period,
       fromDate,
       toDate,
-      data: {
-        ...glData,
-        assets: 0,
-        liabilities: 0,
-        equity: 0,
-        topRevenue: [],
-        topExpenses: [],
-      },
-      note: "هذه الأرقام مستخرجة مباشرة من دفتر الأستاذ العام (GL) وهي المرجع الرسمي والمحاسبي الوحيد.",
+      branchId: effectiveBranchId,
+      data: glData,
+      note: effectiveBranchId
+        ? "أرقام الفرع المحدد من دفتر الأستاذ العام (GL)."
+        : "هذه الأرقام مستخرجة مباشرة من دفتر الأستاذ العام (GL) وهي المرجع الرسمي والمحاسبي الوحيد.",
     })
   } catch (e: any) {
     console.error("Dashboard GL Summary error:", e)
