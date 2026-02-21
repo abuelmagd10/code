@@ -97,13 +97,13 @@ export default function ExchangeRatesPage() {
           const today = new Date().toISOString().slice(0, 10)
           const hasRecentRates = data && data.some((r: any) => r.rate_date === today && r.source === 'api')
           if (!hasRecentRates && cid) {
-            // Fetch all rates automatically
+            // Fetch all rates automatically (insert to avoid upsert constraint mismatch / 400)
             const currList = Object.keys(CURRENCIES).filter(c => c !== base)
             for (const curr of currList) {
               try {
                 const rate = await fetchExchangeRateFromAPI(curr, base)
                 if (rate) {
-                  await supabase.from('exchange_rates').upsert({
+                  const { error } = await supabase.from('exchange_rates').insert({
                     company_id: cid,
                     from_currency: curr,
                     to_currency: base,
@@ -113,7 +113,11 @@ export default function ExchangeRatesPage() {
                     source: 'api',
                     source_detail: 'exchangerate-api.com',
                     is_manual_override: false
-                  }, { onConflict: 'company_id,from_currency,to_currency,rate_date' })
+                  })
+                  // Ignore duplicate key (23505) - rate for today already exists
+                  if (error && (error as { code?: string }).code !== '23505') {
+                    console.warn('[exchange_rates] auto-fetch insert failed:', error.message)
+                  }
                 }
               } catch { }
             }
@@ -187,18 +191,26 @@ export default function ExchangeRatesPage() {
   const handleRefreshAllRates = async () => {
     setFetchingApi(true)
     try {
+      const today = new Date().toISOString().slice(0, 10)
       const currencies = Object.keys(CURRENCIES).filter(c => c !== baseCurrency)
       for (const curr of currencies) {
         const rate = await fetchExchangeRateFromAPI(curr, baseCurrency)
         if (rate) {
-          await supabase.from('exchange_rates').upsert({
+          const { error } = await supabase.from('exchange_rates').insert({
             company_id: companyId,
             from_currency: curr,
             to_currency: baseCurrency,
             rate,
-            rate_date: new Date().toISOString().slice(0, 10),
-            source: 'api'
-          }, { onConflict: 'company_id,from_currency,to_currency,rate_date' })
+            rate_date: today,
+            rate_timestamp: new Date().toISOString(),
+            source: 'api',
+            source_detail: 'exchangerate-api.com',
+            is_manual_override: false
+          })
+          // Ignore duplicate (23505) - same day rate already exists
+          if (error && (error as { code?: string }).code !== '23505') {
+            console.warn('[exchange_rates] refresh insert failed:', error.message)
+          }
         }
       }
       const { data } = await supabase.from('exchange_rates').select('*').eq('company_id', companyId).order('rate_date', { ascending: false })

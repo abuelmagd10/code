@@ -141,7 +141,7 @@ export async function getExchangeRate(
   return 1 // Default to 1 if all else fails
 }
 
-// Save exchange rate to database
+// Save exchange rate to database (insert; duplicate same-day rate is ignored to avoid 400 from upsert constraint mismatch)
 export async function saveExchangeRate(
   supabase: SupabaseClient,
   companyId: string,
@@ -150,16 +150,19 @@ export async function saveExchangeRate(
   rate: number,
   source: 'manual' | 'api' = 'manual'
 ): Promise<boolean> {
-  const { error } = await supabase.from('exchange_rates').upsert({
+  const rateDate = new Date().toISOString().slice(0, 10)
+  const { error } = await supabase.from('exchange_rates').insert({
     company_id: companyId,
     from_currency: fromCurrency,
     to_currency: toCurrency,
     rate,
-    rate_date: new Date().toISOString().slice(0, 10),
+    rate_date: rateDate,
+    rate_timestamp: new Date().toISOString(),
     source,
-  }, {
-    onConflict: 'company_id,from_currency,to_currency,rate_date'
+    source_detail: source === 'api' ? 'exchangerate-api.com' : undefined,
+    is_manual_override: source === 'manual',
   })
-  return !error
+  if (error && (error as { code?: string }).code !== '23505') return false
+  return true
 }
 

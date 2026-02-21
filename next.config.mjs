@@ -10,6 +10,16 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  async headers() {
+    return [
+      {
+        source: '/manifest.json',
+        headers: [
+          { key: 'Content-Type', value: 'application/manifest+json' },
+        ],
+      },
+    ]
+  },
   // Force rebuild: 2026-01-31 - Fix expense number generation (bypass Vercel cache)
   generateBuildId: async () => {
     return `build-${Date.now()}`
