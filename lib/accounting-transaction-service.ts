@@ -407,36 +407,40 @@ export class AccountingTransactionService {
 
     /**
      * تنفيذ مرتجع مشتريات ذري (Atomic Purchase Return)
-     * يشمل:
-     * 1. سجل المرتجع (Purchase Return Record)
-     * 2. إشعار دائن المورد (Vendor Credit)
-     * 3. حركات المخزون (Inventory Reversal)
-     * 4. القيود المحاسبية (Journal Entries)
-     * 5. تحديث الفاتورة والبنود (Bill & Items Update)
+     *
+     * يستخدم process_purchase_return_atomic (migration 20260219_003) التي تضمن:
+     *  - قفل FOR UPDATE على bill_items (منع race conditions)
+     *  - pg_advisory_xact_lock على مستوى المنتج+المخزن
+     *  - تحقق من الكميات بعد القفل (over-return protection)
+     *  - COALESCE increment لـ returned_quantity (ليس overwrite)
+     *  - إنشاء inventory_transactions داخل Transaction واحدة
+     *
+     * الـ accountMapping يشمل الآن vatInput لعكس ضريبة المدخلات عند المرتجع.
      */
     async postPurchaseReturnAtomic(
         params: {
-            billId: string
-            billNumber: string
-            companyId: string
-            supplierId: string
-            branchId: string
-            warehouseId: string
-            costCenterId: string
-            returnItems: any[]
-            returnMethod: 'credit' | 'cash' | 'bank'
+            billId:           string
+            billNumber:       string
+            companyId:        string
+            supplierId:       string
+            branchId:         string
+            warehouseId:      string
+            costCenterId:     string
+            returnItems:      any[]
+            returnMethod:     'credit' | 'cash' | 'bank'
             returnAccountId?: string | null
-            isPaid: boolean
-            lang: 'ar' | 'en'
+            isPaid:           boolean
+            lang:             'ar' | 'en'
         },
         accountMapping: {
-            companyId: string
-            ap: string
-            inventory?: string
-            expense?: string
+            companyId:              string
+            ap:                     string
+            inventory?:             string
+            expense?:               string
+            vatInput?:              string   // ← required for proper VAT reversal
             vendorCreditLiability?: string
-            cash?: string
-            bank?: string
+            cash?:                  string
+            bank?:                  string
         }
     ): Promise<AtomicTransactionResult> {
         try {
@@ -444,28 +448,34 @@ export class AccountingTransactionService {
 
             const { preparePurchaseReturnData } = await import('./purchase-returns-preparation')
 
-            // 1. تحضير جميع البيانات
             const preparation = await preparePurchaseReturnData(this.supabase, params, accountMapping)
 
             if (!preparation.success || !preparation.payload) {
                 throw new Error(preparation.error || 'Failed to prepare purchase return data')
             }
 
-            // 2. استدعاء RPC
-            const { data: rpcResult, error: rpcError } = await this.supabase.rpc('post_purchase_transaction', {
-                p_transaction_type: 'purchase_return',
-                p_company_id: params.companyId,
-                p_bill_id: params.billId,
-                p_bill_update: preparation.payload.billUpdate,
-                p_journal_entry: preparation.payload.journal,
-                p_inventory_transactions: preparation.payload.inventoryTransactions,
-                p_purchase_return: preparation.payload.purchaseReturn,
-                p_vendor_credit: preparation.payload.vendorCredit,
-                p_vendor_credit_items: preparation.payload.vendorCreditItems,
-                p_update_source: {
-                    bill_items_update: preparation.payload.billItemsUpdate
+            const p = preparation.payload
+
+            // Switch to process_purchase_return_atomic which has:
+            //  - proper row-level locking
+            //  - over-return quantity check
+            //  - incremental returned_quantity update (COALESCE + qty)
+            //  - internal inventory_transaction creation
+            const { data: rpcResult, error: rpcError } = await this.supabase.rpc(
+                'process_purchase_return_atomic',
+                {
+                    p_company_id:         params.companyId,
+                    p_supplier_id:        params.supplierId,
+                    p_bill_id:            params.billId,
+                    p_purchase_return:    p.purchaseReturn,
+                    p_return_items:       p.returnItems,
+                    p_journal_entry:      p.journalHeader,
+                    p_journal_lines:      p.journalLines,
+                    p_vendor_credit:      p.vendorCredit      ?? null,
+                    p_vendor_credit_items: p.vendorCreditItems ?? null,
+                    p_bill_update:        p.billUpdate,
                 }
-            })
+            )
 
             if (rpcError) {
                 console.error('Atomic Purchase Return RPC Error:', rpcError)
@@ -474,7 +484,7 @@ export class AccountingTransactionService {
 
             return {
                 success: true,
-                journalEntryIds: rpcResult?.journal_entry_id ? [rpcResult.journal_entry_id] : []
+                journalEntryIds: rpcResult?.journal_entry_id ? [rpcResult.journal_entry_id] : [],
             }
 
         } catch (error: any) {

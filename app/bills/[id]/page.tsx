@@ -551,10 +551,17 @@ export default function BillViewPage() {
     setReturnOpen(true)
   }
 
-  // Calculate return total
+  // Calculate return total — mirrors the formula in preparePurchaseReturnData so the
+  // displayed amount matches what is actually processed (discount + tax applied).
   const returnTotal = useMemo(() => {
-    return returnItems.reduce((sum, it) => sum + (it.return_qty * it.unit_price), 0)
-  }, [returnItems])
+    return returnItems.reduce((sum, it) => {
+      const billItem = items.find(i => i.id === it.item_id)
+      const discountPct = Number(billItem?.discount_percent || 0)
+      const taxRate     = Number(billItem?.tax_rate         || 0)
+      const lineNet     = it.unit_price * (1 - discountPct / 100) * it.return_qty
+      return sum + lineNet + (lineNet * taxRate / 100)
+    }, 0)
+  }, [returnItems, items])
 
   // Process purchase return
   const processPurchaseReturn = async () => {
@@ -659,18 +666,28 @@ export default function BillViewPage() {
           lang: appLang as 'ar' | 'en'
         },
         {
-          companyId: mapping.companyId,
-          ap: mapping.ap!,
-          inventory: mapping.inventory,
-          expense: mapping.expense,
+          companyId:             mapping.companyId,
+          ap:                    mapping.ap!,
+          inventory:             mapping.inventory,
+          expense:               mapping.expense,
+          vatInput:              mapping.vatInput,
           vendorCreditLiability: mapping.vendorCreditLiability,
-          cash: mapping.cash,
-          bank: mapping.bank
+          cash:                  mapping.cash,
+          bank:                  mapping.bank,
         }
       )
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to process purchase return')
+      }
+
+      // Sync vendor credit based on net supplier balance (GL-based)
+      // Creates a vendor_credit only if the supplier's net balance turns into a true credit.
+      try {
+        const { syncVendorCredit } = await import('@/lib/supplier-balance')
+        await syncVendorCredit(supabase, bill.company_id, bill.supplier_id, bill.id)
+      } catch (syncErr) {
+        console.warn('syncVendorCredit non-fatal error:', syncErr)
       }
 
       // Update linked purchase order status
