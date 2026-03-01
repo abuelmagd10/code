@@ -1389,96 +1389,25 @@ export default function InvoiceDetailPage() {
         return sum + (net * (it.tax_rate || 0) / 100)
       }, 0)
 
-      // ===== للفواتير المرسلة (Sent): تحديث الفاتورة + AR فقط (بدون Revenue/VAT/Cash/COGS) =====
+      // ===== للفواتير المرسلة (Sent): Accrual Basis — عكس كامل لقيد الفاتورة الأصلي =====
+      // بما أن الفاتورة المرسلة الآن لها قيد AR/Revenue/VAT كامل (أُنشئ عند الإرسال)،
+      // فإن المرتجع يحتاج إلى عكس كامل (Dr Revenue / Dr VAT / Cr AR + Dr Inventory / Cr COGS)
       if (invoice.status === 'sent') {
-        // 
-        // 📌 تنبيه هام جدًا – معالجة مرتجعات فواتير المبيعات (Sent Invoices)
-        // عند حدوث مرتجع جزئي أو كلي على فاتورة مبيعات حالتها مرسلة (Sent) يجب الالتزام بالآتي بدقة تامة:
-        //
-        // ✅ المسموح فقط:
-        //    - تعديل بيانات الفاتورة نفسها: تحديث الكميات، الصافي والإجمالي
-        //    - تحديث ذمم العميل (AR): تعديل رصيد العميل ليعكس القيمة الصحيحة بعد المرتجع
-        //    - تخفيض المبلغ المستحق على العميل بدقة دون أي زيادات أو ازدواج
-        //
-        // ❌ ممنوع تمامًا:
-        //    - عدم إنشاء أي قيد مالي جديد في هذه المرحلة
-        //    - عدم إنشاء قيد Cash
-        //    - عدم إنشاء قيد COGS
-        //    - عدم إنشاء قيد Revenue إضافي
-        //    - عدم المساس بأي فواتير أو قيود أخرى غير الفاتورة محل المرتجع
-        //
-        // 📌 التزام محاسبي صارم:
-        //    - الحفاظ على النمط المحاسبي الأصلي المعتمد في المشروع
-        //    - المرتجع في حالة Sent هو تصحيح للفاتورة وليس حدثًا ماليًا مستقلًا
-        //    - الهدف أن تعكس الفاتورة القيم الصحيحة فقط دون أي تأثير مالي غير مطلوب
-        //
-
-        // البحث عن القيد المحاسبي الأصلي للفاتورة (إن وجد)
-        const { data: originalEntry, error: findEntryErr } = await supabase
+        const { data: originalEntry } = await supabase
           .from("journal_entries")
           .select("id")
           .eq("company_id", mapping.companyId)
           .eq("reference_type", "invoice")
           .eq("reference_id", invoice.id)
-          .limit(1)
-          .single()
+          .maybeSingle()
 
-        if (findEntryErr || !originalEntry) {
-          console.warn(`⚠️ لم يتم العثور على القيد المحاسبي الأصلي للفاتورة ${invoice.invoice_number}`)
-          // في حالة عدم وجود قيد أصلي، نكتفي بتحديث الفاتورة فقط
-          console.log(`✅ تم تحديث الفاتورة فقط (لا يوجد قيد محاسبي أصلي لتحديثه)`)
-          originalInvoiceEntryId = null
-        } else {
+        if (originalEntry) {
           originalInvoiceEntryId = originalEntry.id
-          // ✅ تحديث قيد AR فقط (بدون Revenue/VAT) للفواتير المرسلة
-          const { data: originalLines, error: linesErr } = await supabase
-            .from("journal_entry_lines")
-            .select("*")
-            .eq("journal_entry_id", originalEntry.id)
-
-          if (linesErr) {
-            console.error("❌ خطأ في جلب قيود القيد الأصلي:", linesErr)
-            throw new Error(appLang === 'en'
-              ? 'Failed to fetch original journal entry lines'
-              : 'فشل في جلب قيود القيد المحاسبي الأصلي')
-          }
-
-          if (originalLines && originalLines.length > 0) {
-            // حساب القيم الجديدة للفاتورة
-            const newInvoiceTotal = Math.max(0, Number(invoice.total_amount || 0) - returnTotal)
-
-            // ✅ تحديث سطر AR فقط (الذمم المدينة) - بدون تعديل Revenue أو VAT
-            for (const line of originalLines) {
-              // ✅ تحديث سطر AR (الذمم المدينة) فقط
-              if (line.account_id === mapping.ar) {
-                const newDebit = newInvoiceTotal // AR يجب أن يعكس المبلغ الجديد للفاتورة
-                const newCredit = 0
-
-                // تحديث السطر فقط إذا تغيرت القيم
-                if (newDebit !== line.debit_amount || newCredit !== line.credit_amount) {
-                  const { error: updateLineErr } = await supabase
-                    .from("journal_entry_lines")
-                    .update({
-                      debit_amount: newDebit,
-                      credit_amount: newCredit,
-                      description: line.description + (appLang === 'en' ? ' (adjusted for return)' : ' (معدل للمرتجع)')
-                    })
-                    .eq("id", line.id)
-
-                  if (updateLineErr) {
-                    console.error(`❌ خطأ في تحديث سطر AR ${line.id}:`, updateLineErr)
-                    throw new Error(appLang === 'en'
-                      ? `Failed to update AR journal entry line: ${updateLineErr.message}`
-                      : `فشل في تحديث سطر AR: ${updateLineErr.message}`)
-                  }
-                }
-              }
-              // ❌ لا نعدل Revenue أو VAT أو أي حسابات أخرى للفواتير المرسلة
-              // المرتجع في حالة Sent هو تصحيح للفاتورة فقط، وليس حدثًا ماليًا مستقلًا
-            }
-
-            console.log(`✅ تم تحديث قيد AR فقط للفاتورة المرسلة ${invoice.invoice_number} (بدون Revenue/VAT)`)
-          }
+          // قيد المرتجع الكامل (Dr Revenue + Dr VAT / Cr AR + Dr Inventory / Cr COGS) سيُنشأ أدناه
+          console.log(`✅ Accrual: Found invoice journal for sent invoice ${invoice.invoice_number} — will create full reversal journal`)
+        } else {
+          originalInvoiceEntryId = null
+          console.warn(`⚠️ Sent invoice ${invoice.invoice_number} has no invoice journal (pre-Accrual). Return will update amounts only.`)
         }
       }
 
@@ -1521,8 +1450,10 @@ export default function InvoiceDetailPage() {
         await supabase.from("sales_return_items").insert(returnItemsData)
       }
 
-      // ===== للفواتير المدفوعة: إنشاء قيود مالية كاملة =====
-      if (requiresJournalEntries(invoice.status)) {
+      // ===== إنشاء قيود مالية كاملة: للفواتير المدفوعة + الفواتير المرسلة ذات القيود (Accrual Basis) =====
+      const shouldCreateReturnJournal = requiresJournalEntries(invoice.status) ||
+        (invoice.status === 'sent' && originalInvoiceEntryId !== null)
+      if (shouldCreateReturnJournal) {
         // Create journal entry for the return (reverse AR and Revenue)
         // 🔧 إصلاح: استخدام sales_return.id بدلاً من invoice.id
         const { data: entry, error: entryErr } = await supabase
@@ -2137,9 +2068,80 @@ export default function InvoiceDetailPage() {
           // (لا return - استمر في الكود أدناه)
         }
 
-        // ✅ COGS يتم إنشاؤه عند الدفع عبر clearThirdPartyInventory() (لـ third-party)
-        // فقط return إذا نجح transferToThirdParty
+        // ===== Accrual Basis: Create AR/Revenue/VAT + COGS journals at Sent time =====
         if (success) {
+          // 1) AR / Revenue / VAT journal (reference_type: 'invoice')
+          const invDupCheck = await checkDuplicateJournalEntry(supabase, mapping.companyId, 'invoice', invoiceId)
+          if (!invDupCheck.exists && mapping.ar && mapping.revenue) {
+            const { data: invJE, error: invJEErr } = await supabase
+              .from('journal_entries')
+              .insert({
+                company_id:     mapping.companyId,
+                reference_type: 'invoice',
+                reference_id:   invoiceId,
+                entry_date:     invoice.invoice_date,
+                description:    `فاتورة مبيعات ${invoice.invoice_number}`,
+                status:         'draft',
+                branch_id:      invoice.branch_id || null,
+                cost_center_id: invoice.cost_center_id || null,
+                warehouse_id:   invoice.warehouse_id || null,
+              })
+              .select().single()
+
+            if (!invJEErr && invJE) {
+              const invLines: any[] = [
+                { journal_entry_id: invJE.id, account_id: mapping.ar,      debit_amount: Number(invoice.total_amount || 0), credit_amount: 0,                                              description: 'الذمم المدينة (العملاء)', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
+                { journal_entry_id: invJE.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: Number(invoice.subtotal || invoice.total_amount || 0),                         description: 'إيراد المبيعات',          branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
+              ]
+              if (mapping.vatPayable && Number(invoice.tax_amount || 0) > 0) {
+                invLines.push({ journal_entry_id: invJE.id, account_id: mapping.vatPayable, debit_amount: 0, credit_amount: Number(invoice.tax_amount || 0), description: 'ضريبة القيمة المضافة المستحقة', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null })
+              }
+              await supabase.from('journal_entry_lines').insert(invLines)
+              await supabase.from('journal_entries').update({ status: 'posted' }).eq('id', invJE.id)
+              console.log(`✅ Accrual: AR/Revenue journal created for sent invoice ${invoice.invoice_number}`)
+            }
+          }
+
+          // 2) COGS / Inventory journal (reference_type: 'invoice_cogs')
+          if (mapping.cogs && mapping.inventory) {
+            const cogsDupCheck = await checkDuplicateJournalEntry(supabase, mapping.companyId, 'invoice_cogs', invoiceId)
+            if (!cogsDupCheck.exists) {
+              const { data: tpiItems } = await supabase
+                .from('third_party_inventory')
+                .select('quantity, unit_cost')
+                .eq('invoice_id', invoiceId)
+                .eq('company_id', mapping.companyId)
+              const totalCOGS = (tpiItems || []).reduce((sum: number, item: any) =>
+                sum + (Number(item.quantity || 0) * Number(item.unit_cost || 0)), 0)
+
+              if (totalCOGS > 0.01) {
+                const { data: cogsJE, error: cogsJEErr } = await supabase
+                  .from('journal_entries')
+                  .insert({
+                    company_id:     mapping.companyId,
+                    reference_type: 'invoice_cogs',
+                    reference_id:   invoiceId,
+                    entry_date:     invoice.invoice_date,
+                    description:    `تكلفة البضاعة المباعة - ${invoice.invoice_number}`,
+                    status:         'draft',
+                    branch_id:      invoice.branch_id || null,
+                    cost_center_id: invoice.cost_center_id || null,
+                  })
+                  .select().single()
+
+                if (!cogsJEErr && cogsJE) {
+                  await supabase.from('journal_entry_lines').insert([
+                    { journal_entry_id: cogsJE.id, account_id: mapping.cogs,      debit_amount: totalCOGS, credit_amount: 0,         description: 'تكلفة البضاعة المباعة', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
+                    { journal_entry_id: cogsJE.id, account_id: mapping.inventory, debit_amount: 0,         credit_amount: totalCOGS, description: 'خصم من المخزون',        branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
+                  ])
+                  await supabase.from('journal_entries').update({ status: 'posted' }).eq('id', cogsJE.id)
+                  console.log(`✅ Accrual: COGS journal created for sent invoice ${invoice.invoice_number}: ${totalCOGS.toFixed(2)}`)
+                }
+              }
+            }
+          }
+
+          console.log(`✅ INV ${invoice.invoice_number}: تم نقل البضائع إلى "${shippingValidation.providerName}" (بضائع لدى الغير)`)
           return
         }
       }
