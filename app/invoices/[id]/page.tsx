@@ -1749,7 +1749,11 @@ export default function InvoiceDetailPage() {
 
         const paymentAccountId = originalPayments?.[0]?.account_id || mapping.cash || mapping.bank
 
-        if (returnMethod === 'cash' && paymentAccountId) {
+        // Create payment reversal journal for all ACTUAL money-out methods (cash + bank_transfer).
+        // credit_note: no cash leaves the business — AR naturally holds the credit balance, and
+        // customer_credits table records it. No separate payment_reversal journal needed.
+        if ((returnMethod === 'cash' || returnMethod === 'bank_transfer') && paymentAccountId) {
+          const isBank = returnMethod === 'bank_transfer'
           const { data: paymentReversalEntry, error: prvErr } = await supabase
             .from("journal_entries")
             .insert({
@@ -1758,8 +1762,8 @@ export default function InvoiceDetailPage() {
               reference_id: invoice.id,
               entry_date: new Date().toISOString().slice(0, 10),
               description: appLang === 'en'
-                ? `Payment reversal for return - Invoice ${invoice.invoice_number} (${excessPayment.toLocaleString()} EGP)`
-                : `عكس مدفوعات للمرتجع - الفاتورة ${invoice.invoice_number} (${excessPayment.toLocaleString()} جنيه)`,
+                ? `${isBank ? 'Bank transfer' : 'Cash'} refund for return - Invoice ${invoice.invoice_number} (${excessPayment.toLocaleString()} EGP)`
+                : `استرداد ${isBank ? 'بنكي' : 'نقدي'} للمرتجع - الفاتورة ${invoice.invoice_number} (${excessPayment.toLocaleString()} جنيه)`,
               status: "draft",
             })
             .select()
@@ -1772,14 +1776,16 @@ export default function InvoiceDetailPage() {
                 account_id: mapping.ar,
                 debit_amount: excessPayment,
                 credit_amount: 0,
-                description: appLang === 'en' ? 'AR increase for payment refund' : 'زيادة الذمم لإرجاع المدفوعات'
+                description: appLang === 'en' ? 'AR reversal for customer refund' : 'عكس الذمم المدينة لاسترداد العميل'
               },
               {
                 journal_entry_id: paymentReversalEntry.id,
                 account_id: paymentAccountId,
                 debit_amount: 0,
                 credit_amount: excessPayment,
-                description: appLang === 'en' ? 'Cash refund to customer' : 'إرجاع نقدي للعميل'
+                description: appLang === 'en'
+                  ? `${isBank ? 'Bank transfer' : 'Cash'} refund to customer`
+                  : `استرداد ${isBank ? 'بنكي' : 'نقدي'} للعميل`
               },
             ])
             await supabase.from("journal_entries").update({ status: "posted" }).eq("id", paymentReversalEntry.id)

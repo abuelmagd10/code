@@ -43,7 +43,7 @@ AS $$
   -- AR debits: come from 'invoice' type journals (reference_id = invoice.id)
   ar_debits AS (
     SELECT
-      je.reference_id AS invoice_id,
+      je.reference_id::TEXT AS invoice_id,
       SUM(jel.debit_amount) AS amount
     FROM journal_entries je
     JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
@@ -60,7 +60,7 @@ AS $$
   -- AR credits from invoice_payment journals (reference_id = invoice.id)
   ar_payment_credits AS (
     SELECT
-      je.reference_id AS invoice_id,
+      je.reference_id::TEXT AS invoice_id,
       SUM(jel.credit_amount) AS amount
     FROM journal_entries je
     JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
@@ -81,7 +81,7 @@ AS $$
       SUM(jel.credit_amount) AS amount
     FROM journal_entries je
     JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
-    JOIN sales_returns sr ON je.reference_id = sr.id::TEXT
+    JOIN sales_returns sr ON je.reference_id = sr.id
     WHERE je.company_id     = p_company_id
       AND je.status         = 'posted'
       AND je.reference_type = 'sales_return'
@@ -207,7 +207,7 @@ AS $$
     'مصدر الحقيقة الرسمي - يستخدم في ميزان المراجعة'::TEXT AS note
   FROM invoices i
   LEFT JOIN (
-    SELECT je.reference_id, SUM(jel.debit_amount) AS amount
+    SELECT je.reference_id::TEXT AS reference_id, SUM(jel.debit_amount) AS amount
     FROM journal_entries je JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
     JOIN chart_of_accounts coa ON coa.id = jel.account_id
     WHERE je.company_id = p_company_id AND je.status = 'posted'
@@ -217,7 +217,7 @@ AS $$
     GROUP BY je.reference_id
   ) d ON d.reference_id = i.id::TEXT
   LEFT JOIN (
-    SELECT je.reference_id, SUM(jel.credit_amount) AS amount
+    SELECT je.reference_id::TEXT AS reference_id, SUM(jel.credit_amount) AS amount
     FROM journal_entries je JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
     JOIN chart_of_accounts coa ON coa.id = jel.account_id
     WHERE je.company_id = p_company_id AND je.status = 'posted'
@@ -230,7 +230,7 @@ AS $$
     SELECT sr.invoice_id::TEXT AS invoice_id, SUM(jel.credit_amount) AS amount
     FROM journal_entries je JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
     JOIN chart_of_accounts coa ON coa.id = jel.account_id
-    JOIN sales_returns sr ON je.reference_id = sr.id::TEXT
+    JOIN sales_returns sr ON je.reference_id = sr.id
     WHERE je.company_id = p_company_id AND je.status = 'posted'
       AND je.reference_type = 'sales_return'
       AND (je.is_deleted IS NULL OR je.is_deleted = false)
