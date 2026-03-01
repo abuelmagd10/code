@@ -1945,7 +1945,7 @@ export default function InvoiceDetailPage() {
         return
       }
 
-      // 1) إدراج سجل الدفع
+      // 1) إدراج سجل الدفع (مع branch_id من الفاتورة لتفادي 400 عند وجود عمود حوكمة أو RLS)
       const basePayload: any = {
         company_id: payCompanyId,
         customer_id: invoice.customer_id,
@@ -1957,12 +1957,18 @@ export default function InvoiceDetailPage() {
         notes: `دفعة على الفاتورة ${invoice.invoice_number}`,
         account_id: paymentAccountId || null,
       }
+      if (invoice.branch_id) basePayload.branch_id = invoice.branch_id
+      if (invoice.cost_center_id) basePayload.cost_center_id = invoice.cost_center_id
+      if (invoice.warehouse_id) basePayload.warehouse_id = invoice.warehouse_id
       {
         const { error: payErr } = await supabase.from("payments").insert(basePayload)
         if (payErr) {
           const msg = String(payErr?.message || "")
           const mentionsAccountId = msg.toLowerCase().includes("account_id")
-          const looksMissingColumn = mentionsAccountId && (
+          const mentionsGovColumn = /branch_id|cost_center_id|warehouse_id/.test(msg) && (
+            msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("column")
+          )
+          const looksMissingColumn = (mentionsAccountId || mentionsGovColumn) && (
             msg.toLowerCase().includes("does not exist") ||
             msg.toLowerCase().includes("not found") ||
             msg.toLowerCase().includes("schema cache") ||
@@ -1970,7 +1976,12 @@ export default function InvoiceDetailPage() {
           )
           if (looksMissingColumn) {
             const payload2 = { ...basePayload }
-            delete (payload2 as any).account_id
+            if (mentionsAccountId) delete (payload2 as any).account_id
+            if (mentionsGovColumn) {
+              delete (payload2 as any).branch_id
+              delete (payload2 as any).cost_center_id
+              delete (payload2 as any).warehouse_id
+            }
             const { error: retryErr } = await supabase.from("payments").insert(payload2)
             if (retryErr) throw retryErr
           } else {
@@ -2219,9 +2230,10 @@ export default function InvoiceDetailPage() {
       setShowPayment(false)
       setPaymentAccountId("")
       toast({ title: "تم تسجيل الدفعة بنجاح", description: "تم إضافة قيد الدفع (Cash/AR)" })
-    } catch (err) {
+    } catch (err: any) {
       console.error("خطأ أثناء تسجيل الدفعة:", err)
-      toast({ title: "خطأ", description: "تعذر تسجيل الدفعة", variant: "destructive" })
+      const errMsg = err?.message || err?.error_description || "تعذر تسجيل الدفعة"
+      toast({ title: "خطأ", description: errMsg, variant: "destructive" })
     } finally {
       setSavingPayment(false)
     }
