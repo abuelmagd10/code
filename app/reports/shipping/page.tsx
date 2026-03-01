@@ -84,7 +84,7 @@ export default function ShippingReportPage() {
 
   useEffect(() => {
     if (permChecked && canRead) loadData()
-  }, [permChecked, canRead, statusFilter, dateFrom, dateTo])
+  }, [permChecked, canRead, statusFilter, dateFrom, dateTo, branchFilterId])
 
   /**
    * ✅ تحميل بيانات الشحنات
