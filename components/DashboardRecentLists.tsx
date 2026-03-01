@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Receipt, ShoppingCart } from "lucide-react"
 import { currencySymbols, getDisplayAmount } from "./DashboardAmounts"
 
@@ -28,6 +29,9 @@ interface Bill {
   status?: string
 }
 
+const INITIAL_DISPLAY = 10
+const MAX_DISPLAY = 20
+
 interface DashboardRecentListsProps {
   invoicesData: Invoice[]
   billsData: Bill[]
@@ -46,6 +50,8 @@ export default function DashboardRecentLists({
   appLang
 }: DashboardRecentListsProps) {
   const [appCurrency, setAppCurrency] = useState(defaultCurrency)
+  const [showInvoicesCount, setShowInvoicesCount] = useState(INITIAL_DISPLAY)
+  const [showBillsCount, setShowBillsCount] = useState(INITIAL_DISPLAY)
 
   useEffect(() => {
     const storedCurrency = localStorage.getItem('app_currency')
@@ -72,8 +78,12 @@ export default function DashboardRecentLists({
     ? { paid: 'Paid', partially_paid: 'Partial', sent: 'Sent', draft: 'Draft' }
     : { paid: 'مدفوعة', partially_paid: 'جزئية', sent: 'مرسلة', draft: 'مسودة' }
 
-  const sortedInvoices = [...invoicesData].sort((a, b) => String(b.invoice_date || "").localeCompare(String(a.invoice_date || ""))).slice(0, 10)
-  const sortedBills = [...billsData].sort((a, b) => String(b.bill_date || "").localeCompare(String(a.bill_date || ""))).slice(0, 10)
+  const sortedInvoices = [...invoicesData].sort((a, b) => String(b.invoice_date || "").localeCompare(String(a.invoice_date || ""))).slice(0, MAX_DISPLAY)
+  const sortedBills = [...billsData].sort((a, b) => String(b.bill_date || "").localeCompare(String(a.bill_date || ""))).slice(0, MAX_DISPLAY)
+  const visibleInvoices = sortedInvoices.slice(0, showInvoicesCount)
+  const visibleBills = sortedBills.slice(0, showBillsCount)
+  const hasMoreInvoices = sortedInvoices.length > showInvoicesCount
+  const hasMoreBills = sortedBills.length > showBillsCount
 
   return (
     <>
@@ -89,26 +99,28 @@ export default function DashboardRecentLists({
         </CardHeader>
         <CardContent className="pt-4">
           {sortedInvoices.length > 0 ? (
-            <div className="space-y-2 max-h-72 overflow-y-auto">
-              {sortedInvoices.map((i) => {
-                const name = i.customer_id ? (customerNames[i.customer_id] || "") : ""
-                const label = i.invoice_number || i.id
-                const displayAmount = getDisplayAmount(Number(i.total_amount || 0), i.display_total, i.display_currency, appCurrency)
-                return (
+            <div className="space-y-2">
+              <div className="max-h-72 overflow-y-auto space-y-2">
+                {visibleInvoices.map((i) => (
                   <div key={i.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-800 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
                     <div>
-                      <a href={`/invoices/${i.id}`} className="text-sm font-medium text-blue-600 hover:underline">{label}</a>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{name}</p>
+                      <a href={`/invoices/${i.id}`} className="text-sm font-medium text-blue-600 hover:underline">{i.invoice_number || i.id}</a>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{i.customer_id ? (customerNames[i.customer_id] || "") : ""}</p>
                     </div>
                     <div className="text-left">
-                      <p className="font-bold text-sm text-gray-900 dark:text-white">{formatNumber(displayAmount)}</p>
+                      <p className="font-bold text-sm text-gray-900 dark:text-white">{formatNumber(getDisplayAmount(Number(i.total_amount || 0), i.display_total, i.display_currency, appCurrency))}</p>
                       <Badge className={`text-[10px] mt-1 ${statusColors[i.status || ''] || statusColors.draft}`}>
                         {statusLabels[i.status || ''] || i.status}
                       </Badge>
                     </div>
                   </div>
-                )
-              })}
+                ))}
+              </div>
+              {hasMoreInvoices && (
+                <Button variant="ghost" size="sm" className="w-full mt-2" onClick={() => setShowInvoicesCount((c) => Math.min(c + INITIAL_DISPLAY, MAX_DISPLAY))}>
+                  {appLang === 'en' ? 'Show more' : 'عرض المزيد'}
+                </Button>
+              )}
             </div>
           ) : (
             <div className="text-center py-6 text-gray-400 dark:text-gray-500">
@@ -130,34 +142,38 @@ export default function DashboardRecentLists({
           </div>
         </CardHeader>
         <CardContent className="pt-4">
-          {sortedBills.length > 0 ? (
-            <div className="space-y-2 max-h-72 overflow-y-auto">
-              {sortedBills.map((b) => {
-                const name = b.supplier_id ? (supplierNames[b.supplier_id] || "") : ""
-                const label = b.bill_number || b.id
-                const displayAmount = getDisplayAmount(Number(b.total_amount || 0), b.display_total, b.display_currency, appCurrency)
-                return (
-                  <div key={b.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-800 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
-                    <div>
-                      <a href={`/bills/${b.id}`} className="text-sm font-medium text-orange-600 hover:underline">{label}</a>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{name}</p>
+          <>
+            {sortedBills.length > 0 ? (
+              <div className="space-y-2">
+                <div className="max-h-72 overflow-y-auto space-y-2">
+                  {visibleBills.map((b) => (
+                    <div key={b.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-800 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+                      <div>
+                        <a href={`/bills/${b.id}`} className="text-sm font-medium text-orange-600 hover:underline">{b.bill_number || b.id}</a>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{b.supplier_id ? (supplierNames[b.supplier_id] || "") : ""}</p>
+                      </div>
+                      <div className="text-left">
+                        <p className="font-bold text-sm text-gray-900 dark:text-white">{formatNumber(getDisplayAmount(Number(b.total_amount || 0), b.display_total, b.display_currency, appCurrency))}</p>
+                        <Badge className={`text-[10px] mt-1 ${statusColors[b.status || ''] || statusColors.draft}`}>
+                          {statusLabels[b.status || ''] || b.status}
+                        </Badge>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <p className="font-bold text-sm text-gray-900 dark:text-white">{formatNumber(displayAmount)}</p>
-                      <Badge className={`text-[10px] mt-1 ${statusColors[b.status || ''] || statusColors.draft}`}>
-                        {statusLabels[b.status || ''] || b.status}
-                      </Badge>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-6 text-gray-400 dark:text-gray-500">
-              <ShoppingCart className="w-10 h-10 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">{appLang === 'en' ? 'No purchases yet' : 'لا توجد مشتريات'}</p>
-            </div>
-          )}
+                  ))}
+                </div>
+                {hasMoreBills && (
+                  <Button variant="ghost" size="sm" className="w-full mt-2" onClick={() => setShowBillsCount((c) => Math.min(c + INITIAL_DISPLAY, MAX_DISPLAY))}>
+                    {appLang === 'en' ? 'Show more' : 'عرض المزيد'}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-gray-400 dark:text-gray-500">
+                <ShoppingCart className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">{appLang === 'en' ? 'No purchases yet' : 'لا توجد مشتريات'}</p>
+              </div>
+            )}
+          </>
         </CardContent>
       </Card>
     </>

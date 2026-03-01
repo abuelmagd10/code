@@ -17,6 +17,7 @@ import AdvancedDashboardCharts from "@/components/charts/AdvancedDashboardCharts
 import { canAccessPage, getFirstAllowedPage } from "@/lib/authz"
 import { CurrencyMismatchAlert } from "@/components/CurrencyMismatchAlert"
 import DashboardScopeSwitcher from "@/components/DashboardScopeSwitcher"
+import DashboardDailyIncomeCard from "@/components/DashboardDailyIncomeCard"
 import { getGLSummary } from "@/lib/dashboard-gl-summary"
 import {
   buildDashboardVisibilityRules,
@@ -225,6 +226,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
 
     if (fromDate) invQuery = invQuery.gte("invoice_date", fromDate)
     if (toDate) invQuery = invQuery.lte("invoice_date", toDate)
+    invQuery = invQuery.order("invoice_date", { ascending: false }).limit(500)
     const { data: invoices } = await invQuery
 
     if (invoices && invoices.length > 0) {
@@ -301,6 +303,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
 
     if (fromDate) billsQuery = billsQuery.gte("bill_date", fromDate)
     if (toDate) billsQuery = billsQuery.lte("bill_date", toDate)
+    billsQuery = billsQuery.order("bill_date", { ascending: false }).limit(500)
     const { data: bills } = await billsQuery
 
     if (bills && bills.length > 0) {
@@ -621,6 +624,21 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
             glMonthlyRevenue={glMonthlyRevenue}
             glMonthlyExpense={glMonthlyExpense}
           />
+
+          {/* كارت الدخل اليومي (نقد + بنك) لكل فرع - GL-First */}
+          {company && visibilityRules && (
+            <DashboardDailyIncomeCard
+              companyId={company.id}
+              defaultCurrency={currencyCode}
+              appLang={appLang}
+              canSwitchScope={visibilityRules.canSwitchScope}
+              canSeeAllBranches={visibilityRules.canSeeAllBranches}
+              userBranchId={visibilityRules.branchId}
+              userBranchName={currentBranchName}
+              allBranches={allBranches}
+              userName={userProfile?.display_name || userProfile?.username || undefined}
+            />
+          )}
 
           {/* بطاقات المخزون والضرائب والمدفوعات */}
           {company && (
