@@ -86,8 +86,10 @@ export async function POST(request: NextRequest) {
     
     // 3️⃣ التحقق من صحة البيانات (إلزامي)
     validateGovernanceData(dataWithGovernance, governance)
-    
+
     const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) dataWithGovernance.created_by_user_id = user.id
 
     // 4️⃣ التحقق من طول رقم التليفون (11 رقم على الأقل) ثم تكراره
     if (dataWithGovernance.phone) {
