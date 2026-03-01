@@ -147,13 +147,15 @@ async function checkPermission(
   const rolePermissions: Record<string, Record<string, string[]>> = {
     owner: { '*': ['read', 'write', 'delete', 'admin'] },
     admin: { '*': ['read', 'write', 'delete'] },
-    manager: { 
+    manager: {
+      dashboard: ['read'],
       invoices: ['read', 'write'],
       customers: ['read', 'write'],
       products: ['read', 'write'],
       reports: ['read']
     },
     accountant: {
+      dashboard: ['read'],
       invoices: ['read', 'write'],
       journal_entries: ['read', 'write'],
       products: ['read'], // ✅ Accountants need to read products for bills and inventory
