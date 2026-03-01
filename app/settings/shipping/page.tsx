@@ -311,6 +311,7 @@ export default function ShippingSettingsPage() {
 
       setIsDialogOpen(false)
       loadData()
+      loadBranchMapping()
     } catch (err: any) {
       console.error("Error saving provider:", err)
       toastActionError(toast, t("Save", "الحفظ"), t("Provider", "شركة الشحن"), err?.message)
@@ -327,6 +328,7 @@ export default function ShippingSettingsPage() {
       if (error) throw error
       toastActionSuccess(toast, t("Delete", "الحذف"), t("Shipping Provider", "شركة الشحن"))
       loadData()
+      loadBranchMapping()
     } catch (err: any) {
       toastActionError(toast, t("Delete", "الحذف"), t("Provider", "شركة الشحن"), err?.message)
     }
