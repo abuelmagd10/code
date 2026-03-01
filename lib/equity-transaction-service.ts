@@ -340,7 +340,7 @@ export class EquityTransactionService {
   }
 
   /**
-   * Get shareholder drawings history
+   * Get shareholder drawings history (all statuses: draft, pending_approval, posted, rejected)
    */
   async getDrawingsHistory(companyId: string, shareholderId?: string): Promise<any[]> {
     let query = this.supabase
@@ -352,7 +352,6 @@ export class EquityTransactionService {
         journal_entries (id, entry_number)
       `)
       .eq('company_id', companyId)
-      .eq('status', 'posted')
       .order('drawing_date', { ascending: false })
 
     if (shareholderId) {

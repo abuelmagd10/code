@@ -35,6 +35,7 @@ export async function POST(request: Request) {
       from_user_id,
       to_user_ids, // مصفوفة للدعم المتعدد
       resource_type, // "customers" | "sales_orders" | "all"
+      branch_id, // اختياري: نقل عملاء/أوامر هذا الفرع فقط (للموظف المنقول عنه)
       reason,
       notes
     } = body
@@ -86,23 +87,30 @@ export async function POST(request: Request) {
       let recordsTransferred = 0
       const transferredIds: string[] = []
 
-      // نقل العملاء
+      // نقل العملاء (اختيارياً حسب الفرع: عملاء الفرع المنقول عنه فقط)
       if (resource_type === "customers" || resource_type === "all") {
-        // جلب IDs العملاء قبل النقل
-        const { data: customerIds } = await supabase
+        let customerQuery = supabase
           .from("customers")
           .select("id")
           .eq("company_id", company_id)
           .eq("created_by_user_id", from_user_id)
+        if (branch_id) {
+          customerQuery = customerQuery.eq("branch_id", branch_id)
+        }
+        const { data: customerIds } = await customerQuery
 
         if (customerIds?.length) {
-          transferredIds.push(...customerIds.map(c => c.id))
+          transferredIds.push(...customerIds.map((c: { id: string }) => c.id))
 
-          const { error: updateError } = await supabase
+          let updateQuery = supabase
             .from("customers")
             .update({ created_by_user_id: toUserId })
             .eq("company_id", company_id)
             .eq("created_by_user_id", from_user_id)
+          if (branch_id) {
+            updateQuery = updateQuery.eq("branch_id", branch_id)
+          }
+          const { error: updateError } = await updateQuery
 
           if (!updateError) {
             recordsTransferred += customerIds.length
@@ -110,22 +118,30 @@ export async function POST(request: Request) {
         }
       }
 
-      // نقل أوامر البيع
+      // نقل أوامر البيع (اختيارياً حسب الفرع)
       if (resource_type === "sales_orders" || resource_type === "all") {
-        const { data: orderIds } = await supabase
+        let orderQuery = supabase
           .from("sales_orders")
           .select("id")
           .eq("company_id", company_id)
           .eq("created_by_user_id", from_user_id)
+        if (branch_id) {
+          orderQuery = orderQuery.eq("branch_id", branch_id)
+        }
+        const { data: orderIds } = await orderQuery
 
         if (orderIds?.length) {
-          transferredIds.push(...orderIds.map(o => o.id))
+          transferredIds.push(...orderIds.map((o: { id: string }) => o.id))
 
-          const { error: updateError } = await supabase
+          let updateOrderQuery = supabase
             .from("sales_orders")
             .update({ created_by_user_id: toUserId })
             .eq("company_id", company_id)
             .eq("created_by_user_id", from_user_id)
+          if (branch_id) {
+            updateOrderQuery = updateOrderQuery.eq("branch_id", branch_id)
+          }
+          const { error: updateError } = await updateOrderQuery
 
           if (!updateError) {
             recordsTransferred += orderIds.length

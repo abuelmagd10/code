@@ -93,4 +93,3 @@ Prevents unauthorized branch reassignment after customer creation.';
 -- ============================================
 -- ✅ تم إنشاء الحماية بنجاح
 -- ============================================
-

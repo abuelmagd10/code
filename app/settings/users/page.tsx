@@ -79,6 +79,7 @@ export default function UsersSettingsPage() {
   const [selectedSourceUser, setSelectedSourceUser] = useState<string>("")
   const [selectedTargetUsers, setSelectedTargetUsers] = useState<string[]>([])
   const [selectedResourceType, setSelectedResourceType] = useState<string>("all")
+  const [transferBranchId, setTransferBranchId] = useState<string>("") // اختياري: نقل عملاء/أوامر فرع معين فقط
   const [selectedBranches, setSelectedBranches] = useState<string[]>([])
   const [shareCanEdit, setShareCanEdit] = useState(false)
   const [shareCanDelete, setShareCanDelete] = useState(false)
@@ -2253,6 +2254,30 @@ export default function UsersSettingsPage() {
                       <SelectItem value="sales_orders">أوامر البيع فقط</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+
+              {/* الفرع (للنقل فقط): نقل عملاء/أوامر فرع معين للموظف الجديد */}
+              {permissionAction === 'transfer' && (
+                <div className="space-y-2">
+                  <Label>الفرع (اختياري)</Label>
+                  <Select value={transferBranchId} onValueChange={setTransferBranchId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="الكل — نقل كل البيانات" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">الكل — نقل كل البيانات</SelectItem>
+                      {branches.map(b => (
+                        <SelectItem key={b.id} value={b.id}>
+                          {b.name}
+                          {b.is_main && ' (رئيسي)'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    عند نقل موظف لفرع آخر: اختر فرع الموظف السابق لنقل عملائه وأوامره فيه إلى الموظف الذي يحل محله.
+                  </p>
                 </div>
               )}
 

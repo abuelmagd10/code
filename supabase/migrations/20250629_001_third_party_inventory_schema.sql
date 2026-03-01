@@ -73,7 +73,7 @@ DROP POLICY IF EXISTS "third_party_inventory_select" ON third_party_inventory;
 CREATE POLICY "third_party_inventory_select" ON third_party_inventory
   FOR SELECT USING (
     company_id IN (
-      SELECT company_id FROM user_company_roles WHERE user_id = auth.uid()
+      SELECT company_id FROM company_members WHERE user_id = auth.uid()
     )
   );
 
@@ -82,7 +82,7 @@ DROP POLICY IF EXISTS "third_party_inventory_insert" ON third_party_inventory;
 CREATE POLICY "third_party_inventory_insert" ON third_party_inventory
   FOR INSERT WITH CHECK (
     company_id IN (
-      SELECT company_id FROM user_company_roles WHERE user_id = auth.uid()
+      SELECT company_id FROM company_members WHERE user_id = auth.uid()
     )
   );
 
@@ -91,7 +91,7 @@ DROP POLICY IF EXISTS "third_party_inventory_update" ON third_party_inventory;
 CREATE POLICY "third_party_inventory_update" ON third_party_inventory
   FOR UPDATE USING (
     company_id IN (
-      SELECT company_id FROM user_company_roles WHERE user_id = auth.uid()
+      SELECT company_id FROM company_members WHERE user_id = auth.uid()
     )
   );
 
@@ -100,7 +100,7 @@ DROP POLICY IF EXISTS "third_party_inventory_delete" ON third_party_inventory;
 CREATE POLICY "third_party_inventory_delete" ON third_party_inventory
   FOR DELETE USING (
     company_id IN (
-      SELECT company_id FROM user_company_roles WHERE user_id = auth.uid()
+      SELECT company_id FROM company_members WHERE user_id = auth.uid()
     )
   );
 

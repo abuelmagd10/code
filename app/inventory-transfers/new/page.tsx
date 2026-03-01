@@ -59,6 +59,10 @@ export default function NewTransferPage() {
 
   const [userRole, setUserRole] = useState<string>("")
   const [companyId, setCompanyId] = useState<string>("")
+  const [userBranchId, setUserBranchId] = useState<string | null>(null)
+  const [userWarehouseId, setUserWarehouseId] = useState<string | null>(null)
+  // للأدوار العادية: المخزن الوجهة = مخزن الفرع تلقائياً ولا يُغيّر. للأدوار العليا: اختيار حر.
+  const [canChooseDestination, setCanChooseDestination] = useState(true)
 
   useEffect(() => {
     setHydrated(true)
@@ -82,6 +86,22 @@ export default function NewTransferPage() {
       loadWarehouseStock(sourceWarehouseId)
     }
   }, [sourceWarehouseId])
+
+  // للأدوار العادية: تعيين المخزن الوجهة تلقائياً = مخزن الفرع التابع له الموظف (ويُستبعد المصدر)
+  useEffect(() => {
+    if (!canChooseDestination && userBranchId && warehouses.length > 0) {
+      const branchWarehouses = warehouses.filter((w: WarehouseData) => w.branch_id === userBranchId)
+      const otherThanSource = branchWarehouses.filter((w: WarehouseData) => w.id !== sourceWarehouseId)
+      const preferred = userWarehouseId && otherThanSource.some((w: WarehouseData) => w.id === userWarehouseId)
+        ? otherThanSource.find((w: WarehouseData) => w.id === userWarehouseId)
+        : otherThanSource[0]
+      if (preferred) {
+        setDestinationWarehouseId(preferred.id)
+      } else if (branchWarehouses.length > 0 && branchWarehouses[0].id === sourceWarehouseId) {
+        setDestinationWarehouseId("")
+      }
+    }
+  }, [canChooseDestination, userBranchId, userWarehouseId, warehouses, sourceWarehouseId])
 
   const loadData = async () => {
     try {
@@ -107,8 +127,12 @@ export default function NewTransferPage() {
         .single()
 
       const role = String(member?.role || "staff").trim().toLowerCase().replace(/\s+/g, "_")
-      const userBranchId = member?.branch_id || null
+      const branchId = member?.branch_id || null
+      const warehouseId = member?.warehouse_id || null
       setUserRole(role)
+      setUserBranchId(branchId)
+      setUserWarehouseId(warehouseId)
+      setCanChooseDestination(["owner", "admin", "manager", "general_manager", "gm"].includes(role))
 
       // 🔒 صلاحية إنشاء طلبات النقل:
       // ✅ Owner/Admin/Manager: إنشاء مباشر (حالة pending)
@@ -137,8 +161,8 @@ export default function NewTransferPage() {
       // 🔒 فلترة المخازن حسب الصلاحيات:
       // - Owner/Admin: يرون جميع المخازن (لا فلترة)
       // - Manager: يرى فقط مخازن فرعه
-      if (role === "manager" && userBranchId) {
-        warehousesQuery = warehousesQuery.eq("branch_id", userBranchId)
+      if (role === "manager" && branchId) {
+        warehousesQuery = warehousesQuery.eq("branch_id", branchId)
       }
       // Owner/Admin: لا فلترة - يرون جميع المخازن
 
@@ -484,8 +508,12 @@ export default function NewTransferPage() {
 
                 <div className="space-y-2">
                   <Label>{appLang === 'en' ? 'Destination Warehouse' : 'المخزن الوجهة'} *</Label>
-                  <Select value={destinationWarehouseId} onValueChange={setDestinationWarehouseId} disabled={!sourceWarehouseId}>
-                    <SelectTrigger>
+                  <Select
+                    value={destinationWarehouseId}
+                    onValueChange={canChooseDestination ? setDestinationWarehouseId : undefined}
+                    disabled={!sourceWarehouseId || !canChooseDestination}
+                  >
+                    <SelectTrigger className={!canChooseDestination ? 'bg-gray-100 dark:bg-slate-800 cursor-not-allowed' : ''}>
                       <SelectValue placeholder={appLang === 'en' ? 'Select destination...' : 'اختر المخزن الوجهة...'} />
                     </SelectTrigger>
                     <SelectContent>
@@ -496,6 +524,13 @@ export default function NewTransferPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {!canChooseDestination && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {appLang === 'en'
+                        ? 'Destination is set automatically to your branch warehouse and cannot be changed.'
+                        : 'الوجهة تُحدد تلقائياً لمخزن فرعك ولا يمكن تغييرها.'}
+                    </p>
+                  )}
                 </div>
               </div>
 

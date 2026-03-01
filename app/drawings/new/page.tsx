@@ -116,9 +116,13 @@ export default function NewDrawingPage() {
             if (result.success) {
                 toast({
                     title: appLang === 'en' ? 'Success' : 'تم بنجاح',
-                    description: appLang === 'en' ? 'Drawing recorded' : 'تم تسجيل المسحوبات'
+                    description: appLang === 'en' ? 'Drawing saved as draft. Submit for approval from the detail page.' : 'تم حفظ المسحوبة كمسودة. أرسلها للاعتماد من صفحة التفاصيل.'
                 })
-                router.push('/drawings')
+                if (result.drawingId) {
+                    router.push(`/drawings/${result.drawingId}`)
+                } else {
+                    router.push('/drawings')
+                }
             } else {
                 toast({
                     title: appLang === 'en' ? 'Error' : 'خطأ',

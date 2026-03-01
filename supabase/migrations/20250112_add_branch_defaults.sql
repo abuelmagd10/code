@@ -2,10 +2,10 @@
 -- Created: 2025-01-12
 -- Purpose: Add enterprise-grade branch defaults for proper ERP governance
 
--- Add default warehouse and cost center columns to branches table
+-- Add default warehouse and cost center columns to branches table (idempotent)
 ALTER TABLE branches 
-ADD COLUMN default_warehouse_id uuid REFERENCES warehouses(id) ON DELETE SET NULL,
-ADD COLUMN default_cost_center_id uuid REFERENCES cost_centers(id) ON DELETE SET NULL;
+ADD COLUMN IF NOT EXISTS default_warehouse_id uuid REFERENCES warehouses(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS default_cost_center_id uuid REFERENCES cost_centers(id) ON DELETE SET NULL;
 
 -- Add indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_branches_default_warehouse ON branches(default_warehouse_id);

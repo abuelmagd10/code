@@ -78,4 +78,3 @@ BEGIN
   
   RAISE NOTICE '✅ تم ترحيل % فاتورة تحتوي على % بند إلى نظام بضائع لدى الغير', migrated_invoices, migrated_items;
 END $$;
-

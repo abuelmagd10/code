@@ -16,7 +16,7 @@ export const validateEmail = (email: string): boolean => {
 };
 
 /**
- * التحقق من صحة رقم الهاتف
+ * التحقق من صحة رقم الهاتف (حد أدنى 11 رقم للعملاء)
  * @param phone رقم الهاتف للتحقق
  * @returns true إذا كان رقم الهاتف صحيحاً
  */
@@ -26,8 +26,8 @@ export const validatePhone = (phone: string): boolean => {
   // إزالة جميع الأحرف غير الرقمية
   const cleanPhone = phone.replace(/[^\d]/g, '');
 
-  // التحقق من أن الرقم يحتوي على 10-15 رقماً
-  return cleanPhone.length >= 10 && cleanPhone.length <= 15;
+  // حد أدنى 11 رقم (مثلاً أرقام مصر المحمولة)، أقصى 15
+  return cleanPhone.length >= 11 && cleanPhone.length <= 15;
 };
 
 /**
@@ -106,7 +106,7 @@ export const getValidationError = (fieldName: string, value: string, type: 'emai
       break;
     case 'phone':
       if (!validatePhone(value)) {
-        return `يرجى إدخال ${fieldName} صحيح`;
+        return fieldName ? `يرجى إدخال ${fieldName} صحيح (11 رقم على الأقل)` : 'رقم الهاتف يجب أن يكون 11 رقم على الأقل';
       }
       break;
     case 'number':

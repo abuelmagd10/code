@@ -84,7 +84,7 @@ export default function DrawingsPage() {
             key: "amount",
             header: appLang === 'en' ? "Amount" : "المبلغ",
             sortable: true,
-            format: (value, row) => `${row.amount.toLocaleString(appLang === 'en' ? "en-US" : "ar-EG")} ${row.currency_code || "EGP"}`
+            format: (value, row) => `${Number(row.amount || 0).toLocaleString(appLang === 'en' ? "en-US" : "ar-EG")} ${row.currency_code || "EGP"}`
         },
         {
             key: "payment_account",
@@ -101,19 +101,20 @@ export default function DrawingsPage() {
             key: "status",
             header: appLang === 'en' ? "Status" : "الحالة",
             sortable: true,
-            format: (value, row) => (
-                <Badge variant={row.status === 'posted' ? 'default' : 'secondary'}>
-                    {row.status === 'posted' ? (appLang === 'en' ? 'Posted' : 'مرحل') : row.status}
-                </Badge>
-            )
+            format: (value, row) => {
+                const s = row.status || 'draft'
+                const labels: Record<string, string> = { draft: appLang === 'en' ? 'Draft' : 'مسودة', pending_approval: appLang === 'en' ? 'Pending Approval' : 'بانتظار الاعتماد', posted: appLang === 'en' ? 'Posted' : 'مرحّل', rejected: appLang === 'en' ? 'Rejected' : 'مرفوض' }
+                const variant = s === 'posted' ? 'default' : s === 'pending_approval' ? 'secondary' : 'outline'
+                return <Badge variant={variant}>{labels[s] || s}</Badge>
+            }
         },
         {
             key: "actions",
             header: appLang === 'en' ? "Actions" : "الإجراءات",
             format: (value, row) => (
-                <div className="flex gap-2">
-                    {/* View/Edit Actions if needed */}
-                </div>
+                <Link href={`/drawings/${row.id}`}>
+                    <Button variant="ghost" size="sm">{appLang === 'en' ? 'View' : 'عرض'}</Button>
+                </Link>
             )
         }
     ]

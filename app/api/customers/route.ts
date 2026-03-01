@@ -89,10 +89,17 @@ export async function POST(request: NextRequest) {
     
     const supabase = await createClient()
 
-    // 4️⃣ التحقق من تكرار رقم التليفون (إلزامي)
+    // 4️⃣ التحقق من طول رقم التليفون (11 رقم على الأقل) ثم تكراره
     if (dataWithGovernance.phone) {
       const { normalizePhone } = await import('@/lib/phone-utils')
       const normalizedPhone = normalizePhone(dataWithGovernance.phone)
+      
+      if (normalizedPhone && normalizedPhone.length < 11) {
+        return NextResponse.json({
+          error: "Phone number must be at least 11 digits",
+          error_ar: "رقم الهاتف يجب أن يكون 11 رقم على الأقل"
+        }, { status: 400 })
+      }
       
       if (normalizedPhone) {
         // جلب جميع العملاء في نفس الشركة

@@ -32,18 +32,17 @@ BEGIN
   has_cc_name := EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cost_centers' AND column_name = 'cost_center_name');
   has_cc_code := EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cost_centers' AND column_name = 'cost_center_code');
 
-  UPDATE branches b
-  SET default_cost_center_id = cc.id
-  FROM LATERAL (
+  UPDATE branches
+  SET default_cost_center_id = (
     SELECT c.id
     FROM cost_centers c
-    WHERE c.company_id = b.company_id
-      AND c.branch_id = b.id
+    WHERE c.company_id = branches.company_id
+      AND c.branch_id = branches.id
       AND (c.is_active IS NULL OR c.is_active = TRUE)
     ORDER BY c.created_at NULLS LAST
     LIMIT 1
-  ) cc
-  WHERE b.default_cost_center_id IS NULL;
+  )
+  WHERE default_cost_center_id IS NULL;
 
   IF EXISTS (SELECT 1 FROM branches WHERE default_cost_center_id IS NULL) THEN
     IF has_cc_name AND has_cc_code THEN
@@ -108,24 +107,23 @@ BEGIN
     RETURN;
   END IF;
 
-  UPDATE branches b
-  SET default_warehouse_id = w.id
-  FROM LATERAL (
+  UPDATE branches
+  SET default_warehouse_id = (
     SELECT w.id
     FROM warehouses w
-    WHERE w.company_id = b.company_id
-      AND w.branch_id = b.id
+    WHERE w.company_id = branches.company_id
+      AND w.branch_id = branches.id
       AND (w.is_active IS NULL OR w.is_active = TRUE)
     ORDER BY w.is_main DESC, w.created_at NULLS LAST
     LIMIT 1
-  ) w
-  WHERE b.default_warehouse_id IS NULL;
+  )
+  WHERE default_warehouse_id IS NULL;
 
   IF EXISTS (SELECT 1 FROM branches WHERE default_warehouse_id IS NULL) THEN
     WITH missing AS (
-      SELECT b.id AS branch_id, b.company_id, COALESCE(b.code, 'BR') AS branch_code, b.default_cost_center_id AS cc_id
-      FROM branches b
-      WHERE b.default_warehouse_id IS NULL
+      SELECT id AS branch_id, company_id, COALESCE(code, 'BR') AS branch_code, default_cost_center_id AS cc_id
+      FROM branches
+      WHERE default_warehouse_id IS NULL
     ),
     ins AS (
       INSERT INTO warehouses (company_id, branch_id, cost_center_id, name, code, is_main, is_active)
@@ -140,10 +138,10 @@ BEGIN
       FROM missing m
       RETURNING id, branch_id
     )
-    UPDATE branches b
+    UPDATE branches
     SET default_warehouse_id = ins.id
     FROM ins
-    WHERE b.id = ins.branch_id AND b.default_warehouse_id IS NULL;
+    WHERE branches.id = ins.branch_id AND branches.default_warehouse_id IS NULL;
   END IF;
 
   BEGIN
