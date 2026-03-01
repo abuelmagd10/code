@@ -204,7 +204,8 @@ export default function WriteOffsPage() {
         role: role,
       }
       setUserContext(context)
-      setCanOverrideContext(["owner", "admin", "manager"].includes(role))
+      // مطابق لـ loadData والـ realtime: Owner/Admin فقط يمكنهم تجاوز قيود الفرع/المخزن
+      setCanOverrideContext(["owner", "admin"].includes(role))
 
       // تعيين القيم الافتراضية من سياق المستخدم (فقط عند التغيير)
       if (context.branch_id && context.branch_id !== branchId) setBranchId(context.branch_id)
