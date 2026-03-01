@@ -662,7 +662,8 @@ export async function createWriteOffJournal(
       .from("inventory_write_offs")
       .select(`
         id, write_off_number, write_off_date, status,
-        total_cost, branch_id, cost_center_id, warehouse_id
+        total_cost, base_amount, currency_code, exchange_rate,
+        branch_id, cost_center_id, warehouse_id
       `)
       .eq("id", writeOffId)
       .eq("company_id", companyId)
@@ -708,8 +709,10 @@ export async function createWriteOffJournal(
     // الحصول على خريطة الحسابات
     const mapping = await getAccrualAccountMapping(supabase, companyId)
 
-    // حساب المبلغ
-    const totalCost = Number(writeOff.total_cost || 0)
+    // Multi-currency: use base_amount (company currency) when present
+    const totalCost = Number(
+      writeOff.base_amount ?? writeOff.total_cost ?? 0
+    )
 
     // إذا لم توجد تكلفة، لا نسجل قيد
     if (totalCost <= 0) {

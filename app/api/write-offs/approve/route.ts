@@ -59,7 +59,11 @@ export async function POST(request: NextRequest) {
 
     // قراءة البيانات من الطلب
     const body = await request.json()
-    const { writeOffId, expenseAccountId, inventoryAccountId } = body
+    const { writeOffId, expenseAccountId, inventoryAccountId, source_ip: bodySourceIp, device_info: bodyDeviceInfo } = body
+
+    // اختياري: تدقيق ERP - IP ومعلومات الجهاز
+    const sourceIp = bodySourceIp ?? request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? null
+    const deviceInfo = bodyDeviceInfo ?? request.headers.get('user-agent') ?? null
 
     if (!writeOffId || !expenseAccountId || !inventoryAccountId) {
       return NextResponse.json(
@@ -241,15 +245,20 @@ export async function POST(request: NextRequest) {
       .update({ total_cost: totalCOGS })
       .eq('id', writeOffId)
 
+    const nowIso = new Date().toISOString()
     // ✅ تحديث status إلى 'approved' قبل استدعاء createWriteOffJournal
     // لأن الدالة تتحقق من أن status === 'approved'
+    // ERP audit: last_status_changed_at, source_ip, device_info
     const { error: statusUpdateError } = await supabase
       .from('inventory_write_offs')
       .update({
         status: 'approved',
         approved_by: user.id,
-        approved_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        approved_at: nowIso,
+        last_status_changed_at: nowIso,
+        ...(sourceIp && { source_ip: sourceIp }),
+        ...(deviceInfo && { device_info: deviceInfo }),
+        updated_at: nowIso
       })
       .eq('id', writeOffId)
 
