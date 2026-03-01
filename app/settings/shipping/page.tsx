@@ -78,6 +78,13 @@ export default function ShippingSettingsPage() {
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
 
+  // ربط شركات الشحن بالفروع (للأدوار العليا)
+  type BranchLink = { id: string; branch_id: string; shipping_provider_id: string; branches?: { id: string; name: string } | null; shipping_providers?: { id: string; provider_name: string; provider_code: string | null } | null }
+  const [branchMapping, setBranchMapping] = useState<{ data: BranchLink[]; branches: { id: string; name: string }[]; providers: { id: string; provider_name: string; provider_code: string | null }[] } | null>(null)
+  const [branchMapBranchId, setBranchMapBranchId] = useState<string>("")
+  const [branchMapProviderId, setBranchMapProviderId] = useState<string>("")
+  const [branchMapSaving, setBranchMapSaving] = useState(false)
+
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
 
   useEffect(() => {
@@ -111,6 +118,73 @@ export default function ShippingSettingsPage() {
     }
   }, [permChecked, canRead])
 
+  const loadBranchMapping = async () => {
+    try {
+      const res = await fetch('/api/settings/branch-shipping-providers')
+      if (!res.ok) return
+      const json = await res.json()
+      if (json.success && json.data) {
+        setBranchMapping({
+          data: json.data,
+          branches: json.branches || [],
+          providers: json.providers || []
+        })
+      }
+    } catch (e) {
+      console.error('loadBranchMapping', e)
+    }
+  }
+
+  useEffect(() => {
+    if (permChecked && canWrite) {
+      loadBranchMapping()
+    }
+  }, [permChecked, canWrite])
+
+  const addBranchProviderLink = async () => {
+    if (!branchMapBranchId || !branchMapProviderId) return
+    setBranchMapSaving(true)
+    try {
+      const res = await fetch('/api/settings/branch-shipping-providers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branch_id: branchMapBranchId, shipping_provider_id: branchMapProviderId })
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        toastActionError(toast, t("Add link", "إضافة ربط"), "", json?.error_ar || json?.error)
+        return
+      }
+      toastActionSuccess(toast, t("Add link", "إضافة ربط"), t("Branch–Provider link", "ربط فرع–شركة شحن"))
+      setBranchMapBranchId("")
+      setBranchMapProviderId("")
+      loadBranchMapping()
+    } catch (e: any) {
+      toastActionError(toast, t("Add link", "إضافة ربط"), "", e?.message)
+    } finally {
+      setBranchMapSaving(false)
+    }
+  }
+
+  const removeBranchProviderLink = async (branchId: string, providerId: string) => {
+    try {
+      const res = await fetch('/api/settings/branch-shipping-providers', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branch_id: branchId, shipping_provider_id: providerId })
+      })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        toastActionError(toast, t("Remove link", "إزالة ربط"), "", json?.error_ar || json?.error)
+        return
+      }
+      toastActionSuccess(toast, t("Remove link", "إزالة ربط"), t("Branch–Provider link", "ربط فرع–شركة شحن"))
+      loadBranchMapping()
+    } catch (e: any) {
+      toastActionError(toast, t("Remove link", "إزالة ربط"), "", e?.message)
+    }
+  }
+
   const loadData = async () => {
     try {
       setIsLoading(true)
@@ -119,6 +193,16 @@ export default function ShippingSettingsPage() {
       if (!cid) return
       setCompanyId(cid)
 
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role, branch_id")
+        .eq("company_id", cid)
+        .eq("user_id", user?.id)
+        .maybeSingle()
+      const privileged = member?.role && ['owner','admin','general_manager','gm','super_admin','superadmin','generalmanager'].includes(String(member.role).toLowerCase())
+      const userBranchId = member?.branch_id || null
+
       const { data, error } = await supabase
         .from("shipping_providers")
         .select("*")
@@ -126,7 +210,17 @@ export default function ShippingSettingsPage() {
         .order("created_at", { ascending: false })
 
       if (error) throw error
-      setProviders(data || [])
+      let list = data || []
+      if (!privileged && userBranchId) {
+        const { data: links } = await supabase
+          .from("branch_shipping_providers")
+          .select("shipping_provider_id")
+          .eq("branch_id", userBranchId)
+          .or("is_active.is.null,is_active.eq.true")
+        const allowedIds = new Set((links || []).map((r: { shipping_provider_id: string }) => r.shipping_provider_id))
+        list = list.filter((p: ShippingProvider) => allowedIds.has(p.id))
+      }
+      setProviders(list)
     } catch (err) {
       console.error("Error loading shipping providers:", err)
     } finally {
@@ -373,6 +467,85 @@ export default function ShippingSettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* ربط شركات الشحن بالفروع (للأدوار العليا فقط) */}
+          {canWrite && branchMapping && (
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="w-5 h-5" />
+                  {t("Branch–Shipping Provider Mapping", "ربط شركات الشحن بالفروع")}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {t("Choose which shipping providers are available per branch. Branch users will only see linked providers.", "حدد شركات الشحن المتاحة لكل فرع. مستخدمو الفرع يرون فقط الشركات المرتبطة بفرعهم.")}
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="space-y-1">
+                    <Label>{t("Branch", "الفرع")}</Label>
+                    <Select value={branchMapBranchId} onValueChange={setBranchMapBranchId}>
+                      <SelectTrigger className="w-[200px]">
+                        <SelectValue placeholder={t("Select branch", "اختر الفرع")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branchMapping.branches.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>{t("Shipping Provider", "شركة الشحن")}</Label>
+                    <Select value={branchMapProviderId} onValueChange={setBranchMapProviderId}>
+                      <SelectTrigger className="w-[220px]">
+                        <SelectValue placeholder={t("Select provider", "اختر الشركة")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branchMapping.providers.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>{p.provider_name} {p.provider_code ? `(${p.provider_code})` : ""}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button onClick={addBranchProviderLink} disabled={branchMapSaving || !branchMapBranchId || !branchMapProviderId}>
+                    {branchMapSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    <span className="mr-2">{t("Add link", "إضافة ربط")}</span>
+                  </Button>
+                </div>
+                {branchMapping.data.length > 0 ? (
+                  <div className="rounded-md border overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="text-right p-2">{t("Branch", "الفرع")}</th>
+                          <th className="text-right p-2">{t("Shipping Provider", "شركة الشحن")}</th>
+                          <th className="w-10 p-2" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {branchMapping.data.map((row) => (
+                          <tr key={row.id} className="border-b last:border-0">
+                            <td className="p-2">{row.branches?.name ?? row.branch_id}</td>
+                            <td className="p-2">{row.shipping_providers?.provider_name ?? row.shipping_provider_id}</td>
+                            <td className="p-2">
+                              <Button type="button" variant="ghost" size="icon" onClick={() => removeBranchProviderLink(row.branch_id, row.shipping_provider_id)} title={t("Remove link", "إزالة ربط")}>
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {t("No branch–provider links yet. Add links so branch users only see allowed providers. If none are set, all providers remain visible (backward compatible).", "لا توجد روابط فرع–شركة بعد. أضف روابط حتى يرى مستخدمو الفرع فقط الشركات المسموح بها. إن لم تُضف أي ربط تبقى كل الشركات ظاهرة (توافق رجعي).")}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Providers List */}
           {isLoading ? (

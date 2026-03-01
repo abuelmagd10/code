@@ -228,14 +228,17 @@ export default function NewPurchaseOrderPage() {
         }
       }
 
-      // Load shipping providers
-      const { data: providersData } = await supabase
-        .from("shipping_providers")
-        .select("id, provider_name, provider_code, is_active")
-        .eq("company_id", companyId)
-        .eq("is_active", true)
-        .order("provider_name")
-      setShippingProviders(providersData || [])
+      // Load shipping providers (filtered by branch for RBAC)
+      let branchIdForProviders: string | null = null
+      if (user) {
+        const { data: mem } = await supabase.from("company_members").select("branch_id").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
+        branchIdForProviders = mem?.branch_id || null
+      }
+      const provRes = await fetch(
+        `/api/shipping-providers${branchIdForProviders ? `?branch_id=${encodeURIComponent(branchIdForProviders)}` : ''}`
+      )
+      const provJson = await provRes.json().catch(() => ({ data: [] }))
+      setShippingProviders(provJson.data || [])
     } catch (err) {
       console.error("Error loading data:", err)
     } finally {

@@ -227,14 +227,13 @@ export default function EditSalesOrderPage() {
         }))
       )
 
-      // Load shipping providers
-      const { data: providersData } = await supabase
-        .from("shipping_providers")
-        .select("id, provider_name, provider_code, is_active")
-        .eq("company_id", activeCompanyId)
-        .eq("is_active", true)
-        .order("provider_name")
-      setShippingProviders(providersData || [])
+      // Load shipping providers (filtered by branch for RBAC)
+      const branchIdForProviders = order?.branch_id || null
+      const provRes = await fetch(
+        `/api/shipping-providers${branchIdForProviders ? `?branch_id=${encodeURIComponent(branchIdForProviders)}` : ''}`
+      )
+      const provJson = await provRes.json().catch(() => ({ data: [] }))
+      setShippingProviders(provJson.data || [])
     } catch (error) {
       console.error("Error loading sales order for edit:", error)
     } finally {

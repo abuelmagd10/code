@@ -197,14 +197,13 @@ export default function EditBillPage() {
       setCostCenterId(billData.cost_center_id || null)
       setWarehouseId(billData.warehouse_id || null)
 
-      // Load shipping providers
-      const { data: providers } = await supabase
-        .from("shipping_providers")
-        .select("id, provider_name, provider_code, is_active")
-        .eq("company_id", companyId)
-        .eq("is_active", true)
-        .order("provider_name")
-      setShippingProviders(providers || [])
+      // Load shipping providers (filtered by branch for RBAC)
+      const branchIdForProviders = billData.branch_id || null
+      const provRes = await fetch(
+        `/api/shipping-providers${branchIdForProviders ? `?branch_id=${encodeURIComponent(branchIdForProviders)}` : ''}`
+      )
+      const provJson = await provRes.json().catch(() => ({ data: [] }))
+      setShippingProviders(provJson.data || [])
 
       const { data: itemData } = await supabase.from("bill_items").select("*").eq("bill_id", id)
       const loadedItems = (itemData || []).map((it: any) => ({

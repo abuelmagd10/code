@@ -160,6 +160,22 @@ export async function POST(request: NextRequest) {
         }, { status: 400 })
       }
     }
+
+    // 6b️⃣ التحقق من أن شركة الشحن (إن وُجدت) مرتبطة بالفرع
+    if (finalData.shipping_provider_id && finalData.branch_id) {
+      const { validateShippingProviderForBranch } = await import('@/lib/shipping-provider-branch')
+      const validation = await validateShippingProviderForBranch(supabase, {
+        branch_id: finalData.branch_id,
+        shipping_provider_id: finalData.shipping_provider_id,
+        company_id: finalData.company_id || governance.companyId
+      })
+      if (!validation.valid) {
+        return NextResponse.json({
+          error: validation.error_ar || 'Invalid shipping provider for branch',
+          error_ar: validation.error_ar
+        }, { status: 400 })
+      }
+    }
     
     // 7️⃣ التأكد من أن جميع الحقول المطلوبة موجودة
     if (!finalData.branch_id || !finalData.warehouse_id || !finalData.cost_center_id) {

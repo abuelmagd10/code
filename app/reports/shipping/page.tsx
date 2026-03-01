@@ -12,9 +12,11 @@ import { Truck, Package, CheckCircle, Clock, RotateCcw, DollarSign, Filter, Exte
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface Shipment {
   id: string
+  invoice_id?: string
   shipment_number: string
   tracking_number: string | null
   tracking_url: string | null
@@ -24,7 +26,7 @@ interface Shipment {
   recipient_city: string
   created_at: string
   delivery_date: string | null
-  invoices?: { invoice_number: string }
+  invoices?: { invoice_number: string; branch_id?: string }
   shipping_providers?: { provider_name: string }
 }
 
@@ -41,6 +43,10 @@ export default function ShippingReportPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
+  const [branchFilterId, setBranchFilterId] = useState<string>("")
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
+  const [userBranchId, setUserBranchId] = useState<string | null>(null)
+  const [canFilterBranch, setCanFilterBranch] = useState(false)
 
   // Stats
   const [stats, setStats] = useState({
@@ -92,13 +98,27 @@ export default function ShippingReportPage() {
       const cid = await getActiveCompanyId(supabase)
       if (!cid) return
 
-      // ✅ جلب الشحنات (تقرير تشغيلي - من shipments مباشرة)
-      // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role, branch_id")
+        .eq("company_id", cid)
+        .eq("user_id", user?.id)
+        .maybeSingle()
+      const privileged = member?.role && ['owner','admin','general_manager','gm','super_admin'].includes(String(member.role).toLowerCase())
+      setCanFilterBranch(!!privileged)
+      setUserBranchId(member?.branch_id || null)
+      if (privileged) {
+        const { data: branchesData } = await supabase.from("branches").select("id, name").eq("company_id", cid).order("name")
+        setBranches(branchesData || [])
+      }
+
+      // ✅ جلب الشحنات (تقرير تشغيلي - من shipments مباشرة) مع branch من الفاتورة
       let query = supabase
         .from("shipments")
-        .select("*, invoices(invoice_number), shipping_providers(provider_name)")
+        .select("*, invoices(invoice_number, branch_id), shipping_providers(provider_name)")
         .eq("company_id", cid)
-        .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الشحنات المحذوفة
+        .or("is_deleted.is.null,is_deleted.eq.false")
         .order("created_at", { ascending: false })
 
       if (statusFilter !== "all") query = query.eq("status", statusFilter)
@@ -107,10 +127,16 @@ export default function ShippingReportPage() {
 
       const { data, error } = await query
       if (error) throw error
-      setShipments(data || [])
+      let list = data || []
+      if (branchFilterId) {
+        list = list.filter((s: any) => s.invoices?.branch_id === branchFilterId)
+      } else if (!privileged && member?.branch_id) {
+        list = list.filter((s: any) => s.invoices?.branch_id === member.branch_id)
+      }
+      setShipments(list)
 
       // Calculate stats
-      const all = data || []
+      const all = list
       setStats({
         pending: all.filter((s: Shipment) => s.status === 'pending').length,
         created: all.filter((s: Shipment) => s.status === 'created').length,
@@ -264,7 +290,23 @@ export default function ShippingReportPage() {
                   <Label className="text-xs">{t("To Date", "إلى تاريخ")}</Label>
                   <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-40" />
                 </div>
-                <Button variant="outline" size="sm" onClick={() => { setStatusFilter("all"); setDateFrom(""); setDateTo("") }}>
+                {canFilterBranch && branches.length > 0 && (
+                  <div>
+                    <Label className="text-xs">{t("Branch", "الفرع")}</Label>
+                    <Select value={branchFilterId || "all"} onValueChange={(v) => setBranchFilterId(v === "all" ? "" : v)}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue placeholder={t("All branches", "كل الفروع")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{t("All branches", "كل الفروع")}</SelectItem>
+                        {branches.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <Button variant="outline" size="sm" onClick={() => { setStatusFilter("all"); setDateFrom(""); setDateTo(""); setBranchFilterId("") }}>
                   {t("Clear", "مسح")}
                 </Button>
               </div>
@@ -306,7 +348,7 @@ export default function ShippingReportPage() {
                           <td className="py-3 px-2 font-medium">{shipment.shipment_number}</td>
                           <td className="py-3 px-2">
                             {shipment.invoices?.invoice_number ? (
-                              <Link href={`/invoices/${shipment.id}`} className="text-blue-600 hover:underline flex items-center gap-1">
+                              <Link href={`/invoices/${shipment.invoice_id || shipment.id}`} className="text-blue-600 hover:underline flex items-center gap-1">
                                 <FileText className="w-3 h-3" />
                                 {shipment.invoices.invoice_number}
                               </Link>

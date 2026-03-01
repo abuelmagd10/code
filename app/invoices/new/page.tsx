@@ -352,14 +352,13 @@ export default function NewInvoicePage() {
         if (base) setBaseCurrency(base.code)
       }
 
-      // Load shipping providers
-      const { data: providersData } = await supabase
-        .from("shipping_providers")
-        .select("id, provider_name, provider_code, is_active")
-        .eq("company_id", companyId)
-        .eq("is_active", true)
-        .order("provider_name")
-      setShippingProviders(providersData || [])
+      // Load shipping providers (filtered by branch for RBAC)
+      const branchIdForProviders = context.branch_id || branchId || null
+      const provRes = await fetch(
+        `/api/shipping-providers${branchIdForProviders ? `?branch_id=${encodeURIComponent(branchIdForProviders)}` : ''}`
+      )
+      const provJson = await provRes.json().catch(() => ({ data: [] }))
+      setShippingProviders(provJson.data || [])
 
       // 🔐 Load available sales orders (not yet converted to invoices)
       const { data: salesOrdersData } = await supabase
