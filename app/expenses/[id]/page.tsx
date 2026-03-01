@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
@@ -24,6 +25,7 @@ type Expense = {
   description: string
   notes?: string
   amount: number
+  base_currency_amount?: number | null
   currency_code?: string
   expense_category?: string
   payment_method?: string
@@ -40,6 +42,7 @@ type Expense = {
   paid_by?: string
   paid_at?: string
   payment_reference?: string
+  journal_entry_id?: string | null
   branch_id?: string
   cost_center_id?: string
   warehouse_id?: string
@@ -66,6 +69,8 @@ export default function ExpenseDetailPage() {
   const [posting, setPosting] = useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [rejectionReason, setRejectionReason] = useState("")
+  const [payDialogOpen, setPayDialogOpen] = useState(false)
+  const [paymentReference, setPaymentReference] = useState("")
   const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
@@ -79,6 +84,7 @@ export default function ExpenseDetailPage() {
   const canApprove = ["owner", "admin", "general_manager", "gm", "generalmanager"].includes(userRole)
   const canEdit = expense?.status === "draft" || expense?.status === "rejected"
   const canSubmitForApproval = expense?.status === "draft" || expense?.status === "rejected"
+  const canMarkAsPaid = expense?.status === "approved" && !expense.paid_at
 
   useEffect(() => {
     setHydrated(true)
@@ -171,7 +177,8 @@ export default function ExpenseDetailPage() {
         .from("expenses")
         .update({
           status: "pending_approval",
-          approval_status: "pending"
+          approval_status: "pending",
+          last_status_changed_at: new Date().toISOString()
         })
         .eq("id", expense.id)
         .eq("company_id", companyId)
@@ -248,7 +255,8 @@ export default function ExpenseDetailPage() {
           status: "approved",
           approval_status: "approved",
           approved_by: userId,
-          approved_at: now
+          approved_at: now,
+          last_status_changed_at: now
         })
         .eq("id", expense.id)
         .eq("company_id", companyId)
@@ -257,7 +265,6 @@ export default function ExpenseDetailPage() {
 
       // ✅ إنشاء القيد المحاسبي تلقائياً عند الاعتماد
       try {
-        // التحقق من عدم وجود قيد سابق
         const duplicateCheck = await checkDuplicateJournalEntry(
           supabase,
           companyId,
@@ -266,17 +273,34 @@ export default function ExpenseDetailPage() {
         )
 
         if (!duplicateCheck.exists) {
-          // الحصول على حسابات المصروفات والنقدية
-          const { data: accounts } = await supabase
-            .from("chart_of_accounts")
-            .select("id, account_code, account_type")
-            .eq("company_id", companyId)
-            .in("account_code", ["5000", "1010"]) // المصروفات والبنك
+          // أولوية الحسابات: المصروف → إعدادات الشركة → fallback 5000/1010 مع تحذير
+          let expenseAccountId = expense.expense_account_id
+          let paymentAccountId = expense.payment_account_id
+          if (!expenseAccountId || !paymentAccountId) {
+            const { data: companySettings } = await supabase
+              .from("company_expenses_settings")
+              .select("default_expense_account_id, default_payment_account_id")
+              .eq("company_id", companyId)
+              .maybeSingle()
+            if (companySettings?.default_expense_account_id) expenseAccountId = expenseAccountId || companySettings.default_expense_account_id
+            if (companySettings?.default_payment_account_id) paymentAccountId = paymentAccountId || companySettings.default_payment_account_id
+          }
+          if (!expenseAccountId || !paymentAccountId) {
+            const { data: accounts } = await supabase
+              .from("chart_of_accounts")
+              .select("id, account_code")
+              .eq("company_id", companyId)
+              .in("account_code", ["5000", "1010"])
+            const fallbackExpense = accounts?.find((a: any) => a.account_code === "5000")
+            const fallbackCash = accounts?.find((a: any) => a.account_code === "1010")
+            if (fallbackExpense) expenseAccountId = expenseAccountId || fallbackExpense.id
+            if (fallbackCash) paymentAccountId = paymentAccountId || fallbackCash.id
+            if (!expenseAccountId || !paymentAccountId) {
+              console.warn("[expenses] No expense/payment accounts: set company_expenses_settings or use accounts 5000/1010")
+            }
+          }
 
-          const expenseAccount = accounts?.find((a: any) => a.account_code === "5000")
-          const cashAccount = accounts?.find((a: any) => a.account_code === "1010")
-
-          if (expenseAccount && cashAccount) {
+          if (expenseAccountId && paymentAccountId) {
             const journalResult = await createExpenseJournalEntry(
               supabase,
               {
@@ -285,27 +309,30 @@ export default function ExpenseDetailPage() {
                 expense_number: expense.expense_number,
                 expense_date: expense.expense_date,
                 amount: expense.amount,
+                base_currency_amount: expense.base_currency_amount ?? undefined,
                 branch_id: expense.branch_id,
                 cost_center_id: expense.cost_center_id
               },
-              expense.expense_account_id || expenseAccount.id,
-              expense.payment_account_id || cashAccount.id
+              expenseAccountId,
+              paymentAccountId
             )
 
-            if (journalResult.success) {
+            if (journalResult.success && journalResult.entryId) {
+              await supabase
+                .from("expenses")
+                .update({ journal_entry_id: journalResult.entryId })
+                .eq("id", expense.id)
+                .eq("company_id", companyId)
               console.log(`✅ تم إنشاء قيد محاسبي للمصروف ${expense.expense_number}`)
-            } else {
+            } else if (!journalResult.success) {
               console.warn(`⚠️ فشل إنشاء قيد محاسبي: ${journalResult.error}`)
             }
-          } else {
-            console.warn("⚠️ لم يتم العثور على حسابات المصروفات أو النقدية")
           }
         } else {
           console.log(`ℹ️ قيد محاسبي موجود مسبقاً للمصروف ${expense.expense_number}`)
         }
       } catch (journalErr) {
         console.warn("Failed to create journal entry:", journalErr)
-        // لا نوقف العملية إذا فشل إنشاء القيد
       }
 
       // Send notification to creator
@@ -365,7 +392,8 @@ export default function ExpenseDetailPage() {
           approval_status: "rejected",
           rejection_reason: rejectionReason.trim(),
           rejected_by: userId,
-          rejected_at: new Date().toISOString()
+          rejected_at: new Date().toISOString(),
+          last_status_changed_at: new Date().toISOString()
         })
         .eq("id", expense.id)
         .eq("company_id", companyId)
@@ -409,6 +437,43 @@ export default function ExpenseDetailPage() {
       toast({
         title: "خطأ",
         description: "فشل رفض المصروف",
+        variant: "destructive"
+      })
+    } finally {
+      setPosting(false)
+    }
+  }
+
+  const handleMarkAsPaid = async () => {
+    if (!expense) return
+    try {
+      setPosting(true)
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+      const now = new Date().toISOString()
+      const { error } = await supabase
+        .from("expenses")
+        .update({
+          status: "paid",
+          paid_by: userId,
+          paid_at: now,
+          payment_reference: paymentReference.trim() || null,
+          last_status_changed_at: now
+        })
+        .eq("id", expense.id)
+        .eq("company_id", companyId)
+      if (error) throw error
+      toast({
+        title: appLang === "en" ? "Payment recorded" : "تم تسجيل الدفع",
+        description: appLang === "en" ? "Expense marked as paid." : "تم تحديث المصروف كمدفوع."
+      })
+      setPayDialogOpen(false)
+      setPaymentReference("")
+      loadExpense()
+    } catch (err: any) {
+      toast({
+        title: appLang === "en" ? "Error" : "خطأ",
+        description: err?.message || (appLang === "en" ? "Failed to record payment" : "فشل تسجيل الدفع"),
         variant: "destructive"
       })
     } finally {
@@ -510,6 +575,12 @@ export default function ExpenseDetailPage() {
                     <span suppressHydrationWarning>{appLang === 'en' ? 'Reject' : 'رفض'}</span>
                   </Button>
                 </>
+              )}
+              {canMarkAsPaid && (
+                <Button onClick={() => setPayDialogOpen(true)} disabled={posting} className="bg-blue-600 hover:bg-blue-700 text-white">
+                  <DollarSign className="h-4 w-4 mr-2" />
+                  <span suppressHydrationWarning>{appLang === 'en' ? 'Mark as Paid' : 'تسجيل الدفع'}</span>
+                </Button>
               )}
             </div>
           </div>
@@ -721,6 +792,41 @@ export default function ExpenseDetailPage() {
                 suppressHydrationWarning
               >
                 {appLang === 'en' ? 'Reject Expense' : 'رفض المصروف'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Mark as Paid Dialog */}
+        <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
+          <DialogContent className="dark:bg-gray-800 dark:border-gray-700">
+            <DialogHeader>
+              <DialogTitle className="text-gray-900 dark:text-white" suppressHydrationWarning>
+                {appLang === "en" ? "Record Payment" : "تسجيل الدفع"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                {appLang === "en" ? "Mark this expense as paid. Optional: enter check number or transfer reference." : "تحديد المصروف كمدفوع. اختياري: رقم الشيك أو التحويل."}
+              </p>
+              <div>
+                <Label className="text-gray-700 dark:text-gray-300" suppressHydrationWarning>
+                  {appLang === "en" ? "Payment reference (optional)" : "مرجع الدفع (اختياري)"}
+                </Label>
+                <Input
+                  value={paymentReference}
+                  onChange={(e) => setPaymentReference(e.target.value)}
+                  placeholder={appLang === "en" ? "Check no. / Transfer ref." : "رقم الشيك / التحويل"}
+                  className="dark:bg-gray-700 dark:border-gray-600 dark:text-white mt-1"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPayDialogOpen(false)} disabled={posting} className="dark:border-gray-600 dark:text-gray-300" suppressHydrationWarning>
+                {appLang === "en" ? "Cancel" : "إلغاء"}
+              </Button>
+              <Button onClick={handleMarkAsPaid} disabled={posting} className="bg-blue-600 hover:bg-blue-700" suppressHydrationWarning>
+                {appLang === "en" ? "Mark as Paid" : "تسجيل الدفع"}
               </Button>
             </DialogFooter>
           </DialogContent>

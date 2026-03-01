@@ -43,6 +43,7 @@ export default function NewExpensePage() {
   const [notes, setNotes] = useState("")
   const [amount, setAmount] = useState<number>(0)
   const [currencyCode, setCurrencyCode] = useState("EGP")
+  const [exchangeRate, setExchangeRate] = useState<number>(1)
   const [expenseCategory, setExpenseCategory] = useState("")
   const [paymentMethod, setPaymentMethod] = useState("")
   const [expenseAccountId, setExpenseAccountId] = useState("")
@@ -261,6 +262,8 @@ export default function NewExpensePage() {
         notes: notes.trim() || null,
         amount,
         currency_code: currencyCode,
+        exchange_rate: exchangeRate,
+        base_currency_amount: amount * (exchangeRate || 1),
         expense_category: expenseCategory || null,
         payment_method: paymentMethod || null,
         expense_account_id: expenseAccountId || null,
@@ -394,6 +397,19 @@ export default function NewExpensePage() {
                     <SelectItem value="SAR">{appLang === 'en' ? 'Saudi Riyal (SAR)' : 'ريال سعودي (SAR)'}</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                  {appLang === 'en' ? 'Exchange rate to base currency' : 'سعر الصرف للعملة الأساسية'}
+                </Label>
+                <NumericInput
+                  value={exchangeRate}
+                  onChange={setExchangeRate}
+                  min={0.000001}
+                  step={0.01}
+                  placeholder="1"
+                  className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                />
               </div>
             </div>
 

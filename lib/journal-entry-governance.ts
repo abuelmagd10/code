@@ -363,7 +363,8 @@ export async function validateAccountingIntegrity(
 }
 
 /**
- * إنشاء قيد مصروف تلقائياً عند اعتماد المصروف
+ * إنشاء قيد مصروف تلقائياً عند اعتماد المصروف.
+ * يستخدم base_currency_amount عند توفره (متعدد العملات)، وإلا amount.
  */
 export async function createExpenseJournalEntry(
   supabase: SupabaseClient,
@@ -373,12 +374,14 @@ export async function createExpenseJournalEntry(
     expense_number: string
     expense_date: string
     amount: number
+    base_currency_amount?: number | null
     branch_id?: string | null
     cost_center_id?: string | null
   },
   expenseAccountId: string,
   cashAccountId: string
 ): Promise<{ success: boolean; entryId?: string; error?: string }> {
+  const amountGl = expense.base_currency_amount != null ? Number(expense.base_currency_amount) : expense.amount
   return createCompleteJournalEntry(
     supabase,
     {
@@ -393,14 +396,14 @@ export async function createExpenseJournalEntry(
     [
       {
         account_id: expenseAccountId,
-        debit_amount: expense.amount,
+        debit_amount: amountGl,
         credit_amount: 0,
         description: `مصروف ${expense.expense_number}`
       },
       {
         account_id: cashAccountId,
         debit_amount: 0,
-        credit_amount: expense.amount,
+        credit_amount: amountGl,
         description: `سداد مصروف ${expense.expense_number}`
       }
     ]
