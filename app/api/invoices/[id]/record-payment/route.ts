@@ -55,6 +55,7 @@ export async function POST(
       branchId,
       costCenterId,
       warehouseId,
+      companyId: bodyCompanyId,
     } = body
 
     if (!amount || Number(amount) <= 0) {
@@ -67,12 +68,30 @@ export async function POST(
       return badRequestError("طريقة الدفع مطلوبة")
     }
 
+    // Prefer bodyCompanyId (the client knows exactly which company's invoice it's paying).
+    // Fall back to the cookie-resolved companyId.
+    // If they differ, we re-validate that the user is a member of bodyCompanyId.
+    const resolvedCompanyId = bodyCompanyId || companyId
+    if (!resolvedCompanyId) return badRequestError("معرف الشركة مطلوب")
+
+    if (bodyCompanyId && bodyCompanyId !== companyId) {
+      const { data: membership } = await authSupabase
+        .from("company_members")
+        .select("id")
+        .eq("user_id", user?.id)
+        .eq("company_id", bodyCompanyId)
+        .maybeSingle()
+      if (!membership) {
+        return NextResponse.json({ success: false, error: "غير مسموح: المستخدم ليس عضواً في هذه الشركة" }, { status: 403 })
+      }
+    }
+
     // ✅ Fetch invoice for customer_id + period lock check
     const { data: invoice, error: invErr } = await supabase
       .from("invoices")
       .select("id, customer_id, invoice_date, status, company_id, branch_id, cost_center_id, warehouse_id")
       .eq("id", invoiceId)
-      .eq("company_id", companyId)
+      .eq("company_id", resolvedCompanyId)
       .maybeSingle()
 
     if (invErr || !invoice) {
@@ -82,7 +101,7 @@ export async function POST(
     // ✅ Period lock check
     const lockDate = paymentDate || invoice.invoice_date
     if (lockDate) {
-      const lockResult = await checkPeriodLock(authSupabase, { companyId, date: lockDate })
+      const lockResult = await checkPeriodLock(authSupabase, { companyId: resolvedCompanyId, date: lockDate })
       if (lockResult.isLocked) {
         return NextResponse.json({
           success: false,
@@ -96,7 +115,7 @@ export async function POST(
       "process_invoice_payment_atomic",
       {
         p_invoice_id:       invoiceId,
-        p_company_id:       companyId,
+        p_company_id:       resolvedCompanyId,
         p_customer_id:      invoice.customer_id,
         p_amount:           Number(amount),
         p_payment_date:     paymentDate,

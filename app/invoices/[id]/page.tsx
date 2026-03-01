@@ -1935,6 +1935,7 @@ export default function InvoiceDetailPage() {
           paymentMethod:   method,
           referenceNumber: reference || null,
           accountId:       paymentAccountId || null,
+          companyId:       invoice.company_id || null,
           branchId:        invoice.branch_id || null,
           costCenterId:    invoice.cost_center_id || null,
           warehouseId:     invoice.warehouse_id || null,
