@@ -141,6 +141,16 @@ export default function ShippingSettingsPage() {
     }
   }, [permChecked, canWrite])
 
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && canWrite && branchMapping) {
+        loadBranchMapping()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [canWrite, branchMapping])
+
   const addBranchProviderLink = async () => {
     if (!branchMapBranchId || !branchMapProviderId) return
     setBranchMapSaving(true)
@@ -221,6 +231,7 @@ export default function ShippingSettingsPage() {
         list = list.filter((p: ShippingProvider) => allowedIds.has(p.id))
       }
       setProviders(list)
+      if (canWrite) loadBranchMapping()
     } catch (err) {
       console.error("Error loading shipping providers:", err)
     } finally {
