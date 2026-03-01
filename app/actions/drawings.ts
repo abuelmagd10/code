@@ -279,10 +279,13 @@ export async function getDrawingById(drawingId: string) {
         .eq('id', drawingId)
         .single()
     if (error || !data) return null
-    // Normalize: Supabase returns the FK relation as journal_entries (table name); detail page expects journal_entry (singular).
+    // Normalize: Supabase returns the FK relation as journal_entries (table name), often as an array
+    // even for one-to-one; detail page expects journal_entry to be a single object with .entry_number.
     const row = data as Record<string, unknown>
+    const raw = row.journal_entries
+    const journal_entry = Array.isArray(raw) ? raw[0] ?? null : (raw ?? null)
     return {
         ...row,
-        journal_entry: row.journal_entries ?? null,
+        journal_entry,
     }
 }
