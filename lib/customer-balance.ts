@@ -56,15 +56,27 @@ export async function getCustomerNetBalance(
 ): Promise<CustomerNetBalance> {
 
   // ── 1) جلب حساب الذمم المدينة للشركة ──────────────────────────────────────
-  const { data: arAccount } = await supabase
+  // نستخدم استعلامَين متتالَيَن لضمان الأولوية الصريحة:
+  //   أولاً: تطابق دقيق عبر sub_type = 'accounts_receivable'
+  //   ثانياً: fallback عبر اسم الحساب إذا لم يوجد sub_type مطابق
+  const { data: arBySubType } = await supabase
     .from('chart_of_accounts')
     .select('id')
     .eq('company_id', companyId)
     .eq('is_active', true)
-    .or("sub_type.eq.accounts_receivable,account_name.ilike.%الذمم المدين%")
-    .order('sub_type', { ascending: true }) // 'accounts_receivable' يأتي أبجدياً قبل غيره (A→Z)
+    .eq('sub_type', 'accounts_receivable')
     .limit(1)
     .maybeSingle()
+
+  const arAccount = arBySubType ?? (await supabase
+    .from('chart_of_accounts')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('is_active', true)
+    .ilike('account_name', '%الذمم المدين%')
+    .limit(1)
+    .maybeSingle()
+  ).data
 
   if (!arAccount) {
     // لا يوجد حساب AR مُعرَّف → نستخدم الحساب التشغيلي (fallback)
