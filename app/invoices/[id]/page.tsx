@@ -1763,40 +1763,29 @@ export default function InvoiceDetailPage() {
         console.log("✅ Invoice updated (no excess payment):", { invoiceId: invoice.id, newReturnedAmount, newReturnStatus, newStatus })
       }
 
-      // If credit_note method, create customer credit record
-      // 📌 للفواتير المرسلة: لا ننشئ customer credit (لأنه لا يوجد مدفوعات)
-      // ✅ التسوية التلقائية: رصيد دائن فقط للمبلغ الزائد عن المتبقي غير المدفوع
-      if (returnMethod === 'credit_note' && invoice.status !== 'sent') {
-        // ✅ حساب المتبقي غير المدفوع قبل المرتجع
-        const remainingUnpaid = Math.max(0, originalTotal - currentPaidAmount)
-
-        // ✅ حساب الرصيد الدائن الفعلي:
-        // - إذا المرتجع ≤ المتبقي: لا رصيد دائن (التسوية تخفض الذمة فقط)
-        // - إذا المرتجع > المتبقي: رصيد دائن = المرتجع - المتبقي
-        const actualCreditAmount = Math.max(0, returnTotal - remainingUnpaid)
-
-        console.log(`📊 [Return Credit Calculation] Invoice ${invoice.invoice_number}:`)
-        console.log(`   - Original Total: ${originalTotal}, Paid: ${currentPaidAmount}, Remaining: ${remainingUnpaid}`)
-        console.log(`   - Return: ${returnTotal}, Actual Credit: ${actualCreditAmount}`)
-
-        // ✅ إنشاء رصيد دائن فقط إذا كان هناك مبلغ زائد
-        if (actualCreditAmount > 0) {
-          await supabase.from("customer_credits").insert({
-            company_id: mapping.companyId,
-            customer_id: invoice.customer_id,
-            invoice_id: invoice.id,
-            credit_number: `CR-${Date.now()}`,
-            credit_date: new Date().toISOString().slice(0, 10),
-            amount: actualCreditAmount,
-            remaining_amount: actualCreditAmount,
-            reason: returnNotes || (appLang === 'en'
-              ? `Sales return - excess over remaining balance`
-              : `مرتجع مبيعات - المبلغ الزائد عن المتبقي`),
-            status: 'active'
-          })
-          console.log(`✅ Created customer credit: ${actualCreditAmount.toFixed(2)} for invoice ${invoice.invoice_number}`)
-        } else {
-          console.log(`✅ No customer credit needed - return fully settled against remaining balance`)
+      // ===== Net AR Balance Engine (Enterprise Standard) =====
+      // بعد اكتمال المرتجع، نحسب الرصيد الصافي الحقيقي للعميل عبر جميع فواتيره ومدفوعاته
+      // ونُنشئ customer_credit فقط إذا أصبح الرصيد دائناً فعلياً (< 0)
+      // المرجع: SAP/Oracle AR Subledger standard
+      if (returnMethod === 'credit_note') {
+        try {
+          const { syncCustomerCredit } = await import('@/lib/customer-balance')
+          const creditResult = await syncCustomerCredit(
+            supabase,
+            mapping.companyId,
+            invoice.customer_id,
+            invoice.id,
+            returnNotes || (appLang === 'en'
+              ? `Sales return ${returnNumber} - net credit balance`
+              : `مرتجع مبيعات ${returnNumber} - رصيد دائن صافٍ`)
+          )
+          if (creditResult.creditCreated) {
+            console.log(`✅ [Net Balance] Customer credit created: ${creditResult.creditAmount.toFixed(2)} ج (net balance: ${creditResult.netBalance.toFixed(2)} ج)`)
+          } else {
+            console.log(`✅ [Net Balance] No customer credit needed — customer net balance: ${creditResult.netBalance.toFixed(2)} ج (still in debit)`)
+          }
+        } catch (creditErr) {
+          console.warn('⚠️ syncCustomerCredit failed (non-blocking):', creditErr)
         }
       }
 
