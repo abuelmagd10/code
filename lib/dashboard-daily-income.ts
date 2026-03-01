@@ -54,7 +54,7 @@ export async function getDailyIncomeByBranch(
         mvQuery = mvQuery.eq("branch_id", options.branchId)
       }
       const { data: mvRows, error: mvErr } = await mvQuery
-      if (!mvErr && mvRows && mvRows.length >= 0) {
+      if (!mvErr && mvRows && mvRows.length > 0) {
         const byBranch = new Map<string | null, number>()
         for (const row of mvRows) {
           const branchId = row.branch_id ?? null
