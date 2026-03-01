@@ -209,10 +209,10 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
                                     <Label className="text-muted-foreground">{appLang === 'en' ? 'Amount' : 'المبلغ'}</Label>
                                     <p className="font-medium">{Number(drawing.amount).toLocaleString()} EGP</p>
                                 </div>
-                                {drawing.journal_entry_id && (drawing.journal_entry?.entry_number != null) && (
+                                {drawing.journal_entry_id && drawing.journal_entry && drawing.journal_entry.entry_number != null && (
                                     <div>
                                         <Label className="text-muted-foreground">{appLang === 'en' ? 'Journal Entry' : 'رقم القيد'}</Label>
-                                        <p><Link href={`/journal-entries/${drawing.journal_entry_id}`} className="text-blue-600 hover:underline">{drawing.journal_entry!.entry_number}</Link></p>
+                                        <p><Link href={`/journal-entries/${drawing.journal_entry_id}`} className="text-blue-600 hover:underline">{drawing.journal_entry.entry_number}</Link></p>
                                     </div>
                                 )}
                             </div>
