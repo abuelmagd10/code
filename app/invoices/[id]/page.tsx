@@ -1739,38 +1739,33 @@ export default function InvoiceDetailPage() {
 
       // ✅ عكس المدفوعات الزائدة إذا كان العميل قد دفع أكثر من المبلغ الجديد (للفواتير المدفوعة فقط)
       if (excessPayment > 0 && invoice.status !== 'sent') {
-        // إنشاء قيد عكسي للمدفوعات (draft → أسطر → ترحيل)
-        const { data: paymentReversalEntry, error: prvErr } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: mapping.companyId,
-            reference_type: "payment_reversal",
-            reference_id: invoice.id,
-            entry_date: new Date().toISOString().slice(0, 10),
-            description: appLang === 'en'
-              ? `Payment reversal for return - Invoice ${invoice.invoice_number} (${excessPayment.toLocaleString()} EGP)`
-              : `عكس مدفوعات للمرتجع - الفاتورة ${invoice.invoice_number} (${excessPayment.toLocaleString()} جنيه)`,
-            status: "draft",
-          })
-          .select()
-          .single()
+        // إنشاء قيد عكسي للمدفوعات فقط عند الإرجاع النقدي (لتجنب قيود draft بدون أسطر)
+        const { data: originalPayments } = await supabase
+          .from("payments")
+          .select("account_id")
+          .eq("invoice_id", invoice.id)
+          .not("is_deleted", "eq", true)
+          .limit(1)
 
-        if (!prvErr && paymentReversalEntry) {
-          // تحديد الحساب المصرفي/النقدي المستخدم في الدفعات الأصلية
-          const { data: originalPayments } = await supabase
-            .from("payments")
-            .select("account_id")
-            .eq("invoice_id", invoice.id)
-            .not("is_deleted", "eq", true)
-            .limit(1)
+        const paymentAccountId = originalPayments?.[0]?.account_id || mapping.cash || mapping.bank
 
-          const paymentAccountId = originalPayments?.[0]?.account_id || mapping.cash || mapping.bank
+        if (returnMethod === 'cash' && paymentAccountId) {
+          const { data: paymentReversalEntry, error: prvErr } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: mapping.companyId,
+              reference_type: "payment_reversal",
+              reference_id: invoice.id,
+              entry_date: new Date().toISOString().slice(0, 10),
+              description: appLang === 'en'
+                ? `Payment reversal for return - Invoice ${invoice.invoice_number} (${excessPayment.toLocaleString()} EGP)`
+                : `عكس مدفوعات للمرتجع - الفاتورة ${invoice.invoice_number} (${excessPayment.toLocaleString()} جنيه)`,
+              status: "draft",
+            })
+            .select()
+            .single()
 
-          // قيد: مدين الحساب المصرفي/النقدي (إرجاع المال)، دائن الذمم المدينة
-          // ملاحظة: في المرتجع، نحن بالفعل أنشأنا قيد يقلل الذمم (دائن AR)
-          // لكن يجب أيضاً عكس الأثر على الحساب المصرفي
-          if (returnMethod === 'cash' && paymentAccountId) {
-            // إرجاع نقدي: مدين الذمم المدينة (زيادة)، دائن النقد (نقص)
+          if (!prvErr && paymentReversalEntry) {
             await supabase.from("journal_entry_lines").insert([
               {
                 journal_entry_id: paymentReversalEntry.id,
@@ -1899,30 +1894,24 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  // ===== 📌 recordInvoicePayment: Atomic API-Driven Payment =====
+  // الدفع يتم عبر API محمية تستدعي process_invoice_payment_atomic RPC في قاعدة البيانات.
+  // كل العمليات (payment INSERT + AR/Revenue journal + invoice UPDATE) في معاملة DB واحدة.
+  // COGS يُعالج بعد نجاح العملية الأساسية (حساب FIFO معقد، لا يمكن دمجه في RPC).
   const recordInvoicePayment = async (amount: number, dateStr: string, method: string, reference: string) => {
     try {
       if (!invoice) return
-
-      // ✅ منع الضغط المتكرر على زر الحفظ
-      if (savingPayment) {
-        console.log("جاري حفظ الدفعة بالفعل...")
-        return
-      }
+      if (savingPayment) return
       setSavingPayment(true)
 
-      // تأكيد اختيار حساب قبل الحفظ
       if (!paymentAccountId) {
         toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار حساب النقد/البنك للدفعة", variant: "destructive" })
         setSavingPayment(false)
         return
       }
 
-      // ✅ تحديث الجلسة أولاً لتجنب انتهاء الصلاحية
       await supabase.auth.refreshSession()
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
         toast({ title: "انتهت الجلسة", description: "يرجى تسجيل الدخول مرة أخرى", variant: "destructive" })
         setSavingPayment(false)
@@ -1930,263 +1919,112 @@ export default function InvoiceDetailPage() {
         return
       }
 
-      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
-      const { getActiveCompanyId } = await import("@/lib/company")
-      const payCompanyId = await getActiveCompanyId(supabase)
-      if (!payCompanyId) throw new Error("لم يتم العثور على الشركة")
-
-      // ✅ التحقق من عدم وجود دفعة مكررة (نفس المبلغ والمرجع في نفس اليوم)
-      const { data: existingPayments } = await supabase
-        .from("payments")
-        .select("id")
-        .eq("invoice_id", invoice.id)
-        .eq("amount", amount)
-        .eq("payment_date", dateStr)
-        .eq("reference_number", reference || "")
-        .limit(1)
-
-      if (existingPayments && existingPayments.length > 0) {
-        toast({ title: "تحذير", description: "توجد دفعة مشابهة مسجلة بالفعل", variant: "destructive" })
-        setSavingPayment(false)
-        return
-      }
-
-      // 1) إدراج سجل الدفع (مع branch_id من الفاتورة لتفادي 400 عند وجود عمود حوكمة أو RLS)
-      const basePayload: any = {
-        company_id: payCompanyId,
-        customer_id: invoice.customer_id,
-        invoice_id: invoice.id,
-        payment_date: dateStr,
-        amount,
-        payment_method: method,
-        reference_number: reference || null,
-        notes: `دفعة على الفاتورة ${invoice.invoice_number}`,
-        account_id: paymentAccountId || null,
-      }
-      if (invoice.branch_id) basePayload.branch_id = invoice.branch_id
-      if (invoice.cost_center_id) basePayload.cost_center_id = invoice.cost_center_id
-      if (invoice.warehouse_id) basePayload.warehouse_id = invoice.warehouse_id
-      {
-        const { error: payErr } = await supabase.from("payments").insert(basePayload)
-        if (payErr) {
-          const msg = String(payErr?.message || "")
-          const mentionsAccountId = msg.toLowerCase().includes("account_id")
-          const mentionsGovColumn = /branch_id|cost_center_id|warehouse_id/.test(msg) && (
-            msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("column")
-          )
-          const looksMissingColumn = (mentionsAccountId || mentionsGovColumn) && (
-            msg.toLowerCase().includes("does not exist") ||
-            msg.toLowerCase().includes("not found") ||
-            msg.toLowerCase().includes("schema cache") ||
-            msg.toLowerCase().includes("column")
-          )
-          if (looksMissingColumn) {
-            const payload2 = { ...basePayload }
-            if (mentionsAccountId) delete (payload2 as any).account_id
-            if (mentionsGovColumn) {
-              delete (payload2 as any).branch_id
-              delete (payload2 as any).cost_center_id
-              delete (payload2 as any).warehouse_id
-            }
-            const { error: retryErr } = await supabase.from("payments").insert(payload2)
-            if (retryErr) throw retryErr
-          } else {
-            throw payErr
-          }
-        }
-      }
-
-      // 2) تحديث الفاتورة (المبلغ المدفوع والحالة)
-      const newPaid = Number(invoice.paid_amount || 0) + Number(amount || 0)
-      const returnedAmt = Number(invoice.returned_amount || 0)
-      const totalAmt = Number(invoice.total_amount || 0)
-      // لفواتير "sent" المرتجعة: يُخفَّض total_amount مباشرة في DB (= الصافي بعد المرتجع).
-      // لفواتير "paid/partially_paid" المرتجعة: يبقى total_amount أصلياً، ونطرح returned_amount.
-      // نكتشف الحالة الأولى بسهولة: returned_amount > total_amount يعني total_amount مُخفَّض سابقاً.
-      const netInvoiceAmount = (returnedAmt > 0 && totalAmt < returnedAmt)
-        ? totalAmt                          // total_amount مُخفَّض سابقاً؛ هو الصافي الفعلي
-        : Math.max(0, totalAmt - returnedAmt)
-      const remaining = netInvoiceAmount - newPaid
-      const newStatus = remaining <= 0 ? "paid" : "partially_paid"
-      const { error: invErr } = await supabase
-        .from("invoices")
-        .update({ paid_amount: newPaid, status: newStatus })
-        .eq("id", invoice.id)
-      if (invErr) throw invErr
-
-      // ===== 3) إنشاء القيود المحاسبية =====
-      // التحقق من وجود قيد دفع سابق لهذه الفاتورة
-      const mapping = await findAccountIds()
-      if (!mapping) {
-        console.error("فشل في الحصول على mapping الحسابات")
-        throw new Error("فشل في الحصول على إعدادات الحسابات")
-      }
-
-      // 🔐 GOVERNANCE: التحقق من وجود قيد الفاتورة (حماية ضد الدفع بدون قيد فاتورة)
-      const invoiceEntryCheck = await checkDuplicateJournalEntry(
-        supabase,
-        mapping.companyId,
-        "invoice",
-        invoice.id
-      )
-      const hasExistingInvoiceEntry = invoiceEntryCheck.exists
-
-      // ===== 📌 ERP Accounting Core Logic (MANDATORY SPECIFICATION) =====
-      // النمط المحاسبي الصارم: القيود تُنشأ عند الدفع فقط
-      // Sent = مخزون فقط، ❌ لا قيد
-      // Paid = قيد AR/Revenue + قيد السداد (Cash/AR)
-
-      // 📌 إنشاء قيد الفاتورة (AR/Revenue) عند أول دفعة (Cash Basis)
-      if (!hasExistingInvoiceEntry) {
-        console.log("📌 إنشاء قيد AR/Revenue عند الدفع (Cash Basis)")
-        await postARRevenueJournal()
-      }
-
-      // ✅ قيد الدفع (Cash/AR) يُنشأ تلقائياً من الـ trigger عند INSERT في payments — لا إنشاء يدوي هنا
-
-      // ===== 📌 4) تصفية بضائع لدى الغير وتسجيل COGS =====
-      // عند الدفع: إزالة من بضائع لدى الغير + تسجيل تكلفة البضاعة المباعة
-      const paidRatio = Number(amount) / Number(invoice.total_amount || 1)
-      console.log(`📌 Calling clearThirdPartyInventory() for invoice ${invoice.invoice_number}, paidRatio: ${paidRatio}`)
-      const clearResult = await clearThirdPartyInventory({
-        supabase,
-        companyId: mapping.companyId,
-        invoiceId: invoice.id,
-        paidRatio,
-        branchId: invoice.branch_id || null,
-        costCenterId: invoice.cost_center_id || null
+      // ✅ STEP 1: Atomic core — payment + AR/Revenue journal + invoice update (single DB transaction)
+      const atomicRes = await fetch(`/api/invoices/${invoice.id}/record-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount,
+          paymentDate:     dateStr,
+          paymentMethod:   method,
+          referenceNumber: reference || null,
+          accountId:       paymentAccountId || null,
+          branchId:        invoice.branch_id || null,
+          costCenterId:    invoice.cost_center_id || null,
+          warehouseId:     invoice.warehouse_id || null,
+        }),
       })
-      console.log(`📊 clearThirdPartyInventory result:`, { success: clearResult.success, totalCOGS: clearResult.totalCOGS, error: clearResult.error })
 
-      if (clearResult.success && clearResult.totalCOGS > 0) {
-        // إنشاء قيد COGS (draft → أسطر → ترحيل)
-        const { data: cogsEntry, error: cogsEntryError } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: mapping.companyId,
-            reference_type: "invoice_cogs",
-            reference_id: invoice.id,
-            entry_date: dateStr,
-            description: `تكلفة البضاعة المباعة - ${invoice.invoice_number} (دفعة ${amount})`,
-            status: "draft",
-            branch_id: invoice.branch_id || null,
-            cost_center_id: invoice.cost_center_id || null,
+      const atomicResult = await atomicRes.json()
+
+      if (!atomicRes.ok || !atomicResult.success) {
+        const errMsg = atomicResult?.error || "فشل تسجيل الدفعة"
+        throw new Error(errMsg)
+      }
+
+      const newStatus: string = atomicResult.newStatus
+
+      // ✅ STEP 2: COGS (post-atomic — complex FIFO, best-effort)
+      // لا تؤثر على الدفعة إذا فشلت (الدفعة والقيود الأساسية تمت بنجاح)
+      try {
+        const mapping = await findAccountIds()
+        if (mapping) {
+          const paidRatio = Number(amount) / Number(invoice.total_amount || 1)
+          const clearResult = await clearThirdPartyInventory({
+            supabase,
+            companyId: mapping.companyId,
+            invoiceId: invoice.id,
+            paidRatio,
+            branchId:     invoice.branch_id || null,
+            costCenterId: invoice.cost_center_id || null
           })
-          .select()
-          .single()
 
-        if (cogsEntryError) {
-          console.error("❌ Error creating COGS journal entry:", cogsEntryError)
-          // لا نوقف العملية - COGS transactions تم إنشاؤها بنجاح
-        } else if (cogsEntry && mapping.cogs && mapping.inventory) {
-          await supabase.from("journal_entry_lines").insert([
-            {
-              journal_entry_id: cogsEntry.id,
-              account_id: mapping.cogs,
-              debit_amount: clearResult.totalCOGS,
-              credit_amount: 0,
-              description: "تكلفة البضاعة المباعة",
-              branch_id: invoice.branch_id || null,
-              cost_center_id: invoice.cost_center_id || null,
-            },
-            {
-              journal_entry_id: cogsEntry.id,
-              account_id: mapping.inventory,
-              debit_amount: 0,
-              credit_amount: clearResult.totalCOGS,
-              description: "خصم من المخزون",
-              branch_id: invoice.branch_id || null,
-              cost_center_id: invoice.cost_center_id || null,
-            },
-          ])
-          await supabase.from("journal_entries").update({ status: "posted" }).eq("id", cogsEntry.id)
-          console.log(`✅ تم تسجيل COGS: ${clearResult.totalCOGS} عند الدفع`)
-        }
-      }
+          if (clearResult.success && clearResult.totalCOGS > 0) {
+            const cogsCheck = await checkDuplicateJournalEntry(supabase, mapping.companyId, "invoice_cogs", invoice.id)
+            if (!cogsCheck.exists) {
+              const { data: cogsEntry, error: cogsEntryError } = await supabase
+                .from("journal_entries")
+                .insert({
+                  company_id:     mapping.companyId,
+                  reference_type: "invoice_cogs",
+                  reference_id:   invoice.id,
+                  entry_date:     dateStr,
+                  description:    `تكلفة البضاعة المباعة - ${invoice.invoice_number}`,
+                  status:         "draft",
+                  branch_id:      invoice.branch_id || null,
+                  cost_center_id: invoice.cost_center_id || null,
+                })
+                .select().single()
 
-      // ===== 5) ✅ إنشاء COGS Transactions إذا لم تكن موجودة =====
-      // التحقق من وجود COGS transactions (إذا لم تكن موجودة، يتم إنشاؤها الآن)
-      const { data: existingCOGS } = await supabase
-        .from("cogs_transactions")
-        .select("id")
-        .eq("source_id", invoice.id)
-        .eq("source_type", "invoice")
-        .limit(1)
-
-      console.log(`🔍 Checking existing COGS transactions: ${existingCOGS?.length || 0} found`)
-
-      if (!existingCOGS || existingCOGS.length === 0) {
-        // ✅ التحقق من وجود third-party inventory items فعلياً (وليس فقط shipping_provider_id)
-        // إذا لم تكن هناك third-party items، يتم استخدام deductInventoryOnly() حتى لو كان هناك shipping_provider_id
-        const { data: thirdPartyItems } = await supabase
-          .from("third_party_inventory")
-          .select("id")
-          .eq("invoice_id", invoice.id)
-          .eq("company_id", mapping.companyId)
-          .limit(1)
-
-        const hasThirdPartyItems = thirdPartyItems && thirdPartyItems.length > 0
-
-        if (!hasThirdPartyItems) {
-          // ✅ Direct Sales أو Third-Party بدون items: إنشاء COGS الآن (FIFO + COGS Transactions)
-          console.log("📌 Invoice paid - no third-party items found, calling deductInventoryOnly() to create COGS...")
-          await deductInventoryOnly()
-          console.log(`✅ INV Paid: تم خصم المخزون وإنشاء COGS Transactions`)
-        } else {
-          console.log(`ℹ️ Third-party items found (${thirdPartyItems.length}) - COGS should be created by clearThirdPartyInventory()`)
-        }
-      }
-
-      // ===== 6) حساب البونص إذا أصبحت الفاتورة مدفوعة بالكامل =====
-      if (newStatus === "paid" && mapping?.companyId) {
-        try {
-          const bonusRes = await fetch("/api/bonuses", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ invoiceId: invoice.id, companyId: mapping.companyId })
-          })
-          const bonusData = await bonusRes.json()
-          if (bonusRes.ok && bonusData.bonus) {
-            console.log("تم حساب البونص:", bonusData.bonus.bonus_amount)
-          } else if (bonusData.disabled) {
-            // نظام البونص معطل - لا نعرض خطأ
-          } else if (bonusData.error && !bonusData.error.includes("already calculated")) {
-            console.warn("تحذير البونص:", bonusData.error)
+              if (!cogsEntryError && cogsEntry && mapping.cogs && mapping.inventory) {
+                await supabase.from("journal_entry_lines").insert([
+                  { journal_entry_id: cogsEntry.id, account_id: mapping.cogs,      debit_amount: clearResult.totalCOGS, credit_amount: 0,                    description: "تكلفة البضاعة المباعة", branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
+                  { journal_entry_id: cogsEntry.id, account_id: mapping.inventory, debit_amount: 0,                     credit_amount: clearResult.totalCOGS, description: "خصم من المخزون",        branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
+                ])
+                await supabase.from("journal_entries").update({ status: "posted" }).eq("id", cogsEntry.id)
+              }
+            }
           }
-        } catch (bonusErr) {
-          console.warn("تعذر حساب البونص:", bonusErr)
-          // لا نوقف العملية بسبب خطأ في البونص
-        }
-      }
 
-      // 📝 Audit Log: تسجيل عملية الدفع
-      if (user?.id && invoice.company_id) {
-        const { error: auditErr3 } = await supabase.from("audit_logs").insert({
-          company_id: invoice.company_id,
-          user_id: user.id,
-          action: "UPDATE",
-          target_table: "invoices",
-          record_id: invoice.id,
-          record_identifier: invoice.invoice_number,
-          old_data: {
-            status: invoice.status,
-            paid_amount: invoice.paid_amount
-          },
-          new_data: {
-            status: newStatus,
-            paid_amount: newPaid,
-            payment_amount: amount,
-            third_party_cleared: clearResult.success
+          const { data: existingCOGS } = await supabase
+            .from("cogs_transactions").select("id")
+            .eq("source_id", invoice.id).eq("source_type", "invoice").limit(1)
+
+          if (!existingCOGS || existingCOGS.length === 0) {
+            const { data: thirdPartyItems } = await supabase
+              .from("third_party_inventory").select("id")
+              .eq("invoice_id", invoice.id).eq("company_id", mapping.companyId).limit(1)
+
+            if (!thirdPartyItems || thirdPartyItems.length === 0) {
+              await deductInventoryOnly()
+            }
           }
-        })
-        if (auditErr3) console.warn("Audit log failed:", auditErr3)
+
+          // Bonus (fully paid)
+          if (newStatus === "paid") {
+            try {
+              const bonusRes = await fetch("/api/bonuses", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ invoiceId: invoice.id, companyId: mapping.companyId })
+              })
+              const bonusData = await bonusRes.json()
+              if (bonusRes.ok && bonusData.bonus) {
+                console.log("✅ تم حساب البونص:", bonusData.bonus.bonus_amount)
+              }
+            } catch (bonusErr) {
+              console.warn("تحذير: تعذر حساب البونص (غير حرج):", bonusErr)
+            }
+          }
+        }
+      } catch (cogsErr: any) {
+        console.warn("⚠️ COGS post-processing failed (non-blocking — payment succeeded):", cogsErr?.message)
       }
 
-      // أعِد التحميل وأغلق النموذج
       await loadInvoice()
       setShowPayment(false)
       setPaymentAccountId("")
-      toast({ title: "تم تسجيل الدفعة بنجاح", description: "تم إضافة قيد الدفع (Cash/AR)" })
+      toast({ title: "تم تسجيل الدفعة بنجاح", description: "تم إضافة قيد الدفع (Cash/AR) ذرياً" })
     } catch (err: any) {
       console.error("خطأ أثناء تسجيل الدفعة:", err)
       const errMsg = err?.message || err?.error_description || "تعذر تسجيل الدفعة"
@@ -2342,7 +2180,7 @@ export default function InvoiceDetailPage() {
         .select("id, description, entry_date, reference_type")
         .eq("company_id", mapping.companyId)
         .eq("reference_id", invoiceId)
-        .in("reference_type", ["invoice", "invoice_payment", "invoice_ar", "invoice_cogs"])
+        .in("reference_type", ["invoice", "invoice_payment", "invoice_ar", "invoice_cogs", "sales_return", "payment_reversal"])
         .is("deleted_at", null) // فقط القيود غير المحذوفة سابقاً
 
       if (invoiceEntries && invoiceEntries.length > 0) {
@@ -2475,6 +2313,7 @@ export default function InvoiceDetailPage() {
           }
 
           await supabase.from("journal_entry_lines").insert(lines)
+          await supabase.from("journal_entries").update({ status: "posted" }).eq("id", entry.id)
           console.log(`✅ تم إنشاء قيد الإيراد للفاتورة ${invoice.invoice_number} (توافق مع بيانات قديمة)`)
         }
       }
@@ -2482,42 +2321,7 @@ export default function InvoiceDetailPage() {
       // 📌 النمط المحاسبي الصارم: لا COGS
       // COGS يُحسب عند الحاجة من cost_price × quantity المباع
 
-      // ===== 4) قيد الدفع =====
-      const selectedAccount = paymentAccountId || mapping.cash || mapping.bank
-      if (selectedAccount && paymentAmount > 0) {
-        const { data: payEntry, error: payError } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: mapping.companyId,
-            reference_type: "invoice_payment",
-            reference_id: invoiceId,
-            entry_date: paymentDate,
-            description: `دفعة على فاتورة ${invoice.invoice_number}`,
-          })
-          .select()
-          .single()
-
-        if (!payError && payEntry) {
-          await supabase.from("journal_entry_lines").insert([
-            // من ح/ البنك أو الصندوق
-            {
-              journal_entry_id: payEntry.id,
-              account_id: selectedAccount,
-              debit_amount: paymentAmount,
-              credit_amount: 0,
-              description: "النقد/البنك",
-            },
-            // إلى ح/ الذمم المدينة
-            {
-              journal_entry_id: payEntry.id,
-              account_id: mapping.ar,
-              debit_amount: 0,
-              credit_amount: paymentAmount,
-              description: "الذمم المدينة",
-            },
-          ])
-        }
-      }
+      // ===== 4) قيد الدفع: يُنشأ من trigger عند INSERT في payments — لا إنشاء يدوي هنا =====
     } catch (err) {
       console.error("Error posting all invoice journals:", err)
     }
