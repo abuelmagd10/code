@@ -10,6 +10,8 @@ import { currencySymbols } from "./DashboardAmounts"
 interface DailyIncomeRow {
   branchId: string | null
   branchName: string | null
+  cashIncome: number
+  bankIncome: number
   totalIncome: number
 }
 
@@ -177,13 +179,14 @@ export default function DashboardDailyIncomeCard({
             {data.length > 1 && (
               <div className="flex flex-wrap gap-4 mb-3 p-2 rounded-lg bg-gray-50 dark:bg-slate-800/50 text-sm">
                 <span className="font-medium">
-                  {isAr ? "الإجمالي اليوم:" : "Total today:"} {formatNum(data.reduce((s, r) => s + r.totalIncome, 0)).toLocaleString("en-US")} {currency}
+                  {isAr ? "الإجمالي اليوم:" : "Total today:"} {formatNum(data.reduce((s, r) => s + (r.totalIncome ?? r.cashIncome + r.bankIncome), 0)).toLocaleString("en-US")} {currency}
                 </span>
                 {data.length > 0 && (() => {
-                  const top = data.reduce((best, r) => (r.totalIncome > (best?.totalIncome ?? -Infinity) ? r : best), data[0])
+                  const total = (r: DailyIncomeRow) => r.totalIncome ?? r.cashIncome + r.bankIncome
+                  const top = data.reduce((best, r) => (total(r) > total(best) ? r : best), data[0])
                   return (
                     <span className="text-gray-600 dark:text-gray-400">
-                      {isAr ? "أعلى فرع:" : "Top branch:"} {top.branchName ?? (isAr ? "—" : "—")} ({formatNum(top.totalIncome).toLocaleString("en-US")} {currency})
+                      {isAr ? "أعلى فرع:" : "Top branch:"} {top.branchName ?? (isAr ? "—" : "—")} ({formatNum(total(top)).toLocaleString("en-US")} {currency})
                     </span>
                   )
                 })()}
@@ -197,22 +200,57 @@ export default function DashboardDailyIncomeCard({
                       {isAr ? "الفرع" : "Branch"}
                     </th>
                     <th className="text-right py-2 font-medium text-gray-700 dark:text-gray-300">
-                      {isAr ? "الدخل اليومي" : "Daily Income"}
+                      {isAr ? "نقد بالخزنة" : "Cash in Treasury"}
+                    </th>
+                    <th className="text-right py-2 font-medium text-gray-700 dark:text-gray-300">
+                      {isAr ? "إيداعات بنكية" : "Bank Deposits"}
+                    </th>
+                    <th className="text-right py-2 font-medium text-gray-700 dark:text-gray-300">
+                      {isAr ? "الإجمالي" : "Total"}
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((row) => (
-                    <tr key={row.branchId ?? "company"} className="border-b border-gray-100 dark:border-slate-800">
+                  {data.map((row) => {
+                    const cash = row.cashIncome ?? 0
+                    const bank = row.bankIncome ?? 0
+                    const total = row.totalIncome ?? cash + bank
+                    return (
+                      <tr key={row.branchId ?? "company"} className="border-b border-gray-100 dark:border-slate-800">
+                        <td className="py-2 text-gray-900 dark:text-gray-100">
+                          {row.branchName ?? (isAr ? "الشركة (بدون فرع)" : "Company (no branch)")}
+                        </td>
+                        <td className="py-2 text-right text-gray-700 dark:text-gray-300">
+                          {formatNum(cash).toLocaleString("en-US")} {currency}
+                        </td>
+                        <td className="py-2 text-right text-gray-700 dark:text-gray-300">
+                          {formatNum(bank).toLocaleString("en-US")} {currency}
+                        </td>
+                        <td className="py-2 text-right font-medium">
+                          {formatNum(total).toLocaleString("en-US")} {currency}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                {data.length > 1 && (
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50 font-medium">
                       <td className="py-2 text-gray-900 dark:text-gray-100">
-                        {row.branchName ?? (isAr ? "الشركة (بدون فرع)" : "Company (no branch)")}
+                        {isAr ? "الإجمالي الكلي" : "Grand Total"}
                       </td>
-                      <td className="py-2 text-right font-medium">
-                        {formatNum(row.totalIncome).toLocaleString("en-US")} {currency}
+                      <td className="py-2 text-right">
+                        {formatNum(data.reduce((s, r) => s + (r.cashIncome ?? 0), 0)).toLocaleString("en-US")} {currency}
+                      </td>
+                      <td className="py-2 text-right">
+                        {formatNum(data.reduce((s, r) => s + (r.bankIncome ?? 0), 0)).toLocaleString("en-US")} {currency}
+                      </td>
+                      <td className="py-2 text-right">
+                        {formatNum(data.reduce((s, r) => s + (r.totalIncome ?? (r.cashIncome ?? 0) + (r.bankIncome ?? 0)), 0)).toLocaleString("en-US")} {currency}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
+                  </tfoot>
+                )}
               </table>
             </div>
           </>

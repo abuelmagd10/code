@@ -9,6 +9,11 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 export interface DailyIncomeByBranchRow {
   branchId: string | null
   branchName: string | null
+  /** المتحصل النقدي بالخزنة (Cash in Treasury) */
+  cashIncome: number
+  /** الإيداعات البنكية اليومية (Bank Deposits) */
+  bankIncome: number
+  /** الإجمالي الكلي = نقد + بنك */
   totalIncome: number
 }
 
@@ -28,11 +33,22 @@ function isCashOrBankAccount(account: { sub_type?: string | null; account_name?:
   return false
 }
 
+/** Classify as bank (إيداعات بنكية) vs cash (نقد بالخزنة); prefer sub_type, then name. */
+function getAccountFlowType(account: { sub_type?: string | null; account_name?: string | null }): "cash" | "bank" | null {
+  const st = String(account.sub_type || "").toLowerCase()
+  if (st === "bank") return "bank"
+  if (st === "cash") return "cash"
+  const nm = (account.account_name || "").toLowerCase()
+  const ar = account.account_name || ""
+  if (/bank|بنك|بنكي|مصرف/.test(nm) || /بنك|مصرف/.test(ar)) return "bank"
+  if (/cash|خزينة|نقد|صندوق/.test(nm) || /خزينة|نقد|صندوق/.test(ar)) return "cash"
+  return null
+}
+
 /**
- * Get daily income (net Cash + Bank flow) per branch for a given date.
- * Daily income = sum(debit - credit) for all Cash/Bank account lines on that day, grouped by branch.
- * Values are in company base currency (GL).
- * Uses mv_gl_daily_branch_cash_flow when available (no cost_center filter); otherwise queries GL directly.
+ * Get daily income (Cash + Bank) per branch for a given date, with separate cash and bank amounts.
+ * Cash = المتحصل النقدي بالخزنة (Cash in Treasury), Bank = الإيداعات البنكية (Bank Deposits), Total = نقد + بنك.
+ * Uses direct GL query to support cash/bank breakdown (MV does not provide it).
  */
 export async function getDailyIncomeByBranch(
   supabase: SupabaseClient,
@@ -42,55 +58,7 @@ export async function getDailyIncomeByBranch(
 ): Promise<DailyIncomeByBranchRow[]> {
   const dateOnly = date.slice(0, 10)
 
-  // Optional: use materialized view when no cost_center filter (faster for large data)
-  if (!options?.costCenterId) {
-    try {
-      let mvQuery = supabase
-        .from("mv_gl_daily_branch_cash_flow")
-        .select("branch_id, total_debit, total_credit")
-        .eq("company_id", companyId)
-        .eq("entry_date", dateOnly)
-      if (options?.branchId) {
-        mvQuery = mvQuery.eq("branch_id", options.branchId)
-      }
-      const { data: mvRows, error: mvErr } = await mvQuery
-      if (!mvErr && mvRows && mvRows.length > 0) {
-        const byBranch = new Map<string | null, number>()
-        for (const row of mvRows) {
-          const branchId = row.branch_id ?? null
-          const net = Number(row.total_debit || 0) - Number(row.total_credit || 0)
-          byBranch.set(branchId, (byBranch.get(branchId) ?? 0) + net)
-        }
-        const branchIds = [...byBranch.keys()].filter(Boolean) as string[]
-        let branchNames: Record<string, string> = {}
-        if (branchIds.length > 0) {
-          const { data: branches } = await supabase
-            .from("branches")
-            .select("id, name")
-            .in("id", branchIds)
-          branchNames = Object.fromEntries((branches || []).map((b: any) => [b.id, b.name || ""]))
-        }
-        const result: DailyIncomeByBranchRow[] = []
-        for (const [branchId, totalIncome] of byBranch.entries()) {
-          result.push({
-            branchId,
-            branchName: branchId ? (branchNames[branchId] || null) : null,
-            totalIncome: Math.round(totalIncome * 100) / 100
-          })
-        }
-        result.sort((a, b) => {
-          if (!a.branchId) return -1
-          if (!b.branchId) return 1
-          return (a.branchName || "").localeCompare(b.branchName || "")
-        })
-        return result
-      }
-    } catch {
-      // Fall through to direct GL query
-    }
-  }
-
-  // 1) Get Cash/Bank account IDs for this company
+  // 1) Get Cash/Bank account IDs and classify as cash vs bank
   const { data: accounts, error: accErr } = await supabase
     .from("chart_of_accounts")
     .select("id, sub_type, account_name, parent_id")
@@ -104,6 +72,15 @@ export async function getDailyIncomeByBranch(
   )
   const accountIds = cashBankAccounts.map((a: any) => a.id)
   if (accountIds.length === 0) return []
+
+  const cashAccountIds = new Set<string>()
+  const bankAccountIds = new Set<string>()
+  for (const a of cashBankAccounts) {
+    const flowType = getAccountFlowType(a)
+    if (flowType === "cash") cashAccountIds.add(a.id)
+    else if (flowType === "bank") bankAccountIds.add(a.id)
+    else cashAccountIds.add(a.id) // default ambiguous to cash
+  }
 
   // 2) Fetch journal lines for that date: jel + je, filter by account_id in accountIds
   let query = supabase
@@ -135,19 +112,25 @@ export async function getDailyIncomeByBranch(
   const { data: lines, error: linesErr } = await query
   if (linesErr) throw new Error(`GL daily income fetch failed: ${linesErr.message}`)
 
-  // 3) Group by branch_id and sum (debit - credit)
-  const byBranch = new Map<string | null, number>()
+  // 3) Group by branch: cash (نقد بالخزنة) and bank (إيداعات بنكية) separately
+  const byBranchCash = new Map<string | null, number>()
+  const byBranchBank = new Map<string | null, number>()
   for (const line of lines || []) {
     const je = (line as any).journal_entries
     const branchId = je?.branch_id ?? null
     const debit = Number(line.debit_amount || 0)
     const credit = Number(line.credit_amount || 0)
     const net = debit - credit
-    byBranch.set(branchId, (byBranch.get(branchId) ?? 0) + net)
+    const accountId = (line as any).account_id
+    if (cashAccountIds.has(accountId)) {
+      byBranchCash.set(branchId, (byBranchCash.get(branchId) ?? 0) + net)
+    } else if (bankAccountIds.has(accountId)) {
+      byBranchBank.set(branchId, (byBranchBank.get(branchId) ?? 0) + net)
+    }
   }
 
-  // 4) Fetch branch names for non-null branch_ids
-  const branchIds = [...byBranch.keys()].filter(Boolean) as string[]
+  const allBranchIds = new Set([...byBranchCash.keys(), ...byBranchBank.keys()])
+  const branchIds = [...allBranchIds].filter(Boolean) as string[]
   let branchNames: Record<string, string> = {}
   if (branchIds.length > 0) {
     const { data: branches } = await supabase
@@ -158,11 +141,16 @@ export async function getDailyIncomeByBranch(
   }
 
   const result: DailyIncomeByBranchRow[] = []
-  for (const [branchId, totalIncome] of byBranch.entries()) {
+  for (const branchId of allBranchIds) {
+    const cashIncome = Math.round((byBranchCash.get(branchId) ?? 0) * 100) / 100
+    const bankIncome = Math.round((byBranchBank.get(branchId) ?? 0) * 100) / 100
+    const totalIncome = Math.round((cashIncome + bankIncome) * 100) / 100
     result.push({
       branchId,
       branchName: branchId ? (branchNames[branchId] || null) : null,
-      totalIncome: Math.round(totalIncome * 100) / 100
+      cashIncome,
+      bankIncome,
+      totalIncome
     })
   }
   // Sort: null (company-wide) first, then by branch name

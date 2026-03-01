@@ -1767,13 +1767,14 @@ export default function InvoiceDetailPage() {
       // بعد اكتمال المرتجع، نحسب الرصيد الصافي الحقيقي للعميل عبر جميع فواتيره ومدفوعاته
       // ونُنشئ customer_credit فقط إذا أصبح الرصيد دائناً فعلياً (< 0)
       // المرجع: SAP/Oracle AR Subledger standard
-      if (returnMethod === 'credit_note') {
+      const invoiceCustomerId = invoice.customer_id
+      if (returnMethod === 'credit_note' && invoiceCustomerId) {
         try {
           const { syncCustomerCredit } = await import('@/lib/customer-balance')
           const creditResult = await syncCustomerCredit(
             supabase,
             mapping.companyId,
-            invoice.customer_id,
+            invoiceCustomerId,
             invoice.id,
             returnNotes || (appLang === 'en'
               ? `Sales return ${returnNumber} - net credit balance`
