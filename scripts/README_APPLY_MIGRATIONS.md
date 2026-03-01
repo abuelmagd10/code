@@ -14,6 +14,18 @@
 
 ---
 
+## إصلاح قيد الدفع: خطأ "Cannot add lines to a posted journal entry" (20260301_003)
+
+إذا ظهر خطأ **400** عند تسجيل دفعة على فاتورة مع رسالة `Cannot add lines to a posted journal entry. Use Reversal instead.` (كود P0001):
+
+1. افتح **Supabase Dashboard** → مشروعك → **SQL Editor**.
+2. انسخ محتوى الملف **`scripts/apply_20260301_003_payment_journal_draft_then_posted.sql`** بالكامل.
+3. الصق واضغط **Run**.
+
+هذا يحدّث دالة `auto_create_payment_journal()` بحيث تُدخل القيد كـ **draft** ثم تضيف الأسطر ثم ترحّل القيد، فلا يتعارض مع الـ trigger الذي يمنع إضافة أسطر لقالب مرحّل.
+
+---
+
 ## التعديلات الأخيرة (20260228)
 
 إذا واجهت تعارضاً في سجل الـ migrations عند تشغيل `npx supabase db push`، يمكنك تطبيق التعديلات الأخيرة يدوياً:

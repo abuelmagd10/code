@@ -1024,7 +1024,7 @@ export default function InvoiceDetailPage() {
         return
       }
 
-      // ===== 1) قيد المبيعات والذمم المدينة =====
+      // ===== 1) قيد المبيعات والذمم المدينة (draft → أسطر → ترحيل لتجنب منع إضافة أسطر لقالب مرحّل) =====
       const { data: entry, error: entryError } = await supabase
         .from("journal_entries")
         .insert({
@@ -1033,7 +1033,7 @@ export default function InvoiceDetailPage() {
           reference_id: invoiceId,
           entry_date: invoice.invoice_date,
           description: `فاتورة مبيعات ${invoice.invoice_number}`,
-          // Branch, Cost Center, Warehouse from invoice
+          status: "draft",
           branch_id: invoice.branch_id || null,
           cost_center_id: invoice.cost_center_id || null,
           warehouse_id: invoice.warehouse_id || null,
@@ -1089,6 +1089,8 @@ export default function InvoiceDetailPage() {
 
       const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
       if (linesError) throw linesError
+
+      await supabase.from("journal_entries").update({ status: "posted" }).eq("id", entry.id)
 
       // ===== 📌 ملاحظة: لا قيد COGS =====
       // حسب النمط المطلوب (Cash Basis): لا COGS في النظام المحاسبي
@@ -1531,6 +1533,7 @@ export default function InvoiceDetailPage() {
             reference_id: salesReturnId, // ✅ استخدام sales_return.id
             entry_date: new Date().toISOString().slice(0, 10),
             description: appLang === 'en' ? `Sales return ${returnNumber} for invoice ${invoice.invoice_number}` : `مرتجع مبيعات ${returnNumber} للفاتورة ${invoice.invoice_number}`,
+            status: "draft",
             branch_id: invoice.branch_id || null,
             cost_center_id: invoice.cost_center_id || null,
             warehouse_id: invoice.warehouse_id || null,
@@ -1635,6 +1638,7 @@ export default function InvoiceDetailPage() {
           if (linesErr) throw linesErr
         }
 
+        await supabase.from("journal_entries").update({ status: "posted" }).eq("id", entry.id)
         console.log(`✅ تم إنشاء قيد المرتجع مع عكس COGS للفاتورة ${invoice.invoice_number}`)
       }
 
@@ -1735,7 +1739,7 @@ export default function InvoiceDetailPage() {
 
       // ✅ عكس المدفوعات الزائدة إذا كان العميل قد دفع أكثر من المبلغ الجديد (للفواتير المدفوعة فقط)
       if (excessPayment > 0 && invoice.status !== 'sent') {
-        // إنشاء قيد عكسي للمدفوعات
+        // إنشاء قيد عكسي للمدفوعات (draft → أسطر → ترحيل)
         const { data: paymentReversalEntry, error: prvErr } = await supabase
           .from("journal_entries")
           .insert({
@@ -1746,6 +1750,7 @@ export default function InvoiceDetailPage() {
             description: appLang === 'en'
               ? `Payment reversal for return - Invoice ${invoice.invoice_number} (${excessPayment.toLocaleString()} EGP)`
               : `عكس مدفوعات للمرتجع - الفاتورة ${invoice.invoice_number} (${excessPayment.toLocaleString()} جنيه)`,
+            status: "draft",
           })
           .select()
           .single()
@@ -1782,6 +1787,7 @@ export default function InvoiceDetailPage() {
                 description: appLang === 'en' ? 'Cash refund to customer' : 'إرجاع نقدي للعميل'
               },
             ])
+            await supabase.from("journal_entries").update({ status: "posted" }).eq("id", paymentReversalEntry.id)
           }
         }
 
@@ -2036,58 +2042,7 @@ export default function InvoiceDetailPage() {
         await postARRevenueJournal()
       }
 
-      // ✅ إنشاء قيد الدفع فقط (Cash/AR)
-      if (!mapping.ar) {
-        console.error("حساب الذمم المدينة غير موجود")
-        throw new Error("حساب الذمم المدينة غير موجود")
-      }
-
-      const cashAccountId = paymentAccountId || mapping.cash || mapping.bank
-      if (!cashAccountId) {
-        console.error("حساب النقد/البنك غير موجود")
-        throw new Error("حساب النقد/البنك غير موجود")
-      }
-
-      const { data: entry, error: entryError } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: mapping.companyId,
-          reference_type: "invoice_payment",
-          reference_id: invoice.id,
-          entry_date: dateStr,
-          description: `دفعة للفاتورة ${invoice.invoice_number}${reference ? ` (${reference})` : ""} (${amount} جنيه)`,
-        })
-        .select()
-        .single()
-
-      if (entryError) {
-        console.error("خطأ في إنشاء قيد الدفع:", entryError)
-        throw entryError
-      }
-
-      const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-        {
-          journal_entry_id: entry.id,
-          account_id: cashAccountId,
-          debit_amount: amount,
-          credit_amount: 0,
-          description: "نقد/بنك",
-        },
-        {
-          journal_entry_id: entry.id,
-          account_id: mapping.ar,
-          debit_amount: 0,
-          credit_amount: amount,
-          description: "الذمم المدينة",
-        },
-      ])
-
-      if (linesErr) {
-        console.error("خطأ في إنشاء سطور قيد الدفع:", linesErr)
-        throw linesErr
-      }
-
-      console.log(`✅ تم إنشاء قيد الدفع (Cash/AR) - Cash Basis`)
+      // ✅ قيد الدفع (Cash/AR) يُنشأ تلقائياً من الـ trigger عند INSERT في payments — لا إنشاء يدوي هنا
 
       // ===== 📌 4) تصفية بضائع لدى الغير وتسجيل COGS =====
       // عند الدفع: إزالة من بضائع لدى الغير + تسجيل تكلفة البضاعة المباعة
@@ -2104,7 +2059,7 @@ export default function InvoiceDetailPage() {
       console.log(`📊 clearThirdPartyInventory result:`, { success: clearResult.success, totalCOGS: clearResult.totalCOGS, error: clearResult.error })
 
       if (clearResult.success && clearResult.totalCOGS > 0) {
-        // إنشاء قيد COGS
+        // إنشاء قيد COGS (draft → أسطر → ترحيل)
         const { data: cogsEntry, error: cogsEntryError } = await supabase
           .from("journal_entries")
           .insert({
@@ -2113,6 +2068,7 @@ export default function InvoiceDetailPage() {
             reference_id: invoice.id,
             entry_date: dateStr,
             description: `تكلفة البضاعة المباعة - ${invoice.invoice_number} (دفعة ${amount})`,
+            status: "draft",
             branch_id: invoice.branch_id || null,
             cost_center_id: invoice.cost_center_id || null,
           })
@@ -2143,6 +2099,7 @@ export default function InvoiceDetailPage() {
               cost_center_id: invoice.cost_center_id || null,
             },
           ])
+          await supabase.from("journal_entries").update({ status: "posted" }).eq("id", cogsEntry.id)
           console.log(`✅ تم تسجيل COGS: ${clearResult.totalCOGS} عند الدفع`)
         }
       }
@@ -2461,6 +2418,7 @@ export default function InvoiceDetailPage() {
             reference_id: invoiceId,
             entry_date: invoice.invoice_date, // تاريخ الفاتورة وليس الدفع
             description: `فاتورة مبيعات ${invoice.invoice_number}`,
+            status: "draft",
             branch_id: invoice.branch_id || null,
             cost_center_id: invoice.cost_center_id || null,
             warehouse_id: invoice.warehouse_id || null,
