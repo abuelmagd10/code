@@ -405,7 +405,8 @@ export default function UsersSettingsPage() {
           company_id: companyId,
           from_user_id: selectedSourceUser,
           to_user_ids: selectedTargetUsers,
-          resource_type: selectedResourceType
+          resource_type: selectedResourceType,
+          ...(transferBranchId ? { branch_id: transferBranchId } : {})
         })
       })
       const data = await res.json()

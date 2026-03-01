@@ -134,7 +134,12 @@ export async function approveDrawing(drawingId: string): Promise<{ success: bool
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { success: false, message: "Unauthorized" }
 
-    const { data: row } = await supabase.from('shareholder_drawings').select('company_id, created_by').eq('id', drawingId).single()
+    const { data: row, error: fetchErr } = await supabase
+        .from('shareholder_drawings')
+        .select('company_id, created_by')
+        .eq('id', drawingId)
+        .single()
+    if (fetchErr || !row) return { success: false, message: "Drawing not found" }
 
     const { data, error } = await supabase.rpc('approve_shareholder_drawing', {
         p_drawing_id: drawingId,
@@ -142,7 +147,7 @@ export async function approveDrawing(drawingId: string): Promise<{ success: bool
     })
     if (error) return { success: false, message: error.message }
 
-    if (row?.company_id && row.created_by && row.created_by !== user.id) {
+    if (row.company_id && row.created_by && row.created_by !== user.id) {
         try {
             await createNotification({
                 companyId: row.company_id,
@@ -251,5 +256,9 @@ export async function getDrawingById(drawingId: string) {
         .eq('id', drawingId)
         .single()
     if (error || !data) return null
-    return data
+    // Normalize journal_entries: FK returns one row but Supabase may expose as object or array
+    const journalEntry = Array.isArray(data.journal_entries)
+        ? (data.journal_entries[0] ?? null)
+        : (data.journal_entries ?? null)
+    return { ...data, journal_entry: journalEntry }
 }
