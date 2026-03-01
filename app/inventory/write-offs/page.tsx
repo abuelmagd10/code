@@ -495,8 +495,8 @@ export default function WriteOffsPage() {
         return true
       }
 
-      // ✅ للمستخدمين الآخرين: فلترة حسب warehouse و branch
-      const isCanOverride = ['owner', 'admin', 'manager'].includes(userRole)
+      // ✅ مطابق لـ loadData: Owner/Admin فقط يرون جميع الفروع
+      const isCanOverride = ['owner', 'admin'].includes(userRole)
       const isAccountantOrManager = ['accountant', 'manager'].includes(userRole)
       const userBranchId = userContext?.branch_id || null
       const userWarehouseId = userContext?.warehouse_id || null
@@ -2407,6 +2407,19 @@ export default function WriteOffsPage() {
       if (authError || !authData?.user) {
         throw new Error(isAr ? "فشل في جلب بيانات المستخدم" : "Failed to get user data")
       }
+
+      let cancelledByName: string | undefined
+      try {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('display_name, username')
+          .eq('user_id', authData.user.id)
+          .maybeSingle()
+        cancelledByName = profile?.display_name || profile?.username || authData.user.email?.split('@')[0] || undefined
+      } catch {
+        cancelledByName = authData.user.email?.split('@')[0] || undefined
+      }
+
       const { data: result, error } = await supabase.rpc("cancel_approved_write_off", {
         p_write_off_id: selectedWriteOff.id,
         p_cancelled_by: authData.user.id,
@@ -2415,6 +2428,25 @@ export default function WriteOffsPage() {
 
       if (error) throw error
       if (!result?.success) throw new Error(result?.error || "Unknown error")
+
+      try {
+        const { notifyWriteOffCancelled } = await import('@/lib/notification-helpers')
+        await notifyWriteOffCancelled({
+          companyId: selectedWriteOff.company_id || '',
+          writeOffId: selectedWriteOff.id,
+          writeOffNumber: selectedWriteOff.write_off_number,
+          createdBy: selectedWriteOff.created_by || authData.user.id,
+          cancelledBy: authData.user.id,
+          cancelledByName,
+          cancellationReason,
+          branchId: selectedWriteOff.branch_id || undefined,
+          warehouseId: selectedWriteOff.warehouse_id || undefined,
+          costCenterId: selectedWriteOff.cost_center_id || undefined,
+          appLang: isAr ? 'ar' : 'en'
+        })
+      } catch (notificationError) {
+        console.error('Error sending write-off cancellation notification:', notificationError)
+      }
 
       toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم إلغاء الإهلاك" : "Write-off cancelled" })
       setShowCancelDialog(false)
