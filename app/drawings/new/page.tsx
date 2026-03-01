@@ -41,6 +41,8 @@ export default function NewDrawingPage() {
     const [drawingDate, setDrawingDate] = useState(new Date().toISOString().split("T")[0])
     const [paymentAccountId, setPaymentAccountId] = useState("")
     const [description, setDescription] = useState("")
+    const [currencyCode, setCurrencyCode] = useState("EGP")
+    const [exchangeRate, setExchangeRate] = useState<number>(1)
 
     useEffect(() => {
         setHydrated(true)
@@ -108,8 +110,10 @@ export default function NewDrawingPage() {
             formData.append('drawingDate', drawingDate)
             formData.append('paymentAccountId', paymentAccountId)
             formData.append('description', description)
+            formData.append('currencyCode', currencyCode)
+            formData.append('exchangeRate', exchangeRate.toString())
 
-            // Ideally fetch drawingsAccountId logic here or let server handle it (server handles it as per action logic)
+            // Drawings account resolved server-side: shareholder.drawings_account_id else company_drawings_settings.default_drawings_account_id
 
             const result = await createDrawing({ success: false, message: '' }, formData)
 
@@ -196,6 +200,26 @@ export default function NewDrawingPage() {
                                 <div className="space-y-2">
                                     <Label>{appLang === 'en' ? 'Amount' : 'المبلغ'}</Label>
                                     <NumericInput value={amount} onChange={setAmount} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
+                                    <Select value={currencyCode} onValueChange={setCurrencyCode}>
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="EGP">EGP</SelectItem>
+                                            <SelectItem value="USD">USD</SelectItem>
+                                            <SelectItem value="EUR">EUR</SelectItem>
+                                            <SelectItem value="SAR">SAR</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label>{appLang === 'en' ? 'Exchange rate to company currency' : 'سعر الصرف لعملة الشركة'}</Label>
+                                    <NumericInput value={exchangeRate} onChange={v => setExchangeRate(v)} min={0.000001} step={0.01} />
                                 </div>
                                 <div className="space-y-2">
                                     <Label>{appLang === 'en' ? 'Payment Account' : 'حساب الدفع'}</Label>

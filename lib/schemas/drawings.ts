@@ -6,6 +6,8 @@ export const drawingSchema = z.object({
     drawingDate: z.string().min(1, "Date is required"),
     paymentAccountId: z.string().min(1, "Payment account is required"),
     description: z.string().optional(),
+    currencyCode: z.string().optional(),
+    exchangeRate: z.coerce.number().min(0.000001).optional(),
 })
 
 export type DrawingFormValues = z.infer<typeof drawingSchema>

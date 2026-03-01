@@ -50,6 +50,8 @@ export async function createDrawing(prevState: ActionState, formData: FormData):
             else return { success: false, message: "No active company found" }
         }
 
+        // Enterprise: resolve drawings account by priority (no name-based fallback)
+        // 1) shareholder.drawings_account_id  2) company_drawings_settings.default_drawings_account_id
         let drawingsAccountId = rawData.drawingsAccountId as string
         if (!drawingsAccountId) {
             const { data: shareholder } = await supabase
@@ -60,17 +62,27 @@ export async function createDrawing(prevState: ActionState, formData: FormData):
             if (shareholder?.drawings_account_id) {
                 drawingsAccountId = shareholder.drawings_account_id
             } else {
-                const { data: coaAccount } = await supabase
-                    .from('chart_of_accounts')
-                    .select('id')
+                const { data: companySettings } = await supabase
+                    .from('company_drawings_settings')
+                    .select('default_drawings_account_id')
                     .eq('company_id', companyId)
-                    .ilike('account_name', '%Masroob%')
-                    .limit(1)
                     .maybeSingle()
-                if (coaAccount) drawingsAccountId = coaAccount.id
-                else return { success: false, message: "Drawings account configuration is missing for this shareholder." }
+                if (companySettings?.default_drawings_account_id) {
+                    drawingsAccountId = companySettings.default_drawings_account_id
+                } else {
+                    console.warn('[drawings] No drawings account: shareholder has no drawings_account_id and company has no default_drawings_account_id.', { companyId, shareholderId: validatedFields.data.shareholderId })
+                    return {
+                        success: false,
+                        message: "Drawings account is not configured. Set it for this shareholder or set a company default in Company Drawings Settings.",
+                    }
+                }
             }
         }
+
+        const amount = validatedFields.data.amount
+        const currencyCode = (rawData.currencyCode as string) || 'EGP'
+        const exchangeRate = Math.max(0.000001, Number(rawData.exchangeRate) || 1)
+        const baseAmount = amount * exchangeRate
 
         const { data: drawing, error } = await supabase
             .from('shareholder_drawings')
@@ -78,7 +90,10 @@ export async function createDrawing(prevState: ActionState, formData: FormData):
                 company_id: companyId,
                 shareholder_id: validatedFields.data.shareholderId,
                 drawing_date: validatedFields.data.drawingDate,
-                amount: validatedFields.data.amount,
+                amount,
+                currency_code: currencyCode,
+                exchange_rate: exchangeRate,
+                base_amount: baseAmount,
                 description: validatedFields.data.description || null,
                 status: 'draft',
                 created_by: user.id,
@@ -119,7 +134,14 @@ export async function submitDrawingForApproval(drawingId: string): Promise<{ suc
 
     const { error: updateErr } = await supabase
         .from('shareholder_drawings')
-        .update({ status: 'pending_approval', approval_status: 'pending', rejected_by: null, rejected_at: null, rejection_reason: null })
+        .update({
+            status: 'pending_approval',
+            approval_status: 'pending',
+            rejected_by: null,
+            rejected_at: null,
+            rejection_reason: null,
+            last_status_changed_at: new Date().toISOString(),
+        })
         .eq('id', drawingId)
 
     if (updateErr) return { success: false, message: updateErr.message }
@@ -192,7 +214,8 @@ export async function rejectDrawing(drawingId: string, reason: string): Promise<
             approval_status: 'rejected',
             rejected_by: user.id,
             rejected_at: new Date().toISOString(),
-            rejection_reason: reason.trim()
+            rejection_reason: reason.trim(),
+            last_status_changed_at: new Date().toISOString(),
         })
         .eq('id', drawingId)
         .eq('status', 'pending_approval')
@@ -256,9 +279,5 @@ export async function getDrawingById(drawingId: string) {
         .eq('id', drawingId)
         .single()
     if (error || !data) return null
-    // Normalize journal_entries: FK returns one row but Supabase may expose as object or array
-    const journalEntry = Array.isArray(data.journal_entries)
-        ? (data.journal_entries[0] ?? null)
-        : (data.journal_entries ?? null)
-    return { ...data, journal_entry: journalEntry }
+    return data
 }
