@@ -279,5 +279,10 @@ export async function getDrawingById(drawingId: string) {
         .eq('id', drawingId)
         .single()
     if (error || !data) return null
-    return data
+    // Normalize: Supabase returns the FK relation as journal_entries (table name); detail page expects journal_entry (singular).
+    const row = data as Record<string, unknown>
+    return {
+        ...row,
+        journal_entry: row.journal_entries ?? null,
+    }
 }
