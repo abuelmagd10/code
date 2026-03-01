@@ -62,7 +62,7 @@ export async function getCustomerNetBalance(
     .eq('company_id', companyId)
     .eq('is_active', true)
     .or("sub_type.eq.accounts_receivable,account_name.ilike.%الذمم المدين%")
-    .order('sub_type', { ascending: false }) // accounts_receivable يسبق غيره
+    .order('sub_type', { ascending: true }) // 'accounts_receivable' يأتي أبجدياً قبل غيره (A→Z)
     .limit(1)
     .maybeSingle()
 
@@ -97,23 +97,44 @@ export async function getCustomerNetBalance(
 
   // ── 3) جلب القيود المحاسبية المُرسَلة (posted) المرتبطة بهذا العميل ────────
   //
-  // أنواع المراجع المرتبطة بحساب AR:
-  //   invoice          ← Dr AR / Cr Revenue / Cr VAT  (عند الإرسال - Accrual)
-  //   invoice_ar       ← Dr AR (بديل لـ invoice في بعض الحالات)
-  //   invoice_payment  ← Dr Cash / Cr AR              (عند الدفع)
-  //   sales_return     ← Dr Revenue / Cr AR           (عند المرتجع)
-  //   payment_reversal ← Dr AR / Cr Cash              (استرداد نقدي للعميل)
+  // نفِّذ استعلامَين منفصلَين لضمان التطابق الدقيق بين reference_type وreference_id:
   //
-  const { data: jeRows } = await supabase
-    .from('journal_entries')
-    .select('id')
-    .eq('company_id', companyId)
-    .in('reference_type', ['invoice', 'invoice_ar', 'invoice_payment', 'sales_return', 'payment_reversal'])
-    .in('reference_id', allRefIds)
-    .is('deleted_at', null)
-    .eq('status', 'posted')
+  //   أنواع مرتبطة بمعرف الفاتورة (invoice IDs):
+  //     invoice          ← Dr AR / Cr Revenue / Cr VAT  (عند الإرسال - Accrual)
+  //     invoice_ar       ← Dr AR (بديل في بعض الحالات)
+  //     invoice_payment  ← Dr Cash / Cr AR              (عند الدفع)
+  //     payment_reversal ← Dr AR / Cr Cash              (استرداد نقدي للعميل)
+  //
+  //   أنواع مرتبطة بمعرف المرتجع (sales_return IDs):
+  //     sales_return     ← Dr Revenue / Cr AR           (عند المرتجع)
+  //
+  const [{ data: invoiceJERows }, { data: returnJERows }] = await Promise.all([
+    invoiceIds.length > 0
+      ? supabase
+          .from('journal_entries')
+          .select('id')
+          .eq('company_id', companyId)
+          .in('reference_type', ['invoice', 'invoice_ar', 'invoice_payment', 'payment_reversal'])
+          .in('reference_id', invoiceIds)
+          .is('deleted_at', null)
+          .eq('status', 'posted')
+      : Promise.resolve({ data: [] as { id: string }[], error: null }),
+    returnIds.length > 0
+      ? supabase
+          .from('journal_entries')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('reference_type', 'sales_return')
+          .in('reference_id', returnIds)
+          .is('deleted_at', null)
+          .eq('status', 'posted')
+      : Promise.resolve({ data: [] as { id: string }[], error: null }),
+  ])
 
-  const jeIds = (jeRows || []).map(je => je.id)
+  const jeIds = [
+    ...(invoiceJERows || []).map(je => je.id),
+    ...(returnJERows  || []).map(je => je.id),
+  ]
 
   if (jeIds.length === 0) {
     // لا توجد قيود GL بعد (بيانات قديمة قبل Accrual Basis) → fallback تشغيلي
