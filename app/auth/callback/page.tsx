@@ -190,7 +190,7 @@ function CallbackInner() {
       document.cookie = `active_company_id=${company.id}; path=/; max-age=31536000`
       document.cookie = `app_currency=${currency}; path=/; max-age=31536000`
       document.cookie = `app_language=${language}; path=/; max-age=31536000`
-    } catch {}
+    } catch { }
 
     return company.id
   }
@@ -210,10 +210,45 @@ function CallbackInner() {
 
         console.log('Callback params:', { token_hash: !!token_hash, type, isAutoSignup, code: !!code })
 
-        // Check for error in URL
+        // Check for error in URL (query params)
         if (error_description) {
           setError(error_description)
           return
+        }
+
+        // METHOD 0: Handle Implicit flow (tokens in URL hash)
+        // e.g. /auth/callback#access_token=...&refresh_token=...&type=signup
+        if (typeof window !== 'undefined' && window.location.hash) {
+          const hashParams = new URLSearchParams(window.location.hash.substring(1))
+          const hashError = hashParams.get("error_description") || hashParams.get("error")
+
+          if (hashError) {
+            setError(hashError)
+            return
+          }
+
+          const accessToken = hashParams.get("access_token")
+          const refreshToken = hashParams.get("refresh_token")
+
+          if (accessToken && refreshToken) {
+            setStatus("جاري التحقق من الجلسة...")
+            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken
+            })
+
+            if (sessionError) {
+              console.error('Session setting error from hash:', sessionError)
+              setError(sessionError.message || "فشل إنشاء الجلسة")
+              return
+            }
+
+            if (sessionData?.user) {
+              window.location.hash = '' // Clear hash for cleanliness
+              await handleUserAfterVerification(sessionData.user)
+              return
+            }
+          }
         }
 
         // METHOD 1: Handle PKCE code exchange (new Supabase method)
@@ -245,7 +280,7 @@ function CallbackInner() {
         // METHOD 3: Handle token_hash verification (legacy method)
         if (token_hash) {
           setStatus("جاري التحقق من الرابط...")
-          const validTypes = ["invite","signup","magiclink","recovery","email_change"] as const
+          const validTypes = ["invite", "signup", "magiclink", "recovery", "email_change"] as const
           const mapped = validTypes.includes(type as any) ? (type as any) : "signup"
           const { error: verErr } = await supabase.auth.verifyOtp({ type: mapped as any, token_hash })
 
@@ -316,7 +351,7 @@ function CallbackInner() {
         try {
           await createCompanyFromMetadata(user.id, user.user_metadata, user.email)
           setStatus("تم إنشاء الشركة بنجاح! جاري تحميل الصلاحيات...")
-          
+
           // ✅ الانتظار حتى اكتمال bootstrap قبل redirect
           const waitForBootstrap = (): Promise<void> => {
             return new Promise((resolve) => {
@@ -325,9 +360,9 @@ function CallbackInner() {
                   window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
                   resolve()
                 }
-                
+
                 window.addEventListener('bootstrap_complete', handleBootstrapComplete)
-                
+
                 // ✅ timeout احتياطي (5 ثواني)
                 setTimeout(() => {
                   window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
@@ -339,10 +374,10 @@ function CallbackInner() {
               }
             })
           }
-          
+
           // ✅ الانتظار ثم التوجيه
           await waitForBootstrap()
-          
+
           try {
             const res = await fetch("/api/first-allowed-page")
             const data = await res.json()
@@ -361,9 +396,9 @@ function CallbackInner() {
         try {
           localStorage.setItem('active_company_id', String(companyId))
           document.cookie = `active_company_id=${String(companyId)}; path=/; max-age=31536000`
-        } catch {}
+        } catch { }
         setStatus("تم التحقق بنجاح، جاري تحميل الصلاحيات...")
-        
+
         // ✅ الانتظار حتى اكتمال bootstrap قبل redirect
         const waitForBootstrap = (): Promise<void> => {
           return new Promise((resolve) => {
@@ -372,9 +407,9 @@ function CallbackInner() {
                 window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
                 resolve()
               }
-              
+
               window.addEventListener('bootstrap_complete', handleBootstrapComplete)
-              
+
               // ✅ timeout احتياطي (5 ثواني)
               setTimeout(() => {
                 window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
@@ -386,10 +421,10 @@ function CallbackInner() {
             }
           })
         }
-        
+
         // ✅ الانتظار ثم التوجيه
         await waitForBootstrap()
-        
+
         try {
           const res = await fetch("/api/first-allowed-page")
           const data = await res.json()
