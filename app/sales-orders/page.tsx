@@ -1043,8 +1043,23 @@ function SalesOrdersContent() {
       }
     },
     onUpdate: async (newOrder, oldOrder) => {
-      // ⚠️ Realtime لا يرسل البيانات المنضمة (branches, customers)
-      // لذا نجلب البيانات الكاملة من قاعدة البيانات لضمان دقة البيانات
+      // ✅ FIX: تحقق ما إذا كان التغيير فقط على status (ناتج عن syncOrderWithInvoice)
+      // في هذه الحالة: نُحدّث الحالة محلياً بدون DB fetch لتجنب الوميض المرئي
+      const changedKeys = Object.keys(newOrder).filter(
+        k => JSON.stringify((newOrder as any)[k]) !== JSON.stringify((oldOrder as any)[k])
+      );
+      const isStatusOnlyChange = changedKeys.length === 1 && changedKeys[0] === 'status';
+      const isMinorChange = changedKeys.every(k => ['status', 'updated_at'].includes(k));
+
+      if (isStatusOnlyChange || isMinorChange) {
+        // تحديث محلي سريع بدون DB fetch
+        setOrders(prev => prev.map(order =>
+          order.id === newOrder.id ? { ...order, status: newOrder.status } : order
+        ));
+        return;
+      }
+
+      // تغييرات جوهرية (customer, amount, items, invoice_id): نجلب البيانات الكاملة
       const { data: fullOrder } = await supabase
         .from("sales_orders")
         .select("*, customers:customer_id(id, name, phone, city), branches:branch_id(name)")
