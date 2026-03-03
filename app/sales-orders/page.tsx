@@ -114,6 +114,7 @@ function SalesOrdersContent() {
   const { toast } = useToast();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [invoicesLoaded, setInvoicesLoaded] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
@@ -308,6 +309,12 @@ function SalesOrdersContent() {
     const totalValue = filteredOrders.reduce((sum, o) => {
       const orderTotal = o.total || o.total_amount || 0;
       const linked = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
+
+      // ✅ FIX: إذا الفاتورة لم تُحمَّل بعد، استخدم total_amount مباشرة لتجنب ظهور £0
+      if (o.invoice_id && !linked) {
+        return sum + orderTotal;
+      }
+
       // ✅ استخدام original_total من الفاتورة للحساب الصحيح
       const originalTotal = linked?.original_total || linked?.total_amount || orderTotal;
       const returnedAmount = linked?.returned_amount || 0;
@@ -725,6 +732,7 @@ function SalesOrdersContent() {
   const loadOrders = async () => {
     try {
       setLoading(true);
+      setInvoicesLoaded(false); // ✅ FIX: إعادة تعيين حتى لا تظهر الإحصائيات بقيم خاطئة
       const activeCompanyId = await getActiveCompanyId(supabase);
       if (!activeCompanyId) {
         setLoading(false);
@@ -895,6 +903,8 @@ function SalesOrdersContent() {
         });
         setLinkedInvoices(invoiceMap);
       }
+      // ✅ FIX: بيانات الفواتير اكتملت — الآن يمكن عرض الإحصائيات الصحيحة
+      setInvoicesLoaded(true);
 
       setLoading(false);
     } catch (error) {
