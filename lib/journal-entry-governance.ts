@@ -134,6 +134,8 @@ export async function createJournalEntryWithGovernance(
   }
 
   // 3. إنشاء القيد
+  // ملاحظة: إذا كان الـ status = "posted" والقيد لن يُضاف له سطور لاحقاً،
+  // استخدم createCompleteJournalEntry بدلاً من هذه الدالة لضمان الذرية الكاملة
   const { data, error } = await supabase
     .from("journal_entries")
     .insert({
@@ -148,7 +150,7 @@ export async function createJournalEntryWithGovernance(
     return { success: false, error: error.message }
   }
 
-  console.log(`✅ GOVERNANCE: Journal entry created successfully. Type: ${entry.reference_type}, Id: ${data.id}`)
+  console.log(`✅ GOVERNANCE: Journal entry created. Type: ${entry.reference_type}, Id: ${data.id}`)
   return { success: true, entryId: data.id }
 }
 
@@ -172,6 +174,15 @@ export function validateJournalEntryBalance(
 
 /**
  * إنشاء قيد محاسبي كامل مع السطور والتحقق من التوازن
+ *
+ * ✅ FULLY ATOMIC: يستخدم `create_journal_entry_atomic` PostgreSQL function
+ * التي تُنشئ الـ header + السطور + الترحيل في DB transaction واحدة.
+ *
+ * الضمانات:
+ * - لا يوجد partial failure: إما كل شيء ينجح أو لا شيء
+ * - الـ DB trigger `trg_enforce_je_integrity` يمنع INSERT مباشر كـ posted
+ * - الـ DB trigger `trg_prevent_posted_je_lines_delete` يمنع حذف السطور بعد الترحيل
+ * - التحقق من التوازن + منع التكرار يتم داخل الـ DB function نفسها
  */
 export async function createCompleteJournalEntry(
   supabase: SupabaseClient,
@@ -202,32 +213,63 @@ export async function createCompleteJournalEntry(
     return { success: false, error: errorMsg }
   }
 
-  // 2. إنشاء القيد الرئيسي
-  const entryResult = await createJournalEntryWithGovernance(supabase, entry)
-  if (!entryResult.success || !entryResult.entryId) {
-    return entryResult
+  // 2. التحقق من وجود إيراد قبل COGS (app-level pre-check للوضوح)
+  if (entry.reference_type === "invoice_cogs") {
+    const revenueCheck = await checkRevenueBeforeCOGS(supabase, entry.company_id, entry.reference_id)
+    if (!revenueCheck.hasRevenue) {
+      const errorMsg = `🚨 GOVERNANCE: COGS without revenue blocked! InvoiceId: ${entry.reference_id}`
+      console.error(errorMsg)
+      return { success: false, error: errorMsg }
+    }
   }
 
-  // 3. إنشاء سطور القيد
-  const linesWithEntryId = lines.map(line => ({
-    ...line,
-    journal_entry_id: entryResult.entryId,
-    branch_id: line.branch_id || entry.branch_id || null,
-    cost_center_id: line.cost_center_id || entry.cost_center_id || null
+  // ✅ 3. استدعاء الدالة الذرية create_journal_entry_atomic
+  // كل شيء يحدث في DB transaction واحدة: header + lines + posted
+  // الـ DB triggers تضمن: لا duplicate، لا empty JE، لا unbalanced
+  const linesPayload = lines.map(line => ({
+    account_id:      line.account_id,
+    debit_amount:    line.debit_amount,
+    credit_amount:   line.credit_amount,
+    description:     line.description || null,
+    branch_id:       line.branch_id || entry.branch_id || null,
+    cost_center_id:  line.cost_center_id || entry.cost_center_id || null
   }))
 
-  const { error: linesError } = await supabase
-    .from("journal_entry_lines")
-    .insert(linesWithEntryId)
+  const { data: rpcResult, error: rpcError } = await supabase.rpc(
+    "create_journal_entry_atomic",
+    {
+      p_company_id:     entry.company_id,
+      p_reference_type: entry.reference_type,
+      p_reference_id:   entry.reference_id,
+      p_entry_date:     entry.entry_date,
+      p_description:    entry.description,
+      p_branch_id:      entry.branch_id || null,
+      p_cost_center_id: entry.cost_center_id || null,
+      p_warehouse_id:   entry.warehouse_id || null,
+      p_lines:          linesPayload
+    }
+  )
 
-  if (linesError) {
-    // Rollback: حذف القيد الرئيسي
-    await supabase.from("journal_entries").delete().eq("id", entryResult.entryId)
-    console.error("Error creating journal entry lines:", linesError)
-    return { success: false, error: linesError.message }
+  if (rpcError) {
+    console.error("🚨 GOVERNANCE: Atomic JE RPC failed:", rpcError)
+    return { success: false, error: rpcError.message }
   }
 
-  return { success: true, entryId: entryResult.entryId }
+  const result = rpcResult as { success: boolean; entry_id?: string; error?: string; existing_id?: string }
+
+  if (!result?.success) {
+    const errorMsg = result?.error || "فشل إنشاء القيد المحاسبي"
+    console.error("🚨 GOVERNANCE: Atomic JE rejected:", errorMsg)
+    // إذا كان duplicate، نعامله كنجاح بدون إعادة إنشاء
+    if (errorMsg.includes("DUPLICATE_JE") && result?.existing_id) {
+      console.log(`⚠️ GOVERNANCE: Returning existing JE ID: ${result.existing_id}`)
+      return { success: true, entryId: result.existing_id }
+    }
+    return { success: false, error: errorMsg }
+  }
+
+  console.log(`✅ GOVERNANCE: Atomic JE created. Type: ${entry.reference_type}, Id: ${result.entry_id}`)
+  return { success: true, entryId: result.entry_id }
 }
 
 /**

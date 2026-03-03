@@ -23,6 +23,68 @@ export async function GET(request: NextRequest) {
     let results: any[] = []
 
     switch (checkType) {
+      case 'live_monitor':
+        // ✅ Real-time check using v_erp_integrity_monitor view
+        const { data: monitorData, error: monitorError } = await supabase
+          .from('v_erp_integrity_monitor')
+          .select('*')
+          .eq('company_id', companyId)
+          .order('check_type')
+
+        if (monitorError) throw monitorError
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            checkType: 'live_monitor',
+            companyId,
+            timestamp: new Date().toISOString(),
+            summary: {
+              totalIssues: monitorData?.length || 0,
+              overallStatus: (monitorData?.length || 0) === 0 ? 'HEALTHY' : 'ISSUES_FOUND',
+              issuesByType: (monitorData || []).reduce((acc: Record<string, number>, r: any) => {
+                acc[r.check_type] = (acc[r.check_type] || 0) + 1
+                return acc
+              }, {})
+            },
+            issues: monitorData || [],
+            recommendations: (monitorData || []).length === 0
+              ? ['✅ جميع الفحوصات نجحت - البيانات نظيفة 100%']
+              : (monitorData || []).map((r: any) => `⚠️ ${r.check_type}: ${r.identifier} — ${r.issue_description}`)
+          }
+        })
+
+      case 'run_scheduled_check':
+        // ✅ Run the scheduled integrity check (populates system_integrity_alerts)
+        // Returns open alerts for this company
+        const { data: schedData, error: schedError } = await supabase
+          .rpc('run_integrity_check')
+
+        if (schedError) throw schedError
+
+        const companyAlerts = (schedData || []).filter((r: any) => r.company_id === companyId)
+        const criticalCount = companyAlerts.filter((r: any) => r.severity === 'critical').length
+        const warningCount  = companyAlerts.filter((r: any) => r.severity === 'warning').length
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            checkType: 'run_scheduled_check',
+            companyId,
+            timestamp: new Date().toISOString(),
+            summary: {
+              totalAlerts: companyAlerts.length,
+              critical: criticalCount,
+              warnings: warningCount,
+              overallStatus: criticalCount > 0 ? 'CRITICAL' : warningCount > 0 ? 'WARNINGS' : 'HEALTHY'
+            },
+            alerts: companyAlerts,
+            message: companyAlerts.length === 0
+              ? '✅ لا توجد تنبيهات مفتوحة - النظام سليم'
+              : `⚠️ يوجد ${companyAlerts.length} تنبيه يستوجب المراجعة`
+          }
+        })
+
       case 'journal_balance':
         const { data: journalResults, error: journalError } = await supabase
           .rpc('verify_journal_entries_balance', { p_company_id: companyId })

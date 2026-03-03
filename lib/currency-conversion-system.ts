@@ -1,12 +1,7 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { getClient as getBrowserClient } from '@/lib/supabase/client'
+import { SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-// Default client (used for fetching exchange rates)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
-// Store the authenticated client passed from the component
+// Store the authenticated client passed from the component (falls back to singleton)
 let authClient: SupabaseClient | null = null
 
 export function setAuthClient(client: SupabaseClient) {
@@ -14,8 +9,16 @@ export function setAuthClient(client: SupabaseClient) {
 }
 
 function getClient(): SupabaseClient {
-  return authClient || supabase
+  if (authClient) return authClient
+  // Use the app's singleton browser client to avoid Multiple GoTrueClient warning
+  if (typeof window !== 'undefined') {
+    return getBrowserClient() as SupabaseClient
+  }
+  throw new Error('currency-conversion-system can only be used in browser context')
 }
+
+// Keep supabase export for backward compatibility (uses the singleton)
+export const supabase = typeof window !== 'undefined' ? getBrowserClient() as SupabaseClient : null as unknown as SupabaseClient
 
 // Currency symbols mapping
 export const currencySymbols: Record<string, string> = {
