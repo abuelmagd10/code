@@ -993,8 +993,12 @@ function SalesOrdersContent() {
 
 
   useEffect(() => {
+    // ✅ FIX: لا نُحمّل الأوامر حتى يكتمل تحميل بيانات المستخدم والفرع
+    // بدون هذا الحارس، loadOrders ينطلق قبل جاهزية الـ auth session
+    // مما يسبب جلب جميع الأوامر ثم إعادة جلبها بفلتر الفرع الصحيح (= تغيير مرئي)
+    if (branchFilter.loading) return;
     loadOrders();
-  }, [supabase, branchFilter.selectedBranchId]); // إعادة تحميل البيانات عند تغيير الفرع المحدد
+  }, [supabase, branchFilter.selectedBranchId, branchFilter.loading]); // إعادة تحميل البيانات عند تغيير الفرع المحدد
 
   // 🔄 الاستماع لتغيير الشركة وإعادة تحميل البيانات
   useEffect(() => {
