@@ -926,49 +926,28 @@ function SalesOrdersContent() {
   };
 
   // تحديث حالة أمر البيع بناءً على حالة الفاتورة
-  const syncOrderWithInvoice = async (orderId: string, invoiceStatus: string) => {
+  // ✅ FIX: تحديث الحالة محلياً فقط بدون كتابة إلى DB
+  // الكتابة إلى DB كانت تولّد أحداث Realtime مكررة تسبب تغيير العرض
+  const syncOrderWithInvoice = (orderId: string, invoiceStatus: string) => {
     let orderStatus = 'draft';
 
     switch (invoiceStatus) {
-      case 'draft':
-        orderStatus = 'invoiced';
-        break;
-      case 'sent':
-        orderStatus = 'sent';
-        break;
-      case 'paid':
-        orderStatus = 'paid';
-        break;
-      case 'partially_paid':
-        orderStatus = 'partially_paid';
-        break;
-      case 'overdue':
-        orderStatus = 'sent';
-        break;
-      case 'cancelled':
-        orderStatus = 'cancelled';
-        break;
+      case 'draft': orderStatus = 'invoiced'; break;
+      case 'sent': orderStatus = 'sent'; break;
+      case 'paid': orderStatus = 'paid'; break;
+      case 'partially_paid': orderStatus = 'partially_paid'; break;
+      case 'overdue': orderStatus = 'sent'; break;
+      case 'cancelled': orderStatus = 'cancelled'; break;
       case 'returned':
-      case 'fully_returned':
-        orderStatus = 'fully_returned';
-        break;
-      case 'partially_returned':
-        orderStatus = 'returned';
-        break;
-      default:
-        orderStatus = 'invoiced';
+      case 'fully_returned': orderStatus = 'fully_returned'; break;
+      case 'partially_returned': orderStatus = 'returned'; break;
+      default: orderStatus = 'invoiced';
     }
 
-    const { error } = await supabase
-      .from('sales_orders')
-      .update({ status: orderStatus })
-      .eq('id', orderId);
-
-    if (!error) {
-      setOrders(prev => prev.map(order =>
-        order.id === orderId ? { ...order, status: orderStatus } : order
-      ));
-    }
+    // ✅ تحديث React state فقط — بدون DB write
+    setOrders(prev => prev.map(order =>
+      order.id === orderId ? { ...order, status: orderStatus } : order
+    ));
   };
 
   // تحديث حالة جميع الفواتير المرتبطة
@@ -992,7 +971,7 @@ function SalesOrdersContent() {
           original_total: inv.original_total
         };
 
-        // تحديث حالة أمر البيع المرتبط
+        // ✅ تحديث حالة أمر البيع محلياً فقط (بدون DB write)
         const linkedOrder = orders.find(o => o.invoice_id === inv.id);
         if (linkedOrder) {
           syncOrderWithInvoice(linkedOrder.id, inv.status);
@@ -1001,6 +980,7 @@ function SalesOrdersContent() {
       setLinkedInvoices(invoiceMap);
     }
   };
+
 
   useEffect(() => {
     loadOrders();
