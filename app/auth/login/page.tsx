@@ -95,55 +95,13 @@ export default function LoginPage() {
       if (must) {
         router.push("/auth/force-change-password")
       } else {
-        // ✅ الانتظار حتى اكتمال bootstrap قبل redirect
-        // ✅ هذا يمنع unmount للـ contexts أثناء التهيئة
-        const waitForBootstrap = (): Promise<void> => {
-          return new Promise((resolve) => {
-            // ✅ إذا كان bootstrap مكتملاً بالفعل، انتقل مباشرة
-            if (typeof window !== 'undefined') {
-              const checkBootstrap = () => {
-                // التحقق من localStorage للـ bootstrap state
-                const permsLoaded = localStorage.getItem('erp_permissions_loaded')
-                if (permsLoaded === 'true') {
-                  // ✅ انتظار قصير للتأكد من اكتمال التحميل
-                  setTimeout(resolve, 200)
-                  return
-                }
-              }
-              
-              // ✅ الاستماع لـ bootstrap_complete event
-              const handleBootstrapComplete = () => {
-                window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
-                resolve()
-              }
-              
-              window.addEventListener('bootstrap_complete', handleBootstrapComplete)
-              
-              // ✅ فحص فوري
-              checkBootstrap()
-              
-              // ✅ timeout احتياطي (5 ثواني)
-              setTimeout(() => {
-                window.removeEventListener('bootstrap_complete', handleBootstrapComplete)
-                console.warn('⚠️ [Login] Bootstrap timeout, proceeding anyway')
-                resolve()
-              }, 5000)
-            } else {
-              resolve()
-            }
-          })
-        }
-        
-        // ✅ الانتظار حتى اكتمال bootstrap
-        await waitForBootstrap()
-        
-        // ✅ الآن يمكن التوجيه بأمان - bootstrap مكتمل
+        // نقل المستخدم بتهيئة كاملة (Hard Navigation) لضمان تحميل سياقات الأمان بشكل نظيف
         try {
           const res = await fetch("/api/first-allowed-page")
           const data = await res.json()
-          router.push(data.path || "/dashboard")
+          window.location.href = data.path || "/dashboard"
         } catch {
-          router.push("/dashboard")
+          window.location.href = "/dashboard"
         }
       }
     } catch (error: unknown) {
@@ -187,12 +145,12 @@ export default function LoginPage() {
               if (!memErr) {
                 await supabase.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
                 if (typeof window !== 'undefined') {
-                  try { localStorage.setItem('active_company_id', String((inv as any).company_id || '')) } catch {}
+                  try { localStorage.setItem('active_company_id', String((inv as any).company_id || '')) } catch { }
                 }
               }
             }
           }
-        } catch {}
+        } catch { }
         // تعيين الشركة الفعّالة افتراضياً إذا لم تُعيّن بعد
         try {
           const hasActive = typeof window !== 'undefined' ? !!localStorage.getItem('active_company_id') : false
@@ -204,7 +162,7 @@ export default function LoginPage() {
               .limit(1)
             const cidFromMember = myMember && myMember[0]?.company_id
             if (cidFromMember && typeof window !== 'undefined') {
-              try { localStorage.setItem('active_company_id', String(cidFromMember)) } catch {}
+              try { localStorage.setItem('active_company_id', String(cidFromMember)) } catch { }
             } else {
               const { data: owned } = await supabase
                 .from('companies')
@@ -213,11 +171,11 @@ export default function LoginPage() {
                 .limit(1)
               const ownedId = owned && owned[0]?.id
               if (ownedId && typeof window !== 'undefined') {
-                try { localStorage.setItem('active_company_id', String(ownedId)) } catch {}
+                try { localStorage.setItem('active_company_id', String(ownedId)) } catch { }
               }
             }
           }
-        } catch {}
+        } catch { }
         try {
           const { data: { user } } = await supabase.auth.getUser()
           let cidForRedirect = ''
@@ -227,8 +185,8 @@ export default function LoginPage() {
             const cid = String(js?.companyId || '')
             if (res.ok && cid && typeof window !== 'undefined') {
               cidForRedirect = cid
-              try { localStorage.setItem('active_company_id', cid) } catch {}
-              try { document.cookie = `active_company_id=${cid}; path=/; max-age=31536000` } catch {}
+              try { localStorage.setItem('active_company_id', cid) } catch { }
+              try { document.cookie = `active_company_id=${cid}; path=/; max-age=31536000` } catch { }
             }
           }
           if (cidForRedirect) {
@@ -237,7 +195,7 @@ export default function LoginPage() {
             router.replace('/auth/force-change-password')
           }
         } catch { router.replace('/auth/force-change-password') }
-      } catch {}
+      } catch { }
     }
     applyHashSession()
     // eslint-disable-next-line react-hooks/exhaustive-deps
