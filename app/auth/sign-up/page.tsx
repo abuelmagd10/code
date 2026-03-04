@@ -269,7 +269,16 @@ export default function SignUpPage() {
           }
         },
       })
-      if (authError) throw authError
+
+      // If Supabase fails ONLY because it can't send its own confirmation email,
+      // we handle it gracefully — our Resend API will send the branded email instead.
+      const isEmailSendError = authError?.message?.toLowerCase().includes("sending confirmation email")
+        || authError?.message?.toLowerCase().includes("error sending")
+        || authError?.message?.toLowerCase().includes("email")
+
+      if (authError && !isEmailSendError) {
+        throw authError
+      }
 
       // Check if email confirmation is needed
       // If user is immediately confirmed (autoconfirm enabled), redirect to create company
@@ -289,7 +298,7 @@ export default function SignUpPage() {
           })
         } catch (resendErr) {
           console.error("Failed to send branded confirmation email:", resendErr)
-          // Non-blocking: Supabase already sent its default email as fallback
+          // Non-blocking: continue to success page anyway
         }
 
         router.push("/auth/sign-up-success")
