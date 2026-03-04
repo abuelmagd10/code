@@ -38,7 +38,10 @@ export async function POST(req: NextRequest) {
     if (fullDelete) {
       const { error: delUserErr } = await (admin as any).auth.admin.deleteUser(userId)
       if (delUserErr) {
-        return apiError(HTTP_STATUS.BAD_REQUEST, "خطأ في حذف المستخدم", delUserErr.message)
+        // تحذير فقط - العضوية تم حذفها بنجاح، لكن حذف المستخدم من Auth فشل
+        // (قد يكون بسبب بيانات مرتبطة في جداول أخرى)
+        console.warn("⚠️ [member-delete] Auth user deletion failed (non-fatal):", delUserErr.message)
+        return apiSuccess({ ok: true, warning: "تم حذف العضوية بنجاح، لكن تعذر حذف حساب المستخدم: " + delUserErr.message })
       }
     }
 
