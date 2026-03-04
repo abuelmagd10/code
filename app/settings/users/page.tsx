@@ -28,7 +28,6 @@ type PermissionTransfer = { id: string; from_user_id: string; to_user_id: string
 type UserBranchAccess = { id: string; user_id: string; branch_id: string; is_primary: boolean; can_view_customers: boolean; can_view_orders: boolean; can_view_prices: boolean; is_active: boolean }
 
 export default function UsersSettingsPage() {
-  console.log('🚀 [Users Page] Component loaded - Version 2.0');
 
   const supabase = useSupabase()
   const { toast } = useToast()
@@ -596,7 +595,7 @@ export default function UsersSettingsPage() {
       ))
 
       toastActionSuccess(toast, "حفظ", "فرع الموظف")
-      
+
       // إنشاء إشعار للمستخدم عند تغيير فرعه
       try {
         const { notifyUserBranchChanged } = await import('@/lib/notification-helpers')
@@ -612,7 +611,7 @@ export default function UsersSettingsPage() {
         console.error("Error creating notification:", notifError)
         // لا نوقف العملية إذا فشل إنشاء الإشعار
       }
-      
+
       setShowMemberBranchDialog(false)
       loadPermissionData()
 
@@ -736,7 +735,7 @@ export default function UsersSettingsPage() {
         .update({ role })
         .eq("id", id)
       if (error) { setActionError(error.message || "تعذر التحديث"); return }
-      
+
       // إنشاء إشعار للمستخدم عند تغيير دوره
       if (oldRole !== role) {
         try {
@@ -755,9 +754,9 @@ export default function UsersSettingsPage() {
           // لا نوقف العملية إذا فشل إنشاء الإشعار
         }
       }
-      
+
       await refreshMembers()
-      
+
       // ✅ تحديث الصلاحيات فقط إذا كان المستخدم الذي تم تغيير صلاحياته هو المستخدم الحالي
       // في حالة تغيير الدور، نتحقق من ذلك في مكان آخر (عند تغيير الدور مباشرة)
       // هنا نحن فقط نحدث الـ Sidebar لأن تغيير الدور تم في مكان آخر
@@ -1057,7 +1056,7 @@ export default function UsersSettingsPage() {
                               if (res.ok && js?.ok) {
                                 setMembers((prev) => prev.map((x) => x.user_id === m.user_id ? { ...x, role: nr } : x))
                                 toastActionSuccess(toast, "تحديث", "الدور")
-                                
+
                                 // ✅ تحديث الصلاحيات فقط إذا كنا نغير دور المستخدم الحالي
                                 if (m.user_id === currentUserId) {
                                   // نحن نغير دور المستخدم الحالي - نحدث الصلاحيات
@@ -1831,7 +1830,7 @@ export default function UsersSettingsPage() {
                   setRolePerms(perms || [])
                   setActionError(null)
                   toastActionSuccess(toast, "حفظ", "الصلاحيات")
-                  
+
                   // ✅ تحديث الصلاحيات فقط إذا كنا نحفظ صلاحيات للمستخدم الحالي
                   // إذا كنا نحفظ صلاحيات لدور آخر، لا نحدث الصلاحيات (لأنها لا تتأثر)
                   if (permRole === currentRole) {
@@ -2262,12 +2261,12 @@ export default function UsersSettingsPage() {
               {permissionAction === 'transfer' && (
                 <div className="space-y-2">
                   <Label>الفرع (اختياري)</Label>
-                  <Select value={transferBranchId} onValueChange={setTransferBranchId}>
+                  <Select value={transferBranchId || "all_branches"} onValueChange={(v) => setTransferBranchId(v === "all_branches" ? "" : v)}>
                     <SelectTrigger>
                       <SelectValue placeholder="الكل — نقل كل البيانات" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">الكل — نقل كل البيانات</SelectItem>
+                      <SelectItem value="all_branches">الكل — نقل كل البيانات</SelectItem>
                       {branches.map(b => (
                         <SelectItem key={b.id} value={b.id}>
                           {b.name}

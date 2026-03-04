@@ -1,0 +1,166 @@
+[
+  {
+    "name": "id",
+    "data_type": "uuid",
+    "format": "uuid",
+    "options": [
+      "updatable"
+    ],
+    "default_value": "gen_random_uuid()"
+  },
+  {
+    "name": "company_id",
+    "data_type": "uuid",
+    "format": "uuid",
+    "options": [
+      "updatable"
+    ]
+  },
+  {
+    "name": "name",
+    "data_type": "text",
+    "format": "text",
+    "options": [
+      "updatable"
+    ]
+  },
+  {
+    "name": "email",
+    "data_type": "text",
+    "format": "text",
+    "options": [
+      "updatable"
+    ]
+  },
+  {
+    "name": "phone",
+    "data_type": "text",
+    "format": "text",
+    "options": [
+      "nullable",
+      "updatable"
+    ]
+  },
+  {
+    "name": "address",
+    "data_type": "text",
+    "format": "text",
+    "options": [
+      "nullable",
+      "updatable"
+    ]
+  },
+  {
+    "name": "city",
+    "data_type": "text",
+    "format": "text",
+    "options": [
+      "nullable",
+      "updatable"
+    ]
+  },
+  {
+    "name": "country",
+    "data_type": "text",
+    "format": "text",
+    "options": [
+      "nullable",
+      "updatable"
+    ]
+  },
+  {
+    "name": "tax_id",
+    "data_type": "text",
+    "format": "text",
+    "options": [
+      "nullable",
+      "updatable"
+    ]
+  },
+  {
+    "name": "payment_terms",
+    "data_type": "text",
+    "format": "text",
+    "options": [
+      "nullable",
+      "updatable"
+    ],
+    "default_value": "'Net 30'::text"
+  },
+  {
+    "name": "is_active",
+    "data_type": "boolean",
+    "format": "bool",
+    "options": [
+      "nullable",
+      "updatable"
+    ],
+    "default_value": "true"
+  },
+  {
+    "name": "created_at",
+    "data_type": "timestamp with time zone",
+    "format": "timestamptz",
+    "options": [
+      "nullable",
+      "updatable"
+    ],
+    "default_value": "CURRENT_TIMESTAMP"
+  },
+  {
+    "name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "format": "timestamptz",
+    "options": [
+      "nullable",
+      "updatable"
+    ],
+    "default_value": "CURRENT_TIMESTAMP"
+  },
+  {
+    "name": "balance_currency",
+    "data_type": "character varying",
+    "format": "varchar",
+    "options": [
+      "nullable",
+      "updatable"
+    ],
+    "default_value": "'EGP'::character varying"
+  },
+  {
+    "name": "created_by_user_id",
+    "data_type": "uuid",
+    "format": "uuid",
+    "options": [
+      "nullable",
+      "updatable"
+    ]
+  },
+  {
+    "name": "branch_id",
+    "data_type": "uuid",
+    "format": "uuid",
+    "options": [
+      "nullable",
+      "updatable"
+    ]
+  },
+  {
+    "name": "cost_center_id",
+    "data_type": "uuid",
+    "format": "uuid",
+    "options": [
+      "nullable",
+      "updatable"
+    ]
+  },
+  {
+    "name": "warehouse_id",
+    "data_type": "uuid",
+    "format": "uuid",
+    "options": [
+      "nullable",
+      "updatable"
+    ]
+  }
+]
