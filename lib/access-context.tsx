@@ -52,22 +52,22 @@ export interface AccessProfile {
   branch_id?: string | null
   warehouse_id?: string | null
   cost_center_id?: string | null
-  
+
   // الصفحات المسموح بها
   allowed_pages: string[]
-  
+
   // العمليات المسموح بها (resource:action)
   allowed_actions: string[]
-  
+
   // الفروع المسموح بها
   allowed_branches: string[]
-  
+
   // المخازن المسموح بها
   allowed_warehouses: string[]
-  
+
   // مراكز التكلفة المسموح بها
   allowed_cost_centers: string[]
-  
+
   // معلومات إضافية
   is_owner: boolean
   is_admin: boolean
@@ -80,22 +80,22 @@ export interface AccessContextType {
   // حالة التحميل
   isLoading: boolean
   isReady: boolean
-  
+
   // ✅ Bootstrap state - يمنع redirect أثناء التهيئة
   isBootstrapComplete: boolean
-  
+
   // Access Profile
   profile: AccessProfile | null
-  
+
   // دوال التحقق
   canAccessPage: (resource: string) => boolean
   canAction: (resource: string, action: string) => boolean
   canAccessBranch: (branchId: string) => boolean
   canAccessWarehouse: (warehouseId: string) => boolean
-  
+
   // إعادة تحميل الصلاحيات، وترجيع AccessProfile المحدّث
   refreshAccess: () => Promise<AccessProfile | null>
-  
+
   // الحصول على أول صفحة مسموحة
   getFirstAllowedPage: () => string
 }
@@ -128,9 +128,9 @@ const AccessContext = createContext<AccessContextType | null>(null)
  * @returns مسار أول صفحة مسموحة، أو "/no-access" إذا لم توجد صفحات
  */
 export function getFirstAllowedRoute(allowedPages: string[]): string {
-  // إذا لم توجد صفحات مسموحة
+  // إذا لم توجد صفحات مسموحة، نفترض أنه يحتاج وقتاً للتحميل ونعطيه مسار اللوحة مؤقتاً
   if (!allowedPages || allowedPages.length === 0) {
-    return "/no-access"
+    return "/dashboard"
   }
 
   // أولوية الصفحات الرئيسية
@@ -165,8 +165,8 @@ export function getFirstAllowedRoute(allowedPages: string[]): string {
     return `/${firstPage.replace(/_/g, "-")}`
   }
 
-  // إذا لم توجد أي صفحة، إرجاع /no-access
-  return "/no-access"
+  // إذا لم توجد أي صفحة من القائمة، إرجاع /dashboard لتجنب التوجيه الخاطئ المؤقت
+  return "/dashboard"
 }
 
 /**
@@ -205,7 +205,7 @@ async function fetchAccessProfile(
       userId,
       companyId,
     })
-    
+
     // ✅ Validation: التأكد من أن Query صحيح (من company_members فقط)
     const { data: member } = await supabase
       .from("company_members")
@@ -213,7 +213,7 @@ async function fetchAccessProfile(
       .eq("company_id", companyId)
       .eq("user_id", userId)
       .maybeSingle()
-    
+
     // ✅ Validation: التأكد من أن البيانات موجودة
     if (!member) {
       console.warn('⚠️ [AccessContext] fetchAccessProfile: No member found in company_members (Single Source of Truth)', {
@@ -222,7 +222,7 @@ async function fetchAccessProfile(
       })
       return null
     }
-    
+
     console.log(`📊 [AccessContext] fetchAccessProfile: Member data retrieved`, {
       hasMember: !!member,
       role: member?.role,
@@ -284,13 +284,13 @@ async function fetchAccessProfile(
         if (perm.can_access === false) {
           return
         }
-        
+
         // إذا كان all_access = true، نضيف الصفحة
         if (perm.all_access === true) {
           allowed_pages.push(perm.resource)
           return
         }
-        
+
         // إذا كان لديه أي صلاحية (read, write, update, delete)، نضيف الصفحة
         if (perm.can_read || perm.can_write || perm.can_update || perm.can_delete || perm.can_access === true) {
           allowed_pages.push(perm.resource)
@@ -326,7 +326,7 @@ async function fetchAccessProfile(
           .eq("company_id", companyId)
           .eq("user_id", userId)
           .eq("is_active", true)
-        
+
         if (branchAccess && branchAccess.length > 0) {
           allowed_branches = branchAccess.map((a: any) => a.branch_id).filter(Boolean)
         }
@@ -334,7 +334,7 @@ async function fetchAccessProfile(
         // ✅ إذا فشل query user_branch_access، نستخدم branch_id من company_members
         console.warn("[AccessContext] Error fetching user_branch_access, falling back to company_members.branch_id:", error)
       }
-      
+
       // ✅ Fallback: إذا لم يكن هناك فروع من user_branch_access، نستخدم branch_id من company_members
       if (allowed_branches.length === 0 && member.branch_id) {
         allowed_branches = [member.branch_id]
@@ -481,7 +481,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
 
     try {
       isRefreshingRef.current = true
-      console.log('🔄 [AccessContext] BLIND REFRESH: Refreshing user security context (full server query, no conditions)...', { 
+      console.log('🔄 [AccessContext] BLIND REFRESH: Refreshing user security context (full server query, no conditions)...', {
         branchChanged,
         timestamp: new Date().toISOString(),
       })
@@ -500,10 +500,10 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       // ✅ لأن branch_id قد يتغير من خلال Realtime حتى لو لم يكن branchChanged معرّف
       const newBranchId = freshProfile.branch_id || null
       const actualBranchChanged = oldBranchId !== newBranchId
-      
+
       if (actualBranchChanged && newBranchId) {
         console.log(`🔄 [AccessContext] Branch changed from ${oldBranchId} to ${newBranchId}, updating context...`)
-        
+
         // ✅ إطلاق event لتحديث الفرع في جميع أنحاء التطبيق
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('user_context_changed', {
@@ -555,12 +555,12 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         // ✅ 1. إطلاق event لتحديث UI (Sidebar, Menus, etc.)
         window.dispatchEvent(new Event('access_profile_updated'))
         console.log('✅ [AccessContext] access_profile_updated event dispatched')
-        
+
         // ✅ 2. إطلاق event للمكونات الأخرى التي تستمع لـ permissions_updated
         // ✅ هذه المكونات لا تستخدم useGovernanceRealtime مباشرة
         window.dispatchEvent(new Event('permissions_updated'))
         console.log('✅ [AccessContext] permissions_updated event dispatched')
-        
+
         // ✅ 3. إطلاق user_context_changed event إذا تغير الفرع (أو دائماً للتأكد)
         // ✅ هذا يضمن تحديث جميع المكونات التي تعتمد على الفرع
         if (actualBranchChanged) {
@@ -600,7 +600,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
   // 🔐 توجيه تلقائي لأول صفحة مسموحة
   const redirectToFirstAllowedPage = useCallback(() => {
     if (!profile) {
-      router.replace('/no-access')
+      router.replace('/dashboard')
       return
     }
 
@@ -612,17 +612,17 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
   // ✅ فحص اكتمال Bootstrap (Access + Permissions)
   useEffect(() => {
     if (bootstrapCheckedRef.current) return
-    
+
     // ✅ التحقق من اكتمال Access
     if (!isReady) return
-    
+
     // ✅ التحقق من اكتمال Permissions عبر event
     // PermissionsContext يطلق 'permissions_ready' event عند اكتمال التحميل
     const handlePermissionsReady = () => {
       if (!bootstrapCheckedRef.current && isReady) {
         bootstrapCheckedRef.current = true
         setIsBootstrapComplete(true)
-        
+
         // ✅ إطلاق event عند اكتمال bootstrap
         if (typeof window !== 'undefined') {
           console.log('✅ [AccessContext] Bootstrap complete - Access + Permissions loaded')
@@ -630,11 +630,11 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         }
       }
     }
-    
+
     // ✅ الاستماع لـ permissions_ready event
     if (typeof window !== 'undefined') {
       window.addEventListener('permissions_ready', handlePermissionsReady)
-      
+
       // ✅ إذا كان Permissions جاهزاً بالفعل (من localStorage cache)
       // نتحقق مباشرة
       const timeoutId = setTimeout(() => {
@@ -644,14 +644,14 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
           handlePermissionsReady()
         }
       }, 100)
-      
+
       return () => {
         window.removeEventListener('permissions_ready', handlePermissionsReady)
         clearTimeout(timeoutId)
       }
     }
   }, [isReady])
-  
+
   // تحميل Access Profile عند البدء
   useEffect(() => {
     loadAccessProfile()
@@ -725,55 +725,55 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
   // دوال التحقق
   const canAccessPage = useCallback((resource: string): boolean => {
     if (!isReady || !profile) return false
-    
+
     // Owner/Admin: كل الصفحات
     if (profile.is_owner || profile.is_admin) return true
-    
+
     // الملف الشخصي متاح للجميع
     if (resource === "profile") return true
-    
+
     // التحقق من allowed_pages
     return profile.allowed_pages.includes(resource)
   }, [isReady, profile])
 
   const canAction = useCallback((resource: string, action: string): boolean => {
     if (!isReady || !profile) return false
-    
+
     // Owner/Admin: كل العمليات
     if (profile.is_owner || profile.is_admin) return true
-    
+
     // التحقق من allowed_actions
     return profile.allowed_actions.includes(`${resource}:${action}`) ||
-           profile.allowed_actions.includes(`${resource}:*`) ||
-           profile.allowed_actions.includes("*")
+      profile.allowed_actions.includes(`${resource}:*`) ||
+      profile.allowed_actions.includes("*")
   }, [isReady, profile])
 
   const canAccessBranch = useCallback((branchId: string): boolean => {
     if (!isReady || !profile) return false
-    
+
     // Owner/Admin: كل الفروع
     if (profile.is_owner || profile.is_admin) return true
-    
+
     // التحقق من allowed_branches
     return profile.allowed_branches.includes(branchId)
   }, [isReady, profile])
 
   const canAccessWarehouse = useCallback((warehouseId: string): boolean => {
     if (!isReady || !profile) return false
-    
+
     // Owner/Admin: كل المخازن
     if (profile.is_owner || profile.is_admin) return true
-    
+
     // التحقق من allowed_warehouses
     return profile.allowed_warehouses.includes(warehouseId)
   }, [isReady, profile])
 
   const getFirstAllowedPage = useCallback((): string => {
     if (!profile) {
-      // إذا لم يكن هناك profile، إرجاع /no-access
-      return "/no-access"
+      // إذا لم يكن هناك profile، نفترض التوجيه للوحة لتجنب الفلاش المزعج
+      return "/dashboard"
     }
-    
+
     // 🔐 استخدام الدالة المركزية
     // حتى Owner/Admin يجب أن يمر عبر getFirstAllowedRoute
     // لأنهم قد لا يملكون dashboard في بعض الحالات النادرة
