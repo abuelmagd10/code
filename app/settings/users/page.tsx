@@ -237,6 +237,65 @@ export default function UsersSettingsPage() {
     load()
   }, [])
 
+  // ✅ Realtime تحديث الدعوات المعلقة عند قبولها/إنشائها بدون الحاجة لرفرش يدوي
+  useEffect(() => {
+    if (!companyId) return
+
+    try {
+      const channel = supabase
+        .channel(`company_invitations_realtime:${companyId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'company_invitations',
+            filter: `company_id=eq.${companyId}`,
+          },
+          (payload: any) => {
+            const nowIso = new Date().toISOString()
+            if (payload.eventType === 'INSERT') {
+              const inv = payload.new as any
+              // نضيف الدعوة فقط إذا كانت غير مقبولة وغير منتهية
+              if (!inv.accepted && inv.expires_at > nowIso) {
+                setInvites((prev) => {
+                  const exists = prev.some((p) => p.id === inv.id)
+                  return exists ? prev : [...prev, inv]
+                })
+              }
+              return
+            }
+
+            if (payload.eventType === 'UPDATE') {
+              const inv = payload.new as any
+              // إذا تم قبول الدعوة أو انتهت صلاحيتها → نحذفها من القائمة
+              if (inv.accepted || inv.expires_at <= nowIso) {
+                setInvites((prev) => prev.filter((p) => p.id !== inv.id))
+              } else {
+                // تحديث بيانات الدعوة في الواجهة إن بقيت معلّقة
+                setInvites((prev) =>
+                  prev.map((p) => (p.id === inv.id ? { ...p, ...inv } : p)),
+                )
+              }
+              return
+            }
+
+            if (payload.eventType === 'DELETE') {
+              const oldInv = payload.old as any
+              setInvites((prev) => prev.filter((p) => p.id !== oldInv.id))
+            }
+          },
+        )
+        .subscribe()
+
+      return () => {
+        supabase.removeChannel(channel)
+      }
+    } catch {
+      // في حال فشل الاشتراك لا نكسر الصفحة، فقط نتجاهل الـ realtime وسيبقى الرفرش اليدوي يعمل
+    }
+  }, [companyId, supabase])
+
   // ✅ الاستماع لتغيير الشركة
   useEffect(() => {
     const handleCompanyChange = async () => {
