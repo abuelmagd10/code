@@ -289,7 +289,8 @@ export default function UsersSettingsPage() {
         .subscribe()
 
       return () => {
-        supabase.removeChannel(channel)
+        // استخدام unsubscribe لإغلاق الاشتراك من جهة الخادم بشكل صحيح
+        channel.unsubscribe()
       }
     } catch {
       // في حال فشل الاشتراك لا نكسر الصفحة، فقط نتجاهل الـ realtime وسيبقى الرفرش اليدوي يعمل
