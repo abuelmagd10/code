@@ -52,13 +52,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "خطأ في الخادم. يرجى المحاولة لاحقاً." }, { status: 500 })
     }
 
-    const user = userData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase())
+    let foundUser = userData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase())
 
-    if (!user) {
-      return NextResponse.json({ error: "البريد الإلكتروني غير مسجل في النظام" }, { status: 404 })
+    if (!foundUser) {
+      // User might have just been created (called right after signUp) — retry once after a short delay
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      const { data: retryData, error: retryError } = await admin.auth.admin.listUsers()
+      if (retryError) {
+        return NextResponse.json({ error: "خطأ في الخادم. يرجى المحاولة لاحقاً." }, { status: 500 })
+      }
+      foundUser = retryData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase())
+      if (!foundUser) {
+        return NextResponse.json({ error: "البريد الإلكتروني غير مسجل في النظام" }, { status: 404 })
+      }
     }
 
-    if (user.email_confirmed_at) {
+    if (foundUser.email_confirmed_at) {
       return NextResponse.json({ error: "البريد الإلكتروني مؤكد مسبقاً! يمكنك تسجيل الدخول.", confirmed: true }, { status: 400 })
     }
 
@@ -110,7 +119,7 @@ export async function POST(req: NextRequest) {
     } catch { }
 
     // Also check user metadata for language preference
-    if (lang === 'ar' && user.user_metadata?.preferred_language === 'en') {
+    if (lang === 'ar' && foundUser.user_metadata?.preferred_language === 'en') {
       lang = 'en'
     }
 

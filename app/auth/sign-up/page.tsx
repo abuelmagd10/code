@@ -52,7 +52,7 @@ export default function SignUpPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [step, setStep] = useState(1) // 1: Account, 2: Company
-  const [pendingInvitation, setPendingInvitation] = useState<{company_id: string, company_name: string, role: string, accept_token: string} | null>(null)
+  const [pendingInvitation, setPendingInvitation] = useState<{ company_id: string, company_name: string, role: string, accept_token: string } | null>(null)
   const [checkingInvitation, setCheckingInvitation] = useState(false)
   const router = useRouter()
   const envOk = !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -279,6 +279,19 @@ export default function SignUpPage() {
       } else {
         // Email confirmation required - save email for resend feature
         sessionStorage.setItem("signup_email", email)
+
+        // Send our branded HTML email via Resend API (replaces Supabase's plain default email)
+        try {
+          await fetch("/api/resend-confirmation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email }),
+          })
+        } catch (resendErr) {
+          console.error("Failed to send branded confirmation email:", resendErr)
+          // Non-blocking: Supabase already sent its default email as fallback
+        }
+
         router.push("/auth/sign-up-success")
       }
     } catch (error: unknown) {
