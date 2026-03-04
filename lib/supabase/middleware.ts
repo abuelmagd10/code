@@ -7,9 +7,9 @@ const SUPPRESS_GOTRUE_WARNING = true
 function isSupabaseConfigured(): boolean {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  
-  return !!(supabaseUrl && supabaseAnonKey && 
-           !supabaseUrl.includes('dummy') && !supabaseAnonKey.includes('dummy'))
+
+  return !!(supabaseUrl && supabaseAnonKey &&
+    !supabaseUrl.includes('dummy') && !supabaseAnonKey.includes('dummy'))
 }
 
 export async function updateSession(request: NextRequest) {
@@ -66,8 +66,8 @@ export async function updateSession(request: NextRequest) {
     const isInvitationAcceptPage = request.nextUrl.pathname.startsWith("/invitations/accept")
     // السماح لمسارات API للدعوات وإعادة إرسال التأكيد بدون تسجيل الدخول
     const isPublicApi = request.nextUrl.pathname.startsWith("/api/get-invitation") ||
-                        request.nextUrl.pathname.startsWith("/api/accept-invite") ||
-                        request.nextUrl.pathname.startsWith("/api/resend-confirmation")
+      request.nextUrl.pathname.startsWith("/api/accept-invite") ||
+      request.nextUrl.pathname.startsWith("/api/resend-confirmation")
 
     if (!isAuthPage && !isInvitationAcceptPage && !isPublicApi && !session) {
       // لا توجد جلسة وليست على صفحة auth أو قبول الدعوة - أعد التوجيه إلى login
@@ -78,13 +78,6 @@ export async function updateSession(request: NextRequest) {
       }
       // السماح للصفحة الرئيسية / أن تعيد التوجيه بنفسها
     }
-
-    // Restore original console.warn
-    if (SUPPRESS_GOTRUE_WARNING) {
-      console.warn = console.warn
-    }
-
-    await supabase.auth.getSession()
 
     return supabaseResponse
   } catch (error) {
