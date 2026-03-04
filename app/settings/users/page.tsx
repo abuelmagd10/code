@@ -61,6 +61,13 @@ export default function UsersSettingsPage() {
   const [newMemberPass, setNewMemberPass] = useState("")
   const [refreshing, setRefreshing] = useState(false)
 
+  // User Reassignment
+  const [reassignModalOpen, setReassignModalOpen] = useState(false)
+  const [userToReassign, setUserToReassign] = useState<Member | null>(null)
+  const [userDependencies, setUserDependencies] = useState<any>(null)
+  const [reassignTargetId, setReassignTargetId] = useState("")
+  const [isReassigning, setIsReassigning] = useState(false)
+
   // Branch, Cost Center, Warehouse for invitations
   const [branches, setBranches] = useState<Branch[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
@@ -1110,6 +1117,12 @@ export default function UsersSettingsPage() {
                             if (res.ok && js?.ok) {
                               setMembers((prev) => prev.filter((x) => x.user_id !== m.user_id))
                               toastActionSuccess(toast, "حذف", "العضو")
+                            } else if (res.status === 409 && js?.reason === "HAS_DEPENDENCIES") {
+                              // Trigger Reassignment Modal
+                              setUserToReassign(m)
+                              setUserDependencies(js.dependencies)
+                              setReassignTargetId("")
+                              setReassignModalOpen(true)
                             } else { toastActionError(toast, "حذف", "العضو", js?.error || undefined) }
                           } catch (e: any) { toastActionError(toast, "حذف", "العضو", e?.message) }
                         }}>
@@ -1153,6 +1166,84 @@ export default function UsersSettingsPage() {
               }}>
                 <Lock className="w-4 h-4" />
                 حفظ
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* موديال نقل بيانات وحذف الموظف (Reassignment) */}
+        <Dialog open={reassignModalOpen} onOpenChange={(v) => { if (!v) { setReassignModalOpen(false); setUserToReassign(null); setUserDependencies(null); setReassignTargetId("") } }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                  <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <DialogTitle>نقل صلاحيات السجلات وملكية البيانات</DialogTitle>
+              </div>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="bg-amber-50 dark:bg-amber-900/20 p-3 rounded-md border border-amber-200 dark:border-amber-800">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
+                  لا يمكن حذف المستخدم ({userToReassign?.display_name || userToReassign?.username}) مباشرة لوجود بيانات مرتبطة به:
+                </p>
+                <ul className="list-disc list-inside text-xs text-amber-700 dark:text-amber-400 space-y-1">
+                  {userDependencies?.invoices > 0 && <li>فواتير مبيعات: {userDependencies.invoices}</li>}
+                  {userDependencies?.sales_orders > 0 && <li>أوامر بيع: {userDependencies.sales_orders}</li>}
+                  {userDependencies?.purchase_orders > 0 && <li>أوامر شراء: {userDependencies.purchase_orders}</li>}
+                  {userDependencies?.bills > 0 && <li>فواتير مشتريات: {userDependencies.bills}</li>}
+                  {userDependencies?.customers > 0 && <li>عملاء: {userDependencies.customers}</li>}
+                  {userDependencies?.suppliers > 0 && <li>موردين: {userDependencies.suppliers}</li>}
+                  {userDependencies?.journal_entries > 0 && <li>قيود يومية: {userDependencies.journal_entries}</li>}
+                </ul>
+                <p className="mt-2 text-xs font-bold text-amber-900 dark:text-amber-200">الإجمالي: {userDependencies?.total} سجل</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>اختر الموظف البديل لنقل الملكية إليه</Label>
+                <Select value={reassignTargetId} onValueChange={setReassignTargetId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر موظفاً (مسموح بالنشطين فقط)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members.filter(m => m.user_id !== userToReassign?.user_id).map(m => (
+                      <SelectItem key={m.user_id} value={m.user_id}>{m.display_name || m.username || m.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1 pb-1">سيتم نقل كافة السجلات باسم الموظف المختار أعلاه، ولن يفقد النظام أي بيانات.</p>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setReassignModalOpen(false)}>إلغاء</Button>
+              <Button className="gap-2 bg-red-600 hover:bg-red-700 text-white" disabled={!reassignTargetId || isReassigning} onClick={async () => {
+                setIsReassigning(true)
+                try {
+                  const res = await fetch("/api/member-delete", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                      userId: userToReassign?.user_id,
+                      companyId,
+                      fullDelete: true,
+                      targetUserId: reassignTargetId
+                    })
+                  })
+                  const js = await res.json()
+                  if (res.ok && js?.ok) {
+                    setMembers((prev) => prev.filter((x) => x.user_id !== userToReassign?.user_id))
+                    toastActionSuccess(toast, "نقل داتا وحذف", "المستخدم القديم")
+                    setReassignModalOpen(false)
+                  } else {
+                    toastActionError(toast, "نقل وحذف", "العضو", js?.error || undefined)
+                  }
+                } catch (e: any) {
+                  toastActionError(toast, "نقل وحذف", "العضو", e?.message)
+                } finally {
+                  setIsReassigning(false)
+                }
+              }}>
+                {isReassigning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : "نقل البيانات والحذف نهائياً"}
               </Button>
             </DialogFooter>
           </DialogContent>
