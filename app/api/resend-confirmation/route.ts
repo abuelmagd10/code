@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
       console.error("No token_hash in linkData:", linkData)
       return NextResponse.json({ error: "فشل إنشاء رابط التأكيد" }, { status: 500 })
     }
-    const confirmLink = `${base}/auth/callback?token_hash=${tokenHash}&type=signup`
+    const confirmLink = `${base}/auth/callback?token_hash=${tokenHash}&type=magiclink`
     console.log("Generated confirm link:", confirmLink)
 
     // Get company name and language from pending_companies table
