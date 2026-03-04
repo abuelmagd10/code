@@ -969,6 +969,47 @@ export default function UsersSettingsPage() {
     },
   }
 
+  const getResourceLabel = (value: string) => {
+    return Object.values(resourceCategories)
+      .flatMap((cat) => cat.resources)
+      .find((r) => r.value === value)?.label || value
+  }
+
+  const defaultSidebarResourcesByRole: Record<string, string[]> = {
+    staff: [
+      'customers', // العملاء
+      'sales_orders', // أوامر البيع
+      'inventory', // المخزون
+      'third_party_inventory', // بضائع لدى الغير
+    ],
+    accountant: [
+      'dashboard', // لوحة التحكم
+      'invoices', // فواتير البيع
+      'sales_returns', // مرتجع المبيعات
+      'suppliers', // الموردين
+      'purchase_orders', // أوامر الشراء
+      'bills', // فواتير المشتريات
+      'purchase_returns', // مرتجعات المشتريات
+      'products', // المنتجات
+      'inventory', // المخزون
+      'product_availability', // توافر المنتجات في الفروع
+      'inventory_transfers', // نقل المخزون
+      'third_party_inventory', // بضائع لدى الغير
+      'write_offs', // اهلاك المخزون
+      'inventory_goods_receipt', // اعتماد استلام المشتريات
+      'payments', // المدفوعات
+      'journal_entries', // المصروفات ضمن القيود اليومية
+    ],
+    store_manager: [
+      'inventory', // المخزون
+      'product_availability', // توافر المنتجات في الفروع
+      'inventory_transfers', // نقل المخزون
+      'third_party_inventory', // بضائع لدى الغير
+      'write_offs', // اهلاك المخزون
+      'inventory_goods_receipt', // اعتماد استلام المشتريات
+    ],
+  }
+
   // حالة التحميل
   if (pageLoading) {
     return (
@@ -1734,6 +1775,24 @@ export default function UsersSettingsPage() {
                     <Shield className="w-4 h-4" />
                     المورد (الصفحة)
                   </Label>
+                  {defaultSidebarResourcesByRole[permRole] && defaultSidebarResourcesByRole[permRole].length > 0 && (
+                    <div className="mb-2 p-3 rounded-lg bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700">
+                      <p className="text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                        الصفحات الافتراضية في القائمة الجانبية لهذا الدور:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {defaultSidebarResourcesByRole[permRole].map((res) => (
+                          <Badge key={res} variant="outline" className="text-[10px] px-2 py-0.5">
+                            {getResourceLabel(res)}
+                          </Badge>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[10px] text-gray-500 dark:text-gray-400">
+                        يمكن للأدوار العليا تعديل هذه الافتراضات لكل مستخدم عند الحاجة. هذا يؤثر فقط على عرض الصفحات في القائمة،
+                        وليس على صلاحيات القراءة أو التعديل أو الحذف.
+                      </p>
+                    </div>
+                  )}
                   <Select value={permResource} onValueChange={(v) => { setPermResource(v); setResourceSearch("") }}>
                     <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
                       <SelectValue placeholder="اختر المورد..." />
