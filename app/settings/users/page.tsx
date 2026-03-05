@@ -976,6 +976,16 @@ export default function UsersSettingsPage() {
   }
 
   const defaultSidebarResourcesByRole: Record<string, string[]> = {
+    owner: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
+    admin: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
+    manager: [
+      'dashboard', 'reports',
+      'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes',
+      'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits',
+      'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt',
+      'payments', 'journal_entries', 'hr', 'employees', 'attendance', 'payroll',
+      'branches', 'cost_centers', 'warehouses',
+    ],
     staff: [
       'customers', // العملاء
       'sales_orders', // أوامر البيع
@@ -1007,6 +1017,10 @@ export default function UsersSettingsPage() {
       'third_party_inventory', // بضائع لدى الغير
       'write_offs', // اهلاك المخزون
       'inventory_goods_receipt', // اعتماد استلام المشتريات
+    ],
+    viewer: [
+      'dashboard', // لوحة التحكم
+      'reports', // التقارير العامة
     ],
   }
 
