@@ -208,7 +208,7 @@ export default function UsersSettingsPage() {
         // جلب الصلاحيات للشركة الحالية فقط
         const { data: perms } = await supabase
           .from("company_role_permissions")
-          .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access")
+          .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access,can_access")
           .eq("company_id", cid)
         setRolePerms(perms || [])
 
@@ -386,12 +386,46 @@ export default function UsersSettingsPage() {
       if (!companyId) return
       const { data: perms } = await supabase
         .from("company_role_permissions")
-        .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access")
+        .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access,can_access")
         .eq("company_id", companyId)
         .eq("role", permRole)
       setRolePerms(perms || [])
     })()
   }, [companyId, permRole])
+
+  // Sync the form states when role/resource or permissions change
+  useEffect(() => {
+    if (!rolePerms || rolePerms.length === 0) {
+      // إذا لم يتم تحميل صلاحيات بعد، نستخدم الافتراضيات
+      setPermAccess(true)
+      setPermRead(true)
+      setPermWrite(false)
+      setPermUpdate(false)
+      setPermDelete(false)
+      setPermFull(false)
+      return
+    }
+
+    const currentPerm = rolePerms.find(p => p.resource === permResource)
+
+    if (currentPerm) {
+      // تحديث الحالة بناءً على الصلاحيات المحفوظة في قاعدة البيانات
+      setPermAccess(currentPerm.can_access !== false)
+      setPermRead(currentPerm.can_read !== false)
+      setPermWrite(currentPerm.can_write === true)
+      setPermUpdate(currentPerm.can_update === true)
+      setPermDelete(currentPerm.can_delete === true)
+      setPermFull(currentPerm.all_access === true)
+    } else {
+      // إذا لم يوجد صلاحية مخصصة لهذا المورد وهذا الدور، نضع الافتراضيات
+      setPermAccess(true)
+      setPermRead(true)
+      setPermWrite(false)
+      setPermUpdate(false)
+      setPermDelete(false)
+      setPermFull(false)
+    }
+  }, [permRole, permResource, rolePerms])
 
   const refreshMembers = async () => {
     if (!companyId) return
