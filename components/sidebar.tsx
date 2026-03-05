@@ -169,6 +169,7 @@ export function Sidebar() {
     if (href.includes('/inventory/third-party')) return 'third_party_inventory'
     if (href.includes('/inventory/write-offs')) return 'write_offs'
     if (href.includes('/inventory/goods-receipt')) return 'inventory_goods_receipt'
+    if (href.includes('/inventory/product-availability')) return 'product_availability'
     if (href.includes('/inventory')) return 'inventory'
     // الموارد البشرية
     if (href.includes('/hr/employees')) return 'employees'
