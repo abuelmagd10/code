@@ -117,16 +117,19 @@ ORDER BY tc.table_name;
 -- Test 6: Verify Role CHECK Constraints
 -- =============================================
 SELECT
-  table_name,
-  constraint_name,
-  check_clause
-FROM information_schema.check_constraints
-WHERE constraint_schema = 'public'
+  c.relname AS table_name,
+  con.conname AS constraint_name,
+  pg_get_constraintdef(con.oid) AS check_clause
+FROM pg_constraint con
+JOIN pg_class c ON con.conrelid = c.oid
+JOIN pg_namespace n ON c.relnamespace = n.oid
+WHERE n.nspname = 'public'
+  AND con.contype = 'c'  -- CHECK constraint
   AND (
-    check_clause LIKE '%role%'
-    OR table_name IN ('company_members', 'company_invitations', 'company_role_permissions')
+    pg_get_constraintdef(con.oid) LIKE '%role%'
+    OR c.relname IN ('company_members', 'company_invitations', 'company_role_permissions')
   )
-ORDER BY table_name;
+ORDER BY c.relname;
 
 -- Expected: Role columns should have CHECK constraints
 -- Verify: Only valid roles can be stored
@@ -197,9 +200,12 @@ BEGIN
   
   -- Count CHECK constraints on roles
   SELECT COUNT(*) INTO check_count
-  FROM information_schema.check_constraints
-  WHERE constraint_schema = 'public'
-    AND check_clause LIKE '%role%';
+  FROM pg_constraint con
+  JOIN pg_class c ON con.conrelid = c.oid
+  JOIN pg_namespace n ON c.relnamespace = n.oid
+  WHERE n.nspname = 'public'
+    AND con.contype = 'c'  -- CHECK constraint
+    AND pg_get_constraintdef(con.oid) LIKE '%role%';
   
   RAISE NOTICE '========================================';
   RAISE NOTICE 'Security Test Summary';
