@@ -192,16 +192,14 @@ async function deleteUser() {
       console.log('   تم حذف العضويات والبيانات المرتبطة من company_members والجداول الأخرى.')
       console.log('   لحذف المستخدم من Auth، يجب حذف جميع البيانات المرتبطة أولاً.')
       console.log('   يمكنك استخدام Supabase Dashboard لحذف المستخدم يدوياً.')
-    } else {
-      console.log('✅ تم حذف المستخدم من Auth بنجاح')
-    }
-
-    console.log(`\n✅ تم حذف المستخدم ${email} من company_members والجداول المرتبطة`)
-    if (deleteError) {
+      console.log(`\n⚠️  تم حذف المستخدم ${email} من company_members والجداول المرتبطة`)
       console.log('⚠️  المستخدم لا يزال موجوداً في Auth بسبب بيانات مرتبطة في جداول أخرى')
       console.log('   يمكنك حذفه يدوياً من Supabase Dashboard بعد التأكد من عدم وجود بيانات مرتبطة')
+      // Throw error to ensure exit code 1
+      throw new Error(`Failed to delete user from Auth: ${deleteError.message}`)
     } else {
-      console.log('✅ تم حذف المستخدم بالكامل من قاعدة البيانات')
+      console.log('✅ تم حذف المستخدم من Auth بنجاح')
+      console.log(`\n✅ تم حذف المستخدم ${email} بالكامل من قاعدة البيانات`)
     }
   } catch (error) {
     console.error('❌ خطأ:', error.message)
