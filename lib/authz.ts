@@ -199,19 +199,20 @@ export async function getResourcePermissions(
     .eq("resource", resource)
     .maybeSingle()
 
-  // إذا لم يوجد سجل صلاحيات، نعطي صلاحيات افتراضية (read, write, update مسموح)
+  // 🔐 Enterprise Security: Default to DENY if no permission record exists
   if (!perm) {
-    const defaultAccess: ResourcePermissions = {
-      can_access: true,
-      can_read: true,
-      can_write: true,
-      can_update: true,
-      can_delete: false, // الحذف يحتاج صلاحية صريحة
+    console.warn(`[AUTHZ] No permission record found for resource: ${resource}, role: ${role}, company: ${cid}`)
+    const deniedAccess: ResourcePermissions = {
+      can_access: false,
+      can_read: false,
+      can_write: false,
+      can_update: false,
+      can_delete: false,
       all_access: false,
       allowed_actions: []
     }
-    permissionCache.set(cacheKey, { data: defaultAccess, timestamp: Date.now() })
-    return defaultAccess
+    permissionCache.set(cacheKey, { data: deniedAccess, timestamp: Date.now() })
+    return deniedAccess
   }
 
   const result: ResourcePermissions = {
@@ -275,14 +276,10 @@ export async function checkPermission(
     .eq("resource", resource)
     .maybeSingle()
 
-  // إذا لم يوجد سجل صلاحيات، نسمح بالصلاحيات الأساسية افتراضياً
-  // هذا يضمن أن الموظفين الجدد يمكنهم العمل حتى لو لم يتم إعداد صلاحياتهم بعد
+  // 🔐 Enterprise Security: Default to DENY if no permission record exists
+  // Permissions must be explicitly granted in company_role_permissions table
   if (!perm) {
-    // السماح بالصلاحيات الأساسية (read, write, update) افتراضياً
-    // لكن الحذف يحتاج صلاحية صريحة
-    if (action === "read" || action === "write" || action === "update") {
-      return { allowed: true, role, reason: "default_allowed" }
-    }
+    console.warn(`[AUTHZ] No permission record found for resource: ${resource}, role: ${role}, company: ${cid}, action: ${action}`)
     return { allowed: false, role, reason: "no_permission_record" }
   }
 

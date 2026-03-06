@@ -93,33 +93,17 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    // ✅ 3. Authorization Check (Multi-tenant)
-    // Check if user is owner or member of this company
-    const { data: membership } = await supabase
-      .from("company_members")
-      .select("company_id, role")
-      .eq("company_id", companyId)
-      .eq("user_id", user.id)
-      .maybeSingle()
-
-    const { data: ownership } = await supabase
-      .from("companies")
-      .select("user_id")
-      .eq("id", companyId)
-      .eq("user_id", user.id)
-      .maybeSingle()
-
-    const isAuthorized = !!membership || !!ownership
+    // ✅ 3. 🔐 Enterprise Authorization: استخدام دالة مساعدة موحدة
+    const { canAccessCompany } = await import("@/lib/company-authorization")
+    const hasAccess = await canAccessCompany(supabase, user.id, companyId)
 
     console.log('🔍 [API /company-info] Authorization:', {
       companyId,
       userId: user.id,
-      hasMembership: !!membership,
-      hasOwnership: !!ownership,
-      isAuthorized
+      hasAccess
     })
 
-    if (!isAuthorized) {
+    if (!hasAccess) {
       console.log('❌ [API /company-info] Access denied')
       return apiError(
         403,

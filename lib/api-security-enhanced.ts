@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveCompanyId } from '@/lib/company'
 import { getCompanyMembership } from '@/lib/company-authorization'
+import { checkPermission } from '@/lib/authz'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface SecurityConfig {
@@ -10,7 +11,7 @@ export interface SecurityConfig {
   requireBranch?: boolean
   requirePermission?: {
     resource: string
-    action: 'read' | 'write' | 'delete' | 'admin'
+    action: 'read' | 'write' | 'update' | 'delete' | 'manage_permissions'
   }
   allowedRoles?: string[]
   supabase?: SupabaseClient // ✅ إضافة supabase client اختياري
@@ -97,22 +98,25 @@ export async function secureApiRequest(
         created_at: authResult.membership.createdAt
       }
 
-      // 3. التحقق من الصلاحيات
+      // 3. 🔐 Enterprise Authorization: التحقق من الصلاحيات من قاعدة البيانات فقط
       if (config.requirePermission) {
-        const hasPermission = await checkPermission(
+        const permissionResult = await checkPermission(
           supabase,
-          member,
           config.requirePermission.resource,
           config.requirePermission.action
         )
 
-        if (!hasPermission) {
+        if (!permissionResult.allowed) {
           return {
             user,
             companyId,
             member,
             error: NextResponse.json(
-              { error: 'لا توجد صلاحية', message: 'Insufficient permissions' },
+              { 
+                error: 'لا توجد صلاحية', 
+                error_en: 'Insufficient permissions',
+                reason: permissionResult.reason || 'permission_denied'
+              },
               { status: 403 }
             )
           }
@@ -148,51 +152,8 @@ export async function secureApiRequest(
   return { user: null, companyId: '', member: null }
 }
 
-async function checkPermission(
-  supabase: any,
-  member: any,
-  resource: string,
-  action: string
-): Promise<boolean> {
-  // التحقق من الصلاحيات الأساسية حسب الدور
-  const rolePermissions: Record<string, Record<string, string[]>> = {
-    owner: { '*': ['read', 'write', 'delete', 'admin'] },
-    admin: { '*': ['read', 'write', 'delete'] },
-    manager: {
-      dashboard: ['read'],
-      invoices: ['read', 'write'],
-      customers: ['read', 'write'],
-      products: ['read', 'write'],
-      reports: ['read']
-    },
-    accountant: {
-      dashboard: ['read'],
-      invoices: ['read', 'write'],
-      journal_entries: ['read', 'write'],
-      products: ['read'], // ✅ Accountants need to read products for bills and inventory
-      reports: ['read']
-    },
-    store_manager: {
-      products: ['read', 'write'],
-      inventory: ['read', 'write'],
-      warehouses: ['read']
-    },
-    staff: {
-      invoices: ['read', 'write'],
-      customers: ['read', 'write']
-    },
-    viewer: { '*': ['read'] }
-  }
-
-  const permissions = rolePermissions[member.role]
-  if (!permissions) return false
-
-  // التحقق من الصلاحية العامة
-  if (permissions['*']?.includes(action)) return true
-
-  // التحقق من صلاحية المورد المحدد
-  return permissions[resource]?.includes(action) || false
-}
+// ✅ تم إزالة hardcoded permissions - الآن نستخدم checkPermission من lib/authz.ts فقط
+// ✅ company_role_permissions هو المصدر الوحيد للصلاحيات
 
 // دوال مساعدة للأخطاء الشائعة
 export function unauthorizedError() {
