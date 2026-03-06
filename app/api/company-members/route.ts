@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
 
     const { data: mems, error: membersError } = await admin
       .from("company_members")
-      .select("id, user_id, role, email, created_at")
+      .select("id, user_id, role, email, created_at, branch_id, cost_center_id, warehouse_id")
       .eq("company_id", companyId)
 
     if (membersError) {
