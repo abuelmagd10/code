@@ -177,17 +177,6 @@ export default function ProductsPage() {
             setUserBranchId(member?.branch_id || "")
             setUserCostCenterId(member?.cost_center_id || "")
             setUserWarehouseId(member?.warehouse_id || "")
-            
-            // 🔍 Debug: تسجيل البيانات للتحقق (يمكن حذفها لاحقاً)
-            if (process.env.NODE_ENV === 'development') {
-              console.log('[Products] User restrictions loaded:', {
-                role,
-                branch_id: member?.branch_id || null,
-                cost_center_id: member?.cost_center_id || null,
-                warehouse_id: member?.warehouse_id || null,
-              })
-            }
-            
             // فقط هذه الأدوار يمكنها رؤية سعر التكلفة
             setCanViewCOGS(["owner", "admin", "accountant", "manager"].includes(role))
           }
@@ -565,7 +554,7 @@ export default function ProductsPage() {
       income_account_id: "",
       expense_account_id: "",
       cost_center: "",
-      // للأدوار العادية: فرض القيم | للأدوار العليا: prefill إذا كانت موجودة
+      // للأدوار العادية: فرض القيم (حتى لو كانت فارغة) | للأدوار العليا: prefill إذا كانت موجودة فقط
       cost_center_id: isNormalRole ? userCostCenterId : (userCostCenterId || ""),
       branch_id: isNormalRole ? userBranchId : (userBranchId || ""),
       // تعيين warehouse_id فقط للمنتجات (item_type === "product")
