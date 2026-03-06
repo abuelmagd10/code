@@ -1192,7 +1192,7 @@ export default function InvoiceDetailPage() {
         recipient_name: invoice.customer_name_snapshot || invoice.customers?.name || "",
         recipient_phone: invoice.customer_phone_snapshot || invoice.customers?.phone || "",
         recipient_address: invoice.customer_address_snapshot || invoice.customers?.address || "",
-        recipient_city: invoice.customers?.city || "",
+        recipient_city: invoice.customer_city_snapshot || invoice.customers?.city || "",
         weight: "",
         notes: ""
       })
@@ -1274,7 +1274,7 @@ export default function InvoiceDetailPage() {
                   name: shipmentData.recipient_name || invoice.customer_name_snapshot || invoice.customers?.name || '',
                   phone: shipmentData.recipient_phone || invoice.customer_phone_snapshot || invoice.customers?.phone || '',
                   address: shipmentData.recipient_address || invoice.customer_address_snapshot || invoice.customers?.address || '',
-                  city: shipmentData.recipient_city || invoice.customers?.city || '',
+                  city: shipmentData.recipient_city || invoice.customer_city_snapshot || invoice.customers?.city || '',
                   country: 'Egypt',
                 },
                 shipment: {

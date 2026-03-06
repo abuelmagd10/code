@@ -731,11 +731,18 @@ export default function NewInvoicePage() {
         }
 
         // 📸 جلب بيانات العميل لحفظ Snapshot
-        const { data: customerData } = await supabase
+        const { data: customerData, error: customerError } = await supabase
           .from("customers")
           .select("name, email, phone, address, city, country, tax_id, governorate, detailed_address")
           .eq("id", formData.customer_id)
           .single()
+
+        if (customerError || !customerData) {
+          toastActionError(toast, appLang === 'en' 
+            ? 'Failed to load customer data. Invoice will be created without snapshot.' 
+            : 'فشل تحميل بيانات العميل. سيتم إنشاء الفاتورة بدون snapshot.')
+          console.error('Customer data fetch error:', customerError)
+        }
 
         // Create invoice with dual currency storage
         const { data: invoiceData, error: invoiceError } = await supabase
