@@ -215,13 +215,16 @@ export async function getResourcePermissions(
     return deniedAccess
   }
 
+  // 🔐 Enterprise Security: Use actual values from database
+  // If a permission record exists, use its values (even if they are defaults)
+  // This respects explicit permission grants while maintaining security
   const result: ResourcePermissions = {
-    can_access: perm.can_access ?? true,
-    can_read: perm.can_read ?? true,
-    can_write: perm.can_write ?? true,
-    can_update: perm.can_update ?? true,
-    can_delete: perm.can_delete ?? false,
-    all_access: perm.all_access ?? false,
+    can_access: perm.can_access ?? false,  // Default to false if null
+    can_read: perm.can_read ?? false,      // Default to false if null (NOT NULL in DB, but defensive)
+    can_write: perm.can_write ?? false,    // Default to false if null
+    can_update: perm.can_update ?? false,  // Default to false if null
+    can_delete: perm.can_delete ?? false,  // Default to false
+    all_access: perm.all_access ?? false,  // Default to false
     allowed_actions: perm.allowed_actions ?? []
   }
 
