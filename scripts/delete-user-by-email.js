@@ -205,8 +205,11 @@ async function deleteUser() {
     }
   } catch (error) {
     console.error('❌ خطأ:', error.message)
-    process.exit(1)
+    throw error // Re-throw to be caught by promise handler
   }
 }
 
-deleteUser()
+deleteUser().catch((error) => {
+  console.error('❌ خطأ غير متوقع:', error.message)
+  process.exit(1)
+})
