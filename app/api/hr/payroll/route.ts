@@ -68,20 +68,28 @@ export async function POST(req: NextRequest) {
     }
     let { data: att, error: attErr } = await client
       .from('attendance_records')
-      .select('employee_id, status, day_date')
+      .select('employee_id, status, day_date, late_minutes, overtime_minutes, early_leave_minutes')
       .eq('company_id', companyId)
-      .gte('day_date', `${year}-${String(month).padStart(2,'0')}-01`)
-      .lte('day_date', `${year}-${String(month).padStart(2,'0')}-31`)
+      .gte('day_date', `${year}-${String(month).padStart(2, '0')}-01`)
+      .lte('day_date', `${year}-${String(month).padStart(2, '0')}-31`)
     if (useHr && attErr && ((attErr as any).code === 'PGRST205' || String(attErr.message || '').toUpperCase().includes('PGRST205'))) {
       const clientHr = (client as any).schema ? (client as any).schema('hr') : client
       const res = await clientHr
         .from('attendance_records')
-        .select('employee_id, status, day_date')
+        .select('employee_id, status, day_date, late_minutes, overtime_minutes, early_leave_minutes')
         .eq('company_id', companyId)
-        .gte('day_date', `${year}-${String(month).padStart(2,'0')}-01`)
-        .lte('day_date', `${year}-${String(month).padStart(2,'0')}-31`)
+        .gte('day_date', `${year}-${String(month).padStart(2, '0')}-01`)
+        .lte('day_date', `${year}-${String(month).padStart(2, '0')}-31`)
       att = res.data as any
       attErr = res.error as any
+    }
+
+    let { data: attSettingsData } = await client.from('attendance_payroll_settings').select('*').eq('company_id', companyId).maybeSingle()
+    const attSettings = attSettingsData || {
+      deduct_late: true, late_deduction_type: 'exact_minutes', late_multiplier: 1.0,
+      deduct_early_leave: true, early_leave_multiplier: 1.0,
+      pay_overtime: true, overtime_multiplier: 1.5,
+      deduct_absence: true, absence_day_deduction: 1.0
     }
 
     const adjByEmp: Record<string, { allowances: number; deductions: number; bonuses: number; advances: number; insurance: number }> = {}
@@ -97,13 +105,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const absencesByEmp: Record<string, number> = {}
+    const attAggByEmp: Record<string, { absences: number, lateDeductionMins: number, overtimeMins: number, earlyLeaveMins: number }> = {}
     for (const r of (att || [])) {
       const st = String((r as any).status || '').toLowerCase()
-      if (st === 'absent') {
-        const k = String((r as any).employee_id)
-        absencesByEmp[k] = (absencesByEmp[k] || 0) + 1
+      const k = String((r as any).employee_id)
+
+      if (!attAggByEmp[k]) {
+        attAggByEmp[k] = { absences: 0, lateDeductionMins: 0, overtimeMins: 0, earlyLeaveMins: 0 }
       }
+      if (st === 'absent') {
+        attAggByEmp[k].absences += 1
+      }
+      attAggByEmp[k].lateDeductionMins += Number((r as any).late_minutes || 0)
+      attAggByEmp[k].overtimeMins += Number((r as any).overtime_minutes || 0)
+      attAggByEmp[k].earlyLeaveMins += Number((r as any).early_leave_minutes || 0)
     }
 
     const rows: any[] = []
@@ -111,9 +126,31 @@ export async function POST(req: NextRequest) {
       const id = String((e as any).id)
       const base = Number((e as any).base_salary || 0)
       const adj = adjByEmp[id] || { allowances: 0, deductions: 0, bonuses: 0, advances: 0, insurance: 0 }
-      const absDays = absencesByEmp[id] || 0
+      const attAgg = attAggByEmp[id] || { absences: 0, lateDeductionMins: 0, overtimeMins: 0, earlyLeaveMins: 0 }
+
       const daily = base / 30
-      const absenceDeduction = daily * absDays
+      const hourly = daily / 8
+      const minuteRate = hourly / 60
+
+      let absenceDeduction = 0
+      if (attSettings.deduct_absence) {
+        absenceDeduction = daily * attAgg.absences * Number(attSettings.absence_day_deduction || 1)
+      }
+
+      let lateDeduction = 0
+      if (attSettings.deduct_late) {
+        lateDeduction = attAgg.lateDeductionMins * minuteRate * Number(attSettings.late_multiplier || 1)
+      }
+
+      let earlyLeaveDeduction = 0
+      if (attSettings.deduct_early_leave) {
+        earlyLeaveDeduction = attAgg.earlyLeaveMins * minuteRate * Number(attSettings.early_leave_multiplier || 1)
+      }
+
+      let overtimeAllowance = 0
+      if (attSettings.pay_overtime) {
+        overtimeAllowance = attAgg.overtimeMins * minuteRate * Number(attSettings.overtime_multiplier || 1.5)
+      }
 
       // ✅ جلب ملخص العمولات للموظف (العمولات المكتسبة - السلف المصروفة)
       // ✅ إصلاح 3: تمرير payroll_run_id لحساب السلف بشكل صحيح عند إعادة الحساب
@@ -136,14 +173,17 @@ export async function POST(req: NextRequest) {
       }
 
       const netCommission = Math.max(commissionEarned - commissionAdvanceDeducted, 0)
-      const totalDeductions = Number(adj.deductions || 0) + Number(adj.advances || 0) + Number(adj.insurance || 0) + Number(absenceDeduction || 0)
-      const net = base + Number(adj.allowances || 0) + Number(adj.bonuses || 0) + netCommission - totalDeductions
+      const totalAttendanceDeductions = absenceDeduction + lateDeduction + earlyLeaveDeduction
+      const totalDeductions = Number(adj.deductions || 0) + Number(adj.advances || 0) + Number(adj.insurance || 0) + totalAttendanceDeductions
+      const totalAllowances = Number(adj.allowances || 0) + overtimeAllowance
+
+      const net = base + totalAllowances + Number(adj.bonuses || 0) + netCommission - totalDeductions
       rows.push({
         company_id: companyId,
         payroll_run_id: runId,
         employee_id: id,
         base_salary: base,
-        allowances: adj.allowances || 0,
+        allowances: totalAllowances,
         deductions: totalDeductions,
         bonuses: adj.bonuses || 0,
         advances: adj.advances || 0,
@@ -151,7 +191,7 @@ export async function POST(req: NextRequest) {
         commission: commissionEarned,
         commission_advance_deducted: commissionAdvanceDeducted,
         net_salary: net,
-        breakdown: { absences: absDays, daily_rate: daily, commission_earned: commissionEarned, commission_advance_deducted: commissionAdvanceDeducted }
+        breakdown: { absences: attAgg.absences, late_mins: attAgg.lateDeductionMins, overtime_mins: attAgg.overtimeMins, early_leave_mins: attAgg.earlyLeaveMins, daily_rate: daily, attendance_deductions_val: totalAttendanceDeductions, overtime_allowance_val: overtimeAllowance, commission_earned: commissionEarned, commission_advance_deducted: commissionAdvanceDeducted }
       })
     }
 
@@ -199,7 +239,7 @@ export async function POST(req: NextRequest) {
         record_id: runId,
         new_data: { year, month, count: rows.length }
       })
-    } catch {}
+    } catch { }
     return apiSuccess({ ok: true, run_id: runId, count: rows.length })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء معالجة المرتبات", e?.message)
