@@ -35,29 +35,34 @@ async function deleteUser() {
     const { data: { users }, error: listError } = await admin.auth.admin.listUsers()
     if (listError) {
       console.error('❌ خطأ في جلب المستخدمين:', listError.message)
-      return
+      throw new Error(`Failed to list users: ${listError.message}`)
     }
 
     const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase())
     if (!user) {
       console.error(`❌ المستخدم ${email} غير موجود في قاعدة البيانات`)
-      return
+      throw new Error(`User ${email} not found`)
     }
 
     console.log(`✅ تم العثور على المستخدم: ${user.id}`)
     console.log(`   - Email: ${user.email}`)
     console.log(`   - Created: ${user.created_at}`)
 
-    // 2. Check company_members
+    const userId = user.id
+
+    // 2. Check company_members FIRST (before deletion)
     const { data: memberships, error: membersError } = await admin
       .from('company_members')
       .select('id, company_id, role')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
 
     if (membersError) {
       console.error('❌ خطأ في جلب العضويات:', membersError.message)
-      return
+      throw new Error(`Failed to fetch memberships: ${membersError.message}`)
     }
+
+    // 3. Check for related data using get_user_dependencies function BEFORE deleting memberships
+    console.log(`\n🔍 التحقق من البيانات المرتبطة...`)
 
     if (memberships && memberships.length > 0) {
       console.log(`\n📋 العضويات الموجودة (${memberships.length}):`)
@@ -65,35 +70,8 @@ async function deleteUser() {
         console.log(`   ${i + 1}. Company: ${m.company_id}, Role: ${m.role}`)
       })
 
-      // Delete from company_members
-      for (const member of memberships) {
-        const { error: delError } = await admin
-          .from('company_members')
-          .delete()
-          .eq('id', member.id)
-
-        if (delError) {
-          console.error(`❌ خطأ في حذف العضوية ${member.id}:`, delError.message)
-        } else {
-          console.log(`✅ تم حذف العضوية من الشركة ${member.company_id}`)
-        }
-      }
-    } else {
-      console.log('ℹ️  لا توجد عضويات في company_members')
-    }
-
-    // 3. Check for related data using get_user_dependencies function
-    console.log(`\n🔍 التحقق من البيانات المرتبطة...`)
-    const userId = user.id
-
-    // Get all companies the user belongs to
-    const { data: allMemberships } = await admin
-      .from('company_members')
-      .select('company_id')
-      .eq('user_id', userId)
-
-    if (allMemberships && allMemberships.length > 0) {
-      for (const membership of allMemberships) {
+      // Check dependencies for each company BEFORE deletion
+      for (const membership of memberships) {
         console.log(`\n   فحص الشركة: ${membership.company_id}`)
         const { data: depsData, error: depsError } = await admin.rpc('get_user_dependencies', {
           p_company_id: membership.company_id,
@@ -110,9 +88,27 @@ async function deleteUser() {
           console.log(`   ✅ لا توجد بيانات مرتبطة في هذه الشركة`)
         }
       }
+
+      // Delete from company_members AFTER checking dependencies
+      console.log(`\n🗑️  حذف العضويات من company_members...`)
+      for (const member of memberships) {
+        const { error: delError } = await admin
+          .from('company_members')
+          .delete()
+          .eq('id', member.id)
+
+        if (delError) {
+          console.error(`❌ خطأ في حذف العضوية ${member.id}:`, delError.message)
+          throw new Error(`Failed to delete membership ${member.id}: ${delError.message}`)
+        } else {
+          console.log(`✅ تم حذف العضوية من الشركة ${member.company_id}`)
+        }
+      }
+    } else {
+      console.log('ℹ️  لا توجد عضويات في company_members')
     }
 
-    // Delete from common audit/logging tables
+    // 4. Delete from common audit/logging tables
     const auditTables = [
       { table: 'audit_logs', column: 'user_id' },
       { table: 'notifications', column: 'user_id' },
@@ -213,4 +209,7 @@ async function deleteUser() {
   }
 }
 
-deleteUser()
+deleteUser().catch((error) => {
+  console.error('❌ خطأ غير متوقع:', error.message)
+  process.exit(1)
+})
