@@ -592,18 +592,33 @@ export function Sidebar() {
           })
         }
 
-        // 2️⃣ جلب الشركات المملوكة أيضاً (حتى لو لم يكن عضواً)
-        const { data: ownedCompanies } = await supabase
-          .from('companies')
-          .select('id, name, logo_url')
+        // 2️⃣ Enterprise Logic: جلب الشركات المملوكة فقط للأدوار العليا
+        const upperRoles = ["owner", "admin", "manager", "accountant"]
+        const { data: memberWithRole } = await supabase
+          .from('company_members')
+          .select('role')
           .eq('user_id', user.id)
-        if (ownedCompanies) {
-          ownedCompanies.forEach((oc: any) => {
-            if (!companies.find((c: any) => c.id === oc.id)) {
-              companies.push({ id: oc.id, name: oc.name || '', logo_url: oc.logo_url || '' })
-            }
-          })
+          .limit(1)
+          .maybeSingle()
+        
+        const userRole = (memberWithRole?.role || "").toLowerCase()
+        const isUpperRole = upperRoles.includes(userRole)
+        
+        if (isUpperRole) {
+          // فقط للأدوار العليا: محاولة الوصول إلى companies table
+          const { data: ownedCompanies } = await supabase
+            .from('companies')
+            .select('id, name, logo_url')
+            .eq('user_id', user.id)
+          if (ownedCompanies) {
+            ownedCompanies.forEach((oc: any) => {
+              if (!companies.find((c: any) => c.id === oc.id)) {
+                companies.push({ id: oc.id, name: oc.name || '', logo_url: oc.logo_url || '' })
+              }
+            })
+          }
         }
+        // للأدوار العادية: لا نحاول الوصول إلى companies table
 
         setMyCompanies(companies)
 

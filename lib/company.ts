@@ -1,13 +1,33 @@
+// Enterprise Logic: جلب الشركة المملوكة فقط للأدوار العليا
 export async function getCompanyIdForUser(supabase: any): Promise<string | null> {
   try {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
-    const { data: company } = await supabase
-      .from("companies")
-      .select("id")
+    
+    // 1️⃣ جلب الدور من company_members أولاً
+    const { data: member } = await supabase
+      .from("company_members")
+      .select("role, company_id")
       .eq("user_id", user.id)
-      .single()
-    return company?.id ?? null
+      .limit(1)
+      .maybeSingle()
+    
+    const upperRoles = ["owner", "admin", "manager", "accountant"]
+    const userRole = (member?.role || "").toLowerCase()
+    const isUpperRole = upperRoles.includes(userRole)
+    
+    // 2️⃣ فقط للأدوار العليا: محاولة الوصول إلى companies table
+    if (isUpperRole) {
+      const { data: company } = await supabase
+        .from("companies")
+        .select("id")
+        .eq("user_id", user.id)
+        .single()
+      return company?.id ?? null
+    }
+    
+    // 3️⃣ للأدوار العادية: استخدام company_members فقط
+    return member?.company_id ?? null
   } catch {
     return null
   }

@@ -67,21 +67,36 @@ export async function GET(req: NextRequest) {
         if (membership?.company_id) {
           companyId = membership.company_id
         } else {
-          // 🔹 ثانياً: محاولة جلب الشركة المملوكة
-          const { data: userCompany, error: companyError } = await supabase
-            .from("companies")
-            .select("id")
+          // 🔹 Enterprise Logic: ثانياً: محاولة جلب الشركة المملوكة فقط للأدوار العليا
+          const upperRoles = ["owner", "admin", "manager", "accountant"]
+          const { data: memberWithRole } = await supabase
+            .from("company_members")
+            .select("role")
             .eq("user_id", user.id)
             .limit(1)
             .maybeSingle()
+          
+          const userRole = (memberWithRole?.role || "").toLowerCase()
+          const isUpperRole = upperRoles.includes(userRole)
+          
+          if (isUpperRole) {
+            // فقط للأدوار العليا: محاولة الوصول إلى companies table
+            const { data: userCompany, error: companyError } = await supabase
+              .from("companies")
+              .select("id")
+              .eq("user_id", user.id)
+              .limit(1)
+              .maybeSingle()
 
-          if (companyError) {
-            console.error('[API /my-company] Error fetching user company:', companyError)
-          }
+            if (companyError) {
+              console.error('[API /my-company] Error fetching user company:', companyError)
+            }
 
-          if (userCompany?.id) {
-            companyId = userCompany.id
+            if (userCompany?.id) {
+              companyId = userCompany.id
+            }
           }
+          // للأدوار العادية: لا نحاول الوصول إلى companies table
         }
       } catch (err) {
         console.error('[API /my-company] Unexpected error fetching company:', err)
