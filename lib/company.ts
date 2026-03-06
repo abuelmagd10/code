@@ -158,6 +158,8 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
             console.warn('⚠️ Ownership check aborted, using saved company ID')
             return savedCompanyId
           }
+          // إعادة رمي الأخطاء الأخرى (مثل authentication, network, permission errors)
+          throw error
         }
       }
 
