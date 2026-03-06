@@ -32,6 +32,20 @@ export async function ensureCompanyId(supabase: any, toast?: any): Promise<strin
 // 4) First company in table (single-company deployments)
 export async function getActiveCompanyId(supabase: any): Promise<string | null> {
   try {
+    // ✅ التحقق من وجود supabase client قبل الاستخدام
+    if (!supabase || !supabase.auth) {
+      console.error("❌ Supabase client is not initialized")
+      // محاولة استخدام الشركة المحفوظة من localStorage
+      if (typeof window !== 'undefined') {
+        const cachedId = localStorage.getItem('active_company_id')
+        if (cachedId) {
+          console.log("✅ Using cached company ID (no supabase):", cachedId)
+          return cachedId
+        }
+      }
+      return null
+    }
+
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
     // معالجة AbortError بشكل صريح
@@ -108,8 +122,14 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         return savedCompanyId
       }
 
-      // 4️⃣ نتحقق إذا كان المستخدم مالكاً للشركة المحفوظة
+      // 4️⃣ نتحقق إذا كان المستخدم مالكاً للشركة المحفوظة أو عضواً فيها
       if (savedCompanyId) {
+        // التحقق من العضوية أولاً (أسرع وأكثر أماناً)
+        if (memberCompanyIds.includes(savedCompanyId)) {
+          return savedCompanyId
+        }
+        
+        // فقط للأدوار العليا: التحقق من الملكية (قد يفشل للأدوار العادية بسبب RLS)
         try {
           const { data: ownedCompany, error } = await supabase
             .from("companies")
@@ -119,6 +139,14 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
             .limit(1)
           
           if (error) {
+            // تجاهل خطأ 406 (Not Acceptable) - يحدث للأدوار العادية بسبب RLS
+            if (error.message?.includes('406') || error.message?.includes('Not Acceptable')) {
+              // الشركة المحفوظة موجودة في العضويات، نستخدمها
+              if (memberCompanyIds.includes(savedCompanyId)) {
+                return savedCompanyId
+              }
+              return null
+            }
             if (error.name === 'AbortError' || error.message?.includes('aborted')) {
               console.warn('⚠️ Ownership check aborted, using saved company ID')
               return savedCompanyId
@@ -129,6 +157,14 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
             return savedCompanyId
           }
         } catch (error: any) {
+          // تجاهل خطأ 406 (Not Acceptable) - يحدث للأدوار العادية بسبب RLS
+          if (error?.message?.includes('406') || error?.message?.includes('Not Acceptable')) {
+            // الشركة المحفوظة موجودة في العضويات، نستخدمها
+            if (memberCompanyIds.includes(savedCompanyId)) {
+              return savedCompanyId
+            }
+            return null
+          }
           if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
             console.warn('⚠️ Ownership check aborted, using saved company ID')
             return savedCompanyId
@@ -149,7 +185,8 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         return newActiveCompany
       }
 
-      // 6️⃣ نتحقق من الشركات المملوكة
+      // 6️⃣ نتحقق من الشركات المملوكة (فقط إذا لم نجد شركات من العضويات)
+      // ملاحظة: هذا الاستعلام قد يفشل للأدوار العادية بسبب RLS، لكن لا بأس
       try {
         const { data: ownedCompany, error } = await supabase
           .from("companies")
@@ -158,6 +195,11 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
           .limit(1)
         
         if (error) {
+          // تجاهل خطأ 406 (Not Acceptable) - يحدث للأدوار العادية بسبب RLS
+          if (error.message?.includes('406') || error.message?.includes('Not Acceptable')) {
+            // لا يوجد شركات مملوكة أو لا توجد صلاحية للاستعلام
+            return null
+          }
           if (error.name === 'AbortError' || error.message?.includes('aborted')) {
             console.warn('⚠️ Owned companies request aborted')
             return null
@@ -176,6 +218,10 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
           return cid
         }
       } catch (error: any) {
+        // تجاهل خطأ 406 (Not Acceptable) - يحدث للأدوار العادية بسبب RLS
+        if (error?.message?.includes('406') || error?.message?.includes('Not Acceptable')) {
+          return null
+        }
         if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
           console.warn('⚠️ Owned companies request aborted')
           return null
@@ -185,58 +231,18 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
     }
 
     // Fallback للحالات بدون مستخدم
-    try {
-      const { data: anyCompanies, error } = await supabase
-        .from("companies")
-        .select("id")
-        .limit(1)
-      
-      if (error) {
-        if (error.name === 'AbortError' || error.message?.includes('aborted')) {
-          console.warn('⚠️ Fallback companies request aborted')
-          // محاولة استخدام الشركة المحفوظة من localStorage
-          if (typeof window !== 'undefined') {
-            const cachedId = localStorage.getItem('active_company_id')
-            if (cachedId) {
-              return cachedId
-            }
-          }
-          return null
-        }
-      }
-      
-      if (Array.isArray(anyCompanies) && anyCompanies[0]?.id) {
-        console.log("⚠️ Using fallback company ID:", anyCompanies[0].id)
-        return anyCompanies[0].id
-      }
-    } catch (error: any) {
-      if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-        console.warn('⚠️ Fallback request aborted, using cached company ID')
-        if (typeof window !== 'undefined') {
-          const cachedId = localStorage.getItem('active_company_id')
-          if (cachedId) {
-            return cachedId
-          }
-        }
-        return null
-      }
-      throw error
+    const { data: anyCompanies } = await supabase
+      .from("companies")
+      .select("id")
+      .limit(1)
+    if (Array.isArray(anyCompanies) && anyCompanies[0]?.id) {
+      console.log("⚠️ Using fallback company ID:", anyCompanies[0].id)
+      return anyCompanies[0].id
     }
 
     console.error("❌ No company ID found!")
     return null
-  } catch (error: any) {
-    // معالجة AbortError بشكل صريح
-    if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-      console.warn('⚠️ Request aborted in getActiveCompanyId, using cached company ID')
-      if (typeof window !== 'undefined') {
-        const cachedId = localStorage.getItem('active_company_id')
-        if (cachedId) {
-          return cachedId
-        }
-      }
-      return null
-    }
+  } catch (error) {
     console.error("❌ Error in getActiveCompanyId:", error)
     return null
   }
