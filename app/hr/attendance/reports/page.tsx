@@ -16,7 +16,6 @@ export default function AttendanceReportsPage() {
     const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
     const [companyId, setCompanyId] = useState<string>("")
     const [employees, setEmployees] = useState<any[]>([])
-    const [departments, setDepartments] = useState<any[]>([])
     const [branches, setBranches] = useState<any[]>([])
 
     const [reportsData, setReportsData] = useState<any[]>([])
@@ -28,7 +27,6 @@ export default function AttendanceReportsPage() {
     const [filterEndDate, setFilterEndDate] = useState<string>(new Date().toISOString().slice(0, 10))
     const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all")
     const [filterBranchId, setFilterBranchId] = useState<string>("all")
-    const [filterDepartmentId, setFilterDepartmentId] = useState<string>("all")
 
     useEffect(() => {
         const handler = () => {
@@ -60,17 +58,15 @@ export default function AttendanceReportsPage() {
         if (companyId) {
             loadReports(companyId, reportType)
         }
-    }, [filterStartDate, filterEndDate, filterEmployeeId, filterBranchId, filterDepartmentId, reportType])
+    }, [filterStartDate, filterEndDate, filterEmployeeId, filterBranchId, reportType])
 
     const loadFiltersData = async (cid: string) => {
         try {
-            const [empsRes, depsRes, bransRes] = await Promise.all([
+            const [empsRes, bransRes] = await Promise.all([
                 fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`),
-                supabase.from('departments').select('*').eq('company_id', cid),
                 supabase.from('branches').select('*').eq('company_id', cid)
             ])
             if (empsRes.ok) setEmployees(await empsRes.json())
-            if (depsRes.data) setDepartments(depsRes.data)
             if (bransRes.data) setBranches(bransRes.data)
         } catch { }
     }
@@ -86,7 +82,6 @@ export default function AttendanceReportsPage() {
             })
             if (filterEmployeeId && filterEmployeeId !== 'all') queryParams.append('employeeId', filterEmployeeId)
             if (filterBranchId && filterBranchId !== 'all') queryParams.append('branchId', filterBranchId)
-            if (filterDepartmentId && filterDepartmentId !== 'all') queryParams.append('departmentId', filterDepartmentId)
 
             const res = await fetch(`/api/hr/attendance/reports?${queryParams.toString()}`)
             const data = await res.json()
@@ -114,11 +109,10 @@ export default function AttendanceReportsPage() {
         let csvData: string[] = []
 
         if (reportType === 'summary') {
-            headers = ['Employee', 'Branch', 'Department', 'Days Present', 'Total Hours', 'Total Late (min)', 'Total Overtime (min)', 'Total Early Leave (min)']
+            headers = ['Employee', 'Branch', 'Days Present', 'Total Hours', 'Total Late (min)', 'Total Overtime (min)', 'Total Early Leave (min)']
             csvData = reportsData.map(row => [
                 row.employee?.full_name,
                 row.employee?.branches?.name || '',
-                row.employee?.departments?.name || '',
                 row.daysPresent,
                 row.totalWorkingHours,
                 row.totalLateMins,
@@ -165,11 +159,13 @@ export default function AttendanceReportsPage() {
         const baseColumns: DataTableColumn[] = [
             {
                 header: t('Employee', 'الموظف'),
-                accessor: (row: any) => row.employee?.full_name || 'N/A'
+                key: 'employeeName',
+                format: (_, row: any) => row.employee?.full_name || 'N/A'
             },
             {
                 header: t('Branch', 'الفرع'),
-                accessor: (row: any) => row.employee?.branches?.name || '-'
+                key: 'branchName',
+                format: (_, row: any) => row.employee?.branches?.name || '-'
             }
         ]
 
@@ -178,26 +174,28 @@ export default function AttendanceReportsPage() {
                 ...baseColumns,
                 {
                     header: t('Total Absence', 'إجمالي الغياب'),
-                    accessor: (row: any) => <span className="text-rose-600 font-bold">{row.totalAbsenceDays} {t('Days', 'أيام')}</span>
+                    key: 'totalAbsenceDays',
+                    format: (_, row: any) => <span className="text-rose-600 font-bold">{row.totalAbsenceDays} {t('Days', 'أيام')}</span>
                 },
                 {
                     header: t('Absence Dates', 'تواريخ الغياب'),
-                    accessor: (row: any) => <span className="text-xs text-gray-500 whitespace-pre-wrap max-w-xs block">{row.absenceDays.join(', ')}</span>
+                    key: 'absenceDays',
+                    format: (_, row: any) => <span className="text-xs text-gray-500 whitespace-pre-wrap max-w-xs block">{row.absenceDays.join(', ')}</span>
                 }
             ]
         }
 
         const aggCols: DataTableColumn[] = []
         if (reportType === 'summary') {
-            aggCols.push({ header: t('Days Present', 'أيام الحضور'), accessor: (row: any) => row.daysPresent })
-            aggCols.push({ header: t('Total Hours', 'إجمالي الساعات'), accessor: (row: any) => <span className="font-semibold">{row.totalWorkingHours} h</span> })
-            aggCols.push({ header: t('Late', 'التأخير (د)'), accessor: (row: any) => <span className={row.totalLateMins > 0 ? "text-amber-600" : ""}>{row.totalLateMins}m</span> })
-            aggCols.push({ header: t('Overtime', 'الإضافي (د)'), accessor: (row: any) => <span className={row.totalOvertimeMins > 0 ? "text-emerald-600" : ""}>{row.totalOvertimeMins}m</span> })
-            aggCols.push({ header: t('Early Leave', 'خروج مبكر (د)'), accessor: (row: any) => <span className={row.totalEarlyLeaveMins > 0 ? "text-rose-600" : ""}>{row.totalEarlyLeaveMins}m</span> })
+            aggCols.push({ header: t('Days Present', 'أيام الحضور'), key: 'daysPresent' })
+            aggCols.push({ header: t('Total Hours', 'إجمالي الساعات'), key: 'totalWorkingHours', format: (_, row: any) => <span className="font-semibold">{row.totalWorkingHours} h</span> })
+            aggCols.push({ header: t('Late', 'التأخير (د)'), key: 'totalLateMins', format: (_, row: any) => <span className={row.totalLateMins > 0 ? "text-amber-600" : ""}>{row.totalLateMins}m</span> })
+            aggCols.push({ header: t('Overtime', 'الإضافي (د)'), key: 'totalOvertimeMins', format: (_, row: any) => <span className={row.totalOvertimeMins > 0 ? "text-emerald-600" : ""}>{row.totalOvertimeMins}m</span> })
+            aggCols.push({ header: t('Early Leave', 'خروج مبكر (د)'), key: 'totalEarlyLeaveMins', format: (_, row: any) => <span className={row.totalEarlyLeaveMins > 0 ? "text-rose-600" : ""}>{row.totalEarlyLeaveMins}m</span> })
         } else if (reportType === 'late') {
-            aggCols.push({ header: t('Total Late', 'إجمالي التأخير'), accessor: (row: any) => <span className="text-amber-600 font-bold text-lg">{row.totalLateMins} {t('mins', 'دقيقة')}</span> })
+            aggCols.push({ header: t('Total Late', 'إجمالي التأخير'), key: 'totalLateMins', format: (_, row: any) => <span className="text-amber-600 font-bold text-lg">{row.totalLateMins} {t('mins', 'دقيقة')}</span> })
         } else if (reportType === 'overtime') {
-            aggCols.push({ header: t('Total Overtime', 'إجمالي الإضافي'), accessor: (row: any) => <span className="text-emerald-600 font-bold text-lg">{row.totalOvertimeMins} {t('mins', 'دقيقة')}</span> })
+            aggCols.push({ header: t('Total Overtime', 'إجمالي الإضافي'), key: 'totalOvertimeMins', format: (_, row: any) => <span className="text-emerald-600 font-bold text-lg">{row.totalOvertimeMins} {t('mins', 'دقيقة')}</span> })
         }
 
         return [...baseColumns, ...aggCols]
@@ -205,7 +203,6 @@ export default function AttendanceReportsPage() {
 
     const activeFiltersCount = [
         filterBranchId !== 'all',
-        filterDepartmentId !== 'all',
         filterEmployeeId !== 'all'
     ].filter(Boolean).length
 
@@ -227,10 +224,10 @@ export default function AttendanceReportsPage() {
             />
 
             <FilterContainer
-                activeFiltersCount={activeFiltersCount}
-                onClearFilters={() => {
+                title={t('Filters', 'الفلاتر')}
+                activeCount={activeFiltersCount}
+                onClear={() => {
                     setFilterBranchId('all');
-                    setFilterDepartmentId('all');
                     setFilterEmployeeId('all');
                 }}
             >
@@ -306,13 +303,17 @@ export default function AttendanceReportsPage() {
 
             <Card className="border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm">
                 <CardContent className="p-0">
-                    <DataTable
-                        columns={getColumns()}
-                        data={reportsData}
-                        searchPlaceholder={t('Search employee...', 'ابحث عن موظف...')}
-                        searchKey="employee.full_name" // Needs custom handling in generic table if nested, assuming fallback is okay
-                        isLoading={loading}
-                    />
+                    {loading ? (
+                        <div className="flex justify-center items-center py-8">
+                            <span className="text-sm text-gray-500">{t('Loading...', 'جاري التحميل...')}</span>
+                        </div>
+                    ) : (
+                        <DataTable
+                            columns={getColumns()}
+                            data={reportsData.map((d: any, index: number) => ({ ...d, id: d.employee?.id || index.toString() }))}
+                            keyField="id"
+                        />
+                    )}
                 </CardContent>
             </Card>
         </div>

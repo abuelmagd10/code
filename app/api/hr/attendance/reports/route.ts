@@ -29,9 +29,8 @@ export async function GET(request: NextRequest) {
         .select(`
             *,
             employees!inner (
-                id, full_name, branch_id, department_id, status,
-                branches ( id, name ),
-                departments ( id, name )
+                id, full_name, branch_id, status,
+                branches ( id, name )
             )
         `)
         .eq('company_id', companyId)
@@ -43,9 +42,6 @@ export async function GET(request: NextRequest) {
     }
     if (branchId && branchId !== 'all') {
         query = query.eq('employees.branch_id', branchId)
-    }
-    if (departmentId && departmentId !== 'all') {
-        query = query.eq('employees.department_id', departmentId)
     }
 
     const { data: records, error } = await query
@@ -96,13 +92,12 @@ export async function GET(request: NextRequest) {
         // Fetch all active employees
         let empQuery = supabase
             .from('employees')
-            .select('id, full_name, branch_id, department_id, status, branches(id, name), departments(id, name)')
+            .select('id, full_name, branch_id, status, branches(id, name)')
             .eq('company_id', companyId)
             .eq('status', 'active')
 
         if (employeeId && employeeId !== 'all') empQuery = empQuery.eq('id', employeeId)
         if (branchId && branchId !== 'all') empQuery = empQuery.eq('branch_id', branchId)
-        if (departmentId && departmentId !== 'all') empQuery = empQuery.eq('department_id', departmentId)
 
         const { data: employees, error: empError } = await empQuery
         if (empError) return serverError(empError.message)
