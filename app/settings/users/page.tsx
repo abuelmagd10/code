@@ -302,6 +302,73 @@ export default function UsersSettingsPage() {
     }
   }, [companyId, supabase])
 
+  // ✅ Realtime تحديث أعضاء الشركة عند إضافة/تحديث/حذف عضو بدون الحاجة لرفرش يدوي
+  useEffect(() => {
+    if (!companyId || !currentUserId) return
+
+    try {
+      const channel = supabase
+        .channel(`company_members_realtime:${companyId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'company_members',
+            filter: `company_id=eq.${companyId}`,
+          },
+          async (payload: any) => {
+            if (payload.eventType === 'INSERT') {
+              // عند إضافة عضو جديد (مثل قبول دعوة)
+              const newMember = payload.new as any
+              // جلب بيانات العضو الكاملة من API
+              try {
+                const res = await fetch(`/api/company-members?companyId=${companyId}`)
+                const js = await res.json()
+                if (res.ok && Array.isArray(js?.members)) {
+                  const membersWithCurrent = js.members.map((m: Member) => ({
+                    ...m,
+                    is_current: m.user_id === currentUserId
+                  }))
+                  setMembers(membersWithCurrent)
+                }
+              } catch (err) {
+                console.error('Error refreshing members after INSERT:', err)
+              }
+              return
+            }
+
+            if (payload.eventType === 'UPDATE') {
+              // عند تحديث بيانات عضو (مثل تغيير الدور)
+              const updatedMember = payload.new as any
+              setMembers((prev) =>
+                prev.map((m) =>
+                  m.id === updatedMember.id
+                    ? { ...m, ...updatedMember, is_current: updatedMember.user_id === currentUserId }
+                    : m
+                )
+              )
+              return
+            }
+
+            if (payload.eventType === 'DELETE') {
+              // عند حذف عضو
+              const deletedMember = payload.old as any
+              setMembers((prev) => prev.filter((m) => m.id !== deletedMember.id))
+            }
+          },
+        )
+        .subscribe()
+
+      return () => {
+        channel.unsubscribe()
+      }
+    } catch (err) {
+      console.error('Failed to subscribe to company_members realtime:', err)
+      // في حال فشل الاشتراك لا نكسر الصفحة، فقط نتجاهل الـ realtime وسيبقى الرفرش اليدوي يعمل
+    }
+  }, [companyId, currentUserId, supabase])
+
   // ✅ الاستماع لتغيير الشركة
   useEffect(() => {
     const handleCompanyChange = async () => {
