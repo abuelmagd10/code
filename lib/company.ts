@@ -151,15 +151,18 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         } catch (error: any) {
           // تجاهل خطأ 406 (Not Acceptable) - يحدث للأدوار العادية بسبب RLS
           if (error?.message?.includes('406') || error?.message?.includes('Not Acceptable')) {
-            // الشركة المحفوظة ليست مملوكة ولا عضوية - تجاهلها
-            return null
-          }
-          if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+            // الشركة المحفوظة ليست مملوكة ولا عضوية - تجاهلها والمتابعة إلى fallback
+            // لا نعيد رمي الخطأ حتى نتمكن من محاولة استراتيجيات fallback الأخرى
+            console.warn('⚠️ Ownership check failed (406), continuing to fallback strategies')
+          } else if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
             console.warn('⚠️ Ownership check aborted, using saved company ID')
             return savedCompanyId
+          } else {
+            // تسجيل الأخطاء الأخرى ولكن المتابعة إلى fallback strategies
+            // هذا يسمح للدالة بمحاولة استراتيجيات بديلة بدلاً من الفشل فوراً
+            console.warn('⚠️ Ownership check error (non-critical), continuing to fallback strategies:', error?.message || error)
           }
-          // إعادة رمي الأخطاء الأخرى (مثل authentication, network, permission errors)
-          throw error
+          // لا نعيد رمي الخطأ - نتابع إلى fallback strategies (step 5, 6)
         }
       }
 
