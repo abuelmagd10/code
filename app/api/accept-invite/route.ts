@@ -71,14 +71,15 @@ export async function POST(req: NextRequest) {
       return internalError("لا يمكن قبول الدعوة بدون فرع", "missing_branch")
     }
 
+    // ✅ استخدام القيم من الدعوة إذا كانت موجودة
     const memberData: any = {
       company_id: inv.company_id,
       user_id: userId,
       role: inv.role,
       email: inv.email,
       branch_id: branchId,
-      cost_center_id: null,
-      warehouse_id: null
+      cost_center_id: inv.cost_center_id || null,
+      warehouse_id: inv.warehouse_id || null
     }
     const { error: memErr } = await admin
       .from("company_members")
