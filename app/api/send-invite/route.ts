@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
           },
           body: JSON.stringify({
             from: process.env.EMAIL_FROM || "7ESAB <info@7esab.com>",
-            to: [email],
+            to: [email.toLowerCase().trim()],
             subject: `دعوة للانضمام إلى ${companyName} | You've Been Invited to ${companyName}`,
             html: `
 <!DOCTYPE html>
@@ -202,17 +202,53 @@ export async function POST(req: NextRequest) {
           }),
         })
         const emailResult = await emailRes.json()
-        if (emailRes.ok) {
-          return apiSuccess({ ok: true, type: "resend", link: acceptLink, accept_token: acceptToken || null, invite_id: inviteId || null })
+        if (emailRes.ok && emailResult.id) {
+          // Log successful email send for debugging
+          console.log(`✅ Email sent successfully via Resend:`, {
+            emailId: emailResult.id,
+            to: email,
+            from: process.env.EMAIL_FROM || "7ESAB <info@7esab.com>",
+            inviteId: inviteId,
+            acceptLink: acceptLink
+          })
+          return apiSuccess({ 
+            ok: true, 
+            type: "resend", 
+            link: acceptLink, 
+            accept_token: acceptToken || null, 
+            invite_id: inviteId || null,
+            emailId: emailResult.id,
+            message: "تم إرسال الدعوة بنجاح. يرجى التحقق من البريد الإلكتروني (بما في ذلك مجلد Spam)"
+          })
         }
-        console.error("Resend error:", emailResult)
-      } catch (resendErr) {
-        console.error("Resend API error:", resendErr)
+        console.error("❌ Resend API error:", {
+          status: emailRes.status,
+          statusText: emailRes.statusText,
+          error: emailResult,
+          email: email,
+          from: process.env.EMAIL_FROM || "7ESAB <info@7esab.com>"
+        })
+      } catch (resendErr: any) {
+        console.error("❌ Resend API exception:", {
+          error: resendErr.message,
+          stack: resendErr.stack,
+          email: email,
+          from: process.env.EMAIL_FROM || "7ESAB <info@7esab.com>"
+        })
       }
     }
 
     // Fallback: return link without sending email
-    return apiSuccess({ ok: true, type: "manual", link: acceptLink, accept_token: acceptToken || null, invite_id: inviteId || null, warning: "تعذر إرسال الإيميل - يرجى مشاركة الرابط يدوياً" })
+    console.warn("⚠️ Resend API key not configured or email send failed. Returning manual link.")
+    return apiSuccess({ 
+      ok: true, 
+      type: "manual", 
+      link: acceptLink, 
+      accept_token: acceptToken || null, 
+      invite_id: inviteId || null, 
+      warning: "تعذر إرسال الإيميل تلقائياً - يرجى مشاركة الرابط يدوياً",
+      manualLink: acceptLink
+    })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء إرسال الدعوة", e?.message || String(e))
   }
