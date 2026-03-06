@@ -24,12 +24,68 @@ export async function POST(req: NextRequest) {
       return badRequestError("معرف المستخدم مطلوب", ["userId"])
     }
 
+    // 🔐 Enterprise ERP: Self-Deletion Protection
+    if (userId === user.id) {
+      return apiError(
+        HTTP_STATUS.FORBIDDEN,
+        "لا يمكنك حذف حسابك الخاص",
+        "You cannot delete your own account"
+      )
+    }
+
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!url || !serviceKey) {
       return internalError("خطأ في إعدادات الخادم", "Server configuration error")
     }
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
+
+    // 🔐 Enterprise ERP: Owner Protection - Check if user is owner
+    const { data: targetMember, error: targetMemberError } = await admin
+      .from("company_members")
+      .select("role")
+      .eq("company_id", companyId)
+      .eq("user_id", userId)
+      .maybeSingle()
+
+    if (targetMemberError) {
+      return apiError(HTTP_STATUS.BAD_REQUEST, "خطأ في جلب بيانات العضو", targetMemberError.message)
+    }
+
+    if (!targetMember) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "العضو غير موجود", "Member not found")
+    }
+
+    // 🔐 Enterprise ERP: Owner Protection - Prevent deletion of owner role
+    if (targetMember.role === 'owner') {
+      // Check if this is the only owner
+      const { data: ownerCount, error: ownerCountError } = await admin
+        .from("company_members")
+        .select("id", { count: 'exact', head: true })
+        .eq("company_id", companyId)
+        .eq("role", "owner")
+
+      if (ownerCountError) {
+        return apiError(HTTP_STATUS.BAD_REQUEST, "خطأ في التحقق من المالكين", ownerCountError.message)
+      }
+
+      const totalOwners = ownerCount || 0
+      if (totalOwners <= 1) {
+        return apiError(
+          HTTP_STATUS.FORBIDDEN,
+          "لا يمكن حذف المالك الوحيد للشركة. يجب تعيين مالك آخر أولاً.",
+          "Cannot delete the only owner of the company. Please assign another owner first."
+        )
+      }
+
+      // Even if there are multiple owners, we should still prevent deletion for security
+      // Only allow if explicitly requested with proper authorization
+      return apiError(
+        HTTP_STATUS.FORBIDDEN,
+        "لا يمكن حذف حساب المالك. يرجى تغيير الدور أولاً.",
+        "Cannot delete owner account. Please change the role first."
+      )
+    }
 
     // 1. Check user data dependencies
     const { data: depsData, error: depsError } = await admin.rpc('get_user_dependencies', {

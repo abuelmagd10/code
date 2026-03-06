@@ -214,6 +214,7 @@ export async function secureApiRequest(
 
 /**
  * Helper: التحقق من أن المستخدم مالك أو مدير
+ * Enterprise ERP: Allows Owner, Admin, and Manager roles
  */
 export async function requireOwnerOrAdmin(
   request: NextRequest
@@ -221,7 +222,7 @@ export async function requireOwnerOrAdmin(
   return secureApiRequest(request, {
     requireAuth: true,
     requireCompany: true,
-    allowRoles: ['owner', 'admin'],
+    allowRoles: ['owner', 'admin', 'manager'],
     customErrorMessage: {
       forbidden: "المالك أو المدير فقط يمكنه الوصول إلى هذا المورد"
     }

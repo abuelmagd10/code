@@ -68,6 +68,11 @@ export default function UsersSettingsPage() {
   const [reassignTargetId, setReassignTargetId] = useState("")
   const [isReassigning, setIsReassigning] = useState(false)
 
+  // 🔐 Enterprise ERP: Delete Confirmation Modal
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [userToDelete, setUserToDelete] = useState<Member | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
   // Branch, Cost Center, Warehouse for invitations
   const [branches, setBranches] = useState<Branch[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
@@ -224,8 +229,8 @@ export default function UsersSettingsPage() {
             .maybeSingle()
           const r = String(myMember?.role || "")
           setCurrentRole(r)
-          // 🔐 السماح للأدوار الإدارية بإدارة المستخدمين
-          admin = ["owner", "admin", "general_manager", "manager"].includes(r)
+          // 🔐 Enterprise ERP: السماح للأدوار الإدارية بإدارة المستخدمين (Owner, Admin, Manager فقط)
+          admin = ["owner", "admin", "manager"].includes(r)
         }
         setCanManage(owner || admin)
       } catch (err: any) {
@@ -1257,24 +1262,15 @@ export default function UsersSettingsPage() {
                         </>
                       )}
                       {canManage && !m.is_current && m.role !== 'owner' && (
-                        <Button variant="outline" size="sm" className="h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={async () => {
-                          try {
-                            const ok = confirm("تأكيد حذف العضو نهائيًا؟")
-                            if (!ok) return
-                            const res = await fetch("/api/member-delete", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: m.user_id, companyId, fullDelete: true }) })
-                            const js = await res.json()
-                            if (res.ok && js?.ok) {
-                              setMembers((prev) => prev.filter((x) => x.user_id !== m.user_id))
-                              toastActionSuccess(toast, "حذف", "العضو")
-                            } else if (res.status === 409 && js?.reason === "HAS_DEPENDENCIES") {
-                              // Trigger Reassignment Modal
-                              setUserToReassign(m)
-                              setUserDependencies(js.dependencies)
-                              setReassignTargetId("")
-                              setReassignModalOpen(true)
-                            } else { toastActionError(toast, "حذف", "العضو", js?.error || undefined) }
-                          } catch (e: any) { toastActionError(toast, "حذف", "العضو", e?.message) }
-                        }}>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20" 
+                          onClick={() => {
+                            setUserToDelete(m)
+                            setDeleteConfirmOpen(true)
+                          }}
+                        >
                           <Trash2 className="w-3 h-3" />
                         </Button>
                       )}
@@ -1285,6 +1281,81 @@ export default function UsersSettingsPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* 🔐 Enterprise ERP: Delete Confirmation Modal */}
+        <Dialog open={deleteConfirmOpen} onOpenChange={(v) => { if (!v) { setDeleteConfirmOpen(false); setUserToDelete(null) } }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                  <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <DialogTitle>تأكيد حذف العضو</DialogTitle>
+              </div>
+            </DialogHeader>
+            <div className="space-y-3 py-4">
+              <p className="text-gray-700 dark:text-gray-300">
+                هل أنت متأكد من رغبتك في إزالة <strong>{userToDelete?.email || userToDelete?.username || 'هذا العضو'}</strong> من الشركة؟
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                سيتم التحقق من وجود بيانات مرتبطة بهذا المستخدم قبل الحذف.
+              </p>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => { setDeleteConfirmOpen(false); setUserToDelete(null) }} disabled={isDeleting}>
+                إلغاء
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={async () => {
+                  if (!userToDelete) return
+                  setIsDeleting(true)
+                  try {
+                    const res = await fetch("/api/member-delete", { 
+                      method: "POST", 
+                      headers: { "content-type": "application/json" }, 
+                      body: JSON.stringify({ userId: userToDelete.user_id, companyId, fullDelete: true }) 
+                    })
+                    const js = await res.json()
+                    if (res.ok && js?.ok) {
+                      setMembers((prev) => prev.filter((x) => x.user_id !== userToDelete.user_id))
+                      toastActionSuccess(toast, "حذف", "العضو")
+                      setDeleteConfirmOpen(false)
+                      setUserToDelete(null)
+                    } else if (res.status === 409 && js?.reason === "HAS_DEPENDENCIES") {
+                      // Trigger Reassignment Modal
+                      setDeleteConfirmOpen(false)
+                      setUserToReassign(userToDelete)
+                      setUserDependencies(js.dependencies)
+                      setReassignTargetId("")
+                      setReassignModalOpen(true)
+                      setUserToDelete(null)
+                    } else { 
+                      toastActionError(toast, "حذف", "العضو", js?.error || js?.error_en || undefined) 
+                    }
+                  } catch (e: any) { 
+                    toastActionError(toast, "حذف", "العضو", e?.message) 
+                  } finally {
+                    setIsDeleting(false)
+                  }
+                }}
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    جاري الحذف...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    حذف
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* موديال تغيير كلمة المرور */}
         <Dialog open={!!changePassUserId} onOpenChange={(v) => { if (!v) { setChangePassUserId(null); setNewMemberPass("") } }}>
