@@ -209,7 +209,4 @@ async function deleteUser() {
   }
 }
 
-deleteUser().catch((error) => {
-  console.error('❌ خطأ غير متوقع:', error.message)
-  process.exit(1)
-})
+deleteUser()
