@@ -19,7 +19,7 @@ const supabase = createClient(
         .select(`
             *,
             employees!inner (
-                id, full_name, branch_id, status
+                id, full_name
             )
         `)
         .limit(1);
@@ -27,6 +27,6 @@ const supabase = createClient(
     if (error) {
         console.error("Query Error:", JSON.stringify(error, null, 2));
     } else {
-        console.log("Success! Found", records.length, "records.");
+        console.log("Success! Found", records?.length, "records.");
     }
 })();

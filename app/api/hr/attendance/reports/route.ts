@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
         .select(`
             *,
             employees!inner (
-                id, full_name, status
+                id, full_name
             )
         `)
         .eq('company_id', companyId)
@@ -88,9 +88,8 @@ export async function GET(request: NextRequest) {
         // Fetch all active employees
         let empQuery = supabase
             .from('employees')
-            .select('id, full_name, status')
+            .select('id, full_name')
             .eq('company_id', companyId)
-            .eq('status', 'active')
 
         if (employeeId && employeeId !== 'all') empQuery = empQuery.eq('id', employeeId)
 
