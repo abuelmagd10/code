@@ -159,26 +159,24 @@ export default function ProductsPage() {
       setPermUpdate(update)
       setPermDelete(del)
 
-      // التحقق من صلاحية رؤية التكلفة (owner, admin, accountant, manager فقط)
+      // 🔐 Enterprise Authorization: استخدام دالة مساعدة موحدة للتحقق من العضوية
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {
           const companyId = await getActiveCompanyId(supabase)
           if (companyId) {
-            const { data: member } = await supabase
-              .from("company_members")
-              .select("role, branch_id, cost_center_id, warehouse_id")
-              .eq("company_id", companyId)
-              .eq("user_id", user.id)
-              .maybeSingle()
+            const { getCompanyMembership } = await import("@/lib/company-authorization")
+            const authResult = await getCompanyMembership(supabase, user.id, companyId)
 
-            const role = member?.role || ""
-            setUserRole(role)
-            setUserBranchId(member?.branch_id || "")
-            setUserCostCenterId(member?.cost_center_id || "")
-            setUserWarehouseId(member?.warehouse_id || "")
-            // فقط هذه الأدوار يمكنها رؤية سعر التكلفة
-            setCanViewCOGS(["owner", "admin", "accountant", "manager"].includes(role))
+            if (authResult.authorized && authResult.membership) {
+              const { role, branchId, costCenterId, warehouseId, isUpperRole } = authResult.membership
+              setUserRole(role)
+              setUserBranchId(branchId || "")
+              setUserCostCenterId(costCenterId || "")
+              setUserWarehouseId(warehouseId || "")
+              // فقط هذه الأدوار يمكنها رؤية سعر التكلفة
+              setCanViewCOGS(isUpperRole)
+            }
           }
         }
       } catch (err) {
@@ -429,22 +427,21 @@ export default function ProductsPage() {
         return
       }
 
-      // 🔐 Enterprise-Level Backend Validation: جلب بيانات المستخدم للتحقق من الصلاحيات
-      const { data: member } = await supabase
-        .from("company_members")
-        .select("role, branch_id, cost_center_id, warehouse_id")
-        .eq("company_id", companyId)
-        .eq("user_id", user.id)
-        .maybeSingle()
+      // 🔐 Enterprise Authorization: استخدام دالة مساعدة موحدة للتحقق من العضوية
+      const { getCompanyMembership } = await import("@/lib/company-authorization")
+      const authResult = await getCompanyMembership(supabase, user.id, companyId)
 
-      if (!member) {
-        toastActionError(toast, appLang === 'en' ? 'Access denied' : 'تم رفض الوصول')
+      if (!authResult.authorized || !authResult.membership) {
+        // استخدام رسالة الخطأ المناسبة للغة المستخدم
+        const errorMessage = appLang === 'en' 
+          ? (authResult.errorEn || 'Access denied')
+          : (authResult.error || 'تم رفض الوصول')
+        toastActionError(toast, errorMessage)
         return
       }
 
-      const upperRoles = ["owner", "admin", "accountant", "manager"]
-      const isUpperRole = upperRoles.includes(member.role)
-      const isNormalRole = !isUpperRole && member.role !== ""
+      const { membership } = authResult
+      const { isUpperRole, isNormalRole, branchId, costCenterId, warehouseId } = membership
 
       // 🔐 Enterprise-Level Backend Validation: فرض القيود على الأدوار العادية
       let finalBranchId = formData.branch_id || null
@@ -453,20 +450,20 @@ export default function ProductsPage() {
 
       if (isNormalRole) {
         // للأدوار العادية: فرض القيم من بيانات المستخدم
-        finalBranchId = member.branch_id || null
-        finalCostCenterId = member.cost_center_id || null
-        finalWarehouseId = formData.item_type === 'product' ? (member.warehouse_id || null) : null
+        finalBranchId = branchId || null
+        finalCostCenterId = costCenterId || null
+        finalWarehouseId = formData.item_type === 'product' ? (warehouseId || null) : null
 
         // 🔐 التحقق من أن المستخدم لم يحاول تجاوز القيود
-        if (formData.branch_id && formData.branch_id !== member.branch_id) {
+        if (formData.branch_id && formData.branch_id !== branchId) {
           toastActionError(toast, appLang === 'en' ? 'Invalid branch assignment' : 'تعيين فرع غير صالح')
           return
         }
-        if (formData.cost_center_id && formData.cost_center_id !== member.cost_center_id) {
+        if (formData.cost_center_id && formData.cost_center_id !== costCenterId) {
           toastActionError(toast, appLang === 'en' ? 'Invalid cost center assignment' : 'تعيين مركز تكلفة غير صالح')
           return
         }
-        if (formData.item_type === 'product' && formData.warehouse_id && formData.warehouse_id !== member.warehouse_id) {
+        if (formData.item_type === 'product' && formData.warehouse_id && formData.warehouse_id !== warehouseId) {
           toastActionError(toast, appLang === 'en' ? 'Invalid warehouse assignment' : 'تعيين مستودع غير صالح')
           return
         }

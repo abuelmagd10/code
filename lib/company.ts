@@ -4,21 +4,17 @@ export async function getCompanyIdForUser(supabase: any): Promise<string | null>
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
     
-    // 1️⃣ جلب جميع العضويات للتحقق من وجود أي دور علوي
-    const { data: members } = await supabase
-      .from("company_members")
-      .select("role, company_id")
-      .eq("user_id", user.id)
+    // 🔐 Enterprise Authorization: استخدام دالة مساعدة موحدة
+    const { getUserCompanies, UPPER_ROLES } = await import("@/lib/company-authorization")
+    const userCompaniesList = await getUserCompanies(supabase, user.id)
     
-    const upperRoles = ["owner", "admin", "manager", "accountant"]
+    // التحقق من وجود أي دور علوي في أي عضوية
+    const hasUpperRole = userCompaniesList.some(c => 
+      UPPER_ROLES.includes(c.role as any)
+    )
     
-    // 2️⃣ التحقق من وجود أي دور علوي في أي عضوية
-    const hasUpperRole = members?.some((m: any) => 
-      upperRoles.includes((m.role || "").toLowerCase())
-    ) || false
-    
-    // 3️⃣ إذا لم يكن هناك أي عضوية، أو كان هناك دور علوي: محاولة الوصول إلى companies table
-    if (!members || members.length === 0 || hasUpperRole) {
+    // إذا لم يكن هناك أي عضوية، أو كان هناك دور علوي: محاولة الوصول إلى companies table
+    if (userCompaniesList.length === 0 || hasUpperRole) {
       const { data: company } = await supabase
         .from("companies")
         .select("id")
@@ -27,8 +23,8 @@ export async function getCompanyIdForUser(supabase: any): Promise<string | null>
       return company?.id ?? null
     }
     
-    // 4️⃣ للأدوار العادية فقط: استخدام أول شركة من company_members
-    return members[0]?.company_id ?? null
+    // للأدوار العادية فقط: استخدام أول شركة من company_members
+    return userCompaniesList[0]?.companyId ?? null
   } catch {
     return null
   }
@@ -105,33 +101,17 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         }
       } catch { }
 
-      // 2️⃣ Enterprise Logic: جلب جميع الشركات التي المستخدم عضو فيها مع الأدوار
-      // هذا يسمح لنا بتحديد مصدر البيانات بناءً على الدور بدلاً من معالجة الأخطاء
-      let userCompanies = null
+      // 2️⃣ 🔐 Enterprise Authorization: جلب جميع الشركات التي المستخدم عضو فيها مع الأدوار
+      let userCompaniesList: Array<{ companyId: string; role: string }> = []
       let userRoles: Record<string, string> = {} // company_id -> role mapping
       try {
-        const { data, error } = await supabase
-          .from("company_members")
-          .select("company_id, role")
-          .eq("user_id", user.id)
+        const { getUserCompanies } = await import("@/lib/company-authorization")
+        userCompaniesList = await getUserCompanies(supabase, user.id)
         
-        if (error) {
-          if (error.name === 'AbortError' || error.message?.includes('aborted')) {
-            console.warn('⚠️ Company members request was aborted, using saved company ID')
-            if (savedCompanyId) {
-              return savedCompanyId
-            }
-            return null
-          }
-          throw error
-        }
-        userCompanies = data
         // بناء خريطة الأدوار لكل شركة
-        if (data) {
-          data.forEach((m: any) => {
-            userRoles[m.company_id] = (m.role || "").toLowerCase()
-          })
-        }
+        userCompaniesList.forEach((c) => {
+          userRoles[c.companyId] = c.role.toLowerCase()
+        })
       } catch (error: any) {
         if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
           console.warn('⚠️ Request aborted, using saved company ID')
@@ -143,10 +123,11 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         throw error
       }
 
-      const memberCompanyIds = (userCompanies || []).map((c: any) => c.company_id)
+      const memberCompanyIds = userCompaniesList.map((c) => c.companyId)
       
       // تعريف الأدوار العليا (يمكنها الوصول إلى companies table)
-      const upperRoles = ["owner", "admin", "manager", "accountant"]
+      const { UPPER_ROLES } = await import("@/lib/company-authorization")
+      const upperRoles = [...UPPER_ROLES]
 
       // 3️⃣ إذا كانت الشركة المحفوظة موجودة وعضو فيها، نستخدمها
       if (savedCompanyId && memberCompanyIds.includes(savedCompanyId)) {
@@ -157,7 +138,7 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
       // 4️⃣ Enterprise Logic: التحقق من ownership فقط للأدوار العليا
       if (savedCompanyId) {
         const savedCompanyRole = userRoles[savedCompanyId] || ""
-        const isUpperRole = upperRoles.includes(savedCompanyRole)
+        const isUpperRole = UPPER_ROLES.includes(savedCompanyRole as any)
         
         if (isUpperRole) {
           // للأدوار العليا فقط: التحقق من ownership في companies table
@@ -205,12 +186,11 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         return newActiveCompany
       }
 
-      // 6️⃣ Enterprise Logic: التحقق من الشركات المملوكة فقط للأدوار العليا
+      // 6️⃣ 🔐 Enterprise Authorization: التحقق من الشركات المملوكة فقط للأدوار العليا
       // للأدوار العادية: نتخطى هذه الخطوة تماماً ولا نحاول الوصول إلى companies table
-      const hasUpperRole = memberCompanyIds.some((cid: string) => {
-        const role = userRoles[cid] || ""
-        return upperRoles.includes(role)
-      })
+      const hasUpperRole = userCompaniesList.some((c) => 
+        UPPER_ROLES.includes(c.role as any)
+      )
       
       if (hasUpperRole) {
         // فقط للأدوار العليا: محاولة الوصول إلى companies table

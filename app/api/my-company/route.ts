@@ -67,21 +67,17 @@ export async function GET(req: NextRequest) {
         if (membership?.company_id) {
           companyId = membership.company_id
         } else {
-          // 🔹 Enterprise Logic: ثانياً: محاولة جلب الشركة المملوكة فقط للأدوار العليا
-          const upperRoles = ["owner", "admin", "manager", "accountant"]
-          // جلب جميع العضويات للتحقق من وجود أي دور علوي
-          const { data: allMembers } = await supabase
-            .from("company_members")
-            .select("role")
-            .eq("user_id", user.id)
+          // 🔹 Enterprise Authorization: ثانياً: محاولة جلب الشركة المملوكة فقط للأدوار العليا
+          const { getUserCompanies, UPPER_ROLES } = await import("@/lib/company-authorization")
+          const userCompaniesList = await getUserCompanies(supabase, user.id)
           
           // التحقق من وجود أي دور علوي في أي عضوية
-          const hasUpperRole = allMembers?.some((m: any) => 
-            upperRoles.includes((m.role || "").toLowerCase())
-          ) || false
+          const hasUpperRole = userCompaniesList.some(c => 
+            UPPER_ROLES.includes(c.role as any)
+          )
           
           // إذا لم يكن هناك أي عضوية، أو كان هناك دور علوي: محاولة الوصول إلى companies table
-          if (!allMembers || allMembers.length === 0 || hasUpperRole) {
+          if (userCompaniesList.length === 0 || hasUpperRole) {
             const { data: userCompany, error: companyError } = await supabase
               .from("companies")
               .select("id")
@@ -114,47 +110,11 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    // ✅ 4. التحقق من صلاحية الوصول للشركة
-    const { data: accessCheck, error: accessError } = await supabase
-      .from("companies")
-      .select("id, user_id")
-      .eq("id", companyId)
-      .maybeSingle()
+    // ✅ 4. 🔐 Enterprise Authorization: التحقق من صلاحية الوصول للشركة
+    const { canAccessCompany } = await import("@/lib/company-authorization")
+    const hasAccess = await canAccessCompany(supabase, user.id, companyId)
 
-    if (accessError) {
-      console.error('[API /my-company] Error checking access:', accessError)
-      return internalServerError(
-        'خطأ في التحقق من صلاحية الوصول',
-        'Error checking access permissions',
-        accessError
-      )
-    }
-
-    if (!accessCheck) {
-      console.warn('[API /my-company] Company not found:', companyId)
-      return notFoundError('الشركة', 'Company not found')
-    }
-
-    // ✅ التحقق من أن المستخدم هو المالك أو عضو
-    const isOwner = accessCheck.user_id === user.id
-    let isMember = false
-
-    if (!isOwner) {
-      const { data: memberCheck, error: memberError } = await supabase
-        .from("company_members")
-        .select("id")
-        .eq("company_id", companyId)
-        .eq("user_id", user.id)
-        .maybeSingle()
-
-      if (memberError) {
-        console.error('[API /my-company] Error checking membership:', memberError)
-      }
-
-      isMember = !!memberCheck
-    }
-
-    if (!isOwner && !isMember) {
+    if (!hasAccess) {
       console.warn('[API /my-company] Access denied for user:', user.id, 'to company:', companyId)
       return forbiddenError(
         'ليس لديك صلاحية للوصول إلى هذه الشركة',

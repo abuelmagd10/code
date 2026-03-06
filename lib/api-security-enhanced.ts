@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveCompanyId } from '@/lib/company'
+import { getCompanyMembership } from '@/lib/company-authorization'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface SecurityConfig {
@@ -65,25 +66,35 @@ export async function secureApiRequest(
         }
       }
 
-      // ✅ التحقق من العضوية (Explicit columns - no SELECT *)
-      // ✅ نجلب الأعمدة الأساسية فقط، بدون العلاقات لتجنب مشاكل RLS
-      const { data: member, error: memberError } = await supabase
-        .from('company_members')
-        .select('id, company_id, user_id, role, branch_id, cost_center_id, warehouse_id, email, created_at')
-        .eq('user_id', user.id)
-        .eq('company_id', companyId)
-        .single()
+      // 🔐 Enterprise Authorization: استخدام دالة مساعدة موحدة للتحقق من العضوية
+      const authResult = await getCompanyMembership(supabase, user.id, companyId)
 
-      if (memberError || !member) {
+      if (!authResult.authorized || !authResult.membership) {
         return {
           user,
           companyId,
           member: null,
           error: NextResponse.json(
-            { error: 'غير مسموح', message: 'Access denied to company' },
+            { 
+              error: authResult.error || 'غير مسموح', 
+              error_en: authResult.errorEn || 'Access denied to company' 
+            },
             { status: 403 }
           )
         }
+      }
+
+      // تحويل CompanyMembership إلى تنسيق member المتوقع
+      const member = {
+        id: authResult.membership.id,
+        company_id: authResult.membership.companyId,
+        user_id: authResult.membership.userId,
+        role: authResult.membership.role,
+        branch_id: authResult.membership.branchId,
+        cost_center_id: authResult.membership.costCenterId,
+        warehouse_id: authResult.membership.warehouseId,
+        email: authResult.membership.email,
+        created_at: authResult.membership.createdAt
       }
 
       // 3. التحقق من الصلاحيات
@@ -124,9 +135,9 @@ export async function secureApiRequest(
       return {
         user,
         companyId,
-        branchId: member.branch_id,
-        costCenterId: member.cost_center_id,
-        warehouseId: member.warehouse_id,
+        branchId: member.branch_id || undefined,
+        costCenterId: member.cost_center_id || undefined,
+        warehouseId: member.warehouse_id || undefined,
         member
       }
     }

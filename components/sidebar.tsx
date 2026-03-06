@@ -592,21 +592,18 @@ export function Sidebar() {
           })
         }
 
-        // 2️⃣ Enterprise Logic: جلب الشركات المملوكة فقط للأدوار العليا
-        const upperRoles = ["owner", "admin", "manager", "accountant"]
-        // جلب جميع العضويات للتحقق من وجود أي دور علوي
-        const { data: allMembers } = await supabase
-          .from('company_members')
-          .select('role')
-          .eq('user_id', user.id)
+        // 2️⃣ Enterprise Authorization: جلب الشركات المملوكة فقط للأدوار العليا
+        const { getUserCompanies } = await import("@/lib/company-authorization")
+        const userCompaniesList = await getUserCompanies(supabase, user.id)
         
         // التحقق من وجود أي دور علوي في أي عضوية
-        const hasUpperRole = allMembers?.some((m: any) => 
-          upperRoles.includes((m.role || "").toLowerCase())
-        ) || false
+        const { UPPER_ROLES } = await import("@/lib/company-authorization")
+        const hasUpperRole = userCompaniesList.some(c => 
+          UPPER_ROLES.includes(c.role as any)
+        )
         
         // إذا لم يكن هناك أي عضوية، أو كان هناك دور علوي: محاولة الوصول إلى companies table
-        if (!allMembers || allMembers.length === 0 || hasUpperRole) {
+        if (userCompaniesList.length === 0 || hasUpperRole) {
           const { data: ownedCompanies } = await supabase
             .from('companies')
             .select('id, name, logo_url')
