@@ -140,6 +140,12 @@ export default function ProductsPage() {
   const [permDelete, setPermDelete] = useState(false)
   const [canViewCOGS, setCanViewCOGS] = useState(false) // صلاحية رؤية سعر التكلفة
   const [userRole, setUserRole] = useState<string>("")
+  const [userBranchId, setUserBranchId] = useState<string>("")
+  const [userCostCenterId, setUserCostCenterId] = useState<string>("")
+  const [userWarehouseId, setUserWarehouseId] = useState<string>("")
+
+  const isUpperRole = ["owner", "admin", "accountant", "manager"].includes(userRole)
+  const isNormalRole = !isUpperRole && userRole !== ""
 
   // التحقق من الصلاحيات
   useEffect(() => {
@@ -161,13 +167,16 @@ export default function ProductsPage() {
           if (companyId) {
             const { data: member } = await supabase
               .from("company_members")
-              .select("role")
+              .select("role, branch_id, cost_center_id, warehouse_id")
               .eq("company_id", companyId)
               .eq("user_id", user.id)
               .maybeSingle()
 
             const role = member?.role || ""
             setUserRole(role)
+            setUserBranchId(member?.branch_id || "")
+            setUserCostCenterId(member?.cost_center_id || "")
+            setUserWarehouseId(member?.warehouse_id || "")
             // فقط هذه الأدوار يمكنها رؤية سعر التكلفة
             setCanViewCOGS(["owner", "admin", "accountant", "manager"].includes(role))
           }
@@ -486,9 +495,10 @@ export default function ProductsPage() {
       income_account_id: "",
       expense_account_id: "",
       cost_center: "",
-      cost_center_id: "",
-      branch_id: "",
-      warehouse_id: "",
+      cost_center_id: isNormalRole ? userCostCenterId : "",
+      branch_id: isNormalRole ? userBranchId : "",
+      // تعيين warehouse_id فقط للمنتجات (item_type === "product")
+      warehouse_id: isNormalRole ? userWarehouseId : "",
       tax_code_id: "",
     })
     setFormErrors({})
@@ -878,7 +888,14 @@ export default function ProductsPage() {
                             type="button"
                             variant={formData.item_type === 'product' ? 'default' : 'outline'}
                             className="flex-1"
-                            onClick={() => setFormData({ ...formData, item_type: 'product' })}
+                            onClick={() => {
+                              const newData: any = { ...formData, item_type: 'product' }
+                              // عند التغيير إلى Product، تعيين warehouse_id للمستخدمين العاديين
+                              if (isNormalRole && !newData.warehouse_id) {
+                                newData.warehouse_id = userWarehouseId
+                              }
+                              setFormData(newData)
+                            }}
                           >
                             <Package className="w-4 h-4 mr-2" />
                             {appLang === 'en' ? 'Product' : 'منتج'}
@@ -887,7 +904,7 @@ export default function ProductsPage() {
                             type="button"
                             variant={formData.item_type === 'service' ? 'default' : 'outline'}
                             className="flex-1"
-                            onClick={() => setFormData({ ...formData, item_type: 'service' })}
+                            onClick={() => setFormData({ ...formData, item_type: 'service', warehouse_id: "" })}
                           >
                             <Wrench className="w-4 h-4 mr-2" />
                             {appLang === 'en' ? 'Service' : 'خدمة'}
@@ -1022,6 +1039,7 @@ export default function ProductsPage() {
                                   cost_center_id: ""
                                 })
                               }}
+                              disabled={isNormalRole}
                             >
                               <SelectTrigger>
                                 <SelectValue placeholder={appLang === 'en' ? 'Select Branch...' : 'اختر الفرع...'} />
@@ -1041,7 +1059,7 @@ export default function ProductsPage() {
                               <Select
                                 value={formData.warehouse_id || "none"}
                                 onValueChange={(v) => setFormData({ ...formData, warehouse_id: v === "none" ? "" : v })}
-                                disabled={!formData.branch_id}
+                                disabled={isNormalRole || !formData.branch_id}
                               >
                                 <SelectTrigger>
                                   <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
@@ -1060,7 +1078,7 @@ export default function ProductsPage() {
                             <Select
                               value={formData.cost_center_id || "none"}
                               onValueChange={(v) => setFormData({ ...formData, cost_center_id: v === "none" ? "" : v })}
-                              disabled={!formData.branch_id}
+                              disabled={isNormalRole || !formData.branch_id}
                             >
                               <SelectTrigger>
                                 <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
