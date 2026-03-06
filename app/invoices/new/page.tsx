@@ -730,6 +730,13 @@ export default function NewInvoicePage() {
           }
         }
 
+        // 📸 جلب بيانات العميل لحفظ Snapshot
+        const { data: customerData } = await supabase
+          .from("customers")
+          .select("name, email, phone, address, city, country, tax_id, governorate, detailed_address")
+          .eq("id", formData.customer_id)
+          .single()
+
         // Create invoice with dual currency storage
         const { data: invoiceData, error: invoiceError } = await supabase
           .from("invoices")
@@ -772,6 +779,16 @@ export default function NewInvoicePage() {
               original_total: totals.total,
               original_subtotal: totals.subtotal,
               original_tax_amount: totals.tax,
+              // 📸 Customer Snapshot: حفظ نسخة من بيانات العميل وقت الإنشاء
+              customer_name_snapshot: customerData?.name || null,
+              customer_email_snapshot: customerData?.email || null,
+              customer_phone_snapshot: customerData?.phone || null,
+              customer_address_snapshot: customerData?.address || null,
+              customer_city_snapshot: customerData?.city || null,
+              customer_country_snapshot: customerData?.country || null,
+              customer_tax_id_snapshot: customerData?.tax_id || null,
+              customer_governorate_snapshot: customerData?.governorate || null,
+              customer_detailed_address_snapshot: customerData?.detailed_address || null,
             },
           ])
           .select()

@@ -89,6 +89,16 @@ interface Invoice {
   // Returns
   returned_amount?: number
   return_status?: string | null
+  // 📸 Customer Snapshot: نسخة من بيانات العميل وقت إنشاء/إرسال الفاتورة
+  customer_name_snapshot?: string | null
+  customer_email_snapshot?: string | null
+  customer_phone_snapshot?: string | null
+  customer_address_snapshot?: string | null
+  customer_city_snapshot?: string | null
+  customer_country_snapshot?: string | null
+  customer_tax_id_snapshot?: string | null
+  customer_governorate_snapshot?: string | null
+  customer_detailed_address_snapshot?: string | null
 }
 
 interface InvoiceItem {
@@ -381,6 +391,9 @@ export default function InvoiceDetailPage() {
 
       if (invoiceData) {
         setInvoice(invoiceData)
+        
+        // 📸 استخدام Snapshot إذا كان موجوداً، وإلا استخدام البيانات الحية
+        // هذا يضمن عرض البيانات الأصلية وقت إنشاء الفاتورة
 
         // Load branch and cost center names
         if (invoiceData.branch_id) {
@@ -786,6 +799,33 @@ export default function InvoiceDetailPage() {
             // ❌ لا قيد محاسبي عند Sent - القيد يُنشأ عند الدفع فقط
             console.log(`✅ INV Sent: تم خصم المخزون ونقله إلى بضاعة لدى الغير`)
 
+            // 📸 حفظ Snapshot بيانات العميل عند الإرسال (إذا لم يكن موجوداً)
+            if (!invoice.customer_name_snapshot && invoice.customer_id) {
+              const { data: customerData } = await supabase
+                .from("customers")
+                .select("name, email, phone, address, city, country, tax_id, governorate, detailed_address")
+                .eq("id", invoice.customer_id)
+                .single()
+
+              if (customerData) {
+                await supabase
+                  .from("invoices")
+                  .update({
+                    customer_name_snapshot: customerData.name || null,
+                    customer_email_snapshot: customerData.email || null,
+                    customer_phone_snapshot: customerData.phone || null,
+                    customer_address_snapshot: customerData.address || null,
+                    customer_city_snapshot: customerData.city || null,
+                    customer_country_snapshot: customerData.country || null,
+                    customer_tax_id_snapshot: customerData.tax_id || null,
+                    customer_governorate_snapshot: customerData.governorate || null,
+                    customer_detailed_address_snapshot: customerData.detailed_address || null,
+                  })
+                  .eq("id", invoiceId)
+                console.log("📸 Customer snapshot saved on invoice sent")
+              }
+            }
+
             // 📝 Audit Log: تسجيل عملية الإرسال
             if (auditUserId && invoice.company_id) {
               const { error: auditErr } = await supabase.from("audit_logs").insert({
@@ -1149,9 +1189,9 @@ export default function InvoiceDetailPage() {
 
       // Pre-fill recipient data from customer
       setShipmentData({
-        recipient_name: invoice.customers?.name || "",
-        recipient_phone: invoice.customers?.phone || "",
-        recipient_address: invoice.customers?.address || "",
+        recipient_name: invoice.customer_name_snapshot || invoice.customers?.name || "",
+        recipient_phone: invoice.customer_phone_snapshot || invoice.customers?.phone || "",
+        recipient_address: invoice.customer_address_snapshot || invoice.customers?.address || "",
         recipient_city: invoice.customers?.city || "",
         weight: "",
         notes: ""
@@ -1231,9 +1271,9 @@ export default function InvoiceDetailPage() {
                   country: 'Egypt',
                 },
                 consignee: {
-                  name: shipmentData.recipient_name || invoice.customers?.name || '',
-                  phone: shipmentData.recipient_phone || invoice.customers?.phone || '',
-                  address: shipmentData.recipient_address || invoice.customers?.address || '',
+                  name: shipmentData.recipient_name || invoice.customer_name_snapshot || invoice.customers?.name || '',
+                  phone: shipmentData.recipient_phone || invoice.customer_phone_snapshot || invoice.customers?.phone || '',
+                  address: shipmentData.recipient_address || invoice.customer_address_snapshot || invoice.customers?.address || '',
                   city: shipmentData.recipient_city || invoice.customers?.city || '',
                   country: 'Egypt',
                 },
@@ -2537,42 +2577,57 @@ export default function InvoiceDetailPage() {
                 <div className="md:col-span-2 bg-gray-50 dark:bg-slate-800 rounded-lg p-4 print:bg-gray-100 print:p-3">
                   <h3 className="font-semibold mb-3 text-gray-700 dark:text-gray-300 print:text-gray-800 border-b pb-2">{appLang === 'en' ? 'Bill To:' : 'فاتورة إلى:'}</h3>
                   <div className="space-y-2">
-                    {/* اسم العميل */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold text-gray-900 dark:text-white print:text-black">{invoice.customers?.name || '-'}</span>
-                    </div>
-                    {/* رقم التليفون */}
-                    {invoice.customers?.phone && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-gray-500 dark:text-gray-400 print:text-gray-600">{appLang === 'en' ? 'Phone:' : 'الهاتف:'}</span>
-                        <span className="font-medium text-gray-700 dark:text-gray-300 print:text-gray-800 dir-ltr">{invoice.customers.phone}</span>
-                      </div>
-                    )}
-                    {/* البريد الإلكتروني */}
-                    {invoice.customers?.email && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-gray-500 dark:text-gray-400 print:text-gray-600">{appLang === 'en' ? 'Email:' : 'البريد:'}</span>
-                        <span className="font-medium text-gray-700 dark:text-gray-300 print:text-gray-800">{invoice.customers.email}</span>
-                      </div>
-                    )}
-                    {/* العنوان */}
-                    {invoice.customers?.address && (
-                      <div className="flex items-start gap-2 text-sm">
-                        <span className="text-gray-500 dark:text-gray-400 print:text-gray-600">{appLang === 'en' ? 'Address:' : 'العنوان:'}</span>
-                        <span className="font-medium text-gray-700 dark:text-gray-300 print:text-gray-800">
-                          {invoice.customers.address}
-                          {invoice.customers.city && `, ${invoice.customers.city}`}
-                          {invoice.customers.country && `, ${invoice.customers.country}`}
-                        </span>
-                      </div>
-                    )}
-                    {/* الرقم الضريبي */}
-                    {invoice.customers?.tax_id && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-gray-500 dark:text-gray-400 print:text-gray-600">{appLang === 'en' ? 'Tax ID:' : 'الرقم الضريبي:'}</span>
-                        <span className="font-medium text-gray-700 dark:text-gray-300 print:text-gray-800">{invoice.customers.tax_id}</span>
-                      </div>
-                    )}
+                    {/* 📸 استخدام Snapshot إذا كان موجوداً، وإلا استخدام البيانات الحية */}
+                    {(() => {
+                      const customerName = invoice.customer_name_snapshot || invoice.customers?.name || '-'
+                      const customerPhone = invoice.customer_phone_snapshot || invoice.customers?.phone
+                      const customerEmail = invoice.customer_email_snapshot || invoice.customers?.email
+                      const customerAddress = invoice.customer_address_snapshot || invoice.customers?.address
+                      const customerCity = invoice.customer_city_snapshot || invoice.customers?.city
+                      const customerCountry = invoice.customer_country_snapshot || invoice.customers?.country
+                      const customerTaxId = invoice.customer_tax_id_snapshot || invoice.customers?.tax_id
+                      
+                      return (
+                        <>
+                          {/* اسم العميل */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg font-bold text-gray-900 dark:text-white print:text-black">{customerName}</span>
+                          </div>
+                          {/* رقم التليفون */}
+                          {customerPhone && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <span className="text-gray-500 dark:text-gray-400 print:text-gray-600">{appLang === 'en' ? 'Phone:' : 'الهاتف:'}</span>
+                              <span className="font-medium text-gray-700 dark:text-gray-300 print:text-gray-800 dir-ltr">{customerPhone}</span>
+                            </div>
+                          )}
+                          {/* البريد الإلكتروني */}
+                          {customerEmail && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <span className="text-gray-500 dark:text-gray-400 print:text-gray-600">{appLang === 'en' ? 'Email:' : 'البريد:'}</span>
+                              <span className="font-medium text-gray-700 dark:text-gray-300 print:text-gray-800">{customerEmail}</span>
+                            </div>
+                          )}
+                          {/* العنوان */}
+                          {customerAddress && (
+                            <div className="flex items-start gap-2 text-sm">
+                              <span className="text-gray-500 dark:text-gray-400 print:text-gray-600">{appLang === 'en' ? 'Address:' : 'العنوان:'}</span>
+                              <span className="font-medium text-gray-700 dark:text-gray-300 print:text-gray-800">
+                                {customerAddress}
+                                {customerCity && `, ${customerCity}`}
+                                {customerCountry && `, ${customerCountry}`}
+                              </span>
+                            </div>
+                          )}
+                          {/* الرقم الضريبي */}
+                          {customerTaxId && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <span className="text-gray-500 dark:text-gray-400 print:text-gray-600">{appLang === 'en' ? 'Tax ID:' : 'الرقم الضريبي:'}</span>
+                              <span className="font-medium text-gray-700 dark:text-gray-300 print:text-gray-800">{customerTaxId}</span>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                 </div>
 
@@ -3373,7 +3428,7 @@ export default function InvoiceDetailPage() {
                       </div>
                     </div>
                     <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                      {appLang === 'en' ? 'Customer' : 'العميل'}: <span className="font-medium">{invoice.customers?.name || '—'}</span>
+                      {appLang === 'en' ? 'Customer' : 'العميل'}: <span className="font-medium">{invoice.customer_name_snapshot || invoice.customers?.name || '—'}</span>
                     </div>
                   </div>
                 )}
@@ -3689,7 +3744,7 @@ export default function InvoiceDetailPage() {
               open={showCustomerRefund}
               onOpenChange={setShowCustomerRefund}
               customerId={invoice.customer_id}
-              customerName={invoice.customers?.name || ''}
+              customerName={invoice.customer_name_snapshot || invoice.customers?.name || ''}
               maxAmount={customerCreditAmount}
               accounts={refundAccounts}
               appCurrency={appCurrency}
