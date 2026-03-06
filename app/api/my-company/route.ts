@@ -69,18 +69,19 @@ export async function GET(req: NextRequest) {
         } else {
           // 🔹 Enterprise Logic: ثانياً: محاولة جلب الشركة المملوكة فقط للأدوار العليا
           const upperRoles = ["owner", "admin", "manager", "accountant"]
-          const { data: memberWithRole } = await supabase
+          // جلب جميع العضويات للتحقق من وجود أي دور علوي
+          const { data: allMembers } = await supabase
             .from("company_members")
             .select("role")
             .eq("user_id", user.id)
-            .limit(1)
-            .maybeSingle()
           
-          const userRole = (memberWithRole?.role || "").toLowerCase()
-          const isUpperRole = upperRoles.includes(userRole)
+          // التحقق من وجود أي دور علوي في أي عضوية
+          const hasUpperRole = allMembers?.some((m: any) => 
+            upperRoles.includes((m.role || "").toLowerCase())
+          ) || false
           
-          if (isUpperRole) {
-            // فقط للأدوار العليا: محاولة الوصول إلى companies table
+          // إذا لم يكن هناك أي عضوية، أو كان هناك دور علوي: محاولة الوصول إلى companies table
+          if (!allMembers || allMembers.length === 0 || hasUpperRole) {
             const { data: userCompany, error: companyError } = await supabase
               .from("companies")
               .select("id")
@@ -96,7 +97,7 @@ export async function GET(req: NextRequest) {
               companyId = userCompany.id
             }
           }
-          // للأدوار العادية: لا نحاول الوصول إلى companies table
+          // للأدوار العادية فقط: لا نحاول الوصول إلى companies table
         }
       } catch (err) {
         console.error('[API /my-company] Unexpected error fetching company:', err)

@@ -4,20 +4,21 @@ export async function getCompanyIdForUser(supabase: any): Promise<string | null>
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
     
-    // 1️⃣ جلب الدور من company_members أولاً
-    const { data: member } = await supabase
+    // 1️⃣ جلب جميع العضويات للتحقق من وجود أي دور علوي
+    const { data: members } = await supabase
       .from("company_members")
       .select("role, company_id")
       .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle()
     
     const upperRoles = ["owner", "admin", "manager", "accountant"]
-    const userRole = (member?.role || "").toLowerCase()
-    const isUpperRole = upperRoles.includes(userRole)
     
-    // 2️⃣ فقط للأدوار العليا: محاولة الوصول إلى companies table
-    if (isUpperRole) {
+    // 2️⃣ التحقق من وجود أي دور علوي في أي عضوية
+    const hasUpperRole = members?.some((m: any) => 
+      upperRoles.includes((m.role || "").toLowerCase())
+    ) || false
+    
+    // 3️⃣ إذا لم يكن هناك أي عضوية، أو كان هناك دور علوي: محاولة الوصول إلى companies table
+    if (!members || members.length === 0 || hasUpperRole) {
       const { data: company } = await supabase
         .from("companies")
         .select("id")
@@ -26,8 +27,8 @@ export async function getCompanyIdForUser(supabase: any): Promise<string | null>
       return company?.id ?? null
     }
     
-    // 3️⃣ للأدوار العادية: استخدام company_members فقط
-    return member?.company_id ?? null
+    // 4️⃣ للأدوار العادية فقط: استخدام أول شركة من company_members
+    return members[0]?.company_id ?? null
   } catch {
     return null
   }

@@ -565,7 +565,8 @@ export default function ProductsPage() {
   }
 
   const handleEdit = (product: Product) => {
-    setFormData({
+    // 🔐 Enterprise Logic: عند التعديل، للأدوار العادية نفرض القيم من بيانات المستخدم
+    const editData: any = {
       ...product,
       income_account_id: product.income_account_id || "",
       expense_account_id: product.expense_account_id || "",
@@ -574,7 +575,20 @@ export default function ProductsPage() {
       branch_id: product.branch_id || "",
       warehouse_id: product.warehouse_id || "",
       tax_code_id: product.tax_code_id || "",
-    } as any)
+    }
+    
+    // للأدوار العادية: فرض القيم من بيانات المستخدم (لضمان عدم التلاعب)
+    if (isNormalRole) {
+      editData.branch_id = userBranchId || ""
+      editData.cost_center_id = userCostCenterId || ""
+      if (product.item_type === 'product') {
+        editData.warehouse_id = userWarehouseId || ""
+      } else {
+        editData.warehouse_id = ""
+      }
+    }
+    
+    setFormData(editData)
     setEditingId(product.id)
     setIsDialogOpen(true)
   }
@@ -949,10 +963,18 @@ export default function ProductsPage() {
                             variant={formData.item_type === 'product' ? 'default' : 'outline'}
                             className="flex-1"
                             onClick={() => {
+                              // 🔐 Enterprise Logic: عند التغيير إلى Product
                               const newData: any = { ...formData, item_type: 'product' }
-                              // عند التغيير إلى Product، تعيين warehouse_id للمستخدمين العاديين
-                              if (isNormalRole && !newData.warehouse_id) {
-                                newData.warehouse_id = userWarehouseId
+                              if (isNormalRole) {
+                                // للأدوار العادية: فرض جميع القيم
+                                newData.branch_id = userBranchId || ""
+                                newData.cost_center_id = userCostCenterId || ""
+                                newData.warehouse_id = userWarehouseId || ""
+                              } else {
+                                // للأدوار العليا: prefill إذا كانت موجودة
+                                if (!newData.branch_id) newData.branch_id = userBranchId || ""
+                                if (!newData.cost_center_id) newData.cost_center_id = userCostCenterId || ""
+                                if (!newData.warehouse_id) newData.warehouse_id = userWarehouseId || ""
                               }
                               setFormData(newData)
                             }}
@@ -964,7 +986,20 @@ export default function ProductsPage() {
                             type="button"
                             variant={formData.item_type === 'service' ? 'default' : 'outline'}
                             className="flex-1"
-                            onClick={() => setFormData({ ...formData, item_type: 'service', warehouse_id: "" })}
+                            onClick={() => {
+                              // 🔐 Enterprise Logic: عند التغيير إلى Service
+                              const newData: any = { ...formData, item_type: 'service', warehouse_id: "" }
+                              if (isNormalRole) {
+                                // للأدوار العادية: فرض Branch و Cost Center فقط
+                                newData.branch_id = userBranchId || ""
+                                newData.cost_center_id = userCostCenterId || ""
+                              } else {
+                                // للأدوار العليا: prefill إذا كانت موجودة
+                                if (!newData.branch_id) newData.branch_id = userBranchId || ""
+                                if (!newData.cost_center_id) newData.cost_center_id = userCostCenterId || ""
+                              }
+                              setFormData(newData)
+                            }}
                           >
                             <Wrench className="w-4 h-4 mr-2" />
                             {appLang === 'en' ? 'Service' : 'خدمة'}
