@@ -29,8 +29,7 @@ export async function GET(request: NextRequest) {
         .select(`
             *,
             employees!inner (
-                id, full_name, branch_id, status,
-                branches ( id, name )
+                id, full_name, status
             )
         `)
         .eq('company_id', companyId)
@@ -39,9 +38,6 @@ export async function GET(request: NextRequest) {
 
     if (employeeId && employeeId !== 'all') {
         query = query.eq('employee_id', employeeId)
-    }
-    if (branchId && branchId !== 'all') {
-        query = query.eq('employees.branch_id', branchId)
     }
 
     const { data: records, error } = await query
@@ -92,12 +88,11 @@ export async function GET(request: NextRequest) {
         // Fetch all active employees
         let empQuery = supabase
             .from('employees')
-            .select('id, full_name, branch_id, status, branches(id, name)')
+            .select('id, full_name, status')
             .eq('company_id', companyId)
             .eq('status', 'active')
 
         if (employeeId && employeeId !== 'all') empQuery = empQuery.eq('id', employeeId)
-        if (branchId && branchId !== 'all') empQuery = empQuery.eq('branch_id', branchId)
 
         const { data: employees, error: empError } = await empQuery
         if (empError) return serverError(empError.message)

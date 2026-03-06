@@ -16,7 +16,6 @@ export default function AttendanceReportsPage() {
     const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
     const [companyId, setCompanyId] = useState<string>("")
     const [employees, setEmployees] = useState<any[]>([])
-    const [branches, setBranches] = useState<any[]>([])
 
     const [reportsData, setReportsData] = useState<any[]>([])
     const [loading, setLoading] = useState(false)
@@ -26,7 +25,6 @@ export default function AttendanceReportsPage() {
     const [filterStartDate, setFilterStartDate] = useState<string>(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
     const [filterEndDate, setFilterEndDate] = useState<string>(new Date().toISOString().slice(0, 10))
     const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all")
-    const [filterBranchId, setFilterBranchId] = useState<string>("all")
 
     useEffect(() => {
         const handler = () => {
@@ -58,16 +56,12 @@ export default function AttendanceReportsPage() {
         if (companyId) {
             loadReports(companyId, reportType)
         }
-    }, [filterStartDate, filterEndDate, filterEmployeeId, filterBranchId, reportType])
+    }, [filterStartDate, filterEndDate, filterEmployeeId, reportType])
 
     const loadFiltersData = async (cid: string) => {
         try {
-            const [empsRes, bransRes] = await Promise.all([
-                fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`),
-                supabase.from('branches').select('*').eq('company_id', cid)
-            ])
-            if (empsRes.ok) setEmployees(await empsRes.json())
-            if (bransRes.data) setBranches(bransRes.data)
+            const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`)
+            if (res.ok) setEmployees(await res.json())
         } catch { }
     }
 
@@ -81,7 +75,6 @@ export default function AttendanceReportsPage() {
                 to: filterEndDate
             })
             if (filterEmployeeId && filterEmployeeId !== 'all') queryParams.append('employeeId', filterEmployeeId)
-            if (filterBranchId && filterBranchId !== 'all') queryParams.append('branchId', filterBranchId)
 
             const res = await fetch(`/api/hr/attendance/reports?${queryParams.toString()}`)
             const data = await res.json()
@@ -109,10 +102,9 @@ export default function AttendanceReportsPage() {
         let csvData: string[] = []
 
         if (reportType === 'summary') {
-            headers = ['Employee', 'Branch', 'Days Present', 'Total Hours', 'Total Late (min)', 'Total Overtime (min)', 'Total Early Leave (min)']
+            headers = ['Employee', 'Days Present', 'Total Hours', 'Total Late (min)', 'Total Overtime (min)', 'Total Early Leave (min)']
             csvData = reportsData.map(row => [
                 row.employee?.full_name,
-                row.employee?.branches?.name || '',
                 row.daysPresent,
                 row.totalWorkingHours,
                 row.totalLateMins,
@@ -120,26 +112,23 @@ export default function AttendanceReportsPage() {
                 row.totalEarlyLeaveMins
             ].join(','))
         } else if (reportType === 'late') {
-            headers = ['Employee', 'Branch', 'Days Present', 'Total Late (min)']
+            headers = ['Employee', 'Days Present', 'Total Late (min)']
             csvData = reportsData.map(row => [
                 row.employee?.full_name,
-                row.employee?.branches?.name || '',
                 row.daysPresent,
                 row.totalLateMins
             ].join(','))
         } else if (reportType === 'overtime') {
-            headers = ['Employee', 'Branch', 'Days Present', 'Total Overtime (min)']
+            headers = ['Employee', 'Days Present', 'Total Overtime (min)']
             csvData = reportsData.map(row => [
                 row.employee?.full_name,
-                row.employee?.branches?.name || '',
                 row.daysPresent,
                 row.totalOvertimeMins
             ].join(','))
         } else if (reportType === 'absence') {
-            headers = ['Employee', 'Branch', 'Total Absence Days', 'Dates']
+            headers = ['Employee', 'Total Absence Days', 'Dates']
             csvData = reportsData.map(row => [
                 row.employee?.full_name,
-                row.employee?.branches?.name || '',
                 row.totalAbsenceDays,
                 `"${row.absenceDays.join(' | ')}"` // Quote to handle commas in csv safely
             ].join(','))
@@ -161,11 +150,6 @@ export default function AttendanceReportsPage() {
                 header: t('Employee', 'الموظف'),
                 key: 'employeeName',
                 format: (_, row: any) => row.employee?.full_name || 'N/A'
-            },
-            {
-                header: t('Branch', 'الفرع'),
-                key: 'branchName',
-                format: (_, row: any) => row.employee?.branches?.name || '-'
             }
         ]
 
@@ -202,7 +186,6 @@ export default function AttendanceReportsPage() {
     }
 
     const activeFiltersCount = [
-        filterBranchId !== 'all',
         filterEmployeeId !== 'all'
     ].filter(Boolean).length
 
@@ -227,7 +210,6 @@ export default function AttendanceReportsPage() {
                 title={t('Filters', 'الفلاتر')}
                 activeCount={activeFiltersCount}
                 onClear={() => {
-                    setFilterBranchId('all');
                     setFilterEmployeeId('all');
                 }}
             >
@@ -266,22 +248,6 @@ export default function AttendanceReportsPage() {
                             onChange={(e) => setFilterEndDate(e.target.value)}
                             className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
-                    </div>
-
-                    {/* Org Filters */}
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium">{t('Branch', 'الفرع')}</label>
-                        <Select value={filterBranchId} onValueChange={setFilterBranchId}>
-                            <SelectTrigger className="bg-white dark:bg-slate-800">
-                                <SelectValue placeholder={t('All Branches', 'جميع الفروع')} />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">{t('All Branches', 'جميع الفروع')}</SelectItem>
-                                {branches.map(b => (
-                                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
                     </div>
 
                     <div className="space-y-2">
