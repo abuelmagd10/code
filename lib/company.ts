@@ -28,7 +28,7 @@ export async function ensureCompanyId(supabase: any, toast?: any): Promise<strin
 // Order of resolution:
 // 1) Check localStorage/Cookie for active_company_id AND verify user has access
 // 2) First company from company_members
-// 3) Owned company
+// 3) Owned company (only for upper roles)
 // 4) First company in table (single-company deployments)
 export async function getActiveCompanyId(supabase: any): Promise<string | null> {
   try {
@@ -84,12 +84,14 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         }
       } catch { }
 
-      // 2️⃣ جلب جميع الشركات التي المستخدم عضو فيها
+      // 2️⃣ Enterprise Logic: جلب جميع الشركات التي المستخدم عضو فيها مع الأدوار
+      // هذا يسمح لنا بتحديد مصدر البيانات بناءً على الدور بدلاً من معالجة الأخطاء
       let userCompanies = null
+      let userRoles: Record<string, string> = {} // company_id -> role mapping
       try {
         const { data, error } = await supabase
           .from("company_members")
-          .select("company_id")
+          .select("company_id, role")
           .eq("user_id", user.id)
         
         if (error) {
@@ -103,6 +105,12 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
           throw error
         }
         userCompanies = data
+        // بناء خريطة الأدوار لكل شركة
+        if (data) {
+          data.forEach((m: any) => {
+            userRoles[m.company_id] = (m.role || "").toLowerCase()
+          })
+        }
       } catch (error: any) {
         if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
           console.warn('⚠️ Request aborted, using saved company ID')
@@ -115,6 +123,9 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
       }
 
       const memberCompanyIds = (userCompanies || []).map((c: any) => c.company_id)
+      
+      // تعريف الأدوار العليا (يمكنها الوصول إلى companies table)
+      const upperRoles = ["owner", "admin", "manager", "accountant"]
 
       // 3️⃣ إذا كانت الشركة المحفوظة موجودة وعضو فيها، نستخدمها
       if (savedCompanyId && memberCompanyIds.includes(savedCompanyId)) {
@@ -122,48 +133,42 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         return savedCompanyId
       }
 
-      // 4️⃣ إذا كانت الشركة المحفوظة موجودة لكن ليست في العضويات، نتحقق من الملكية
-      // (فقط للأدوار العليا - قد يفشل للأدوار العادية بسبب RLS)
+      // 4️⃣ Enterprise Logic: التحقق من ownership فقط للأدوار العليا
       if (savedCompanyId) {
-        try {
-          const { data: ownedCompany, error } = await supabase
-            .from("companies")
-            .select("id")
-            .eq("id", savedCompanyId)
-            .eq("user_id", user.id)
-            .limit(1)
-          
-          if (error) {
-            // تجاهل خطأ 406 (Not Acceptable) - يحدث للأدوار العادية بسبب RLS
-            if (error.message?.includes('406') || error.message?.includes('Not Acceptable')) {
-              // الشركة المحفوظة ليست مملوكة ولا عضوية - تجاهلها
-              return null
+        const savedCompanyRole = userRoles[savedCompanyId] || ""
+        const isUpperRole = upperRoles.includes(savedCompanyRole)
+        
+        if (isUpperRole) {
+          // للأدوار العليا فقط: التحقق من ownership في companies table
+          try {
+            const { data: ownedCompany, error } = await supabase
+              .from("companies")
+              .select("id")
+              .eq("id", savedCompanyId)
+              .eq("user_id", user.id)
+              .limit(1)
+            
+            if (error) {
+              if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+                console.warn('⚠️ Ownership check aborted, using saved company ID')
+                return savedCompanyId
+              }
+              // للأدوار العليا، إذا فشل الاستعلام، نتابع إلى fallback
+              console.warn('⚠️ Ownership check failed for upper role, continuing to fallback')
+            } else if (Array.isArray(ownedCompany) && ownedCompany[0]?.id) {
+              return savedCompanyId
             }
-            if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+          } catch (error: any) {
+            if (error?.name === 'AbortError' || error.message?.includes('aborted')) {
               console.warn('⚠️ Ownership check aborted, using saved company ID')
               return savedCompanyId
             }
+            // للأدوار العليا، إذا فشل الاستعلام، نتابع إلى fallback
+            console.warn('⚠️ Ownership check failed for upper role, continuing to fallback')
           }
-          
-          if (Array.isArray(ownedCompany) && ownedCompany[0]?.id) {
-            return savedCompanyId
-          }
-        } catch (error: any) {
-          // تجاهل خطأ 406 (Not Acceptable) - يحدث للأدوار العادية بسبب RLS
-          if (error?.message?.includes('406') || error?.message?.includes('Not Acceptable')) {
-            // الشركة المحفوظة ليست مملوكة ولا عضوية - تجاهلها والمتابعة إلى fallback
-            // لا نعيد رمي الخطأ حتى نتمكن من محاولة استراتيجيات fallback الأخرى
-            console.warn('⚠️ Ownership check failed (406), continuing to fallback strategies')
-          } else if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-            console.warn('⚠️ Ownership check aborted, using saved company ID')
-            return savedCompanyId
-          } else {
-            // تسجيل الأخطاء الأخرى ولكن المتابعة إلى fallback strategies
-            // هذا يسمح للدالة بمحاولة استراتيجيات بديلة بدلاً من الفشل فوراً
-            console.warn('⚠️ Ownership check error (non-critical), continuing to fallback strategies:', error?.message || error)
-          }
-          // لا نعيد رمي الخطأ - نتابع إلى fallback strategies (step 5, 6)
         }
+        // للأدوار العادية: لا نحاول الوصول إلى companies table
+        // نتابع مباشرة إلى استخدام أول شركة من العضويات
       }
 
       // 5️⃣ إذا لم تكن الشركة المحفوظة صالحة، نأخذ أول شركة من العضويات
@@ -179,104 +184,69 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         return newActiveCompany
       }
 
-      // 6️⃣ نتحقق من الشركات المملوكة (فقط إذا لم نجد شركات من العضويات)
-      // ملاحظة: هذا الاستعلام قد يفشل للأدوار العادية بسبب RLS، لكن لا بأس
-      try {
-        const { data: ownedCompany, error } = await supabase
-          .from("companies")
-          .select("id")
-          .eq("user_id", user.id)
-          .limit(1)
-        
-        if (error) {
-          // تجاهل خطأ 406 (Not Acceptable) - يحدث للأدوار العادية بسبب RLS
-          if (error.message?.includes('406') || error.message?.includes('Not Acceptable')) {
-            // لا يوجد شركات مملوكة أو لا توجد صلاحية للاستعلام
+      // 6️⃣ Enterprise Logic: التحقق من الشركات المملوكة فقط للأدوار العليا
+      // للأدوار العادية: نتخطى هذه الخطوة تماماً ولا نحاول الوصول إلى companies table
+      const hasUpperRole = memberCompanyIds.some((cid: string) => {
+        const role = userRoles[cid] || ""
+        return upperRoles.includes(role)
+      })
+      
+      if (hasUpperRole) {
+        // فقط للأدوار العليا: محاولة الوصول إلى companies table
+        try {
+          const { data: ownedCompany, error } = await supabase
+            .from("companies")
+            .select("id")
+            .eq("user_id", user.id)
+            .limit(1)
+          
+          if (error) {
+            if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+              console.warn('⚠️ Owned companies request aborted')
+              return null
+            }
+            // للأدوار العليا، إذا فشل الاستعلام، نعود null
+            console.warn('⚠️ Owned companies check failed for upper role')
             return null
           }
-          if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+          
+          if (Array.isArray(ownedCompany) && ownedCompany[0]?.id) {
+            const cid: string = ownedCompany[0].id
+            console.log("✅ Using owned company ID:", cid)
+            try {
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('active_company_id', cid)
+                document.cookie = `active_company_id=${cid}; path=/; max-age=31536000`
+              }
+            } catch { }
+            return cid
+          }
+        } catch (error: any) {
+          if (error?.name === 'AbortError' || error.message?.includes('aborted')) {
             console.warn('⚠️ Owned companies request aborted')
             return null
           }
-        }
-        
-        if (Array.isArray(ownedCompany) && ownedCompany[0]?.id) {
-          const cid = ownedCompany[0].id
-          console.log("✅ Using owned company ID:", cid)
-          try {
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('active_company_id', cid)
-              document.cookie = `active_company_id=${cid}; path=/; max-age=31536000`
-            }
-          } catch { }
-          return cid
-        }
-      } catch (error: any) {
-        // تجاهل خطأ 406 (Not Acceptable) - يحدث للأدوار العادية بسبب RLS
-        if (error?.message?.includes('406') || error?.message?.includes('Not Acceptable')) {
+          // للأدوار العليا، إذا فشل الاستعلام، نعود null
+          console.warn('⚠️ Owned companies check failed for upper role')
           return null
         }
-        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-          console.warn('⚠️ Owned companies request aborted')
-          return null
-        }
-        throw error
       }
+      // للأدوار العادية: نتخطى هذه الخطوة تماماً ولا نحاول الوصول إلى companies table
     }
 
     // Fallback للحالات بدون مستخدم
-    try {
-      const { data: anyCompanies, error: fallbackError } = await supabase
-        .from("companies")
-        .select("id")
-        .limit(1)
-      
-      if (fallbackError) {
-        if (fallbackError.name === 'AbortError' || fallbackError.message?.includes('aborted')) {
-          console.warn('⚠️ Fallback companies request aborted')
-          // محاولة استخدام الشركة المحفوظة من localStorage
-          if (typeof window !== 'undefined') {
-            const cachedId = localStorage.getItem('active_company_id')
-            if (cachedId) {
-              return cachedId
-            }
-          }
-          return null
-        }
-      }
-      
-      if (Array.isArray(anyCompanies) && anyCompanies[0]?.id) {
-        console.log("⚠️ Using fallback company ID:", anyCompanies[0].id)
-        return anyCompanies[0].id
-      }
-    } catch (fallbackErr: any) {
-      if (fallbackErr?.name === 'AbortError' || fallbackErr?.message?.includes('aborted')) {
-        console.warn('⚠️ Fallback request aborted, using cached company ID')
-        if (typeof window !== 'undefined') {
-          const cachedId = localStorage.getItem('active_company_id')
-          if (cachedId) {
-            return cachedId
-          }
-        }
-        return null
-      }
-      throw fallbackErr
+    const { data: anyCompanies } = await supabase
+      .from("companies")
+      .select("id")
+      .limit(1)
+    if (Array.isArray(anyCompanies) && anyCompanies[0]?.id) {
+      console.log("⚠️ Using fallback company ID:", anyCompanies[0].id)
+      return anyCompanies[0].id
     }
 
     console.error("❌ No company ID found!")
     return null
-  } catch (error: any) {
-    // معالجة AbortError بشكل صريح للاستعادة من localStorage
-    if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-      console.warn('⚠️ Request aborted in getActiveCompanyId, using cached company ID')
-      if (typeof window !== 'undefined') {
-        const cachedId = localStorage.getItem('active_company_id')
-        if (cachedId) {
-          return cachedId
-        }
-      }
-      return null
-    }
+  } catch (error) {
     console.error("❌ Error in getActiveCompanyId:", error)
     return null
   }
