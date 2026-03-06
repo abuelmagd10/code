@@ -158,12 +158,12 @@ export default function BillsPage() {
   const statusOptions = useMemo(() => {
     // جمع جميع الحالات الفعلية من الفواتير
     const availableStatuses = new Set<string>();
-    
+
     bills.forEach((bill) => {
       // إضافة حالة الفاتورة
       availableStatuses.add(bill.status);
     });
-    
+
     // إرجاع فقط الحالات المتاحة من القائمة الكاملة
     return allStatusOptions.filter(opt => availableStatuses.has(opt.value));
   }, [bills, allStatusOptions])
@@ -877,12 +877,11 @@ export default function BillsPage() {
         if (!row.receipt_status) return <span className="text-gray-400">-</span>
         return (
           <div className="flex flex-col items-center gap-1">
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-              row.receipt_status === 'received' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
-              row.receipt_status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-              row.receipt_status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-              'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-            }`}>
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${row.receipt_status === 'received' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
+                row.receipt_status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                  row.receipt_status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                    'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+              }`}>
               {row.receipt_status === 'received' ? (appLang === 'en' ? 'Received' : 'تم الاستلام') :
                 row.receipt_status === 'rejected' ? (appLang === 'en' ? 'Rejected' : 'مرفوض') :
                   row.receipt_status === 'pending' ? (appLang === 'en' ? 'Pending' : 'بانتظار') :
@@ -918,16 +917,31 @@ export default function BillsPage() {
               </Button>
             </Link>
           )}
-          {row.status !== 'draft' && row.status !== 'voided' && row.status !== 'fully_returned' && row.status !== 'cancelled' && (
-            <>
-              <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(row, "partial")}>
-                {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
-              </Button>
-              <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(row, "full")}>
-                {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
-              </Button>
-            </>
-          )}
+          {(() => {
+            if (row.status === 'draft' || row.status === 'voided' || row.status === 'fully_returned' || row.status === 'cancelled') return null;
+
+            // Calculate if partial return is allowed for this specific bill row
+            const itemsForBill = billItems.filter(item => item.bill_id === row.id);
+            const returnableItems = itemsForBill.map(it => ({
+              ...it,
+              max_qty: Math.max(0, Number(it.quantity || 0) - Number(it.returned_quantity || 0))
+            })).filter(it => it.max_qty > 0);
+
+            const canPartialReturn = returnableItems.length > 1 || (returnableItems.length === 1 && returnableItems[0].max_qty > 1);
+
+            return (
+              <>
+                {canPartialReturn && (
+                  <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(row, "partial")}>
+                    {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(row, "full")}>
+                  {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
+                </Button>
+              </>
+            );
+          })()}
           {permDelete && row.status !== 'sent' && row.status !== 'partially_paid' && row.status !== 'paid' && (
             <Button
               variant="outline"
@@ -1276,7 +1290,7 @@ export default function BillsPage() {
         })
         .select()
         .single()
-      
+
       if (entryErr || !entry) {
         throw new Error(`فشل إنشاء القيد المحاسبي: ${entryErr?.message || 'Unknown error'}`)
       }
@@ -1288,7 +1302,7 @@ export default function BillsPage() {
       const inventoryCost = (inventoryCostFromFIFO > 0) ? inventoryCostFromFIFO : baseReturnedNet
 
       // البحث عن حساب Vendor Credit Liability
-      const vendorCreditLiability = find((a: any) => 
+      const vendorCreditLiability = find((a: any) =>
         String(a.sub_type || "").toLowerCase() === "vendor_credit_liability" ||
         String(a.sub_type || "").toLowerCase() === "ap_contra" ||
         String(a.account_name || "").toLowerCase().includes("vendor credit") ||
@@ -1367,7 +1381,7 @@ export default function BillsPage() {
             account_id: refundAccountId,
             debit_amount: baseReturnTotal,
             credit_amount: 0,
-            description: returnMethod === 'cash' 
+            description: returnMethod === 'cash'
               ? (appLang === 'en' ? 'Cash refund received' : 'استرداد نقدي مستلم')
               : (appLang === 'en' ? 'Bank refund received' : 'استرداد بنكي مستلم'),
             branch_id: effectiveBranchId,
@@ -1540,7 +1554,7 @@ export default function BillsPage() {
       // ✅ 6. إنشاء Vendor Credit للفواتير المدفوعة (Credit Return فقط)
       if (isPaid && returnMethod === 'credit' && purchaseReturn) {
         const { data: { user } } = await supabase.auth.getUser()
-        
+
         const vendorCreditResult = await createVendorCreditForReturn(supabase, {
           companyId: companyId,
           supplierId: billRow.supplier_id,

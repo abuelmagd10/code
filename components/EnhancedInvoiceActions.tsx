@@ -4,18 +4,18 @@
  */
 
 import { Button } from '@/components/ui/button'
-import { 
-  Eye, Pencil, Trash2, Send, CreditCard, RotateCcw, 
-  FileX, Receipt, AlertTriangle, CheckCircle 
+import {
+  Eye, Pencil, Trash2, Send, CreditCard, RotateCcw,
+  FileX, Receipt, AlertTriangle, CheckCircle
 } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { useToast } from '@/hooks/use-toast'
-import { 
-  canReturnInvoice, 
-  getInvoiceOperationError, 
+import {
+  canReturnInvoice,
+  getInvoiceOperationError,
   requiresJournalEntries,
-  type UserContext 
+  type UserContext
 } from '@/lib/validation'
 
 interface EnhancedInvoiceActionsProps {
@@ -36,6 +36,7 @@ interface EnhancedInvoiceActionsProps {
   onCreateReturn?: (mode: 'partial' | 'full') => void
   onCancel?: () => void
   lang: 'ar' | 'en'
+  allowPartialReturn?: boolean
   permissions: {
     canView: boolean
     canEdit: boolean
@@ -82,14 +83,14 @@ export const EnhancedInvoiceActions = (props: EnhancedInvoiceActionsProps) => {
   const canDeleteDirectly = invoiceStatus === 'draft' && !hasPayments && !isLinkedToDraftOrder
   const canSendInvoice = invoiceStatus === 'draft' && permissions.canSend
   const canRecordPayment = invoiceStatus === 'sent' && permissions.canPay
-  const canCreatePartialReturn = canReturnInvoice(invoiceStatus) && permissions.canReturn && remainingAmount < netAmount
+  const canCreatePartialReturn = canReturnInvoice(invoiceStatus) && permissions.canReturn && remainingAmount < netAmount && (props.allowPartialReturn !== false)
   const canCreateFullReturn = canReturnInvoice(invoiceStatus) && permissions.canReturn && netAmount > 0
   const canCancelInvoice = invoiceStatus === 'draft' && !hasPayments
 
   // 📌 دوال المساعدة للرسائل
   const getActionTooltip = (action: string): string => {
     const tooltips = {
-      edit_linked: lang === 'en' 
+      edit_linked: lang === 'en'
         ? 'Cannot edit directly - edit through linked order'
         : 'لا يمكن التعديل مباشرة - عدل من خلال الأمر المرتبط',
       edit_not_draft: lang === 'en'
@@ -189,8 +190,8 @@ export const EnhancedInvoiceActions = (props: EnhancedInvoiceActionsProps) => {
               className="h-8 w-8 opacity-50 cursor-not-allowed"
               title={
                 isLinkedToDraftOrder ? getActionTooltip('delete_linked') :
-                hasPayments ? getActionTooltip('delete_has_payments') :
-                getActionTooltip('delete_not_draft')
+                  hasPayments ? getActionTooltip('delete_has_payments') :
+                    getActionTooltip('delete_not_draft')
               }
             >
               <Trash2 className="h-4 w-4 text-gray-400" />

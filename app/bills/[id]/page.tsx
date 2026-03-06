@@ -557,8 +557,8 @@ export default function BillViewPage() {
     return returnItems.reduce((sum, it) => {
       const billItem = items.find(i => i.id === it.item_id)
       const discountPct = Number(billItem?.discount_percent || 0)
-      const taxRate     = Number(billItem?.tax_rate         || 0)
-      const lineNet     = it.unit_price * (1 - discountPct / 100) * it.return_qty
+      const taxRate = Number(billItem?.tax_rate || 0)
+      const lineNet = it.unit_price * (1 - discountPct / 100) * it.return_qty
       return sum + lineNet + (lineNet * taxRate / 100)
     }, 0)
   }, [returnItems, items])
@@ -666,14 +666,14 @@ export default function BillViewPage() {
           lang: appLang as 'ar' | 'en'
         },
         {
-          companyId:             mapping.companyId,
-          ap:                    mapping.ap!,
-          inventory:             mapping.inventory,
-          expense:               mapping.expense,
-          vatInput:              mapping.vatInput,
+          companyId: mapping.companyId,
+          ap: mapping.ap!,
+          inventory: mapping.inventory,
+          expense: mapping.expense,
+          vatInput: mapping.vatInput,
           vendorCreditLiability: mapping.vendorCreditLiability,
-          cash:                  mapping.cash,
-          bank:                  mapping.bank,
+          cash: mapping.cash,
+          bank: mapping.bank,
         }
       )
 
@@ -1980,10 +1980,17 @@ export default function BillViewPage() {
                 {["received", "partially_paid", "paid"].includes(bill.status) &&
                   items.some(it => (it.quantity - (it.returned_quantity || 0)) > 0) && (
                     <>
-                      <Button variant="outline" size="sm" onClick={() => openReturnDialog('partial')} className="text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400">
-                        <RotateCcw className="w-4 h-4 sm:mr-1" />
-                        <span className="hidden sm:inline">{appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}</span>
-                      </Button>
+                      {(() => {
+                        const returnableItems = items.filter(it => (it.quantity - (it.returned_quantity || 0)) > 0);
+                        const canPartialReturn = returnableItems.length > 1 || (returnableItems.length === 1 && returnableItems[0].quantity > 1);
+
+                        return canPartialReturn && (
+                          <Button variant="outline" size="sm" onClick={() => openReturnDialog('partial')} className="text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400">
+                            <RotateCcw className="w-4 h-4 sm:mr-1" />
+                            <span className="hidden sm:inline">{appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}</span>
+                          </Button>
+                        );
+                      })()}
                       <Button variant="outline" size="sm" onClick={() => openReturnDialog('full')} className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400">
                         <RotateCcw className="w-4 h-4 sm:mr-1" />
                         <span className="hidden sm:inline">{appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}</span>

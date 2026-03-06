@@ -525,40 +525,40 @@ export default function InvoiceDetailPage() {
   // 🔐 تحميل روابط التنقل (السابق / التالي) مع فلتر الفرع للأدوار المقيّدة
   useEffect(() => {
     if (!invoice) return
-    ;(async () => {
-      try {
-        const companyId = (invoice as any).company_id || await getActiveCompanyId(supabase)
-        if (!companyId) { setNextInvoiceId(null); setPrevInvoiceId(null); return }
+      ; (async () => {
+        try {
+          const companyId = (invoice as any).company_id || await getActiveCompanyId(supabase)
+          if (!companyId) { setNextInvoiceId(null); setPrevInvoiceId(null); return }
 
-        // الأدوار المميزة ترى جميع فواتير الشركة - غيرها مقيّدة بفرعها
-        const branchFilter = isPrivilegedUser ? null : (userBranchId || null)
+          // الأدوار المميزة ترى جميع فواتير الشركة - غيرها مقيّدة بفرعها
+          const branchFilter = isPrivilegedUser ? null : (userBranchId || null)
 
-        let nextQ = supabase
-          .from("invoices")
-          .select("id, invoice_number")
-          .eq("company_id", companyId)
-          .gt("invoice_number", (invoice as any).invoice_number)
-          .order("invoice_number", { ascending: true })
-          .limit(1)
-        if (branchFilter) nextQ = nextQ.eq("branch_id", branchFilter)
+          let nextQ = supabase
+            .from("invoices")
+            .select("id, invoice_number")
+            .eq("company_id", companyId)
+            .gt("invoice_number", (invoice as any).invoice_number)
+            .order("invoice_number", { ascending: true })
+            .limit(1)
+          if (branchFilter) nextQ = nextQ.eq("branch_id", branchFilter)
 
-        let prevQ = supabase
-          .from("invoices")
-          .select("id, invoice_number")
-          .eq("company_id", companyId)
-          .lt("invoice_number", (invoice as any).invoice_number)
-          .order("invoice_number", { ascending: false })
-          .limit(1)
-        if (branchFilter) prevQ = prevQ.eq("branch_id", branchFilter)
+          let prevQ = supabase
+            .from("invoices")
+            .select("id, invoice_number")
+            .eq("company_id", companyId)
+            .lt("invoice_number", (invoice as any).invoice_number)
+            .order("invoice_number", { ascending: false })
+            .limit(1)
+          if (branchFilter) prevQ = prevQ.eq("branch_id", branchFilter)
 
-        const [{ data: nextData }, { data: prevData }] = await Promise.all([nextQ, prevQ])
-        setNextInvoiceId((nextData && nextData[0]?.id) || null)
-        setPrevInvoiceId((prevData && prevData[0]?.id) || null)
-      } catch {
-        setNextInvoiceId(null)
-        setPrevInvoiceId(null)
-      }
-    })()
+          const [{ data: nextData }, { data: prevData }] = await Promise.all([nextQ, prevQ])
+          setNextInvoiceId((nextData && nextData[0]?.id) || null)
+          setPrevInvoiceId((prevData && prevData[0]?.id) || null)
+        } catch {
+          setNextInvoiceId(null)
+          setPrevInvoiceId(null)
+        }
+      })()
   }, [invoice, isPrivilegedUser, userBranchId])
 
   useEffect(() => {
@@ -1852,14 +1852,14 @@ export default function InvoiceDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount,
-          paymentDate:     dateStr,
-          paymentMethod:   method,
+          paymentDate: dateStr,
+          paymentMethod: method,
           referenceNumber: reference || null,
-          accountId:       paymentAccountId || null,
-          companyId:       invoice.company_id || null,
-          branchId:        invoice.branch_id || null,
-          costCenterId:    invoice.cost_center_id || null,
-          warehouseId:     invoice.warehouse_id || null,
+          accountId: paymentAccountId || null,
+          companyId: invoice.company_id || null,
+          branchId: invoice.branch_id || null,
+          costCenterId: invoice.cost_center_id || null,
+          warehouseId: invoice.warehouse_id || null,
         }),
       })
 
@@ -1883,7 +1883,7 @@ export default function InvoiceDetailPage() {
             companyId: mapping.companyId,
             invoiceId: invoice.id,
             paidRatio,
-            branchId:     invoice.branch_id || null,
+            branchId: invoice.branch_id || null,
             costCenterId: invoice.cost_center_id || null
           })
 
@@ -1893,21 +1893,21 @@ export default function InvoiceDetailPage() {
               const { data: cogsEntry, error: cogsEntryError } = await supabase
                 .from("journal_entries")
                 .insert({
-                  company_id:     mapping.companyId,
+                  company_id: mapping.companyId,
                   reference_type: "invoice_cogs",
-                  reference_id:   invoice.id,
-                  entry_date:     dateStr,
-                  description:    `تكلفة البضاعة المباعة - ${invoice.invoice_number}`,
-                  status:         "draft",
-                  branch_id:      invoice.branch_id || null,
+                  reference_id: invoice.id,
+                  entry_date: dateStr,
+                  description: `تكلفة البضاعة المباعة - ${invoice.invoice_number}`,
+                  status: "draft",
+                  branch_id: invoice.branch_id || null,
                   cost_center_id: invoice.cost_center_id || null,
                 })
                 .select().single()
 
               if (!cogsEntryError && cogsEntry && mapping.cogs && mapping.inventory) {
                 await supabase.from("journal_entry_lines").insert([
-                  { journal_entry_id: cogsEntry.id, account_id: mapping.cogs,      debit_amount: clearResult.totalCOGS, credit_amount: 0,                    description: "تكلفة البضاعة المباعة", branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
-                  { journal_entry_id: cogsEntry.id, account_id: mapping.inventory, debit_amount: 0,                     credit_amount: clearResult.totalCOGS, description: "خصم من المخزون",        branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
+                  { journal_entry_id: cogsEntry.id, account_id: mapping.cogs, debit_amount: clearResult.totalCOGS, credit_amount: 0, description: "تكلفة البضاعة المباعة", branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
+                  { journal_entry_id: cogsEntry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: clearResult.totalCOGS, description: "خصم من المخزون", branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
                 ])
                 await supabase.from("journal_entries").update({ status: "posted" }).eq("id", cogsEntry.id)
               }
@@ -2066,22 +2066,22 @@ export default function InvoiceDetailPage() {
             const { data: invJE, error: invJEErr } = await supabase
               .from('journal_entries')
               .insert({
-                company_id:     mapping.companyId,
+                company_id: mapping.companyId,
                 reference_type: 'invoice',
-                reference_id:   invoiceId,
-                entry_date:     invoice.invoice_date,
-                description:    `فاتورة مبيعات ${invoice.invoice_number}`,
-                status:         'draft',
-                branch_id:      invoice.branch_id || null,
+                reference_id: invoiceId,
+                entry_date: invoice.invoice_date,
+                description: `فاتورة مبيعات ${invoice.invoice_number}`,
+                status: 'draft',
+                branch_id: invoice.branch_id || null,
                 cost_center_id: invoice.cost_center_id || null,
-                warehouse_id:   invoice.warehouse_id || null,
+                warehouse_id: invoice.warehouse_id || null,
               })
               .select().single()
 
             if (!invJEErr && invJE) {
               const invLines: any[] = [
-                { journal_entry_id: invJE.id, account_id: mapping.ar,      debit_amount: Number(invoice.total_amount || 0), credit_amount: 0,                                              description: 'الذمم المدينة (العملاء)', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
-                { journal_entry_id: invJE.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: Number(invoice.subtotal || invoice.total_amount || 0),                         description: 'إيراد المبيعات',          branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
+                { journal_entry_id: invJE.id, account_id: mapping.ar, debit_amount: Number(invoice.total_amount || 0), credit_amount: 0, description: 'الذمم المدينة (العملاء)', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
+                { journal_entry_id: invJE.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: Number(invoice.subtotal || invoice.total_amount || 0), description: 'إيراد المبيعات', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
               ]
               if (mapping.vatPayable && Number(invoice.tax_amount || 0) > 0) {
                 invLines.push({ journal_entry_id: invJE.id, account_id: mapping.vatPayable, debit_amount: 0, credit_amount: Number(invoice.tax_amount || 0), description: 'ضريبة القيمة المضافة المستحقة', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null })
@@ -2108,21 +2108,21 @@ export default function InvoiceDetailPage() {
                 const { data: cogsJE, error: cogsJEErr } = await supabase
                   .from('journal_entries')
                   .insert({
-                    company_id:     mapping.companyId,
+                    company_id: mapping.companyId,
                     reference_type: 'invoice_cogs',
-                    reference_id:   invoiceId,
-                    entry_date:     invoice.invoice_date,
-                    description:    `تكلفة البضاعة المباعة - ${invoice.invoice_number}`,
-                    status:         'draft',
-                    branch_id:      invoice.branch_id || null,
+                    reference_id: invoiceId,
+                    entry_date: invoice.invoice_date,
+                    description: `تكلفة البضاعة المباعة - ${invoice.invoice_number}`,
+                    status: 'draft',
+                    branch_id: invoice.branch_id || null,
                     cost_center_id: invoice.cost_center_id || null,
                   })
                   .select().single()
 
                 if (!cogsJEErr && cogsJE) {
                   await supabase.from('journal_entry_lines').insert([
-                    { journal_entry_id: cogsJE.id, account_id: mapping.cogs,      debit_amount: totalCOGS, credit_amount: 0,         description: 'تكلفة البضاعة المباعة', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
-                    { journal_entry_id: cogsJE.id, account_id: mapping.inventory, debit_amount: 0,         credit_amount: totalCOGS, description: 'خصم من المخزون',        branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
+                    { journal_entry_id: cogsJE.id, account_id: mapping.cogs, debit_amount: totalCOGS, credit_amount: 0, description: 'تكلفة البضاعة المباعة', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
+                    { journal_entry_id: cogsJE.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: totalCOGS, description: 'خصم من المخزون', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
                   ])
                   await supabase.from('journal_entries').update({ status: 'posted' }).eq('id', cogsJE.id)
                   console.log(`✅ Accrual: COGS journal created for sent invoice ${invoice.invoice_number}: ${totalCOGS.toFixed(2)}`)
@@ -3220,11 +3220,20 @@ export default function InvoiceDetailPage() {
                   </Button>
                 ) : null}
                 {/* 🔒 زر المرتجع: فقط للفواتير المنفذة (sent/partially_paid/paid) - ليس للمسودات أو الملغاة */}
-                {invoice.status !== "cancelled" && invoice.status !== "draft" && invoice.status !== "invoiced" && invoice.status !== "fully_returned" && permUpdate ? (
-                  <Button variant="outline" className="border-orange-500 text-orange-600 hover:bg-orange-50" onClick={openPartialReturnDialog}>
-                    {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
-                  </Button>
-                ) : null}
+                {(() => {
+                  const returnableItems = items.map(it => ({
+                    ...it,
+                    max_qty: Math.max(0, it.quantity - (it.returned_quantity || 0))
+                  })).filter(it => it.max_qty > 0)
+
+                  const canPartialReturn = returnableItems.length > 1 || (returnableItems.length === 1 && returnableItems[0].max_qty > 1)
+
+                  return invoice.status !== "cancelled" && invoice.status !== "draft" && invoice.status !== "invoiced" && invoice.status !== "fully_returned" && permUpdate && canPartialReturn ? (
+                    <Button variant="outline" className="border-orange-500 text-orange-600 hover:bg-orange-50" onClick={openPartialReturnDialog}>
+                      {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
+                    </Button>
+                  ) : null
+                })()}
                 {/* 📌 تم إلغاء زر "إنشاء شحنة" - الوظيفة مدمجة في "تحديد كمرسلة" */}
                 {/* View Shipment Button - if shipment/third party goods exists */}
                 {existingShipment ? (
