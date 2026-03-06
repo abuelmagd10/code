@@ -195,11 +195,14 @@ async function deleteUser() {
       console.log(`\n✅ تم حذف المستخدم ${email} من company_members والجداول المرتبطة بنجاح`)
       console.log('⚠️  المستخدم لا يزال موجوداً في Auth بسبب بيانات مرتبطة في جداول أخرى')
       console.log('   يمكنك حذفه يدوياً من Supabase Dashboard بعد التأكد من عدم وجود بيانات مرتبطة')
-      // Auth deletion failure is expected and recoverable - exit with code 0
-      // The critical cleanup (company_members, related tables) has succeeded
+      // Exit with code 1 to indicate partial failure (Auth deletion failed)
+      // Critical cleanup succeeded, but full deletion incomplete
+      process.exit(1)
     } else {
       console.log('✅ تم حذف المستخدم من Auth بنجاح')
       console.log(`\n✅ تم حذف المستخدم ${email} بالكامل من قاعدة البيانات`)
+      // Exit with code 0 to indicate complete success
+      process.exit(0)
     }
   } catch (error) {
     console.error('❌ خطأ:', error.message)
