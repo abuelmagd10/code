@@ -429,6 +429,49 @@ export default function ProductsPage() {
         return
       }
 
+      // 🔐 Enterprise-Level Backend Validation: جلب بيانات المستخدم للتحقق من الصلاحيات
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id, warehouse_id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .maybeSingle()
+
+      if (!member) {
+        toastActionError(toast, appLang === 'en' ? 'Access denied' : 'تم رفض الوصول')
+        return
+      }
+
+      const upperRoles = ["owner", "admin", "accountant", "manager"]
+      const isUpperRole = upperRoles.includes(member.role)
+      const isNormalRole = !isUpperRole && member.role !== ""
+
+      // 🔐 Enterprise-Level Backend Validation: فرض القيود على الأدوار العادية
+      let finalBranchId = formData.branch_id || null
+      let finalCostCenterId = formData.cost_center_id || null
+      let finalWarehouseId = formData.item_type === 'service' ? null : (formData.warehouse_id || null)
+
+      if (isNormalRole) {
+        // للأدوار العادية: فرض القيم من بيانات المستخدم
+        finalBranchId = member.branch_id || null
+        finalCostCenterId = member.cost_center_id || null
+        finalWarehouseId = formData.item_type === 'product' ? (member.warehouse_id || null) : null
+
+        // 🔐 التحقق من أن المستخدم لم يحاول تجاوز القيود
+        if (formData.branch_id && formData.branch_id !== member.branch_id) {
+          toastActionError(toast, appLang === 'en' ? 'Invalid branch assignment' : 'تعيين فرع غير صالح')
+          return
+        }
+        if (formData.cost_center_id && formData.cost_center_id !== member.cost_center_id) {
+          toastActionError(toast, appLang === 'en' ? 'Invalid cost center assignment' : 'تعيين مركز تكلفة غير صالح')
+          return
+        }
+        if (formData.item_type === 'product' && formData.warehouse_id && formData.warehouse_id !== member.warehouse_id) {
+          toastActionError(toast, appLang === 'en' ? 'Invalid warehouse assignment' : 'تعيين مستودع غير صالح')
+          return
+        }
+      }
+
       // Get system currency for original values
       const systemCurrency = typeof window !== 'undefined'
         ? localStorage.getItem('original_system_currency') || 'EGP'
@@ -444,27 +487,41 @@ export default function ProductsPage() {
         income_account_id: formData.income_account_id || null,
         expense_account_id: formData.expense_account_id || null,
         tax_code_id: formData.tax_code_id || null,
-        // 🏢 حقول الموقع - الفرع ومركز التكلفة للمنتجات والخدمات، المستودع للمنتجات فقط
-        branch_id: formData.branch_id || null,
-        warehouse_id: formData.item_type === 'service' ? null : (formData.warehouse_id || null),
-        cost_center_id: formData.cost_center_id || null,
+        // 🔐 حقول الموقع - تطبيق القيم المفحوصة
+        branch_id: finalBranchId,
+        warehouse_id: finalWarehouseId,
+        cost_center_id: finalCostCenterId,
+        // Multi-currency support
+        original_unit_price: formData.unit_price,
+        original_cost_price: formData.cost_price,
+        original_currency: systemCurrency,
+        exchange_rate_used: 1,
       }
 
+      // 🔐 Enterprise-Level: استخدام API endpoint مع Backend validation
       if (editingId) {
-        const { error } = await supabase.from("products").update(saveData).eq("id", editingId)
-        if (error) throw error
+        const response = await fetch(`/api/products/${editingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(saveData),
+        })
+
+        const result = await response.json()
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || result.error_en || (appLang === 'en' ? 'Failed to update item' : 'فشل في تحديث الصنف'))
+        }
         toastActionSuccess(toast, appLang === 'en' ? 'Item updated successfully' : 'تم تحديث الصنف بنجاح')
       } else {
-        // Store original values for multi-currency support
-        const { error } = await supabase.from("products").insert([{
-          ...saveData,
-          company_id: companyId,
-          original_unit_price: formData.unit_price,
-          original_cost_price: formData.cost_price,
-          original_currency: systemCurrency,
-          exchange_rate_used: 1,
-        }])
-        if (error) throw error
+        const response = await fetch('/api/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(saveData),
+        })
+
+        const result = await response.json()
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || result.error_en || (appLang === 'en' ? 'Failed to add item' : 'فشل في إضافة الصنف'))
+        }
         toastActionSuccess(toast, appLang === 'en' ? 'Item added successfully' : 'تمت إضافة الصنف بنجاح')
       }
 
