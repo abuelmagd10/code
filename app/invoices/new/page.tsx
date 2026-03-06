@@ -738,9 +738,13 @@ export default function NewInvoicePage() {
           .single()
 
         if (customerError || !customerData) {
-          toastActionError(toast, appLang === 'en' 
-            ? 'Failed to load customer data. Invoice will be created without snapshot.' 
-            : 'فشل تحميل بيانات العميل. سيتم إنشاء الفاتورة بدون snapshot.')
+          toast({
+            title: appLang === 'en' ? 'Warning' : 'تحذير',
+            description: appLang === 'en' 
+              ? 'Failed to load customer data. Invoice will be created without snapshot.' 
+              : 'فشل تحميل بيانات العميل. سيتم إنشاء الفاتورة بدون snapshot.',
+            variant: 'destructive'
+          })
           console.error('Customer data fetch error:', customerError)
         }
 
