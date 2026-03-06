@@ -122,14 +122,9 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         return savedCompanyId
       }
 
-      // 4️⃣ نتحقق إذا كان المستخدم مالكاً للشركة المحفوظة أو عضواً فيها
+      // 4️⃣ إذا كانت الشركة المحفوظة موجودة لكن ليست في العضويات، نتحقق من الملكية
+      // (فقط للأدوار العليا - قد يفشل للأدوار العادية بسبب RLS)
       if (savedCompanyId) {
-        // التحقق من العضوية أولاً (أسرع وأكثر أماناً)
-        if (memberCompanyIds.includes(savedCompanyId)) {
-          return savedCompanyId
-        }
-        
-        // فقط للأدوار العليا: التحقق من الملكية (قد يفشل للأدوار العادية بسبب RLS)
         try {
           const { data: ownedCompany, error } = await supabase
             .from("companies")
@@ -141,10 +136,7 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
           if (error) {
             // تجاهل خطأ 406 (Not Acceptable) - يحدث للأدوار العادية بسبب RLS
             if (error.message?.includes('406') || error.message?.includes('Not Acceptable')) {
-              // الشركة المحفوظة موجودة في العضويات، نستخدمها
-              if (memberCompanyIds.includes(savedCompanyId)) {
-                return savedCompanyId
-              }
+              // الشركة المحفوظة ليست مملوكة ولا عضوية - تجاهلها
               return null
             }
             if (error.name === 'AbortError' || error.message?.includes('aborted')) {
@@ -159,10 +151,7 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         } catch (error: any) {
           // تجاهل خطأ 406 (Not Acceptable) - يحدث للأدوار العادية بسبب RLS
           if (error?.message?.includes('406') || error?.message?.includes('Not Acceptable')) {
-            // الشركة المحفوظة موجودة في العضويات، نستخدمها
-            if (memberCompanyIds.includes(savedCompanyId)) {
-              return savedCompanyId
-            }
+            // الشركة المحفوظة ليست مملوكة ولا عضوية - تجاهلها
             return null
           }
           if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
@@ -231,18 +220,58 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
     }
 
     // Fallback للحالات بدون مستخدم
-    const { data: anyCompanies } = await supabase
-      .from("companies")
-      .select("id")
-      .limit(1)
-    if (Array.isArray(anyCompanies) && anyCompanies[0]?.id) {
-      console.log("⚠️ Using fallback company ID:", anyCompanies[0].id)
-      return anyCompanies[0].id
+    try {
+      const { data: anyCompanies, error: fallbackError } = await supabase
+        .from("companies")
+        .select("id")
+        .limit(1)
+      
+      if (fallbackError) {
+        if (fallbackError.name === 'AbortError' || fallbackError.message?.includes('aborted')) {
+          console.warn('⚠️ Fallback companies request aborted')
+          // محاولة استخدام الشركة المحفوظة من localStorage
+          if (typeof window !== 'undefined') {
+            const cachedId = localStorage.getItem('active_company_id')
+            if (cachedId) {
+              return cachedId
+            }
+          }
+          return null
+        }
+      }
+      
+      if (Array.isArray(anyCompanies) && anyCompanies[0]?.id) {
+        console.log("⚠️ Using fallback company ID:", anyCompanies[0].id)
+        return anyCompanies[0].id
+      }
+    } catch (fallbackErr: any) {
+      if (fallbackErr?.name === 'AbortError' || fallbackErr?.message?.includes('aborted')) {
+        console.warn('⚠️ Fallback request aborted, using cached company ID')
+        if (typeof window !== 'undefined') {
+          const cachedId = localStorage.getItem('active_company_id')
+          if (cachedId) {
+            return cachedId
+          }
+        }
+        return null
+      }
+      throw fallbackErr
     }
 
     console.error("❌ No company ID found!")
     return null
-  } catch (error) {
+  } catch (error: any) {
+    // معالجة AbortError بشكل صريح للاستعادة من localStorage
+    if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+      console.warn('⚠️ Request aborted in getActiveCompanyId, using cached company ID')
+      if (typeof window !== 'undefined') {
+        const cachedId = localStorage.getItem('active_company_id')
+        if (cachedId) {
+          return cachedId
+        }
+      }
+      return null
+    }
     console.error("❌ Error in getActiveCompanyId:", error)
     return null
   }
