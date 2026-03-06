@@ -231,7 +231,10 @@ export async function getUserCompanies(
 
 /**
  * 🔐 التحقق من أن المستخدم يمكنه الوصول إلى شركة محددة
- * (للأدوار العليا: يمكنهم الوصول إلى الشركات المملوكة أيضاً)
+ * 
+ * المنطق:
+ * 1. إذا كان المستخدم عضواً في الشركة → الوصول مسموح
+ * 2. إذا كان المستخدم يملك الشركة (owner) → الوصول مسموح (بغض النظر عن العضوية)
  * 
  * @param supabase - Supabase client
  * @param userId - معرف المستخدم
@@ -243,32 +246,24 @@ export async function canAccessCompany(
   userId: string,
   companyId: string
 ): Promise<boolean> {
-  // 1. التحقق من العضوية
+  // 1. التحقق من العضوية أولاً
   const membershipResult = await getCompanyMembership(supabase, userId, companyId)
   if (membershipResult.authorized) {
     return true
   }
 
-  // 2. للأدوار العليا: التحقق من الملكية
-  const userCompanies = await getUserCompanies(supabase, userId)
-  const hasUpperRole = userCompanies.some(c => 
-    UPPER_ROLES.includes(c.role as UpperRole)
-  )
+  // 2. التحقق من الملكية (owner) - بغض النظر عن وجود دور علوي في شركات أخرى
+  // هذا يضمن أن المالكين يمكنهم الوصول لشركاتهم حتى لو لم يكونوا أعضاء في company_members
+  try {
+    const { data: company } = await supabase
+      .from("companies")
+      .select("id")
+      .eq("id", companyId)
+      .eq("user_id", userId)
+      .maybeSingle()
 
-  if (hasUpperRole) {
-    try {
-      const { data: company } = await supabase
-        .from("companies")
-        .select("id")
-        .eq("id", companyId)
-        .eq("user_id", userId)
-        .maybeSingle()
-
-      return !!company
-    } catch {
-      return false
-    }
+    return !!company
+  } catch {
+    return false
   }
-
-  return false
 }
