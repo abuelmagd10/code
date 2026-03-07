@@ -17,6 +17,21 @@ import { MultiSelect } from "@/components/ui/multi-select"
 import { Filter, X, Search, Calendar } from "lucide-react"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string; branch_id?: string | null; cost_center_id?: string | null; branch_name?: string; cost_center_name?: string }
+type BankVoucherRequest = {
+  id: string;
+  voucher_type: 'deposit' | 'withdraw';
+  amount: number;
+  currency: string;
+  entry_date: string;
+  description: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejection_reason?: string;
+  created_at: string;
+  created_by: string;
+  users?: { email: string; raw_user_meta_data?: { name?: string } };
+  counter_account?: { account_code?: string; account_name: string };
+}
+
 type Line = {
   id: string;
   debit_amount: number;
@@ -525,6 +540,76 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
             )}
           </CardContent>
         </Card>
+
+        
+        {/* RequestsSection */}
+        {requests.length > 0 && (
+          <Card className="mt-6 border-orange-200 dark:border-orange-900/50">
+            <CardContent className="pt-6">
+              <h2 className="text-xl font-semibold mb-4 text-orange-700 dark:text-orange-400">
+                {appLang === 'en' ? 'Voucher Requests' : 'طلبات السندات'}
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-orange-50 dark:bg-orange-900/20 text-orange-900 dark:text-orange-200">
+                    <tr>
+                      <th className="p-3 text-right">التاريخ</th>
+                      <th className="p-3 text-right">النوع</th>
+                      <th className="p-3 text-right">المبلغ</th>
+                      <th className="p-3 text-right">المقابل</th>
+                      <th className="p-3 text-right">الوصف</th>
+                      <th className="p-3 text-right">الحالة</th>
+                      <th className="p-3 text-right">الإجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {requests.map(r => (
+                      <tr key={r.id} className="border-b">
+                        <td className="p-3">{r.entry_date}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 rounded text-xs ${r.voucher_type === 'deposit' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                            {r.voucher_type === 'deposit' ? 'إيداع' : 'سحب'}
+                          </span>
+                        </td>
+                        <td className="p-3">{new Intl.NumberFormat('ar-EG').format(r.amount)} {r.currency}</td>
+                        <td className="p-3">{r.counter_account?.account_name}</td>
+                        <td className="p-3">{r.description}</td>
+                        <td className="p-3">
+                          {r.status === 'pending' && <span className="text-orange-600">قيد المراجعة</span>}
+                          {r.status === 'approved' && <span className="text-green-600">معتمد</span>}
+                          {r.status === 'rejected' && <div className="text-red-600">مرفوض {(r.rejection_reason) && <span className="block text-xs text-gray-500">{r.rejection_reason}</span>}</div>}
+                        </td>
+                        <td className="p-3">
+                          {r.status === 'pending' && ["admin", "owner", "manager"].includes(role || "") && (
+                            <div className="flex gap-2">
+                              <Button size="sm" variant="outline" className="text-green-600 border-green-200 hover:bg-green-50" onClick={() => approveRequest(r)} disabled={saving}><Check className="w-4 h-4 mr-1"/> اعتماد</Button>
+                              <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectingReq(r)} disabled={saving}><Ban className="w-4 h-4 mr-1"/> رفض</Button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        
+        <Dialog open={!!rejectingReq} onOpenChange={(open) => !open && setRejectingReq(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>رفض السند</DialogTitle>
+              <DialogDescription>يرجى إدخال سبب الرفض لإعلام الموظف به.</DialogDescription>
+            </DialogHeader>
+            <Input value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="السبب..." />
+            <DialogFooter>
+              <Button onClick={() => setRejectingReq(null)} variant="outline">إلغاء</Button>
+              <Button onClick={rejectRequest} disabled={!rejectReason || saving} variant="destructive">تأكيد الرفض</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+    
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card>

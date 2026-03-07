@@ -23,6 +23,7 @@ export type ReferenceType =
   | 'supplier_debit_receipt'
   | 'customer_voucher'
   | 'expense'
+  | 'bank_voucher'
 
 /**
  * خريطة reference_type إلى route
@@ -61,6 +62,7 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'journal_entry': (id) => `/journal-entries/${id}`,
   'depreciation': (id) => `/fixed-assets?highlight=depreciation-${id}`,
   'expense': (id) => `/expenses/${id}`, // ✅ إضافة route للمصروفات
+  'bank_voucher': (id) => `/banking?request=${id}`, // Route for bank voucher requests
 
   // الموافقات
   'approval_request': (id) => `/approvals?highlight=${id}`,
@@ -77,9 +79,9 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
  * الحصول على route للإشعار
  */
 export function getNotificationRoute(
-  referenceType: string, 
-  referenceId: string, 
-  eventKey?: string, 
+  referenceType: string,
+  referenceId: string,
+  eventKey?: string,
   category?: string
 ): string | null {
   const routeBuilder = REFERENCE_TYPE_TO_ROUTE[referenceType]
@@ -103,6 +105,6 @@ export function useNotificationNavigation() {
     }
     return route
   }
-  
+
   return { navigateToNotification }
 }

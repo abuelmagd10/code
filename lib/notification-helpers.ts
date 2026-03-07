@@ -24,10 +24,10 @@ export async function notifyRefundRequestCreated(params: {
 }) {
   const { companyId, refundRequestId, branchId, costCenterId, amount, currency, createdBy, appLang = 'ar' } = params
 
-  const title = appLang === 'en' 
-    ? 'New Refund Request' 
+  const title = appLang === 'en'
+    ? 'New Refund Request'
     : 'طلب استرداد نقدي جديد'
-  
+
   const message = appLang === 'en'
     ? `A new refund request of ${amount} ${currency} requires your approval`
     : `طلب استرداد نقدي جديد بقيمة ${amount} ${currency} يحتاج إلى موافقتك`
@@ -85,7 +85,7 @@ export async function notifyRefundApproved(params: {
   const title = appLang === 'en'
     ? 'Refund Request Approved'
     : 'تمت الموافقة على طلب الاسترداد'
-  
+
   const message = appLang === 'en'
     ? 'A refund request has been approved and requires final approval'
     : 'تمت الموافقة على طلب الاسترداد ويحتاج إلى موافقة نهائية'
@@ -126,7 +126,7 @@ export async function notifyStockTransferRequest(params: {
   const title = appLang === 'en'
     ? 'New Stock Transfer Request'
     : 'طلب نقل مخزون جديد'
-  
+
   const message = appLang === 'en'
     ? 'A new stock transfer request requires your approval'
     : 'طلب نقل مخزون جديد يحتاج إلى موافقتك'
@@ -166,7 +166,7 @@ export async function notifyVendorCreditCreated(params: {
   const title = appLang === 'en'
     ? 'New Vendor Credit'
     : 'إشعار دائن مورد جديد'
-  
+
   const message = appLang === 'en'
     ? 'A new vendor credit has been created and requires review'
     : 'تم إنشاء إشعار دائن مورد جديد ويحتاج إلى مراجعة'
@@ -404,7 +404,7 @@ export async function notifyCustomerDebitNoteCreated(params: {
   const title = appLang === 'en'
     ? 'New Customer Debit Note'
     : 'إشعار مدين عميل جديد'
-  
+
   const message = appLang === 'en'
     ? 'A new customer debit note has been created and requires review'
     : 'تم إنشاء إشعار مدين عميل جديد ويحتاج إلى مراجعة'
@@ -462,7 +462,7 @@ export async function notifyUserRoleChanged(params: {
   const title = appLang === 'en'
     ? 'Your Role Has Changed'
     : 'تم تغيير دورك'
-  
+
   const message = appLang === 'en'
     ? `Your role has been changed from ${oldRole} to ${newRole}`
     : `تم تغيير دورك من ${oldRole} إلى ${newRole}`
@@ -499,7 +499,7 @@ export async function notifyUserBranchChanged(params: {
   const title = appLang === 'en'
     ? 'Your Branch Has Changed'
     : 'تم تغيير فرعك'
-  
+
   const message = appLang === 'en'
     ? 'Your assigned branch has been changed'
     : 'تم تغيير الفرع المخصص لك'
@@ -540,7 +540,7 @@ export async function notifyPurchaseApprovalRequest(params: {
   const title = appLang === 'en'
     ? 'Purchase Bill Approval Required'
     : 'طلب موافقة على فاتورة مشتريات'
-  
+
   const message = appLang === 'en'
     ? `A purchase bill of ${amount} ${currency} requires your approval`
     : `فاتورة مشتريات بقيمة ${amount} ${currency} تحتاج إلى موافقتك`
@@ -586,7 +586,7 @@ export async function notifyWriteOffApprovalRequest(params: {
   const title = appLang === 'en'
     ? 'New Write-Off Approval Request'
     : 'طلب اعتماد إهلاك جديد'
-  
+
   const message = appLang === 'en'
     ? `A new write-off ${writeOffNumber} is pending your approval`
     : `يوجد إهلاك جديد رقم ${writeOffNumber} في انتظار اعتمادك`
@@ -598,7 +598,7 @@ export async function notifyWriteOffApprovalRequest(params: {
   const supabase = createClient()
   try {
     console.log('🔍 [NOTIFY] Checking for existing notification with event_key:', eventKey)
-    
+
     // استخدام RPC للتحقق من التكرار (أكثر أماناً من RLS)
     const { data: existingCheck, error: checkError } = await supabase.rpc('check_notification_exists', {
       p_company_id: companyId,
@@ -640,16 +640,16 @@ export async function notifyWriteOffApprovalRequest(params: {
   // إشعار لـ Admin
   try {
     // ✅ ERP Standard: ننشئ إشعار admin فقط لأن owner يرى إشعارات admin (تجنب التكرار)
-    console.log('🔔 [NOTIFY] Creating notification for Admin (owner will also see it):', { 
-      companyId, 
-      writeOffId, 
+    console.log('🔔 [NOTIFY] Creating notification for Admin (owner will also see it):', {
+      companyId,
+      writeOffId,
       writeOffNumber,
       eventKey,
       branchId: branchId || 'null',
       warehouseId: warehouseId || 'null',
       costCenterId: costCenterId || 'null'
     })
-    
+
     const notificationId = await createNotification({
       companyId,
       referenceType: 'inventory_write_off',
@@ -666,7 +666,7 @@ export async function notifyWriteOffApprovalRequest(params: {
       severity: 'warning',
       category: 'inventory'
     })
-    
+
     console.log('✅ [NOTIFY] Admin notification created successfully. ID:', notificationId)
   } catch (error: any) {
     console.error('❌ [NOTIFY] CRITICAL: Error creating Admin notification')
@@ -677,7 +677,7 @@ export async function notifyWriteOffApprovalRequest(params: {
       hint: error?.hint,
       stack: error?.stack
     })
-    
+
     // ⚠️ إذا فشل كلاهما، نرمي خطأ
     throw new Error(`Failed to create notifications for write-off ${writeOffNumber}. Please ensure QUICK_FIX_NOTIFICATIONS.sql has been run in Supabase. Error: ${error?.message || 'Unknown error'}`)
   }
@@ -702,7 +702,7 @@ export async function notifyWriteOffModified(params: {
   const title = appLang === 'en'
     ? 'Write-Off Modified - Re-approval Required'
     : 'تم تعديل إهلاك في انتظار الاعتماد'
-  
+
   const message = appLang === 'en'
     ? `Write-off ${writeOffNumber} has been modified and requires re-review and approval`
     : `تم تعديل الإهلاك رقم ${writeOffNumber} ويحتاج إعادة مراجعة واعتماد`
@@ -713,7 +713,7 @@ export async function notifyWriteOffModified(params: {
   const supabase = createClient()
   try {
     console.log('🔍 [NOTIFY] Checking for existing modification notification with event_key:', eventKey)
-    
+
     // استخدام RPC للتحقق من التكرار (أكثر أماناً من RLS)
     const { data: existingCheck, error: checkError } = await supabase.rpc('check_notification_exists', {
       p_company_id: companyId,
@@ -755,9 +755,9 @@ export async function notifyWriteOffModified(params: {
   try {
     // إشعار لـ Admin
     // ✅ ERP Standard: ننشئ إشعار admin فقط لأن owner يرى إشعارات admin (تجنب التكرار)
-    console.log('🔔 [NOTIFY] Creating modification notification for Admin (owner will also see it):', { 
-      companyId, 
-      writeOffId, 
+    console.log('🔔 [NOTIFY] Creating modification notification for Admin (owner will also see it):', {
+      companyId,
+      writeOffId,
       writeOffNumber,
       eventKey
     })
@@ -805,11 +805,11 @@ export async function notifyWriteOffApproved(params: {
   const title = appLang === 'en'
     ? 'Write-Off Approved'
     : 'تم اعتماد الإهلاك'
-  
-  const approvedByText = approvedByName 
+
+  const approvedByText = approvedByName
     ? (appLang === 'en' ? ` by ${approvedByName}` : ` بواسطة ${approvedByName}`)
     : ''
-  
+
   const message = appLang === 'en'
     ? `Write-off ${writeOffNumber} has been approved successfully${approvedByText}`
     : `تم اعتماد الإهلاك رقم ${writeOffNumber} بنجاح${approvedByText}`
@@ -884,15 +884,15 @@ export async function notifyWriteOffRejected(params: {
   const title = appLang === 'en'
     ? 'Write-Off Rejected'
     : 'تم رفض الإهلاك'
-  
-  const reasonText = rejectionReason 
+
+  const reasonText = rejectionReason
     ? (appLang === 'en' ? ` Reason: ${rejectionReason}` : ` السبب: ${rejectionReason}`)
     : ''
-  
-  const rejectedByText = rejectedByName 
+
+  const rejectedByText = rejectedByName
     ? (appLang === 'en' ? ` by ${rejectedByName}` : ` بواسطة ${rejectedByName}`)
     : ''
-  
+
   const message = appLang === 'en'
     ? `Write-off ${writeOffNumber} has been rejected${rejectedByText}. Please review the data and resubmit for approval.${reasonText}`
     : `تم رفض الإهلاك رقم ${writeOffNumber}${rejectedByText}. يرجى مراجعة البيانات وإعادة الإرسال للاعتماد.${reasonText}`
@@ -938,15 +938,15 @@ export async function notifyWriteOffCancelled(params: {
   const title = appLang === 'en'
     ? 'Write-Off Cancelled'
     : 'تم إلغاء الإهلاك'
-  
-  const reasonText = cancellationReason 
+
+  const reasonText = cancellationReason
     ? (appLang === 'en' ? ` Reason: ${cancellationReason}` : ` السبب: ${cancellationReason}`)
     : ''
-  
-  const cancelledByText = cancelledByName 
+
+  const cancelledByText = cancelledByName
     ? (appLang === 'en' ? ` by ${cancelledByName}` : ` بواسطة ${cancelledByName}`)
     : ''
-  
+
   const message = appLang === 'en'
     ? `Write-off ${writeOffNumber} has been cancelled${cancelledByText}. A reversal entry has been created to restore inventory.${reasonText}`
     : `تم إلغاء الإهلاك رقم ${writeOffNumber}${cancelledByText}. تم إنشاء قيد عكسي لاستعادة المخزون.${reasonText}`
@@ -1234,5 +1234,155 @@ export async function notifyTransferReceived(params: {
     eventKey: `transfer:${transferId}:received`,
     severity: 'info',
     category: 'inventory'
+  })
+}
+
+// =====================================================
+// 🔔 Bank Voucher Requests Notifications
+// =====================================================
+
+export async function notifyBankVoucherRequestCreated(params: {
+  companyId: string
+  requestId: string
+  voucherType: 'deposit' | 'withdraw'
+  amount: number
+  currency: string
+  branchId?: string
+  costCenterId?: string
+  createdBy: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, requestId, voucherType, amount, currency, branchId, costCenterId, createdBy, appLang = 'ar' } = params
+
+  const typeNamesAr: Record<string, string> = { deposit: 'إيداع', withdraw: 'سحب' }
+  const typeNamesEn: Record<string, string> = { deposit: 'Deposit', withdraw: 'Withdrawal' }
+
+  const title = appLang === 'en'
+    ? `New ${typeNamesEn[voucherType]} Request`
+    : `طلب ${typeNamesAr[voucherType]} جديد`
+
+  const message = appLang === 'en'
+    ? `A new ${typeNamesEn[voucherType]} request for ${amount} ${currency} requires your approval.`
+    : `طلب ${typeNamesAr[voucherType]} جديد بقيمة ${amount} ${currency} يحتاج لاعتمادك.`
+
+  const eventKey = `bank_voucher:${requestId}:created`
+
+  // Send to Manager
+  await createNotification({
+    companyId,
+    referenceType: 'bank_voucher',
+    referenceId: requestId,
+    title,
+    message,
+    createdBy,
+    branchId,
+    costCenterId,
+    assignedToRole: 'manager',
+    priority: 'high',
+    eventKey: `${eventKey}:manager`,
+    severity: 'warning',
+    category: 'approvals'
+  })
+
+  // Send to Owner
+  await createNotification({
+    companyId,
+    referenceType: 'bank_voucher',
+    referenceId: requestId,
+    title,
+    message,
+    createdBy,
+    branchId,
+    costCenterId,
+    assignedToRole: 'owner',
+    priority: 'high',
+    eventKey: `${eventKey}:owner`,
+    severity: 'warning',
+    category: 'approvals'
+  })
+}
+
+export async function notifyBankVoucherApproved(params: {
+  companyId: string
+  requestId: string
+  voucherType: 'deposit' | 'withdraw'
+  amount: number
+  currency: string
+  branchId?: string
+  costCenterId?: string
+  createdBy: string // requested by
+  approvedBy: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, requestId, voucherType, amount, currency, branchId, costCenterId, createdBy, approvedBy, appLang = 'ar' } = params
+
+  const typeNamesAr: Record<string, string> = { deposit: 'إيداع', withdraw: 'سحب' }
+  const typeNamesEn: Record<string, string> = { deposit: 'Deposit', withdraw: 'Withdrawal' }
+
+  const title = appLang === 'en'
+    ? `${typeNamesEn[voucherType]} Request Approved`
+    : `تم اعتماد طلب الـ ${typeNamesAr[voucherType]}`
+
+  const message = appLang === 'en'
+    ? `Your ${typeNamesEn[voucherType]} request for ${amount} ${currency} has been approved.`
+    : `تمت الموافقة على طلب الـ ${typeNamesAr[voucherType]} الخاص بك بقيمة ${amount} ${currency}.`
+
+  await createNotification({
+    companyId,
+    referenceType: 'bank_voucher',
+    referenceId: requestId,
+    title,
+    message,
+    createdBy: approvedBy,
+    assignedToUser: createdBy,
+    branchId,
+    costCenterId,
+    priority: 'normal',
+    eventKey: `bank_voucher:${requestId}:approved`,
+    severity: 'info',
+    category: 'approvals'
+  })
+}
+
+export async function notifyBankVoucherRejected(params: {
+  companyId: string
+  requestId: string
+  voucherType: 'deposit' | 'withdraw'
+  amount: number
+  currency: string
+  branchId?: string
+  costCenterId?: string
+  createdBy: string // requested by
+  rejectedBy: string
+  reason: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, requestId, voucherType, amount, currency, branchId, costCenterId, createdBy, rejectedBy, reason, appLang = 'ar' } = params
+
+  const typeNamesAr: Record<string, string> = { deposit: 'إيداع', withdraw: 'سحب' }
+  const typeNamesEn: Record<string, string> = { deposit: 'Deposit', withdraw: 'Withdrawal' }
+
+  const title = appLang === 'en'
+    ? `${typeNamesEn[voucherType]} Request Rejected`
+    : `تم رفض طلب الـ ${typeNamesAr[voucherType]}`
+
+  const message = appLang === 'en'
+    ? `Your ${typeNamesEn[voucherType]} request for ${amount} ${currency} was rejected. Reason: ${reason}`
+    : `تم رفض طلب الـ ${typeNamesAr[voucherType]} الخاص بك بقيمة ${amount} ${currency}. السبب: ${reason}`
+
+  await createNotification({
+    companyId,
+    referenceType: 'bank_voucher',
+    referenceId: requestId,
+    title,
+    message,
+    createdBy: rejectedBy,
+    assignedToUser: createdBy,
+    branchId,
+    costCenterId,
+    priority: 'high',
+    eventKey: `bank_voucher:${requestId}:rejected`,
+    severity: 'error',
+    category: 'approvals'
   })
 }
