@@ -70,7 +70,7 @@ export function useUserContext(): UseUserContextReturn {
       // Get user's membership with branch, cost center, warehouse
       const { data: member, error: memberError } = await supabase
         .from("company_members")
-        .select("role, branch_id")
+        .select("role, branch_id, warehouse_id, cost_center_id")
         .eq("company_id", companyId)
         .eq("user_id", user.id)
         .maybeSingle()
@@ -90,27 +90,28 @@ export function useUserContext(): UseUserContextReturn {
       const isOwner = company?.user_id === user.id
 
       const memberBranchId = member?.branch_id || null
-      if (!memberBranchId) {
+      if (!memberBranchId && !isOwner) {
         setError("المستخدم بدون فرع")
         setUserContext(null)
         return
       }
 
-      const { data: branchDefaults, error: branchErr } = await supabase
-        .from("branches")
-        .select("default_cost_center_id, default_warehouse_id")
-        .eq("company_id", companyId)
-        .eq("id", memberBranchId)
-        .single()
+      let defaultCostCenterId = member?.cost_center_id || null
+      let defaultWarehouseId = member?.warehouse_id || null
 
-      if (branchErr) {
-        setError(branchErr.message)
-        setUserContext(null)
-        return
+      if (memberBranchId && (!defaultCostCenterId || !defaultWarehouseId)) {
+        const { data: branchDefaults, error: branchErr } = await supabase
+          .from("branches")
+          .select("default_cost_center_id, default_warehouse_id")
+          .eq("company_id", companyId)
+          .eq("id", memberBranchId)
+          .single()
+
+        if (!branchErr && branchDefaults) {
+          if (!defaultCostCenterId) defaultCostCenterId = branchDefaults.default_cost_center_id || null
+          if (!defaultWarehouseId) defaultWarehouseId = branchDefaults.default_warehouse_id || null
+        }
       }
-
-      const defaultCostCenterId = branchDefaults?.default_cost_center_id || null
-      const defaultWarehouseId = branchDefaults?.default_warehouse_id || null
 
       setUserContext({
         user_id: user.id,
