@@ -278,9 +278,64 @@ async function fetchAccessProfile(
         .eq("company_id", companyId)
         .eq("role", role)
 
-      // بناء allowed_pages من الصلاحيات
+      // Default pages per role, matching the UI
+      const defaultRolePages: Record<string, string[]> = {
+        manager: [
+          'dashboard', 'reports',
+          'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes',
+          'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits',
+          'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt',
+          'payments', 'journal_entries', 'hr', 'employees', 'attendance', 'payroll',
+          'branches', 'cost_centers', 'warehouses',
+        ],
+        staff: [
+          'customers',
+          'sales_orders',
+          'inventory',
+          'third_party_inventory',
+        ],
+        accountant: [
+          'dashboard',
+          'invoices',
+          'sales_returns',
+          'suppliers',
+          'purchase_orders',
+          'bills',
+          'purchase_returns',
+          'products',
+          'inventory',
+          'product_availability',
+          'inventory_transfers',
+          'third_party_inventory',
+          'write_offs',
+          'inventory_goods_receipt',
+          'payments',
+          'journal_entries',
+        ],
+        store_manager: [
+          'inventory',
+          'product_availability',
+          'inventory_transfers',
+          'third_party_inventory',
+          'write_offs',
+          'inventory_goods_receipt',
+        ],
+        viewer: [
+          'dashboard',
+          'reports',
+        ],
+      }
+
+      // Initialize with default pages for the role
+      allowed_pages = defaultRolePages[role] ? [...defaultRolePages[role]] : []
+
+      // بناء allowed_pages من الصلاحيات (الاعتراضات تتخطى الافتراضيات)
       permissions?.forEach((perm: any) => {
-        // إذا كان can_access = false، لا نضيف الصفحة
+        // إذا كان can_access = false، نحذف الصفحة من الافتراضيات ولا نضيفها
+        if (perm.can_access === false) {
+          allowed_pages = allowed_pages.filter(p => p !== perm.resource)
+          return
+        }
         if (perm.can_access === false) {
           return
         }
