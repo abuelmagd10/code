@@ -13,11 +13,11 @@ import { Users } from "lucide-react"
 export default function EmployeesPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
-  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [companyId, setCompanyId] = useState<string>("")
   const [employees, setEmployees] = useState<any[]>([])
   const [editingId, setEditingId] = useState<string>("")
-  const [editForm, setEditForm] = useState<{ full_name: string; base_salary: number }>({ full_name: "", base_salary: 0 })
+  const [editForm, setEditForm] = useState<{ full_name: string; email?: string; phone?: string; job_title?: string; department?: string; base_salary: number }>({ full_name: "", base_salary: 0 })
   const [form, setForm] = useState({ full_name: "", email: "", phone: "", job_title: "", department: "", base_salary: 0 })
   const [loading, setLoading] = useState(false)
 
@@ -26,7 +26,7 @@ export default function EmployeesPage() {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -53,8 +53,8 @@ export default function EmployeesPage() {
     } catch { toast({ title: t('Network error', 'خطأ الشبكة') }) } finally { setLoading(false) }
   }
 
-  const startEdit = (e: any) => { setEditingId(String(e.id)); setEditForm({ full_name: String(e.full_name || ''), base_salary: Number(e.base_salary || 0) }) }
-  const cancelEdit = () => { setEditingId(""); setEditForm({ full_name: "", base_salary: 0 }) }
+  const startEdit = (e: any) => { setEditingId(String(e.id)); setEditForm({ full_name: String(e.full_name || ''), email: e.email || '', phone: e.phone || '', job_title: e.job_title || '', department: e.department || '', base_salary: Number(e.base_salary || 0) }) }
+  const cancelEdit = () => { setEditingId(""); setEditForm({ full_name: "", email: "", phone: "", job_title: "", department: "", base_salary: 0 }) }
   const saveEdit = async () => {
     if (!companyId || !editingId) return
     setLoading(true)
@@ -120,10 +120,10 @@ export default function EmployeesPage() {
                       {employees.map((e) => (
                         <tr key={e.id} className="border-b">
                           <td className="p-2">{editingId === e.id ? (<Input value={editForm.full_name} onChange={(ev) => setEditForm({ ...editForm, full_name: ev.target.value })} />) : e.full_name}</td>
-                          <td className="p-2">{e.email}</td>
-                          <td className="p-2">{e.phone}</td>
-                          <td className="p-2">{e.job_title}</td>
-                          <td className="p-2">{e.department}</td>
+                          <td className="p-2">{editingId === e.id ? (<Input value={editForm.email || ''} onChange={(ev) => setEditForm({ ...editForm, email: ev.target.value })} />) : e.email}</td>
+                          <td className="p-2">{editingId === e.id ? (<Input value={editForm.phone || ''} onChange={(ev) => setEditForm({ ...editForm, phone: ev.target.value })} />) : e.phone}</td>
+                          <td className="p-2">{editingId === e.id ? (<Input value={editForm.job_title || ''} onChange={(ev) => setEditForm({ ...editForm, job_title: ev.target.value })} />) : e.job_title}</td>
+                          <td className="p-2">{editingId === e.id ? (<Input value={editForm.department || ''} onChange={(ev) => setEditForm({ ...editForm, department: ev.target.value })} />) : e.department}</td>
                           <td className="p-2">{editingId === e.id ? (<Input type="number" value={editForm.base_salary} onChange={(ev) => setEditForm({ ...editForm, base_salary: Number(ev.target.value) })} />) : Number(e.base_salary || 0).toFixed(2)}</td>
                           <td className="p-2">
                             {editingId === e.id ? (

@@ -76,6 +76,10 @@ export async function POST(req: NextRequest) {
       company_id: companyId,
       full_name: String(employee.full_name || ''),
       base_salary: Number(employee.base_salary || 0),
+      email: employee.email ? String(employee.email) : null,
+      phone: employee.phone ? String(employee.phone) : null,
+      job_title: employee.job_title ? String(employee.job_title) : null,
+      department: employee.department ? String(employee.department) : null,
     }
     const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
@@ -91,7 +95,7 @@ export async function POST(req: NextRequest) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إضافة الموظف", insertError.message)
     }
     // ✅ الآن ins.data موجود ويمكن الوصول إلى ID
-    try { await admin.from('audit_logs').insert({ action: 'employee_added', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: (ins.data as any)?.[0]?.id, new_data: { full_name: employee.full_name } }) } catch {}
+    try { await admin.from('audit_logs').insert({ action: 'employee_added', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: (ins.data as any)?.[0]?.id, new_data: { full_name: employee.full_name } }) } catch { }
     return apiSuccess({ ok: true }, HTTP_STATUS.CREATED)
   } catch (e: any) {
     return internalError("حدث خطأ أثناء إضافة الموظف", e?.message)
@@ -126,6 +130,10 @@ export async function PUT(req: NextRequest) {
     const safeUpdate: Record<string, any> = {}
     if (typeof update.full_name !== 'undefined') safeUpdate.full_name = String(update.full_name || '')
     if (typeof update.base_salary !== 'undefined') safeUpdate.base_salary = Number(update.base_salary || 0)
+    if (typeof update.email !== 'undefined') safeUpdate.email = update.email ? String(update.email) : null
+    if (typeof update.phone !== 'undefined') safeUpdate.phone = update.phone ? String(update.phone) : null
+    if (typeof update.job_title !== 'undefined') safeUpdate.job_title = update.job_title ? String(update.job_title) : null
+    if (typeof update.department !== 'undefined') safeUpdate.department = update.department ? String(update.department) : null
     const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let upd = await client.from("employees").update(safeUpdate).eq("company_id", companyId).eq("id", id)
@@ -138,7 +146,7 @@ export async function PUT(req: NextRequest) {
     if (updateError) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تحديث الموظف", updateError.message)
     }
-    try { await admin.from('audit_logs').insert({ action: 'employee_updated', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: id, new_data: { id } }) } catch {}
+    try { await admin.from('audit_logs').insert({ action: 'employee_updated', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: id, new_data: { id } }) } catch { }
     return apiSuccess({ ok: true })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء تحديث الموظف", e?.message)
@@ -180,7 +188,7 @@ export async function DELETE(req: NextRequest) {
     if (deleteError) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في حذف الموظف", deleteError.message)
     }
-    try { await admin.from('audit_logs').insert({ action: 'employee_deleted', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: id, old_data: { id } }) } catch {}
+    try { await admin.from('audit_logs').insert({ action: 'employee_deleted', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: id, old_data: { id } }) } catch { }
     return apiSuccess({ ok: true })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء حذف الموظف", e?.message)
