@@ -821,10 +821,11 @@ export default function UsersSettingsPage() {
 
   const createInvitation = async () => {
     const targetCompanyId = (inviteCompanyId || companyId)
-    if (!targetCompanyId || !inviteEmail.trim()) return
+    if (!targetCompanyId || !inviteEmail.trim() || !inviteName.trim()) return
     if (!canManage) { setActionError("ليست لديك صلاحية لإنشاء دعوات"); return }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(inviteEmail.trim())) { setActionError("البريد الإلكتروني غير صالح"); return }
+    if (!inviteName.trim()) { setActionError("اسم الموظف مطلوب"); return }
     if (!inviteBranchId) { setActionError("يجب تحديد الفرع"); return }
     setLoading(true)
     try {
@@ -1669,7 +1670,7 @@ export default function UsersSettingsPage() {
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                     <UserCog className="w-4 h-4" />
-                    اسم الموظف (اختياري)
+                    اسم الموظف <span className="text-red-500">*</span>
                   </Label>
                   <Input placeholder="الاسم الكامل" value={inviteName} onChange={(e) => setInviteName(e.target.value)} className="bg-gray-50 dark:bg-slate-800" />
                 </div>

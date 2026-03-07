@@ -14,6 +14,10 @@ export async function POST(req: NextRequest) {
       return badRequestError("البريد الإلكتروني مطلوب", ["email"])
     }
 
+    if (!existingToken && !employeeName) {
+      return badRequestError("اسم الموظف مطلوب", ["employeeName"])
+    }
+
     // === تحصين أمني: استخدام requireOwnerOrAdmin ===
     const { user, companyId, member, error } = await requireOwnerOrAdmin(req)
 
