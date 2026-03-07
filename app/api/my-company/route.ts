@@ -52,10 +52,10 @@ export async function GET(req: NextRequest) {
     // إذا لم يتم تمرير companyId، نحاول جلبه من الشركات المرتبطة بالمستخدم
     if (!companyId) {
       try {
-        // 🔹 أولاً: جلب من company_members (الأولوية للعضوية)
+        // 🔹 أولاً: جلب من company_members (الأولوية للعضوية) مع جلب كامل التفاصيل
         const { data: membership, error: memberError } = await supabase
           .from("company_members")
-          .select("company_id")
+          .select("company_id, role, branch_id, cost_center_id, warehouse_id")
           .eq("user_id", user.id)
           .limit(1)
           .maybeSingle()
@@ -70,12 +70,12 @@ export async function GET(req: NextRequest) {
           // 🔹 Enterprise Authorization: ثانياً: محاولة جلب الشركة المملوكة فقط للأدوار العليا
           const { getUserCompanies, UPPER_ROLES } = await import("@/lib/company-authorization")
           const userCompaniesList = await getUserCompanies(supabase, user.id)
-          
+
           // التحقق من وجود أي دور علوي في أي عضوية
-          const hasUpperRole = userCompaniesList.some(c => 
+          const hasUpperRole = userCompaniesList.some(c =>
             UPPER_ROLES.includes(c.role as any)
           )
-          
+
           // إذا لم يكن هناك أي عضوية، أو كان هناك دور علوي: محاولة الوصول إلى companies table
           if (userCompaniesList.length === 0 || hasUpperRole) {
             const { data: userCompany, error: companyError } = await supabase
@@ -143,7 +143,24 @@ export async function GET(req: NextRequest) {
       return notFoundError('الشركة', 'Company not found')
     }
 
-    // ✅ 6. جلب الحسابات
+    // ✅ 6. جلب بيانات العضوية إذا لم تكن مجلوبة مسبقاً (في حالة الدخول كمالك للشركة ولم تُجلب العضوية)
+    let userContext = null
+    const { data: membershipData } = await supabase
+      .from("company_members")
+      .select("role, branch_id, cost_center_id, warehouse_id")
+      .eq("company_id", companyId)
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle()
+
+    if (membershipData) {
+      userContext = membershipData
+    } else {
+      // إذا كان المالك ولم يتم إضافته لجدول Members بعد (Default to owner)
+      userContext = { role: 'owner', branch_id: null, cost_center_id: null, warehouse_id: null }
+    }
+
+    // ✅ 7. جلب الحسابات
     const { data: accounts, error: accountsError } = await supabase
       .from("chart_of_accounts")
       .select("*")
@@ -154,16 +171,16 @@ export async function GET(req: NextRequest) {
       console.error('[API /my-company] Error fetching accounts:', accountsError)
       // ✅ نرجع الشركة حتى لو فشل جلب الحسابات
       return apiSuccess(
-        { company, accounts: [] },
+        { company, accounts: [], userContext },
         'تم جلب بيانات الشركة ولكن فشل جلب الحسابات',
         'Company data fetched but accounts failed'
       )
     }
 
-    // ✅ 7. نجاح كامل
+    // ✅ 8. نجاح كامل
     console.log('[API /my-company] Success for company:', companyId)
     return apiSuccess(
-      { company, accounts: accounts || [] },
+      { company, accounts: accounts || [], userContext },
       undefined,
       'Company data fetched successfully'
     )

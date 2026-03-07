@@ -9,6 +9,7 @@ import { useEffect, useState, useRef } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
 import { Printer } from "lucide-react"
+import { PayrollSettingsDialog } from "@/components/hr/payroll-settings-dialog"
 
 export default function PayrollPage() {
   const supabase = useSupabase()
@@ -318,10 +319,13 @@ export default function PayrollPage() {
                 {t('👑 Admin access - All payroll data visible', '👑 صلاحية إدارية - جميع بيانات المرتبات مرئية')}
               </p>
             </div>
-            <Button variant="outline" onClick={handlePrint} className="no-print">
-              <Printer className="h-4 w-4 mr-2" />
-              {t('Print', 'طباعة')}
-            </Button>
+            <div className="flex gap-2">
+              <PayrollSettingsDialog companyId={companyId} appLang={appLang} />
+              <Button variant="outline" onClick={handlePrint} className="no-print">
+                <Printer className="h-4 w-4 mr-2" />
+                {t('Print', 'طباعة')}
+              </Button>
+            </div>
           </div>
 
           <div ref={printContentRef} className="space-y-6">

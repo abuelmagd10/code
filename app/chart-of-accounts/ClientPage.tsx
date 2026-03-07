@@ -136,7 +136,7 @@ function ChartOfAccountsPage() {
   const [showGroupsOnly, setShowGroupsOnly] = useState<boolean>(false)
   const [hasNormalized, setHasNormalized] = useState<boolean>(false)
   const [hasCoaNormalBalanceColumn, setHasCoaNormalBalanceColumn] = useState<boolean>(true)
-  const [hasSchemaWarningShown, setHasSchemaWarningShown] = useState<boolean>(false)
+  const [hasSchemaWarningShown, setHasSchemaWarningShown] = useState(false)
   const [cleanupLoading, setCleanupLoading] = useState<boolean>(false)
   const [cleanupSummary, setCleanupSummary] = useState<string | null>(null)
   const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
@@ -144,6 +144,12 @@ function ChartOfAccountsPage() {
   const [companyIdState, setCompanyIdState] = useState<string | null>(null)
   const [branches, setBranches] = useState<Branch[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
+  // حالة جديدة للفرز والمقارنة
+  const [sortBy, setSortBy] = useState<'code' | 'name' | 'type'>('code')
+  const [comparisonDate, setComparisonDate] = useState<string>('')
+  const [comparisonBalances, setComparisonBalances] = useState<Record<string, number>>({})
+  const [userContext, setUserContext] = useState<any>(null)
+
   const [formData, setFormData] = useState({
     account_code: "",
     account_name: "",
@@ -563,9 +569,16 @@ function ChartOfAccountsPage() {
         const res = await fetch('/api/my-company')
         if (res.ok) {
           const j = await res.json()
-          // API response structure: { success, data: { company, accounts } }
+          // API response structure: { success, data: { company, accounts, userContext } }
           companyId = String(j?.data?.company?.id || j?.company?.id || '') || null
           if (companyId) { try { localStorage.setItem('active_company_id', companyId) } catch { } }
+
+          if (j?.data?.userContext) {
+            setUserContext(j?.data?.userContext)
+          } else if (j?.userContext) {
+            setUserContext(j?.userContext)
+          }
+
           const accountsList = j?.data?.accounts || j?.accounts
           if (Array.isArray(accountsList)) {
             const list = accountsList as Account[]
@@ -745,6 +758,11 @@ function ChartOfAccountsPage() {
         return
       }
 
+      // Determine the effective branch ID to assign based on role
+      const effectiveBranchId = (userContext?.role !== 'admin' && userContext?.role !== 'owner' && userContext?.role !== 'manager')
+        ? (userContext?.branch_id || null)
+        : (formData.branch_id || null)
+
       const payload: any = {
         ...buildCoaFormPayload({
           account_code: formData.account_code,
@@ -756,7 +774,7 @@ function ChartOfAccountsPage() {
         }, computedLevel, flags),
         description: formData.description,
         opening_balance: formData.opening_balance,
-        branch_id: (formData.is_bank || formData.is_cash) && formData.branch_id ? formData.branch_id : null,
+        branch_id: (formData.is_bank || formData.is_cash) ? effectiveBranchId : null,
         cost_center_id: (formData.is_bank || formData.is_cash) && formData.cost_center_id ? formData.cost_center_id : null,
       }
 
@@ -1084,15 +1102,27 @@ function ChartOfAccountsPage() {
                         <>
                           <div className="space-y-2">
                             <Label htmlFor="branch_id">{appLang === 'en' ? 'Branch' : 'الفرع'}</Label>
-                            <select
-                              id="branch_id"
-                              value={formData.branch_id}
-                              onChange={(e) => setFormData({ ...formData, branch_id: e.target.value, cost_center_id: "" })}
-                              className="w-full px-3 py-2 border rounded-lg"
-                            >
-                              <option value="">{appLang === 'en' ? 'Select Branch' : 'اختر الفرع'}</option>
-                              {branches.map((b) => (<option key={b.id} value={b.id}>{b.code} - {b.name}</option>))}
-                            </select>
+                            {userContext?.role !== 'admin' && userContext?.role !== 'owner' && userContext?.role !== 'manager' ? (
+                              <select
+                                id="branch_id"
+                                value={userContext?.branch_id || formData.branch_id}
+                                disabled
+                                className="w-full px-3 py-2 border rounded-lg bg-gray-100 cursor-not-allowed opacity-70"
+                              >
+                                {branches.map((b) => (<option key={b.id} value={b.id}>{b.code} - {b.name}</option>))}
+                                {(!userContext?.branch_id && !formData.branch_id) && <option value="">{appLang === 'en' ? 'No branch assigned' : 'لا يوجد فرع محدد'}</option>}
+                              </select>
+                            ) : (
+                              <select
+                                id="branch_id"
+                                value={formData.branch_id}
+                                onChange={(e) => setFormData({ ...formData, branch_id: e.target.value, cost_center_id: "" })}
+                                className="w-full px-3 py-2 border rounded-lg"
+                              >
+                                <option value="">{appLang === 'en' ? 'Select Branch' : 'اختر الفرع'}</option>
+                                {branches.map((b) => (<option key={b.id} value={b.id}>{b.code} - {b.name}</option>))}
+                              </select>
+                            )}
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="cost_center_id">{appLang === 'en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
@@ -1101,11 +1131,17 @@ function ChartOfAccountsPage() {
                               value={formData.cost_center_id}
                               onChange={(e) => setFormData({ ...formData, cost_center_id: e.target.value })}
                               className="w-full px-3 py-2 border rounded-lg"
-                              disabled={!formData.branch_id}
+                              disabled={!formData.branch_id && !userContext?.branch_id}
                             >
                               <option value="">{appLang === 'en' ? 'Select Cost Center' : 'اختر مركز التكلفة'}</option>
                               {costCenters
-                                .filter((cc) => !formData.branch_id || cc.branch_id === formData.branch_id)
+                                .filter((cc) => {
+                                  // Use the user's branch id if they are a normal role, else use formData
+                                  const effectiveBranchId = (userContext?.role !== 'admin' && userContext?.role !== 'owner' && userContext?.role !== 'manager')
+                                    ? userContext?.branch_id
+                                    : formData.branch_id
+                                  return !effectiveBranchId || cc.branch_id === effectiveBranchId
+                                })
                                 .map((cc) => (<option key={cc.id} value={cc.id}>{cc.cost_center_code} - {cc.cost_center_name}</option>))}
                             </select>
                           </div>

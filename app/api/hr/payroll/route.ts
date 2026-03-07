@@ -105,6 +105,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ✅ جلب السلف الفورية (الصرف الفوري) غير المخصومة من قبل
+    let { data: rawAdvances, error: advErr } = await client
+      .from('commission_advance_payments')
+      .select('employee_id, amount')
+      .eq('company_id', companyId)
+      .eq('status', 'paid')
+      .or('deducted_in_payroll.is.null,deducted_in_payroll.eq.false')
+
+    if (useHr && advErr && ((advErr as any).code === 'PGRST205' || String(advErr.message || '').toUpperCase().includes('PGRST205'))) {
+      const clientHr = (client as any).schema ? (client as any).schema('hr') : client
+      const res = await clientHr
+        .from('commission_advance_payments')
+        .select('employee_id, amount')
+        .eq('company_id', companyId)
+        .eq('status', 'paid')
+        .or('deducted_in_payroll.is.null,deducted_in_payroll.eq.false')
+      rawAdvances = res.data as any
+      advErr = res.error as any
+    }
+
+    // إضافة مبالغ الصرف الفوري لخانة السلف في الراتب
+    for (const adv of (rawAdvances || [])) {
+      const k = String(adv.employee_id)
+      const amt = Number(adv.amount || 0)
+      if (!adjByEmp[k]) {
+        adjByEmp[k] = { allowances: 0, deductions: 0, bonuses: 0, advances: 0, insurance: 0 }
+      }
+      adjByEmp[k].advances += amt
+    }
+
     const attAggByEmp: Record<string, { absences: number, lateDeductionMins: number, overtimeMins: number, earlyLeaveMins: number }> = {}
     for (const r of (att || [])) {
       const st = String((r as any).status || '').toLowerCase()
