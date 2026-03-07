@@ -79,7 +79,7 @@ export default function BankingPage() {
         ?.split("=")[1];
       const v = fromCookie || localStorage.getItem("app_language") || "ar";
       setAppLang(v === "en" ? "en" : "ar");
-    } catch {}
+    } catch { }
   }, []);
   const [permView, setPermView] = useState(true);
   const [permWrite, setPermWrite] = useState(false);
@@ -187,7 +187,7 @@ export default function BankingPage() {
           ?.split("=")[1];
         const v = fromCookie || localStorage.getItem("app_language") || "ar";
         setAppLang(v === "en" ? "en" : "ar");
-      } catch {}
+      } catch { }
     };
     window.addEventListener("app_language_changed", handler);
     window.addEventListener("storage", (e: any) => {
@@ -240,7 +240,7 @@ export default function BankingPage() {
           if (cid) {
             try {
               localStorage.setItem("active_company_id", cid);
-            } catch {}
+            } catch { }
           }
 
           let uContext = null;
@@ -269,7 +269,7 @@ export default function BankingPage() {
             setAccounts(loadedAccounts);
           }
         }
-      } catch {}
+      } catch { }
 
       if (!cid) cid = await getActiveCompanyId(supabase);
       if (!cid) return;
@@ -348,12 +348,12 @@ export default function BankingPage() {
           // Use display amounts if available and currency matches, otherwise use original
           const debit =
             line.display_debit != null &&
-            line.display_currency === currentCurrency
+              line.display_currency === currentCurrency
               ? Number(line.display_debit)
               : Number(line.debit_amount || 0);
           const credit =
             line.display_credit != null &&
-            line.display_currency === currentCurrency
+              line.display_currency === currentCurrency
               ? Number(line.display_credit)
               : Number(line.credit_amount || 0);
           lineTotals[line.account_id].debit += debit;
@@ -422,7 +422,7 @@ export default function BankingPage() {
           const j = await res.json();
           cid = String(j?.company?.id || "") || null;
         }
-      } catch {}
+      } catch { }
       if (!cid) cid = await getActiveCompanyId(supabase);
       if (!cid) return;
 
@@ -529,8 +529,8 @@ export default function BankingPage() {
                 </p>
                 {/* 🔐 Governance Notice - Banking Role Access */}
                 {userContext?.role === "admin" ||
-                userContext?.role === "owner" ||
-                userContext?.role === "manager" ? (
+                  userContext?.role === "owner" ||
+                  userContext?.role === "manager" ? (
                   <p className="text-xs text-green-600 dark:text-green-400 mt-1">
                     {appLang === "en"
                       ? "👑 Company-wide accounts - All bank accounts visible"
@@ -561,180 +561,180 @@ export default function BankingPage() {
         {(userContext?.role === "admin" ||
           userContext?.role === "owner" ||
           userContext?.role === "manager") && (
-          <Card>
-            <CardContent className="pt-6 space-y-6">
-              <h2 className="text-xl font-semibold" suppressHydrationWarning>
-                {hydrated && appLang === "en"
-                  ? "Transfer Between Accounts"
-                  : "تحويل بين الحسابات"}
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
-                <div>
-                  <Label suppressHydrationWarning>
-                    {hydrated && appLang === "en"
-                      ? "From Account"
-                      : "من الحساب"}
-                  </Label>
-                  <select
-                    className="w-full border rounded px-2 py-1"
-                    value={transfer.from_id}
-                    onChange={(e) =>
-                      setTransfer({ ...transfer, from_id: e.target.value })
-                    }
-                  >
-                    <option value="">
-                      {appLang === "en" ? "Select account" : "اختر حسابًا"}
-                    </option>
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.account_code || ""} {a.account_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label suppressHydrationWarning>
-                    {hydrated && appLang === "en" ? "To Account" : "إلى الحساب"}
-                  </Label>
-                  <select
-                    className="w-full border rounded px-2 py-1"
-                    value={transfer.to_id}
-                    onChange={(e) =>
-                      setTransfer({ ...transfer, to_id: e.target.value })
-                    }
-                  >
-                    <option value="">
-                      {appLang === "en" ? "Select account" : "اختر حسابًا"}
-                    </option>
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.account_code || ""} {a.account_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label suppressHydrationWarning>
-                    {hydrated && appLang === "en" ? "Amount" : "المبلغ"}
-                  </Label>
-                  <NumericInput
-                    min={0}
-                    step="0.01"
-                    value={transfer.amount}
-                    onChange={(val) =>
-                      setTransfer({ ...transfer, amount: val })
-                    }
-                    decimalPlaces={2}
-                  />
-                </div>
-                <div>
-                  <Label suppressHydrationWarning>
-                    {hydrated && appLang === "en" ? "Currency" : "العملة"}
-                  </Label>
-                  <select
-                    className="w-full border rounded px-2 py-1"
-                    value={transfer.currency}
-                    onChange={(e) =>
-                      setTransfer({ ...transfer, currency: e.target.value })
-                    }
-                  >
-                    {currencies.length > 0 ? (
-                      currencies.map((c) => (
-                        <option key={c.code} value={c.code}>
-                          {c.code} - {c.name}
-                        </option>
-                      ))
-                    ) : (
-                      <>
-                        <option value="EGP">EGP - جنيه مصري</option>
-                        <option value="USD">USD - دولار أمريكي</option>
-                        <option value="EUR">EUR - يورو</option>
-                        <option value="SAR">SAR - ريال سعودي</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-                <div>
-                  <Label suppressHydrationWarning>
-                    {hydrated && appLang === "en" ? "Date" : "التاريخ"}
-                  </Label>
-                  <Input
-                    type="date"
-                    value={transfer.date}
-                    onChange={(e) =>
-                      setTransfer({ ...transfer, date: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="flex gap-2">
-                  {permWrite ? (
-                    <Button
-                      onClick={submitTransfer}
-                      disabled={
-                        saving ||
-                        !transfer.from_id ||
-                        !transfer.to_id ||
-                        transfer.from_id === transfer.to_id ||
-                        transfer.amount <= 0
+            <Card>
+              <CardContent className="pt-6 space-y-6">
+                <h2 className="text-xl font-semibold" suppressHydrationWarning>
+                  {hydrated && appLang === "en"
+                    ? "Transfer Between Accounts"
+                    : "تحويل بين الحسابات"}
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+                  <div>
+                    <Label suppressHydrationWarning>
+                      {hydrated && appLang === "en"
+                        ? "From Account"
+                        : "من الحساب"}
+                    </Label>
+                    <select
+                      className="w-full border rounded px-2 py-1"
+                      value={transfer.from_id}
+                      onChange={(e) =>
+                        setTransfer({ ...transfer, from_id: e.target.value })
                       }
                     >
-                      {hydrated && appLang === "en"
-                        ? "Record Transfer"
-                        : "تسجيل التحويل"}
-                    </Button>
-                  ) : null}
+                      <option value="">
+                        {appLang === "en" ? "Select account" : "اختر حسابًا"}
+                      </option>
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.account_code || ""} {a.account_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label suppressHydrationWarning>
+                      {hydrated && appLang === "en" ? "To Account" : "إلى الحساب"}
+                    </Label>
+                    <select
+                      className="w-full border rounded px-2 py-1"
+                      value={transfer.to_id}
+                      onChange={(e) =>
+                        setTransfer({ ...transfer, to_id: e.target.value })
+                      }
+                    >
+                      <option value="">
+                        {appLang === "en" ? "Select account" : "اختر حسابًا"}
+                      </option>
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.account_code || ""} {a.account_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label suppressHydrationWarning>
+                      {hydrated && appLang === "en" ? "Amount" : "المبلغ"}
+                    </Label>
+                    <NumericInput
+                      min={0}
+                      step="0.01"
+                      value={transfer.amount}
+                      onChange={(val) =>
+                        setTransfer({ ...transfer, amount: val })
+                      }
+                      decimalPlaces={2}
+                    />
+                  </div>
+                  <div>
+                    <Label suppressHydrationWarning>
+                      {hydrated && appLang === "en" ? "Currency" : "العملة"}
+                    </Label>
+                    <select
+                      className="w-full border rounded px-2 py-1"
+                      value={transfer.currency}
+                      onChange={(e) =>
+                        setTransfer({ ...transfer, currency: e.target.value })
+                      }
+                    >
+                      {currencies.length > 0 ? (
+                        currencies.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.code} - {c.name}
+                          </option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="EGP">EGP - جنيه مصري</option>
+                          <option value="USD">USD - دولار أمريكي</option>
+                          <option value="EUR">EUR - يورو</option>
+                          <option value="SAR">SAR - ريال سعودي</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                  <div>
+                    <Label suppressHydrationWarning>
+                      {hydrated && appLang === "en" ? "Date" : "التاريخ"}
+                    </Label>
+                    <Input
+                      type="date"
+                      value={transfer.date}
+                      onChange={(e) =>
+                        setTransfer({ ...transfer, date: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    {permWrite ? (
+                      <Button
+                        onClick={submitTransfer}
+                        disabled={
+                          saving ||
+                          !transfer.from_id ||
+                          !transfer.to_id ||
+                          transfer.from_id === transfer.to_id ||
+                          transfer.amount <= 0
+                        }
+                      >
+                        {hydrated && appLang === "en"
+                          ? "Record Transfer"
+                          : "تسجيل التحويل"}
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
 
-              {/* Exchange Rate Info */}
-              {transfer.currency !== appCurrency && transfer.amount > 0 && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm">
-                  <div className="flex justify-between items-center">
-                    <span>
-                      {appLang === "en" ? "Exchange Rate:" : "سعر الصرف:"}{" "}
-                      <strong>
-                        1 {transfer.currency} = {exchangeRate.toFixed(4)}{" "}
-                        {appCurrency}
-                      </strong>
-                    </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      (
-                      {rateSource === "api"
-                        ? appLang === "en"
-                          ? "API"
-                          : "API"
-                        : rateSource === "manual"
+                {/* Exchange Rate Info */}
+                {transfer.currency !== appCurrency && transfer.amount > 0 && (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm">
+                    <div className="flex justify-between items-center">
+                      <span>
+                        {appLang === "en" ? "Exchange Rate:" : "سعر الصرف:"}{" "}
+                        <strong>
+                          1 {transfer.currency} = {exchangeRate.toFixed(4)}{" "}
+                          {appCurrency}
+                        </strong>
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        (
+                        {rateSource === "api"
                           ? appLang === "en"
-                            ? "Manual"
-                            : "يدوي"
-                          : rateSource === "cache"
+                            ? "API"
+                            : "API"
+                          : rateSource === "manual"
                             ? appLang === "en"
-                              ? "Cache"
-                              : "كاش"
-                            : rateSource}
-                      )
-                    </span>
+                              ? "Manual"
+                              : "يدوي"
+                            : rateSource === "cache"
+                              ? appLang === "en"
+                                ? "Cache"
+                                : "كاش"
+                              : rateSource}
+                        )
+                      </span>
+                    </div>
+                    <div className="mt-1">
+                      {appLang === "en" ? "Base Amount:" : "المبلغ الأساسي:"}{" "}
+                      <strong>
+                        {baseAmount.toFixed(2)} {appCurrency}
+                      </strong>
+                    </div>
                   </div>
-                  <div className="mt-1">
-                    {appLang === "en" ? "Base Amount:" : "المبلغ الأساسي:"}{" "}
-                    <strong>
-                      {baseAmount.toFixed(2)} {appCurrency}
-                    </strong>
-                  </div>
-                </div>
-              )}
+                )}
 
-              <div
-                className="text-sm text-gray-600 dark:text-gray-400"
-                suppressHydrationWarning
-              >
-                {hydrated && appLang === "en"
-                  ? "The transfer is recorded as a journal entry (debit receiver, credit sender)."
-                  : "يتم تسجيل التحويل كقيد يومي (مدين للحساب المستلم، دائن للحساب المرسل)."}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+                <div
+                  className="text-sm text-gray-600 dark:text-gray-400"
+                  suppressHydrationWarning
+                >
+                  {hydrated && appLang === "en"
+                    ? "The transfer is recorded as a journal entry (debit receiver, credit sender)."
+                    : "يتم تسجيل التحويل كقيد يومي (مدين للحساب المستلم، دائن للحساب المرسل)."}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
         <Card>
           <CardContent className="pt-6 space-y-4">
@@ -756,34 +756,45 @@ export default function BankingPage() {
 
             {/* Filters */}
             {showFilters && (
-              <div className="bg-gray-50 dark:bg-slate-800 p-4 rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label className="mb-1 block">
-                    {appLang === "en" ? "Branch" : "الفرع"}
-                  </Label>
-                  <Select
-                    value={selectedBranch}
-                    onValueChange={setSelectedBranch}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={
-                          appLang === "en" ? "All Branches" : "جميع الفروع"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        {appLang === "en" ? "All Branches" : "جميع الفروع"}
-                      </SelectItem>
-                      {branches.map((b) => (
-                        <SelectItem key={b.id} value={b.id}>
-                          {b.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div
+                className={`bg-gray-50 dark:bg-slate-800 p-4 rounded-lg grid grid-cols-1 gap-4 ${userContext?.role === "admin" ||
+                    userContext?.role === "owner" ||
+                    userContext?.role === "manager"
+                    ? "sm:grid-cols-2"
+                    : ""
+                  }`}
+              >
+                {(userContext?.role === "admin" ||
+                  userContext?.role === "owner" ||
+                  userContext?.role === "manager") && (
+                    <div>
+                      <Label className="mb-1 block">
+                        {appLang === "en" ? "Branch" : "الفرع"}
+                      </Label>
+                      <Select
+                        value={selectedBranch}
+                        onValueChange={setSelectedBranch}
+                      >
+                        <SelectTrigger>
+                          <SelectValue
+                            placeholder={
+                              appLang === "en" ? "All Branches" : "جميع الفروع"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">
+                            {appLang === "en" ? "All Branches" : "جميع الفروع"}
+                          </SelectItem>
+                          {branches.map((b) => (
+                            <SelectItem key={b.id} value={b.id}>
+                              {b.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 <div>
                   <Label className="mb-1 block">
                     {appLang === "en" ? "Cost Center" : "مركز التكلفة"}
