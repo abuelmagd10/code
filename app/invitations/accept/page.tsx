@@ -137,7 +137,7 @@ function AcceptInvitationsContent() {
       } catch { }
 
       toast({ title: "تم الانضمام إلى الشركة بنجاح!" })
-      router.push("/dashboard")
+      window.location.href = "/dashboard"
     } finally { setProcessing(false) }
   }
 
@@ -192,7 +192,7 @@ function AcceptInvitationsContent() {
       } catch { }
 
       toast({ title: "تم قبول الدعوة وتسجيل الدخول بنجاح!" })
-      router.push("/dashboard")
+      window.location.href = "/dashboard"
     } finally { setProcessing(false) }
   }
 
@@ -356,7 +356,7 @@ function AcceptInvitationsContent() {
                                 document.cookie = `active_company_id=${js.company_id}; path=/; max-age=31536000`
                               } catch { }
                               toast({ title: "تم الانضمام إلى الشركة بنجاح!" })
-                              router.push("/dashboard")
+                              window.location.href = "/dashboard"
                             } catch (e: any) {
                               setError(e?.message || "حدث خطأ")
                             } finally {
