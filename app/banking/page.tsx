@@ -232,6 +232,8 @@ export default function BankingPage() {
       let cid: string | null = null;
       let loadedAccounts: Account[] = [];
 
+      let currentUserContext = userContext;
+
       try {
         const res = await fetch("/api/my-company");
         if (res.ok) {
@@ -243,13 +245,12 @@ export default function BankingPage() {
             } catch { }
           }
 
-          let uContext = null;
           if (j?.data?.userContext) {
-            uContext = j?.data?.userContext;
-            setUserContext(uContext);
+            currentUserContext = j?.data?.userContext;
+            setUserContext(currentUserContext);
           } else if (j?.userContext) {
-            uContext = j?.userContext;
-            setUserContext(uContext);
+            currentUserContext = j?.userContext;
+            setUserContext(currentUserContext);
           }
 
           const accs = j?.data?.accounts || j?.accounts;
@@ -258,11 +259,11 @@ export default function BankingPage() {
 
             // Filter out accounts clearly not in this user's branch for normal roles
             const isNormalRole =
-              uContext?.role &&
-              !["admin", "owner", "manager"].includes(uContext.role);
-            if (isNormalRole && uContext?.branch_id) {
+              currentUserContext?.role &&
+              !["admin", "owner", "manager"].includes(currentUserContext.role);
+            if (isNormalRole && currentUserContext?.branch_id) {
               leaf = leaf.filter(
-                (a: any) => a.branch_id === uContext.branch_id,
+                (a: any) => a.branch_id === currentUserContext.branch_id,
               );
             }
             loadedAccounts = leaf as Account[];
@@ -309,11 +310,11 @@ export default function BankingPage() {
 
         // Filter if userContext is a normal role
         const isNormalRole =
-          userContext?.role &&
-          !["admin", "owner", "manager"].includes(userContext.role);
-        if (isNormalRole && userContext?.branch_id) {
+          currentUserContext?.role &&
+          !["admin", "owner", "manager"].includes(currentUserContext.role);
+        if (isNormalRole && currentUserContext?.branch_id) {
           leafCashBankAccounts = leafCashBankAccounts.filter(
-            (a: any) => a.branch_id === userContext.branch_id,
+            (a: any) => a.branch_id === currentUserContext.branch_id,
           );
         }
 
@@ -375,8 +376,16 @@ export default function BankingPage() {
   // Filter accounts by branch and cost center
   const filteredAccounts = useMemo(() => {
     let filtered = accounts;
-    if (selectedBranch !== "all") {
-      filtered = filtered.filter((a) => a.branch_id === selectedBranch);
+    const isNormalRole =
+      userContext?.role &&
+      !["admin", "owner", "manager"].includes(userContext.role);
+    const effectiveBranch =
+      isNormalRole && userContext?.branch_id
+        ? userContext.branch_id
+        : selectedBranch;
+
+    if (effectiveBranch !== "all") {
+      filtered = filtered.filter((a) => a.branch_id === effectiveBranch);
     }
     if (selectedCostCenter !== "all") {
       filtered = filtered.filter(
@@ -384,13 +393,21 @@ export default function BankingPage() {
       );
     }
     return filtered;
-  }, [accounts, selectedBranch, selectedCostCenter]);
+  }, [accounts, selectedBranch, selectedCostCenter, userContext]);
 
   // Filter cost centers by selected branch
   const filteredCostCenters = useMemo(() => {
-    if (selectedBranch === "all") return costCenters;
-    return costCenters.filter((cc) => cc.branch_id === selectedBranch);
-  }, [costCenters, selectedBranch]);
+    const isNormalRole =
+      userContext?.role &&
+      !["admin", "owner", "manager"].includes(userContext.role);
+    const effectiveBranch =
+      isNormalRole && userContext?.branch_id
+        ? userContext.branch_id
+        : selectedBranch;
+
+    if (effectiveBranch === "all") return costCenters;
+    return costCenters.filter((cc) => cc.branch_id === effectiveBranch);
+  }, [costCenters, selectedBranch, userContext]);
 
   // Reset cost center when branch changes
   useEffect(() => {
@@ -758,10 +775,10 @@ export default function BankingPage() {
             {showFilters && (
               <div
                 className={`bg-gray-50 dark:bg-slate-800 p-4 rounded-lg grid grid-cols-1 gap-4 ${userContext?.role === "admin" ||
-                    userContext?.role === "owner" ||
-                    userContext?.role === "manager"
-                    ? "sm:grid-cols-2"
-                    : ""
+                  userContext?.role === "owner" ||
+                  userContext?.role === "manager"
+                  ? "sm:grid-cols-2"
+                  : ""
                   }`}
               >
                 {(userContext?.role === "admin" ||
