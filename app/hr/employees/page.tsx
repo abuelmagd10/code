@@ -17,8 +17,8 @@ export default function EmployeesPage() {
   const [companyId, setCompanyId] = useState<string>("")
   const [employees, setEmployees] = useState<any[]>([])
   const [editingId, setEditingId] = useState<string>("")
-  const [editForm, setEditForm] = useState<{ full_name: string; email?: string; phone?: string; job_title?: string; department?: string; base_salary: number }>({ full_name: "", base_salary: 0 })
-  const [form, setForm] = useState({ full_name: "", email: "", phone: "", job_title: "", department: "", base_salary: 0 })
+  const [editForm, setEditForm] = useState<{ full_name: string; email?: string; phone?: string; job_title?: string; department?: string; joined_date?: string; base_salary: number }>({ full_name: "", base_salary: 0 })
+  const [form, setForm] = useState({ full_name: "", email: "", phone: "", job_title: "", department: "", joined_date: new Date().toISOString().split('T')[0], base_salary: 0 })
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -49,12 +49,12 @@ export default function EmployeesPage() {
     setLoading(true)
     try {
       const res = await fetch('/api/hr/employees', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, employee: form }) })
-      if (res.ok) { await loadEmployees(companyId); setForm({ full_name: "", email: "", phone: "", job_title: "", department: "", base_salary: 0 }); toast({ title: t('Employee added', 'تم إضافة الموظف') }) } else { const j = await res.json(); toast({ title: t('Error', 'خطأ'), description: j?.error || t('Failed to add', 'فشل الإضافة') }) }
+      if (res.ok) { await loadEmployees(companyId); setForm({ full_name: "", email: "", phone: "", job_title: "", department: "", joined_date: new Date().toISOString().split('T')[0], base_salary: 0 }); toast({ title: t('Employee added', 'تم إضافة الموظف') }) } else { const j = await res.json(); toast({ title: t('Error', 'خطأ'), description: j?.error || t('Failed to add', 'فشل الإضافة') }) }
     } catch { toast({ title: t('Network error', 'خطأ الشبكة') }) } finally { setLoading(false) }
   }
 
-  const startEdit = (e: any) => { setEditingId(String(e.id)); setEditForm({ full_name: String(e.full_name || ''), email: e.email || '', phone: e.phone || '', job_title: e.job_title || '', department: e.department || '', base_salary: Number(e.base_salary || 0) }) }
-  const cancelEdit = () => { setEditingId(""); setEditForm({ full_name: "", email: "", phone: "", job_title: "", department: "", base_salary: 0 }) }
+  const startEdit = (e: any) => { setEditingId(String(e.id)); setEditForm({ full_name: String(e.full_name || ''), email: e.email || '', phone: e.phone || '', job_title: e.job_title || '', department: e.department || '', joined_date: e.joined_date || '', base_salary: Number(e.base_salary || 0) }) }
+  const cancelEdit = () => { setEditingId(""); setEditForm({ full_name: "", email: "", phone: "", job_title: "", department: "", joined_date: "", base_salary: 0 }) }
   const saveEdit = async () => {
     if (!companyId || !editingId) return
     setLoading(true)
@@ -104,6 +104,7 @@ export default function EmployeesPage() {
               <div><Label>{t('Phone', 'الهاتف')}</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
               <div><Label>{t('Job Title', 'الوظيفة')}</Label><Input value={form.job_title} onChange={(e) => setForm({ ...form, job_title: e.target.value })} /></div>
               <div><Label>{t('Department', 'القسم')}</Label><Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
+              <div><Label>{t('Joined Date', 'تاريخ التعيين')}</Label><Input type="date" value={form.joined_date} onChange={(e) => setForm({ ...form, joined_date: e.target.value })} /></div>
               <div><Label>{t('Base Salary', 'الراتب الأساسي')}</Label><Input type="number" value={form.base_salary} onChange={(e) => setForm({ ...form, base_salary: Number(e.target.value) })} /></div>
               <div className="md:col-span-3"><Button disabled={loading} onClick={addEmployee}>{t('Add', 'إضافة')}</Button></div>
             </CardContent>
@@ -115,7 +116,7 @@ export default function EmployeesPage() {
               {employees.length === 0 ? (<p className="text-gray-600 dark:text-gray-400">{t('No employees yet.', 'لا يوجد موظفون بعد.')}</p>) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="border-b"><tr><th className="p-2 text-right">{t('Name', 'الاسم')}</th><th className="p-2 text-right">{t('Email', 'البريد')}</th><th className="p-2 text-right">{t('Phone', 'الهاتف')}</th><th className="p-2 text-right">{t('Job Title', 'الوظيفة')}</th><th className="p-2 text-right">{t('Department', 'القسم')}</th><th className="p-2 text-right">{t('Salary', 'الراتب')}</th><th className="p-2 text-right">{t('Actions', 'الإجراءات')}</th></tr></thead>
+                    <thead className="border-b"><tr><th className="p-2 text-right">{t('Name', 'الاسم')}</th><th className="p-2 text-right">{t('Email', 'البريد')}</th><th className="p-2 text-right">{t('Phone', 'الهاتف')}</th><th className="p-2 text-right">{t('Job Title', 'الوظيفة')}</th><th className="p-2 text-right">{t('Department', 'القسم')}</th><th className="p-2 text-right">{t('Joined Date', 'تاريخ التعيين')}</th><th className="p-2 text-right">{t('Salary', 'الراتب')}</th><th className="p-2 text-right">{t('Actions', 'الإجراءات')}</th></tr></thead>
                     <tbody>
                       {employees.map((e) => (
                         <tr key={e.id} className="border-b">
@@ -124,6 +125,7 @@ export default function EmployeesPage() {
                           <td className="p-2">{editingId === e.id ? (<Input value={editForm.phone || ''} onChange={(ev) => setEditForm({ ...editForm, phone: ev.target.value })} />) : e.phone}</td>
                           <td className="p-2">{editingId === e.id ? (<Input value={editForm.job_title || ''} onChange={(ev) => setEditForm({ ...editForm, job_title: ev.target.value })} />) : e.job_title}</td>
                           <td className="p-2">{editingId === e.id ? (<Input value={editForm.department || ''} onChange={(ev) => setEditForm({ ...editForm, department: ev.target.value })} />) : e.department}</td>
+                          <td className="p-2">{editingId === e.id ? (<Input type="date" value={editForm.joined_date || ''} onChange={(ev) => setEditForm({ ...editForm, joined_date: ev.target.value })} />) : e.joined_date}</td>
                           <td className="p-2">{editingId === e.id ? (<Input type="number" value={editForm.base_salary} onChange={(ev) => setEditForm({ ...editForm, base_salary: Number(ev.target.value) })} />) : Number(e.base_salary || 0).toFixed(2)}</td>
                           <td className="p-2">
                             {editingId === e.id ? (

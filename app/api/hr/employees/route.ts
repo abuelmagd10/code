@@ -80,6 +80,7 @@ export async function POST(req: NextRequest) {
       phone: employee.phone ? String(employee.phone) : null,
       job_title: employee.job_title ? String(employee.job_title) : null,
       department: employee.department ? String(employee.department) : null,
+      joined_date: employee.joined_date ? String(employee.joined_date) : new Date().toISOString().split('T')[0],
     }
     const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
@@ -134,6 +135,7 @@ export async function PUT(req: NextRequest) {
     if (typeof update.phone !== 'undefined') safeUpdate.phone = update.phone ? String(update.phone) : null
     if (typeof update.job_title !== 'undefined') safeUpdate.job_title = update.job_title ? String(update.job_title) : null
     if (typeof update.department !== 'undefined') safeUpdate.department = update.department ? String(update.department) : null
+    if (typeof update.joined_date !== 'undefined') safeUpdate.joined_date = update.joined_date ? String(update.joined_date) : null
     const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let upd = await client.from("employees").update(safeUpdate).eq("company_id", companyId).eq("id", id)
