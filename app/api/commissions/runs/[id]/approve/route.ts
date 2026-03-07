@@ -9,9 +9,10 @@ import { NextResponse } from 'next/server';
  */
 export async function POST(
     request: Request,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = await createClient();
 
         const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -52,7 +53,7 @@ export async function POST(
                 approved_by: user.id,
                 approved_at: new Date().toISOString(),
             })
-            .eq('id', params.id)
+            .eq('id', id)
             .eq('company_id', employee.company_id)
             .select()
             .single();

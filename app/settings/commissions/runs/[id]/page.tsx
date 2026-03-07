@@ -543,6 +543,7 @@ export default function RunDetailsPage() {
                             <DataTable
                                 data={employeeBreakdown}
                                 columns={tableColumns}
+                                keyField="employee_id"
                                 lang={appLang}
                             />
                         </CardContent>

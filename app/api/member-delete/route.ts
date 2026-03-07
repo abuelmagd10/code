@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     // 🔐 Enterprise ERP: Owner Protection - Prevent deletion of owner role
     if (targetMember.role === 'owner') {
       // Check if this is the only owner
-      const { data: ownerCount, error: ownerCountError } = await admin
+      const { count: ownerCount, error: ownerCountError } = await admin
         .from("company_members")
         .select("id", { count: 'exact', head: true })
         .eq("company_id", companyId)

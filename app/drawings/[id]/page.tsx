@@ -76,7 +76,7 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
             setUserRole(member?.role || '')
 
             const data = await getDrawingById(resolvedParams.id)
-            if (!data || (data.company_id && data.company_id !== cId)) {
+            if (!data || ((data as any).company_id && (data as any).company_id !== cId)) {
                 toast({ title: appLang === 'en' ? 'Not found' : 'غير موجود', variant: 'destructive' })
                 router.push('/drawings')
                 return

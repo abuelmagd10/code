@@ -20,11 +20,12 @@ import { checkPeriodLock } from "@/lib/accounting-period-lock"
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const authSupabase = await createServerClient()
-    const invoiceId = params.id
+    const invoiceId = id
 
     // ✅ Auth + company context
     const { user, companyId, error } = await secureApiRequest(req, {
@@ -114,19 +115,19 @@ export async function POST(
     const { data: rpcResult, error: rpcError } = await supabase.rpc(
       "process_invoice_payment_atomic",
       {
-        p_invoice_id:       invoiceId,
-        p_company_id:       resolvedCompanyId,
-        p_customer_id:      invoice.customer_id,
-        p_amount:           Number(amount),
-        p_payment_date:     paymentDate,
-        p_payment_method:   paymentMethod,
+        p_invoice_id: invoiceId,
+        p_company_id: resolvedCompanyId,
+        p_customer_id: invoice.customer_id,
+        p_amount: Number(amount),
+        p_payment_date: paymentDate,
+        p_payment_method: paymentMethod,
         p_reference_number: referenceNumber || null,
-        p_notes:            notes || null,
-        p_account_id:       accountId || null,
-        p_branch_id:        branchId || invoice.branch_id || null,
-        p_cost_center_id:   costCenterId || invoice.cost_center_id || null,
-        p_warehouse_id:     warehouseId || invoice.warehouse_id || null,
-        p_user_id:          user?.id || null,
+        p_notes: notes || null,
+        p_account_id: accountId || null,
+        p_branch_id: branchId || invoice.branch_id || null,
+        p_cost_center_id: costCenterId || invoice.cost_center_id || null,
+        p_warehouse_id: warehouseId || invoice.warehouse_id || null,
+        p_user_id: user?.id || null,
       }
     )
 
@@ -155,11 +156,11 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      paymentId:           result.payment_id,
-      newPaidAmount:       result.new_paid_amount,
-      newStatus:           result.new_status,
-      netInvoiceAmount:    result.net_invoice_amount,
-      remaining:           result.remaining,
+      paymentId: result.payment_id,
+      newPaidAmount: result.new_paid_amount,
+      newStatus: result.new_status,
+      netInvoiceAmount: result.net_invoice_amount,
+      remaining: result.remaining,
       invoiceJournalCreated: result.invoice_journal_created,
     })
   } catch (e: any) {

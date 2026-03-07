@@ -91,7 +91,7 @@ export default function EarlyCommissionPayoutPage() {
                     .select('id, full_name, user_id')
                     .eq('company_id', cid)
                     .order('full_name')
-                setAllEmployees((emps || []).map(e => ({ ...e, name: e.full_name })))
+                setAllEmployees((emps || []).map((e: any) => ({ ...e, name: e.full_name })))
 
                 await loadAdvanceHistory(cid)
             }
@@ -246,7 +246,7 @@ export default function EarlyCommissionPayoutPage() {
                             <p className="text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
                                 <AlertCircle className="w-4 h-4" />
                                 {t('Advances will be deducted from the monthly salary automatically.',
-                                   'سيتم خصم السلف من المرتب الشهري تلقائياً.')}
+                                    'سيتم خصم السلف من المرتب الشهري تلقائياً.')}
                             </p>
                         </div>
                     </div>
@@ -325,7 +325,7 @@ export default function EarlyCommissionPayoutPage() {
                             {employees.length === 0 ? (
                                 <p className="text-gray-600 dark:text-gray-400">
                                     {t('Click "Load Available Commissions" to see employee balances.',
-                                       'اضغط "تحميل العمولات المتاحة" لعرض أرصدة الموظفين.')}
+                                        'اضغط "تحميل العمولات المتاحة" لعرض أرصدة الموظفين.')}
                                 </p>
                             ) : (
                                 <div className="overflow-x-auto">
@@ -342,9 +342,8 @@ export default function EarlyCommissionPayoutPage() {
                                             {employees.map((emp) => (
                                                 <tr
                                                     key={emp.employee_id}
-                                                    className={`border-b cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800 ${
-                                                        selectedEmployeeId === emp.employee_id ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                                                    }`}
+                                                    className={`border-b cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800 ${selectedEmployeeId === emp.employee_id ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                                                        }`}
                                                     onClick={() => {
                                                         setSelectedEmployeeId(emp.employee_id)
                                                         setAdvanceAmount(0)
@@ -484,14 +483,13 @@ export default function EarlyCommissionPayoutPage() {
                                                     <td className="p-2">{adv.employee_name}</td>
                                                     <td className="p-2 font-semibold">{Number(adv.amount).toFixed(2)}</td>
                                                     <td className="p-2">
-                                                        <span className={`px-2 py-1 rounded-full text-xs ${
-                                                            adv.status === 'paid' ? 'bg-green-100 text-green-700' :
-                                                            adv.status === 'reversed' ? 'bg-red-100 text-red-700' :
-                                                            'bg-gray-100 text-gray-700'
-                                                        }`}>
+                                                        <span className={`px-2 py-1 rounded-full text-xs ${adv.status === 'paid' ? 'bg-green-100 text-green-700' :
+                                                                adv.status === 'reversed' ? 'bg-red-100 text-red-700' :
+                                                                    'bg-gray-100 text-gray-700'
+                                                            }`}>
                                                             {adv.status === 'paid' ? t('Paid', 'مدفوع') :
-                                                             adv.status === 'reversed' ? t('Reversed', 'ملغي') :
-                                                             adv.status}
+                                                                adv.status === 'reversed' ? t('Reversed', 'ملغي') :
+                                                                    adv.status}
                                                         </span>
                                                     </td>
                                                     <td className="p-2">

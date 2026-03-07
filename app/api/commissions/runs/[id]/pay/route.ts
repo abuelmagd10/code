@@ -9,9 +9,10 @@ import { NextResponse } from 'next/server';
  */
 export async function POST(
     request: Request,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = await createClient();
 
         const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -58,7 +59,7 @@ export async function POST(
         const { data: run, error: runError } = await supabase
             .from('commission_runs')
             .select('*')
-            .eq('id', params.id)
+            .eq('id', id)
             .eq('company_id', employee.company_id)
             .single();
 
@@ -83,7 +84,7 @@ export async function POST(
                 paid_at: new Date().toISOString(),
                 notes: notes || run.notes
             })
-            .eq('id', params.id);
+            .eq('id', id);
 
         if (updateError) {
             console.error('Error updating run:', updateError);

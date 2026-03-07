@@ -7,11 +7,12 @@ import { checkPeriodLock } from "@/lib/accounting-period-lock"
 
 export async function POST(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = await createClient()
-        const invoiceId = params.id
+        const invoiceId = id
 
         // 1. Authentication & Company Context
         const { data: { user }, error: authError } = await supabase.auth.getUser()

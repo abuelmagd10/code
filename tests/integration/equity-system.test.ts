@@ -334,12 +334,12 @@ describe('🏦 Equity System - Capital Governance Engine', () => {
       // Find debit line (Retained Earnings)
       const debitLine = lines.find((l: any) => l.debit_amount > 0)
       expect(debitLine).toBeDefined()
-      expect(debitLine.account_id).toBe(ctx.retainedEarningsAccountId)
+      expect(debitLine!.account_id).toBe(ctx.retainedEarningsAccountId)
 
       // Find credit line (Dividends Payable)
       const creditLine = lines.find((l: any) => l.credit_amount > 0)
       expect(creditLine).toBeDefined()
-      expect(creditLine.account_id).toBe(ctx.dividendsPayableAccountId)
+      expect(creditLine!.account_id).toBe(ctx.dividendsPayableAccountId)
 
       // Verify balanced
       const totalDebit = lines.reduce((sum: number, l: any) => sum + (l.debit_amount || 0), 0)
@@ -381,10 +381,10 @@ describe('🏦 Equity System - Capital Governance Engine', () => {
       for (const sh of ctx.shareholders) {
         const line = lines.find((l: any) => l.shareholder_id === sh.id)
         expect(line).toBeDefined()
-        expect(line.percentage_at_distribution).toBe(sh.percentage)
-        expect(line.amount).toBe((distributions.total_profit * sh.percentage) / 100)
-        expect(line.paid_amount).toBe(0)
-        expect(line.status).toBe('pending')
+        expect(line!.percentage_at_distribution).toBe(sh.percentage)
+        expect(line!.amount).toBe((distributions.total_profit * sh.percentage) / 100)
+        expect(line!.paid_amount).toBe(0)
+        expect(line!.status).toBe('pending')
       }
     })
   })
@@ -551,12 +551,12 @@ describe('🏦 Equity System - Capital Governance Engine', () => {
       // Debit: Dividends Payable (clearing the liability)
       const debitLine = lines.find((l: any) => l.debit_amount > 0)
       expect(debitLine).toBeDefined()
-      expect(debitLine.account_id).toBe(ctx.dividendsPayableAccountId)
+      expect(debitLine!.account_id).toBe(ctx.dividendsPayableAccountId)
 
       // Credit: Cash (payment)
       const creditLine = lines.find((l: any) => l.credit_amount > 0)
       expect(creditLine).toBeDefined()
-      expect(creditLine.account_id).toBe(ctx.cashAccountId)
+      expect(creditLine!.account_id).toBe(ctx.cashAccountId)
 
       // Verify balanced
       const totalDebit = lines.reduce((sum: number, l: any) => sum + (l.debit_amount || 0), 0)

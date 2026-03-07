@@ -661,10 +661,10 @@ export async function GET(req: NextRequest) {
     // ─────────────────────────────────────────
     {
       const requiredTriggers = [
-        { trigger: "trg_enforce_journal_balance",         table: "journal_entry_lines" },
+        { trigger: "trg_enforce_journal_balance", table: "journal_entry_lines" },
         { trigger: "trg_prevent_posted_line_modification", table: "journal_entry_lines" },
-        { trigger: "trg_prevent_duplicate_journal_entry",  table: "journal_entries" },
-        { trigger: "trg_prevent_posted_journal_mod",       table: "journal_entries" },
+        { trigger: "trg_prevent_duplicate_journal_entry", table: "journal_entries" },
+        { trigger: "trg_prevent_posted_journal_mod", table: "journal_entries" },
       ]
 
       const { data: existingTriggers } = await supabase
@@ -850,7 +850,7 @@ export async function GET(req: NextRequest) {
       const { data: mvRow2 } = await supabase
         .rpc("get_trial_balance", { p_company_id: companyId, p_as_of_date: new Date().toISOString().slice(0, 10) } as any)
 
-      const mvExists   = !!mvRow || mvRow2 !== null
+      const mvExists = !!mvRow || mvRow2 !== null
       const trialBalOk = mvRow2 !== undefined && !("error" in (mvRow2 as any || {}))
 
       tests.push({
@@ -910,11 +910,11 @@ export async function GET(req: NextRequest) {
 
       const allPresent = !!reconTable && !!snapshotTable && !!reconFn && !!snapshotFn && !!fifoReconFn
       const missing: string[] = []
-      if (!reconTable)   missing.push("daily_reconciliation_log table")
+      if (!reconTable) missing.push("daily_reconciliation_log table")
       if (!snapshotTable) missing.push("audit_snapshots table")
-      if (!reconFn)      missing.push("run_daily_reconciliation()")
-      if (!snapshotFn)   missing.push("create_monthly_audit_snapshot()")
-      if (!fifoReconFn)  missing.push("reconcile_fifo_vs_gl()")
+      if (!reconFn) missing.push("run_daily_reconciliation()")
+      if (!snapshotFn) missing.push("create_monthly_audit_snapshot()")
+      if (!fifoReconFn) missing.push("reconcile_fifo_vs_gl()")
 
       tests.push({
         id: "phase5_integrity_shield",
@@ -936,7 +936,13 @@ export async function GET(req: NextRequest) {
     // اختبار 19: Double COGS Detection
     // ─────────────────────────────────────────
     {
-      const { data: doubleCOGS } = await supabase.rpc("find_double_cogs_entries" as any, { p_company_id: companyId }).catch(() => ({ data: null }))
+      let doubleCOGS = null;
+      try {
+        const res_cogs = await supabase.rpc("find_double_cogs_entries" as any, { p_company_id: companyId });
+        doubleCOGS = res_cogs.data;
+      } catch (e) {
+        // ignore
+      }
       // Fallback: count via direct query
       const { count: dblCount } = await supabase
         .from("journal_entries" as any)

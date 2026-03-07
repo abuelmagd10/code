@@ -9,9 +9,10 @@ import { NextResponse } from 'next/server';
  */
 export async function POST(
     request: Request,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = await createClient();
 
         const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -56,7 +57,7 @@ export async function POST(
 
         // Call RPC function
         const { data, error } = await supabase.rpc('post_commission_run_atomic', {
-            p_commission_run_id: params.id,
+            p_commission_run_id: id,
             p_expense_account_id: expense_account_id,
             p_payable_account_id: payable_account_id,
             p_user_id: user.id,

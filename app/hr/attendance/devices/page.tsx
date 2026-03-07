@@ -7,7 +7,8 @@ import { useEffect, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
-import { Wifi, RefreshCw } from "lucide-react"
+import { Wifi, RefreshCw, Cpu } from "lucide-react"
+import { AddDeviceModal } from "./AddDeviceModal"
 
 export default function DevicesPage() {
     const supabase = useSupabase()
@@ -124,6 +125,26 @@ export default function DevicesPage() {
 
     return (
         <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex items-center gap-2">
+                    <Cpu className="text-emerald-500 w-8 h-8" />
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                            {t('Biometric Devices', 'أجهزة البصمة')}
+                        </h1>
+                        <p className="text-sm text-gray-500">
+                            {t('Manage attendance devices and link employee biometric IDs.', 'إدارة أجهزة الحضور وربط بصمات الموظفين.')}
+                        </p>
+                    </div>
+                </div>
+
+                <AddDeviceModal
+                    companyId={companyId}
+                    appLang={appLang}
+                    onSuccess={() => loadDevices(companyId)}
+                />
+            </div>
+
             <Card>
                 <CardContent className="p-0">
                     {loading ? (

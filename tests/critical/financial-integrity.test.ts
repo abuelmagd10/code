@@ -59,11 +59,11 @@ async function isEntryBalanced(supabase: any, journalEntryId: string): Promise<{
 
   if (error) throw new Error(`Error fetching journal lines: ${error.message}`)
 
-  const totalDebit  = (data || []).reduce((s: number, l: any) => s + Number(l.debit_amount  || 0), 0)
+  const totalDebit = (data || []).reduce((s: number, l: any) => s + Number(l.debit_amount || 0), 0)
   const totalCredit = (data || []).reduce((s: number, l: any) => s + Number(l.credit_amount || 0), 0)
 
   return {
-    balanced:    Math.abs(totalDebit - totalCredit) < 0.01,
+    balanced: Math.abs(totalDebit - totalCredit) < 0.01,
     totalDebit,
     totalCredit
   }
@@ -198,7 +198,7 @@ describe('2. ترحيل الفاتورة — Invoice Post Accuracy', () => {
         .eq('reference_type', 'invoice')
 
       if ((count || 0) === 0) issues.push(`${inv.invoice_number}: لا يوجد قيد إيراد`)
-      if ((count || 0) > 1)  issues.push(`${inv.invoice_number}: قيود إيراد مكررة (${count})`)
+      if ((count || 0) > 1) issues.push(`${inv.invoice_number}: قيود إيراد مكررة (${count})`)
     }
 
     expect(issues, issues.join('\n')).toHaveLength(0)
@@ -254,7 +254,7 @@ describe('2. ترحيل الفاتورة — Invoice Post Accuracy', () => {
 
       const arDebit = ((entry as any).journal_entry_lines || [])
         .filter((l: any) => l.chart_of_accounts?.account_type === 'asset' &&
-                             (l.chart_of_accounts?.sub_type?.includes('receivable') || true))
+          (l.chart_of_accounts?.sub_type?.includes('receivable') || true))
         .reduce((s: number, l: any) => s + Number(l.debit_amount || 0), 0)
 
       const tolerance = 0.01
@@ -359,12 +359,12 @@ describe('4. سلامة الميزانية — Balance Sheet Integrity', () => {
       }, 0)
     }
 
-    const totalAssets     = balances.asset     || 0
-    const totalLiab       = -(balances.liability || 0)  // liabilities are credit-normal
-    const totalEquity     = -(balances.equity    || 0)  // equity is credit-normal
-    const netIncome       = -(balances.revenue   || 0) + (balances.expense  || 0)
+    const totalAssets = balances.asset || 0
+    const totalLiab = -(balances.liability || 0)  // liabilities are credit-normal
+    const totalEquity = -(balances.equity || 0)  // equity is credit-normal
+    const netIncome = -(balances.revenue || 0) + (balances.expense || 0)
     const totalLiabEquity = totalLiab + totalEquity + netIncome
-    const difference      = Math.abs(totalAssets - totalLiabEquity)
+    const difference = Math.abs(totalAssets - totalLiabEquity)
 
     expect(difference,
       `الميزانية غير متوازنة! الأصول=${totalAssets.toFixed(2)}, L+E=${totalLiabEquity.toFixed(2)}, فارق=${difference.toFixed(2)}`
@@ -381,9 +381,9 @@ describe('4. سلامة الميزانية — Balance Sheet Integrity', () => {
       .eq('journal_entries.company_id', TEST_COMPANY_ID)
       .eq('journal_entries.status', 'posted')
 
-    const totalDebit  = (data || []).reduce((s: number, l: any) => s + Number(l.debit_amount  || 0), 0)
+    const totalDebit = (data || []).reduce((s: number, l: any) => s + Number(l.debit_amount || 0), 0)
     const totalCredit = (data || []).reduce((s: number, l: any) => s + Number(l.credit_amount || 0), 0)
-    const diff        = Math.abs(totalDebit - totalCredit)
+    const diff = Math.abs(totalDebit - totalCredit)
 
     expect(diff, `ميزان المراجعة غير متوازن! فارق=${diff.toFixed(2)}`).toBeLessThan(0.01)
   })
@@ -441,7 +441,7 @@ describe('5. مرتجعات المبيعات — Sales Return Integrity', () => 
     const overReturned: string[] = []
     for (const inv of (invoices || [])) {
       const returned = Number(inv.returned_amount || 0)
-      const total    = Number(inv.total_amount || 0)
+      const total = Number(inv.total_amount || 0)
       if (returned > total + 0.01) {
         overReturned.push(`${inv.invoice_number}: مُرتجَع=${returned} > إجمالي=${total}`)
       }
@@ -476,7 +476,7 @@ describe('6. ترحيل فاتورة الشراء — Bill Post Integrity', () =
         .eq('reference_type', 'purchase')
 
       if ((count || 0) === 0) issues.push(`${bill.bill_number}: لا يوجد قيد شراء`)
-      if ((count || 0) > 1)  issues.push(`${bill.bill_number}: قيود شراء مكررة (${count})`)
+      if ((count || 0) > 1) issues.push(`${bill.bill_number}: قيود شراء مكررة (${count})`)
     }
 
     expect(issues, issues.join('\n')).toHaveLength(0)
@@ -494,7 +494,7 @@ describe('6. ترحيل فاتورة الشراء — Bill Post Integrity', () =
 
     const overPaid: string[] = []
     for (const bill of (bills || [])) {
-      const paid  = Number(bill.paid_amount  || 0)
+      const paid = Number(bill.paid_amount || 0)
       const total = Number(bill.total_amount || 0)
       if (paid > total + 0.01) {
         overPaid.push(`${bill.bill_number}: مدفوع=${paid} > إجمالي=${total}`)
@@ -531,9 +531,13 @@ describe('7. التسوية اليومية — Daily Reconciliation', () => {
     if (!TEST_COMPANY_ID) return
     const supabase = getTestClient()
 
-    const { data } = await supabase
-      .rpc('run_daily_reconciliation', { p_company_id: TEST_COMPANY_ID })
-      .catch(() => ({ data: null }))
+    let data = null;
+    try {
+      const res = await supabase.rpc('run_daily_reconciliation', { p_company_id: TEST_COMPANY_ID });
+      data = res.data;
+    } catch (e) {
+      // Ignore
+    }
 
     if (!data) return
 
@@ -582,7 +586,7 @@ describe('8. الحوكمة والأمان — Governance & Security', () => {
       .in('tablename', ['journal_entries', 'journal_entry_lines'])
 
     const tables = new Set((policies || []).map((p: any) => p.tablename))
-    expect(tables.has('journal_entries'),    'RLS غير مفعَّل على journal_entries').toBe(true)
+    expect(tables.has('journal_entries'), 'RLS غير مفعَّل على journal_entries').toBe(true)
     expect(tables.has('journal_entry_lines'), 'RLS غير مفعَّل على journal_entry_lines').toBe(true)
   })
 
