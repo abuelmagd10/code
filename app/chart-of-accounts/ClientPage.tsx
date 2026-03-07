@@ -739,6 +739,40 @@ function ChartOfAccountsPage() {
       }
     }
 
+    // ERP Validation: Ensure account_code starts with correct digit based on account_type
+    const typeToDigitMap: Record<string, string> = {
+      asset: '1',
+      liability: '2',
+      equity: '3',
+      income: '4',
+      expense: '5'
+    }
+    const expectedDigit = typeToDigitMap[formData.account_type]
+    if (expectedDigit && !formData.account_code.startsWith(expectedDigit)) {
+      const typeNamesAr: Record<string, string> = {
+        asset: 'الأصول (يجب أن تبدأ بـ 1)',
+        liability: 'الالتزامات (يجب أن تبدأ بـ 2)',
+        equity: 'حقوق الملكية (يجب أن تبدأ بـ 3)',
+        income: 'الإيرادات (يجب أن تبدأ بـ 4)',
+        expense: 'المصروفات (يجب أن تبدأ بـ 5)'
+      }
+      const typeNamesEn: Record<string, string> = {
+        asset: 'Assets (must start with 1)',
+        liability: 'Liabilities (must start with 2)',
+        equity: 'Equity (must start with 3)',
+        income: 'Income (must start with 4)',
+        expense: 'Expenses (must start with 5)'
+      }
+
+      const errorMsg = appLang === 'en'
+        ? `Account Code must start with ${expectedDigit} for ${typeNamesEn[formData.account_type]}`
+        : `يجب أن يبدأ رمز الحساب بالرقم ${expectedDigit} لنوع الحساب ${typeNamesAr[formData.account_type]}`
+
+      toastActionError(toast, editingId ? "التحديث" : "الإنشاء", "الحساب", errorMsg)
+      setFormErrors({ account_code: errorMsg })
+      return
+    }
+
     try {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return

@@ -70,7 +70,7 @@ export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: '1160', account_name: 'ضريبة القيمة المضافة - مدخلات', account_name_en: 'VAT Input (Recoverable)', account_type: 'asset', normal_balance: 'debit', sub_type: 'vat_input', parent_code: '1100' },
   { account_code: '1170', account_name: 'سلف ومقدمات للموظفين', account_name_en: 'Employee Advances', account_type: 'asset', normal_balance: 'debit', parent_code: '1100' },
   { account_code: '1180', account_name: 'سلف ومقدمات للموردين', account_name_en: 'Supplier Advances', account_type: 'asset', normal_balance: 'debit', parent_code: '1100' },
-  { account_code: '1190', account_name: 'أرصدة العملاء الدائنة', account_name_en: 'Customer Credit Balances', account_type: 'asset', normal_balance: 'debit', sub_type: 'other_receivable', parent_code: '1100' },
+  { account_code: '1185', account_name: 'العهد (عهد الموظفين)', account_name_en: 'Petty Cash / Employee Custody', account_type: 'asset', normal_balance: 'debit', sub_type: 'cash', parent_code: '1100' },
 
   // ─────────────────────────────────────────────────────────────
   // 12xx - الأصول الثابتة (Fixed Assets / PPE)
@@ -82,6 +82,7 @@ export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: '1240', account_name: 'السيارات ووسائل النقل', account_name_en: 'Vehicles', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
   { account_code: '1250', account_name: 'الأثاث والتجهيزات', account_name_en: 'Furniture & Fixtures', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
   { account_code: '1260', account_name: 'أجهزة الحاسب الآلي', account_name_en: 'Computer Equipment', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
+  { account_code: '1270', account_name: 'مشاريع تحت التنفيذ', account_name_en: 'Capital Work in Progress (CWIP)', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
   { account_code: '1290', account_name: 'مجمع الإهلاك', account_name_en: 'Accumulated Depreciation', account_type: 'asset', normal_balance: 'credit', sub_type: 'accumulated_depreciation', parent_code: '1200' },
 
   // ─────────────────────────────────────────────────────────────
@@ -113,7 +114,6 @@ export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
 
   // المستحقات
   { account_code: '2130', account_name: 'الرواتب والأجور المستحقة', account_name_en: 'Accrued Salaries & Wages', account_type: 'liability', normal_balance: 'credit', sub_type: 'accrued_salaries', parent_code: '2100' },
-  { account_code: '2135', account_name: 'مستحقات نهاية الخدمة', account_name_en: 'End of Service Benefits', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
   { account_code: '2140', account_name: 'إيرادات مقدمة (غير مكتسبة)', account_name_en: 'Unearned Revenue', account_type: 'liability', normal_balance: 'credit', sub_type: 'unearned_revenue', parent_code: '2100' },
   { account_code: '2145', account_name: 'سلف من العملاء', account_name_en: 'Customer Deposits', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
   { account_code: '2150', account_name: 'الأرباح الموزعة المستحقة', account_name_en: 'Dividends Payable', account_type: 'liability', normal_balance: 'credit', sub_type: 'dividends_payable', parent_code: '2100' },
@@ -128,6 +128,7 @@ export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: '2210', account_name: 'القروض طويلة الأجل', account_name_en: 'Long-term Loans', account_type: 'liability', normal_balance: 'credit', parent_code: '2200' },
   { account_code: '2220', account_name: 'سندات مستحقة الدفع', account_name_en: 'Bonds Payable', account_type: 'liability', normal_balance: 'credit', parent_code: '2200' },
   { account_code: '2230', account_name: 'التزامات عقود الإيجار', account_name_en: 'Lease Liabilities', account_type: 'liability', normal_balance: 'credit', parent_code: '2200' },
+  { account_code: '2240', account_name: 'مخصص مكافأة نهاية الخدمة', account_name_en: 'Provision for End of Service Benefits', account_type: 'liability', normal_balance: 'credit', parent_code: '2200' },
 
   // ═══════════════════════════════════════════════════════════════
   // 3xxx - حقوق الملكية (Equity) - Normal Balance: Credit
