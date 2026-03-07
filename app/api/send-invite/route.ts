@@ -8,8 +8,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     // Support both modes: with existing token/inviteId OR create new invitation
-    const { email, role, token: existingToken, inviteId: existingInviteId } = body || {}
-    
+    const { email, role, token: existingToken, inviteId: existingInviteId, employeeName } = body || {}
+
     if (!email) {
       return badRequestError("البريد الإلكتروني مطلوب", ["email"])
     }
@@ -41,7 +41,12 @@ export async function POST(req: NextRequest) {
     if (!acceptToken) {
       const { data: created, error: invInsErr } = await admin
         .from("company_invitations")
-        .insert({ company_id: companyId, email: String(email).toLowerCase(), role: String(role || "viewer") })
+        .insert({
+          company_id: companyId,
+          email: String(email).toLowerCase(),
+          role: String(role || "viewer"),
+          employee_name: employeeName ? String(employeeName) : null
+        })
         .select("id, accept_token")
         .single()
       if (invInsErr) {
@@ -56,7 +61,7 @@ export async function POST(req: NextRequest) {
     try {
       const { data: company } = await admin.from("companies").select("name").eq("id", companyId).single()
       if (company?.name) companyName = company.name
-    } catch {}
+    } catch { }
 
     try {
       await admin.from('audit_logs').insert({
@@ -211,11 +216,11 @@ export async function POST(req: NextRequest) {
             inviteId: inviteId,
             acceptLink: acceptLink
           })
-          return apiSuccess({ 
-            ok: true, 
-            type: "resend", 
-            link: acceptLink, 
-            accept_token: acceptToken || null, 
+          return apiSuccess({
+            ok: true,
+            type: "resend",
+            link: acceptLink,
+            accept_token: acceptToken || null,
             invite_id: inviteId || null,
             emailId: emailResult.id,
             message: "تم إرسال الدعوة بنجاح. يرجى التحقق من البريد الإلكتروني (بما في ذلك مجلد Spam)"
@@ -240,12 +245,12 @@ export async function POST(req: NextRequest) {
 
     // Fallback: return link without sending email
     console.warn("⚠️ Resend API key not configured or email send failed. Returning manual link.")
-    return apiSuccess({ 
-      ok: true, 
-      type: "manual", 
-      link: acceptLink, 
-      accept_token: acceptToken || null, 
-      invite_id: inviteId || null, 
+    return apiSuccess({
+      ok: true,
+      type: "manual",
+      link: acceptLink,
+      accept_token: acceptToken || null,
+      invite_id: inviteId || null,
       warning: "تعذر إرسال الإيميل تلقائياً - يرجى مشاركة الرابط يدوياً",
       manualLink: acceptLink
     })

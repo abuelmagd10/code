@@ -42,6 +42,7 @@ export default function UsersSettingsPage() {
   const [currentUserId, setCurrentUserId] = useState<string>("")
   const [currentRole, setCurrentRole] = useState<string>("")
   const [inviteEmail, setInviteEmail] = useState("")
+  const [inviteName, setInviteName] = useState("")
   const [inviteRole, setInviteRole] = useState("staff")
   const [invites, setInvites] = useState<Array<{ id: string; email: string; role: string; expires_at: string; status?: string; accept_token?: string }>>([])
   const [memberEmails, setMemberEmails] = useState<Record<string, string>>({})
@@ -844,6 +845,7 @@ export default function UsersSettingsPage() {
       const invitationData: any = {
         company_id: targetCompanyId,
         email: inviteEmail.trim(),
+        employee_name: inviteName.trim() || null,
         role: inviteRole,
         branch_id: inviteBranchId || null,
         cost_center_id: inviteCostCenterId || null,
@@ -862,6 +864,7 @@ export default function UsersSettingsPage() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             email: inviteEmail.trim(),
+            employeeName: inviteName.trim() || undefined,
             inviteId: created.id,
             token: created.accept_token,
             companyId: targetCompanyId,
@@ -873,6 +876,7 @@ export default function UsersSettingsPage() {
         })
       } catch { }
       setInviteEmail("")
+      setInviteName("")
       setInviteRole("staff")
       // جلب الدعوات المعلقة فقط (غير مقبولة وغير منتهية)
       const { data: cinv } = await supabase
@@ -1329,10 +1333,10 @@ export default function UsersSettingsPage() {
                         </>
                       )}
                       {canManage && !m.is_current && m.role !== 'owner' && (
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20" 
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
                           onClick={() => {
                             setUserToDelete(m)
                             setDeleteConfirmOpen(true)
@@ -1372,16 +1376,16 @@ export default function UsersSettingsPage() {
               <Button variant="outline" onClick={() => { setDeleteConfirmOpen(false); setUserToDelete(null) }} disabled={isDeleting}>
                 إلغاء
               </Button>
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 onClick={async () => {
                   if (!userToDelete) return
                   setIsDeleting(true)
                   try {
-                    const res = await fetch("/api/member-delete", { 
-                      method: "POST", 
-                      headers: { "content-type": "application/json" }, 
-                      body: JSON.stringify({ userId: userToDelete.user_id, companyId, fullDelete: true }) 
+                    const res = await fetch("/api/member-delete", {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ userId: userToDelete.user_id, companyId, fullDelete: true })
                     })
                     const js = await res.json()
                     if (res.ok && js?.ok) {
@@ -1397,11 +1401,11 @@ export default function UsersSettingsPage() {
                       setReassignTargetId("")
                       setReassignModalOpen(true)
                       setUserToDelete(null)
-                    } else { 
-                      toastActionError(toast, "حذف", "العضو", js?.error || js?.error_en || undefined) 
+                    } else {
+                      toastActionError(toast, "حذف", "العضو", js?.error || js?.error_en || undefined)
                     }
-                  } catch (e: any) { 
-                    toastActionError(toast, "حذف", "العضو", e?.message) 
+                  } catch (e: any) {
+                    toastActionError(toast, "حذف", "العضو", e?.message)
                   } finally {
                     setIsDeleting(false)
                   }
@@ -1661,6 +1665,13 @@ export default function UsersSettingsPage() {
                       )}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                    <UserCog className="w-4 h-4" />
+                    اسم الموظف (اختياري)
+                  </Label>
+                  <Input placeholder="الاسم الكامل" value={inviteName} onChange={(e) => setInviteName(e.target.value)} className="bg-gray-50 dark:bg-slate-800" />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
