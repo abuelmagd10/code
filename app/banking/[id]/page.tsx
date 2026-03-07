@@ -14,8 +14,10 @@ import { filterLeafAccounts } from "@/lib/accounts"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { getActiveCompanyId } from "@/lib/company"
 import { MultiSelect } from "@/components/ui/multi-select"
-import { Filter, X, Search, Calendar } from "lucide-react"
-
+import { Filter, X, Search, Calendar, Check, Ban } from "lucide-react"
+import { usePermissions } from "@/lib/permissions-context"
+import { notifyBankVoucherRequestCreated, notifyBankVoucherApproved, notifyBankVoucherRejected } from "@/lib/notification-helpers"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string; branch_id?: string | null; cost_center_id?: string | null; branch_name?: string; cost_center_name?: string }
 type BankVoucherRequest = {
   id: string;
@@ -47,9 +49,13 @@ type Line = {
 export default function BankAccountDetail({ params }: { params: Promise<{ id: string }> }) {
   const supabase = useSupabase()
   const { toast } = useToast()
+  const { role } = usePermissions()
   const { id: accountId } = React.use(params)
   const [account, setAccount] = useState<Account | null>(null)
   const [lines, setLines] = useState<Line[]>([])
+  const [requests, setRequests] = useState<BankVoucherRequest[]>([])
+  const [rejectingReq, setRejectingReq] = useState<BankVoucherRequest | null>(null)
+  const [rejectReason, setRejectReason] = useState("")
   const [counterAccounts, setCounterAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -488,6 +494,69 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
     } finally { setSaving(false) }
   }
 
+  const approveRequest = async (req: BankVoucherRequest) => {
+    try {
+      setSaving(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data, error } = await supabase.rpc('approve_bank_voucher', {
+        p_request_id: req.id,
+        p_approved_by: user?.id
+      })
+      if (error) throw error
+
+      await notifyBankVoucherApproved({
+        companyId: companyId!,
+        requestId: req.id,
+        voucherType: req.voucher_type,
+        amount: req.amount,
+        currency: req.currency,
+        branchId: account?.branch_id || undefined,
+        costCenterId: account?.cost_center_id || undefined,
+        createdBy: req.created_by,
+        approvedBy: user?.id || ""
+      })
+
+      toastActionSuccess(toast, "اعتماد", "السند")
+      await loadData()
+    } catch (err) {
+      toastActionError(toast, "اعتماد", "السند")
+    } finally { setSaving(false) }
+  }
+
+  const rejectRequest = async () => {
+    if (!rejectingReq || !rejectReason.trim()) return;
+    try {
+      setSaving(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      const { error } = await supabase.rpc('reject_bank_voucher', {
+        p_request_id: rejectingReq.id,
+        p_rejected_by: user?.id,
+        p_reason: rejectReason
+      })
+      if (error) throw error
+
+      await notifyBankVoucherRejected({
+        companyId: companyId!,
+        requestId: rejectingReq.id,
+        voucherType: rejectingReq.voucher_type,
+        amount: rejectingReq.amount,
+        currency: rejectingReq.currency,
+        branchId: account?.branch_id || undefined,
+        costCenterId: account?.cost_center_id || undefined,
+        createdBy: rejectingReq.created_by,
+        rejectedBy: user?.id || "",
+        reason: rejectReason
+      })
+
+      toastActionSuccess(toast, "رفض", "السند")
+      setRejectingReq(null)
+      setRejectReason("")
+      await loadData()
+    } catch (err) {
+      toastActionError(toast, "رفض", "السند")
+    } finally { setSaving(false) }
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
@@ -541,7 +610,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
           </CardContent>
         </Card>
 
-        
+
         {/* RequestsSection */}
         {requests.length > 0 && (
           <Card className="mt-6 border-orange-200 dark:border-orange-900/50">
@@ -582,8 +651,8 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                         <td className="p-3">
                           {r.status === 'pending' && ["admin", "owner", "manager"].includes(role || "") && (
                             <div className="flex gap-2">
-                              <Button size="sm" variant="outline" className="text-green-600 border-green-200 hover:bg-green-50" onClick={() => approveRequest(r)} disabled={saving}><Check className="w-4 h-4 mr-1"/> اعتماد</Button>
-                              <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectingReq(r)} disabled={saving}><Ban className="w-4 h-4 mr-1"/> رفض</Button>
+                              <Button size="sm" variant="outline" className="text-green-600 border-green-200 hover:bg-green-50" onClick={() => approveRequest(r)} disabled={saving}><Check className="w-4 h-4 mr-1" /> اعتماد</Button>
+                              <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectingReq(r)} disabled={saving}><Ban className="w-4 h-4 mr-1" /> رفض</Button>
                             </div>
                           )}
                         </td>
@@ -595,7 +664,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
             </CardContent>
           </Card>
         )}
-        
+
         <Dialog open={!!rejectingReq} onOpenChange={(open) => !open && setRejectingReq(null)}>
           <DialogContent>
             <DialogHeader>
@@ -609,7 +678,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
             </DialogFooter>
           </DialogContent>
         </Dialog>
-    
+
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card>
