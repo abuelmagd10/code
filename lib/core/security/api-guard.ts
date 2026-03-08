@@ -75,7 +75,7 @@ export async function apiGuard(req: Request, options: GuardOptions = {}): Promis
         // 2. Company Context & Injection Check
         let companyId = '';
         if (defaultOptions.requireCompany) {
-            companyId = await getActiveCompanyId(supabase);
+            companyId = await getActiveCompanyId(supabase) ?? '';
             if (!companyId) {
                 throw new Error('COMPANY_MISSING'); // Catch error format below
             }

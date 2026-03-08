@@ -40,9 +40,7 @@ export async function asyncAuditLog(events: AuditEventPayload | AuditEventPayloa
                 record_identifier: e.recordIdentifier,
                 old_data: e.oldData,
                 new_data: e.newData,
-                reason: e.reason,
-                // إعداد Correlation ID للبحث المتزامن في الـ Logs
-                // يمكن تخزينه في `settings` أو `metadata` إذا لم يكن له حقل خاص في الجدول
+                // دمج الـ Correlation ID في حقل الـ reason للسماح بالبحث المتزامن في الـ Logs
                 reason: e.correlationId ? `[TX:${e.correlationId}] ${e.reason || ''}`.trim() : e.reason
             }));
 
