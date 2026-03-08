@@ -53,11 +53,7 @@ export async function POST(req: Request) {
       p_tax_code_id: body.tax_code_id || null,
       p_branch_id: finalBranchId,
       p_warehouse_id: finalWarehouseId,
-      p_cost_center_id: finalCostCenterId,
-      p_original_unit_price: body.original_unit_price || body.unit_price || 0,
-      p_original_cost_price: body.original_cost_price || body.cost_price || 0,
-      p_original_currency: body.original_currency || 'EGP',
-      p_exchange_rate_used: body.exchange_rate_used || 1
+      p_cost_center_id: finalCostCenterId
     })
 
     if (rpcError || !rpcResult?.success) {
