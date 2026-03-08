@@ -65,7 +65,7 @@ export default function BankReconciliationPage() {
     try {
       setLoading(true)
       let cid: string | null = null
-      try { const r = await fetch('/api/my-company'); if (r.ok) { const j = await r.json(); cid = String(j?.company?.id || '') || null; if (Array.isArray(j?.accounts)) setAccounts(filterBankAccounts(j.accounts || [], true) as any) } } catch { }
+      try { const r = await fetch('/api/my-company'); if (r.ok) { const j = await r.json(); cid = String((j?.data?.company?.id || j?.company?.id) || '') || null; if (Array.isArray((j?.data?.accounts || j?.accounts))) setAccounts(filterBankAccounts(j.accounts || [], true) as any) } } catch { }
       if (!cid) cid = await getActiveCompanyId(supabase)
       if (!cid) return
       if (!accounts || accounts.length === 0) {
@@ -88,7 +88,7 @@ export default function BankReconciliationPage() {
     try {
       setLoading(true)
       let cid: string | null = null
-      try { const r = await fetch('/api/my-company'); if (r.ok) { const j = await r.json(); cid = String(j?.company?.id || '') || null } } catch { }
+      try { const r = await fetch('/api/my-company'); if (r.ok) { const j = await r.json(); cid = String((j?.data?.company?.id || j?.company?.id) || '') || null } } catch { }
       if (!cid) cid = await getActiveCompanyId(supabase)
       if (!cid) return
       // ✅ جلب حركات الحساب (تقرير محاسبي - من journal_entries فقط)

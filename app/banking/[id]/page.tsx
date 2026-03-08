@@ -187,11 +187,14 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         const res = await fetch('/api/my-company')
         if (res.ok) {
           const j = await res.json()
-          cid = String(j?.company?.id || '') || null
+          const companyData = j?.data?.company || j?.company || null
+          const accountsData = j?.data?.accounts || j?.accounts || []
+
+          cid = String(companyData?.id || '') || null
           if (cid) { try { localStorage.setItem('active_company_id', cid) } catch { } }
-          const acc = (j?.accounts || []).find((a: any) => String(a.id) === String(accountId))
+          const acc = accountsData.find((a: any) => String(a.id) === String(accountId))
           if (acc) setAccount(acc as any)
-          const leafOnly = filterLeafAccounts(j?.accounts || [])
+          const leafOnly = filterLeafAccounts(accountsData)
           setCounterAccounts(leafOnly.filter((a: any) => String(a.id) !== String(accountId)) as any)
         }
       } catch { }
@@ -350,7 +353,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       let cid: string | null = null
       try {
         const res = await fetch('/api/my-company')
-        if (res.ok) { const j = await res.json(); cid = String(j?.company?.id || '') || null }
+        if (res.ok) { const j = await res.json(); cid = String(j?.data?.company?.id || j?.company?.id || '') || null }
       } catch { }
       if (!cid) {
         const { data: { user } } = await supabase.auth.getUser()

@@ -570,7 +570,7 @@ function ChartOfAccountsPage() {
         if (res.ok) {
           const j = await res.json()
           // API response structure: { success, data: { company, accounts, userContext } }
-          companyId = String(j?.data?.company?.id || j?.company?.id || '') || null
+          companyId = String(j?.data?.company?.id || (j?.data?.company?.id || j?.company?.id) || '') || null
           if (companyId) { try { localStorage.setItem('active_company_id', companyId) } catch { } }
 
           if (j?.data?.userContext) {
@@ -579,7 +579,7 @@ function ChartOfAccountsPage() {
             setUserContext(j?.userContext)
           }
 
-          const accountsList = j?.data?.accounts || j?.accounts
+          const accountsList = j?.data?.accounts || (j?.data?.accounts || j?.accounts)
           if (Array.isArray(accountsList)) {
             const list = accountsList as Account[]
             setAccounts(list)

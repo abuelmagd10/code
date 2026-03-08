@@ -238,7 +238,7 @@ export default function BankingPage() {
         const res = await fetch("/api/my-company");
         if (res.ok) {
           const j = await res.json();
-          cid = String(j?.data?.company?.id || j?.company?.id || "") || null;
+          cid = String(j?.data?.company?.id || (j?.data?.company?.id || j?.company?.id) || "") || null;
           if (cid) {
             try {
               localStorage.setItem("active_company_id", cid);
@@ -253,7 +253,7 @@ export default function BankingPage() {
             setUserContext(currentUserContext);
           }
 
-          const accs = j?.data?.accounts || j?.accounts;
+          const accs = j?.data?.accounts || (j?.data?.accounts || j?.accounts);
           if (Array.isArray(accs)) {
             let leaf = filterCashBankAccounts(accs || [], true);
 
@@ -437,7 +437,7 @@ export default function BankingPage() {
         const res = await fetch("/api/my-company");
         if (res.ok) {
           const j = await res.json();
-          cid = String(j?.company?.id || "") || null;
+          cid = String((j?.data?.company?.id || j?.company?.id) || "") || null;
         }
       } catch { }
       if (!cid) cid = await getActiveCompanyId(supabase);
