@@ -817,6 +817,18 @@ export default function ProductsPage() {
         )
       },
       {
+        key: 'branch_id',
+        header: appLang === 'en' ? 'Branch' : 'الفرع',
+        type: 'custom',
+        align: 'left',
+        hidden: 'md',
+        format: (_, row) => {
+          if (!row.branch_id) return <span className="text-gray-400 dark:text-gray-500 text-xs">-</span>
+          const branch = branches.find(b => b.id === row.branch_id)
+          return <span className="text-gray-600 dark:text-gray-300 text-xs bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">{branch ? branch.branch_name : (appLang === 'en' ? 'Unknown' : 'غير معروف')}</span>
+        }
+      },
+      {
         key: 'unit_price',
         header: appLang === 'en' ? 'Price' : 'السعر',
         type: 'currency',
@@ -947,7 +959,7 @@ export default function ProductsPage() {
     })
 
     return columns
-  }, [appLang, currencySymbol, activeTab, productTaxDefaults, taxCodes, permUpdate, permDelete])
+  }, [appLang, currencySymbol, activeTab, productTaxDefaults, taxCodes, permUpdate, permDelete, branches])
 
   const lowStockProducts = products.filter((p) => (p.item_type === 'product' || !p.item_type) && p.quantity_on_hand <= p.reorder_level)
   const productsCount = products.filter(p => p.item_type === 'product' || !p.item_type).length

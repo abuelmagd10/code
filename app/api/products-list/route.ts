@@ -17,35 +17,35 @@ export async function GET(req: NextRequest) {
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
 
     const supabase = await createClient()
-    
+
     // ✅ بناء الاستعلام - تطبيق فلتر الفرع فقط إذا كان موجوداً
     let query = supabase
       .from("products")
       .select("*")
       .eq("company_id", companyId)
-    
+
     // ✅ تطبيق فلتر الفرع فقط إذا كان موجوداً وكان member موجوداً
     // المنتجات قد تحتوي على branch_id (اختياري)، لذا نطبق الفلتر فقط إذا كان هناك branch و member
     if (branchId && member) {
       // تحديد الدور للتحقق من الصلاحيات
       const userRole = member.role || "employee"
       const canViewAll = ["owner", "admin", "manager"].includes(userRole)
-      
+
       // إذا لم يكن المستخدم يرى جميع المنتجات، نطبق الفلتر
       if (!canViewAll) {
-        // جلب المنتجات المرتبطة بهذا الفرع أو المنتجات بدون فرع (null)
-        query = query.or(`branch_id.eq.${branchId},branch_id.is.null`)
+        // جلب المنتجات المرتبطة بهذا الفرع فقط
+        query = query.eq('branch_id', branchId)
       }
       // إذا كان المستخدم owner/admin/manager، لا نطبق فلتر الفرع (يرى جميع المنتجات)
     }
-    
+
     const { data, error: dbError } = await query.order("name")
-    
+
     if (dbError) {
       console.error("Error loading products:", dbError)
       return serverError(`خطأ في جلب المنتجات: ${dbError.message}`)
     }
-    
+
     return NextResponse.json({
       success: true,
       data: data || []
