@@ -1,64 +1,77 @@
-import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { createClient as createSSR } from "@/lib/supabase/server"
-import { getActiveCompanyId } from "@/lib/company"
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import { apiGuard } from '@/lib/core/security/api-guard';
+import { ErrorHandler } from '@/lib/core/errors/error-handler';
+import { asyncAuditLog } from '@/lib/core/audit/async-audit-engine';
 
-// POST: إغلاق فترة محاسبية
+/**
+ * POST /api/accounting-periods/lock
+ * إغلاق فترة محاسبية (owner و admin فقط)
+ */
 export async function POST(req: NextRequest) {
+  // 1. Security Guard: Auth + Company Isolation + RBAC
+  const { context, errorResponse } = await apiGuard(req, {
+    requireAuth: true,
+    requireCompany: true
+  });
+  if (errorResponse) return errorResponse;
+
+  // 2. Role Check (Owner or Admin only for financial period locking)
+  const memberRole = context!.member?.role;
+  if (!['owner', 'admin'].includes(memberRole)) {
+    return ErrorHandler.handle(
+      ErrorHandler.forbidden('إغلاق الفترات المالية متاح للمالك والمدير فقط'),
+      context!.correlationId
+    );
+  }
+
   try {
-    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) {
-      return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
-    }
-
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-    }
-
-    const companyId = await getActiveCompanyId(ssr)
-    if (!companyId) {
-      return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 })
-    }
-
-    // التحقق من الصلاحيات (المالك والمدير فقط)
-    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
-    const { data: member } = await admin
-      .from("company_members")
-      .select("role")
-      .eq("company_id", companyId)
-      .eq("user_id", user.id)
-      .single()
-
-    if (!member || !['owner', 'admin'].includes(member.role)) {
-      return NextResponse.json({ error: "غير مصرح" }, { status: 403 })
-    }
-
-    const body = await req.json()
-    const { period_id, notes } = body
+    const body = await req.json();
+    const { period_id, notes } = body;
 
     if (!period_id) {
-      return NextResponse.json({ error: "معرف الفترة مطلوب" }, { status: 400 })
+      return ErrorHandler.handle(
+        ErrorHandler.validation('period_id مطلوب'),
+        context!.correlationId
+      );
     }
 
-    // استدعاء دالة إغلاق الفترة
+    // 3. Execute via Admin client (requires Service Role for RPC bypass of RLS)
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    if (!url || !serviceKey) {
+      return ErrorHandler.handle(new Error('Server not configured'), context!.correlationId);
+    }
+
+    const admin = createClient(url, serviceKey);
     const { data, error } = await admin.rpc('close_accounting_period', {
       p_period_id: period_id,
-      p_user_id: user.id,
+      p_company_id: context!.companyId, // ✅ تمرير companyId لضمان عزل الشركات على مستوى RPC
+      p_user_id: context!.user.id,
       p_notes: notes || null
-    })
+    });
 
     if (error) {
-      console.error("Error closing accounting period:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      throw error;
     }
 
-    return NextResponse.json({ data })
-  } catch (err) {
-    console.error("Error:", err)
-    return NextResponse.json({ error: "حدث خطأ" }, { status: 500 })
+    // 4. Async Audit Log
+    asyncAuditLog({
+      correlationId: context!.correlationId,
+      companyId: context!.companyId,
+      userId: context!.user.id,
+      userEmail: context!.user.email,
+      action: 'UPDATE',
+      table: 'accounting_periods',
+      recordId: period_id,
+      recordIdentifier: period_id,
+      newData: { status: 'closed', notes },
+      reason: 'Close Accounting Period'
+    });
+
+    return NextResponse.json({ success: true, data }, { status: 200 });
+
+  } catch (error: any) {
+    return ErrorHandler.handle(error, context!.correlationId);
   }
 }
