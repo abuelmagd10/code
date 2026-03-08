@@ -203,11 +203,11 @@ export async function getUserNotifications(params: {
   console.log('📥 [GET_NOTIFICATIONS] Fetching notifications:', {
     userId: params.userId,
     companyId: params.companyId,
-    branchId: params.branchId || 'null',
-    warehouseId: params.warehouseId || 'null',
-    status: params.status || 'null',
-    severity: params.severity || 'null',
-    category: params.category || 'null'
+    branchId: params.branchId ?? null,
+    warehouseId: params.warehouseId ?? null,
+    status: params.status ?? null,
+    severity: params.severity ?? null,
+    category: params.category ?? null
   })
 
   const { data, error } = await supabase.rpc('get_user_notifications', {
@@ -641,7 +641,7 @@ export async function canCreateRefundPayment(params: {
  * ✅ محدث: يطابق منطق getUserNotifications() بالضبط
  */
 export async function getUnreadNotificationCount(
-  userId: string, 
+  userId: string,
   companyId: string,
   branchId?: string,
   userRole?: string
@@ -662,7 +662,7 @@ export async function getUnreadNotificationCount(
   })
 
   if (error) throw error
-  
+
   // ✅ فلترة حسب expires_at و archived (مثل getUserNotifications)
   const validNotifications = (data || []).filter((n: Notification) => {
     // التحقق من انتهاء الصلاحية
