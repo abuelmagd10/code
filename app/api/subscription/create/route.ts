@@ -5,11 +5,11 @@ import { apiError, HTTP_STATUS } from "@/lib/api-error-handler"
 function getSupabaseClient() {
   const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  
+
   if (!url || !key) {
     return null
   }
-  
+
   return createClient(url, key)
 }
 
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     if (!supabase) {
       return NextResponse.json({ success: false, message: 'Service not configured' })
     }
-    
+
     const { plan = 'free', billingCycle = 'monthly', companyName, contactName, email, phone, country, city } = await req.json()
 
     if (!companyName || !contactName || !email || !phone) {
@@ -39,41 +39,28 @@ export async function POST(req: NextRequest) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إنشاء الحساب", authError.message)
     }
 
-    // Create company
-    const { data: company, error: companyError } = await supabase
-      .from('companies')
-      .insert({
-        user_id: authData.user.id,
-        name: companyName,
-        email,
-        phone,
-        country,
-        city,
-        subscription_plan: 'free',
-        max_users: 1,
-        subscription_status: 'active'
-      })
-      .select()
-      .single()
-
-    if (companyError) {
-      await supabase.auth.admin.deleteUser(authData.user.id)
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إنشاء الشركة", companyError.message)
-    }
-
-    // Create company member
-    await supabase.from('company_members').insert({
-      company_id: company.id,
-      user_id: authData.user.id,
-      role: 'owner',
-      email,
-      full_name: contactName
+    // 🏢 إنشاء هيكل الشركة بالكامل بشكل ذري (Atomic Transaction via RPC)
+    // يشمل: Company, Member(Owner), Main Branch, Cost Center, Warehouse
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('create_company_atomic', {
+      p_user_id: authData.user.id,
+      p_email: email,
+      p_company_name: companyName,
+      p_contact_name: contactName,
+      p_phone: phone,
+      p_country: country || null,
+      p_city: city || null
     })
+
+    if (rpcError || !rpcResult?.success) {
+      // 🔙 Rollback: Delete the user if infrastructure creation fails
+      await supabase.auth.admin.deleteUser(authData.user.id)
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في بناء هيكل الشركة وملحقاتها", rpcError?.message || 'Unknown RPC error')
+    }
 
     return NextResponse.json({
       success: true,
-      message: "تم إنشاء الحساب بنجاح",
-      redirectUrl: `/welcome?company=${company.id}`,
+      message: "تم إنشاء حساب الشركة والهيكل الإداري بنجاح",
+      redirectUrl: `/welcome?company=${rpcResult.company_id}`,
       tempPassword
     })
 

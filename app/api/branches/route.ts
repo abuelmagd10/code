@@ -1,24 +1,23 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { getActiveCompanyId } from "@/lib/company"
-import { logAuditEvent } from "@/lib/audit-log"
+import { apiGuard, requireRole, asyncAuditLog } from "@/lib/core"
+import { internalError, badRequestError } from "@/lib/api-error-handler"
+
 /**
  * GET /api/branches
  * جلب جميع الفروع للشركة الحالية
  */
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const supabase = await createClient()
-    const companyId = await getActiveCompanyId(supabase)
+    const { context, errorResponse } = await apiGuard(req, { requireAuth: true, requireCompany: true })
+    if (errorResponse) return errorResponse
 
-    if (!companyId) {
-      return NextResponse.json({ error: "No company found" }, { status: 400 })
-    }
+    const supabase = await createClient()
 
     const { data, error } = await supabase
       .from("branches")
       .select("*")
-      .eq("company_id", companyId)
+      .eq("company_id", context!.companyId)
       .order("is_main", { ascending: false })
       .order("name")
 
@@ -26,158 +25,84 @@ export async function GET() {
 
     return NextResponse.json({ branches: data })
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('خطأ في جلب الفروع', error.message)
   }
 }
 
 /**
  * POST /api/branches
- * إنشاء فرع جديد مع ملحقاته (مركز التكلفة والمستودع) 
- * Enterprise ERP Automation
+ * إنشاء فرع جديد (Atomic Transaction) + Security Guard + Async Audit
  */
-export async function POST(request: Request) {
+export async function POST(req: Request) {
   try {
-    const supabase = await createClient()
-    const companyId = await getActiveCompanyId(supabase)
+    const { context, errorResponse } = await apiGuard(req, { requireAuth: true, requireCompany: true })
+    if (errorResponse) return errorResponse
 
-    if (!companyId) {
-      return NextResponse.json({ error: "No company found" }, { status: 400 })
-    }
+    const { user, companyId } = context!
 
-    const { data: { user } } = await supabase.auth.getUser()
+    // 🔒 حظر إنشاء فروع إلا للأدوار العليا
+    requireRole(context!, ['owner', 'admin', 'manager'])
 
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    const body = await request.json()
+    const body = await req.json()
     const { name, code, address, city, phone, email, manager_name, is_active } = body
     const finalCode = code?.trim().toUpperCase()
 
     if (!name || !finalCode) {
-      return NextResponse.json({ error: "Name and code are required" }, { status: 400 })
+      return badRequestError('اسم الفرع والكود مطلوبان', ['name', 'code'])
     }
 
-    // 1️⃣ إنشاء الفرع (Create Branch)
-    const { data: branch, error: branchError } = await supabase
-      .from("branches")
-      .insert({
-        company_id: companyId,
-        name: name.trim(),
-        branch_name: name.trim(),
-        code: finalCode,
-        branch_code: finalCode,
-        address: address?.trim() || null,
-        city: city?.trim() || null,
-        phone: phone?.trim() || null,
-        email: email?.trim() || null,
-        manager_name: manager_name?.trim() || null,
-        is_active: is_active ?? true,
-        is_main: false, // دائما فروع فرعية
-        is_head_office: false
-      })
-      .select()
-      .single()
+    const supabase = await createClient()
 
-    if (branchError) throw branchError
+    // 🏗️ استخدام الـ RPC الاوتوماتيكي الذري
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('create_branch_atomic', {
+      p_company_id: companyId,
+      p_name: name.trim(),
+      p_code: finalCode,
+      p_address: address?.trim() || null,
+      p_city: city?.trim() || null,
+      p_phone: phone?.trim() || null,
+      p_email: email?.trim() || null,
+      p_manager_name: manager_name?.trim() || null,
+      p_is_active: is_active ?? true
+    })
 
-    try {
-      // 2️⃣ إنشاء مركز التكلفة الافتراضي (Default Cost Center)
-      // استخدام كود فريد مستمد من كود الفرع لمنع التصادم
-      const { data: costCenter, error: ccError } = await supabase
-        .from('cost_centers')
-        .insert({
-          company_id: companyId,
-          branch_id: branch.id,
-          cost_center_name: `مركز التكلفة الافتراضي - ${name.trim()}`,
-          cost_center_code: `CC-${finalCode}`,
-          is_active: true
-        })
-        .select()
-        .single()
-
-      if (ccError) throw ccError
-
-      // 3️⃣ إنشاء المستودع الافتراضي (Default Warehouse)
-      // إضافة كود فريد مستمد من كود الفرع
-      const { data: warehouse, error: whError } = await supabase
-        .from('warehouses')
-        .insert({
-          company_id: companyId,
-          branch_id: branch.id,
-          cost_center_id: costCenter.id,
-          name: `المستودع الافتراضي - ${name.trim()}`,
-          code: `WH-${finalCode}`,
-          is_main: false, // مجرد مستودع افتراضي للفرع وليس مستودع رئيسي للشركة
-          is_active: true
-        })
-        .select()
-        .single()
-
-      if (whError) throw whError
-
-      // 4️⃣ تحديث الفرع لربطه للقيم الافتراضية
-      const { error: updateError } = await supabase
-        .from('branches')
-        .update({
-          default_cost_center_id: costCenter.id,
-          default_warehouse_id: warehouse.id
-        })
-        .eq('id', branch.id)
-
-      if (updateError) throw updateError
-
-      // 5️⃣ تسجيل العمليات في Audit Log (ممارسة Enterprise)
-      await Promise.all([
-        logAuditEvent(supabase, {
-          company_id: companyId,
-          user_id: user.id,
-          user_email: user.email,
-          action: 'create',
-          target_table: 'branches',
-          record_id: branch.id,
-          record_identifier: finalCode,
-          new_data: branch
-        }),
-        logAuditEvent(supabase, {
-          company_id: companyId,
-          user_id: user.id,
-          user_email: user.email,
-          action: 'create',
-          target_table: 'cost_centers',
-          record_id: costCenter.id,
-          record_identifier: costCenter.cost_center_code,
-          new_data: costCenter
-        }),
-        logAuditEvent(supabase, {
-          company_id: companyId,
-          user_id: user.id,
-          user_email: user.email,
-          action: 'create',
-          target_table: 'warehouses',
-          record_id: warehouse.id,
-          record_identifier: warehouse.code,
-          new_data: warehouse
-        })
-      ])
-
-      // جلب الفرع المحدث للتأكد من احتوائه على keys
-      const { data: finalBranch } = await supabase
-        .from('branches')
-        .select('*')
-        .eq('id', branch.id)
-        .single()
-
-      return NextResponse.json({ branch: finalBranch || branch })
-
-    } catch (err: any) {
-      // 🚫 Rollback في حالة فشل أي خطوة لاحقة (Atomic Strategy)
-      await supabase.from('branches').delete().eq('id', branch.id)
-      throw new Error(`فشل إنشاء الملحقات وتم التراجع عن إنشاء الفرع (Rollback): ${err.message}`)
+    if (rpcError || !rpcResult?.success) {
+      return internalError('خطأ في بناء البنية التحتية للفرع', rpcError?.message || 'Unknown RPC error')
     }
+
+    // 🛡️ توثيق الحدث بشكل غير حظري (Fire and Forget)
+    asyncAuditLog({
+      companyId: companyId,
+      userId: user.id,
+      userEmail: user.email,
+      action: 'CREATE',
+      table: 'branches',
+      recordId: rpcResult.branch_id,
+      recordIdentifier: finalCode,
+      newData: {
+        branch_id: rpcResult.branch_id,
+        cost_center_id: rpcResult.cost_center_id,
+        warehouse_id: rpcResult.warehouse_id,
+        branch_name: rpcResult.branch_name,
+      },
+      reason: 'Automated Branch Infrastructure Creation'
+    })
+
+    return NextResponse.json({
+      branch: {
+        id: rpcResult.branch_id,
+        name: rpcResult.branch_name,
+        default_cost_center_id: rpcResult.cost_center_id,
+        default_warehouse_id: rpcResult.warehouse_id
+      }
+    })
 
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error.error?.status) { // if ERPError wrapped inside a Response
+      return NextResponse.json({ error: error.error.message }, { status: error.error.status })
+    }
+    return internalError('خطأ داخلي في الخادم', error.message)
   }
 }
+
 
