@@ -37,17 +37,17 @@ interface UseGovernanceRealtimeOptions {
    * دالة يتم استدعاؤها عند تغيير صلاحيات المستخدم الحالي
    */
   onPermissionsChanged?: () => void | Promise<void>
-  
+
   /**
    * دالة يتم استدعاؤها عند تغيير دور المستخدم
    */
   onRoleChanged?: () => void | Promise<void>
-  
+
   /**
    * دالة يتم استدعاؤها عند تغيير الفرع/المخزن
    */
   onBranchOrWarehouseChanged?: () => void | Promise<void>
-  
+
   /**
    * إظهار رسائل Toast عند التغييرات
    */
@@ -84,26 +84,35 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
     showNotifications = true,
   } = options
 
+  // ✅ [Performance Fix] استخدام Refs لتخزين الدوال ومنع إعادة تسجيل Handler عند كل re-render
+  // السبب: الدوال تتغير مراجعها في كل render لـ AccessContext أثناء التهيئة
+  // بدون Refs: useEffect يعيد تشغيله 4 مرات → 4 إلغاءات + 4 اشتراكات
+  // مع Refs: يسجّل مرة واحدة فقط ويظل ثابتاً طوال دورة حياة التطبيق
   const handlersRef = useRef<{
     onPermissionsChanged?: () => void | Promise<void>
     onRoleChanged?: () => void | Promise<void>
     onBranchOrWarehouseChanged?: () => void | Promise<void>
   }>({})
+  const toastRef = useRef(toast)
 
-  // تحديث الـ refs عند تغيير الدوال
-  useEffect(() => {
-    handlersRef.current = {
-      onPermissionsChanged,
-      onRoleChanged,
-      onBranchOrWarehouseChanged,
-    }
-  }, [onPermissionsChanged, onRoleChanged, onBranchOrWarehouseChanged])
+  // تحديث الـ refs فوراً (synchronous) حتى تكون دائماً محدّثة
+  // لا نحتاج useEffect هنا لأننا لا نريد تأثير جانبي — فقط تخزين المرجع
+  handlersRef.current = {
+    onPermissionsChanged,
+    onRoleChanged,
+    onBranchOrWarehouseChanged,
+  }
+  toastRef.current = toast
 
+  // ✅ [Single Registration Effect]
+  // هذا الـ effect يُسجَّل مرة واحدة فقط (عند Mount) ويُلغى عند Unmount
+  // لا يعتمد على مراجع الدوال لأنها مخزنة في handlersRef الذي يُقرأ دائماً بشكل آني
+  // الـ dep الوحيد الحقيقي: showNotifications (يغيّر سلوك الـ toast داخل الـ handler)
   useEffect(() => {
-    console.log('🔐 [GovernanceRealtime] Setting up governance realtime hook', {
-      hasOnPermissionsChanged: !!onPermissionsChanged,
-      hasOnRoleChanged: !!onRoleChanged,
-      hasOnBranchOrWarehouseChanged: !!onBranchOrWarehouseChanged,
+    console.log('🔐 [GovernanceRealtime] Setting up governance realtime hook (ONE TIME)', {
+      hasOnPermissionsChanged: !!handlersRef.current.onPermissionsChanged,
+      hasOnRoleChanged: !!handlersRef.current.onRoleChanged,
+      hasOnBranchOrWarehouseChanged: !!handlersRef.current.onBranchOrWarehouseChanged,
     })
     const manager = getRealtimeManager()
 
@@ -145,7 +154,7 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
           // ✅ نستدعي refreshUserSecurityContext مباشرة بدون أي تحليل أو مقارنة
           // ✅ هذا يضمن أن أي تغيير (role, branch, warehouse, permissions) يتم اكتشافه وتحديثه فوراً
           // ✅ بدون شروط، بدون فلاتر، بدون تحقق - فقط تحديث كامل من السيرفر
-          
+
           console.log(`🔄 [GovernanceRealtime] company_members UPDATE detected - performing blind refresh (no analysis, no comparison)`, {
             type,
             eventType: type,
@@ -156,7 +165,7 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
 
           // ✅ إشعار المستخدم (اختياري)
           if (showNotifications && type === 'UPDATE') {
-            toast({
+            toastRef.current({
               title: "تم تحديث صلاحياتك",
               description: "تم تحديث بياناتك بواسطة الإدارة. سيتم تحديث الصفحات المتاحة لك.",
               variant: "default",
@@ -178,12 +187,12 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
           }
           return
         }
-        
+
         if (table === 'user_branch_access') {
           // ✅ تغيير في الفروع المسموحة للمستخدم (allowed_branches)
           // ✅ هذا يؤثر على الصلاحيات والفرع الحالي
           if (showNotifications) {
-            toast({
+            toastRef.current({
               title: "تم تحديث الفروع المسموحة",
               description: "تم تحديث الفروع المسموحة لك. سيتم تحديث البيانات المعروضة.",
               variant: "default",
@@ -195,7 +204,7 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
             await handlersRef.current.onBranchOrWarehouseChanged()
             return
           }
-          
+
           // ✅ إذا لم يكن onBranchOrWarehouseChanged معرّف، نستخدم onPermissionsChanged كـ fallback
           if (handlersRef.current.onPermissionsChanged) {
             await handlersRef.current.onPermissionsChanged()
@@ -204,7 +213,7 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
         } else if (table === 'company_role_permissions') {
           // تغيير في صلاحيات الدور
           if (showNotifications) {
-            toast({
+            toastRef.current({
               title: "تم تحديث صلاحيات الدور",
               description: "تم تحديث صلاحيات دورك. قد تتغير بعض الصفحات المتاحة لك.",
               variant: "default",
@@ -217,7 +226,7 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
         } else if (table === 'branches' || table === 'warehouses') {
           // تغيير في الفروع أو المخازن
           if (showNotifications) {
-            toast({
+            toastRef.current({
               title: "تم تحديث البيانات",
               description: `تم تحديث ${table === 'branches' ? 'الفروع' : 'المخازن'}. سيتم تحديث البيانات المعروضة.`,
               variant: "default",
@@ -230,7 +239,7 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
         } else if (table === 'permissions') {
           // تغيير في الصلاحيات العامة
           if (showNotifications) {
-            toast({
+            toastRef.current({
               title: "تم تحديث الصلاحيات",
               description: "تم تحديث نظام الصلاحيات. سيتم تحديث الصفحات المتاحة لك.",
               variant: "default",
@@ -244,7 +253,7 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
       } catch (error) {
         console.error('❌ [GovernanceRealtime] Error handling governance event:', error)
         if (showNotifications) {
-          toast({
+          toastRef.current({
             title: "خطأ في تحديث الصلاحيات",
             description: "حدث خطأ أثناء تحديث الصلاحيات. يرجى تحديث الصفحة.",
             variant: "destructive",
@@ -255,18 +264,23 @@ export function useGovernanceRealtime(options: UseGovernanceRealtimeOptions = {}
 
     // تسجيل المعالج
     console.log('🔐 [GovernanceRealtime] Registering governance event handler...', {
-      hasOnPermissionsChanged: !!onPermissionsChanged,
-      hasOnRoleChanged: !!onRoleChanged,
-      hasOnBranchOrWarehouseChanged: !!onBranchOrWarehouseChanged,
+      hasOnPermissionsChanged: !!handlersRef.current.onPermissionsChanged,
+      hasOnRoleChanged: !!handlersRef.current.onRoleChanged,
+      hasOnBranchOrWarehouseChanged: !!handlersRef.current.onBranchOrWarehouseChanged,
     })
-    
+
     const unsubscribe = manager.onGovernanceChange(handler)
-    
+
     console.log('✅ [GovernanceRealtime] Governance event handler registered successfully')
 
     return () => {
       console.log('🔐 [GovernanceRealtime] Unregistering governance event handler...')
       unsubscribe()
     }
-  }, [showNotifications, toast, onPermissionsChanged, onRoleChanged, onBranchOrWarehouseChanged])
+    // ✅ [Performance Fix] الدوال تُقرأ من handlersRef.current داخل الـ handler لذا لا حاجة لوجودها في dependencies
+    // showNotifications: التغيير فيه يغيّر سلوك الـ toast داخل الـ handler لذا يبقى ك dep
+    // تحذير: لا تُضف onPermissionsChanged/onRoleChanged/onBranchOrWarehouseChanged هنا أبداً!
+    // إضافتها تهدم الفائدة كلها لأنها تتغيّر في كل render وتتسبّب في إعادة تسجيل غير ضرورية
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showNotifications])
 }
