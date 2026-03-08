@@ -145,7 +145,7 @@ export default function GoodsReceiptPage() {
     try {
       setSelectedBill(bill)
       setProcessing(true)
-      
+
       // ✅ جلب بنود الفاتورة
       const { data: itemsData, error } = await supabase
         .from("bill_items")
@@ -167,7 +167,7 @@ export default function GoodsReceiptPage() {
         }))
 
       setReceiptItems(rows)
-      
+
       // ✅ جلب أسماء الفرع والمخزن
       const companyId = await getActiveCompanyId(supabase)
       if (companyId) {
@@ -182,7 +182,7 @@ export default function GoodsReceiptPage() {
         } else {
           setBranchName(null)
         }
-        
+
         if (bill.warehouse_id) {
           const { data: warehouseData } = await supabase
             .from("warehouses")
@@ -195,7 +195,7 @@ export default function GoodsReceiptPage() {
           setWarehouseName(null)
         }
       }
-      
+
       setDialogOpen(true)
     } catch (err) {
       console.error("Error loading bill items for receipt:", err)
@@ -307,6 +307,43 @@ export default function GoodsReceiptPage() {
     }
   }, [userContextLoading, userContext, selectedBranchId, selectedWarehouseId])
 
+  // ✅ [Fix] جلب أسماء الفرع والمخزن لجميع الأدوار غير الإدارية (بما فيها accountant)
+  // المشكلة: loadBills تُعيد مبكراً لبعض الأدوار مما يُبقي branchName/warehouseName كـ null
+  // ثم يُعرض userContext.branch_id كـ UUID مباشرةً في الـ UI
+  // الحل: useEffect مستقل يجلب الأسماء من DB بناءً على IDs في userContext
+  useEffect(() => {
+    const resolveNames = async () => {
+      if (!userContext || userContextLoading || isOwnerAdmin) return
+      try {
+        const companyId = await getActiveCompanyId(supabase)
+        if (!companyId) return
+
+        if (userContext.branch_id) {
+          const { data: branchRow } = await supabase
+            .from("branches")
+            .select("name")
+            .eq("id", userContext.branch_id)
+            .eq("company_id", companyId)
+            .maybeSingle()
+          setBranchName(branchRow?.name || null)
+        }
+
+        if (userContext.warehouse_id) {
+          const { data: whRow } = await supabase
+            .from("warehouses")
+            .select("name")
+            .eq("id", userContext.warehouse_id)
+            .eq("company_id", companyId)
+            .maybeSingle()
+          setWarehouseName(whRow?.name || null)
+        }
+      } catch (err) {
+        console.warn("[GoodsReceipt] Could not resolve branch/warehouse names:", err)
+      }
+    }
+    resolveNames()
+  }, [userContext, userContextLoading, isOwnerAdmin, supabase])
+
   // ✅ فتح dialog الاستلام تلقائياً عند وجود billId في query string
   useEffect(() => {
     if (!billIdFromQuery || dialogOpen || loading || !userContext || autoOpenDialogRef.current) return
@@ -342,12 +379,12 @@ export default function GoodsReceiptPage() {
           // ✅ استخدام refs للتحقق من القيم الحالية بدلاً من dependencies لتجنب re-runs
           const currentBranchId = selectedBranchIdRef.current
           const currentWarehouseId = selectedWarehouseIdRef.current
-          
+
           if (billData.branch_id !== currentBranchId || billData.warehouse_id !== currentWarehouseId) {
             // ✅ حفظ بيانات الفاتورة في ref وتمييز أننا بحاجة لفتح الـ dialog بعد التحديث
             pendingBillDataRef.current = billData as BillForReceipt
             autoOpenDialogRef.current = true
-            
+
             // ✅ تحديث الفرع والمخزن
             if (billData.branch_id !== currentBranchId) {
               setSelectedBranchId(billData.branch_id)
@@ -693,7 +730,7 @@ export default function GoodsReceiptPage() {
       // هذا يضمن وجود journal_entry قبل إنشاء inventory_transactions
       // createPurchaseInventoryJournal ترجع journal_entry_id إذا كان موجوداً أو أنشأته
       const journalEntryId = await createPurchaseInventoryJournal(supabase, selectedBill.id, companyId)
-      
+
       if (!journalEntryId) {
         throw new Error(
           appLang === "en"
@@ -1057,7 +1094,7 @@ export default function GoodsReceiptPage() {
                               placeholder={
                                 selectedWarehouseId
                                   ? warehouses.find((w) => w.id === selectedWarehouseId)?.name ||
-                                    (appLang === "en" ? "Select warehouse" : "اختر المخزن")
+                                  (appLang === "en" ? "Select warehouse" : "اختر المخزن")
                                   : appLang === "en"
                                     ? "Select warehouse"
                                     : "اختر المخزن"
@@ -1079,12 +1116,12 @@ export default function GoodsReceiptPage() {
                       <span className="flex items-center gap-1">
                         <Building2 className="w-4 h-4" />
                         {appLang === "en" ? "Branch:" : "الفرع:"}{" "}
-                        {branchName || userContext.branch_id || "-"}
+                        {branchName || "-"}
                       </span>
                       <span className="flex items-center gap-1">
                         <Warehouse className="w-4 h-4" />
                         {appLang === "en" ? "Warehouse:" : "المخزن:"}{" "}
-                        {warehouseName || userContext.warehouse_id || "-"}
+                        {warehouseName || "-"}
                       </span>
                     </>
                   )}
