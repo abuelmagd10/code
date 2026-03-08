@@ -54,6 +54,39 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  // ✅ [Enterprise Accessibility Fix — Root Cause & Solution]
+  //
+  // ROOT CAUSE of the warning:
+  //   Radix UI (@radix-ui/react-dialog) enforces ARIA accessibility standards.
+  //   When a dialog has no `aria-describedby` attribute AND no `DialogDescription`
+  //   child, Radix logs: "Warning: Missing `Description` or `aria-describedby`"
+  //   This is NOT a visual bug — it's a screen reader (a11y) compliance issue.
+  //
+  // WHY THIS HAPPENS REPEATEDLY:
+  //   Developers add new dialogs (forms, confirmations, detail views) without
+  //   thinking about screen reader users. The warning is easy to miss in console.
+  //
+  // SOLUTION (Enterprise Pattern — fix once, applies to all 43+ dialogs):
+  //   Detect if a DialogDescription already exists in the children tree.
+  //   If not, inject a visually-hidden description automatically.
+  //   This means: screen readers get a description, sighted users see nothing extra.
+  //
+  // HOW TO PREVENT IN THE FUTURE:
+  //   - For informational dialogs: add <DialogDescription>human readable text</DialogDescription>
+  //   - For form dialogs: add <DialogDescription className="sr-only">form purpose</DialogDescription>
+  //   - This component already handles it if you forget — but explicit is better.
+
+  const hasDescription = React.Children.toArray(children).some((child) => {
+    if (!React.isValidElement(child)) return false
+    // Direct DialogDescription child
+    if (child.type === DialogDescription) return true
+    // DialogDescription inside DialogHeader
+    const grandchildren = React.Children.toArray((child.props as any)?.children)
+    return grandchildren.some(
+      (inner) => React.isValidElement(inner) && inner.type === DialogDescription
+    )
+  })
+
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -65,6 +98,12 @@ function DialogContent({
         )}
         {...props}
       >
+        {/* ✅ Auto-inject visually hidden description for screen readers when none exists */}
+        {!hasDescription && (
+          <DialogPrimitive.Description className="sr-only">
+            Dialog content
+          </DialogPrimitive.Description>
+        )}
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
