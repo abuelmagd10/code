@@ -33,7 +33,7 @@ export class ErrorHandler {
 
             if (error.code === '23505') { // Unique constraint violation
                 erpCode = 'ERR_VALIDATION';
-                message = 'هذا السجل موجود مسبقاً ولا يمكن تكراره';
+                message = 'رمز المنتج أو الخدمة مكرر، يرجى تغيير الرمز واستخدام رمز مختلف';
                 status = 409;
             } else if (error.code === '40P01') { // Deadlock
                 erpCode = 'ERR_RACE_CONDITION';
