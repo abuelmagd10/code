@@ -549,7 +549,10 @@ export default function ProductsPage() {
 
         const result = await response.json()
         if (!response.ok || !result.success) {
-          throw new Error(result.error || result.error_en || (appLang === 'en' ? 'Failed to update item' : 'فشل في تحديث الصنف'))
+          const errMsg = typeof result.error === 'object' && result.error?.message
+            ? result.error.message
+            : (result.error || result.error_en || (appLang === 'en' ? 'Failed to update item' : 'فشل في تحديث الصنف'))
+          throw new Error(errMsg)
         }
         toastActionSuccess(toast, appLang === 'en' ? 'Item updated successfully' : 'تم تحديث الصنف بنجاح')
       } else {
@@ -561,7 +564,10 @@ export default function ProductsPage() {
 
         const result = await response.json()
         if (!response.ok || !result.success) {
-          throw new Error(result.error || result.error_en || (appLang === 'en' ? 'Failed to add item' : 'فشل في إضافة الصنف'))
+          const errMsg = typeof result.error === 'object' && result.error?.message
+            ? result.error.message
+            : (result.error || result.error_en || (appLang === 'en' ? 'Failed to add item' : 'فشل في إضافة الصنف'))
+          throw new Error(errMsg)
         }
         toastActionSuccess(toast, appLang === 'en' ? 'Item added successfully' : 'تمت إضافة الصنف بنجاح')
       }
