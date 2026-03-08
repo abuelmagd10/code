@@ -375,7 +375,7 @@ export default function ProductsPage() {
   const loadProducts = async () => {
     try {
       setIsLoading(true)
-      const res = await fetch('/api/products-list')
+      const res = await fetch(`/api/products-list?t=${Date.now()}`, { cache: 'no-store' })
       if (res.ok) {
         const result = await res.json()
         // ✅ API يرجع { success: true, data: [...] }

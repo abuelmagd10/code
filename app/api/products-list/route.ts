@@ -4,6 +4,8 @@ import { secureApiRequest } from "@/lib/api-security-enhanced"
 import { serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { buildBranchFilter } from "@/lib/branch-access-control"
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
   try {
     const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
