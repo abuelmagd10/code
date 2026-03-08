@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
 /**
  * 🔧 دالة لتوليد رقم مرتجع تلقائي
  */
@@ -31,7 +28,10 @@ async function generateReturnNumber(supabase: any, companyId: string): Promise<s
  * 🔧 API لإصلاح الدفعات المتبقية تلقائياً
  */
 export async function POST(req: NextRequest) {
-  const supabase = createClient(supabaseUrl, supabaseServiceKey)
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
   const results: any[] = []
 
   try {

@@ -1,27 +1,27 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
 /**
  * 🔍 API لفحص المدفوعات السالبة
  */
 export async function GET(req: NextRequest) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
-    
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
     // جلب جميع المدفوعات السالبة مع كل التفاصيل
     const { data: negativePayments, error: fetchError } = await supabase
       .from("payments")
       .select("*")
       .lt("amount", 0)
       .order("payment_date", { ascending: true })
-    
+
     if (fetchError) {
-      return NextResponse.json({ 
-        success: false, 
-        error: fetchError.message 
+      return NextResponse.json({
+        success: false,
+        error: fetchError.message
       }, { status: 500 })
     }
 
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
             .eq("invoice_number", invoiceNumber)
             .eq("company_id", payment.company_id)
             .single()
-          
+
           relatedInvoice = invoice
         }
 
@@ -60,9 +60,9 @@ export async function GET(req: NextRequest) {
 
   } catch (error: any) {
     console.error("Error inspecting negative payments:", error)
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message 
+    return NextResponse.json({
+      success: false,
+      error: error.message
     }, { status: 500 })
   }
 }

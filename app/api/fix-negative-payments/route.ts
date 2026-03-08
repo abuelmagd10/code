@@ -1,26 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
 /**
  * 🔧 API لتصحيح المدفوعات السالبة (المرتجعات الخاطئة)
- * 
- * المشكلة:
- * - المرتجعات تم تسجيلها كمدفوعات سالبة في جدول payments
- * - هذا خطأ محاسبي - المرتجعات يجب أن تكون في sales_returns
- * 
- * الحل:
- * 1. البحث عن جميع المدفوعات السالبة
- * 2. إنشاء سجلات مرتجعات صحيحة في sales_returns
- * 3. تحديث الفواتير (returned_amount, return_status)
- * 4. إنشاء قيود محاسبية عكسية
- * 5. حذف المدفوعات السالبة الخاطئة
  */
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
 
     // 1️⃣ جلب جميع المدفوعات السالبة
     const { data: negativePayments, error: fetchError } = await supabase

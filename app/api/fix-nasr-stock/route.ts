@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
 /**
  * 🔧 API لإصلاح مخزون مدينة نصر
  */
 export async function POST(req: NextRequest) {
-  const supabase = createClient(supabaseUrl, supabaseServiceKey)
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
 
   try {
     const body = await req.json()
@@ -80,9 +80,9 @@ export async function POST(req: NextRequest) {
 
     for (const tx of transactions || []) {
       if (tx.is_deleted) continue
-      
+
       calculatedStock += Number(tx.quantity_change || 0)
-      
+
       const type = tx.transaction_type || 'unknown'
       if (!byType[type]) byType[type] = { count: 0, total: 0 }
       byType[type].count++
