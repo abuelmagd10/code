@@ -17,7 +17,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { ensureCompanyId, getActiveCompanyId } from "@/lib/company"
-import { Plus, Edit2, Trash2, Search, AlertCircle, Package, Wrench } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, AlertCircle, Package, Wrench, Sparkles } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { canAction } from "@/lib/authz"
@@ -130,6 +130,47 @@ export default function ProductsPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [activeTab, setActiveTab] = useState<'all' | 'products' | 'services'>('all')
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+
+  // 🔗 Accounting Auto-Linkage
+  const [autoFilledAccounts, setAutoFilledAccounts] = useState<{ incomeId: string; expenseId: string } | null>(null)
+
+  // Smart auto-detection based on item type
+  const getDefaultAccounts = (itemType: 'product' | 'service', accs: Account[]) => {
+    const incomeAccounts = accs.filter(a => a.account_type === 'income')
+    const expenseAccounts = accs.filter(a => a.account_type === 'expense')
+
+    // Income: prefer sales_revenue sub_type → first income account
+    const incomeId =
+      (incomeAccounts.find(a => (a as any).sub_type === 'sales_revenue') ||
+        incomeAccounts[0])?.id || ''
+
+    // Expense: for products prefer COGS (code 5xxx or sub_type cogs) → first expense
+    // For services: prefer first expense account
+    const expenseId = itemType === 'product'
+      ? (expenseAccounts.find(a =>
+        (a as any).sub_type === 'cost_of_goods_sold' ||
+        (a as any).sub_type === 'cogs' ||
+        a.account_code?.startsWith('5')
+      ) || expenseAccounts[0])?.id || ''
+      : expenseAccounts[0]?.id || ''
+
+    return { incomeId, expenseId }
+  }
+
+  // Auto-fill accounts when opening new item form or switching item_type
+  useEffect(() => {
+    if (editingId || accounts.length === 0) return // Don't auto-fill when editing
+    const defaults = getDefaultAccounts(formData.item_type, accounts)
+    if (defaults.incomeId || defaults.expenseId) {
+      setFormData(prev => ({
+        ...prev,
+        income_account_id: defaults.incomeId,
+        expense_account_id: defaults.expenseId,
+      }))
+      setAutoFilledAccounts(defaults)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.item_type, accounts, editingId])
 
   // 🏢 بيانات الفروع والمستودعات ومراكز التكلفة
   const [branches, setBranches] = useState<Branch[]>([])
@@ -1221,15 +1262,48 @@ export default function ProductsPage() {
 
                       {/* Accounting Links */}
                       <div className="border-t pt-4 mt-4">
-                        <p className="text-sm font-medium mb-3">{appLang === 'en' ? 'Accounting' : 'الربط المحاسبي'}</p>
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-sm font-medium">{appLang === 'en' ? 'Accounting' : 'الربط المحاسبي'}</p>
+                          {!editingId && autoFilledAccounts && (
+                            <span className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
+                              <Sparkles className="w-3 h-3" />
+                              {appLang === 'en' ? 'Auto-suggested' : 'مقترح تلقائياً'}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Auto-fill info banner */}
+                        {!editingId && autoFilledAccounts && (
+                          <div className="mb-3 flex items-start gap-2 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-100 dark:border-purple-800/50 text-xs text-purple-700 dark:text-purple-300">
+                            <Sparkles className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            <span>
+                              {appLang === 'en'
+                                ? `Accounts auto-suggested based on ${formData.item_type === 'product' ? 'product' : 'service'} type. You can change them manually.`
+                                : `تم اقتراح الحسابات تلقائياً بناءً على نوع ${formData.item_type === 'product' ? 'المنتج' : 'الخدمة'}. يمكنك تغييرها يدوياً.`}
+                            </span>
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-2">
-                            <Label>{appLang === 'en' ? 'Income Account' : 'حساب الإيرادات'}</Label>
+                            <div className="flex items-center gap-1.5">
+                              <Label>{appLang === 'en' ? 'Income Account' : 'حساب الإيرادات'}</Label>
+                              {!editingId && autoFilledAccounts && formData.income_account_id === autoFilledAccounts.incomeId && formData.income_account_id && (
+                                <Sparkles className="w-3 h-3 text-purple-500" />
+                              )}
+                            </div>
                             <Select
                               value={formData.income_account_id || "none"}
-                              onValueChange={(v) => setFormData({ ...formData, income_account_id: v === "none" ? "" : v })}
+                              onValueChange={(v) => {
+                                const val = v === "none" ? "" : v
+                                setFormData({ ...formData, income_account_id: val })
+                                // User manually changed → clear auto-fill badge for income
+                                if (autoFilledAccounts && val !== autoFilledAccounts.incomeId) {
+                                  setAutoFilledAccounts(prev => prev ? { ...prev, incomeId: '' } : null)
+                                }
+                              }}
                             >
-                              <SelectTrigger>
+                              <SelectTrigger className={!editingId && autoFilledAccounts && formData.income_account_id === autoFilledAccounts.incomeId && formData.income_account_id ? 'border-purple-300 dark:border-purple-700' : ''}>
                                 <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
                               </SelectTrigger>
                               <SelectContent>
@@ -1241,12 +1315,24 @@ export default function ProductsPage() {
                             </Select>
                           </div>
                           <div className="space-y-2">
-                            <Label>{appLang === 'en' ? 'Expense Account' : 'حساب المصروفات'}</Label>
+                            <div className="flex items-center gap-1.5">
+                              <Label>{appLang === 'en' ? (formData.item_type === 'product' ? 'COGS Account' : 'Expense Account') : (formData.item_type === 'product' ? 'حساب تكلفة المبيعات' : 'حساب المصروفات')}</Label>
+                              {!editingId && autoFilledAccounts && formData.expense_account_id === autoFilledAccounts.expenseId && formData.expense_account_id && (
+                                <Sparkles className="w-3 h-3 text-purple-500" />
+                              )}
+                            </div>
                             <Select
                               value={formData.expense_account_id || "none"}
-                              onValueChange={(v) => setFormData({ ...formData, expense_account_id: v === "none" ? "" : v })}
+                              onValueChange={(v) => {
+                                const val = v === "none" ? "" : v
+                                setFormData({ ...formData, expense_account_id: val })
+                                // User manually changed → clear auto-fill badge for expense
+                                if (autoFilledAccounts && val !== autoFilledAccounts.expenseId) {
+                                  setAutoFilledAccounts(prev => prev ? { ...prev, expenseId: '' } : null)
+                                }
+                              }}
                             >
-                              <SelectTrigger>
+                              <SelectTrigger className={!editingId && autoFilledAccounts && formData.expense_account_id === autoFilledAccounts.expenseId && formData.expense_account_id ? 'border-purple-300 dark:border-purple-700' : ''}>
                                 <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
                               </SelectTrigger>
                               <SelectContent>
