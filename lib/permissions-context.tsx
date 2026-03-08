@@ -3,7 +3,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { useGovernanceRealtime } from "@/hooks/use-governance-realtime"
+// ✅ [Enterprise Architecture] لا نستخدم useGovernanceRealtime هنا مباشرة
+// ✅ AccessContext هو المستمع الوحيد لـ Realtime governance events (Single Source of Truth)
+// ✅ بعد كل BLIND REFRESH في AccessContext يُطلق `permissions_updated` event
+// ✅ هذا يمنع تسجيل handler مزدوج في RealtimeManager ويقلل DB queries إلى النصف
 
 // مفاتيح التخزين المحلي
 const STORAGE_KEYS = {
@@ -386,15 +389,28 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
     loadPermissions()
   }, [loadPermissions])
 
-  // ✅ إزالة permissions_updated event listener - useGovernanceRealtime يتعامل معه مباشرة
-  // ✅ هذا يمنع استدعاء loadPermissions مرتين (مرة من event ومرة من useGovernanceRealtime)
+  // ✅ [Enterprise Single Source of Truth Architecture]
+  // ✅ AccessContext هو المستمع الوحيد لأحداث Supabase Realtime الخاصة بالحوكمة
+  // ✅ بعد كل BLIND REFRESH، يُطلق AccessContext حدث `permissions_updated`
+  // ✅ هنا نستمع لهذا الحدث فقط بدلاً من الاشتراك المباشر في Realtime
+  // ✅ هذا يمنع:
+  //    - تسجيل handler مزدوج في RealtimeManager.governanceHandlers
+  //    - مضاعفة DB queries عند كل تغيير في الصلاحيات
+  //    - إعادة إنشاء governance channel مرتين
+  //    - React re-renders مزدوجة
+  useEffect(() => {
+    const handlePermissionsUpdated = () => {
+      console.log('🔄 [PermissionsContext] permissions_updated event received from AccessContext (BLIND REFRESH) - reloading permissions...')
+      loadPermissions()
+    }
 
-  // 🔐 استخدام نظام Realtime للحوكمة
-  useGovernanceRealtime({
-    onPermissionsChanged: loadPermissions,
-    onRoleChanged: loadPermissions,
-    showNotifications: true,
-  })
+    if (typeof window !== 'undefined') {
+      window.addEventListener('permissions_updated', handlePermissionsUpdated)
+      return () => {
+        window.removeEventListener('permissions_updated', handlePermissionsUpdated)
+      }
+    }
+  }, [loadPermissions])
 
   const value = useMemo<PermissionsContextType>(() => ({
     isLoading,
