@@ -144,7 +144,7 @@ export default function ProductsPage() {
   const [userCostCenterId, setUserCostCenterId] = useState<string>("")
   const [userWarehouseId, setUserWarehouseId] = useState<string>("")
 
-  const isUpperRole = ["owner", "admin", "accountant", "manager"].includes(userRole)
+  const isUpperRole = ["owner", "admin", "manager"].includes(userRole)
   const isNormalRole = !isUpperRole && userRole !== ""
 
   // التحقق من الصلاحيات
@@ -174,6 +174,7 @@ export default function ProductsPage() {
               setUserBranchId(branchId || "")
               setUserCostCenterId(costCenterId || "")
               setUserWarehouseId(warehouseId || "")
+              setIsUpperRole(isUpperRole)
               // فقط هذه الأدوار يمكنها رؤية سعر التكلفة
               setCanViewCOGS(isUpperRole)
             }
@@ -433,7 +434,7 @@ export default function ProductsPage() {
 
       if (!authResult.authorized || !authResult.membership) {
         // استخدام رسالة الخطأ المناسبة للغة المستخدم
-        const errorMessage = appLang === 'en' 
+        const errorMessage = appLang === 'en'
           ? (authResult.errorEn || 'Access denied')
           : (authResult.error || 'تم رفض الوصول')
         toastActionError(toast, errorMessage)
@@ -573,7 +574,7 @@ export default function ProductsPage() {
       warehouse_id: product.warehouse_id || "",
       tax_code_id: product.tax_code_id || "",
     }
-    
+
     // للأدوار العادية: فرض القيم من بيانات المستخدم (لضمان عدم التلاعب)
     if (isNormalRole) {
       editData.branch_id = userBranchId || ""
@@ -584,7 +585,7 @@ export default function ProductsPage() {
         editData.warehouse_id = ""
       }
     }
-    
+
     setFormData(editData)
     setEditingId(product.id)
     setIsDialogOpen(true)
