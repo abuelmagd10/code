@@ -58,7 +58,9 @@ export async function POST(req: Request) {
 
     if (rpcError || !rpcResult?.success) {
       console.error("RPC Error:", rpcError)
-      return ErrorHandler.handle(new ERPError('ERR_SYSTEM', 'فشل في إنشاء المنتج', 500, rpcError?.message || 'Unknown RPC error'))
+      // ✅ Pass rpcError directly to ErrorHandler so it can map 23505 → 409, etc.
+      if (rpcError) return ErrorHandler.handle(rpcError)
+      return ErrorHandler.handle(new ERPError('ERR_SYSTEM', 'فشل في إنشاء المنتج', 500))
     }
 
     // 4️⃣ Async Audit Logging (Fire and Forget)
