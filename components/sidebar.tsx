@@ -139,11 +139,7 @@ export function Sidebar() {
       setPermissionsReady(true)
       // حساب deniedResources من allowed_pages
       const allResources = [
-        "dashboard", "products", "inventory", "customers", "suppliers",
-        "sales_orders", "purchase_orders", "invoices", "bills", "payments", "expenses",
-        "journal_entries", "banking", "reports", "chart_of_accounts",
-        "shareholders", "settings", "users", "taxes", "branches", "warehouses",
-        "commission_plans", "commission_runs", "instant_payouts"
+        'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'shareholders', 'taxes', 'exchange_rates', 'accounting_maintenance', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses', 'settings', 'users', 'company_settings', 'audit_log', 'backup', 'shipping', 'profile', 'orders_rules', 'system_status'
       ]
       const denied = allResources.filter(r => !profile.allowed_pages.includes(r) && r !== "profile")
       setDeniedResources(denied)
@@ -595,13 +591,13 @@ export function Sidebar() {
         // 2️⃣ Enterprise Authorization: جلب الشركات المملوكة فقط للأدوار العليا
         const { getUserCompanies } = await import("@/lib/company-authorization")
         const userCompaniesList = await getUserCompanies(supabase, user.id)
-        
+
         // التحقق من وجود أي دور علوي في أي عضوية
         const { UPPER_ROLES } = await import("@/lib/company-authorization")
-        const hasUpperRole = userCompaniesList.some(c => 
+        const hasUpperRole = userCompaniesList.some(c =>
           UPPER_ROLES.includes(c.role as any)
         )
-        
+
         // إذا لم يكن هناك أي عضوية، أو كان هناك دور علوي: محاولة الوصول إلى companies table
         if (userCompaniesList.length === 0 || hasUpperRole) {
           const { data: ownedCompanies } = await supabase

@@ -1095,50 +1095,19 @@ export default function UsersSettingsPage() {
     owner: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
     admin: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
     manager: [
-      'dashboard', 'reports',
-      'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes',
-      'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits',
-      'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt',
-      'expenses', 'payments', 'journal_entries', 'drawings', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts',
-      'branches', 'cost_centers', 'warehouses',
-    ],
-    staff: [
-      'customers', // العملاء
-      'sales_orders', // أوامر البيع
-      'inventory', // المخزون
-      'third_party_inventory', // بضائع لدى الغير
+      'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses'
     ],
     accountant: [
-      'dashboard', // لوحة التحكم
-      'invoices', // فواتير البيع
-      'sales_returns', // مرتجع المبيعات
-      'suppliers', // الموردين
-      'purchase_orders', // أوامر الشراء
-      'bills', // فواتير المشتريات
-      'purchase_returns', // مرتجعات المشتريات
-      'products', // المنتجات
-      'inventory', // المخزون
-      'product_availability', // توافر المنتجات في الفروع
-      'inventory_transfers', // نقل المخزون
-      'third_party_inventory', // بضائع لدى الغير
-      'write_offs', // اهلاك المخزون
-      'inventory_goods_receipt', // اعتماد استلام المشتريات
-      'expenses', // المصروفات
-      'payments', // المدفوعات
-      'journal_entries', // القيود اليومية
-      'annual_closing', // الإقفال السنوي
+      'dashboard', 'reports', 'invoices', 'customers', 'sales_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_returns', 'vendor_credits', 'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts', 'banking', 'annual_closing', 'shareholders', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'taxes', 'exchange_rates', 'accounting_maintenance', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt'
     ],
     store_manager: [
-      'inventory', // المخزون
-      'product_availability', // توافر المنتجات في الفروع
-      'inventory_transfers', // نقل المخزون
-      'third_party_inventory', // بضائع لدى الغير
-      'write_offs', // اهلاك المخزون
-      'inventory_goods_receipt', // اعتماد استلام المشتريات
+      'dashboard', 'products', 'inventory', 'product_availability', 'inventory_transfers', 'third_party_inventory', 'write_offs', 'inventory_goods_receipt', 'purchase_orders', 'sales_orders', 'shipping'
+    ],
+    staff: [
+      'dashboard', 'customers', 'estimates', 'sales_orders', 'invoices', 'inventory', 'product_availability', 'attendance'
     ],
     viewer: [
-      'dashboard', // لوحة التحكم
-      'reports', // التقارير العامة
+      'dashboard', 'reports'
     ],
   }
 

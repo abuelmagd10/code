@@ -281,48 +281,19 @@ async function fetchAccessProfile(
       // Default pages per role, matching the UI
       const defaultRolePages: Record<string, string[]> = {
         manager: [
-          'dashboard', 'reports',
-          'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes',
-          'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits',
-          'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt',
-          'payments', 'journal_entries', 'hr', 'employees', 'attendance', 'payroll',
-          'branches', 'cost_centers', 'warehouses',
-        ],
-        staff: [
-          'customers',
-          'sales_orders',
-          'inventory',
-          'third_party_inventory',
+          'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses'
         ],
         accountant: [
-          'dashboard',
-          'invoices',
-          'sales_returns',
-          'suppliers',
-          'purchase_orders',
-          'bills',
-          'purchase_returns',
-          'products',
-          'inventory',
-          'product_availability',
-          'inventory_transfers',
-          'third_party_inventory',
-          'write_offs',
-          'inventory_goods_receipt',
-          'payments',
-          'journal_entries',
+          'dashboard', 'reports', 'invoices', 'customers', 'sales_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_returns', 'vendor_credits', 'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts', 'banking', 'annual_closing', 'shareholders', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'taxes', 'exchange_rates', 'accounting_maintenance', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt'
         ],
         store_manager: [
-          'inventory',
-          'product_availability',
-          'inventory_transfers',
-          'third_party_inventory',
-          'write_offs',
-          'inventory_goods_receipt',
+          'dashboard', 'products', 'inventory', 'product_availability', 'inventory_transfers', 'third_party_inventory', 'write_offs', 'inventory_goods_receipt', 'purchase_orders', 'sales_orders', 'shipping'
+        ],
+        staff: [
+          'dashboard', 'customers', 'estimates', 'sales_orders', 'invoices', 'inventory', 'product_availability', 'attendance'
         ],
         viewer: [
-          'dashboard',
-          'reports',
+          'dashboard', 'reports'
         ],
       }
 
