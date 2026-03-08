@@ -143,8 +143,8 @@ export default function ProductsPage() {
   const [userBranchId, setUserBranchId] = useState<string>("")
   const [userCostCenterId, setUserCostCenterId] = useState<string>("")
   const [userWarehouseId, setUserWarehouseId] = useState<string>("")
+  const [isUpperRole, setIsUpperRole] = useState<boolean>(false)
 
-  const isUpperRole = ["owner", "admin", "manager"].includes(userRole)
   const isNormalRole = !isUpperRole && userRole !== ""
 
   // التحقق من الصلاحيات
@@ -537,8 +537,12 @@ export default function ProductsPage() {
   }
 
   const resetFormData = () => {
-    // للأدوار العادية: فرض القيم (معطلة)
     // للأدوار العليا: prefill القيم إذا كانت موجودة (قابلة للتعديل)
+
+    // محاولة ذكية لإيجاد مركز تكلفة/مستودع افتراضي للفرع إذا لم يكن للمستخدم واحد
+    const autoCostCenterId = userCostCenterId || costCenters.find(cc => cc.branch_id === userBranchId)?.id || ""
+    const autoWarehouseId = userWarehouseId || warehouses.find(w => w.branch_id === userBranchId)?.id || ""
+
     setFormData({
       sku: "",
       name: "",
@@ -552,11 +556,11 @@ export default function ProductsPage() {
       income_account_id: "",
       expense_account_id: "",
       cost_center: "",
-      // للأدوار العادية: فرض القيم (حتى لو كانت فارغة) | للأدوار العليا: prefill إذا كانت موجودة فقط
-      cost_center_id: isNormalRole ? userCostCenterId : (userCostCenterId || ""),
+      // للأدوار العادية: نفرض القيمة من الحساب أو نضع أول مركز للفرع | للأدوار العليا: prefill فقط
+      cost_center_id: isNormalRole ? autoCostCenterId : (userCostCenterId || ""),
       branch_id: isNormalRole ? userBranchId : (userBranchId || ""),
-      // تعيين warehouse_id فقط للمنتجات (item_type === "product")
-      warehouse_id: isNormalRole ? userWarehouseId : (userWarehouseId || ""),
+      // تعيين مستودع فقط للمنتجات
+      warehouse_id: isNormalRole ? autoWarehouseId : (userWarehouseId || ""),
       tax_code_id: "",
     })
     setFormErrors({})
@@ -961,13 +965,16 @@ export default function ProductsPage() {
                             variant={formData.item_type === 'product' ? 'default' : 'outline'}
                             className="flex-1"
                             onClick={() => {
+                              const autoWarehouseId = userWarehouseId || warehouses.find(w => w.branch_id === userBranchId)?.id || ""
+                              const autoCostCenterId = userCostCenterId || costCenters.find(cc => cc.branch_id === userBranchId)?.id || ""
+
                               // 🔐 Enterprise Logic: عند التغيير إلى Product
                               const newData: any = { ...formData, item_type: 'product' }
                               if (isNormalRole) {
                                 // للأدوار العادية: فرض جميع القيم
                                 newData.branch_id = userBranchId || ""
-                                newData.cost_center_id = userCostCenterId || ""
-                                newData.warehouse_id = userWarehouseId || ""
+                                newData.cost_center_id = autoCostCenterId
+                                newData.warehouse_id = autoWarehouseId
                               } else {
                                 // للأدوار العليا: prefill إذا كانت موجودة
                                 if (!newData.branch_id) newData.branch_id = userBranchId || ""
@@ -985,12 +992,14 @@ export default function ProductsPage() {
                             variant={formData.item_type === 'service' ? 'default' : 'outline'}
                             className="flex-1"
                             onClick={() => {
+                              const autoCostCenterId = userCostCenterId || costCenters.find(cc => cc.branch_id === userBranchId)?.id || ""
+
                               // 🔐 Enterprise Logic: عند التغيير إلى Service
                               const newData: any = { ...formData, item_type: 'service', warehouse_id: "" }
                               if (isNormalRole) {
                                 // للأدوار العادية: فرض Branch و Cost Center فقط
                                 newData.branch_id = userBranchId || ""
-                                newData.cost_center_id = userCostCenterId || ""
+                                newData.cost_center_id = autoCostCenterId
                               } else {
                                 // للأدوار العليا: prefill إذا كانت موجودة
                                 if (!newData.branch_id) newData.branch_id = userBranchId || ""
@@ -1152,7 +1161,7 @@ export default function ProductsPage() {
                               <Select
                                 value={formData.warehouse_id || "none"}
                                 onValueChange={(v) => setFormData({ ...formData, warehouse_id: v === "none" ? "" : v })}
-                                disabled={isNormalRole || !formData.branch_id}
+                                disabled={(isNormalRole && !!userWarehouseId) || !formData.branch_id}
                               >
                                 <SelectTrigger>
                                   <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
@@ -1171,7 +1180,7 @@ export default function ProductsPage() {
                             <Select
                               value={formData.cost_center_id || "none"}
                               onValueChange={(v) => setFormData({ ...formData, cost_center_id: v === "none" ? "" : v })}
-                              disabled={isNormalRole || !formData.branch_id}
+                              disabled={(isNormalRole && !!userCostCenterId) || !formData.branch_id}
                             >
                               <SelectTrigger>
                                 <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />

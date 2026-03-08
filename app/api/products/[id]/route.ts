@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security-enhanced"
-import { serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { serverError, badRequestError, forbiddenError } from "@/lib/api-security-enhanced"
 import { logAuditEvent } from "@/lib/audit-log"
 
 // PUT - Update existing product
@@ -55,48 +55,46 @@ export async function PUT(
       if (finalBranchId && wData.branch_id !== finalBranchId) return badRequestError("المستودع المختار لا يتبع للفرع المحدد")
     }
 
-    // Validate Cost Center
+    // Validate Cost Center -> Branch Relationship
     if (finalCostCenterId) {
-      const { data: ccData } = await supabase.from('cost_centers').select('company_id').eq('id', finalCostCenterId).single()
+      const { data: ccData } = await supabase.from('cost_centers').select('company_id, branch_id').eq('id', finalCostCenterId).single()
       if (!ccData || ccData.company_id !== companyId) return badRequestError("مركز التكلفة غير صالح أو لا يتبع لشركتك")
+      if (finalBranchId && ccData.branch_id && ccData.branch_id !== finalBranchId) return badRequestError("مركز التكلفة المختار لا يتبع للفرع المحدد")
     }
 
     if (isNormalRole) {
-      // للأدوار العادية: فرض القيم من بيانات المستخدم
-      finalBranchId = member.branch_id || null
-      finalCostCenterId = member.cost_center_id || null
-      finalWarehouseId = body.item_type === 'product' ? (member.warehouse_id || null) : null
+      // 🔐 للأدوار العادية: لا يمكنهم اختيار فرع غير فرعهم
+      finalBranchId = member.branch_id || finalBranchId
 
-      // 🔐 التحقق من أن المستخدم لم يحاول تجاوز القيود
+      if (!member.branch_id) {
+        return forbiddenError("لا يمكنك رفع منتجات، لم يتم تعيين فرع لحسابك")
+      }
       if (body.branch_id && body.branch_id !== member.branch_id) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "تعيين فرع غير صالح - لا يمكنك تعيين فرع غير مرتبط بدورك",
-            error_en: "Invalid branch assignment - You cannot assign a branch not associated with your role"
-          },
-          { status: 403 }
-        )
+        return forbiddenError("لا يمكنك تعيين فرع غير مرتبط بدورك")
       }
-      if (body.cost_center_id && body.cost_center_id !== member.cost_center_id) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "تعيين مركز تكلفة غير صالح - لا يمكنك تعيين مركز تكلفة غير مرتبط بدورك",
-            error_en: "Invalid cost center assignment - You cannot assign a cost center not associated with your role"
-          },
-          { status: 403 }
-        )
+
+      // 🔐 بالنسبة للمستودع: 
+      if (body.item_type === 'product') {
+        if (member.warehouse_id) {
+          if (body.warehouse_id && body.warehouse_id !== member.warehouse_id) {
+            return forbiddenError("لا يمكنك تعيين مستودع غير مرتبط بدورك")
+          }
+          finalWarehouseId = member.warehouse_id
+        } else {
+          finalWarehouseId = body.warehouse_id || null
+        }
+      } else {
+        finalWarehouseId = null
       }
-      if (body.item_type === 'product' && body.warehouse_id && body.warehouse_id !== member.warehouse_id) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "تعيين مستودع غير صالح - لا يمكنك تعيين مستودع غير مرتبط بدورك",
-            error_en: "Invalid warehouse assignment - You cannot assign a warehouse not associated with your role"
-          },
-          { status: 403 }
-        )
+
+      // 🔐 بالنسبة لمركز التكلفة:
+      if (member.cost_center_id) {
+        if (body.cost_center_id && body.cost_center_id !== member.cost_center_id) {
+          return forbiddenError("لا يمكنك تعيين مركز تكلفة غير مرتبط بدورك")
+        }
+        finalCostCenterId = member.cost_center_id
+      } else {
+        finalCostCenterId = body.cost_center_id || null
       }
     }
 
