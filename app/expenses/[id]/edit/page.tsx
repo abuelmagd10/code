@@ -165,7 +165,7 @@ export default function EditExpensePage() {
 
       const { data: payAccountsRaw } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, sub_type, parent_id, branch_id")
+        .select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id")
         .eq("company_id", cid)
         .in("account_type", ["asset"])
         .eq("is_active", true)

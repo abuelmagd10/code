@@ -58,11 +58,8 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   const [requests, setRequests] = useState<BankVoucherRequest[]>([])
   const [rejectingReq, setRejectingReq] = useState<BankVoucherRequest | null>(null)
   const [rejectReason, setRejectReason] = useState("")
-  const [counterAccounts, setCounterAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [deposit, setDeposit] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), description: "إيداع", counter_id: "", currency: "EGP", payment_method: "cash", reference_number: "" })
-  const [withdraw, setWithdraw] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), description: "سحب", counter_id: "", currency: "EGP", payment_method: "cash", reference_number: "" })
 
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>(() => {
@@ -78,10 +75,6 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   // Multi-currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [companyId, setCompanyId] = useState<string | null>(null)
-  const [depositExRate, setDepositExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
-  const [withdrawExRate, setWithdrawExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
-  const [depositBaseAmount, setDepositBaseAmount] = useState<number>(0)
-  const [withdrawBaseAmount, setWithdrawBaseAmount] = useState<number>(0)
 
   // Filter states for transactions
   const [selectedDescriptions, setSelectedDescriptions] = useState<string[]>([])
@@ -142,44 +135,12 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         setCompanyId(cid)
         const curr = await getActiveCurrencies(supabase, cid)
         if (curr.length > 0) setCurrencies(curr)
-        const baseCur = localStorage.getItem('app_currency') || 'EGP'
-        setDeposit(d => ({ ...d, currency: baseCur }))
-        setWithdraw(w => ({ ...w, currency: baseCur }))
       }
     }
     loadCurrencies()
   }, [])
 
-  // Update exchange rates when currencies change
-  useEffect(() => {
-    const updateDepositRate = async () => {
-      const baseCurrency = localStorage.getItem('app_currency') || 'EGP'
-      if (deposit.currency === baseCurrency) {
-        setDepositExRate({ rate: 1, rateId: null, source: 'same_currency' })
-        setDepositBaseAmount(deposit.amount)
-      } else if (companyId) {
-        const result = await getExchangeRate(supabase, deposit.currency, baseCurrency, undefined, companyId)
-        setDepositExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
-        setDepositBaseAmount(Math.round(deposit.amount * result.rate * 10000) / 10000)
-      }
-    }
-    updateDepositRate()
-  }, [deposit.currency, deposit.amount, companyId])
 
-  useEffect(() => {
-    const updateWithdrawRate = async () => {
-      const baseCurrency = localStorage.getItem('app_currency') || 'EGP'
-      if (withdraw.currency === baseCurrency) {
-        setWithdrawExRate({ rate: 1, rateId: null, source: 'same_currency' })
-        setWithdrawBaseAmount(withdraw.amount)
-      } else if (companyId) {
-        const result = await getExchangeRate(supabase, withdraw.currency, baseCurrency, undefined, companyId)
-        setWithdrawExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
-        setWithdrawBaseAmount(Math.round(withdraw.amount * result.rate * 10000) / 10000)
-      }
-    }
-    updateWithdrawRate()
-  }, [withdraw.currency, withdraw.amount, companyId])
 
   const loadData = async () => {
     try {
@@ -196,8 +157,6 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
           if (cid) { try { localStorage.setItem('active_company_id', cid) } catch { } }
           const acc = accountsData.find((a: any) => String(a.id) === String(accountId))
           if (acc) setAccount(acc as any)
-          const leafOnly = filterLeafAccounts(accountsData)
-          setCounterAccounts(leafOnly.filter((a: any) => String(a.id) !== String(accountId)) as any)
         }
       } catch { }
       if (!cid) {
@@ -346,94 +305,6 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
     setTransactionTypes([])
   }
 
-  const recordEntry = async (type: "deposit" | "withdraw") => {
-    try {
-      setSaving(true)
-      const cfg = type === "deposit" ? deposit : withdraw
-      if (!cfg.counter_id) { toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار الحساب المقابل", variant: "destructive" }); return }
-      if (cfg.amount <= 0) { toast({ title: "قيمة غير صحيحة", description: "يرجى إدخال مبلغ أكبر من صفر", variant: "destructive" }); return }
-      let cid: string | null = null
-      try {
-        const res = await fetch('/api/my-company')
-        if (res.ok) { const j = await res.json(); cid = String(j?.data?.company?.id || j?.company?.id || '') || null }
-      } catch { }
-      if (!cid) {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-        const { data: memberCompany } = await supabase.from('company_members').select('company_id').eq('user_id', user.id).limit(1)
-        cid = Array.isArray(memberCompany) && memberCompany[0]?.company_id ? String(memberCompany[0].company_id) : null
-      }
-      if (!cid) return
-
-      // ✅ ERP-Grade: Period Lock Check - منع تسجيل سندات في فترات مغلقة
-      try {
-        const { assertPeriodNotLocked } = await import("@/lib/accounting-period-lock")
-        const { createClient } = await import("@supabase/supabase-js")
-        const serviceSupabase = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
-        await assertPeriodNotLocked(serviceSupabase, {
-          companyId: cid,
-          date: cfg.date,
-        })
-      } catch (lockError: any) {
-        toast({
-          title: "❌ الفترة المحاسبية مقفلة",
-          description: lockError.message || "لا يمكن تسجيل سند في فترة محاسبية مغلقة",
-          variant: "destructive",
-        })
-        setSaving(false)
-        return
-      }
-
-      // Get base currency and exchange rate info
-      const baseCurrency = typeof window !== 'undefined'
-        ? localStorage.getItem('app_currency') || 'EGP'
-        : 'EGP'
-
-      const exRateInfo = type === "deposit" ? depositExRate : withdrawExRate
-      const baseAmt = type === "deposit" ? depositBaseAmount : withdrawBaseAmount
-      const finalBaseAmount = cfg.currency === baseCurrency ? cfg.amount : baseAmt
-
-      // Insert into bank_voucher_requests rather than journal_entries directly
-      const { data: request, error: reqErr } = await supabase
-        .from("bank_voucher_requests")
-        .insert({
-          company_id: cid,
-          branch_id: account?.branch_id || null,
-          cost_center_id: account?.cost_center_id || null,
-          voucher_type: type,
-          account_id: accountId,
-          counter_id: cfg.counter_id,
-          amount: cfg.amount,
-          currency: cfg.currency,
-          base_amount: finalBaseAmount,
-          exchange_rate: exRateInfo.rate,
-          exchange_rate_source: exRateInfo.source,
-          exchange_rate_id: exRateInfo.rateId,
-          entry_date: cfg.date,
-          description: cfg.description,
-          payment_method: cfg.payment_method,
-          reference_number: cfg.reference_number || null,
-          status: 'pending'
-        })
-        .select()
-        .single()
-
-      if (reqErr) throw reqErr
-      toastActionSuccess(toast, "تسجيل", "الطلب")
-      setDeposit({ amount: 0, date: deposit.date, description: "إيداع", counter_id: "", currency: "EGP", payment_method: "cash", reference_number: "" })
-      setWithdraw({ amount: 0, date: withdraw.date, description: "سحب", counter_id: "", currency: "EGP", payment_method: "cash", reference_number: "" })
-      await loadData()
-      if (type === "deposit") setDeposit({ ...deposit, amount: 0, description: "إيداع" })
-      else setWithdraw({ ...withdraw, amount: 0, description: "سحب" })
-      toastActionSuccess(toast, "الحفظ", "العملية")
-    } catch (err) {
-      console.error("Error recording entry:", err)
-      toastActionError(toast, "الحفظ", "العملية")
-    } finally { setSaving(false) }
-  }
 
   const approveRequest = async (req: BankVoucherRequest) => {
     try {
@@ -658,143 +529,6 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         </Dialog>
 
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
-            <CardContent className="pt-6 space-y-4">
-              <h2 className="text-xl font-semibold">إيداع (سند قبض)</h2>
-              <div>
-                <Label>الحساب المقابل</Label>
-                <select className="w-full border rounded px-2 py-1" value={deposit.counter_id} onChange={(e) => setDeposit({ ...deposit, counter_id: e.target.value })}>
-                  <option value="">اختر حسابًا</option>
-                  {counterAccounts.map(a => (
-                    <option key={a.id} value={a.id}>{a.account_code || ""} {a.account_name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label>المبلغ</Label>
-                  <NumericInput min={0} step="0.01" value={deposit.amount} onChange={(val) => setDeposit({ ...deposit, amount: val })} decimalPlaces={2} />
-                </div>
-                <div>
-                  <Label>العملة</Label>
-                  <select className="w-full border rounded px-2 py-1" value={deposit.currency} onChange={(e) => setDeposit({ ...deposit, currency: e.target.value })}>
-                    {currencies.length > 0 ? (
-                      currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)
-                    ) : (
-                      <>
-                        <option value="EGP">EGP</option>
-                        <option value="USD">USD</option>
-                        <option value="EUR">EUR</option>
-                        <option value="SAR">SAR</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-              </div>
-              {deposit.currency !== appCurrency && deposit.amount > 0 && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded text-sm">
-                  <div>سعر الصرف: <strong>1 {deposit.currency} = {depositExRate.rate.toFixed(4)} {appCurrency}</strong> ({depositExRate.source})</div>
-                  <div>المبلغ الأساسي: <strong>{depositBaseAmount.toFixed(2)} {appCurrency}</strong></div>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label>طريقة الدفع</Label>
-                  <select className="w-full border rounded px-2 py-1" value={deposit.payment_method} onChange={(e) => setDeposit({ ...deposit, payment_method: e.target.value })}>
-                    <option value="cash">نقدي</option>
-                    <option value="bank_transfer">تحويل بنكي</option>
-                    <option value="check">شيك</option>
-                    <option value="credit_card">بطاقة ائتمان</option>
-                  </select>
-                </div>
-                <div>
-                  <Label>رقم المرجع (إن وجد)</Label>
-                  <Input type="text" value={deposit.reference_number} onChange={(e) => setDeposit({ ...deposit, reference_number: e.target.value })} />
-                </div>
-              </div>
-              <div>
-                <Label>التاريخ</Label>
-                <Input type="date" value={deposit.date} onChange={(e) => setDeposit({ ...deposit, date: e.target.value })} />
-              </div>
-              <div>
-                <Label>الوصف</Label>
-                <Input type="text" value={deposit.description} onChange={(e) => setDeposit({ ...deposit, description: e.target.value })} />
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={() => recordEntry("deposit")} disabled={saving || !deposit.counter_id || deposit.amount <= 0}>إنشاء طلب إيداع</Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6 space-y-4">
-              <h2 className="text-xl font-semibold">سحب (سند صرف)</h2>
-              <div>
-                <Label>الحساب المقابل</Label>
-                <select className="w-full border rounded px-2 py-1" value={withdraw.counter_id} onChange={(e) => setWithdraw({ ...withdraw, counter_id: e.target.value })}>
-                  <option value="">اختر حسابًا</option>
-                  {counterAccounts.map(a => (
-                    <option key={a.id} value={a.id}>{a.account_code || ""} {a.account_name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label>المبلغ</Label>
-                  <NumericInput min={0} step="0.01" value={withdraw.amount} onChange={(val) => setWithdraw({ ...withdraw, amount: val })} decimalPlaces={2} />
-                </div>
-                <div>
-                  <Label>العملة</Label>
-                  <select className="w-full border rounded px-2 py-1" value={withdraw.currency} onChange={(e) => setWithdraw({ ...withdraw, currency: e.target.value })}>
-                    {currencies.length > 0 ? (
-                      currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)
-                    ) : (
-                      <>
-                        <option value="EGP">EGP</option>
-                        <option value="USD">USD</option>
-                        <option value="EUR">EUR</option>
-                        <option value="SAR">SAR</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-              </div>
-              {withdraw.currency !== appCurrency && withdraw.amount > 0 && (
-                <div className="bg-red-50 dark:bg-red-900/20 p-2 rounded text-sm">
-                  <div>سعر الصرف: <strong>1 {withdraw.currency} = {withdrawExRate.rate.toFixed(4)} {appCurrency}</strong> ({withdrawExRate.source})</div>
-                  <div>المبلغ الأساسي: <strong>{withdrawBaseAmount.toFixed(2)} {appCurrency}</strong></div>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label>طريقة الدفع</Label>
-                  <select className="w-full border rounded px-2 py-1" value={withdraw.payment_method} onChange={(e) => setWithdraw({ ...withdraw, payment_method: e.target.value })}>
-                    <option value="cash">نقدي</option>
-                    <option value="bank_transfer">تحويل بنكي</option>
-                    <option value="check">شيك</option>
-                    <option value="credit_card">بطاقة ائتمان</option>
-                  </select>
-                </div>
-                <div>
-                  <Label>رقم المرجع (إن وجد)</Label>
-                  <Input type="text" value={withdraw.reference_number} onChange={(e) => setWithdraw({ ...withdraw, reference_number: e.target.value })} />
-                </div>
-              </div>
-              <div>
-                <Label>التاريخ</Label>
-                <Input type="date" value={withdraw.date} onChange={(e) => setWithdraw({ ...withdraw, date: e.target.value })} />
-              </div>
-              <div>
-                <Label>الوصف</Label>
-                <Input type="text" value={withdraw.description} onChange={(e) => setWithdraw({ ...withdraw, description: e.target.value })} />
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={() => recordEntry("withdraw")} disabled={saving || !withdraw.counter_id || withdraw.amount <= 0}>إنشاء طلب سحب</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
 
         <Card>
           <CardContent className="pt-6 space-y-4">
