@@ -20,11 +20,15 @@ import { CompanyHeader } from "@/components/company-header"
 import { useToast } from "@/hooks/use-toast"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { BranchCostCenterSelectorEnhanced } from "@/components/branch-cost-center-selector-enhanced"
+import { filterCashBankAccounts } from "@/lib/accounts"
 
 type Account = {
   id: string
   account_code: string
   account_name: string
+  branch_id?: string
+  sub_type?: string
+  parent_id?: string
 }
 
 export default function NewExpensePage() {
@@ -154,15 +158,20 @@ export default function NewExpensePage() {
       setExpenseAccounts(expAccounts || [])
 
       // Load payment accounts (cash/bank)
-      const { data: payAccounts } = await supabase
+      const { data: payAccountsRaw } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name")
+        .select("id, account_code, account_name, sub_type, parent_id, branch_id")
         .eq("company_id", cid)
         .in("account_type", ["asset"])
         .eq("is_active", true)
         .order("account_code")
 
-      setPaymentAccounts(payAccounts || [])
+      let payAccounts = filterCashBankAccounts(payAccountsRaw || [], true)
+      if (!adminCheck && userBranchId) {
+        payAccounts = payAccounts.filter((a: any) => a.branch_id === userBranchId)
+      }
+
+      setPaymentAccounts(payAccounts as Account[])
     } catch (error: any) {
       console.error("Error loading initial data:", error)
     }
@@ -355,135 +364,154 @@ export default function NewExpensePage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-            {/* Branch, Cost Center, Warehouse Selector */}
-            <BranchCostCenterSelectorEnhanced
-              branchId={branchId}
-              costCenterId={costCenterId}
-              warehouseId={warehouseId}
-              onBranchChange={handleBranchChange}
-              onCostCenterChange={setCostCenterId}
-              onWarehouseChange={setWarehouseId}
-              disabled={!isAdmin} // 🔐 Governance: Only Admin/GeneralManager can change these fields
-              required={true}
-              lang={appLang}
-              showLabels={true}
-              showWarehouse={false}
-            />
+              {/* Branch, Cost Center, Warehouse Selector */}
+              <BranchCostCenterSelectorEnhanced
+                branchId={branchId}
+                costCenterId={costCenterId}
+                warehouseId={warehouseId}
+                onBranchChange={handleBranchChange}
+                onCostCenterChange={setCostCenterId}
+                onWarehouseChange={setWarehouseId}
+                disabled={!isAdmin} // 🔐 Governance: Only Admin/GeneralManager can change these fields
+                required={true}
+                lang={appLang}
+                showLabels={true}
+                showWarehouse={false}
+              />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Expense Date *' : 'تاريخ المصروف *'}
+                  </Label>
+                  <Input
+                    type="date"
+                    value={expenseDate}
+                    onChange={(e) => setExpenseDate(e.target.value)}
+                    className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Currency' : 'العملة'}
+                  </Label>
+                  <Select value={currencyCode} onValueChange={setCurrencyCode}>
+                    <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="EGP">{appLang === 'en' ? 'Egyptian Pound (EGP)' : 'جنيه مصري (EGP)'}</SelectItem>
+                      <SelectItem value="USD">{appLang === 'en' ? 'US Dollar (USD)' : 'دولار أمريكي (USD)'}</SelectItem>
+                      <SelectItem value="EUR">{appLang === 'en' ? 'Euro (EUR)' : 'يورو (EUR)'}</SelectItem>
+                      <SelectItem value="SAR">{appLang === 'en' ? 'Saudi Riyal (SAR)' : 'ريال سعودي (SAR)'}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Exchange rate to base currency' : 'سعر الصرف للعملة الأساسية'}
+                  </Label>
+                  <NumericInput
+                    value={exchangeRate}
+                    onChange={setExchangeRate}
+                    min={0.000001}
+                    step={0.01}
+                    placeholder="1"
+                    className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                  {appLang === 'en' ? 'Expense Date *' : 'تاريخ المصروف *'}
+                  {appLang === 'en' ? 'Description *' : 'الوصف *'}
                 </Label>
                 <Input
-                  type="date"
-                  value={expenseDate}
-                  onChange={(e) => setExpenseDate(e.target.value)}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder={appLang === 'en' ? 'Expense description...' : 'وصف المصروف...'}
                   className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
                 />
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                  {appLang === 'en' ? 'Currency' : 'العملة'}
-                </Label>
-                <Select value={currencyCode} onValueChange={setCurrencyCode}>
-                  <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="EGP">{appLang === 'en' ? 'Egyptian Pound (EGP)' : 'جنيه مصري (EGP)'}</SelectItem>
-                    <SelectItem value="USD">{appLang === 'en' ? 'US Dollar (USD)' : 'دولار أمريكي (USD)'}</SelectItem>
-                    <SelectItem value="EUR">{appLang === 'en' ? 'Euro (EUR)' : 'يورو (EUR)'}</SelectItem>
-                    <SelectItem value="SAR">{appLang === 'en' ? 'Saudi Riyal (SAR)' : 'ريال سعودي (SAR)'}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                  {appLang === 'en' ? 'Exchange rate to base currency' : 'سعر الصرف للعملة الأساسية'}
-                </Label>
-                <NumericInput
-                  value={exchangeRate}
-                  onChange={setExchangeRate}
-                  min={0.000001}
-                  step={0.01}
-                  placeholder="1"
-                  className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
-                />
-              </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                {appLang === 'en' ? 'Description *' : 'الوصف *'}
-              </Label>
-              <Input
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder={appLang === 'en' ? 'Expense description...' : 'وصف المصروف...'}
-                className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
-              />
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Amount *' : 'المبلغ *'}
+                  </Label>
+                  <NumericInput
+                    value={amount}
+                    onChange={setAmount}
+                    placeholder="0.00"
+                    className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Category' : 'التصنيف'}
+                  </Label>
+                  <Select value={expenseCategory} onValueChange={setExpenseCategory}>
+                    <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
+                      <SelectValue placeholder={appLang === 'en' ? 'Select category' : 'اختر التصنيف'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {expenseCategories.map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                  {appLang === 'en' ? 'Amount *' : 'المبلغ *'}
-                </Label>
-                <NumericInput
-                  value={amount}
-                  onChange={setAmount}
-                  placeholder="0.00"
-                  className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Payment Method' : 'طريقة الدفع'}
+                  </Label>
+                  <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                    <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
+                      <SelectValue placeholder={appLang === 'en' ? 'Select payment method' : 'اختر طريقة الدفع'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {paymentMethods.map((method) => (
+                        <SelectItem key={method.value} value={method.value}>
+                          {method.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Expense Account' : 'حساب المصروف'}
+                  </Label>
+                  <Select value={expenseAccountId} onValueChange={setExpenseAccountId}>
+                    <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
+                      <SelectValue placeholder={appLang === 'en' ? 'Select account' : 'اختر الحساب'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {expenseAccounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          {acc.account_code} - {acc.account_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                  {appLang === 'en' ? 'Category' : 'التصنيف'}
-                </Label>
-                <Select value={expenseCategory} onValueChange={setExpenseCategory}>
-                  <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
-                    <SelectValue placeholder={appLang === 'en' ? 'Select category' : 'اختر التصنيف'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {expenseCategories.map((cat) => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                  {appLang === 'en' ? 'Payment Method' : 'طريقة الدفع'}
+                  {appLang === 'en' ? 'Payment Account (Cash/Bank)' : 'حساب الدفع (نقدية/بنك)'}
                 </Label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
-                    <SelectValue placeholder={appLang === 'en' ? 'Select payment method' : 'اختر طريقة الدفع'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {paymentMethods.map((method) => (
-                      <SelectItem key={method.value} value={method.value}>
-                        {method.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                  {appLang === 'en' ? 'Expense Account' : 'حساب المصروف'}
-                </Label>
-                <Select value={expenseAccountId} onValueChange={setExpenseAccountId}>
+                <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
                   <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
                     <SelectValue placeholder={appLang === 'en' ? 'Select account' : 'اختر الحساب'} />
                   </SelectTrigger>
                   <SelectContent>
-                    {expenseAccounts.map((acc) => (
+                    {paymentAccounts.map((acc) => (
                       <SelectItem key={acc.id} value={acc.id}>
                         {acc.account_code} - {acc.account_name}
                       </SelectItem>
@@ -491,52 +519,33 @@ export default function NewExpensePage() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                {appLang === 'en' ? 'Payment Account (Cash/Bank)' : 'حساب الدفع (نقدية/بنك)'}
-              </Label>
-              <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
-                <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
-                  <SelectValue placeholder={appLang === 'en' ? 'Select account' : 'اختر الحساب'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {paymentAccounts.map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id}>
-                      {acc.account_code} - {acc.account_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                  {appLang === 'en' ? 'Notes' : 'ملاحظات'}
+                </Label>
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder={appLang === 'en' ? 'Additional notes...' : 'ملاحظات إضافية...'}
+                  rows={4}
+                  className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                {appLang === 'en' ? 'Notes' : 'ملاحظات'}
-              </Label>
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder={appLang === 'en' ? 'Additional notes...' : 'ملاحظات إضافية...'}
-                rows={4}
-                className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
-              />
-            </div>
-
-            <div className="flex gap-2 justify-end pt-4 border-t dark:border-slate-700">
-              <Link href="/expenses">
-                <Button variant="outline" disabled={saving} className="dark:bg-slate-800 dark:text-gray-200 dark:hover:bg-slate-700">
-                  {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+              <div className="flex gap-2 justify-end pt-4 border-t dark:border-slate-700">
+                <Link href="/expenses">
+                  <Button variant="outline" disabled={saving} className="dark:bg-slate-800 dark:text-gray-200 dark:hover:bg-slate-700">
+                    {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                  </Button>
+                </Link>
+                <Button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700">
+                  <Save className="h-4 w-4 ml-2" />
+                  {saving ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save' : 'حفظ')}
                 </Button>
-              </Link>
-              <Button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700">
-                <Save className="h-4 w-4 ml-2" />
-                {saving ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save' : 'حفظ')}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </main>
     </div>

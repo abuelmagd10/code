@@ -26,7 +26,9 @@ type BankVoucherRequest = {
   currency: string;
   entry_date: string;
   description: string;
-  status: 'pending' | 'approved' | 'rejected';
+  payment_method?: string;
+  reference_number?: string;
+  status: 'draft' | 'pending' | 'approved' | 'posted' | 'rejected';
   rejection_reason?: string;
   created_at: string;
   created_by: string;
@@ -59,8 +61,8 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   const [counterAccounts, setCounterAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [deposit, setDeposit] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), description: "إيداع", counter_id: "", currency: "EGP" })
-  const [withdraw, setWithdraw] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), description: "سحب", counter_id: "", currency: "EGP" })
+  const [deposit, setDeposit] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), description: "إيداع", counter_id: "", currency: "EGP", payment_method: "cash", reference_number: "" })
+  const [withdraw, setWithdraw] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), description: "سحب", counter_id: "", currency: "EGP", payment_method: "cash", reference_number: "" })
 
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>(() => {
@@ -385,21 +387,6 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         return
       }
 
-      // Include branch_id and cost_center_id from the account
-      const { data: entry, error: entryErr } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: cid,
-          reference_type: type === "deposit" ? "bank_deposit" : "cash_withdrawal",
-          entry_date: cfg.date,
-          description: cfg.description,
-          branch_id: account?.branch_id || null,
-          cost_center_id: account?.cost_center_id || null,
-        })
-        .select()
-        .single()
-      if (entryErr) throw entryErr
-
       // Get base currency and exchange rate info
       const baseCurrency = typeof window !== 'undefined'
         ? localStorage.getItem('app_currency') || 'EGP'
@@ -409,84 +396,35 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       const baseAmt = type === "deposit" ? depositBaseAmount : withdrawBaseAmount
       const finalBaseAmount = cfg.currency === baseCurrency ? cfg.amount : baseAmt
 
-      // Deposit: debit accountId, credit counter
-      // Withdraw: debit counter, credit accountId
-      const linesPayload = type === "deposit"
-        ? [
-          {
-            journal_entry_id: entry.id,
-            account_id: accountId,
-            debit_amount: finalBaseAmount,
-            credit_amount: 0,
-            description: "إيداع",
-            // Multi-currency support - store original and base values
-            original_debit: cfg.amount,
-            original_credit: 0,
-            original_currency: cfg.currency,
-            exchange_rate_used: exRateInfo.rate,
-            exchange_rate_id: exRateInfo.rateId,
-            rate_source: exRateInfo.source,
-            // Branch and Cost Center from account
-            branch_id: account?.branch_id || null,
-            cost_center_id: account?.cost_center_id || null,
-          },
-          {
-            journal_entry_id: entry.id,
-            account_id: cfg.counter_id,
-            debit_amount: 0,
-            credit_amount: finalBaseAmount,
-            description: "مقابل الإيداع",
-            // Multi-currency support - store original and base values
-            original_debit: 0,
-            original_credit: cfg.amount,
-            original_currency: cfg.currency,
-            exchange_rate_used: exRateInfo.rate,
-            exchange_rate_id: exRateInfo.rateId,
-            rate_source: exRateInfo.source,
-            // Branch and Cost Center from account
-            branch_id: account?.branch_id || null,
-            cost_center_id: account?.cost_center_id || null,
-          },
-        ]
-        : [
-          {
-            journal_entry_id: entry.id,
-            account_id: cfg.counter_id,
-            debit_amount: finalBaseAmount,
-            credit_amount: 0,
-            description: "مقابل السحب",
-            // Multi-currency support - store original and base values
-            original_debit: cfg.amount,
-            original_credit: 0,
-            original_currency: cfg.currency,
-            exchange_rate_used: exRateInfo.rate,
-            exchange_rate_id: exRateInfo.rateId,
-            rate_source: exRateInfo.source,
-            // Branch and Cost Center from account
-            branch_id: account?.branch_id || null,
-            cost_center_id: account?.cost_center_id || null,
-          },
-          {
-            journal_entry_id: entry.id,
-            account_id: accountId,
-            debit_amount: 0,
-            credit_amount: finalBaseAmount,
-            description: "سحب",
-            // Multi-currency support - store original and base values
-            original_debit: 0,
-            original_credit: cfg.amount,
-            original_currency: cfg.currency,
-            exchange_rate_used: exRateInfo.rate,
-            exchange_rate_id: exRateInfo.rateId,
-            rate_source: exRateInfo.source,
-            // Branch and Cost Center from account
-            branch_id: account?.branch_id || null,
-            cost_center_id: account?.cost_center_id || null,
-          },
-        ]
+      // Insert into bank_voucher_requests rather than journal_entries directly
+      const { data: request, error: reqErr } = await supabase
+        .from("bank_voucher_requests")
+        .insert({
+          company_id: cid,
+          branch_id: account?.branch_id || null,
+          cost_center_id: account?.cost_center_id || null,
+          voucher_type: type,
+          account_id: accountId,
+          counter_id: cfg.counter_id,
+          amount: cfg.amount,
+          currency: cfg.currency,
+          base_amount: finalBaseAmount,
+          exchange_rate: exRateInfo.rate,
+          exchange_rate_source: exRateInfo.source,
+          exchange_rate_id: exRateInfo.rateId,
+          entry_date: cfg.date,
+          description: cfg.description,
+          payment_method: cfg.payment_method,
+          reference_number: cfg.reference_number || null,
+          status: 'pending'
+        })
+        .select()
+        .single()
 
-      const { error: linesErr } = await supabase.from("journal_entry_lines").insert(linesPayload)
-      if (linesErr) throw linesErr
+      if (reqErr) throw reqErr
+      toastActionSuccess(toast, "تسجيل", "الطلب")
+      setDeposit({ amount: 0, date: deposit.date, description: "إيداع", counter_id: "", currency: "EGP", payment_method: "cash", reference_number: "" })
+      setWithdraw({ amount: 0, date: withdraw.date, description: "سحب", counter_id: "", currency: "EGP", payment_method: "cash", reference_number: "" })
       await loadData()
       if (type === "deposit") setDeposit({ ...deposit, amount: 0, description: "إيداع" })
       else setWithdraw({ ...withdraw, amount: 0, description: "سحب" })
@@ -523,6 +461,27 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       await loadData()
     } catch (err) {
       toastActionError(toast, "اعتماد", "السند")
+    } finally { setSaving(false) }
+  }
+
+  const postRequest = async (req: BankVoucherRequest) => {
+    try {
+      setSaving(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      const { error } = await supabase.rpc('post_bank_voucher', {
+        p_request_id: req.id,
+        p_posted_by: user?.id
+      })
+      if (error) throw error
+
+      toastActionSuccess(toast, "ترحيل", "السند")
+      await loadData()
+    } catch (err: any) {
+      toast({
+        title: "خطأ في الترحيل",
+        description: err.message || "حدث خطأ غير متوقع",
+        variant: "destructive"
+      })
     } finally { setSaving(false) }
   }
 
@@ -629,6 +588,8 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                       <th className="p-3 text-right">النوع</th>
                       <th className="p-3 text-right">المبلغ</th>
                       <th className="p-3 text-right">المقابل</th>
+                      <th className="p-3 text-right">الدفع</th>
+                      <th className="p-3 text-right">رقم المرجع</th>
                       <th className="p-3 text-right">الوصف</th>
                       <th className="p-3 text-right">الحالة</th>
                       <th className="p-3 text-right">الإجراء</th>
@@ -645,19 +606,33 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                         </td>
                         <td className="p-3">{new Intl.NumberFormat('ar-EG').format(r.amount)} {r.currency}</td>
                         <td className="p-3">{r.counter_account?.account_name}</td>
+                        <td className="p-3">
+                          {r.payment_method === 'cash' ? 'نقدي' :
+                            r.payment_method === 'bank_transfer' ? 'تحويل بنكي' :
+                              r.payment_method === 'check' ? 'شيك' :
+                                r.payment_method === 'credit_card' ? 'بطاقة ائتمان' : r.payment_method}
+                        </td>
+                        <td className="p-3">{r.reference_number || '-'}</td>
                         <td className="p-3">{r.description}</td>
                         <td className="p-3">
+                          {r.status === 'draft' && <span className="text-gray-600">مسودة</span>}
                           {r.status === 'pending' && <span className="text-orange-600">قيد المراجعة</span>}
-                          {r.status === 'approved' && <span className="text-green-600">معتمد</span>}
-                          {r.status === 'rejected' && <div className="text-red-600">مرفوض {(r.rejection_reason) && <span className="block text-xs text-gray-500">{r.rejection_reason}</span>}</div>}
+                          {r.status === 'approved' && <span className="text-blue-600">معتمد مسبقاً</span>}
+                          {r.status === 'posted' && <span className="text-green-600">مُرحل ومُسجل</span>}
+                          {r.status === 'rejected' && <div className="text-red-600">مرفوض {r.rejection_reason && <span className="block text-xs text-gray-500">{r.rejection_reason}</span>}</div>}
                         </td>
                         <td className="p-3">
-                          {r.status === 'pending' && ["admin", "owner", "manager"].includes(role || "") && (
-                            <div className="flex gap-2">
-                              <Button size="sm" variant="outline" className="text-green-600 border-green-200 hover:bg-green-50" onClick={() => approveRequest(r)} disabled={saving}><Check className="w-4 h-4 mr-1" /> اعتماد</Button>
-                              <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectingReq(r)} disabled={saving}><Ban className="w-4 h-4 mr-1" /> رفض</Button>
-                            </div>
-                          )}
+                          <div className="flex gap-2">
+                            {r.status === 'pending' && ["super_admin", "admin", "owner", "manager", "general_manager"].includes(role || "") && (
+                              <>
+                                <Button size="sm" variant="outline" className="text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => approveRequest(r)} disabled={saving}><Check className="w-4 h-4 mr-1" /> اعتماد</Button>
+                                <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectingReq(r)} disabled={saving}><Ban className="w-4 h-4 mr-1" /> رفض</Button>
+                              </>
+                            )}
+                            {r.status === 'approved' && ["super_admin", "admin", "owner", "manager", "general_manager"].includes(role || "") && (
+                              <Button size="sm" variant="outline" className="text-green-600 border-green-200 hover:bg-green-50" onClick={() => postRequest(r)} disabled={saving}><Check className="w-4 h-4 mr-1" /> ترحيل لدفتر اليومية</Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -723,6 +698,21 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                   <div>المبلغ الأساسي: <strong>{depositBaseAmount.toFixed(2)} {appCurrency}</strong></div>
                 </div>
               )}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>طريقة الدفع</Label>
+                  <select className="w-full border rounded px-2 py-1" value={deposit.payment_method} onChange={(e) => setDeposit({ ...deposit, payment_method: e.target.value })}>
+                    <option value="cash">نقدي</option>
+                    <option value="bank_transfer">تحويل بنكي</option>
+                    <option value="check">شيك</option>
+                    <option value="credit_card">بطاقة ائتمان</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>رقم المرجع (إن وجد)</Label>
+                  <Input type="text" value={deposit.reference_number} onChange={(e) => setDeposit({ ...deposit, reference_number: e.target.value })} />
+                </div>
+              </div>
               <div>
                 <Label>التاريخ</Label>
                 <Input type="date" value={deposit.date} onChange={(e) => setDeposit({ ...deposit, date: e.target.value })} />
@@ -732,7 +722,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                 <Input type="text" value={deposit.description} onChange={(e) => setDeposit({ ...deposit, description: e.target.value })} />
               </div>
               <div className="flex gap-2">
-                <Button onClick={() => recordEntry("deposit")} disabled={saving || !deposit.counter_id || deposit.amount <= 0}>تسجيل الإيداع</Button>
+                <Button onClick={() => recordEntry("deposit")} disabled={saving || !deposit.counter_id || deposit.amount <= 0}>إنشاء طلب إيداع</Button>
               </div>
             </CardContent>
           </Card>
@@ -776,6 +766,21 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                   <div>المبلغ الأساسي: <strong>{withdrawBaseAmount.toFixed(2)} {appCurrency}</strong></div>
                 </div>
               )}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>طريقة الدفع</Label>
+                  <select className="w-full border rounded px-2 py-1" value={withdraw.payment_method} onChange={(e) => setWithdraw({ ...withdraw, payment_method: e.target.value })}>
+                    <option value="cash">نقدي</option>
+                    <option value="bank_transfer">تحويل بنكي</option>
+                    <option value="check">شيك</option>
+                    <option value="credit_card">بطاقة ائتمان</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>رقم المرجع (إن وجد)</Label>
+                  <Input type="text" value={withdraw.reference_number} onChange={(e) => setWithdraw({ ...withdraw, reference_number: e.target.value })} />
+                </div>
+              </div>
               <div>
                 <Label>التاريخ</Label>
                 <Input type="date" value={withdraw.date} onChange={(e) => setWithdraw({ ...withdraw, date: e.target.value })} />
@@ -785,7 +790,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                 <Input type="text" value={withdraw.description} onChange={(e) => setWithdraw({ ...withdraw, description: e.target.value })} />
               </div>
               <div className="flex gap-2">
-                <Button onClick={() => recordEntry("withdraw")} disabled={saving || !withdraw.counter_id || withdraw.amount <= 0}>تسجيل السحب</Button>
+                <Button onClick={() => recordEntry("withdraw")} disabled={saving || !withdraw.counter_id || withdraw.amount <= 0}>إنشاء طلب سحب</Button>
               </div>
             </CardContent>
           </Card>
