@@ -180,6 +180,9 @@ const PATH_TO_RESOURCE: Record<string, string> = {
   '/fixed-assets/categories': 'asset_categories',
   '/fixed-assets/reports': 'fixed_assets_reports',
 
+  // 📅 المحاسبة
+  '/accounting/periods': 'accounting_periods',
+
   // 👥 الموارد البشرية
   '/hr': 'hr',
   '/hr/employees': 'employees',
@@ -195,6 +198,7 @@ const PATH_TO_RESOURCE: Record<string, string> = {
   // ⚙️ الإعدادات
   '/settings': 'settings',
   '/system-status': 'system_status',
+  '/settings/company': 'company_settings',
   '/settings/users': 'users',
   '/settings/taxes': 'taxes',
   '/settings/exchange-rates': 'exchange_rates',

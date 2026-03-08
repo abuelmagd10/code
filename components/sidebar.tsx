@@ -139,7 +139,7 @@ export function Sidebar() {
       setPermissionsReady(true)
       // حساب deniedResources من allowed_pages
       const allResources = [
-        'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'shareholders', 'taxes', 'exchange_rates', 'accounting_maintenance', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses', 'settings', 'users', 'company_settings', 'audit_log', 'backup', 'shipping', 'profile', 'orders_rules', 'system_status'
+        'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'shareholders', 'taxes', 'exchange_rates', 'accounting_maintenance', 'accounting_periods', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses', 'settings', 'users', 'company_settings', 'audit_log', 'backup', 'shipping', 'profile', 'orders_rules', 'system_status', 'permission_sharing', 'permission_transfers', 'user_branch_access', 'role_permissions'
       ]
       const denied = allResources.filter(r => !profile.allowed_pages.includes(r) && r !== "profile")
       setDeniedResources(denied)
@@ -215,8 +215,10 @@ export function Sidebar() {
     if (href.includes('/payments')) return 'payments'
     if (href.includes('/expenses')) return 'expenses'
     if (href.includes('/banking')) return 'banking'
-    if (href.includes('/drawings')) return 'shareholders'
+    if (href.includes('/drawings')) return 'drawings'
     if (href.includes('/shareholders')) return 'shareholders'
+    if (href.includes('/annual-closing')) return 'annual_closing'
+    if (href.includes('/accounting/periods')) return 'accounting_periods'
     // أخرى
     if (href.includes('/products')) return 'products'
     if (href.includes('/reports')) return 'reports'

@@ -1100,6 +1100,7 @@ export default function UsersSettingsPage() {
         { value: 'expenses', label: 'المصروفات' },
         { value: 'drawings', label: 'المسحوبات الشخصية' },
         { value: 'annual_closing', label: 'الإقفال السنوي' },
+        { value: 'accounting_periods', label: 'الفترات المحاسبية' },
         { value: 'payments', label: 'المدفوعات' },
         { value: 'journal_entries', label: 'القيود اليومية' },
         { value: 'chart_of_accounts', label: 'الشجرة المحاسبية' },
@@ -1169,7 +1170,7 @@ export default function UsersSettingsPage() {
       'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses'
     ],
     accountant: [
-      'dashboard', 'reports', 'invoices', 'customers', 'sales_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_returns', 'vendor_credits', 'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts', 'banking', 'annual_closing', 'shareholders', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'taxes', 'exchange_rates', 'accounting_maintenance', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt'
+      'dashboard', 'reports', 'invoices', 'customers', 'sales_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_returns', 'vendor_credits', 'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts', 'banking', 'annual_closing', 'accounting_periods', 'shareholders', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'taxes', 'exchange_rates', 'accounting_maintenance', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt'
     ],
     store_manager: [
       'dashboard', 'products', 'inventory', 'product_availability', 'inventory_transfers', 'third_party_inventory', 'write_offs', 'inventory_goods_receipt', 'purchase_orders', 'sales_orders', 'shipping'
