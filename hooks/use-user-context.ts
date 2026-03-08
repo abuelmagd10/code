@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import type { UserContext, ValidationResult } from "@/lib/validation"
-import { useGovernanceRealtime } from "@/hooks/use-governance-realtime"
 import {
   validateUserDocumentAccess,
   validateFinancialTransaction,
@@ -132,13 +131,17 @@ export function useUserContext(): UseUserContextReturn {
     loadUserContext()
   }, [loadUserContext])
 
-  // 🔐 استخدام نظام Realtime للحوكمة
-  useGovernanceRealtime({
-    onPermissionsChanged: loadUserContext,
-    onRoleChanged: loadUserContext,
-    onBranchOrWarehouseChanged: loadUserContext,
-    showNotifications: true,
-  })
+  // ✅ [Enterprise Architecture - Single Source of Truth]
+  // لا نستخدم useGovernanceRealtime هنا مباشرةً لأن ذلك يّقيد handler إضافي في RealtimeManager
+  // AccessContext هو المستمع الوحيد ويُطلق `permissions_updated` event بعد كل BLIND REFRESH
+  // نحن نستمع لهذا الـ event فقط: بسيط + فعّال + بدون أثر جانبي
+  useEffect(() => {
+    const handlePermissionsUpdated = () => {
+      loadUserContext()
+    }
+    window.addEventListener("permissions_updated", handlePermissionsUpdated)
+    return () => window.removeEventListener("permissions_updated", handlePermissionsUpdated)
+  }, [loadUserContext])
 
   // Check if user can override context restrictions
   const canOverrideContext = userContext

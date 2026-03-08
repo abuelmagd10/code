@@ -10,7 +10,6 @@ import { useEffect, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useAccess } from "@/lib/access-context"
 import { getResourceFromPath } from "@/lib/permissions-context"
-import { useGovernanceRealtime } from "@/hooks/use-governance-realtime"
 import { Loader2, ShieldAlert } from "lucide-react"
 
 /**
@@ -25,75 +24,35 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
   const [isChecking, setIsChecking] = useState(true)
   const [hasAccess, setHasAccess] = useState(false)
 
-  // 🔐 الاستماع لتحديثات الصلاحيات من Realtime
-  useGovernanceRealtime({
-    onPermissionsChanged: async () => {
-      console.log("🔄 [RealtimeRouteGuard] Permissions changed, rechecking access...")
-      
-      // ✅ انتظار تحديث البيانات أولاً
+  // ✅ [Enterprise Architecture - Single Source of Truth]
+  // لا نستخدم useGovernanceRealtime هنا مباشرةً لأن ذلك ينشئ handler ثانيًا في RealtimeManager
+  // AccessContext هو المستمع الوحيد للـ Realtime ويُطلق `permissions_updated` event بعد كل BLIND REFRESH
+  // نحن نستمع لهذا الـ event فقط (passive consumer)
+  useEffect(() => {
+    const handlePermissionsUpdated = async () => {
+      console.log("🔄 [RealtimeRouteGuard] permissions_updated received, rechecking access...")
       await new Promise(resolve => setTimeout(resolve, 100))
-      
-      // ✅ استخدام pathname الحالي (من hook) بدلاً من captured value
-      // ✅ هذا يضمن أننا نفحص الصفحة الحالية وليس الصفحة القديمة
       const currentPathname = pathname
       const resource = getResourceFromPath(currentPathname)
       const access = canAccessPage(resource)
-      
       if (access) {
-        // ✅ الصفحة الحالية لا تزال مسموحة - لا نعيد التوجيه
         setHasAccess(true)
-        console.log(`✅ [RealtimeRouteGuard] Current page ${currentPathname} is still allowed`)
+        console.log(`✅ [RealtimeRouteGuard] Page ${currentPathname} is still allowed`)
       } else {
-        // ❌ الصفحة الحالية لم تعد مسموحة - إعادة توجيه ديناميكية
         setHasAccess(false)
-        
-        // ✅ حساب أول صفحة مسموحة ديناميكياً (ليست dashboard ثابتة)
         const redirectTo = getFirstAllowedPage()
-        
-        // ✅ التحقق من أن الصفحة الهدف صالحة
         if (redirectTo && redirectTo !== "/no-access") {
-          console.log(`🔄 [RealtimeRouteGuard] Current page ${currentPathname} is no longer allowed, redirecting to: ${redirectTo}`)
+          console.log(`🔄 [RealtimeRouteGuard] Page ${currentPathname} no longer allowed, redirecting to: ${redirectTo}`)
           router.replace(redirectTo)
         } else {
           console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user`)
-          setHasAccess(false)
         }
       }
-    },
-    onBranchOrWarehouseChanged: async () => {
-      // ✅ عند تغيير الفرع/المخزن، إعادة فحص الصلاحية
-      console.log("🔄 [RealtimeRouteGuard] Branch/Warehouse changed, rechecking access...")
-      
-      // ✅ انتظار تحديث البيانات أولاً
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
-      // ✅ استخدام pathname الحالي (من hook) بدلاً من captured value
-      // ✅ هذا يضمن أننا نفحص الصفحة الحالية وليس الصفحة القديمة
-      const currentPathname = pathname
-      const resource = getResourceFromPath(currentPathname)
-      const access = canAccessPage(resource)
-      
-      if (access) {
-        setHasAccess(true)
-        console.log(`✅ [RealtimeRouteGuard] Current page ${currentPathname} is still allowed after branch change`)
-      } else {
-        setHasAccess(false)
-        
-        // ✅ حساب أول صفحة مسموحة ديناميكياً (ليست dashboard ثابتة)
-        const redirectTo = getFirstAllowedPage()
-        
-        // ✅ التحقق من أن الصفحة الهدف صالحة
-        if (redirectTo && redirectTo !== "/no-access") {
-          console.log(`🔄 [RealtimeRouteGuard] Current page ${currentPathname} not allowed after branch change, redirecting to: ${redirectTo}`)
-          router.replace(redirectTo)
-        } else {
-          console.error(`❌ [RealtimeRouteGuard] No allowed pages found for user after branch change`)
-          setHasAccess(false)
-        }
-      }
-    },
-    showNotifications: true,
-  })
+    }
+
+    window.addEventListener("permissions_updated", handlePermissionsUpdated)
+    return () => window.removeEventListener("permissions_updated", handlePermissionsUpdated)
+  }, [pathname, canAccessPage, getFirstAllowedPage, router])
 
   // فحص الصلاحية عند تحميل الصفحة أو تغيير المسار
   useEffect(() => {
@@ -104,14 +63,14 @@ export function RealtimeRouteGuard({ children }: { children: React.ReactNode }) 
 
     const resource = getResourceFromPath(pathname)
     const access = canAccessPage(resource)
-    
+
     setHasAccess(access)
     setIsChecking(false)
 
     if (!access) {
       // منع الوصول وإعادة التوجيه
       const redirectTo = getFirstAllowedPage()
-      
+
       // ✅ التحقق من أن الصفحة الهدف صالحة (نفس التحقق الموجود في realtime handlers)
       if (redirectTo && redirectTo !== "/no-access") {
         console.log(`🚫 [RealtimeRouteGuard] Access denied to ${pathname}, redirecting to: ${redirectTo}`)
