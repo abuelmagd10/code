@@ -16,6 +16,7 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { usePermissions } from "@/lib/permissions-context"
+import { canAdvancedAction, type AdvancedAction } from "@/lib/authz"
 import Link from "next/link"
 import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch, Search, Copy } from "lucide-react"
 
@@ -26,6 +27,51 @@ type WarehouseType = { id: string; name: string; branch_id: string; is_main: boo
 type PermissionSharing = { id: string; grantor_user_id: string; grantee_user_id: string; resource_type: string; can_view: boolean; can_edit: boolean; is_active: boolean; expires_at?: string }
 type PermissionTransfer = { id: string; from_user_id: string; to_user_id: string; resource_type: string; records_transferred: number; transferred_at: string; status: string }
 type UserBranchAccess = { id: string; user_id: string; branch_id: string; is_primary: boolean; can_view_customers: boolean; can_view_orders: boolean; can_view_prices: boolean; is_active: boolean }
+
+// 🔐 Enterprise Action Mapping
+const ADVANCED_ACTIONS_MAP: Record<string, { value: AdvancedAction, label: string }[]> = {
+  invoices: [
+    { value: "print", label: "طباعة الفاتورة" },
+    { value: "send", label: "إرسال فاتورة" },
+    { value: "convert_to_bill", label: "تحويل لفاتورة شراء" },
+    { value: "void", label: "إبطال" }
+  ],
+  bills: [
+    { value: "record_payment", label: "تسجيل دفعة" },
+    { value: "convert_to_invoice", label: "تحويل لفاتورة مبيعات" },
+    { value: "void", label: "إبطال" }
+  ],
+  journal_entries: [
+    { value: "post", label: "ترحيل القيد" },
+    { value: "unpost", label: "إلغاء ترحيل" }
+  ],
+  banking: [
+    { value: "reconcile", label: "مطابقة" },
+    { value: "record_payment", label: "تسجيل دفعة/استلام" }
+  ],
+  inventory: [
+    { value: "adjust", label: "تسوية" },
+    { value: "transfer", label: "نقل مخزون" },
+    { value: "count", label: "جرد مباشر" }
+  ],
+  hr: [
+    { value: "process", label: "معالجة الرواتب" },
+    { value: "approve", label: "اعتماد الرواتب" }
+  ],
+  payroll: [
+    { value: "process", label: "معالجة الرواتب" },
+    { value: "approve", label: "اعتماد الرواتب" }
+  ],
+  fixed_assets: [
+    { value: "post_depreciation", label: "ترحيل إهلاك" },
+    { value: "approve_depreciation", label: "اعتماد إهلاك" }
+  ],
+  sales_returns: [
+    { value: "partial_return", label: "مرتجع جزئي" },
+    { value: "full_return", label: "مرتجع كامل" },
+    { value: "reverse_return", label: "عكس مرتجع" }
+  ]
+}
 
 export default function UsersSettingsPage() {
 
@@ -55,6 +101,7 @@ export default function UsersSettingsPage() {
   const [permDelete, setPermDelete] = useState(false)
   const [permFull, setPermFull] = useState(false)
   const [permAccess, setPermAccess] = useState(true) // صلاحية الوصول للصفحة
+  const [permAllowedActions, setPermAllowedActions] = useState<AdvancedAction[]>([])
   const [rolePerms, setRolePerms] = useState<any[]>([])
   const [myCompanies, setMyCompanies] = useState<Array<{ id: string; name: string }>>([])
   const [inviteCompanyId, setInviteCompanyId] = useState<string>("")
@@ -214,7 +261,7 @@ export default function UsersSettingsPage() {
         // جلب الصلاحيات للشركة الحالية فقط
         const { data: perms } = await supabase
           .from("company_role_permissions")
-          .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access,can_access")
+          .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access,can_access,allowed_actions")
           .eq("company_id", cid)
         setRolePerms(perms || [])
 
@@ -459,7 +506,7 @@ export default function UsersSettingsPage() {
       if (!companyId) return
       const { data: perms } = await supabase
         .from("company_role_permissions")
-        .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access,can_access")
+        .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access,can_access,allowed_actions")
         .eq("company_id", companyId)
         .eq("role", permRole)
       setRolePerms(perms || [])
@@ -476,6 +523,7 @@ export default function UsersSettingsPage() {
       setPermUpdate(false)
       setPermDelete(false)
       setPermFull(false)
+      setPermAllowedActions([])
       return
     }
 
@@ -489,6 +537,28 @@ export default function UsersSettingsPage() {
       setPermUpdate(currentPerm.can_update === true)
       setPermDelete(currentPerm.can_delete === true)
       setPermFull(currentPerm.all_access === true)
+
+      // ✅ Enterprise ERP Action-Level Control Update
+      // Format allowed_actions from DB
+      let actions: AdvancedAction[] = []
+      if (currentPerm.allowed_actions && Array.isArray(currentPerm.allowed_actions)) {
+        actions = currentPerm.allowed_actions.map((a: string) => {
+          if (a === "*") {
+            return "*" as any // Special case
+          }
+          if (a.includes(':')) {
+            return a.split(':')[1] as AdvancedAction
+          }
+          return a as AdvancedAction
+        }).filter((a: any) => a !== "*") // Skip '*' if permFull is true anyway
+
+        // If * is present, populate all available advanced actions for the resource
+        if (currentPerm.allowed_actions.includes("*") && ADVANCED_ACTIONS_MAP[permResource]) {
+          actions = ADVANCED_ACTIONS_MAP[permResource].map((a: any) => a.value)
+        }
+      }
+      setPermAllowedActions(actions)
+
     } else {
       // إذا لم يوجد صلاحية مخصصة لهذا المورد وهذا الدور، نضع الافتراضيات
       setPermAccess(true)
@@ -497,6 +567,7 @@ export default function UsersSettingsPage() {
       setPermUpdate(false)
       setPermDelete(false)
       setPermFull(false)
+      setPermAllowedActions([])
     }
   }, [permRole, permResource, rolePerms])
 
@@ -2178,6 +2249,41 @@ export default function UsersSettingsPage() {
                   </div>
                 </div>
 
+                {/* 🚀 Enterprise ERP: Action-Level Permissions */}
+                {ADVANCED_ACTIONS_MAP[permResource] && ADVANCED_ACTIONS_MAP[permResource].length > 0 && (
+                  <div className="mt-6 pt-4 border-t border-gray-100 dark:border-slate-700">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">الإجراءات المتقدمة (Action-Level Permissions):</p>
+                      <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800 gap-1">
+                        <Lock className="w-3 h-3" />
+                        صلاحيات دقيقة
+                      </Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {ADVANCED_ACTIONS_MAP[permResource].map((action) => {
+                        const isSelected = permAllowedActions.includes(action.value) || permFull;
+                        return (
+                          <label key={action.value} className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border transition-all duration-200 ${isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-700 dark:bg-indigo-900/40 dark:border-indigo-700 dark:text-indigo-300 shadow-sm' : 'bg-white border-gray-200 text-gray-600 dark:bg-slate-700 dark:border-slate-600 hover:border-indigo-300'}`}>
+                            <Checkbox
+                              checked={isSelected}
+                              disabled={permFull}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setPermAllowedActions(prev => [...prev, action.value])
+                                } else {
+                                  setPermAllowedActions(prev => prev.filter(v => v !== action.value))
+                                }
+                              }}
+                              className={isSelected ? "border-indigo-500 text-indigo-600" : ""}
+                            />
+                            <span className="text-sm font-medium">{action.label}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* شريط معلومات */}
                 <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                   <AlertCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />
@@ -2203,12 +2309,13 @@ export default function UsersSettingsPage() {
                       can_update: permUpdate,
                       can_delete: permDelete,
                       all_access: permFull,
-                      can_access: permAccess
+                      can_access: permAccess,
+                      allowed_actions: permFull ? ["*"] : permAllowedActions.map(action => `${permResource}:${action}`)
                     }, { onConflict: "company_id,role,resource" })
                   if (error) { setActionError(error.message || "تعذر الحفظ"); return }
                   const { data: perms } = await supabase
                     .from("company_role_permissions")
-                    .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access,can_access")
+                    .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access,can_access,allowed_actions")
                     .eq("company_id", companyId)
                     .eq("role", permRole)
                   setRolePerms(perms || [])
@@ -2291,6 +2398,27 @@ export default function UsersSettingsPage() {
                             </div>
 
                             <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-3">{resourceLabel}</h4>
+
+                            {/* Actions Mapping rendering */}
+                            {p.allowed_actions && p.allowed_actions.length > 0 && !p.all_access && (
+                              <div className="flex flex-wrap gap-1 mb-3">
+                                {p.allowed_actions.map((act: string) => {
+                                  if (act === "*") return null;
+                                  const rawAction = act.includes(':') ? act.split(':')[1] : act;
+                                  // Look up label
+                                  let label = rawAction;
+                                  if (ADVANCED_ACTIONS_MAP[p.resource]) {
+                                    const matched = ADVANCED_ACTIONS_MAP[p.resource].find(a => a.value === rawAction);
+                                    if (matched) label = matched.label;
+                                  }
+                                  return (
+                                    <Badge key={act} variant="outline" className="text-[10px] bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
+                                      {label}
+                                    </Badge>
+                                  )
+                                })}
+                              </div>
+                            )}
 
                             {/* أيقونات الصلاحيات */}
                             <div className="flex items-center gap-2 flex-wrap">
