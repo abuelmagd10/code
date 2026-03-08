@@ -1,22 +1,24 @@
 /**
- * 🔐 Atomic Invoice Payment API
+ * 🔐 Atomic Invoice Payment API — Enterprise ERP
  *
- * Enterprise-grade payment recording: calls process_invoice_payment_atomic RPC
- * which wraps payment INSERT + AR/Revenue journal + invoice UPDATE in ONE DB transaction.
- *
- * COGS is handled separately (complex FIFO calculation, non-atomic by design).
+ * Upgraded to Core Infrastructure:
+ * - requireOpenFinancialPeriod: Application-level Financial Lock Guard
+ * - asyncAuditLog: Non-blocking audit from Core
  *
  * ✅ Guarantees:
- *   - Zero partial-failure: if any step fails, the entire operation rolls back
+ *   - Zero partial-failure: RPC wraps payment + journal + invoice update atomically
  *   - Idempotent: duplicate payments are rejected at DB level
- *   - Race-condition safe: invoice row is locked (SELECT FOR UPDATE) during the transaction
+ *   - Race-condition safe: SELECT FOR UPDATE inside RPC
+ *   - Period Lock: double-checked at app + DB level
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
-import { checkPeriodLock } from "@/lib/accounting-period-lock"
+import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { asyncAuditLog } from "@/lib/core"
+import { ERPError } from "@/lib/core/errors/erp-errors"
 
 export async function POST(
   req: NextRequest,
@@ -37,7 +39,7 @@ export async function POST(
     if (error) return error
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
 
-    // ✅ Service role client (bypasses RLS – needed for atomic RPC)
+    // ✅ Service role client (bypasses RLS — needed for atomic RPC)
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -59,19 +61,11 @@ export async function POST(
       companyId: bodyCompanyId,
     } = body
 
-    if (!amount || Number(amount) <= 0) {
-      return badRequestError("مبلغ الدفعة يجب أن يكون أكبر من صفر")
-    }
-    if (!paymentDate) {
-      return badRequestError("تاريخ الدفعة مطلوب")
-    }
-    if (!paymentMethod) {
-      return badRequestError("طريقة الدفع مطلوبة")
-    }
+    if (!amount || Number(amount) <= 0) return badRequestError("مبلغ الدفعة يجب أن يكون أكبر من صفر")
+    if (!paymentDate) return badRequestError("تاريخ الدفعة مطلوب")
+    if (!paymentMethod) return badRequestError("طريقة الدفع مطلوبة")
 
-    // Prefer bodyCompanyId (the client knows exactly which company's invoice it's paying).
-    // Fall back to the cookie-resolved companyId.
-    // If they differ, we re-validate that the user is a member of bodyCompanyId.
+    // Multi-Company guard: validate membership if bodyCompanyId differs from cookie
     const resolvedCompanyId = bodyCompanyId || companyId
     if (!resolvedCompanyId) return badRequestError("معرف الشركة مطلوب")
 
@@ -87,7 +81,7 @@ export async function POST(
       }
     }
 
-    // ✅ Fetch invoice for customer_id + period lock check
+    // ✅ Fetch invoice
     const { data: invoice, error: invErr } = await supabase
       .from("invoices")
       .select("id, customer_id, invoice_date, status, company_id, branch_id, cost_center_id, warehouse_id")
@@ -99,15 +93,16 @@ export async function POST(
       return NextResponse.json({ success: false, error: "الفاتورة غير موجودة" }, { status: 404 })
     }
 
-    // ✅ Period lock check
+    // ✅ Financial Lock Guard — Core Infrastructure (replaces old checkPeriodLock)
     const lockDate = paymentDate || invoice.invoice_date
     if (lockDate) {
-      const lockResult = await checkPeriodLock(authSupabase, { companyId: resolvedCompanyId, date: lockDate })
-      if (lockResult.isLocked) {
-        return NextResponse.json({
-          success: false,
-          error: lockResult.error || `الفترة المحاسبية مقفلة: ${lockResult.periodName}`
-        }, { status: 400 })
+      try {
+        await requireOpenFinancialPeriod(resolvedCompanyId, lockDate)
+      } catch (lockErr: any) {
+        if (lockErr instanceof ERPError && lockErr.code === 'ERR_PERIOD_CLOSED') {
+          return NextResponse.json({ success: false, error: lockErr.message }, { status: 400 })
+        }
+        throw lockErr
       }
     }
 
@@ -132,7 +127,6 @@ export async function POST(
     )
 
     if (rpcError) {
-      // Structured error codes from the RPC
       const msg = rpcError.message || ""
       if (msg.includes("DUPLICATE_PAYMENT")) {
         return NextResponse.json({ success: false, error: "توجد دفعة مشابهة مسجلة بالفعل لهذه الفاتورة" }, { status: 409 })
@@ -148,11 +142,27 @@ export async function POST(
 
     const result = rpcResult as any
     if (!result?.success) {
-      return NextResponse.json({
-        success: false,
-        error: result?.error || "فشل غير معروف في معالجة الدفعة"
-      }, { status: 400 })
+      return NextResponse.json({ success: false, error: result?.error || "فشل غير معروف في معالجة الدفعة" }, { status: 400 })
     }
+
+    // ✅ Non-Blocking Async Audit (Core Infrastructure)
+    asyncAuditLog({
+      companyId: resolvedCompanyId,
+      userId: user?.id || '',
+      userEmail: user?.email,
+      action: 'CREATE',
+      table: 'invoice_payments',
+      recordId: result.payment_id || invoiceId,
+      recordIdentifier: invoiceId,
+      newData: {
+        payment_id: result.payment_id,
+        amount,
+        paymentDate,
+        paymentMethod,
+        new_status: result.new_status
+      },
+      reason: 'Invoice Payment Recorded'
+    })
 
     return NextResponse.json({
       success: true,
@@ -163,6 +173,7 @@ export async function POST(
       remaining: result.remaining,
       invoiceJournalCreated: result.invoice_journal_created,
     })
+
   } catch (e: any) {
     return serverError(`خطأ غير متوقع في تسجيل الدفعة: ${e?.message || "unknown"}`)
   }

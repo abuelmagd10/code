@@ -1,8 +1,10 @@
 import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { createClient as createSSR } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from "@/lib/api-error-handler"
+import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { asyncAuditLog } from "@/lib/core"
+import { ERPError } from "@/lib/core/errors/erp-errors"
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -32,7 +34,22 @@ export async function POST(req: NextRequest) {
       return badRequestError("السنة والشهر وحساب الدفع مطلوبة", ["year", "month", "paymentAccountId"])
     }
 
-    // ── Idempotency Key من الـ header (يمنع Double Submission)
+    const dateStr = typeof paymentDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate)
+      ? paymentDate
+      : new Date().toISOString().slice(0, 10)
+
+    // ✅ Financial Lock Guard — Core Infrastructure (Application-Level Check)
+    // منع صرف رواتب في فترة محاسبية مغلقة قبل حتى الوصول إلى قاعدة البيانات
+    try {
+      await requireOpenFinancialPeriod(companyId, dateStr)
+    } catch (lockErr: any) {
+      if (lockErr instanceof ERPError && lockErr.code === 'ERR_PERIOD_CLOSED') {
+        return apiError(HTTP_STATUS.BAD_REQUEST, lockErr.message, 'Period is locked')
+      }
+      throw lockErr
+    }
+
+    // ── Idempotency Key
     const idempotencyKey = req.headers.get('Idempotency-Key') || null
 
     // ── جلب دفعة الرواتب
@@ -54,7 +71,6 @@ export async function POST(req: NextRequest) {
     if (runErr) return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب دفعة المرتبات", runErr.message)
     if (!run?.id) return notFoundError("دفعة المرتبات", "Payroll run not found")
 
-    // منع إعادة الصرف إذا كانت مدفوعة مسبقاً
     if (run.status === 'paid') {
       return apiError(HTTP_STATUS.BAD_REQUEST, "تم صرف هذه الرواتب مسبقاً", "Payroll already paid")
     }
@@ -82,29 +98,23 @@ export async function POST(req: NextRequest) {
       return apiError(HTTP_STATUS.BAD_REQUEST, "حساب المصروفات 6110 غير موجود", "Expense account 6110 missing")
     }
 
-    const dateStr = typeof paymentDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate)
-      ? paymentDate
-      : new Date().toISOString().slice(0, 10)
-
-    // ── استدعاء RPC الذري (Phase 2: Atomic + Period Lock + Idempotency)
+    // ── استدعاء RPC الذري (يحتوي على Period Lock + Idempotency Guard داخلياً في Postgres)
     const { data: rpcResult, error: rpcErr } = await admin.rpc('post_payroll_atomic', {
-      p_company_id:         companyId,
-      p_payroll_run_id:     run.id,
+      p_company_id: companyId,
+      p_payroll_run_id: run.id,
       p_payment_account_id: paymentAccountId,
       p_expense_account_id: expAcc.id,
-      p_payment_date:       dateStr,
-      p_year:               year,
-      p_month:              month,
-      p_created_by:         user.id,
-      p_idempotency_key:    idempotencyKey
+      p_payment_date: dateStr,
+      p_year: year,
+      p_month: month,
+      p_created_by: user.id,
+      p_idempotency_key: idempotencyKey
     })
 
     if (rpcErr) {
       const msg = rpcErr.message || ''
       if (msg.includes('PERIOD_LOCKED')) {
-        return apiError(HTTP_STATUS.BAD_REQUEST,
-          msg.replace('PERIOD_LOCKED: ', ''),
-          'Period is locked')
+        return apiError(HTTP_STATUS.BAD_REQUEST, msg.replace('PERIOD_LOCKED: ', ''), 'Period is locked')
       }
       if (msg.includes('NO_PAYSLIPS')) {
         return apiError(HTTP_STATUS.BAD_REQUEST, "لا توجد كشوف مرتبات للصرف", "No payslips to pay")
@@ -117,24 +127,24 @@ export async function POST(req: NextRequest) {
 
     const result = rpcResult as any
 
-    // ── Audit Log
-    try {
-      await admin.from('audit_logs').insert({
-        action: 'payroll_paid',
-        target_table: 'journal_entries',
-        company_id: companyId,
-        user_id: user.id,
-        record_id: result?.entry_id,
-        new_data: { year, month, total: result?.total, entry_id: result?.entry_id, idempotent: result?.idempotent }
-      })
-    } catch {}
+    // ✅ Async Audit Log — Non-Blocking (Core Infrastructure)
+    asyncAuditLog({
+      companyId,
+      userId: user.id,
+      userEmail: user.email,
+      action: 'CREATE',
+      table: 'journal_entries',
+      recordId: result?.entry_id || run.id,
+      recordIdentifier: `Payroll ${year}-${String(month).padStart(2, '0')}`,
+      newData: { year, month, total: result?.total, entry_id: result?.entry_id, idempotent: result?.idempotent },
+      reason: 'Payroll Payment Posted'
+    })
 
     return apiSuccess({
       ok: true,
       total: result?.total,
       entry_id: result?.entry_id,
       idempotent: result?.idempotent || false,
-      // RPC يُرجع 'description' وليس 'message' — نحافظ على التوافق مع الحالتين
       message: result?.description ?? result?.message ?? null
     })
 
