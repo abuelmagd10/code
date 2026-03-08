@@ -62,14 +62,13 @@ export async function POST(request: Request) {
             );
         }
 
-        // 4. Log the raw device push (Fire-and-Forget — لا نُعطّل الـ Response بانتظاره)
-        supabase.from('biometric_device_logs').insert({
+        Promise.resolve(supabase.from('biometric_device_logs').insert({
             device_id: device.id,
             company_id: device.company_id,
             request_ip: requestIp,
             payload,
             status_code: 200
-        }).then().catch(err => console.error('[BIOMETRIC] Failed to log device push:', err));
+        })).catch((err: any) => console.error('[BIOMETRIC] Failed to log device push:', err));
 
         // 5. Enterprise Batch Processing (بدلاً من Sequential Loop!)
         const result = await AttendanceService.pushRawLogs(
@@ -80,10 +79,11 @@ export async function POST(request: Request) {
         );
 
         // 6. Update device last_sync (Fire-and-Forget)
-        supabase.from('biometric_devices')
-            .update({ last_sync_at: new Date().toISOString() })
-            .eq('id', device.id)
-            .then().catch(() => { });
+        Promise.resolve(
+            supabase.from('biometric_devices')
+                .update({ last_sync_at: new Date().toISOString() })
+                .eq('id', device.id)
+        ).catch(() => { });
 
         return NextResponse.json({
             success: true,
