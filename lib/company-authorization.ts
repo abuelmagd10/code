@@ -38,7 +38,7 @@ export interface AuthorizationResult {
 /**
  * الأدوار العليا (يمكنها الوصول إلى companies table)
  */
-export const UPPER_ROLES = ["owner", "admin", "manager", "accountant"] as const
+export const UPPER_ROLES = ["owner", "admin", "manager"] as const
 
 /**
  * الأدوار العادية (مقيدة بالفرع ومركز التكلفة والمستودع)

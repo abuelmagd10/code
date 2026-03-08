@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     // 1️⃣ Permissions Scope Evaluation
     // (Actual permission 'products:write' was already checked above by secureApiRequest)
     // Here we define the scope for company-wide assignment vs restricted branch assignment
-    const isCompanyLevelAdmin = ["owner", "admin", "accountant", "manager"].includes(member.role)
+    const isCompanyLevelAdmin = ["owner", "admin", "manager"].includes(member.role)
     const isNormalRole = !isCompanyLevelAdmin && member.role !== ""
 
     // 🔐 فرض القيود على الأدوار العادية
