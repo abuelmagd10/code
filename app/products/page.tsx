@@ -1278,8 +1278,8 @@ export default function ProductsPage() {
                             <Sparkles className="w-4 h-4 mt-0.5 flex-shrink-0" />
                             <span>
                               {appLang === 'en'
-                                ? `Accounts auto-suggested based on ${formData.item_type === 'product' ? 'product' : 'service'} type. You can change them manually.`
-                                : `تم اقتراح الحسابات تلقائياً بناءً على نوع ${formData.item_type === 'product' ? 'المنتج' : 'الخدمة'}. يمكنك تغييرها يدوياً.`}
+                                ? `Accounts auto-suggested based on ${formData.item_type === 'product' ? 'product' : 'service'} type.${isNormalRole ? ' Assigned automatically by system.' : ' You can change them manually.'}`
+                                : `تم اقتراح الحسابات تلقائياً بناءً على نوع ${formData.item_type === 'product' ? 'المنتج' : 'الخدمة'}.${isNormalRole ? ' تم التعيين التلقائي بواسطة النظام.' : ' يمكنك تغييرها يدوياً.'}`}
                             </span>
                           </div>
                         )}
@@ -1294,6 +1294,7 @@ export default function ProductsPage() {
                             </div>
                             <Select
                               value={formData.income_account_id || "none"}
+                              disabled={isNormalRole}
                               onValueChange={(v) => {
                                 const val = v === "none" ? "" : v
                                 setFormData({ ...formData, income_account_id: val })
@@ -1323,6 +1324,7 @@ export default function ProductsPage() {
                             </div>
                             <Select
                               value={formData.expense_account_id || "none"}
+                              disabled={isNormalRole}
                               onValueChange={(v) => {
                                 const val = v === "none" ? "" : v
                                 setFormData({ ...formData, expense_account_id: val })
