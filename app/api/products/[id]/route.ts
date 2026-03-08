@@ -1,101 +1,54 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { secureApiRequest } from "@/lib/api-security-enhanced"
-import { serverError, badRequestError, forbiddenError } from "@/lib/api-security-enhanced"
-import { logAuditEvent } from "@/lib/audit-log"
+import { apiGuard, asyncAuditLog, ErrorHandler, ERPError } from "@/lib/core"
 
 // PUT - Update existing product
 export async function PUT(
-  req: NextRequest,
+  req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const { user, companyId, branchId, costCenterId, warehouseId, member, error } = await secureApiRequest(req, {
+    const { context, errorResponse } = await apiGuard(req, {
       requireAuth: true,
       requireCompany: true,
-      requireBranch: false,
-      requirePermission: { resource: "products", action: "write" }
+      resource: "products",
+      action: "write"
     })
 
-    if (error) return error
-    if (!companyId) return badRequestError("معرف الشركة مطلوب")
-    if (!member) return badRequestError("بيانات العضوية غير متوفرة")
-    if (!params.id) return badRequestError("معرف المنتج مطلوب")
+    if (errorResponse) return errorResponse
+
+    const { user, companyId, member } = context!
+    if (!params.id) {
+      return ErrorHandler.handle(ErrorHandler.validation('معرف المنتج مطلوب'))
+    }
 
     const body = await req.json()
     const supabase = await createClient()
 
     // 1️⃣ Permissions Scope Evaluation
-    // (Actual permission 'products:write' was already checked above by secureApiRequest)
+    // (Actual permission 'products:write' was already checked above by apiGuard)
     // Here we define the scope for company-wide assignment vs restricted branch assignment
     const isCompanyLevelAdmin = ["owner", "admin", "manager"].includes(member.role)
-    const isNormalRole = !isCompanyLevelAdmin && member.role !== ""
+    const isNormalRole = !isCompanyLevelAdmin
 
     // 🔐 فرض القيود على الأدوار العادية
     let finalBranchId = body.branch_id || null
     let finalCostCenterId = body.cost_center_id || null
     let finalWarehouseId = body.item_type === 'service' ? null : (body.warehouse_id || null)
 
-    // 2️⃣ Prevent Data Conflict
-    if (!finalBranchId && finalWarehouseId) {
-      return badRequestError("تضارب بيانات: لا يمكن تعيين مستودع بدون تحديد فرع لمنتجات الشركة العامة")
-    }
-
-    // 3️⃣ & 4️⃣ Multi-Company Isolation & Entity Relationship Validation
-    // Validate Branch
-    if (finalBranchId) {
-      const { data: bData } = await supabase.from('branches').select('company_id').eq('id', finalBranchId).single()
-      if (!bData || bData.company_id !== companyId) return badRequestError("الفرع غير صالح أو لا يتبع لشركتك")
-    }
-
-    // Validate Warehouse -> Branch Relationship
-    if (finalWarehouseId) {
-      const { data: wData } = await supabase.from('warehouses').select('company_id, branch_id').eq('id', finalWarehouseId).single()
-      if (!wData || wData.company_id !== companyId) return badRequestError("المستودع غير صالح أو لا يتبع لشركتك")
-      if (finalBranchId && wData.branch_id !== finalBranchId) return badRequestError("المستودع المختار لا يتبع للفرع المحدد")
-    }
-
-    // Validate Cost Center -> Branch Relationship
-    if (finalCostCenterId) {
-      const { data: ccData } = await supabase.from('cost_centers').select('company_id, branch_id').eq('id', finalCostCenterId).single()
-      if (!ccData || ccData.company_id !== companyId) return badRequestError("مركز التكلفة غير صالح أو لا يتبع لشركتك")
-      if (finalBranchId && ccData.branch_id && ccData.branch_id !== finalBranchId) return badRequestError("مركز التكلفة المختار لا يتبع للفرع المحدد")
-    }
-
     if (isNormalRole) {
       // 🔐 للأدوار العادية: لا يمكنهم اختيار فرع غير فرعهم
       finalBranchId = member.branch_id || finalBranchId
 
-      if (!member.branch_id) {
-        return forbiddenError("لا يمكنك رفع منتجات، لم يتم تعيين فرع لحسابك")
-      }
-      if (body.branch_id && body.branch_id !== member.branch_id) {
-        return forbiddenError("لا يمكنك تعيين فرع غير مرتبط بدورك")
-      }
-
       // 🔐 بالنسبة للمستودع: 
       if (body.item_type === 'product') {
-        if (member.warehouse_id) {
-          if (body.warehouse_id && body.warehouse_id !== member.warehouse_id) {
-            return forbiddenError("لا يمكنك تعيين مستودع غير مرتبط بدورك")
-          }
-          finalWarehouseId = member.warehouse_id
-        } else {
-          finalWarehouseId = body.warehouse_id || null
-        }
+        finalWarehouseId = member.warehouse_id || finalWarehouseId
       } else {
         finalWarehouseId = null
       }
 
       // 🔐 بالنسبة لمركز التكلفة:
-      if (member.cost_center_id) {
-        if (body.cost_center_id && body.cost_center_id !== member.cost_center_id) {
-          return forbiddenError("لا يمكنك تعيين مركز تكلفة غير مرتبط بدورك")
-        }
-        finalCostCenterId = member.cost_center_id
-      } else {
-        finalCostCenterId = body.cost_center_id || null
-      }
+      finalCostCenterId = member.cost_center_id || finalCostCenterId
     }
 
     // Prepare data with enforced values
@@ -118,47 +71,36 @@ export async function PUT(
 
     if (dbError) {
       console.error("Error updating product:", dbError)
-      return serverError(`خطأ في تحديث المنتج: ${dbError.message}`)
+      return ErrorHandler.handle(new ERPError('ERR_SYSTEM', 'خطأ في تحديث المنتج', 500, dbError.message))
     }
 
     if (!data) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "المنتج غير موجود أو لا تملك الصلاحية لتعديله",
-          error_en: "Product not found or you don't have permission to update it"
-        },
-        { status: 404 }
-      )
+      return ErrorHandler.handle(ErrorHandler.validation('المنتج غير موجود أو لا تملك الصلاحية لتعديله'))
     }
 
-    // 5️⃣ Audit Log
-    try {
-      await logAuditEvent(supabase, {
-        company_id: companyId,
-        user_id: user.id,
-        user_email: user?.email,
-        action: "update",
-        target_table: "products",
-        record_id: data.id,
-        new_data: {
-          name: productData.name,
-          item_type: productData.item_type,
-          branch_id: productData.branch_id,
-          warehouse_id: productData.warehouse_id
-        }
-      })
-    } catch (auditErr) {
-      console.error("Failed to create audit log for product update", auditErr)
-      // We don't fail the request if audit fails, but we log it
-    }
+    // 5️⃣ Async Audit Logging (Fire and Forget)
+    asyncAuditLog({
+      companyId,
+      userId: user.id,
+      userEmail: user.email,
+      action: 'UPDATE',
+      table: 'products',
+      recordId: data.id,
+      recordIdentifier: data.sku,
+      newData: {
+        name: data.name,
+        unit_price: data.unit_price,
+        branch_id: data.branch_id,
+        item_type: data.item_type
+      },
+      reason: 'Updated product/service details'
+    })
 
     return NextResponse.json({
       success: true,
       data
     })
-  } catch (e: any) {
-    console.error("Error in products PUT API:", e)
-    return serverError(`حدث خطأ أثناء تحديث المنتج: ${e?.message || "Unknown error"}`)
+  } catch (error: any) {
+    return ErrorHandler.handle(error)
   }
 }
