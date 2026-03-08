@@ -1026,6 +1026,9 @@ export default function UsersSettingsPage() {
     finance: {
       label: '🏦 المالية والمحاسبة',
       resources: [
+        { value: 'expenses', label: 'المصروفات' },
+        { value: 'drawings', label: 'المسحوبات الشخصية' },
+        { value: 'annual_closing', label: 'الإقفال السنوي' },
         { value: 'payments', label: 'المدفوعات' },
         { value: 'journal_entries', label: 'القيود اليومية' },
         { value: 'chart_of_accounts', label: 'الشجرة المحاسبية' },
@@ -1043,6 +1046,7 @@ export default function UsersSettingsPage() {
         { value: 'employees', label: 'الموظفين' },
         { value: 'attendance', label: 'الحضور والانصراف' },
         { value: 'payroll', label: 'الرواتب' },
+        { value: 'instant_payouts', label: 'السلف الفورية' },
       ]
     },
     organization: {
@@ -1057,6 +1061,7 @@ export default function UsersSettingsPage() {
       label: '⚙️ الإعدادات',
       resources: [
         { value: 'settings', label: 'الإعدادات (الرئيسية)' },
+        { value: 'system_status', label: 'حالة النظام' },
         { value: 'company_settings', label: 'إعدادات الشركة' },
         { value: 'users', label: 'المستخدمون' },
         { value: 'exchange_rates', label: 'أسعار العملات' },
@@ -1094,7 +1099,7 @@ export default function UsersSettingsPage() {
       'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes',
       'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits',
       'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt',
-      'payments', 'journal_entries', 'hr', 'employees', 'attendance', 'payroll',
+      'expenses', 'payments', 'journal_entries', 'drawings', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts',
       'branches', 'cost_centers', 'warehouses',
     ],
     staff: [
@@ -1118,8 +1123,10 @@ export default function UsersSettingsPage() {
       'third_party_inventory', // بضائع لدى الغير
       'write_offs', // اهلاك المخزون
       'inventory_goods_receipt', // اعتماد استلام المشتريات
+      'expenses', // المصروفات
       'payments', // المدفوعات
-      'journal_entries', // المصروفات ضمن القيود اليومية
+      'journal_entries', // القيود اليومية
+      'annual_closing', // الإقفال السنوي
     ],
     store_manager: [
       'inventory', // المخزون

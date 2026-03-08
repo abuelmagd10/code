@@ -141,7 +141,7 @@ const PATH_TO_RESOURCE: Record<string, string> = {
   // 📊 التقارير واللوحة الرئيسية
   '/dashboard': 'dashboard',
   '/reports': 'reports',
-  
+
   // 💰 المبيعات
   '/customers': 'customers',
   '/invoices': 'invoices',
@@ -150,14 +150,14 @@ const PATH_TO_RESOURCE: Record<string, string> = {
   '/sent-invoice-returns': 'sent_invoice_returns',
   '/estimates': 'estimates',
   '/customer-debit-notes': 'customer_debit_notes',
-  
+
   // 🛒 المشتريات
   '/suppliers': 'suppliers',
   '/bills': 'bills',
   '/purchase-orders': 'purchase_orders',
   '/purchase-returns': 'purchase_returns',
   '/vendor-credits': 'vendor_credits',
-  
+
   // 📦 المخزون
   '/products': 'products',
   '/inventory': 'inventory',
@@ -165,8 +165,12 @@ const PATH_TO_RESOURCE: Record<string, string> = {
   '/inventory/product-availability': 'product_availability',
   '/inventory/write-offs': 'write_offs',
   '/inventory-transfers': 'inventory_transfers',
-  
+  '/inventory/goods-receipt': 'inventory_goods_receipt',
+
   // 🏦 المالية والمحاسبة
+  '/expenses': 'expenses',
+  '/drawings': 'drawings',
+  '/annual-closing': 'annual_closing',
   '/payments': 'payments',
   '/journal-entries': 'journal_entries',
   '/chart-of-accounts': 'chart_of_accounts',
@@ -175,20 +179,22 @@ const PATH_TO_RESOURCE: Record<string, string> = {
   '/fixed-assets': 'fixed_assets',
   '/fixed-assets/categories': 'asset_categories',
   '/fixed-assets/reports': 'fixed_assets_reports',
-  
+
   // 👥 الموارد البشرية
   '/hr': 'hr',
   '/hr/employees': 'employees',
   '/hr/attendance': 'attendance',
   '/hr/payroll': 'payroll',
-  
+  '/hr/instant-payouts': 'instant_payouts',
+
   // 🏢 الهيكل التنظيمي
   '/branches': 'branches',
   '/cost-centers': 'cost_centers',
   '/warehouses': 'warehouses',
-  
+
   // ⚙️ الإعدادات
   '/settings': 'settings',
+  '/system-status': 'system_status',
   '/settings/users': 'users',
   '/settings/taxes': 'taxes',
   '/settings/exchange-rates': 'exchange_rates',
@@ -320,7 +326,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
     } finally {
       setIsReady(true)
       setIsLoading(false)
-      
+
       // ✅ إطلاق event عند اكتمال تحميل Permissions
       if (typeof window !== 'undefined') {
         console.log('✅ [PermissionsContext] Permissions loaded, dispatching permissions_ready event')
@@ -378,7 +384,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
 
   // ✅ إزالة permissions_updated event listener - useGovernanceRealtime يتعامل معه مباشرة
   // ✅ هذا يمنع استدعاء loadPermissions مرتين (مرة من event ومرة من useGovernanceRealtime)
-  
+
   // 🔐 استخدام نظام Realtime للحوكمة
   useGovernanceRealtime({
     onPermissionsChanged: loadPermissions,
