@@ -34,22 +34,22 @@ export async function enforceGovernance(
           return cookieStore.get(name)?.value
         },
         set(name: string, value: string, options: CookieOptions) {
-            try {
-                cookieStore.set({ name, value, ...options })
-            } catch (error) {
-                // The `set` method was called from a Server Component.
-                // This can be ignored if you have middleware refreshing
-                // user sessions.
-            }
+          try {
+            cookieStore.set({ name, value, ...options })
+          } catch (error) {
+            // The `set` method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing
+            // user sessions.
+          }
         },
         remove(name: string, options: CookieOptions) {
-            try {
-                cookieStore.set({ name, value: '', ...options })
-            } catch (error) {
-                // The `delete` method was called from a Server Component.
-                // This can be ignored if you have middleware refreshing
-                // user sessions.
-            }
+          try {
+            cookieStore.set({ name, value: '', ...options })
+          } catch (error) {
+            // The `delete` method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing
+            // user sessions.
+          }
         },
       },
     }
@@ -68,7 +68,7 @@ export async function enforceGovernance(
     const activeCompanyCookie = cookieStore.get('active_company_id')?.value
     // console.log('Governance: Active company cookie:', activeCompanyCookie) 
     activeCompanyId = activeCompanyCookie || null
-  } catch {}
+  } catch { }
 
   // الحصول على بيانات المستخدم من company_members
   let memberQuery = supabase
@@ -93,7 +93,7 @@ export async function enforceGovernance(
       .eq('user_id', user.id)
       .limit(1)
       .single()
-    
+
     if (fallbackError || !fallbackMember) {
       console.error('Governance: No company membership found for user', user.id)
       throw new Error('Governance Error: User is not a company member')
@@ -139,17 +139,21 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
       .single()
 
     if (error || !branch) {
-      throw new Error('Governance Error: Branch not found')
+      // ⚠️ الفرع غير موجود أو خطأ في الاستعلام - نرجع null بدلاً من رمي خطأ
+      console.warn(`Governance: Branch ${branchId} not found or query error`, error)
+      return { defaultWarehouseId: null as string | null, defaultCostCenterId: null as string | null }
     }
+    // ✅ إذا كانت القيم null نخطر فقط بدلاً من رمي خطأ
+    // بعض الجداول (مثل customers) لا تحتاج warehouse/cost_center
     if (!branch.default_warehouse_id || !branch.default_cost_center_id) {
-      throw new Error('Branch missing required defaults')
+      console.warn(`Governance: Branch ${branchId} is missing default_warehouse_id or default_cost_center_id. Some operations may be limited.`)
     }
     return {
-      defaultWarehouseId: branch.default_warehouse_id as string,
-      defaultCostCenterId: branch.default_cost_center_id as string
+      defaultWarehouseId: branch.default_warehouse_id as string | null,
+      defaultCostCenterId: branch.default_cost_center_id as string | null
     }
   }
-  
+
   switch (role) {
     case 'staff':
     case 'employee':
@@ -157,8 +161,8 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
       context.branchIds = [member.branch_id]
       {
         const defaults = await getBranchDefaults(member.branch_id)
-        context.warehouseIds = [defaults.defaultWarehouseId]
-        context.costCenterIds = [defaults.defaultCostCenterId]
+        if (defaults.defaultWarehouseId) context.warehouseIds = [defaults.defaultWarehouseId]
+        if (defaults.defaultCostCenterId) context.costCenterIds = [defaults.defaultCostCenterId]
       }
       break
 
@@ -169,8 +173,8 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
       context.branchIds = [member.branch_id]
       {
         const defaults = await getBranchDefaults(member.branch_id)
-        context.warehouseIds = [defaults.defaultWarehouseId]
-        context.costCenterIds = [defaults.defaultCostCenterId]
+        if (defaults.defaultWarehouseId) context.warehouseIds = [defaults.defaultWarehouseId]
+        if (defaults.defaultCostCenterId) context.costCenterIds = [defaults.defaultCostCenterId]
       }
       break
 
@@ -186,25 +190,25 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
         .from('branches')
         .select('id')
         .eq('company_id', context.companyId)
-      
+
       {
         const branchIds = allBranches?.map((b: any) => b.id) || []
         const primary = member.branch_id
         context.branchIds = [primary, ...branchIds.filter((id: string) => id !== primary)]
       }
-      
+
       const { data: allWarehouses } = await supabase
         .from('warehouses')
         .select('id')
         .eq('company_id', context.companyId)
-      
+
       context.warehouseIds = allWarehouses?.map((w: any) => w.id) || []
-      
+
       const { data: allCostCenters } = await supabase
         .from('cost_centers')
         .select('id')
         .eq('company_id', context.companyId)
-      
+
       context.costCenterIds = allCostCenters?.map((c: any) => c.id) || []
       break
 
@@ -213,8 +217,8 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
       context.branchIds = [member.branch_id]
       {
         const defaults = await getBranchDefaults(member.branch_id)
-        context.warehouseIds = [defaults.defaultWarehouseId]
-        context.costCenterIds = [defaults.defaultCostCenterId]
+        if (defaults.defaultWarehouseId) context.warehouseIds = [defaults.defaultWarehouseId]
+        if (defaults.defaultCostCenterId) context.costCenterIds = [defaults.defaultCostCenterId]
       }
       break
   }
@@ -230,19 +234,19 @@ export function applyGovernanceFilters(
   context: GovernanceContext
 ) {
   query = query.eq('company_id', context.companyId)
-  
+
   if (context.branchIds.length > 0) {
     query = query.in('branch_id', context.branchIds)
   }
-  
+
   if (context.warehouseIds.length > 0) {
     query = query.in('warehouse_id', context.warehouseIds)
   }
-  
+
   if (context.costCenterIds.length > 0) {
     query = query.in('cost_center_id', context.costCenterIds)
   }
-  
+
   return query
 }
 
@@ -263,13 +267,13 @@ export function validateGovernanceData(
     throw new Error('Governance Violation: Invalid branch_id')
   }
 
-  // التحقق من warehouse_id
-  if (!context.warehouseIds.includes(data.warehouse_id)) {
+  // التحقق من warehouse_id (فقط إذا كان السياق يمتلكه وكان الحقل موجوداً)
+  if (data.warehouse_id && context.warehouseIds.length > 0 && !context.warehouseIds.includes(data.warehouse_id)) {
     throw new Error('Governance Violation: Invalid warehouse_id')
   }
 
-  // التحقق من cost_center_id
-  if (!context.costCenterIds.includes(data.cost_center_id)) {
+  // التحقق من cost_center_id (فقط إذا كان السياق يمتلكه وكان الحقل موجوداً)
+  if (data.cost_center_id && context.costCenterIds.length > 0 && !context.costCenterIds.includes(data.cost_center_id)) {
     throw new Error('Governance Violation: Invalid cost_center_id')
   }
 }
@@ -284,7 +288,7 @@ export function addGovernanceData(
   // 🔐 Governance: Role-based enforcement
   const role = String(context.role || 'staff').trim().toLowerCase().replace(/\s+/g, '_')
   const isAdmin = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(role)
-  
+
   // For non-admin users, enforce their assigned governance values
   if (!isAdmin) {
     // Override any attempt to change governance fields
@@ -296,7 +300,7 @@ export function addGovernanceData(
       cost_center_id: context.costCenterIds[0] || null // Force user's assigned cost center
     }
   }
-  
+
   // For admin users, allow their choices but validate against available options
   return {
     ...data,
