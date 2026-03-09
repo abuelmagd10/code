@@ -23,7 +23,7 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Button } from "@/components/ui/button"
 import { useParams } from "next/navigation"
-import { Pencil, Trash2, Printer, FileDown, ArrowLeft, ArrowRight, RotateCcw, DollarSign, CreditCard, Banknote, FileText, AlertCircle, CheckCircle, Package, Clock, User, ExternalLink } from "lucide-react"
+import { Pencil, Trash2, Printer, FileDown, ArrowLeft, ArrowRight, RotateCcw, DollarSign, CreditCard, Banknote, FileText, AlertCircle, CheckCircle, Package, Clock, User, ExternalLink, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
@@ -52,6 +52,7 @@ import { createNotification } from "@/lib/governance-layer"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
+import { validateBillMatching } from "@/lib/three-way-matching"
 
 type Bill = {
   id: string
@@ -190,6 +191,23 @@ export default function BillViewPage() {
 
   // Linked Purchase Order
   const [linkedPurchaseOrder, setLinkedPurchaseOrder] = useState<{ id: string; po_number: string } | null>(null)
+  
+  // Linked Goods Receipt
+  const [linkedGRN, setLinkedGRN] = useState<{ id: string; grn_number: string; status: string } | null>(null)
+  
+  // Three-Way Matching Status
+  const [matchingStatus, setMatchingStatus] = useState<{
+    isValid: boolean
+    hasExceptions: boolean
+    exceptions: Array<{
+      id: string
+      exception_type: string
+      description: string
+      severity: string
+      is_resolved: boolean
+    }>
+  } | null>(null)
+  const [matchingLoading, setMatchingLoading] = useState(false)
 
   // Admin approval context
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
@@ -285,6 +303,30 @@ export default function BillViewPage() {
     }
   }, [id])
 
+  // Load Three-Way Matching Status
+  const loadMatchingStatus = async (billId: string, companyId: string) => {
+    try {
+      setMatchingLoading(true)
+      const result = await validateBillMatching(supabase, billId, companyId)
+      setMatchingStatus({
+        isValid: result.success && !result.hasExceptions,
+        hasExceptions: result.hasExceptions,
+        exceptions: result.exceptions.map((e: any) => ({
+          id: e.id,
+          exception_type: e.exception_type,
+          description: e.description || '',
+          severity: e.severity || 'warning',
+          is_resolved: e.is_resolved || false
+        }))
+      })
+    } catch (err) {
+      console.error("Error loading matching status:", err)
+      setMatchingStatus(null)
+    } finally {
+      setMatchingLoading(false)
+    }
+  }
+
   const loadData = async () => {
     try {
       setLoading(true)
@@ -336,6 +378,21 @@ export default function BillViewPage() {
       } else {
         setLinkedPurchaseOrder(null)
       }
+
+      // Load linked Goods Receipt if exists
+      const { data: grnData } = await supabase
+        .from("goods_receipts")
+        .select("id, grn_number, status")
+        .eq("bill_id", id)
+        .maybeSingle()
+      if (grnData) {
+        setLinkedGRN(grnData)
+      } else {
+        setLinkedGRN(null)
+      }
+
+      // Load Three-Way Matching Status
+      await loadMatchingStatus(id, billData.company_id)
 
       const { data: supplierData } = await supabase.from("suppliers").select("id, name").eq("id", billData.supplier_id).single()
       setSupplier(supplierData as any)
@@ -2292,8 +2349,109 @@ export default function BillViewPage() {
                           </Link>
                         </div>
                       )}
+                      {linkedGRN && (
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700 print:hidden">
+                          <span>{appLang === 'en' ? 'Goods Receipt (GRN)' : 'إيصال الاستلام'}</span>
+                          <Link href={`/goods-receipts/${linkedGRN.id}`} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline flex items-center gap-1">
+                            <ExternalLink className="w-3 h-3" />
+                            <span className="font-medium">{linkedGRN.grn_number}</span>
+                          </Link>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
+
+                  {/* Three-Way Matching Status Card */}
+                  {bill.purchase_order_id && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          {appLang === 'en' ? 'Three-Way Matching' : 'المطابقة الثلاثية'}
+                          {matchingLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : matchingStatus?.isValid ? (
+                            <CheckCircle className="w-4 h-4 text-green-600" />
+                          ) : matchingStatus?.hasExceptions ? (
+                            <AlertCircle className="w-4 h-4 text-red-600" />
+                          ) : null}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        {matchingLoading ? (
+                          <div className="text-center py-4 text-gray-500">
+                            {appLang === 'en' ? 'Checking matching...' : 'جاري التحقق من المطابقة...'}
+                          </div>
+                        ) : matchingStatus ? (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <span>{appLang === 'en' ? 'Status' : 'الحالة'}</span>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                matchingStatus.isValid
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                              }`}>
+                                {matchingStatus.isValid
+                                  ? (appLang === 'en' ? 'Matched' : 'مطابق')
+                                  : (appLang === 'en' ? 'Exceptions Found' : 'يوجد استثناءات')}
+                              </span>
+                            </div>
+                            {matchingStatus.hasExceptions && matchingStatus.exceptions.length > 0 && (
+                              <div className="mt-3 space-y-2">
+                                <div className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                                  {appLang === 'en' ? 'Exceptions:' : 'الاستثناءات:'}
+                                </div>
+                                {matchingStatus.exceptions
+                                  .filter(e => !e.is_resolved)
+                                  .map((exception) => (
+                                    <div
+                                      key={exception.id}
+                                      className={`p-2 rounded text-xs ${
+                                        exception.severity === 'error'
+                                          ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                                          : exception.severity === 'warning'
+                                          ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                                          : 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
+                                      }`}
+                                    >
+                                      <div className="font-medium mb-1">
+                                        {exception.exception_type === 'quantity_mismatch'
+                                          ? (appLang === 'en' ? 'Quantity Mismatch' : 'عدم تطابق الكمية')
+                                          : exception.exception_type === 'price_mismatch'
+                                          ? (appLang === 'en' ? 'Price Mismatch' : 'عدم تطابق السعر')
+                                          : exception.exception_type === 'missing_grn'
+                                          ? (appLang === 'en' ? 'Missing GRN' : 'إيصال الاستلام مفقود')
+                                          : exception.exception_type === 'missing_po'
+                                          ? (appLang === 'en' ? 'Missing PO' : 'أمر الشراء مفقود')
+                                          : exception.exception_type}
+                                      </div>
+                                      {exception.description && (
+                                        <div className="text-gray-600 dark:text-gray-400">
+                                          {exception.description}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                            {matchingStatus.hasExceptions && (
+                              <div className="mt-2">
+                                <Link
+                                  href={`/matching-exceptions?bill_id=${bill.id}`}
+                                  className="text-blue-600 hover:underline text-xs"
+                                >
+                                  {appLang === 'en' ? 'View All Exceptions →' : 'عرض جميع الاستثناءات →'}
+                                </Link>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-center py-4 text-gray-500 text-xs">
+                            {appLang === 'en' ? 'No matching data available' : 'لا توجد بيانات مطابقة متاحة'}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
               </CardContent>
             </Card>

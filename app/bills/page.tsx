@@ -27,7 +27,7 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Receipt, Plus, RotateCcw, Eye, Trash2, Pencil, Search, X, ShoppingCart } from "lucide-react"
+import { Receipt, Plus, RotateCcw, Eye, Trash2, Pencil, Search, X, ShoppingCart, Package } from "lucide-react"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { CompanyHeader } from "@/components/company-header"
 import { useToast } from "@/hooks/use-toast"
@@ -67,6 +67,9 @@ type Bill = {
   suppliers?: { name: string; phone?: string }
   // Linked Purchase Order
   purchase_order_id?: string | null
+  // Linked Goods Receipt
+  goods_receipt_id?: string | null
+  goods_receipts?: { id: string; grn_number: string } | null
 }
 
 type Supplier = { id: string; name: string; phone?: string }
@@ -352,7 +355,7 @@ export default function BillsPage() {
 
       let billsQuery = supabase
         .from("bills")
-        .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, receipt_status, receipt_rejection_reason, display_currency, display_total, original_currency, original_total, branch_id, suppliers(name, phone), branches(name)")
+        .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, receipt_status, receipt_rejection_reason, display_currency, display_total, original_currency, original_total, branch_id, purchase_order_id, suppliers(name, phone), branches(name), goods_receipts(id, grn_number)")
         .eq("company_id", visibilityRules.companyId)
         .neq("status", "voided")
 
@@ -956,6 +959,13 @@ export default function BillsPage() {
             <Link href={`/purchase-orders/${row.purchase_order_id}`}>
               <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Linked PO' : 'أمر الشراء المرتبط'}>
                 <ShoppingCart className="w-4 h-4 text-orange-500" />
+              </Button>
+            </Link>
+          )}
+          {row.goods_receipts && (
+            <Link href={`/goods-receipts/${row.goods_receipts.id}`}>
+              <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Linked GRN' : 'إيصال الاستلام المرتبط'}>
+                <Package className="w-4 h-4 text-green-500" />
               </Button>
             </Link>
           )}
