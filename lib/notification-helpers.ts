@@ -1413,23 +1413,53 @@ export async function notifyPOApprovalRequest(params: {
     ? `Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) requires your approval`
     : `أمر شراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency} يحتاج إلى موافقتك`
 
-  const roles = ['admin', 'owner', 'manager', 'general_manager']
-  for (const role of roles) {
-    await createNotification({
-      companyId,
-      referenceType: 'purchase_order',
-      referenceId: poId,
-      title,
-      message,
-      createdBy,
-      branchId,
-      costCenterId,
-      assignedToRole: role,
-      priority: 'high',
-      eventKey: `purchase_order:${poId}:approval_request:${role}`,
-      severity: 'warning',
-      category: 'approvals'
-    })
+  // الأدوار العليا (admin/owner/GM) تستلم الإشعار بدون branchId حتى يظهر على مستوى الشركة كاملة
+  // الأدوار المتوسطة (manager) تستلم الإشعار مع branchId للفرع المعني فقط
+  const topRoles = ['admin', 'owner', 'general_manager']
+  const branchRoles = ['manager']
+
+  for (const role of topRoles) {
+    try {
+      await createNotification({
+        companyId,
+        referenceType: 'purchase_order',
+        referenceId: poId,
+        title,
+        message,
+        createdBy,
+        branchId: undefined, // ← بدون branchId للأدوار العليا (مرئي على مستوى الشركة)
+        costCenterId: undefined,
+        assignedToRole: role,
+        priority: 'high',
+        eventKey: `purchase_order:${poId}:approval_request:${role}`,
+        severity: 'warning',
+        category: 'approvals'
+      })
+    } catch (err) {
+      console.warn(`⚠️ Failed to notify ${role} for PO approval:`, err)
+    }
+  }
+
+  for (const role of branchRoles) {
+    try {
+      await createNotification({
+        companyId,
+        referenceType: 'purchase_order',
+        referenceId: poId,
+        title,
+        message,
+        createdBy,
+        branchId,       // ← مع branchId للمدير المباشر للفرع
+        costCenterId,
+        assignedToRole: role,
+        priority: 'high',
+        eventKey: `purchase_order:${poId}:approval_request:${role}`,
+        severity: 'warning',
+        category: 'approvals'
+      })
+    } catch (err) {
+      console.warn(`⚠️ Failed to notify ${role} for PO approval:`, err)
+    }
   }
 }
 
@@ -1456,21 +1486,25 @@ export async function notifyPOApproved(params: {
     ? `Your Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) has been approved.`
     : `تمت الموافقة على أمر الشراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency}.`
 
-  await createNotification({
-    companyId,
-    referenceType: 'purchase_order',
-    referenceId: poId,
-    title,
-    message,
-    createdBy: approvedBy,
-    assignedToUser: createdBy,
-    branchId,
-    costCenterId,
-    priority: 'normal',
-    eventKey: `purchase_order:${poId}:approved`,
-    severity: 'info',
-    category: 'approvals'
-  })
+  try {
+    await createNotification({
+      companyId,
+      referenceType: 'purchase_order',
+      referenceId: poId,
+      title,
+      message,
+      createdBy: approvedBy,
+      assignedToUser: createdBy,
+      branchId: undefined, // ← بدون branchId لضمان وصول الإشعار للمنشئ بغض النظر عن فرعه
+      costCenterId: undefined,
+      priority: 'normal',
+      eventKey: `purchase_order:${poId}:approved:${Date.now()}`,
+      severity: 'info',
+      category: 'approvals'
+    })
+  } catch (err) {
+    console.warn('⚠️ Failed to send PO approved notification:', err)
+  }
 }
 
 export async function notifyPORejected(params: {
@@ -1497,21 +1531,25 @@ export async function notifyPORejected(params: {
     ? `Your Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) was rejected. Reason: ${reason}`
     : `تم رفض أمر الشراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency}. السبب: ${reason}`
 
-  await createNotification({
-    companyId,
-    referenceType: 'purchase_order',
-    referenceId: poId,
-    title,
-    message,
-    createdBy: rejectedBy,
-    assignedToUser: createdBy,
-    branchId,
-    costCenterId,
-    priority: 'high',
-    eventKey: `purchase_order:${poId}:rejected`,
-    severity: 'error',
-    category: 'approvals'
-  })
+  try {
+    await createNotification({
+      companyId,
+      referenceType: 'purchase_order',
+      referenceId: poId,
+      title,
+      message,
+      createdBy: rejectedBy,
+      assignedToUser: createdBy,
+      branchId: undefined, // ← بدون branchId لضمان وصول الإشعار للمنشئ
+      costCenterId: undefined,
+      priority: 'high',
+      eventKey: `purchase_order:${poId}:rejected`,
+      severity: 'error',
+      category: 'approvals'
+    })
+  } catch (err) {
+    console.warn('⚠️ Failed to send PO rejected notification:', err)
+  }
 }
 
 // ===========================================================
