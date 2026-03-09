@@ -1386,3 +1386,127 @@ export async function notifyBankVoucherRejected(params: {
     category: 'approvals'
   })
 }
+
+// =====================================================
+// 🔔 Purchase Order Approval Notifications
+// =====================================================
+
+export async function notifyPOApprovalRequest(params: {
+  companyId: string
+  poId: string
+  poNumber: string
+  supplierName: string
+  amount: number
+  currency: string
+  branchId?: string
+  costCenterId?: string
+  createdBy: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, poId, poNumber, supplierName, amount, currency, branchId, costCenterId, createdBy, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? 'Purchase Order Approval Required'
+    : 'طلب موافقة على أمر شراء'
+
+  const message = appLang === 'en'
+    ? `Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) requires your approval`
+    : `أمر شراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency} يحتاج إلى موافقتك`
+
+  await createNotification({
+    companyId,
+    referenceType: 'purchase_order',
+    referenceId: poId,
+    title,
+    message,
+    createdBy,
+    branchId,
+    costCenterId,
+    assignedToRole: 'admin',
+    priority: 'high',
+    eventKey: `purchase_order:${poId}:approval_request`,
+    severity: 'warning',
+    category: 'approvals'
+  })
+}
+
+export async function notifyPOApproved(params: {
+  companyId: string
+  poId: string
+  poNumber: string
+  supplierName: string
+  amount: number
+  currency: string
+  branchId?: string
+  costCenterId?: string
+  createdBy: string // requested by
+  approvedBy: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, poId, poNumber, supplierName, amount, currency, branchId, costCenterId, createdBy, approvedBy, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? `Purchase Order Approved`
+    : `تم اعتماد أمر الشراء`
+
+  const message = appLang === 'en'
+    ? `Your Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) has been approved.`
+    : `تمت الموافقة على أمر الشراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency}.`
+
+  await createNotification({
+    companyId,
+    referenceType: 'purchase_order',
+    referenceId: poId,
+    title,
+    message,
+    createdBy: approvedBy,
+    assignedToUser: createdBy,
+    branchId,
+    costCenterId,
+    priority: 'normal',
+    eventKey: `purchase_order:${poId}:approved`,
+    severity: 'info',
+    category: 'approvals'
+  })
+}
+
+export async function notifyPORejected(params: {
+  companyId: string
+  poId: string
+  poNumber: string
+  supplierName: string
+  amount: number
+  currency: string
+  branchId?: string
+  costCenterId?: string
+  createdBy: string // requested by
+  rejectedBy: string
+  reason: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, poId, poNumber, supplierName, amount, currency, branchId, costCenterId, createdBy, rejectedBy, reason, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? `Purchase Order Rejected`
+    : `تم رفض أمر الشراء`
+
+  const message = appLang === 'en'
+    ? `Your Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) was rejected. Reason: ${reason}`
+    : `تم رفض أمر الشراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency}. السبب: ${reason}`
+
+  await createNotification({
+    companyId,
+    referenceType: 'purchase_order',
+    referenceId: poId,
+    title,
+    message,
+    createdBy: rejectedBy,
+    assignedToUser: createdBy,
+    branchId,
+    costCenterId,
+    priority: 'high',
+    eventKey: `purchase_order:${poId}:rejected`,
+    severity: 'error',
+    category: 'approvals'
+  })
+}

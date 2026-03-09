@@ -24,10 +24,10 @@ export async function GET(request: NextRequest) {
     const governance = await enforceGovernance()
 
     const supabase = await createClient()
-    
+
     const { searchParams } = new URL(request.url)
     const status = searchParams.get("status") || undefined
-    
+
     // 2️⃣ بناء الاستعلام مع فلاتر الحوكمة
     let query = supabase
       .from("purchase_orders")
@@ -48,9 +48,9 @@ export async function GET(request: NextRequest) {
 
     if (dbError) {
       console.error("[API /purchase-orders] Database error:", dbError)
-      return NextResponse.json({ 
-        error: dbError.message, 
-        error_ar: "خطأ في جلب أوامر الشراء" 
+      return NextResponse.json({
+        error: dbError.message,
+        error_ar: "خطأ في جلب أوامر الشراء"
       }, { status: 500 })
     }
 
@@ -71,11 +71,11 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error("[API /purchase-orders] Unexpected error:", error)
-    return NextResponse.json({ 
-      error: error.message, 
-      error_ar: "حدث خطأ غير متوقع" 
-    }, { 
-      status: error.message.includes('Unauthorized') ? 401 : 403 
+    return NextResponse.json({
+      error: error.message,
+      error_ar: "حدث خطأ غير متوقع"
+    }, {
+      status: error.message.includes('Unauthorized') ? 401 : 403
     })
   }
 }
@@ -88,15 +88,15 @@ export async function POST(request: NextRequest) {
   try {
     // 1️⃣ تطبيق الحوكمة (إلزامي)
     const governance = await enforceGovernance()
-    
+
     const body = await request.json()
-    
+
     // 2️⃣ إضافة بيانات الحوكمة تلقائياً
     const dataWithGovernance = addGovernanceData(body, governance)
-    
+
     // 3️⃣ التحقق من صحة البيانات (إلزامي)
     validateGovernanceData(dataWithGovernance, governance)
-    
+
     const supabase = await createClient()
 
     // 4️⃣ الإدخال في قاعدة البيانات
@@ -107,10 +107,24 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (insertError) {
-      return NextResponse.json({ 
-        error: insertError.message, 
-        error_ar: "فشل في إنشاء أمر الشراء" 
+      return NextResponse.json({
+        error: insertError.message,
+        error_ar: "فشل في إنشاء أمر الشراء"
       }, { status: 500 })
+    }
+
+    // 5️⃣ إضافة سجل تدقيق (Enterprise Requirement)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user && governance.companyId) {
+      await supabase.from("audit_logs").insert({
+        company_id: governance.companyId,
+        user_id: user.id,
+        action: "po_created",
+        entity_type: "purchase_order",
+        entity_id: newOrder.id,
+        new_values: newOrder,
+        created_at: new Date().toISOString()
+      })
     }
 
     return NextResponse.json({
@@ -128,11 +142,12 @@ export async function POST(request: NextRequest) {
     }, { status: 201 })
 
   } catch (error: any) {
-    return NextResponse.json({ 
-      error: error.message, 
-      error_ar: "حدث خطأ غير متوقع" 
-    }, { 
-      status: error.message.includes('Violation') ? 403 : 500 
+    return NextResponse.json({
+      error: error.message,
+      error_ar: "حدث خطأ غير متوقع"
+    }, {
+      status: error.message.includes('Violation') ? 403 : 500
     })
   }
 }
+

@@ -113,12 +113,27 @@ export const statusConfigs: Record<string, {
   billed: {
     variant: 'default',
     className: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-    label: { ar: 'تم التحويل لفاتورة', en: 'Billed' }
+    label: { ar: 'مفوتر بالكامل', en: 'Fully Billed' }
+  },
+  partially_billed: {
+    variant: 'outline',
+    className: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
+    label: { ar: 'مفوتر جزئياً', en: 'Partially Billed' }
+  },
+  sent_to_vendor: {
+    variant: 'default',
+    className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+    label: { ar: 'مرسل للمورد', en: 'Sent to Vendor' }
   },
   received: {
     variant: 'default',
     className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
     label: { ar: 'مُستلم', en: 'Received' }
+  },
+  partially_received: {
+    variant: 'outline',
+    className: 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
+    label: { ar: 'مستلم جزئياً', en: 'Partially Received' }
   },
   returned: {
     variant: 'destructive',
@@ -176,6 +191,11 @@ export const statusConfigs: Record<string, {
     variant: 'default',
     className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
     label: { ar: 'مكتمل', en: 'Completed' }
+  },
+  closed: {
+    variant: 'secondary',
+    className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
+    label: { ar: 'مغلق', en: 'Closed' }
   },
   // Attendance statuses
   present: {

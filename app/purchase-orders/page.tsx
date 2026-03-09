@@ -132,9 +132,14 @@ export default function PurchaseOrdersPage() {
   // Status options for multi-select - قائمة ثابتة بجميع الحالات الممكنة
   const allStatusOptions = useMemo(() => [
     { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
-    { value: "sent", label: appLang === 'en' ? "Sent" : "مُرسل" },
-    { value: "received", label: appLang === 'en' ? "Received" : "مُستلم" },
-    { value: "billed", label: appLang === 'en' ? "Billed" : "تم التحويل" },
+    { value: "pending_approval", label: appLang === 'en' ? "Pending Approval" : "في انتظار الموافقة" },
+    { value: "approved", label: appLang === 'en' ? "Approved" : "معتمد" },
+    { value: "sent_to_vendor", label: appLang === 'en' ? "Sent to Vendor" : "تم الإرسال للمورد" },
+    { value: "partially_received", label: appLang === 'en' ? "Partially Received" : "مستلم جزئياً" },
+    { value: "received", label: appLang === 'en' ? "Received" : "تم الاستلام" },
+    { value: "billed", label: appLang === 'en' ? "Billed" : "مفوتر بالكامل" },
+    { value: "closed", label: appLang === 'en' ? "Closed" : "مغلق" },
+    { value: "rejected", label: appLang === 'en' ? "Rejected" : "مرفوض" },
     { value: "paid", label: appLang === 'en' ? "Paid" : "مدفوع" },
     { value: "partially_paid", label: appLang === 'en' ? "Partially Paid" : "مدفوع جزئياً" },
     { value: "returned", label: appLang === 'en' ? "Returned" : "مرتجع" },
@@ -146,18 +151,18 @@ export default function PurchaseOrdersPage() {
   const statusOptions = useMemo(() => {
     // جمع جميع الحالات الفعلية من الأوامر
     const availableStatuses = new Set<string>();
-    
+
     orders.forEach((order) => {
       // استخدام حالة الفاتورة المرتبطة إذا كانت موجودة، وإلا استخدام حالة الأمر
       const linkedBill = order.bill_id ? linkedBills[order.bill_id] : null;
       const displayStatus = linkedBill ? linkedBill.status : order.status;
-      
+
       availableStatuses.add(displayStatus);
-      
+
       // إضافة حالة الأمر نفسه أيضاً
       availableStatuses.add(order.status);
     });
-    
+
     // إرجاع فقط الحالات المتاحة من القائمة الكاملة
     return allStatusOptions.filter(opt => availableStatuses.has(opt.value));
   }, [orders, linkedBills, allStatusOptions]);
@@ -314,7 +319,7 @@ export default function PurchaseOrdersPage() {
           return !order.cost_center_id || order.cost_center_id === visibilityRules.costCenterId
         })
       }
-      
+
       setOrders(filteredOrders);
 
       // Load linked bills with full details
@@ -779,8 +784,8 @@ export default function PurchaseOrdersPage() {
         // ✅ إذا مرتبط بفاتورة: نعرض حالة أمر الشراء بناءً على حالة الفاتورة
         if (linkedBill || row.bill_id) {
           // ✅ إذا كانت الفاتورة Draft، لا نعرض "billed"
-          const orderStatus = (linkedBill && linkedBill.status !== 'draft' && row.bill_id) 
-            ? 'billed' 
+          const orderStatus = (linkedBill && linkedBill.status !== 'draft' && row.bill_id)
+            ? 'billed'
             : row.status;
           const hasReturns = linkedBill && (linkedBill.returned_amount || 0) > 0;
           const returnStatus = linkedBill?.return_status;
@@ -876,8 +881,8 @@ export default function PurchaseOrdersPage() {
           // منع الحذف للفواتير المرسلة أو المدفوعة
           if (linkedBill.status === 'sent' || linkedBill.status === 'partially_paid' || linkedBill.status === 'paid') {
             sonnerToast.error(
-              appLang === 'en' 
-                ? 'Cannot delete - linked bill is sent or paid. Use Return instead.' 
+              appLang === 'en'
+                ? 'Cannot delete - linked bill is sent or paid. Use Return instead.'
                 : 'لا يمكن الحذف - الفاتورة المرتبطة مرسلة أو مدفوعة. استخدم المرتجع بدلاً من ذلك.'
             );
             setDeleteConfirmOpen(false);

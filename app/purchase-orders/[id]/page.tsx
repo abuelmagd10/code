@@ -15,6 +15,10 @@ import { getActiveCompanyId } from "@/lib/company"
 import { Pencil, ArrowRight, ArrowLeft, Loader2, Mail, Send, FileText, CreditCard, RotateCcw, DollarSign, Package, Receipt, ShoppingCart, Plus, CheckCircle, Clock, AlertCircle, Ban, Printer } from "lucide-react"
 import { type UserContext, validatePurchaseOrderAction, canViewPurchasePrices } from "@/lib/validation"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { notifyPOApproved, notifyPORejected } from "@/lib/notification-helpers"
 
 interface Supplier { id: string; name: string; email?: string; address?: string; phone?: string }
 interface POItem {
@@ -52,6 +56,9 @@ interface PO {
   adjustment?: number
   bill_id?: string
   company_id?: string
+  rejection_reason?: string
+  rejected_by?: string
+  approved_by?: string
 }
 
 interface LinkedBill {
@@ -110,6 +117,9 @@ export default function PurchaseOrderDetailPage() {
   const [canReceiveOrder, setCanReceiveOrder] = useState(false)
   const [canViewPrices, setCanViewPrices] = useState(false)
   const [poCreatedBy, setPoCreatedBy] = useState<string | null>(null)
+
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false)
+  const [rejectionReason, setRejectionReason] = useState("")
 
   const printContentRef = useRef<HTMLDivElement>(null)
   const [companyDetails, setCompanyDetails] = useState<any>(null)
@@ -495,12 +505,16 @@ export default function PurchaseOrderDetailPage() {
     const statusConfig: Record<string, { icon: any; color: string; bgColor: string; label: string; labelEn: string }> = {
       // حالات أوامر الشراء
       draft: { icon: Clock, color: 'text-gray-600', bgColor: 'bg-gray-100 dark:bg-gray-800', label: 'مسودة', labelEn: 'Draft' },
-      sent: { icon: Send, color: 'text-blue-600', bgColor: 'bg-blue-100 dark:bg-blue-900/30', label: 'تم الإرسال', labelEn: 'Sent' },
+      pending_approval: { icon: Clock, color: 'text-yellow-600', bgColor: 'bg-yellow-100 dark:bg-yellow-900/30', label: 'في انتظار الموافقة', labelEn: 'Pending Approval' },
+      approved: { icon: CheckCircle, color: 'text-blue-600', bgColor: 'bg-blue-100 dark:bg-blue-900/30', label: 'معتمد', labelEn: 'Approved' },
+      sent_to_vendor: { icon: Send, color: 'text-indigo-600', bgColor: 'bg-indigo-100 dark:bg-indigo-900/30', label: 'تم الإرسال للمورد', labelEn: 'Sent to Vendor' },
+      partially_received: { icon: Package, color: 'text-teal-600', bgColor: 'bg-teal-100 dark:bg-teal-900/30', label: 'مستلم جزئياً', labelEn: 'Partially Received' },
       received: { icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-100 dark:bg-green-900/30', label: 'تم الاستلام', labelEn: 'Received' },
       partially_billed: { icon: AlertCircle, color: 'text-orange-600', bgColor: 'bg-orange-100 dark:bg-orange-900/30', label: 'مفوتر جزئياً', labelEn: 'Partially Billed' },
       billed: { icon: FileText, color: 'text-purple-600', bgColor: 'bg-purple-100 dark:bg-purple-900/30', label: 'مفوتر بالكامل', labelEn: 'Fully Billed' },
-      cancelled: { icon: Ban, color: 'text-red-600', bgColor: 'bg-red-100 dark:bg-red-900/30', label: 'ملغي', labelEn: 'Cancelled' },
       closed: { icon: CheckCircle, color: 'text-gray-600', bgColor: 'bg-gray-100 dark:bg-gray-800', label: 'مغلق', labelEn: 'Closed' },
+      rejected: { icon: Ban, color: 'text-red-600', bgColor: 'bg-red-100 dark:bg-red-900/30', label: 'مرفوض', labelEn: 'Rejected' },
+      cancelled: { icon: Ban, color: 'text-red-600', bgColor: 'bg-red-100 dark:bg-red-900/30', label: 'ملغي', labelEn: 'Cancelled' },
       // حالات الفواتير
       pending: { icon: Clock, color: 'text-yellow-600', bgColor: 'bg-yellow-100 dark:bg-yellow-900/30', label: 'معلقة', labelEn: 'Pending' },
       paid: { icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-100 dark:bg-green-900/30', label: 'مدفوعة', labelEn: 'Paid' },
@@ -553,7 +567,7 @@ export default function PurchaseOrderDetailPage() {
       // Update local state immediately
       setPo(prev => prev ? ({ ...prev, status: newStatus }) : null)
 
-      if (newStatus === "sent") {
+      if (newStatus === "sent_to_vendor") {
         // Try to send email to supplier if they have an email
         const supplierEmail = po?.suppliers?.email
         if (supplierEmail) {
@@ -616,6 +630,111 @@ export default function PurchaseOrderDetailPage() {
     } catch (err) {
       console.error("Error updating PO status:", err)
       toastActionError(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Purchase Order" : "أمر الشراء", appLang === 'en' ? "Failed to update status" : "تعذر تحديث حالة أمر الشراء")
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  const handleApprovePO = async () => {
+    try {
+      setIsSending(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || !userContext?.company_id || !po) return
+
+      const { data, error } = await supabase.rpc('approve_purchase_order_atomic', {
+        p_po_id: poId,
+        p_user_id: user.id,
+        p_company_id: userContext.company_id,
+        p_action: 'approve'
+      })
+
+      if (error) throw error
+      if (data && !data.success) throw new Error(data.error || 'Failed to approve PO')
+
+      // status becomes 'draft' or 'approved' based on RPC, currently 'draft'. Let's align with draft for billing.
+      setPo(prev => prev ? ({ ...prev, status: data.status || "draft", approved_by: user.id }) : null)
+
+      // Notify creator, assuming po history might not have exact creator reliably stored since it wasn't there before
+      // but if we don't have createdBy, we'll try to omit it or pass known values.
+      const companyId = await getActiveCompanyId(supabase)
+      if (companyId) {
+        await notifyPOApproved({
+          companyId,
+          poId,
+          poNumber: po.po_number,
+          supplierName: po.suppliers?.name || "Unknown",
+          amount: po.total_amount || 0,
+          currency: po.currency || "EGP",
+          branchId: userContext.branch_id || undefined,
+          costCenterId: userContext.cost_center_id || undefined,
+          createdBy: poCreatedBy || "",
+          approvedBy: user.id,
+          appLang
+        })
+      }
+
+      toastActionSuccess(toast, appLang === 'en' ? "Approve" : "اعتماد", appLang === 'en' ? "Purchase Order" : "أمر الشراء")
+      router.refresh()
+    } catch (err) {
+      console.error("Error approving PO:", err)
+      toastActionError(toast, appLang === 'en' ? "Approve" : "اعتماد", appLang === 'en' ? "Purchase Order" : "أمر الشراء")
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  const handleRejectPO = async () => {
+    if (!rejectionReason.trim()) {
+      toast({
+        title: appLang === 'en' ? "Reason Required" : "السبب مطلوب",
+        description: appLang === 'en' ? "Please provide a reason for rejection" : "يرجى تقديم سبب للرفض",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      setIsSending(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || !userContext?.company_id || !po) return
+
+      const { data, error } = await supabase.rpc('approve_purchase_order_atomic', {
+        p_po_id: poId,
+        p_user_id: user.id,
+        p_company_id: userContext.company_id,
+        p_action: 'reject',
+        p_reason: rejectionReason
+      })
+
+      if (error) throw error
+      if (data && !data.success) throw new Error(data.error || 'Failed to reject PO')
+
+      setPo(prev => prev ? ({ ...prev, status: "rejected", rejection_reason: rejectionReason, rejected_by: user.id }) : null)
+      setIsRejectDialogOpen(false)
+
+      const companyId = await getActiveCompanyId(supabase)
+      if (companyId) {
+        await notifyPORejected({
+          companyId,
+          poId,
+          poNumber: po.po_number,
+          supplierName: po.suppliers?.name || "Unknown",
+          amount: po.total_amount || 0,
+          currency: po.currency || "EGP",
+          branchId: userContext.branch_id || undefined,
+          costCenterId: userContext.cost_center_id || undefined,
+          createdBy: poCreatedBy || "",
+          rejectedBy: user.id,
+          reason: rejectionReason,
+          appLang
+        })
+      }
+
+      toastActionSuccess(toast, appLang === 'en' ? "Reject" : "رفض", appLang === 'en' ? "Purchase Order" : "أمر الشراء")
+      router.refresh()
+    } catch (err) {
+      console.error("Error rejecting PO:", err)
+      toastActionError(toast, appLang === 'en' ? "Reject" : "رفض", appLang === 'en' ? "Purchase Order" : "أمر الشراء")
     } finally {
       setIsSending(false)
     }
@@ -730,17 +849,30 @@ export default function PurchaseOrderDetailPage() {
               )}
               {/* 🔐 ERP Access Control: زر الإرسال - فقط للمسؤولين والمدراء */}
               {po.status === "draft" && canSendOrder && (
-                <Button onClick={() => changeStatus("sent")} variant="outline" disabled={isSending}>
+                <Button onClick={() => changeStatus("sent_to_vendor")} variant="outline" disabled={isSending}>
                   {isSending ? <Loader2 className="h-4 w-4 ml-1 animate-spin" /> : po.suppliers?.email ? <Mail className="h-4 w-4 ml-1" /> : <Send className="h-4 w-4 ml-1" />}
                   {appLang === 'en' ? 'Mark as Sent' : 'تحديد كمرسل'}
                 </Button>
               )}
               {/* 🔐 ERP Access Control: زر الاستلام - للموظف الذي أنشأ الطلب أو المسؤولين */}
-              {po.status === "sent" && canReceiveOrder && (
+              {po.status === "sent_to_vendor" && canReceiveOrder && (
                 <Button onClick={() => changeStatus("received")} className="bg-blue-600 hover:bg-blue-700" disabled={isSending}>
                   <Package className="h-4 w-4 ml-1" />
                   {appLang === 'en' ? 'Receive Items' : 'استلام البضاعة'}
                 </Button>
+              )}
+              {/* 🔐 ERP Access Control: Approval actions */}
+              {po.status === "pending_approval" && (userContext?.role === 'admin' || userContext?.role === 'owner' || userContext?.role === 'general_manager') && (
+                <>
+                  <Button onClick={handleApprovePO} className="bg-green-600 hover:bg-green-700 text-white" disabled={isSending}>
+                    <CheckCircle className="h-4 w-4 mr-1" />
+                    {appLang === 'en' ? 'Approve' : 'اعتماد'}
+                  </Button>
+                  <Button onClick={() => setIsRejectDialogOpen(true)} variant="destructive" disabled={isSending}>
+                    <Ban className="h-4 w-4 mr-1" />
+                    {appLang === 'en' ? 'Reject' : 'رفض'}
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -832,6 +964,12 @@ export default function PurchaseOrderDetailPage() {
                     <span className="text-gray-500 dark:text-gray-400 font-medium">{appLang === 'en' ? 'Order Total' : 'إجمالي الأمر'}</span>
                     <span className="font-bold text-gray-900 dark:text-white">{symbol}{total.toFixed(2)}</span>
                   </div>
+                  {po.status === 'rejected' && po.rejection_reason && (
+                    <div className="flex justify-between pt-2 border-t dark:border-red-900/30">
+                      <span className="text-red-500 dark:text-red-400 font-medium">{appLang === 'en' ? 'Rejection Reason' : 'سبب الرفض'}</span>
+                      <span className="text-red-700 dark:text-red-300 font-medium text-right max-w-[60%]">{po.rejection_reason}</span>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
@@ -1036,6 +1174,35 @@ export default function PurchaseOrderDetailPage() {
           </div>
         </div>
       </main>
+
+      {/* Reject Dialog */}
+      <Dialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{appLang === 'en' ? 'Reject Purchase Order' : 'رفض أمر الشراء'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>{appLang === 'en' ? 'Reason for Rejection' : 'سبب الرفض'} *</Label>
+              <Textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder={appLang === 'en' ? 'Enter the reason for rejecting this order...' : 'أدخل سبب رفض هذا الأمر...'}
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRejectDialogOpen(false)} disabled={isSending}>
+              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+            </Button>
+            <Button variant="destructive" onClick={handleRejectPO} disabled={isSending || !rejectionReason.trim()}>
+              {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
+              {appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
