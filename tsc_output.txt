@@ -1,0 +1,14 @@
+.next/dev/types/validator.ts(2754,31): error TS2344: Type 'typeof import("C:/Users/abuel/Documents/trae_projects/ERB_VitaSlims/app/api/products/[id]/route")' does not satisfy the constraint 'RouteHandlerConfig<"/api/products/[id]">'.
+  Types of property 'PUT' are incompatible.
+    Type '(req: Request, { params }: { params: { id: string; }; }) => Promise<any>' is not assignable to type '(request: NextRequest, context: { params: Promise<{ id: string; }>; }) => void | Response | Promise<void | Response>'.
+      Types of parameters '__1' and 'context' are incompatible.
+        Type '{ params: Promise<{ id: string; }>; }' is not assignable to type '{ params: { id: string; }; }'.
+          Types of property 'params' are incompatible.
+            Property 'id' is missing in type 'Promise<{ id: string; }>' but required in type '{ id: string; }'.
+.next/types/validator.ts(2736,31): error TS2344: Type 'typeof import("C:/Users/abuel/Documents/trae_projects/ERB_VitaSlims/app/api/products/[id]/route")' does not satisfy the constraint 'RouteHandlerConfig<"/api/products/[id]">'.
+  Types of property 'PUT' are incompatible.
+    Type '(req: Request, { params }: { params: { id: string; }; }) => Promise<any>' is not assignable to type '(request: NextRequest, context: { params: Promise<{ id: string; }>; }) => void | Response | Promise<void | Response>'.
+      Types of parameters '__1' and 'context' are incompatible.
+        Type '{ params: Promise<{ id: string; }>; }' is not assignable to type '{ params: { id: string; }; }'.
+          Types of property 'params' are incompatible.
+            Property 'id' is missing in type 'Promise<{ id: string; }>' but required in type '{ id: string; }'.

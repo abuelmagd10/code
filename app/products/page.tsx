@@ -522,7 +522,6 @@ export default function ProductsPage() {
       const saveData = {
         ...formData,
         // For services, set inventory fields to 0/null
-        quantity_on_hand: formData.item_type === 'service' ? 0 : formData.quantity_on_hand,
         reorder_level: formData.item_type === 'service' ? 0 : formData.reorder_level,
         unit: formData.item_type === 'service' ? 'service' : formData.unit,
         income_account_id: formData.income_account_id || null,
@@ -1153,22 +1152,13 @@ export default function ProductsPage() {
                       {/* Product-specific fields */}
                       {formData.item_type === 'product' && (
                         <>
-                          <div className="grid grid-cols-3 gap-3">
+                          <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-2">
                               <Label htmlFor="unit">{appLang === 'en' ? 'Unit' : 'الوحدة'}</Label>
                               <Input
                                 id="unit"
                                 value={formData.unit}
                                 onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="quantity_on_hand">{appLang === 'en' ? 'Qty' : 'الكمية'}</Label>
-                              <NumericInput
-                                id="quantity_on_hand"
-                                min={0}
-                                value={formData.quantity_on_hand}
-                                onChange={(val) => setFormData({ ...formData, quantity_on_hand: Math.round(val) })}
                               />
                             </div>
                             <div className="space-y-2">

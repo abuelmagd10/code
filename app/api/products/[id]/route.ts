@@ -5,9 +5,12 @@ import { apiGuard, asyncAuditLog, ErrorHandler, ERPError } from "@/lib/core"
 // PUT - Update existing product
 export async function PUT(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const resolvedParams = await params;
+    const { id } = resolvedParams;
+
     const { context, errorResponse } = await apiGuard(req, {
       requireAuth: true,
       requireCompany: true,
@@ -18,7 +21,7 @@ export async function PUT(
     if (errorResponse) return errorResponse
 
     const { user, companyId, member } = context!
-    if (!params.id) {
+    if (!id) {
       return ErrorHandler.handle(ErrorHandler.validation('معرف المنتج مطلوب'))
     }
 
@@ -64,7 +67,7 @@ export async function PUT(
     const { data, error: dbError } = await supabase
       .from("products")
       .update(productData)
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("company_id", companyId)
       .select()
       .single()
