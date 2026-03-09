@@ -10,7 +10,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast as sonnerToast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
-import { toastActionError, toastActionSuccess } from "@/lib/notifications";
+import { toastActionError, toastActionSuccess, toastDeleteSuccess, toastDeleteError } from "@/lib/notifications";
 import { ClipboardList, Plus, Eye, Pencil, Trash2, FileText, AlertCircle } from "lucide-react";
 import { canAction } from "@/lib/authz";
 import { useRouter } from "next/navigation";
@@ -30,6 +30,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { FilterContainer } from "@/components/ui/filter-container";
 import { useRealtimeTable } from "@/hooks/use-realtime-table";
 import { useUserContext } from "@/hooks/use-user-context";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 type PurchaseRequest = {
   id: string;
@@ -120,10 +121,10 @@ export default function PurchaseRequestsPage() {
       if (!companyId) return;
 
       const [read, write, update, del] = await Promise.all([
-        canAction(supabase, companyId, 'purchase_requests', 'read'),
-        canAction(supabase, companyId, 'purchase_requests', 'write'),
-        canAction(supabase, companyId, 'purchase_requests', 'update'),
-        canAction(supabase, companyId, 'purchase_requests', 'delete'),
+        canAction(supabase, 'purchase_requests', 'read'),
+        canAction(supabase, 'purchase_requests', 'write'),
+        canAction(supabase, 'purchase_requests', 'update'),
+        canAction(supabase, 'purchase_requests', 'delete'),
       ]);
 
       setPermRead(read);
@@ -210,7 +211,7 @@ export default function PurchaseRequestsPage() {
   }, [requests, searchTerm, filterStatuses, filterPriorities, dateFrom, dateTo]);
 
   // Pagination
-  const { currentPage, totalPages, paginatedData, goToPage, setPage } = usePagination(filteredRequests, pageSize);
+  const { currentPage, totalPages, paginatedItems, goToPage, setPageSize: setPaginationPageSize } = usePagination(filteredRequests, { pageSize });
 
   // Delete request
   const handleDelete = async () => {
@@ -339,44 +340,50 @@ export default function PurchaseRequestsPage() {
         <PageHeaderList
           title={appLang === 'en' ? 'Purchase Requests' : 'طلبات الشراء'}
           description={appLang === 'en' ? 'Manage purchase requests before creating purchase orders' : 'إدارة طلبات الشراء قبل إنشاء أوامر الشراء'}
-          actionLabel={appLang === 'en' ? 'New Request' : 'طلب جديد'}
-          actionHref="/purchase-requests/new"
-          canCreate={permWrite}
+          createLabel={appLang === 'en' ? 'New Request' : 'طلب جديد'}
+          createHref={permWrite ? "/purchase-requests/new" : undefined}
+          lang={appLang}
         />
 
-        <FilterContainer>
-          <Input
-            placeholder={appLang === 'en' ? 'Search by number...' : 'البحث برقم الطلب...'}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="max-w-xs"
-          />
-          <MultiSelect
-            options={allStatusOptions}
-            selected={filterStatuses}
-            onChange={setFilterStatuses}
-            placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
-          />
-          <MultiSelect
-            options={priorityOptions}
-            selected={filterPriorities}
-            onChange={setFilterPriorities}
-            placeholder={appLang === 'en' ? 'All Priorities' : 'جميع الأولويات'}
-          />
-          <Input
-            type="date"
-            placeholder={appLang === 'en' ? 'From Date' : 'من تاريخ'}
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="max-w-xs"
-          />
-          <Input
-            type="date"
-            placeholder={appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="max-w-xs"
-          />
+        <FilterContainer
+          title={appLang === 'en' ? 'Filters' : 'تصفية'}
+          activeCount={filterStatuses.length + filterPriorities.length + (searchTerm ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0)}
+          onClear={() => { setFilterStatuses([]); setFilterPriorities([]); setSearchTerm(''); setDateFrom(''); setDateTo(''); }}
+        >
+          <div className="flex flex-wrap gap-3">
+            <Input
+              placeholder={appLang === 'en' ? 'Search by number...' : 'البحث برقم الطلب...'}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-xs"
+            />
+            <MultiSelect
+              options={allStatusOptions}
+              selected={filterStatuses}
+              onChange={setFilterStatuses}
+              placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
+            />
+            <MultiSelect
+              options={priorityOptions}
+              selected={filterPriorities}
+              onChange={setFilterPriorities}
+              placeholder={appLang === 'en' ? 'All Priorities' : 'جميع الأولويات'}
+            />
+            <Input
+              type="date"
+              placeholder={appLang === 'en' ? 'From Date' : 'من تاريخ'}
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="max-w-xs"
+            />
+            <Input
+              type="date"
+              placeholder={appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="max-w-xs"
+            />
+          </div>
         </FilterContainer>
 
         {loading ? (
@@ -385,23 +392,22 @@ export default function PurchaseRequestsPage() {
           <EmptyState
             title={appLang === 'en' ? 'No Purchase Requests' : 'لا توجد طلبات شراء'}
             description={appLang === 'en' ? 'Create your first purchase request to get started' : 'أنشئ أول طلب شراء للبدء'}
-            actionLabel={appLang === 'en' ? 'New Request' : 'طلب جديد'}
-            actionHref="/purchase-requests/new"
-            canCreate={permWrite}
+            action={permWrite ? { label: appLang === 'en' ? 'New Request' : 'طلب جديد', onClick: () => router.push('/purchase-requests/new') } : undefined}
           />
         ) : (
           <>
             <DataTable
-              data={paginatedData}
+              data={paginatedItems}
               columns={tableColumns}
+              keyField="id"
               lang={appLang}
             />
             <DataPagination
               currentPage={currentPage}
               totalPages={totalPages}
-              onPageChange={setPage}
+              onPageChange={goToPage}
               pageSize={pageSize}
-              onPageSizeChange={setPageSize}
+              onPageSizeChange={(size) => { setPageSize(size); setPaginationPageSize(size); }}
               totalItems={filteredRequests.length}
               lang={appLang}
             />

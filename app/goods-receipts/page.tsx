@@ -48,7 +48,6 @@ type GoodsReceipt = {
   received_at: string | null;
   purchase_order?: { id: string; po_number: string };
   bill?: { id: string; bill_number: string };
-  received_by_user?: { email: string };
   warehouses?: { name: string };
 };
 
@@ -108,10 +107,10 @@ export default function GoodsReceiptsPage() {
       if (!companyId) return;
 
       const [read, write, update, del] = await Promise.all([
-        canAction(supabase, companyId, 'goods_receipts', 'read'),
-        canAction(supabase, companyId, 'goods_receipts', 'write'),
-        canAction(supabase, companyId, 'goods_receipts', 'update'),
-        canAction(supabase, companyId, 'goods_receipts', 'delete'),
+        canAction(supabase, 'goods_receipts', 'read'),
+        canAction(supabase, 'goods_receipts', 'write'),
+        canAction(supabase, 'goods_receipts', 'update'),
+        canAction(supabase, 'goods_receipts', 'delete'),
       ]);
 
       setPermRead(read);
@@ -141,7 +140,6 @@ export default function GoodsReceiptsPage() {
             *,
             purchase_order:purchase_orders!purchase_order_id (id, po_number),
             bill:bills!bill_id (id, bill_number),
-            received_by_user:received_by (id, email),
             warehouses (id, name)
           `)
           .eq("company_id", companyId)
@@ -194,7 +192,7 @@ export default function GoodsReceiptsPage() {
   }, [receipts, searchTerm, filterStatuses, dateFrom, dateTo]);
 
   // Pagination
-  const { currentPage, totalPages, paginatedData, goToPage, setPage } = usePagination(filteredReceipts, pageSize);
+  const { currentPage, totalPages, paginatedItems, goToPage, setPageSize: setPaginationPageSize } = usePagination(filteredReceipts, { pageSize });
 
   // Delete receipt
   const handleDelete = async () => {
@@ -311,38 +309,44 @@ export default function GoodsReceiptsPage() {
         <PageHeaderList
           title={appLang === 'en' ? 'Goods Receipts' : 'إيصالات الاستلام'}
           description={appLang === 'en' ? 'Manage goods receipt notes (GRN) for received inventory' : 'إدارة إيصالات استلام البضاعة'}
-          actionLabel={appLang === 'en' ? 'New GRN' : 'إيصال جديد'}
-          actionHref="/goods-receipts/new"
-          canCreate={permWrite}
+          createLabel={appLang === 'en' ? 'New GRN' : 'إيصال جديد'}
+          createHref={permWrite ? "/goods-receipts/new" : undefined}
+          lang={appLang}
         />
 
-        <FilterContainer>
-          <Input
-            placeholder={appLang === 'en' ? 'Search by GRN, PO, Bill...' : 'البحث برقم الإيصال، أمر الشراء، الفاتورة...'}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="max-w-xs"
-          />
-          <MultiSelect
-            options={allStatusOptions}
-            selected={filterStatuses}
-            onChange={setFilterStatuses}
-            placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
-          />
-          <Input
-            type="date"
-            placeholder={appLang === 'en' ? 'From Date' : 'من تاريخ'}
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="max-w-xs"
-          />
-          <Input
-            type="date"
-            placeholder={appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="max-w-xs"
-          />
+        <FilterContainer
+          title={appLang === 'en' ? 'Filters' : 'تصفية'}
+          activeCount={filterStatuses.length + (searchTerm ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0)}
+          onClear={() => { setFilterStatuses([]); setSearchTerm(''); setDateFrom(''); setDateTo(''); }}
+        >
+          <div className="flex flex-wrap gap-3">
+            <Input
+              placeholder={appLang === 'en' ? 'Search by GRN, PO, Bill...' : 'البحث برقم الإيصال، أمر الشراء، الفاتورة...'}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-xs"
+            />
+            <MultiSelect
+              options={allStatusOptions}
+              selected={filterStatuses}
+              onChange={setFilterStatuses}
+              placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
+            />
+            <Input
+              type="date"
+              placeholder={appLang === 'en' ? 'From Date' : 'من تاريخ'}
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="max-w-xs"
+            />
+            <Input
+              type="date"
+              placeholder={appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="max-w-xs"
+            />
+          </div>
         </FilterContainer>
 
         {loading ? (
@@ -351,23 +355,22 @@ export default function GoodsReceiptsPage() {
           <EmptyState
             title={appLang === 'en' ? 'No Goods Receipts' : 'لا توجد إيصالات استلام'}
             description={appLang === 'en' ? 'Create your first goods receipt to get started' : 'أنشئ أول إيصال استلام للبدء'}
-            actionLabel={appLang === 'en' ? 'New GRN' : 'إيصال جديد'}
-            actionHref="/goods-receipts/new"
-            canCreate={permWrite}
+            action={permWrite ? { label: appLang === 'en' ? 'New GRN' : 'إيصال جديد', onClick: () => router.push('/goods-receipts/new') } : undefined}
           />
         ) : (
           <>
             <DataTable
-              data={paginatedData}
+              data={paginatedItems}
               columns={tableColumns}
+              keyField="id"
               lang={appLang}
             />
             <DataPagination
               currentPage={currentPage}
               totalPages={totalPages}
-              onPageChange={setPage}
+              onPageChange={goToPage}
               pageSize={pageSize}
-              onPageSizeChange={setPageSize}
+              onPageSizeChange={(size) => { setPageSize(size); setPaginationPageSize(size); }}
               totalItems={filteredReceipts.length}
               lang={appLang}
             />
