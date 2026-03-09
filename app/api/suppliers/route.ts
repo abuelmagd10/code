@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   try {
     const governance = await enforceGovernance()
     const supabase = await createClient()
-    
+
     let query = supabase.from("suppliers").select("*")
     query = applyGovernanceFilters(query, governance)
     query = query.order("name")
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message }, 
+      { error: error.message },
       { status: error.message.includes('Unauthorized') ? 401 : 403 }
     )
   }
@@ -43,11 +43,17 @@ export async function POST(request: NextRequest) {
   try {
     const governance = await enforceGovernance()
     const body = await request.json()
-    
-    const data = addGovernanceData(body, governance)
-    validateGovernanceData(data, governance)
-    
+
     const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    const data = addGovernanceData(body, governance)
+    if (user) {
+      data.created_by_user_id = user.id
+    }
+
+    validateGovernanceData(data, governance)
+
     const { data: result, error } = await supabase
       .from("suppliers")
       .insert(data)
@@ -61,7 +67,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: result }, { status: 201 })
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message }, 
+      { error: error.message },
       { status: error.message.includes('Violation') ? 403 : 500 }
     )
   }

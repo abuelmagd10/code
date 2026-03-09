@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
@@ -33,6 +34,8 @@ interface Supplier {
   country: string
   tax_id: string
   payment_terms: string
+  branch_id?: string | null
+  branches?: { name?: string; branch_name?: string } | null
 }
 
 interface SupplierBalance {
@@ -89,6 +92,7 @@ export default function SuppliersPage() {
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
   const [currentUserRole, setCurrentUserRole] = useState<string>("")
+  const [allBranches, setAllBranches] = useState<{ id: string; name: string }[]>([])
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -97,6 +101,7 @@ export default function SuppliersPage() {
     country: "",
     tax_id: "",
     payment_terms: "Net 30",
+    branch_id: "",
   })
 
   // ===== حالات الأرصدة وسند الاستقبال =====
@@ -163,7 +168,7 @@ export default function SuppliersPage() {
   // 🔄 تحديث الأرصدة بشكل دوري (كل 30 ثانية) لضمان تحديث البيانات
   useEffect(() => {
     if (suppliers.length === 0) return
-    
+
     const interval = setInterval(async () => {
       const companyId = await getActiveCompanyId(supabase)
       if (companyId && suppliers.length > 0) {
@@ -210,8 +215,21 @@ export default function SuppliersPage() {
       const canFilterByBranch = PRIVILEGED_ROLES.includes(userRole.toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
 
+      if (canFilterByBranch) {
+        const { data: branchesData } = await supabase
+          .from("branches")
+          .select("id, branch_name")
+          .eq("company_id", companyId)
+          .eq("is_active", true)
+          .order("branch_name")
+        setAllBranches((branchesData || []).map((b: any) => ({
+          id: b.id,
+          name: b.branch_name || ''
+        })))
+      }
+
       // تحميل الموردين
-      let suppliersQuery = supabase.from("suppliers").select("*").eq("company_id", companyId)
+      let suppliersQuery = supabase.from("suppliers").select("*, branches(branch_name)").eq("company_id", companyId)
 
       // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
       if (canFilterByBranch && selectedBranchId) {
@@ -279,7 +297,7 @@ export default function SuppliersPage() {
       if (data && data.length > 0) {
         await loadSupplierBalances(companyId, data)
       }
-      
+
       // تحديث البيانات في Next.js
       router.refresh()
     } catch (error) {
@@ -307,7 +325,7 @@ export default function SuppliersPage() {
   })
 
   // refs للأرصدة (تُحدَّث بعد تعريف loadSupplierBalances أدناه)
-  const loadBalancesRef = useRef<(companyId: string, suppliersList: Supplier[]) => Promise<void>>(async () => {})
+  const loadBalancesRef = useRef<(companyId: string, suppliersList: Supplier[]) => Promise<void>>(async () => { })
   const suppliersRef = useRef(suppliers)
   useEffect(() => { suppliersRef.current = suppliers }, [suppliers])
 
@@ -342,75 +360,75 @@ export default function SuppliersPage() {
       const newBalances: Record<string, SupplierBalance> = {}
 
       for (const supplier of suppliersList) {
-      let payables = 0
+        let payables = 0
 
-      // ✅ حساب الذمم الدائنة مباشرة من الفواتير (Cash Basis)
-      // في نظام Cash Basis، فواتير المشتريات المستلمة لا تُنشئ قيود محاسبية
-      // لذلك نحسب الذمم من الفواتير مباشرة: total_amount - paid_amount
-      const { data: bills, error: billsError } = await supabase
-        .from("bills")
-        .select("id, total_amount, paid_amount, status, returned_amount")
-        .eq("company_id", companyId)
-        .eq("supplier_id", supplier.id)
-        .neq("status", "draft")
-        .neq("status", "cancelled")
-        .neq("status", "fully_returned")
-
-      if (billsError) {
-        console.error(`❌ خطأ في جلب فواتير المورد ${supplier.name}:`, billsError)
-      } else if (bills && bills.length > 0) {
-        for (const bill of bills) {
-          // ✅ حساب المتبقي من الفاتورة = إجمالي الفاتورة الحالي - المدفوع
-          // ملاحظة: total_amount هو الإجمالي الحالي (بعد المرتجعات)، لذلك لا نطرح returned_amount مرة أخرى
-          const totalAmount = Number(bill.total_amount || 0)
-          const paidAmount = Number(bill.paid_amount || 0)
-          const remaining = totalAmount - paidAmount
-          
-          if (remaining > 0) {
-            payables += remaining
-          }
-        }
-        console.log(`📋 ${supplier.name}: ${bills.length} فاتورة، ذمم: ${payables.toFixed(2)}`)
-      }
-
-      // حساب الرصيد المدين من إشعارات الدائن (vendor_credits)
-      let debitCreditsTotal = 0
-      try {
-        const { data: vendorCredits, error: vendorCreditsError } = await supabase
-          .from("vendor_credits")
-          .select("total_amount, applied_amount, status")
+        // ✅ حساب الذمم الدائنة مباشرة من الفواتير (Cash Basis)
+        // في نظام Cash Basis، فواتير المشتريات المستلمة لا تُنشئ قيود محاسبية
+        // لذلك نحسب الذمم من الفواتير مباشرة: total_amount - paid_amount
+        const { data: bills, error: billsError } = await supabase
+          .from("bills")
+          .select("id, total_amount, paid_amount, status, returned_amount")
           .eq("company_id", companyId)
           .eq("supplier_id", supplier.id)
-          .eq("status", "open")
+          .neq("status", "draft")
+          .neq("status", "cancelled")
+          .neq("status", "fully_returned")
 
-        if (vendorCreditsError) {
-          console.error("Error loading vendor credits:", vendorCreditsError)
-        } else if (vendorCredits) {
-          for (const vc of vendorCredits) {
-            const available = Number(vc.total_amount || 0) - Number(vc.applied_amount || 0)
-            debitCreditsTotal += Math.max(0, available)
+        if (billsError) {
+          console.error(`❌ خطأ في جلب فواتير المورد ${supplier.name}:`, billsError)
+        } else if (bills && bills.length > 0) {
+          for (const bill of bills) {
+            // ✅ حساب المتبقي من الفاتورة = إجمالي الفاتورة الحالي - المدفوع
+            // ملاحظة: total_amount هو الإجمالي الحالي (بعد المرتجعات)، لذلك لا نطرح returned_amount مرة أخرى
+            const totalAmount = Number(bill.total_amount || 0)
+            const paidAmount = Number(bill.paid_amount || 0)
+            const remaining = totalAmount - paidAmount
+
+            if (remaining > 0) {
+              payables += remaining
+            }
           }
+          console.log(`📋 ${supplier.name}: ${bills.length} فاتورة، ذمم: ${payables.toFixed(2)}`)
         }
-      } catch (error: any) {
-        console.error("Error calculating supplier debit credits:", error)
+
+        // حساب الرصيد المدين من إشعارات الدائن (vendor_credits)
+        let debitCreditsTotal = 0
+        try {
+          const { data: vendorCredits, error: vendorCreditsError } = await supabase
+            .from("vendor_credits")
+            .select("total_amount, applied_amount, status")
+            .eq("company_id", companyId)
+            .eq("supplier_id", supplier.id)
+            .eq("status", "open")
+
+          if (vendorCreditsError) {
+            console.error("Error loading vendor credits:", vendorCreditsError)
+          } else if (vendorCredits) {
+            for (const vc of vendorCredits) {
+              const available = Number(vc.total_amount || 0) - Number(vc.applied_amount || 0)
+              debitCreditsTotal += Math.max(0, available)
+            }
+          }
+        } catch (error: any) {
+          console.error("Error calculating supplier debit credits:", error)
+        }
+
+        newBalances[supplier.id] = {
+          advances: 0, // يمكن إضافة حساب السلف لاحقاً
+          payables,
+          debitCredits: debitCreditsTotal
+        }
+
+        // تسجيل بيانات المورد للتشخيص
+        if (payables > 0 || debitCreditsTotal > 0) {
+          console.log(`📊 ${supplier.name}:`, { payables, debitCredits: debitCreditsTotal })
+        }
       }
 
-      newBalances[supplier.id] = {
-        advances: 0, // يمكن إضافة حساب السلف لاحقاً
-        payables,
-        debitCredits: debitCreditsTotal
-      }
-      
-      // تسجيل بيانات المورد للتشخيص
-      if (payables > 0 || debitCreditsTotal > 0) {
-        console.log(`📊 ${supplier.name}:`, { payables, debitCredits: debitCreditsTotal })
-      }
-    }
-
-    console.log("✅ تم تحميل أرصدة الموردين:", Object.keys(newBalances).length, "مورد")
-    console.log("📊 تفاصيل الأرصدة:", newBalances)
-    setBalances(newBalances)
-    console.log("✅ تم حفظ الأرصدة في state")
+      console.log("✅ تم تحميل أرصدة الموردين:", Object.keys(newBalances).length, "مورد")
+      console.log("📊 تفاصيل الأرصدة:", newBalances)
+      setBalances(newBalances)
+      console.log("✅ تم حفظ الأرصدة في state")
     } catch (error) {
       console.error("❌ خطأ في تحميل أرصدة الموردين:", error)
     }
@@ -455,18 +473,32 @@ export default function SuppliersPage() {
       if (!user) return
 
       if (editingId) {
-        const { error } = await supabase.from("suppliers").update(formData).eq("id", editingId)
+        // For updates, remove empty branch_id
+        const updateData = { ...formData }
+        if (updateData.branch_id === "") {
+          updateData.branch_id = null as any
+        }
+
+        const { error } = await supabase.from("suppliers").update(updateData).eq("id", editingId)
 
         if (error) throw error
       } else {
-        // Include created_by_user_id when creating new supplier
-        const { error } = await supabase.from("suppliers").insert([{
-          ...formData,
-          company_id: companyId,
-          created_by_user_id: user.id
-        }])
+        // Use secure API for creation
+        const payloadData: any = { ...formData, company_id: companyId }
+        if (payloadData.branch_id === "") {
+          delete payloadData.branch_id
+        }
 
-        if (error) throw error
+        const response = await fetch('/api/suppliers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payloadData)
+        })
+
+        const result = await response.json()
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || result.error_ar || 'Failed to create supplier')
+        }
       }
 
       setIsDialogOpen(false)
@@ -479,6 +511,7 @@ export default function SuppliersPage() {
         country: "",
         tax_id: "",
         payment_terms: "Net 30",
+        branch_id: "",
       })
       loadSuppliers()
       router.refresh()
@@ -488,7 +521,16 @@ export default function SuppliersPage() {
   }
 
   const handleEdit = (supplier: Supplier) => {
-    setFormData(supplier)
+    setFormData({
+      name: supplier.name || "",
+      email: supplier.email || "",
+      phone: supplier.phone || "",
+      city: supplier.city || "",
+      country: supplier.country || "",
+      tax_id: supplier.tax_id || "",
+      payment_terms: supplier.payment_terms || "Net 30",
+      branch_id: supplier.branch_id || "",
+    })
     setEditingId(supplier.id)
     setIsDialogOpen(true)
   }
@@ -539,6 +581,17 @@ export default function SuppliersPage() {
       align: 'left',
       hidden: 'md',
       format: (value) => value || '—'
+    },
+    {
+      key: 'branch_id',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'text',
+      align: 'left',
+      hidden: 'lg',
+      format: (_, row) => {
+        const branchName = row.branches?.branch_name || row.branches?.name || '—'
+        return <span className="text-gray-600 dark:text-gray-400 text-sm bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">{branchName}</span>
+      }
     },
     {
       key: 'id',
@@ -673,6 +726,7 @@ export default function SuppliersPage() {
                           country: "",
                           tax_id: "",
                           payment_terms: "Net 30",
+                          branch_id: "",
                         })
                       }}
                     >
@@ -735,6 +789,33 @@ export default function SuppliersPage() {
                           onChange={(e) => setFormData({ ...formData, tax_id: e.target.value })}
                         />
                       </div>
+
+                      {/* Branch Selection for privileged roles */}
+                      {['owner', 'admin', 'general_manager'].includes(currentUserRole.toLowerCase()) && (
+                        <div className="space-y-2">
+                          <Label htmlFor="branch">{appLang === 'en' ? 'Assign to Branch (Optional)' : 'تعيين لفرع (اختياري)'}</Label>
+                          <Select
+                            value={formData.branch_id}
+                            onValueChange={(value) => setFormData({ ...formData, branch_id: value })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder={appLang === 'en' ? 'Select Branch' : 'اختر الفرع'} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">{appLang === 'en' ? 'First Available Branch (Auto)' : 'أول فرع متاح (تلقائي)'}</SelectItem>
+                              {allBranches.map((b) => (
+                                <SelectItem key={b.id} value={b.id}>
+                                  {b.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {appLang === 'en' ? 'Normal users create suppliers for their branch automatically.' : 'يتم إنشاء الموردين للمستخدمين العاديين بفرعهم تلقائياً.'}
+                          </p>
+                        </div>
+                      )}
+
                       <Button type="submit" className="w-full">
                         {editingId ? (appLang === 'en' ? 'Update' : 'تحديث') : (appLang === 'en' ? 'Add' : 'إضافة')}
                       </Button>
