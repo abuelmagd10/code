@@ -52,12 +52,12 @@ export function NotificationCenter({
   const supabase = useSupabase()
   const { toast } = useToast()
   const { canAction } = useAccess()
-  
+
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [mounted, setMounted] = useState(false)
-  
+
   // 🔹 Advanced Filters
   const [filterStatus, setFilterStatus] = useState<NotificationStatus | "all">("all")
   const [filterPriority, setFilterPriority] = useState<NotificationPriority | "all">("all")
@@ -67,7 +67,7 @@ export function NotificationCenter({
   const [filterBranch, setFilterBranch] = useState<string>("all")
   const [filterWarehouse, setFilterWarehouse] = useState<string>("all")
   const [searchQuery, setSearchQuery] = useState("")
-  
+
   // 🔹 Branches & Warehouses for filters
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([])
   const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string }>>([])
@@ -103,7 +103,7 @@ export function NotificationCenter({
   // 🔹 Load branches and warehouses for filters
   useEffect(() => {
     if (!companyId) return
-    
+
     const loadBranchesAndWarehouses = async () => {
       try {
         // Load branches
@@ -112,7 +112,7 @@ export function NotificationCenter({
           .select('id, name')
           .eq('company_id', companyId)
           .order('name')
-        
+
         if (branchesData) {
           setBranches(branchesData)
         }
@@ -123,7 +123,7 @@ export function NotificationCenter({
           .select('id, name')
           .eq('company_id', companyId)
           .order('name')
-        
+
         if (warehousesData) {
           setWarehouses(warehousesData)
         }
@@ -143,7 +143,7 @@ export function NotificationCenter({
       // ✅ فلترة صارمة: إزالة undefined, null, القيم الفارغة, والسلسلة "undefined"
       const allCreatedByIds = displayNotifications.map(n => n.created_by)
       console.log('📋 [NotificationCenter] All created_by IDs:', allCreatedByIds)
-      
+
       const userIds = new Set(
         allCreatedByIds
           .filter((id): id is string => {
@@ -156,12 +156,12 @@ export function NotificationCenter({
             return uuidRegex.test(id)
           })
       )
-      
+
       console.log('✅ [NotificationCenter] Valid user IDs after filtering:', Array.from(userIds))
-      
+
       const missingIds = Array.from(userIds).filter(id => !createdByUsers.has(id))
       console.log('🔍 [NotificationCenter] Missing user IDs to fetch:', missingIds)
-      
+
       if (missingIds.length === 0) {
         console.log('✅ [NotificationCenter] All user names already loaded')
         return
@@ -316,7 +316,7 @@ export function NotificationCenter({
       // Search filter
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase()
-        filtered = filtered.filter(n => 
+        filtered = filtered.filter(n =>
           n.title.toLowerCase().includes(query) ||
           n.message.toLowerCase().includes(query) ||
           n.reference_id.toLowerCase().includes(query)
@@ -378,12 +378,12 @@ export function NotificationCenter({
 
     // 2. التحقق من المستخدم المخصص له
     if (notification.assigned_to_user && notification.assigned_to_user !== userId) {
-      if (userRole !== 'owner' && userRole !== 'admin') return false
+      if (!['owner', 'admin', 'general_manager'].includes(userRole)) return false
     }
 
     // 3. التحقق من الدور المخصص له
     if (notification.assigned_to_role && notification.assigned_to_role !== userRole) {
-      if (userRole !== 'owner' && userRole !== 'admin') {
+      if (!['owner', 'admin', 'general_manager'].includes(userRole)) {
         if (!(notification.assigned_to_role === 'admin' && userRole === 'owner')) return false
       }
     }
@@ -495,13 +495,13 @@ export function NotificationCenter({
       if (unreadIds.length === 0) return
 
       await Promise.all(unreadIds.map(id => markNotificationAsRead(id, userId)))
-      
-      setNotifications(prev => prev.map(n => 
+
+      setNotifications(prev => prev.map(n =>
         unreadIds.includes(n.id)
           ? { ...n, status: "read" as NotificationStatus, read_at: new Date().toISOString() }
           : n
       ))
-      
+
       window.dispatchEvent(new Event('notifications_updated'))
       toast({
         title: appLang === 'en' ? 'Success' : 'نجح',
@@ -524,8 +524,8 @@ export function NotificationCenter({
 
       // ✅ إذا كان المستخدم يريد رؤية المؤرشفة، نحدث status بدلاً من الإزالة
       if (filterStatus === 'archived') {
-        setNotifications(prev => 
-          prev.map(n => 
+        setNotifications(prev =>
+          prev.map(n =>
             readIds.includes(n.id)
               ? { ...n, status: "archived" as NotificationStatus }
               : n
@@ -535,7 +535,7 @@ export function NotificationCenter({
         // ✅ إذا لم يكن يريد رؤية المؤرشفة، نزيلها من القائمة
         setNotifications(prev => prev.filter(n => !readIds.includes(n.id)))
       }
-      
+
       window.dispatchEvent(new Event('notifications_updated'))
       toast({
         title: appLang === 'en' ? 'Success' : 'نجح',
@@ -557,9 +557,9 @@ export function NotificationCenter({
     if (notification.status === "unread") {
       try {
         await markNotificationAsRead(notification.id, userId)
-        setNotifications(prev => 
-          prev.map(n => 
-            n.id === notification.id 
+        setNotifications(prev =>
+          prev.map(n =>
+            n.id === notification.id
               ? { ...n, status: "read" as NotificationStatus, read_at: new Date().toISOString() }
               : n
           )
@@ -572,7 +572,7 @@ export function NotificationCenter({
 
     // 🔗 Deep Link to reference
     const route = getNotificationRoute(
-      notification.reference_type, 
+      notification.reference_type,
       notification.reference_id,
       notification.event_key || undefined,
       notification.category || undefined
@@ -593,13 +593,13 @@ export function NotificationCenter({
     e?.stopPropagation()
     try {
       const result = await updateNotificationStatus(notificationId, 'actioned', userId)
-      
+
       if (!result.success) {
         throw new Error(result.error || 'Failed to update notification status')
       }
 
       // ✅ تحديث الحالة محليًا
-      setNotifications(prev => 
+      setNotifications(prev =>
         prev.map(n => {
           if (n.id === notificationId) {
             const updated = { ...n, status: "actioned" as NotificationStatus }
@@ -636,7 +636,7 @@ export function NotificationCenter({
     e?.stopPropagation()
     try {
       const result = await updateNotificationStatus(notificationId, 'archived', userId)
-      
+
       if (!result.success) {
         throw new Error(result.error || 'Failed to archive notification')
       }
@@ -782,7 +782,7 @@ export function NotificationCenter({
   if (!mounted) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent 
+        <DialogContent
           className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden"
         >
           <DialogDescription className="sr-only">
@@ -805,7 +805,7 @@ export function NotificationCenter({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent 
+      <DialogContent
         className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden"
       >
         <DialogDescription className="sr-only">
@@ -892,7 +892,7 @@ export function NotificationCenter({
               className="flex-1"
             />
           </div>
-          
+
           {/* Filter Row 1 */}
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
             <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as any)}>
@@ -1021,7 +1021,7 @@ export function NotificationCenter({
                 const statusStyles = getStatusStyles(notification.status)
                 const createdBy = createdByUsers.get(notification.created_by)
                 const isApproval = notification.category === 'approvals' && (userRole === 'owner' || userRole === 'admin')
-                
+
                 // 🔍 Debug: Log created_by lookup
                 if (!createdBy && notification.created_by) {
                   console.log(`⚠️ [NotificationCenter] No user found for created_by: ${notification.created_by}`, {
@@ -1030,7 +1030,7 @@ export function NotificationCenter({
                     createdByUsersKeys: Array.from(createdByUsers.keys())
                   })
                 }
-                
+
                 return (
                   <div
                     key={notification.id}
@@ -1059,12 +1059,12 @@ export function NotificationCenter({
                             )}
                           </div>
                         </div>
-                        
+
                         {/* 🔹 Row 2: Message */}
                         <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
                           {notification.message}
                         </p>
-                        
+
                         {/* 🔹 Row 3: Meta Info */}
                         <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 dark:text-gray-400 mb-3">
                           {notification.branch_name && (
@@ -1099,7 +1099,7 @@ export function NotificationCenter({
                             <span>{getReferenceTypeLabel(notification.reference_type)}</span>
                           </div>
                         </div>
-                        
+
                         {/* 🔹 Row 4: Actions */}
                         <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
                           <div className="flex items-center gap-2">
