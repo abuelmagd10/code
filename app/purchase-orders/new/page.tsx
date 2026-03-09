@@ -211,10 +211,18 @@ export default function NewPurchaseOrderPage() {
             setBranchId(userBranchId)
           }
         }
+        // 🔐 Enterprise Governance: Filter suppliers by branch for non-admin users
+        let suppQuery = supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId).order("name")
+        if (!adminCheck && userBranchId) {
+          suppQuery = suppQuery.eq("branch_id", userBranchId)
+        }
+        const { data: suppData } = await suppQuery
+        setSuppliers(suppData || [])
+      } else {
+        // No user info: load all suppliers (fallback)
+        const { data: suppData } = await supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId).order("name")
+        setSuppliers(suppData || [])
       }
-
-      const { data: suppData } = await supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId).order("name")
-      setSuppliers(suppData || [])
 
       const { data: prodData } = await supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", companyId).order("name")
       setProducts(prodData || [])
@@ -345,25 +353,51 @@ export default function NewPurchaseOrderPage() {
     }
   }
 
-  // Create new supplier
+  // Create new supplier - uses governance API to enforce branch assignment
   const handleCreateSupplier = async () => {
     if (!newSupplierName.trim()) return
     try {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      // Get current user for created_by_user_id
-      const { data: { user } } = await supabase.auth.getUser()
+      // Use governance API to ensure branch_id is enforced correctly
+      const response = await fetch('/api/suppliers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id: companyId,
+          name: newSupplierName.trim(),
+          phone: newSupplierPhone.trim() || null,
+        })
+      })
 
-      const { data, error } = await supabase.from("suppliers").insert({
-        company_id: companyId,
-        name: newSupplierName.trim(),
-        phone: newSupplierPhone.trim() || null,
-        created_by_user_id: user?.id || null // 🔒 تسجيل المنشئ
-      }).select("id, name, phone").single()
-      if (error) throw error
-      setSuppliers([...suppliers, data])
-      setFormData({ ...formData, supplier_id: data.id })
+      const result = await response.json()
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to create supplier')
+      }
+
+      const data = result.data
+      // Re-filter to only show suppliers visible to this user
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: memberData } = await supabase
+        .from('company_members')
+        .select('branch_id, role')
+        .eq('company_id', companyId)
+        .eq('user_id', user?.id || '')
+        .maybeSingle()
+      const userBranchId = memberData?.branch_id || null
+      const role = String(memberData?.role || '').trim().toLowerCase().replace(/\s+/g, '_')
+      const isAdminUser = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(role)
+
+      // Only add the supplier to the list if it belongs to the user's branch (for non-admin)
+      if (isAdminUser || !userBranchId || data.branch_id === userBranchId) {
+        setSuppliers(prev => [...prev, { id: data.id, name: data.name, phone: data.phone }])
+        setFormData({ ...formData, supplier_id: data.id })
+      } else {
+        // Supplier was created but doesn't belong to this branch, don't add to visible list
+        setFormData({ ...formData, supplier_id: data.id })
+      }
+
       setIsSupplierDialogOpen(false)
       setNewSupplierName("")
       setNewSupplierPhone("")
