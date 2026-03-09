@@ -19,7 +19,7 @@ import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-re
 import { notifyPurchaseReturnPendingApproval } from "@/lib/notification-helpers"
 
 type Supplier = { id: string; name: string; phone?: string | null }
-type Bill = { id: string; bill_number: string; supplier_id: string; total_amount: number; status: string; branch_id?: string | null; cost_center_id?: string | null; warehouse_id?: string | null }
+type Bill = { id: string; bill_number: string; supplier_id: string; total_amount: number; status: string; receipt_status?: string | null; branch_id?: string | null; cost_center_id?: string | null; warehouse_id?: string | null }
 type BillItem = { id: string; product_id: string | null; quantity: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number; returned_quantity?: number; products?: { name: string; cost_price: number } }
 type Product = { id: string; name: string; cost_price: number; item_type?: 'product' | 'service' }
 type Warehouse = { id: string; name: string; branch_id: string | null; branches?: { name: string } | null }
@@ -146,9 +146,10 @@ export default function NewPurchaseReturnPage() {
       const isPrivilegedRole = PRIVILEGED_ROLES.includes(role.toLowerCase())
       let billQuery = supabase
         .from("bills")
-        .select("id, bill_number, supplier_id, total_amount, status, branch_id, cost_center_id, warehouse_id")
+        .select("id, bill_number, supplier_id, total_amount, status, receipt_status, branch_id, cost_center_id, warehouse_id")
         .eq("company_id", loadedCompanyId)
-        .in("status", ["paid", "partially_paid", "sent", "received"])
+        .in("status", ["paid", "partially_paid", "received"])
+        .eq("receipt_status", "received") // ✅ يجب أن تكون البضاعة مستلمة فعلياً قبل السماح بالمرتجع
 
       // الأدوار العادية (محاسب/مدير فرع/موظف): ترى فواتير فرعها فقط
       if (!isPrivilegedRole && userBranchId) {

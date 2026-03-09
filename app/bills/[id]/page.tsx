@@ -629,143 +629,122 @@ export default function BillViewPage() {
     }, 0)
   }, [returnItems, items])
 
-  // Process purchase return
+  // ✅ إنشاء طلب مرتجع بحالة "pending_approval" — المخزون لا يُخصم إلا عند اعتماد مسؤول المخزن
   const processPurchaseReturn = async () => {
     if (!bill || returnTotal <= 0) return
     try {
       setReturnProcessing(true)
 
-      // 🔍 التحقق من توفر المخزون قبل المرتجع
-      const itemsToCheck = returnItems
-        .filter(it => it.return_qty > 0 && it.product_id)
-        .map(it => ({
-          product_id: it.product_id!,
-          quantity: it.return_qty
-        }))
+      const companyId = await getActiveCompanyId(supabase)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!companyId || !user) return
 
-      if (itemsToCheck.length > 0) {
-        const inventoryContext = bill ? {
+      const returnNumber = `PR-${bill.bill_number}-${Date.now()}`
+      const returnDate = new Date().toISOString().slice(0, 10)
+
+      // 1. إنشاء سجل المرتجع بحالة pending_approval
+      const { data: prData, error: prError } = await supabase
+        .from('purchase_returns')
+        .insert({
           company_id: bill.company_id,
+          supplier_id: bill.supplier_id,
+          bill_id: bill.id,
+          return_number: returnNumber,
+          return_date: returnDate,
+          status: 'pending_approval',
+          workflow_status: 'pending_approval',
+          settlement_method: returnMethod,
+          reason: returnNotes || (appLang === 'en' ? 'Purchase return request' : 'طلب مرتجع مشتريات'),
+          notes: returnNotes || null,
+          total_amount: returnTotal,
+          subtotal: returnTotal,
           branch_id: bill.branch_id || null,
-          warehouse_id: bill.warehouse_id || null,
           cost_center_id: bill.cost_center_id || null,
-        } : undefined
+          warehouse_id: bill.warehouse_id || null,
+          created_by: user.id,
+        })
+        .select('id')
+        .single()
 
-        const inventoryCheck = await checkInventoryAvailability(supabase, itemsToCheck, undefined, inventoryContext)
-        if (!inventoryCheck.success) {
-          const shortageContent = getShortageToastContent(inventoryCheck.shortages, appLang)
-          toast({
-            title: shortageContent.title,
-            description: shortageContent.description,
-            variant: "destructive"
-          })
-          setReturnProcessing(false)
-          return
-        }
-      }
+      if (prError) throw prError
 
-      // Get account mapping
-      const mapping = await findAccountIds(bill.company_id)
-      if (!mapping) {
-        toastActionError(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Bill' : 'الفاتورة', appLang === 'en' ? 'Account settings not found' : 'لم يتم العثور على إعدادات الحسابات')
-        setReturnProcessing(false)
-        return
-      }
-
-      // ✅ ERP-grade: التحقق من الحوكمة (إلزامي)
-      let effectiveBranchId = (bill as any).branch_id as string | null
-      let effectiveWarehouseId = (bill as any).warehouse_id as string | null
-      let effectiveCostCenterId = (bill as any).cost_center_id as string | null
-
-      if (!effectiveBranchId && effectiveWarehouseId) {
-        const { data: wh } = await supabase
-          .from("warehouses")
-          .select("branch_id")
-          .eq("company_id", bill.company_id)
-          .eq("id", effectiveWarehouseId)
-          .single()
-        effectiveBranchId = (wh as any)?.branch_id || null
-      }
-
-      if (effectiveBranchId && (!effectiveWarehouseId || !effectiveCostCenterId)) {
-        const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
-        const defaults = await getBranchDefaults(supabase, effectiveBranchId)
-        if (!effectiveWarehouseId) effectiveWarehouseId = defaults.default_warehouse_id
-        if (!effectiveCostCenterId) effectiveCostCenterId = defaults.default_cost_center_id
-      }
-
-      if (!effectiveBranchId || !effectiveWarehouseId || !effectiveCostCenterId) {
-        toastActionError(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Governance' : 'الحوكمة', appLang === 'en' ? 'Branch, Warehouse, and Cost Center are required' : 'الفرع والمخزن ومركز التكلفة مطلوبة')
-        setReturnProcessing(false)
-        return
-      }
-
-      // Determine if bill is paid
-      const billStatus = bill.status?.toLowerCase()
-      const isPaid = billStatus === 'paid' || billStatus === 'partially_paid'
-
-      // ✅ ATOMIC EXECUTION: Use AccountingTransactionService
-      const { AccountingTransactionService } = await import('@/lib/accounting-transaction-service')
-      const service = new AccountingTransactionService(supabase)
-
-      const result = await service.postPurchaseReturnAtomic(
-        {
-          billId: bill.id,
-          billNumber: bill.bill_number,
-          companyId: bill.company_id,
-          supplierId: bill.supplier_id,
-          branchId: effectiveBranchId,
-          warehouseId: effectiveWarehouseId,
-          costCenterId: effectiveCostCenterId,
-          returnItems: returnItems.map(it => ({
-            item_id: it.item_id,
+      // 2. إضافة بنود المرتجع
+      const prItems = returnItems
+        .filter(it => it.return_qty > 0)
+        .map(it => {
+          const billItem = items.find(i => i.id === it.item_id)
+          const discountPct = Number(billItem?.discount_percent || 0)
+          const taxRate = Number(billItem?.tax_rate || 0)
+          const lineNet = it.unit_price * (1 - discountPct / 100) * it.return_qty
+          return {
+            purchase_return_id: prData.id,
+            bill_item_id: it.item_id,
             product_id: it.product_id,
-            product_name: it.product_name,
-            return_qty: it.return_qty,
-            unit_price: Number(items.find(i => i.id === it.item_id)?.unit_price || 0),
-            tax_rate: Number(items.find(i => i.id === it.item_id)?.tax_rate || 0),
-            discount_percent: Number(items.find(i => i.id === it.item_id)?.discount_percent || 0)
-          })),
-          returnMethod: returnMethod as 'credit' | 'cash' | 'bank',
-          returnAccountId: returnAccountId,
-          isPaid,
-          lang: appLang as 'ar' | 'en'
-        },
-        {
-          companyId: mapping.companyId,
-          ap: mapping.ap!,
-          inventory: mapping.inventory,
-          expense: mapping.expense,
-          vatInput: mapping.vatInput,
-          vendorCreditLiability: mapping.vendorCreditLiability,
-          cash: mapping.cash,
-          bank: mapping.bank,
-        }
-      )
+            description: it.product_name,
+            quantity: it.return_qty,
+            unit_price: it.unit_price,
+            tax_rate: taxRate,
+            discount_percent: discountPct,
+            line_total: Number((lineNet + lineNet * taxRate / 100).toFixed(2)),
+          }
+        })
 
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to process purchase return')
+      if (prItems.length > 0) {
+        const { error: itemsError } = await supabase
+          .from('purchase_return_items')
+          .insert(prItems)
+        if (itemsError) throw itemsError
       }
 
-      // Sync vendor credit based on net supplier balance (GL-based)
-      // Creates a vendor_credit only if the supplier's net balance turns into a true credit.
+      // 3. سجل تدقيق
       try {
-        const { syncVendorCredit } = await import('@/lib/supplier-balance')
-        await syncVendorCredit(supabase, bill.company_id, bill.supplier_id, bill.id)
-      } catch (syncErr) {
-        console.warn('syncVendorCredit non-fatal error:', syncErr)
-      }
+        await supabase.from('audit_logs').insert({
+          company_id: companyId,
+          user_id: user.id,
+          action: 'purchase_return_submitted',
+          entity_type: 'purchase_return',
+          entity_id: prData.id,
+          new_values: { bill_id: bill.id, return_number: returnNumber, total_amount: returnTotal },
+          created_at: new Date().toISOString(),
+        })
+      } catch (auditErr) { console.warn('Audit log failed:', auditErr) }
 
-      // Update linked purchase order status
-      await updateLinkedPurchaseOrderStatus(bill.id)
+      // 4. إشعار للإدارة العليا للموافقة
+      try {
+        const notifTs = Date.now()
+        const title = appLang === 'en' ? 'Purchase Return Approval Required' : 'مطلوب اعتماد مرتجع مشتريات'
+        const message = appLang === 'en'
+          ? `Purchase return ${returnNumber} for bill ${bill.bill_number} (${returnTotal.toFixed(2)}) requires your approval`
+          : `مرتجع مشتريات رقم ${returnNumber} للفاتورة ${bill.bill_number} بقيمة ${returnTotal.toFixed(2)} يحتاج إلى اعتمادك`
 
+        for (const role of ['admin', 'owner', 'general_manager']) {
+          await createNotification({
+            companyId,
+            referenceType: 'purchase_return',
+            referenceId: prData.id,
+            title,
+            message,
+            createdBy: user.id,
+            branchId: bill.branch_id || undefined,
+            costCenterId: bill.cost_center_id || undefined,
+            assignedToRole: role,
+            priority: 'high',
+            eventKey: `purchase_return:${prData.id}:pending_approval:${role}:${notifTs}`,
+            severity: 'warning',
+            category: 'approvals',
+          })
+        }
+      } catch (notifErr) { console.warn('Notification failed:', notifErr) }
+
+      setReturnOpen(false)
       toastActionSuccess(
         toast,
-        appLang === 'en' ? 'Return' : 'المرتجع',
-        appLang === 'en' ? 'Purchase Return' : 'مرتجع المشتريات',
+        appLang === 'en' ? 'Return Submitted' : 'تم إرسال المرتجع',
+        appLang === 'en'
+          ? `Return ${returnNumber} submitted for approval. You will be notified when approved.`
+          : `تم إرسال المرتجع ${returnNumber} للاعتماد. ستُخطَر عند الموافقة.`,
         appLang
       )
-      setReturnOpen(false)
       await loadData()
     } catch (err: any) {
       console.error('Purchase return error:', err)
@@ -773,7 +752,7 @@ export default function BillViewPage() {
         toast,
         appLang === 'en' ? 'Return' : 'المرتجع',
         appLang === 'en' ? 'Purchase Return' : 'مرتجع المشتريات',
-        err.message || (appLang === 'en' ? 'Failed to process return' : 'فشل معالجة المرتجع'),
+        err.message || (appLang === 'en' ? 'Failed to submit return' : 'فشل إرسال المرتجع'),
         appLang
       )
     } finally {
@@ -2303,7 +2282,9 @@ export default function BillViewPage() {
                     🛡️ مع دورة الاعتماد الجديدة لا نسمح بالمرتجع إلا بعد اعتماد الاستلام (received) أو بعد وجود مدفوعات على الفاتورة.
                     لذا نسمح بالمرتجعات فقط للحالات: received / partially_paid / paid.
                 */}
-                {["received", "partially_paid", "paid"].includes(bill.status) &&
+                {/* ✅ المرتجعات تُسمح فقط للفواتير التي اعتُمد استلام بضاعتها فعلياً */}
+                {bill.receipt_status === 'received' &&
+                  ["received", "partially_paid", "paid"].includes(bill.status) &&
                   items.some(it => (it.quantity - (it.returned_quantity || 0)) > 0) && (
                     <>
                       {(() => {
@@ -3279,7 +3260,7 @@ export default function BillViewPage() {
               disabled={returnProcessing || returnTotal <= 0}
               className="bg-orange-600 hover:bg-orange-700"
             >
-              {returnProcessing ? '...' : (appLang === 'en' ? 'Process Return' : 'تنفيذ المرتجع')}
+              {returnProcessing ? '...' : (appLang === 'en' ? 'Submit for Approval' : 'إرسال للاعتماد')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -16,8 +16,10 @@ import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useToast } from "@/hooks/use-toast"
 import { notifyPurchaseReturnConfirmed, notifyWarehouseAllocationConfirmed, notifyPRApproved, notifyPRRejected } from "@/lib/notification-helpers"
+import { createNotification } from "@/lib/governance-layer"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
 
 type WarehouseAllocation = {
   id: string
@@ -82,6 +84,12 @@ export default function PurchaseReturnsPage() {
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false)
   const [prToReject, setPrToReject] = useState<PurchaseReturn | null>(null)
   const [rejectionReason, setRejectionReason] = useState('')
+
+  // Refund recording state
+  const [isRefundDialogOpen, setIsRefundDialogOpen] = useState(false)
+  const [prToRefund, setPrToRefund] = useState<PurchaseReturn | null>(null)
+  const [refundNotes, setRefundNotes] = useState('')
+  const [isRecordingRefund, setIsRecordingRefund] = useState(false)
 
   useEffect(() => {
     try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
@@ -235,7 +243,7 @@ export default function PurchaseReturnsPage() {
         return
       }
 
-      // Notify creator
+      // 1. إشعار للمنشئ بالموافقة
       if (pr.created_by && currentUserId !== pr.created_by) {
         try {
           await notifyPRApproved({
@@ -252,6 +260,27 @@ export default function PurchaseReturnsPage() {
           })
         } catch (notifyErr) { console.warn('Notification failed:', notifyErr) }
       }
+
+      // 2. إشعار لمسؤول المخزن لاعتماد تسليم البضاعة للمورد
+      try {
+        await createNotification({
+          companyId,
+          referenceType: 'purchase_return',
+          referenceId: pr.id,
+          title: appLang === 'en' ? 'Purchase Return Approved - Warehouse Confirmation Required' : 'تمت الموافقة على المرتجع - مطلوب اعتماد المخزن',
+          message: appLang === 'en'
+            ? `Return ${pr.return_number} for supplier ${(pr.suppliers as any)?.name || ''} has been approved. Please confirm goods delivery to supplier.`
+            : `تمت الموافقة على المرتجع ${pr.return_number} للمورد ${(pr.suppliers as any)?.name || ''}. يرجى اعتماد تسليم البضاعة للمورد.`,
+          createdBy: currentUserId,
+          branchId: pr.branch_id || undefined,
+          warehouseId: pr.warehouse_id || undefined,
+          assignedToRole: 'store_manager',
+          priority: 'high',
+          eventKey: `purchase_return:${pr.id}:approved_pending_warehouse:${Date.now()}`,
+          severity: 'info',
+          category: 'inventory',
+        })
+      } catch (notifyErr) { console.warn('Store manager notification failed:', notifyErr) }
 
       toast({ title: appLang === 'en' ? '✅ Return Approved' : '✅ تم اعتماد المرتجع', description: pr.return_number })
       loadReturns()
@@ -362,10 +391,50 @@ export default function PurchaseReturnsPage() {
         return
       }
 
-      // إشعار للمنشئ (المالك/المدير)
+      const supplierName = (pr.suppliers as any)?.name || ''
+
+      // 1. إنشاء إشعار دائن للمورد (Vendor Credit) تلقائياً بعد تأكيد التسليم
+      try {
+        const { syncVendorCredit } = await import('@/lib/supplier-balance')
+        // نحتاج bill_id للـ syncVendorCredit
+        if (pr.bills?.id) {
+          const { data: billCompany } = await supabase
+            .from('bills')
+            .select('company_id, supplier_id')
+            .eq('id', pr.bills.id)
+            .single()
+          if (billCompany) {
+            await syncVendorCredit(supabase, billCompany.company_id, billCompany.supplier_id, pr.bills.id)
+          }
+        }
+      } catch (vendorCreditErr) {
+        console.warn('⚠️ Vendor credit sync failed (non-critical):', vendorCreditErr)
+      }
+
+      // 2. سجل تدقيق لخصم المخزون
+      try {
+        if (currentUserId) {
+          await supabase.from('audit_logs').insert({
+            company_id: companyId,
+            user_id: currentUserId,
+            action: 'purchase_return_warehouse_confirmed',
+            entity_type: 'purchase_return',
+            entity_id: pr.id,
+            new_values: {
+              return_number: pr.return_number,
+              warehouse_id: pr.warehouse_id,
+              branch_id: pr.branch_id,
+              confirmed_by: currentUserId,
+              timestamp: new Date().toISOString(),
+            },
+            created_at: new Date().toISOString(),
+          })
+        }
+      } catch (auditErr) { console.warn('Audit log failed:', auditErr) }
+
+      // 3. إشعار للمنشئ بتأكيد التسليم
       if (pr.created_by) {
         try {
-          const supplierName = (pr.suppliers as any)?.name || ''
           await notifyPurchaseReturnConfirmed({
             companyId,
             purchaseReturnId: pr.id,
@@ -378,15 +447,40 @@ export default function PurchaseReturnsPage() {
             appLang,
           })
         } catch (notifyErr) {
-          console.warn('⚠️ Notification failed (non-critical):', notifyErr)
+          console.warn('⚠️ Creator notification failed:', notifyErr)
         }
       }
+
+      // 4. إشعار للإدارة العليا بنجاح تسليم البضاعة وخصم المخزون
+      try {
+        const confirmTs = Date.now()
+        const adminTitle = appLang === 'en' ? 'Purchase Return Confirmed - Inventory Deducted' : 'تم اعتماد المرتجع وخصم المخزون'
+        const adminMessage = appLang === 'en'
+          ? `Return ${pr.return_number} for supplier ${supplierName} confirmed by warehouse. Stock has been deducted and vendor credit created.`
+          : `تم اعتماد تسليم المرتجع ${pr.return_number} للمورد ${supplierName} من قِبَل المخزن. تم خصم المخزون وإنشاء إشعار دائن للمورد.`
+        for (const role of ['admin', 'owner', 'general_manager']) {
+          await createNotification({
+            companyId,
+            referenceType: 'purchase_return',
+            referenceId: pr.id,
+            title: adminTitle,
+            message: adminMessage,
+            createdBy: currentUserId,
+            branchId: pr.branch_id || undefined,
+            assignedToRole: role,
+            priority: 'normal',
+            eventKey: `purchase_return:${pr.id}:confirmed:${role}:${confirmTs}`,
+            severity: 'info',
+            category: 'inventory',
+          })
+        }
+      } catch (notifyErr) { console.warn('⚠️ Admin notification failed:', notifyErr) }
 
       toast({
         title: appLang === 'en' ? '✅ Delivery Confirmed' : '✅ تم اعتماد التسليم',
         description: appLang === 'en'
-          ? `Return ${pr.return_number} has been confirmed. Stock deducted and journal entry posted.`
-          : `تم اعتماد المرتجع ${pr.return_number}. تم خصم المخزون ونشر القيد المحاسبي.`,
+          ? `Return ${pr.return_number} confirmed. Stock deducted, journal entry posted, and vendor credit created.`
+          : `تم اعتماد المرتجع ${pr.return_number}. خُصم المخزون، نُشر القيد المحاسبي، وأُنشئ إشعار دائن للمورد.`,
       })
 
       loadReturns()
@@ -483,6 +577,92 @@ export default function PurchaseReturnsPage() {
       })
     } finally {
       setConfirmingAllocationId(null)
+    }
+  }
+
+  // ===================== تسجيل استلام المبلغ المسترد من المورد =====================
+  const handleRecordRefund = async () => {
+    if (!prToRefund || !currentUserId) return
+    setIsRecordingRefund(true)
+    try {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      const now = new Date().toISOString()
+
+      // 1. تحديث حالة المرتجع إلى "closed" بعد استلام المبلغ
+      const { error } = await supabase
+        .from('purchase_returns')
+        .update({
+          status: 'closed',
+          workflow_status: 'closed',
+          notes: prToRefund.reason + (refundNotes ? ` | استلام الاسترداد: ${refundNotes}` : ' | تم استلام الاسترداد'),
+        })
+        .eq('id', prToRefund.id)
+
+      if (error) throw error
+
+      // 2. سجل تدقيق
+      try {
+        await supabase.from('audit_logs').insert({
+          company_id: companyId,
+          user_id: currentUserId,
+          action: 'purchase_return_refund_received',
+          entity_type: 'purchase_return',
+          entity_id: prToRefund.id,
+          new_values: {
+            return_number: prToRefund.return_number,
+            total_amount: prToRefund.total_amount,
+            settlement_method: prToRefund.settlement_method,
+            notes: refundNotes,
+            recorded_by: currentUserId,
+            timestamp: now,
+          },
+          created_at: now,
+        })
+      } catch (auditErr) { console.warn('Audit log failed:', auditErr) }
+
+      // 3. إشعار للإدارة العليا بتأكيد استلام المبلغ المسترد
+      try {
+        const refundTs = Date.now()
+        const supplierName = (prToRefund.suppliers as any)?.name || ''
+        const refundTitle = appLang === 'en' ? 'Supplier Refund Received' : 'تم استلام الاسترداد من المورد'
+        const refundMessage = appLang === 'en'
+          ? `Refund of ${prToRefund.total_amount.toFixed(2)} for return ${prToRefund.return_number} (${supplierName}) has been received and recorded.`
+          : `تم استلام مبلغ الاسترداد ${prToRefund.total_amount.toFixed(2)} للمرتجع ${prToRefund.return_number} من المورد ${supplierName} وتسجيله.`
+
+        for (const role of ['admin', 'owner', 'general_manager']) {
+          await createNotification({
+            companyId,
+            referenceType: 'purchase_return',
+            referenceId: prToRefund.id,
+            title: refundTitle,
+            message: refundMessage,
+            createdBy: currentUserId,
+            branchId: prToRefund.branch_id || undefined,
+            assignedToRole: role,
+            priority: 'normal',
+            eventKey: `purchase_return:${prToRefund.id}:refund_received:${role}:${refundTs}`,
+            severity: 'info',
+            category: 'approvals',
+          })
+        }
+      } catch (notifyErr) { console.warn('Refund notification failed:', notifyErr) }
+
+      setIsRefundDialogOpen(false)
+      setPrToRefund(null)
+      setRefundNotes('')
+      toast({
+        title: appLang === 'en' ? '✅ Refund Recorded' : '✅ تم تسجيل الاسترداد',
+        description: appLang === 'en'
+          ? `Return ${prToRefund.return_number} closed. Refund receipt recorded and management notified.`
+          : `تم إغلاق المرتجع ${prToRefund.return_number}. تم تسجيل استلام الاسترداد وإشعار الإدارة.`,
+      })
+      loadReturns()
+    } catch (err) {
+      toast({ title: '❌ Error', description: String(err), variant: 'destructive' })
+    } finally {
+      setIsRecordingRefund(false)
     }
   }
 
@@ -814,6 +994,21 @@ export default function PurchaseReturnsPage() {
                 </Button>
               )}
 
+              {/* زر تسجيل استلام الاسترداد - للمرتجعات المكتملة بتسوية نقدية/بنكية */}
+              {isPrivileged &&
+                (pr.status === 'returned' || pr.workflow_status === 'confirmed') &&
+                (pr.settlement_method === 'cash' || pr.settlement_method === 'bank_transfer' || pr.settlement_method === 'bank') && (
+                <Button
+                  size="sm"
+                  className="bg-teal-600 hover:bg-teal-700 text-white text-xs h-7 px-2"
+                  onClick={() => { setPrToRefund(pr); setIsRefundDialogOpen(true) }}
+                  title={appLang === 'en' ? 'Record Refund Received' : 'تسجيل استلام الاسترداد'}
+                >
+                  <RotateCcw className="w-3 h-3 mr-1" />
+                  {appLang === 'en' ? 'Refund' : 'استرداد'}
+                </Button>
+              )}
+
               {pr.bills ? (
                 <Button
                   variant="outline"
@@ -1044,6 +1239,60 @@ export default function PurchaseReturnsPage() {
       </main>
 
       {/* Rejection Reason Dialog */}
+      {/* 💰 Refund Recording Dialog */}
+      <Dialog open={isRefundDialogOpen} onOpenChange={(open) => { setIsRefundDialogOpen(open); if (!open) { setPrToRefund(null); setRefundNotes('') } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-teal-700 dark:text-teal-400">
+              {appLang === 'en' ? '💰 Record Supplier Refund' : '💰 تسجيل استلام الاسترداد من المورد'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {prToRefund && (
+              <div className="p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800 rounded-lg text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Return #' : 'رقم المرتجع'}</span>
+                  <span className="font-medium">{prToRefund.return_number}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Supplier' : 'المورد'}</span>
+                  <span className="font-medium">{(prToRefund.suppliers as any)?.name || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Amount' : 'المبلغ'}</span>
+                  <span className="font-bold text-teal-700 dark:text-teal-400">{prToRefund.total_amount.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Method' : 'طريقة التسوية'}</span>
+                  <span className="font-medium">{prToRefund.settlement_method === 'cash' ? (appLang === 'en' ? 'Cash' : 'نقدي') : (appLang === 'en' ? 'Bank Transfer' : 'تحويل بنكي')}</span>
+                </div>
+              </div>
+            )}
+            <div className="space-y-1">
+              <Label>{appLang === 'en' ? 'Notes (optional)' : 'ملاحظات (اختياري)'}</Label>
+              <Textarea
+                value={refundNotes}
+                onChange={(e) => setRefundNotes(e.target.value)}
+                placeholder={appLang === 'en' ? 'e.g. Cash received at main office, Ref: TRX-12345' : 'مثال: تم استلام المبلغ نقداً في المكتب الرئيسي، المرجع: TRX-12345'}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRefundDialogOpen(false)} disabled={isRecordingRefund}>
+              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+            </Button>
+            <Button
+              className="bg-teal-600 hover:bg-teal-700 text-white"
+              onClick={handleRecordRefund}
+              disabled={isRecordingRefund}
+            >
+              {isRecordingRefund ? '...' : (appLang === 'en' ? 'Confirm Refund Received' : 'تأكيد استلام الاسترداد')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={isRejectDialogOpen} onOpenChange={(open) => { setIsRejectDialogOpen(open); if (!open) { setPrToReject(null); setRejectionReason('') } }}>
         <DialogContent>
           <DialogHeader>
