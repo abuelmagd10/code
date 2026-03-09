@@ -1351,7 +1351,28 @@ export default function BillViewPage() {
       // 3. تحديث حالة أمر الشراء المرتبط
       await updateLinkedPurchaseOrderStatus(bill.id)
 
-      // 4. إشعار للإدارة العليا بنجاح استلام البضاعة
+      // 4. تسجيل حدث في سجل التدقيق (Audit Log)
+      try {
+        await supabase.from("audit_logs").insert({
+          company_id: companyId,
+          user_id: user.id,
+          action: "goods_receipt_approved",
+          entity_type: "bill",
+          entity_id: bill.id,
+          new_values: {
+            bill_id: bill.id,
+            branch_id: bill.branch_id || null,
+            warehouse_id: bill.warehouse_id || null,
+            approved_by: user.id,
+            timestamp: now
+          },
+          created_at: now
+        })
+      } catch (auditErr) {
+        console.warn("Audit log for goods_receipt_approved failed:", auditErr)
+      }
+
+      // 5. إشعار للإدارة العليا بنجاح استلام البضاعة
       try {
         const receiptTimestamp = Date.now()
         const receiptTitle = appLang === "en"
