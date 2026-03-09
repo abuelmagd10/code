@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useCallback } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -96,6 +96,10 @@ export default function EditSalesOrderPage() {
   const [soCurrency, setSOCurrency] = useState<string>("SAR")
   const [exchangeRate, setExchangeRate] = useState<number>(1)
 
+  // 🔐 Branch-specific stock quantities map
+  const [branchStockMap, setBranchStockMap] = useState<Record<string, number>>({})
+  const [isLoadingStock, setIsLoadingStock] = useState(false)
+
   const [formData, setFormData] = useState({
     customer_id: "",
     so_number: "",
@@ -140,12 +144,107 @@ export default function EditSalesOrderPage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
+
+  // 🔐 دالة حساب الكميات المتاحة من مخازن الفرع المحدد
+  const loadBranchStock = useCallback(async (targetBranchId: string | null, productsList: Product[]) => {
+    if (!targetBranchId || productsList.length === 0) {
+      setBranchStockMap({})
+      return
+    }
+
+    try {
+      setIsLoadingStock(true)
+
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      // 1. جلب جميع المخازن التابعة للفرع المحدد
+      const { data: branchWarehouses, error: whError } = await supabase
+        .from('warehouses')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('branch_id', targetBranchId)
+        .eq('is_active', true)
+
+      if (whError) {
+        console.error('Error fetching branch warehouses:', whError)
+        setBranchStockMap({})
+        return
+      }
+
+      const warehouseIds = (branchWarehouses || []).map((w: { id: string }) => w.id)
+
+      if (warehouseIds.length === 0) {
+        // لا توجد مخازن في هذا الفرع - جميع الكميات = 0
+        const emptyStock: Record<string, number> = {}
+        productsList.forEach(p => { emptyStock[p.id] = 0 })
+        setBranchStockMap(emptyStock)
+        return
+      }
+
+      // 2. جلب حركات المخزون لجميع المنتجات من مخازن الفرع فقط
+      const productIds = productsList.filter(p => p.item_type !== 'service').map(p => p.id)
+
+      if (productIds.length === 0) {
+        setBranchStockMap({})
+        return
+      }
+
+      const { data: transactions, error: txError } = await supabase
+        .from('inventory_transactions')
+        .select('product_id, quantity_change')
+        .eq('company_id', companyId)
+        .in('warehouse_id', warehouseIds)
+        .in('product_id', productIds)
+        .or('is_deleted.is.null,is_deleted.eq.false')
+
+      if (txError) {
+        console.error('Error fetching inventory transactions:', txError)
+        setBranchStockMap({})
+        return
+      }
+
+      // 3. حساب الكمية المتاحة لكل منتج
+      const stockMap: Record<string, number> = {}
+
+      // تهيئة جميع المنتجات بـ 0
+      productIds.forEach(pid => { stockMap[pid] = 0 })
+
+        // جمع الحركات
+        ; (transactions || []).forEach((tx: any) => {
+          const pid = tx.product_id
+          const change = Number(tx.quantity_change || 0)
+          stockMap[pid] = (stockMap[pid] || 0) + change
+        })
+
+      // التأكد من عدم وجود كميات سالبة
+      Object.keys(stockMap).forEach(pid => {
+        stockMap[pid] = Math.max(0, stockMap[pid])
+      })
+
+      console.log('🔐 Branch stock loaded:', { branchId: targetBranchId, warehouseCount: warehouseIds.length, stockMap })
+      setBranchStockMap(stockMap)
+    } catch (error) {
+      console.error('Error loading branch stock:', error)
+      setBranchStockMap({})
+    } finally {
+      setIsLoadingStock(false)
+    }
+  }, [supabase])
+
+  // 🔐 تحميل الكميات المتاحة عند تغيير الفرع أو المنتجات
+  useEffect(() => {
+    if (branchId && products.length > 0 && !isLoading) {
+      loadBranchStock(branchId, products)
+    }
+  }, [branchId, products, isLoading, loadBranchStock])
 
   const loadInitial = async () => {
     try {
@@ -202,7 +301,7 @@ export default function EditSalesOrderPage() {
         setOrderStatus(order.status || "draft")
         setSOCurrency(order.currency || "SAR")
         setExchangeRate(Number(order.exchange_rate || 1))
-        
+
         // التحقق من صلاحيات التعديل
         const permissions = await checkSalesOrderPermissions(orderId)
         setCanEdit(permissions.canEdit)
@@ -339,7 +438,7 @@ export default function EditSalesOrderPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     // التحقق من الصلاحيات قبل الحفظ
     if (!canEdit) {
       const permissions = await checkSalesOrderPermissions(orderId)
@@ -360,11 +459,31 @@ export default function EditSalesOrderPage() {
     // Validate shipping provider is selected
     if (!shippingProviderId) {
       toast({
-        title: appLang==='en' ? "Shipping Required" : "الشحن مطلوب",
-        description: appLang==='en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        title: appLang === 'en' ? "Shipping Required" : "الشحن مطلوب",
+        description: appLang === 'en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
         variant: "destructive"
       })
       return
+    }
+
+    // 🔐 Stock Validation (Frontend)
+    const outOfStockItem = soItems.find(item => {
+      if (!item.product_id || item.item_type === 'service') return false;
+      const available = branchStockMap[item.product_id] || 0;
+      return item.quantity > available;
+    });
+
+    if (outOfStockItem) {
+      const product = products.find(p => p.id === outOfStockItem.product_id);
+      const available = branchStockMap[outOfStockItem.product_id] || 0;
+      toast({
+        title: appLang === 'en' ? "Insufficient Stock" : "عجز في المخزون",
+        description: appLang === 'en'
+          ? `Product "${product?.name}" has only ${available} available in the selected branch.`
+          : `المنتج "${product?.name}" متوفر منه ${available} فقط في الفرع المختار.`,
+        variant: "destructive"
+      });
+      return;
     }
 
     setIsSaving(true)
@@ -665,13 +784,23 @@ export default function EditSalesOrderPage() {
                                   </select>
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Input
-                                    type="number"
-                                    step="0.01"
-                                    value={item.quantity}
-                                    onChange={(e) => updateItem(index, "quantity", Number.parseFloat(e.target.value) || 0)}
-                                    className="text-center text-sm"
-                                  />
+                                  <div className="flex flex-col items-center gap-1">
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      value={item.quantity}
+                                      onChange={(e) => updateItem(index, "quantity", Number.parseFloat(e.target.value) || 0)}
+                                      className={`text-center text-sm ${item.item_type !== 'service' && item.quantity > (branchStockMap[item.product_id] || 0)
+                                          ? 'border-red-500 focus-visible:ring-red-500'
+                                          : ''
+                                        }`}
+                                    />
+                                    {item.item_type !== 'service' && item.product_id && item.quantity > (branchStockMap[item.product_id] || 0) && (
+                                      <span className="text-[10px] text-red-500 font-medium">
+                                        {appLang === 'en' ? 'Max:' : 'المتاح:'} {branchStockMap[item.product_id] || 0}
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="px-3 py-3">
                                   <Input
@@ -775,10 +904,18 @@ export default function EditSalesOrderPage() {
                                 <Input
                                   type="number"
                                   step="0.01"
-                                  className="mt-1"
+                                  className={`mt-1 ${item.item_type !== 'service' && item.quantity > (branchStockMap[item.product_id] || 0)
+                                      ? 'border-red-500 focus-visible:ring-red-500'
+                                      : ''
+                                    }`}
                                   value={item.quantity}
                                   onChange={(e) => updateItem(index, "quantity", Number.parseFloat(e.target.value) || 0)}
                                 />
+                                {item.item_type !== 'service' && item.product_id && item.quantity > (branchStockMap[item.product_id] || 0) && (
+                                  <span className="text-[10px] text-red-500 font-medium block mt-1">
+                                    {appLang === 'en' ? 'Max:' : 'المتاح:'} {branchStockMap[item.product_id] || 0}
+                                  </span>
+                                )}
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</Label>

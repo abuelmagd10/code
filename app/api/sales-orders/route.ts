@@ -8,8 +8,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
-import { 
-  enforceGovernance, 
+import {
+  enforceGovernance,
   applyGovernanceFilters,
   validateGovernanceData,
   addGovernanceData
@@ -57,9 +57,9 @@ export async function GET(request: NextRequest) {
 
     if (dbError) {
       console.error("[API /sales-orders] Database error:", dbError)
-      return NextResponse.json({ 
-        error: dbError.message, 
-        error_ar: "خطأ في جلب أوامر البيع" 
+      return NextResponse.json({
+        error: dbError.message,
+        error_ar: "خطأ في جلب أوامر البيع"
       }, { status: 500 })
     }
 
@@ -80,11 +80,11 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error("[API /sales-orders] Error:", error)
-    return NextResponse.json({ 
-      error: error.message, 
-      error_ar: "حدث خطأ غير متوقع" 
-    }, { 
-      status: error.message.includes('Unauthorized') ? 401 : 403 
+    return NextResponse.json({
+      error: error.message,
+      error_ar: "حدث خطأ غير متوقع"
+    }, {
+      status: error.message.includes('Unauthorized') ? 401 : 403
     })
   }
 }
@@ -97,25 +97,25 @@ export async function POST(request: NextRequest) {
   try {
     // 1️⃣ تطبيق الحوكمة الأساسية (إلزامي)
     const governance = await enforceGovernance(request)
-    
+
     const body = await request.json()
-    
+
     // 2️⃣ تطبيق افتراضيات الفرع (Enterprise Pattern: User → Branch → Defaults)
     const { enforceBranchDefaults, validateBranchDefaults, buildSalesOrderData } = await import('@/lib/governance-branch-defaults')
     const supabase = await createClient()
     const enhancedContext = await enforceBranchDefaults(governance, body, supabase)
-    
+
     // 3️⃣ بناء البيانات النهائية مع الحوكمة المحسنة
     const finalData = buildSalesOrderData(body, enhancedContext)
-    
+
     // 4️⃣ التأكد من أن company_id موجود
     if (!finalData.company_id && governance.companyId) {
       finalData.company_id = governance.companyId
     }
-    
+
     // 5️⃣ التحقق من صحة البيانات قبل الإدخال
     validateBranchDefaults(finalData, enhancedContext)
-    
+
     // 6️⃣ التحقق من أن المستودع ومركز التكلفة ينتميان للفرع
     if (finalData.branch_id && finalData.warehouse_id) {
       const { data: warehouse, error: whError } = await supabase
@@ -123,40 +123,40 @@ export async function POST(request: NextRequest) {
         .select("branch_id")
         .eq("id", finalData.warehouse_id)
         .single()
-      
+
       if (whError || !warehouse) {
-        return NextResponse.json({ 
+        return NextResponse.json({
           error: "Warehouse not found",
-          error_ar: "المخزن المحدد غير موجود" 
+          error_ar: "المخزن المحدد غير موجود"
         }, { status: 400 })
       }
-      
+
       if (warehouse.branch_id !== finalData.branch_id) {
-        return NextResponse.json({ 
+        return NextResponse.json({
           error: "Warehouse does not belong to the selected branch",
-          error_ar: "المخزن المحدد لا ينتمي للفرع المختار" 
+          error_ar: "المخزن المحدد لا ينتمي للفرع المختار"
         }, { status: 400 })
       }
     }
-    
+
     if (finalData.branch_id && finalData.cost_center_id) {
       const { data: costCenter, error: ccError } = await supabase
         .from("cost_centers")
         .select("branch_id")
         .eq("id", finalData.cost_center_id)
         .single()
-      
+
       if (ccError || !costCenter) {
-        return NextResponse.json({ 
+        return NextResponse.json({
           error: "Cost center not found",
-          error_ar: "مركز التكلفة المحدد غير موجود" 
+          error_ar: "مركز التكلفة المحدد غير موجود"
         }, { status: 400 })
       }
-      
+
       if (costCenter.branch_id !== finalData.branch_id) {
-        return NextResponse.json({ 
+        return NextResponse.json({
           error: "Cost center does not belong to the selected branch",
-          error_ar: "مركز التكلفة المحدد لا ينتمي للفرع المختار" 
+          error_ar: "مركز التكلفة المحدد لا ينتمي للفرع المختار"
         }, { status: 400 })
       }
     }
@@ -176,15 +176,49 @@ export async function POST(request: NextRequest) {
         }, { status: 400 })
       }
     }
-    
+
+    // 6c️⃣ التحقق من توفر المخزون (Stock Validation)
+    if (body.items && Array.isArray(body.items) && body.items.length > 0) {
+      const productItems = body.items.filter((i: any) => i.item_type !== 'service' && i.product_id);
+      const productIds = productItems.map((i: any) => i.product_id);
+
+      if (productIds.length > 0) {
+        const { data: txs, error: txError } = await supabase
+          .from('inventory_transactions')
+          .select('product_id, quantity_change')
+          .eq('company_id', finalData.company_id || governance.companyId)
+          .eq('warehouse_id', finalData.warehouse_id)
+          .in('product_id', productIds)
+          .or('is_deleted.is.null,is_deleted.eq.false');
+
+        if (!txError && txs) {
+          const stockMap: Record<string, number> = {};
+          txs.forEach((tx: any) => {
+            stockMap[tx.product_id] = (stockMap[tx.product_id] || 0) + Number(tx.quantity_change || 0);
+          });
+
+          for (const item of productItems) {
+            const reqQty = Number(item.quantity || 0);
+            const avail = Math.max(0, stockMap[item.product_id] || 0);
+            if (reqQty > avail) {
+              return NextResponse.json({
+                error: `Insufficient stock for product. Requested: ${reqQty}, Available: ${avail}`,
+                error_ar: `المخزون غير كافي لأحد المنتجات. المطلوبة: ${reqQty}، المتاحة في المخزن: ${avail}`
+              }, { status: 400 });
+            }
+          }
+        }
+      }
+    }
+
     // 7️⃣ التأكد من أن جميع الحقول المطلوبة موجودة
     if (!finalData.branch_id || !finalData.warehouse_id || !finalData.cost_center_id) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: "Missing required fields: branch_id, warehouse_id, and cost_center_id are required",
-        error_ar: "الحقول المطلوبة مفقودة: يجب تحديد الفرع والمخزن ومركز التكلفة" 
+        error_ar: "الحقول المطلوبة مفقودة: يجب تحديد الفرع والمخزن ومركز التكلفة"
       }, { status: 400 })
     }
-    
+
     // 7️⃣ الإدخال في قاعدة البيانات
     const { data: newSalesOrder, error: insertError } = await supabase
       .from("sales_orders")
@@ -312,13 +346,13 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error("[API /sales-orders POST] Error:", error)
-    return NextResponse.json({ 
-      error: error.message, 
-      error_ar: error.message?.includes('Warehouse') || error.message?.includes('Cost center') 
-        ? error.message 
-        : "حدث خطأ غير متوقع" 
-    }, { 
-      status: error.message?.includes('Violation') || error.message?.includes('governance') ? 400 : 500 
+    return NextResponse.json({
+      error: error.message,
+      error_ar: error.message?.includes('Warehouse') || error.message?.includes('Cost center')
+        ? error.message
+        : "حدث خطأ غير متوقع"
+    }, {
+      status: error.message?.includes('Violation') || error.message?.includes('governance') ? 400 : 500
     })
   }
 }

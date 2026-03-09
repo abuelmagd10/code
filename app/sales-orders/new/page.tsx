@@ -447,12 +447,12 @@ export default function NewSalesOrderPage() {
       // تهيئة جميع المنتجات بـ 0
       productIds.forEach(pid => { stockMap[pid] = 0 })
 
-      // جمع الحركات
-      ;(transactions || []).forEach((tx: any) => {
-        const pid = tx.product_id
-        const change = Number(tx.quantity_change || 0)
-        stockMap[pid] = (stockMap[pid] || 0) + change
-      })
+        // جمع الحركات
+        ; (transactions || []).forEach((tx: any) => {
+          const pid = tx.product_id
+          const change = Number(tx.quantity_change || 0)
+          stockMap[pid] = (stockMap[pid] || 0) + change
+        })
 
       // التأكد من عدم وجود كميات سالبة
       Object.keys(stockMap).forEach(pid => {
@@ -670,6 +670,26 @@ export default function NewSalesOrderPage() {
       return
     }
 
+    // 🔐 Stock Validation (Frontend)
+    const outOfStockItem = soItems.find(item => {
+      if (!item.product_id || item.item_type === 'service') return false;
+      const available = branchStockMap[item.product_id] || 0;
+      return item.quantity > available;
+    });
+
+    if (outOfStockItem) {
+      const product = products.find(p => p.id === outOfStockItem.product_id);
+      const available = branchStockMap[outOfStockItem.product_id] || 0;
+      toast({
+        title: appLang === 'en' ? "Insufficient Stock" : "عجز في المخزون",
+        description: appLang === 'en'
+          ? `Product "${product?.name}" has only ${available} available in the selected branch.`
+          : `المنتج "${product?.name}" متوفر منه ${available} فقط في الفرع المختار.`,
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
       setIsSaving(true)
 
@@ -713,6 +733,10 @@ export default function NewSalesOrderPage() {
           branch_id: branchId,
           cost_center_id: costCenterId,
           warehouse_id: warehouseId,
+          items: soItems
+            .filter((item) => !!item.product_id && (item.quantity ?? 0) > 0)
+            .map(item => ({ ...item, product_id: item.product_id })),
+
         }),
       })
 
@@ -1398,13 +1422,23 @@ export default function NewSalesOrderPage() {
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Input
-                                    type="number"
-                                    min="1"
-                                    value={item.quantity}
-                                    onChange={(e) => updateItem(index, "quantity", Number.parseInt(e.target.value))}
-                                    className="text-center text-sm"
-                                  />
+                                  <div className="flex flex-col items-center gap-1">
+                                    <Input
+                                      type="number"
+                                      min="1"
+                                      value={item.quantity}
+                                      onChange={(e) => updateItem(index, "quantity", Number.parseFloat(e.target.value) || 0)}
+                                      className={`text-center text-sm ${item.item_type !== 'service' && item.quantity > (branchStockMap[item.product_id] || 0)
+                                          ? 'border-red-500 focus-visible:ring-red-500'
+                                          : ''
+                                        }`}
+                                    />
+                                    {item.item_type !== 'service' && item.product_id && item.quantity > (branchStockMap[item.product_id] || 0) && (
+                                      <span className="text-[10px] text-red-500 font-medium">
+                                        {appLang === 'en' ? 'Max:' : 'المتاح:'} {branchStockMap[item.product_id] || 0}
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="px-3 py-3">
                                   <Input
@@ -1513,10 +1547,18 @@ export default function NewSalesOrderPage() {
                                 <Input
                                   type="number"
                                   min="1"
-                                  className="mt-1"
+                                  className={`mt-1 ${item.item_type !== 'service' && item.quantity > (branchStockMap[item.product_id] || 0)
+                                      ? 'border-red-500 focus-visible:ring-red-500'
+                                      : ''
+                                    }`}
                                   value={item.quantity}
-                                  onChange={(e) => updateItem(index, "quantity", Number.parseInt(e.target.value))}
+                                  onChange={(e) => updateItem(index, "quantity", Number.parseFloat(e.target.value) || 0)}
                                 />
+                                {item.item_type !== 'service' && item.product_id && item.quantity > (branchStockMap[item.product_id] || 0) && (
+                                  <span className="text-[10px] text-red-500 font-medium block mt-1">
+                                    {appLang === 'en' ? 'Max:' : 'المتاح:'} {branchStockMap[item.product_id] || 0}
+                                  </span>
+                                )}
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
