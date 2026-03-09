@@ -69,7 +69,7 @@ type Bill = {
   purchase_order_id?: string | null
   // Linked Goods Receipt
   goods_receipt_id?: string | null
-  goods_receipts?: { id: string; grn_number: string } | Array<{ id: string; grn_number: string }> | null
+  goods_receipts?: { id: string; grn_number: string } | null
 }
 
 type Supplier = { id: string; name: string; phone?: string }
@@ -962,8 +962,8 @@ export default function BillsPage() {
               </Button>
             </Link>
           )}
-          {row.goods_receipts && (Array.isArray(row.goods_receipts) ? row.goods_receipts[0] : row.goods_receipts) && (
-            <Link href={`/goods-receipts/${Array.isArray(row.goods_receipts) ? row.goods_receipts[0].id : row.goods_receipts.id}`}>
+          {row.goods_receipts && (
+            <Link href={`/goods-receipts/${row.goods_receipts.id}`}>
               <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Linked GRN' : 'إيصال الاستلام المرتبط'}>
                 <Package className="w-4 h-4 text-green-500" />
               </Button>
