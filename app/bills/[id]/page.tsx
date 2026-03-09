@@ -32,6 +32,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import {
@@ -213,10 +214,15 @@ export default function BillViewPage() {
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
   const [canSubmitForApproval, setCanSubmitForApproval] = useState(false)
   const [canApproveAdmin, setCanApproveAdmin] = useState(false)
+  const [canApproveReceipt, setCanApproveReceipt] = useState(false)
 
   // Admin rejection dialog state
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [rejectionReason, setRejectionReason] = useState("")
+
+  // Receipt rejection dialog state
+  const [receiptRejectDialogOpen, setReceiptRejectDialogOpen] = useState(false)
+  const [receiptRejectionReason, setReceiptRejectionReason] = useState("")
 
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
@@ -281,6 +287,9 @@ export default function BillViewPage() {
 
               // من يمكنه الاعتماد الإداري؟
               setCanApproveAdmin(["owner", "admin", "general_manager"].includes(role))
+
+              // من يمكنه اعتماد الاستلام؟ (مسؤول المخزن + الإدارة العليا)
+              setCanApproveReceipt(["owner", "admin", "general_manager", "store_manager"].includes(role))
             }
           }
         } catch { }
@@ -1316,6 +1325,155 @@ export default function BillViewPage() {
     }
   }
 
+  // ✅ اعتماد استلام البضاعة من مسؤول المخزن - يُنشئ inventory_transactions هنا فقط
+  const handleApproveReceipt = async () => {
+    try {
+      if (!bill) return
+      setPosting(true)
+
+      const companyId = await getActiveCompanyId(supabase)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!companyId || !user) { setPosting(false); return }
+
+      // 1. إنشاء inventory_transactions (المخزون يُحدَّث هنا فقط)
+      await postBillAtomic()
+
+      // 2. تحديث حالة الفاتورة إلى "received" + اعتماد الاستلام
+      const now = new Date().toISOString()
+      const { error } = await supabase.from("bills").update({
+        status: "received",
+        receipt_status: "received",
+        received_by: user.id,
+        received_at: now
+      }).eq("id", bill.id)
+      if (error) throw error
+
+      // 3. تحديث حالة أمر الشراء المرتبط
+      await updateLinkedPurchaseOrderStatus(bill.id)
+
+      // 4. إشعار للإدارة العليا بنجاح استلام البضاعة
+      try {
+        const receiptTimestamp = Date.now()
+        const receiptTitle = appLang === "en"
+          ? "Goods receipt approved - inventory updated"
+          : "تم اعتماد استلام البضاعة وتحديث المخزون"
+        const receiptMessage = appLang === "en"
+          ? `Goods for purchase bill ${bill.bill_number} have been received and warehouse inventory has been updated`
+          : `تم استلام البضاعة لفاتورة المشتريات رقم ${bill.bill_number} وتم تحديث مخزون الفرع`
+
+        for (const role of ['admin', 'owner', 'general_manager']) {
+          await createNotification({
+            companyId,
+            referenceType: "bill",
+            referenceId: bill.id,
+            title: receiptTitle,
+            message: receiptMessage,
+            createdBy: user.id,
+            branchId: bill.branch_id || undefined,
+            costCenterId: bill.cost_center_id || undefined,
+            warehouseId: bill.warehouse_id || undefined,
+            assignedToRole: role,
+            priority: "normal",
+            eventKey: `bill:${bill.id}:receipt_approved:${role}:${receiptTimestamp}`,
+            severity: "info",
+            category: "inventory"
+          })
+        }
+      } catch (notifErr) {
+        console.warn("Receipt approval notifications failed:", notifErr)
+      }
+
+      toastActionSuccess(
+        toast,
+        appLang === "en" ? "Receipt Approval" : "اعتماد الاستلام",
+        appLang === "en" ? "Goods received and inventory updated" : "تم استلام البضاعة وتحديث المخزون",
+        appLang
+      )
+      await loadData()
+    } catch (err: any) {
+      console.error("Error approving receipt:", err)
+      toastActionError(
+        toast,
+        appLang === "en" ? "Receipt Approval" : "اعتماد الاستلام",
+        appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
+        appLang === "en" ? "Failed to approve receipt" : "تعذر اعتماد الاستلام",
+        appLang
+      )
+    } finally {
+      setPosting(false)
+    }
+  }
+
+  // ❌ رفض استلام البضاعة من مسؤول المخزن - المخزون لا يُحدَّث
+  const handleRejectReceipt = async () => {
+    if (!bill) return
+    if (!receiptRejectionReason.trim()) {
+      toast({
+        variant: "destructive",
+        title: appLang === "en" ? "Rejection Reason Required" : "سبب الرفض مطلوب",
+        description: appLang === "en" ? "Please enter a reason for rejecting the receipt" : "يرجى إدخال سبب رفض الاستلام"
+      })
+      return
+    }
+    try {
+      setPosting(true)
+      const companyId = await getActiveCompanyId(supabase)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!companyId || !user) { setPosting(false); return }
+
+      const { error } = await supabase.from("bills").update({
+        receipt_status: "rejected",
+        receipt_rejection_reason: receiptRejectionReason.trim()
+      }).eq("id", bill.id)
+      if (error) throw error
+
+      // إشعار لمنشئ الفاتورة بالرفض
+      try {
+        if (bill.created_by) {
+          await createNotification({
+            companyId,
+            referenceType: "bill",
+            referenceId: bill.id,
+            title: appLang === "en" ? "Goods receipt rejected" : "تم رفض استلام البضاعة",
+            message: appLang === "en"
+              ? `The goods receipt for bill ${bill.bill_number} was rejected. Reason: ${receiptRejectionReason.trim()}`
+              : `تم رفض استلام البضاعة للفاتورة رقم ${bill.bill_number}. السبب: ${receiptRejectionReason.trim()}`,
+            createdBy: user.id,
+            branchId: bill.branch_id || undefined,
+            assignedToUser: bill.created_by,
+            priority: "high",
+            eventKey: `bill:${bill.id}:receipt_rejected:${Date.now()}`,
+            severity: "error",
+            category: "inventory"
+          })
+        }
+      } catch (notifErr) {
+        console.warn("Receipt rejection notification failed:", notifErr)
+      }
+
+      setReceiptRejectDialogOpen(false)
+      setReceiptRejectionReason("")
+      toastActionSuccess(
+        toast,
+        appLang === "en" ? "Receipt Rejected" : "رفض الاستلام",
+        appLang === "en" ? "Receipt rejection recorded" : "تم تسجيل رفض الاستلام",
+        appLang
+      )
+      await loadData()
+    } catch (err: any) {
+      console.error("Error rejecting receipt:", err)
+      toastActionError(
+        toast,
+        appLang === "en" ? "Receipt Rejection" : "رفض الاستلام",
+        appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
+        appLang === "en" ? "Failed to reject receipt" : "تعذر رفض الاستلام",
+        appLang
+      )
+    } finally {
+      setPosting(false)
+    }
+  }
+
   const changeStatus = async (newStatus: string) => {
     try {
       if (!bill) return
@@ -1326,9 +1484,11 @@ export default function BillViewPage() {
         return
       }
 
-      // التحقق من توفر المخزون قبل الإلغاء أو الإرجاع للمسودة (لأن ذلك يعني خصم المخزون)
+      // التحقق من توفر المخزون قبل الإلغاء أو الإرجاع للمسودة
+      // فقط إذا كان المخزون قد أُضيف فعلاً (receipt_status === 'received')
       if ((newStatus === "draft" || newStatus === "cancelled") &&
-        (bill.status === "sent" || bill.status === "received" || bill.status === "partially_paid" || bill.status === "paid")) {
+        (bill.status === "sent" || bill.status === "received" || bill.status === "partially_paid" || bill.status === "paid") &&
+        bill.receipt_status === 'received') {
         // جلب عناصر الفاتورة للتحقق
         const { data: billItems } = await supabase
           .from("bill_items")
@@ -1364,18 +1524,60 @@ export default function BillViewPage() {
         }
       }
 
-      const { error } = await supabase.from("bills").update({ status: newStatus }).eq("id", bill.id)
-      if (error) throw error
+      // عند التحويل إلى "مرسلة": نضيف receipt_status = 'pending' بدون تحديث المخزون
+      const updateData: Record<string, unknown> = { status: newStatus }
       if (newStatus === "sent") {
-        // ✅ ATOMIC Bill Posting: Inventory + Journal Entries in one transaction
-        await postBillAtomic()
-        // Update linked purchase order status
+        updateData.receipt_status = 'pending'
+      } else if ((newStatus === "draft" || newStatus === "cancelled") && bill.receipt_status === 'received') {
+        // عند الإلغاء بعد اعتماد الاستلام: إعادة ضبط بيانات الاستلام
+        updateData.receipt_status = null
+        updateData.received_by = null
+        updateData.received_at = null
+      }
+
+      const { error } = await supabase.from("bills").update(updateData).eq("id", bill.id)
+      if (error) throw error
+
+      if (newStatus === "sent") {
+        // ✅ إرسال إشعار لمسؤول المخزن لاعتماد الاستلام (المخزون لم يُحدَّث بعد)
+        try {
+          const companyId = await getActiveCompanyId(supabase)
+          const { data: { user } } = await supabase.auth.getUser()
+          if (companyId && user) {
+            await createNotification({
+              companyId,
+              referenceType: "bill",
+              referenceId: bill.id,
+              title: appLang === "en"
+                ? "Goods receipt approval required"
+                : "مطلوب اعتماد استلام البضاعة",
+              message: appLang === "en"
+                ? `Purchase bill ${bill.bill_number} is awaiting warehouse receipt approval. Please review and approve the goods receipt.`
+                : `فاتورة المشتريات رقم ${bill.bill_number} بانتظار اعتماد الاستلام في المخزن. يرجى مراجعة واعتماد استلام البضاعة.`,
+              createdBy: user.id,
+              branchId: bill.branch_id || undefined,
+              costCenterId: bill.cost_center_id || undefined,
+              warehouseId: bill.warehouse_id || undefined,
+              assignedToRole: "store_manager",
+              priority: "high",
+              eventKey: `bill:${bill.id}:sent_pending_receipt:${Date.now()}`,
+              severity: "info",
+              category: "inventory"
+            })
+          }
+        } catch (notifErr) {
+          console.warn("Receipt pending notification failed:", notifErr)
+        }
+        // تحديث حالة أمر الشراء المرتبط
         await updateLinkedPurchaseOrderStatus(bill.id)
-        console.log(`✅ BILL Sent: Posted atomically (Inventory + AP Journal)`)
+        console.log(`✅ BILL Sent: Awaiting warehouse receipt approval (inventory NOT yet updated)`)
       } else if (newStatus === "draft" || newStatus === "cancelled") {
-        await reverseBillInventory()
-        // عكس القيود المحاسبية إن وجدت (للفواتير المدفوعة سابقاً)
-        await reverseBillJournals()
+        // عكس المخزون فقط إذا كان قد أُضيف فعلاً (بعد اعتماد الاستلام)
+        if (bill.receipt_status === 'received') {
+          await reverseBillInventory()
+          // عكس القيود المحاسبية إن وجدت (للفواتير المدفوعة سابقاً)
+          await reverseBillJournals()
+        }
         // تحديث حالة أمر الشراء المرتبط
         await updateLinkedPurchaseOrderStatus(bill.id)
       }
@@ -2023,6 +2225,52 @@ export default function BillViewPage() {
                     <AlertCircle className="w-4 h-4 sm:mr-1" />
                     <span className="hidden sm:inline">
                       {appLang === 'en' ? 'Reject' : 'رفض'}
+                    </span>
+                  </Button>
+                )}
+
+                {/* 📦 تحويل الفاتورة المعتمدة إلى مرسلة (المحاسب) */}
+                {bill.status === "approved" && bill.receipt_status !== 'rejected' && canSubmitForApproval && (
+                  <Button
+                    onClick={() => changeStatus("sent")}
+                    disabled={posting}
+                    size="sm"
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Package className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">
+                      {posting ? "..." : (appLang === 'en' ? 'Convert to Sent' : 'تحويل إلى مرسلة')}
+                    </span>
+                  </Button>
+                )}
+
+                {/* ✅ اعتماد استلام البضاعة (مسؤول المخزن) */}
+                {bill.status === "sent" && bill.receipt_status === 'pending' && canApproveReceipt && (
+                  <Button
+                    onClick={handleApproveReceipt}
+                    disabled={posting}
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    <CheckCircle className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">
+                      {posting ? "..." : (appLang === 'en' ? 'Approve Receipt' : 'اعتماد الاستلام')}
+                    </span>
+                  </Button>
+                )}
+
+                {/* ❌ رفض استلام البضاعة (مسؤول المخزن) */}
+                {bill.status === "sent" && bill.receipt_status === 'pending' && canApproveReceipt && (
+                  <Button
+                    onClick={() => setReceiptRejectDialogOpen(true)}
+                    disabled={posting}
+                    size="sm"
+                    variant="outline"
+                    className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400"
+                  >
+                    <AlertCircle className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">
+                      {appLang === 'en' ? 'Reject Receipt' : 'رفض الاستلام'}
                     </span>
                   </Button>
                 )}
@@ -2723,6 +2971,50 @@ export default function BillViewPage() {
           </div>
         )}
       </main>
+
+      {/* ❌ Receipt Rejection Dialog */}
+      <Dialog open={receiptRejectDialogOpen} onOpenChange={setReceiptRejectDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {appLang === 'en' ? 'Reject Goods Receipt' : 'رفض استلام البضاعة'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {appLang === 'en'
+                ? `Please provide a reason for rejecting the goods receipt for bill ${bill?.bill_number}`
+                : `يرجى إدخال سبب رفض استلام البضاعة للفاتورة رقم ${bill?.bill_number}`}
+            </p>
+            <div className="space-y-2">
+              <Label>
+                {appLang === 'en' ? 'Rejection Reason' : 'سبب الرفض'} *
+              </Label>
+              <Textarea
+                value={receiptRejectionReason}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReceiptRejectionReason(e.target.value)}
+                placeholder={appLang === 'en' ? 'Enter rejection reason...' : 'أدخل سبب الرفض...'}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setReceiptRejectDialogOpen(false); setReceiptRejectionReason("") }}
+            >
+              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleRejectReceipt}
+              disabled={posting || !receiptRejectionReason.trim()}
+            >
+              {posting ? "..." : (appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Purchase Return Dialog */}
       <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
