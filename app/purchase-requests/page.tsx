@@ -49,8 +49,6 @@ type PurchaseRequest = {
   approved_by: string | null;
   rejected_by: string | null;
   converted_to_po_id: string | null;
-  requested_by_user?: { email: string };
-  approved_by_user?: { email: string };
   converted_to_po?: { id: string; po_number: string };
   purchase_request_items?: Array<{ id: string; product_id: string | null; quantity_requested: number; quantity_approved: number }>;
 };
@@ -152,8 +150,6 @@ export default function PurchaseRequestsPage() {
           .from("purchase_requests")
           .select(`
             *,
-            requested_by_user:requested_by (id, email),
-            approved_by_user:approved_by (id, email),
             converted_to_po:purchase_orders!converted_to_po_id (id, po_number),
             purchase_request_items (*)
           `)
@@ -187,8 +183,7 @@ export default function PurchaseRequestsPage() {
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
         const matchesSearch = 
-          req.request_number.toLowerCase().includes(searchLower) ||
-          req.requested_by_user?.email?.toLowerCase().includes(searchLower);
+          req.request_number.toLowerCase().includes(searchLower);
         if (!matchesSearch) return false;
       }
 
