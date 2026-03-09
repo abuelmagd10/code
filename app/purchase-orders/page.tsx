@@ -424,7 +424,41 @@ export default function PurchaseOrdersPage() {
         .single();
 
       if (fullOrder) {
-        setOrders(prev => [fullOrder, ...prev]);
+        setOrders(prev => {
+          // Prevent duplicates one more time just in case
+          if (prev.some(o => o.id === fullOrder.id)) return prev;
+          return [fullOrder, ...prev];
+        });
+
+        // ⚠️ Fetch items for the new order to prevent it from disappearing if filtered by products
+        const { data: itemsData } = await supabase
+          .from("purchase_order_items")
+          .select("purchase_order_id, quantity, product_id")
+          .eq("purchase_order_id", newOrder.id);
+
+        if (itemsData && itemsData.length > 0) {
+          const productIds = [...new Set(itemsData.map((i: any) => i.product_id).filter(Boolean))];
+          if (productIds.length > 0) {
+            const { data: productsData } = await supabase
+              .from("products")
+              .select("id, name")
+              .in("id", productIds);
+
+            const productNames = (productsData || []).reduce((acc: Record<string, string>, p: { id: string; name: string }) => {
+              acc[p.id] = p.name;
+              return acc;
+            }, {});
+
+            const newItemsWithNames = itemsData.map((item: any) => ({
+              ...item,
+              product_name: item.product_id ? productNames[item.product_id] : null
+            }));
+
+            setOrderItems(prev => [...prev, ...newItemsWithNames]);
+          } else {
+            setOrderItems(prev => [...prev, ...itemsData]);
+          }
+        }
       }
     },
     onUpdate: async (newOrder, oldOrder) => {

@@ -1413,21 +1413,24 @@ export async function notifyPOApprovalRequest(params: {
     ? `Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) requires your approval`
     : `أمر شراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency} يحتاج إلى موافقتك`
 
-  await createNotification({
-    companyId,
-    referenceType: 'purchase_order',
-    referenceId: poId,
-    title,
-    message,
-    createdBy,
-    branchId,
-    costCenterId,
-    assignedToRole: 'admin',
-    priority: 'high',
-    eventKey: `purchase_order:${poId}:approval_request`,
-    severity: 'warning',
-    category: 'approvals'
-  })
+  const roles = ['admin', 'owner', 'manager', 'general_manager']
+  for (const role of roles) {
+    await createNotification({
+      companyId,
+      referenceType: 'purchase_order',
+      referenceId: poId,
+      title,
+      message,
+      createdBy,
+      branchId,
+      costCenterId,
+      assignedToRole: role,
+      priority: 'high',
+      eventKey: `purchase_order:${poId}:approval_request:${role}`,
+      severity: 'warning',
+      category: 'approvals'
+    })
+  }
 }
 
 export async function notifyPOApproved(params: {

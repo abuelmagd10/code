@@ -239,8 +239,9 @@ export default function PurchaseOrderDetailPage() {
         }
 
         setPo(poData)
-        // purchase_orders لا يحتوي على created_by - استخدام null
-        setPoCreatedBy(null)
+
+        // Use created_by_user_id from the purchase order table
+        setPoCreatedBy((poData as any)?.created_by_user_id || null)
 
         // 🔐 تحديث صلاحيات الإرسال والاستلام
         // purchase_orders لا يحتوي على created_by - تمرير null
