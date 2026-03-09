@@ -475,7 +475,7 @@ export default function SuppliersPage() {
       if (editingId) {
         // For updates, remove empty branch_id
         const updateData = { ...formData }
-        if (updateData.branch_id === "") {
+        if (updateData.branch_id === "" || updateData.branch_id === "__none__") {
           updateData.branch_id = null as any
         }
 
@@ -485,7 +485,7 @@ export default function SuppliersPage() {
       } else {
         // Use secure API for creation
         const payloadData: any = { ...formData, company_id: companyId }
-        if (payloadData.branch_id === "") {
+        if (payloadData.branch_id === "" || payloadData.branch_id === "__none__") {
           delete payloadData.branch_id
         }
 
@@ -511,7 +511,7 @@ export default function SuppliersPage() {
         country: "",
         tax_id: "",
         payment_terms: "Net 30",
-        branch_id: "",
+        branch_id: "__none__",
       })
       loadSuppliers()
       router.refresh()
@@ -529,7 +529,7 @@ export default function SuppliersPage() {
       country: supplier.country || "",
       tax_id: supplier.tax_id || "",
       payment_terms: supplier.payment_terms || "Net 30",
-      branch_id: supplier.branch_id || "",
+      branch_id: supplier.branch_id || "__none__",
     })
     setEditingId(supplier.id)
     setIsDialogOpen(true)
