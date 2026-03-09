@@ -188,10 +188,10 @@ function NewBillPageContent() {
       if (userBranchId) {
         // Fetch branch defaults instead of user assignments
         const { getBranchDefaults } = await import('@/lib/governance-branch-defaults')
-        
+
         try {
           const branchDefaults = await getBranchDefaults(supabase, userBranchId)
-          
+
           // Validate branch has required defaults
           if (!branchDefaults.default_warehouse_id || !branchDefaults.default_cost_center_id) {
             throw new Error(
@@ -222,7 +222,14 @@ function NewBillPageContent() {
         }
       }
 
-      const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId)
+      // 🔐 Enterprise Governance: Filter suppliers by branch for non-admin users
+      const normalizedRoleForSupp = String(role || '').trim().toLowerCase().replace(/\s+/g, '_')
+      const isAdminForSupp = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRoleForSupp)
+      let suppQuery = supabase.from("suppliers").select("id, name").eq("company_id", companyId)
+      if (!isAdminForSupp && userBranchId) {
+        suppQuery = suppQuery.eq("branch_id", userBranchId)
+      }
+      const { data: supps } = await suppQuery
       const { data: prods } = await supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", companyId)
       setSuppliers(supps || [])
       setProducts(prods || [])
@@ -724,7 +731,7 @@ function NewBillPageContent() {
           // ✅ التحقق من الحوكمة قبل إنشاء inventory_transactions
           if (!effectiveBranchId || !effectiveWarehouseId || !effectiveCostCenterId) {
             throw new Error(
-              appLang === 'en' 
+              appLang === 'en'
                 ? 'Branch, Warehouse, and Cost Center are required for inventory transactions'
                 : 'الفرع والمخزن ومركز التكلفة مطلوبة لحركات المخزون'
             )
@@ -737,7 +744,7 @@ function NewBillPageContent() {
             .eq("id", effectiveBranchId)
             .eq("company_id", mapping.companyId)
             .single()
-          
+
           if (!branchCheck) {
             console.error(`Branch ${effectiveBranchId} does not belong to company ${mapping.companyId}`)
             throw new Error(
@@ -754,7 +761,7 @@ function NewBillPageContent() {
             .eq("id", effectiveWarehouseId)
             .eq("company_id", mapping.companyId)
             .single()
-          
+
           if (!warehouseCheck) {
             console.error(`Warehouse ${effectiveWarehouseId} does not belong to company ${mapping.companyId}`)
             throw new Error(
@@ -771,7 +778,7 @@ function NewBillPageContent() {
             .eq("id", effectiveCostCenterId)
             .eq("company_id", mapping.companyId)
             .single()
-          
+
           if (!costCenterCheck) {
             console.error(`Cost Center ${effectiveCostCenterId} does not belong to company ${mapping.companyId}`)
             throw new Error(

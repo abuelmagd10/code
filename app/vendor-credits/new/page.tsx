@@ -86,7 +86,25 @@ export default function NewVendorCreditPage() {
       if (!loadedCompanyId) return
       setCompanyId(loadedCompanyId)
 
-      const { data: sups } = await supabase.from("suppliers").select("id, name").eq("company_id", loadedCompanyId)
+      // 🔐 Enterprise Governance: Filter suppliers by branch for non-admin users
+      const { data: memberDataVC } = await supabase
+        .from("company_members")
+        .select("role, branch_id")
+        .eq("company_id", loadedCompanyId)
+        .eq("user_id", user.id)
+        .maybeSingle()
+      const { data: companyDataVC } = await supabase.from("companies").select("user_id").eq("id", loadedCompanyId).single()
+      const isOwnerVC = companyDataVC?.user_id === user.id
+      const roleVC = isOwnerVC ? "owner" : (memberDataVC?.role || "viewer")
+      const userBranchIdVC = isOwnerVC ? null : (memberDataVC?.branch_id || null)
+      const normalizedRoleVC = String(roleVC).trim().toLowerCase().replace(/\s+/g, '_')
+      const isAdminVC = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRoleVC)
+
+      let suppQueryVC = supabase.from("suppliers").select("id, name").eq("company_id", loadedCompanyId)
+      if (!isAdminVC && userBranchIdVC) {
+        suppQueryVC = suppQueryVC.eq("branch_id", userBranchIdVC)
+      }
+      const { data: sups } = await suppQueryVC
       setSuppliers((sups || []) as any)
 
       const { data: prods } = await supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", loadedCompanyId)

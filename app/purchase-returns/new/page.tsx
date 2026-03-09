@@ -155,8 +155,15 @@ export default function NewPurchaseReturnPage() {
         billQuery = billQuery.eq("branch_id", userBranchId)
       }
 
+      // 🔐 Enterprise Governance: Filter suppliers by branch for non-admin users
+      const isPrivilegedForSuppliers = PRIVILEGED_ROLES.includes(role.toLowerCase())
+      let suppQuery = supabase.from("suppliers").select("id, name, phone").eq("company_id", loadedCompanyId)
+      if (!isPrivilegedForSuppliers && userBranchId) {
+        suppQuery = suppQuery.eq("branch_id", userBranchId)
+      }
+
       const [suppRes, billRes, prodRes] = await Promise.all([
-        supabase.from("suppliers").select("id, name, phone").eq("company_id", loadedCompanyId),
+        suppQuery,
         billQuery,
         supabase.from("products").select("id, name, cost_price").eq("company_id", loadedCompanyId)
       ])
@@ -1483,8 +1490,8 @@ export default function NewPurchaseReturnPage() {
                               <tr
                                 key={wh.id}
                                 className={`border-b border-blue-100 dark:border-blue-800 transition-colors ${isAllocated
-                                    ? 'bg-amber-50 dark:bg-amber-900/30 ring-1 ring-inset ring-amber-300 dark:ring-amber-700'
-                                    : 'hover:bg-blue-50/40 dark:hover:bg-blue-900/10'
+                                  ? 'bg-amber-50 dark:bg-amber-900/30 ring-1 ring-inset ring-amber-300 dark:ring-amber-700'
+                                  : 'hover:bg-blue-50/40 dark:hover:bg-blue-900/10'
                                   }`}
                               >
                                 <td className="p-2.5">
