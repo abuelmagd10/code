@@ -66,7 +66,7 @@ export default function ShippingCostsPage() {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
         setAppCurrency(localStorage.getItem('app_currency') || 'EGP')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -269,12 +269,12 @@ export default function ShippingCostsPage() {
                 </div>
                 <div>
                   <Label className="text-xs">{t("Provider", "مزود الشحن")}</Label>
-                  <Select value={selectedProvider} onValueChange={setSelectedProvider}>
+                  <Select value={selectedProvider || '__all__'} onValueChange={(v) => setSelectedProvider(v === '__all__' ? '' : v)}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder={t("All Providers", "جميع المزودين")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">{t("All Providers", "جميع المزودين")}</SelectItem>
+                      <SelectItem value="__all__">{t("All Providers", "جميع المزودين")}</SelectItem>
                       {providers.map((p) => (
                         <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                       ))}

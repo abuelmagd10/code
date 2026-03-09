@@ -75,7 +75,7 @@ export default function LoginActivityPage() {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -276,12 +276,12 @@ export default function LoginActivityPage() {
                 </div>
                 <div>
                   <Label className="text-xs">{t("User", "المستخدم")}</Label>
-                  <Select value={selectedUser} onValueChange={setSelectedUser}>
+                  <Select value={selectedUser || '__all__'} onValueChange={(v) => setSelectedUser(v === '__all__' ? '' : v)}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder={t("All Users", "جميع المستخدمين")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">{t("All Users", "جميع المستخدمين")}</SelectItem>
+                      <SelectItem value="__all__">{t("All Users", "جميع المستخدمين")}</SelectItem>
                       {users.map((u) => (
                         <SelectItem key={u.user_id} value={u.user_id}>{u.user_name} ({u.user_email})</SelectItem>
                       ))}

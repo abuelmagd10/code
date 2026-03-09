@@ -137,7 +137,7 @@ export const EnhancedReportLayout = ({
   }
 
   const updateFilter = (key: keyof ReportFilters, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value || undefined }))
+    setFilters(prev => ({ ...prev, [key]: (value === '__all__' || value === '') ? undefined : value }))
   }
 
   const handlePrint = async () => {
@@ -286,12 +286,12 @@ export const EnhancedReportLayout = ({
                 <label className="text-sm font-medium">
                   {lang === 'en' ? 'Branch' : 'الفرع'}
                 </label>
-                <Select value={filters.branchId || ''} onValueChange={(value) => updateFilter('branchId', value)}>
+                <Select value={filters.branchId || '__all__'} onValueChange={(value) => updateFilter('branchId', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder={lang === 'en' ? 'All Branches' : 'جميع الفروع'} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">{lang === 'en' ? 'All Branches' : 'جميع الفروع'}</SelectItem>
+                    <SelectItem value="__all__">{lang === 'en' ? 'All Branches' : 'جميع الفروع'}</SelectItem>
                     {branches.map(branch => (
                       <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
                     ))}
@@ -304,12 +304,12 @@ export const EnhancedReportLayout = ({
                 <label className="text-sm font-medium">
                   {lang === 'en' ? 'Cost Center' : 'مركز التكلفة'}
                 </label>
-                <Select value={filters.costCenterId || ''} onValueChange={(value) => updateFilter('costCenterId', value)}>
+                <Select value={filters.costCenterId || '__all__'} onValueChange={(value) => updateFilter('costCenterId', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder={lang === 'en' ? 'All Cost Centers' : 'جميع مراكز التكلفة'} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">{lang === 'en' ? 'All Cost Centers' : 'جميع مراكز التكلفة'}</SelectItem>
+                    <SelectItem value="__all__">{lang === 'en' ? 'All Cost Centers' : 'جميع مراكز التكلفة'}</SelectItem>
                     {costCenters.map(cc => (
                       <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>
                     ))}
@@ -323,12 +323,12 @@ export const EnhancedReportLayout = ({
                   <label className="text-sm font-medium">
                     {lang === 'en' ? 'Warehouse' : 'المخزن'}
                   </label>
-                  <Select value={filters.warehouseId || ''} onValueChange={(value) => updateFilter('warehouseId', value)}>
+                  <Select value={filters.warehouseId || '__all__'} onValueChange={(value) => updateFilter('warehouseId', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder={lang === 'en' ? 'All Warehouses' : 'جميع المخازن'} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">{lang === 'en' ? 'All Warehouses' : 'جميع المخازن'}</SelectItem>
+                      <SelectItem value="__all__">{lang === 'en' ? 'All Warehouses' : 'جميع المخازن'}</SelectItem>
                       {warehouses.map(wh => (
                         <SelectItem key={wh.id} value={wh.id}>{wh.name}</SelectItem>
                       ))}

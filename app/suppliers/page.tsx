@@ -795,14 +795,14 @@ export default function SuppliersPage() {
                         <div className="space-y-2">
                           <Label htmlFor="branch">{appLang === 'en' ? 'Assign to Branch (Optional)' : 'تعيين لفرع (اختياري)'}</Label>
                           <Select
-                            value={formData.branch_id}
-                            onValueChange={(value) => setFormData({ ...formData, branch_id: value })}
+                            value={formData.branch_id || '__none__'}
+                            onValueChange={(value) => setFormData({ ...formData, branch_id: value === '__none__' ? '' : value })}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder={appLang === 'en' ? 'Select Branch' : 'اختر الفرع'} />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">{appLang === 'en' ? 'First Available Branch (Auto)' : 'أول فرع متاح (تلقائي)'}</SelectItem>
+                              <SelectItem value="__none__">{appLang === 'en' ? 'First Available Branch (Auto)' : 'أول فرع متاح (تلقائي)'}</SelectItem>
                               {allBranches.map((b) => (
                                 <SelectItem key={b.id} value={b.id}>
                                   {b.name}

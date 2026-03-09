@@ -74,7 +74,7 @@ export default function DailyPaymentsReceiptsPage() {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -295,12 +295,12 @@ export default function DailyPaymentsReceiptsPage() {
                 </div>
                 <div>
                   <Label className="text-xs">{t("Account", "الحساب")}</Label>
-                  <Select value={accountId} onValueChange={setAccountId}>
+                  <Select value={accountId || '__all__'} onValueChange={(v) => setAccountId(v === '__all__' ? '' : v)}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder={t("All Accounts", "جميع الحسابات")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">{t("All Accounts", "جميع الحسابات")}</SelectItem>
+                      <SelectItem value="__all__">{t("All Accounts", "جميع الحسابات")}</SelectItem>
                       {accounts.map((acc) => (
                         <SelectItem key={acc.id} value={acc.id}>{acc.account_name} ({acc.account_code})</SelectItem>
                       ))}

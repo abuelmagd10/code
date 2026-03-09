@@ -54,7 +54,7 @@ export default function SalesByProductPage() {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -251,12 +251,12 @@ export default function SalesByProductPage() {
                 </div>
                 <div>
                   <Label className="text-xs">{t("Product", "المنتج")}</Label>
-                  <Select value={selectedProduct} onValueChange={setSelectedProduct}>
+                  <Select value={selectedProduct || '__all__'} onValueChange={(v) => setSelectedProduct(v === '__all__' ? '' : v)}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder={t("All Products", "جميع المنتجات")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">{t("All Products", "جميع المنتجات")}</SelectItem>
+                      <SelectItem value="__all__">{t("All Products", "جميع المنتجات")}</SelectItem>
                       {products.map((p) => (
                         <SelectItem key={p.id} value={p.id}>{p.name} ({p.sku})</SelectItem>
                       ))}
