@@ -139,7 +139,7 @@ export function Sidebar() {
       setPermissionsReady(true)
       // حساب deniedResources من allowed_pages
       const allResources = [
-        'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'shareholders', 'taxes', 'exchange_rates', 'accounting_maintenance', 'accounting_periods', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses', 'settings', 'users', 'company_settings', 'audit_log', 'backup', 'shipping', 'profile', 'orders_rules', 'system_status', 'permission_sharing', 'permission_transfers', 'user_branch_access', 'role_permissions'
+        'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_requests', 'purchase_orders', 'goods_receipts', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'shareholders', 'taxes', 'exchange_rates', 'accounting_maintenance', 'accounting_periods', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses', 'settings', 'users', 'company_settings', 'audit_log', 'backup', 'shipping', 'profile', 'orders_rules', 'system_status', 'permission_sharing', 'permission_transfers', 'user_branch_access', 'role_permissions'
       ]
       const denied = allResources.filter(r => !profile.allowed_pages.includes(r) && r !== "profile")
       setDeniedResources(denied)
@@ -205,7 +205,9 @@ export function Sidebar() {
     if (href.includes('/estimates')) return 'estimates'
     // المشتريات
     if (href.includes('/vendor-credits')) return 'vendor_credits'
+    if (href.includes('/purchase-requests')) return 'purchase_requests'
     if (href.includes('/purchase-orders')) return 'purchase_orders'
+    if (href.includes('/goods-receipts')) return 'goods_receipts'
     if (href.includes('/purchase-returns')) return 'purchase_returns'
     if (href.includes('/bills')) return 'bills'
     if (href.includes('/suppliers')) return 'suppliers'
@@ -1045,7 +1047,9 @@ export function Sidebar() {
                 {
                   key: 'purchases', icon: ShoppingCart, label: (lang === 'en' ? 'Purchases' : 'المشتريات'), items: [
                     { label: (lang === 'en' ? 'Suppliers' : 'الموردين'), href: `/suppliers${q}`, icon: ShoppingCart },
+                    { label: (lang === 'en' ? 'Purchase Requests' : 'طلبات الشراء'), href: `/purchase-requests${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart },
+                    { label: (lang === 'en' ? 'Goods Receipts' : 'إيصالات الاستلام'), href: `/goods-receipts${q}`, icon: Package },
                     { label: (lang === 'en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'), href: `/purchase-returns${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'), href: `/vendor-credits${q}`, icon: FileText },

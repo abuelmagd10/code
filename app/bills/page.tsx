@@ -69,7 +69,7 @@ type Bill = {
   purchase_order_id?: string | null
   // Linked Goods Receipt
   goods_receipt_id?: string | null
-  goods_receipts?: { id: string; grn_number: string } | null
+  goods_receipts?: { id: string; grn_number: string } | Array<{ id: string; grn_number: string }> | null
 }
 
 type Supplier = { id: string; name: string; phone?: string }
@@ -355,7 +355,7 @@ export default function BillsPage() {
 
       let billsQuery = supabase
         .from("bills")
-        .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, receipt_status, receipt_rejection_reason, display_currency, display_total, original_currency, original_total, branch_id, purchase_order_id, suppliers(name, phone), branches(name), goods_receipts(id, grn_number)")
+        .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, receipt_status, receipt_rejection_reason, display_currency, display_total, original_currency, original_total, branch_id, purchase_order_id, suppliers(name, phone), branches(name), goods_receipts!goods_receipt_id(id, grn_number)")
         .eq("company_id", visibilityRules.companyId)
         .neq("status", "voided")
 
@@ -962,8 +962,8 @@ export default function BillsPage() {
               </Button>
             </Link>
           )}
-          {row.goods_receipts && (
-            <Link href={`/goods-receipts/${row.goods_receipts.id}`}>
+          {row.goods_receipts && (Array.isArray(row.goods_receipts) ? row.goods_receipts[0] : row.goods_receipts) && (
+            <Link href={`/goods-receipts/${Array.isArray(row.goods_receipts) ? row.goods_receipts[0].id : row.goods_receipts.id}`}>
               <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Linked GRN' : 'إيصال الاستلام المرتبط'}>
                 <Package className="w-4 h-4 text-green-500" />
               </Button>

@@ -316,7 +316,7 @@ export default function BillViewPage() {
           exception_type: e.exception_type,
           description: e.description || '',
           severity: e.severity || 'warning',
-          is_resolved: e.is_resolved || false
+          is_resolved: e.resolved || false
         }))
       })
     } catch (err) {

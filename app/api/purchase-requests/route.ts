@@ -79,11 +79,12 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error("[API /purchase-requests] Unexpected error:", error)
+    const errorMessage = error?.message || String(error) || 'Unknown error'
     return NextResponse.json({
-      error: error.message,
+      error: errorMessage,
       error_ar: "حدث خطأ غير متوقع"
     }, {
-      status: error.message.includes('Unauthorized') ? 401 : 403
+      status: errorMessage.includes('Unauthorized') ? 401 : 403
     })
   }
 }
@@ -101,15 +102,6 @@ export async function POST(request: NextRequest) {
     const { items, ...requestData } = body
 
     // 2️⃣ إضافة بيانات الحوكمة تلقائياً
-    const dataWithGovernance = addGovernanceData({
-      ...requestData,
-      requested_by: governance.userId,
-      status: 'draft'
-    }, governance)
-
-    // 3️⃣ التحقق من صحة البيانات (إلزامي)
-    validateGovernanceData(dataWithGovernance, governance)
-
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
@@ -119,6 +111,15 @@ export async function POST(request: NextRequest) {
         error_ar: "غير مصرح"
       }, { status: 401 })
     }
+
+    const dataWithGovernance = addGovernanceData({
+      ...requestData,
+      requested_by: user.id,
+      status: 'draft'
+    }, governance)
+
+    // 3️⃣ التحقق من صحة البيانات (إلزامي)
+    validateGovernanceData(dataWithGovernance, governance)
 
     // 4️⃣ إنشاء طلب الشراء
     const { data: purchaseRequest, error: requestError } = await supabase
@@ -167,7 +168,7 @@ export async function POST(request: NextRequest) {
     // 6️⃣ Audit log
     await supabase.from("audit_logs").insert({
       company_id: governance.companyId,
-      user_id: governance.userId,
+      user_id: user.id,
       action: "purchase_request_created",
       entity_type: "purchase_request",
       entity_id: purchaseRequest.id,
@@ -182,11 +183,12 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error("[API /purchase-requests] Unexpected error:", error)
+    const errorMessage = error?.message || String(error) || 'Unknown error'
     return NextResponse.json({
-      error: error.message,
+      error: errorMessage,
       error_ar: "حدث خطأ غير متوقع"
     }, {
-      status: error.message.includes('Unauthorized') ? 401 : 403
+      status: errorMessage.includes('Unauthorized') ? 401 : 403
     })
   }
 }

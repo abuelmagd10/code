@@ -43,11 +43,12 @@ export async function POST(
 
   } catch (error: any) {
     console.error("[API /bills/validate-matching] Unexpected error:", error)
+    const errorMessage = error?.message || String(error) || 'Unknown error'
     return NextResponse.json({
-      error: error.message,
+      error: errorMessage,
       error_ar: "حدث خطأ غير متوقع"
     }, {
-      status: error.message.includes('Unauthorized') ? 401 : 403
+      status: errorMessage.includes('Unauthorized') ? 401 : 403
     })
   }
 }

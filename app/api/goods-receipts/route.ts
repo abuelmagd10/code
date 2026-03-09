@@ -79,11 +79,12 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error("[API /goods-receipts] Unexpected error:", error)
+    const errorMessage = error?.message || String(error) || 'Unknown error'
     return NextResponse.json({
-      error: error.message,
+      error: errorMessage,
       error_ar: "حدث خطأ غير متوقع"
     }, {
-      status: error.message.includes('Unauthorized') ? 401 : 403
+      status: errorMessage.includes('Unauthorized') ? 401 : 403
     })
   }
 }
@@ -177,7 +178,7 @@ export async function POST(request: NextRequest) {
     // 7️⃣ Audit log
     await supabase.from("audit_logs").insert({
       company_id: governance.companyId,
-      user_id: governance.userId,
+      user_id: user.id,
       action: "goods_receipt_created",
       entity_type: "goods_receipt",
       entity_id: goodsReceipt.id,
@@ -192,11 +193,12 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error("[API /goods-receipts] Unexpected error:", error)
+    const errorMessage = error?.message || String(error) || 'Unknown error'
     return NextResponse.json({
-      error: error.message,
+      error: errorMessage,
       error_ar: "حدث خطأ غير متوقع"
     }, {
-      status: error.message.includes('Unauthorized') ? 401 : 403
+      status: errorMessage.includes('Unauthorized') ? 401 : 403
     })
   }
 }
