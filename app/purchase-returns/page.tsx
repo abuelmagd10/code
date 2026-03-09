@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Plus, Search, RotateCcw, Eye, CheckCircle2, Clock, AlertTriangle } from "lucide-react"
+import { Plus, Search, RotateCcw, Eye, CheckCircle2, Clock, AlertTriangle, Ban, XCircle } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
@@ -15,7 +15,9 @@ import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useToast } from "@/hooks/use-toast"
-import { notifyPurchaseReturnConfirmed, notifyWarehouseAllocationConfirmed } from "@/lib/notification-helpers"
+import { notifyPurchaseReturnConfirmed, notifyWarehouseAllocationConfirmed, notifyPRApproved, notifyPRRejected } from "@/lib/notification-helpers"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 
 type WarehouseAllocation = {
   id: string
@@ -41,10 +43,16 @@ type PurchaseReturn = {
   status: string
   workflow_status: string
   reason: string
+  rejection_reason?: string | null
+  is_locked?: boolean
   settlement_method: string
   warehouse_id: string | null
   branch_id: string | null
   created_by: string | null
+  approved_by?: string | null
+  approved_at?: string | null
+  rejected_by?: string | null
+  rejected_at?: string | null
   suppliers?: { name: string }
   bills?: { id: string; bill_number: string } | null
   branches?: { name: string } | null
@@ -69,6 +77,11 @@ export default function PurchaseReturnsPage() {
   const [returns, setReturns] = useState<PurchaseReturn[]>([])
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [managedWarehouseIds, setManagedWarehouseIds] = useState<Set<string>>(new Set())
+  // Enterprise approval state
+  const [isApproving, setIsApproving] = useState(false)
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false)
+  const [prToReject, setPrToReject] = useState<PurchaseReturn | null>(null)
+  const [rejectionReason, setRejectionReason] = useState('')
 
   useEffect(() => {
     try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
@@ -200,6 +213,105 @@ export default function PurchaseReturnsPage() {
 
   const loadReturnsRef = useRef(loadReturns)
   loadReturnsRef.current = loadReturns
+
+  // ===================== Enterprise Approval/Rejection =====================
+  const handleApprovePR = async (pr: PurchaseReturn) => {
+    if (!currentUserId) return
+    setIsApproving(true)
+    try {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      const { data: result, error } = await supabase.rpc('approve_purchase_return_atomic', {
+        p_pr_id: pr.id,
+        p_user_id: currentUserId,
+        p_company_id: companyId,
+        p_action: 'approve',
+        p_reason: null,
+      })
+
+      if (error || !result?.success) {
+        toast({ title: appLang === 'en' ? '❌ Approval Failed' : '❌ فشل الاعتماد', description: result?.error || error?.message, variant: 'destructive' })
+        return
+      }
+
+      // Notify creator
+      if (pr.created_by && currentUserId !== pr.created_by) {
+        try {
+          await notifyPRApproved({
+            companyId,
+            prId: pr.id,
+            prNumber: pr.return_number,
+            supplierName: (pr.suppliers as any)?.name || '',
+            amount: pr.total_amount,
+            currency: appCurrency,
+            createdBy: pr.created_by,
+            approvedBy: currentUserId,
+            branchId: pr.branch_id || undefined,
+            appLang,
+          })
+        } catch (notifyErr) { console.warn('Notification failed:', notifyErr) }
+      }
+
+      toast({ title: appLang === 'en' ? '✅ Return Approved' : '✅ تم اعتماد المرتجع', description: pr.return_number })
+      loadReturns()
+    } catch (err) {
+      toast({ title: '❌ Error', description: String(err), variant: 'destructive' })
+    } finally {
+      setIsApproving(false)
+    }
+  }
+
+  const handleRejectPR = async () => {
+    if (!prToReject || !currentUserId || !rejectionReason.trim()) return
+    setIsApproving(true)
+    try {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      const { data: result, error } = await supabase.rpc('approve_purchase_return_atomic', {
+        p_pr_id: prToReject.id,
+        p_user_id: currentUserId,
+        p_company_id: companyId,
+        p_action: 'reject',
+        p_reason: rejectionReason.trim(),
+      })
+
+      if (error || !result?.success) {
+        toast({ title: appLang === 'en' ? '❌ Rejection Failed' : '❌ فشل الرفض', description: result?.error || error?.message, variant: 'destructive' })
+        return
+      }
+
+      if (prToReject.created_by && currentUserId !== prToReject.created_by) {
+        try {
+          await notifyPRRejected({
+            companyId,
+            prId: prToReject.id,
+            prNumber: prToReject.return_number,
+            supplierName: (prToReject.suppliers as any)?.name || '',
+            amount: prToReject.total_amount,
+            currency: appCurrency,
+            reason: rejectionReason.trim(),
+            createdBy: prToReject.created_by,
+            rejectedBy: currentUserId,
+            branchId: prToReject.branch_id || undefined,
+            appLang,
+          })
+        } catch (notifyErr) { console.warn('Notification failed:', notifyErr) }
+      }
+
+      toast({ title: appLang === 'en' ? '✅ Return Rejected' : '✅ تم رفض المرتجع', description: prToReject.return_number })
+      setIsRejectDialogOpen(false)
+      setPrToReject(null)
+      setRejectionReason('')
+      loadReturns()
+    } catch (err) {
+      toast({ title: '❌ Error', description: String(err), variant: 'destructive' })
+    } finally {
+      setIsApproving(false)
+    }
+  }
+
 
   const handleReturnsRealtimeEvent = useCallback(() => {
     loadReturnsRef.current()
@@ -383,14 +495,63 @@ export default function PurchaseReturnsPage() {
   const getWorkflowBadge = (wfStatus: string, row?: PurchaseReturn) => {
     const allocations = row?.allocations || []
     const isMultiAlloc = allocations.length > 1
+    const status = row?.status || wfStatus
 
-    if (wfStatus === 'pending_approval') {
+    if (status === 'pending_approval' || wfStatus === 'pending_approval') {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
           <Clock className="w-3 h-3" />
           {isMultiAlloc
             ? `0/${allocations.length} ${appLang === 'en' ? 'warehouses' : 'مخازن'}`
-            : (appLang === 'en' ? 'Pending' : 'بانتظار الاعتماد')}
+            : (appLang === 'en' ? 'Pending Approval' : 'بانتظار الاعتماد')}
+        </span>
+      )
+    }
+    if (status === 'approved') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
+          <CheckCircle2 className="w-3 h-3" />
+          {appLang === 'en' ? 'Approved' : 'معتمد'}
+        </span>
+      )
+    }
+    if (status === 'rejected') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+          <XCircle className="w-3 h-3" />
+          {appLang === 'en' ? 'Rejected' : 'مرفوض'}
+        </span>
+      )
+    }
+    if (status === 'sent_to_vendor') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+          <RotateCcw className="w-3 h-3" />
+          {appLang === 'en' ? 'Sent to Vendor' : 'مُرسل للمورد'}
+        </span>
+      )
+    }
+    if (status === 'partially_returned') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300">
+          <RotateCcw className="w-3 h-3" />
+          {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئياً'}
+        </span>
+      )
+    }
+    if (status === 'returned') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+          <CheckCircle2 className="w-3 h-3" />
+          {appLang === 'en' ? 'Returned' : 'مرتجع'}
+        </span>
+      )
+    }
+    if (status === 'closed') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+          <Ban className="w-3 h-3" />
+          {appLang === 'en' ? 'Closed' : 'مغلق'}
         </span>
       )
     }
@@ -415,7 +576,7 @@ export default function PurchaseReturnsPage() {
     }
     return (
       <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-        {wfStatus}
+        {wfStatus || status}
       </span>
     )
   }
@@ -587,6 +748,32 @@ export default function PurchaseReturnsPage() {
         return (
           <div className="flex flex-col items-center gap-1">
             <div className="flex items-center gap-1.5 justify-center">
+              {/* Enterprise: Approve/Reject buttons for privileged roles */}
+              {isPrivileged && pr.status === 'pending_approval' && (
+                <>
+                  <Button
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-7 px-2"
+                    onClick={() => handleApprovePR(pr)}
+                    disabled={isApproving}
+                    title={appLang === 'en' ? 'Approve Return' : 'اعتماد المرتجع'}
+                  >
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    {appLang === 'en' ? 'Approve' : 'اعتماد'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-red-400 text-red-600 hover:bg-red-50 text-xs h-7 px-2"
+                    onClick={() => { setPrToReject(pr); setIsRejectDialogOpen(true) }}
+                    disabled={isApproving}
+                    title={appLang === 'en' ? 'Reject Return' : 'رفض المرتجع'}
+                  >
+                    <XCircle className="w-3 h-3 mr-1" />
+                    {appLang === 'en' ? 'Reject' : 'رفض'}
+                  </Button>
+                </>
+              )}
               {/* Phase 1: زر اعتماد مرتجع مخزن واحد لمسؤول المخزن */}
               {isStoreManager && isPending && !isMultiAlloc && isPhase1MyWarehouse && (
                 <Button
@@ -702,11 +889,10 @@ export default function PurchaseReturnsPage() {
                   return (
                     <span
                       key={alloc.id}
-                      className={`text-[10px] px-1.5 py-0.5 rounded ${
-                        isConfirmed
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                      }`}
+                      className={`text-[10px] px-1.5 py-0.5 rounded ${isConfirmed
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        }`}
                       title={(alloc.warehouses as any)?.name || alloc.warehouse_id}
                     >
                       {isConfirmed ? '✓' : '⏳'} {(alloc.warehouses as any)?.name?.slice(0, 10) || '—'}
@@ -728,15 +914,15 @@ export default function PurchaseReturnsPage() {
 
   const myPendingCount = isStoreManager
     ? returns.filter(r => {
-        const isPending = r.workflow_status === 'pending_approval' || r.workflow_status === 'partial_approval'
-        if (!isPending) return false
-        const allocations = r.allocations || []
-        const isMultiAlloc = allocations.length > 1
-        // Phase 1
-        if (!isMultiAlloc) return r.warehouse_id === currentWarehouseId
-        // Phase 2: هل هناك تخصيص بانتظار اعتمادي؟
-        return allocations.some(a => a.warehouse_id === currentWarehouseId && a.workflow_status === 'pending_approval')
-      }).length
+      const isPending = r.workflow_status === 'pending_approval' || r.workflow_status === 'partial_approval'
+      if (!isPending) return false
+      const allocations = r.allocations || []
+      const isMultiAlloc = allocations.length > 1
+      // Phase 1
+      if (!isMultiAlloc) return r.warehouse_id === currentWarehouseId
+      // Phase 2: هل هناك تخصيص بانتظار اعتمادي؟
+      return allocations.some(a => a.warehouse_id === currentWarehouseId && a.workflow_status === 'pending_approval')
+    }).length
     : pendingCount
 
   return (
@@ -856,6 +1042,45 @@ export default function PurchaseReturnsPage() {
           </Card>
         </div>
       </main>
+
+      {/* Rejection Reason Dialog */}
+      <Dialog open={isRejectDialogOpen} onOpenChange={(open) => { setIsRejectDialogOpen(open); if (!open) { setPrToReject(null); setRejectionReason('') } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-red-600">
+              {appLang === 'en' ? '❌ Reject Purchase Return' : '❌ رفض مرتجع المشتريات'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {prToReject && (
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {appLang === 'en'
+                  ? `Return: ${prToReject.return_number} — Supplier: ${(prToReject.suppliers as any)?.name || '—'}`
+                  : `المرتجع: ${prToReject.return_number} — المورد: ${(prToReject.suppliers as any)?.name || '—'}`}
+              </p>
+            )}
+            <Textarea
+              placeholder={appLang === 'en' ? 'Enter rejection reason (required)…' : 'أدخل سبب الرفض (إلزامي)…'}
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              rows={3}
+              className="resize-none"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setIsRejectDialogOpen(false); setPrToReject(null); setRejectionReason('') }}>
+              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+            </Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={handleRejectPR}
+              disabled={isApproving || !rejectionReason.trim()}
+            >
+              {isApproving ? '⏳' : (appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

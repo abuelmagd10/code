@@ -1510,3 +1510,139 @@ export async function notifyPORejected(params: {
     category: 'approvals'
   })
 }
+
+// ===========================================================
+// 📦 Enterprise Purchase Return Workflow Notifications
+// ===========================================================
+
+/**
+ * Notify approvers when a Purchase Return is submitted for approval
+ */
+export async function notifyPRApprovalRequest(params: {
+  companyId: string
+  prId: string
+  prNumber: string
+  supplierName: string
+  amount: number
+  currency: string
+  createdBy: string
+  branchId?: string
+  costCenterId?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, prId, prNumber, supplierName, amount, currency, createdBy, branchId, costCenterId, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? 'Purchase Return Pending Approval'
+    : 'مرتجع مشتريات بانتظار الموافقة'
+
+  const message = appLang === 'en'
+    ? `Purchase return ${prNumber} from supplier ${supplierName} for ${amount} ${currency} requires your approval`
+    : `مرتجع مشتريات ${prNumber} من المورد ${supplierName} بقيمة ${amount} ${currency} يحتاج اعتمادك`
+
+  const roles = ['admin', 'owner', 'general_manager']
+  for (const role of roles) {
+    await createNotification({
+      companyId,
+      referenceType: 'purchase_return',
+      referenceId: prId,
+      title,
+      message,
+      createdBy,
+      branchId,
+      costCenterId,
+      assignedToRole: role,
+      priority: 'high' as NotificationPriority,
+      eventKey: `purchase_return:${prId}:pending:${role}`,
+      severity: 'warning',
+      category: 'approvals'
+    })
+  }
+}
+
+/**
+ * Notify creator when a Purchase Return is approved
+ */
+export async function notifyPRApproved(params: {
+  companyId: string
+  prId: string
+  prNumber: string
+  supplierName: string
+  amount: number
+  currency: string
+  createdBy: string
+  approvedBy: string
+  branchId?: string
+  costCenterId?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, prId, prNumber, supplierName, amount, currency, createdBy, approvedBy, branchId, costCenterId, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? '✅ Purchase Return Approved'
+    : '✅ تم اعتماد مرتجع المشتريات'
+
+  const message = appLang === 'en'
+    ? `Purchase return ${prNumber} from supplier ${supplierName} for ${amount} ${currency} has been approved`
+    : `تم اعتماد مرتجع المشتريات ${prNumber} من المورد ${supplierName} بقيمة ${amount} ${currency}`
+
+  await createNotification({
+    companyId,
+    referenceType: 'purchase_return',
+    referenceId: prId,
+    title,
+    message,
+    createdBy: approvedBy,
+    assignedToUser: createdBy,
+    branchId,
+    costCenterId,
+    priority: 'normal' as NotificationPriority,
+    eventKey: `purchase_return:${prId}:approved`,
+    severity: 'success' as any,
+    category: 'approvals'
+  })
+}
+
+/**
+ * Notify creator when a Purchase Return is rejected
+ */
+export async function notifyPRRejected(params: {
+  companyId: string
+  prId: string
+  prNumber: string
+  supplierName: string
+  amount: number
+  currency: string
+  reason: string
+  createdBy: string
+  rejectedBy: string
+  branchId?: string
+  costCenterId?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, prId, prNumber, supplierName, amount, currency, reason, createdBy, rejectedBy, branchId, costCenterId, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? '❌ Purchase Return Rejected'
+    : '❌ تم رفض مرتجع المشتريات'
+
+  const message = appLang === 'en'
+    ? `Purchase return ${prNumber} from supplier ${supplierName} for ${amount} ${currency} was rejected. Reason: ${reason}`
+    : `تم رفض مرتجع المشتريات ${prNumber} من المورد ${supplierName} بقيمة ${amount} ${currency}. السبب: ${reason}`
+
+  await createNotification({
+    companyId,
+    referenceType: 'purchase_return',
+    referenceId: prId,
+    title,
+    message,
+    createdBy: rejectedBy,
+    assignedToUser: createdBy,
+    branchId,
+    costCenterId,
+    priority: 'high' as NotificationPriority,
+    eventKey: `purchase_return:${prId}:rejected`,
+    severity: 'error',
+    category: 'approvals'
+  })
+}
