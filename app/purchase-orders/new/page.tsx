@@ -441,6 +441,8 @@ export default function NewPurchaseOrderPage() {
       const totals = calculateTotals
 
       // Insert purchase order
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+
       const { data: poData, error: poError } = await supabase.from("purchase_orders").insert({
         company_id: companyId,
         supplier_id: formData.supplier_id,
@@ -467,6 +469,8 @@ export default function NewPurchaseOrderPage() {
         branch_id: branchId || null,
         cost_center_id: costCenterId || null,
         warehouse_id: warehouseId || null,
+        // ✅ تسجيل المنشئ لدعم فلترة الأدوار العادية في قائمة أوامر الشراء
+        created_by_user_id: currentUser?.id || null,
       }).select("id, po_number").single()
 
       if (poError) throw poError

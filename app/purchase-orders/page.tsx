@@ -287,38 +287,52 @@ export default function PurchaseOrdersPage() {
       const { data: prod } = await supabase.from("products").select("id, name, cost_price, item_type").eq("company_id", companyId).order("name");
       setProducts(prod || []);
 
-      // 🔐 ERP Access Control - تصفية أوامر الشراء باستخدام نظام Data Visibility الموحد
-      const visibilityRules = buildDataVisibilityFilter(context)
-
-      // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      // 🔐 ERP Access Control - تصفية أوامر الشراء حسب صلاحيات المستخدم
+      // الأدوار المميزة: owner/admin/general_manager → يرون جميع الفروع
+      // الأدوار المتوسطة: manager/accountant/supervisor → يرون فرعهم فقط
+      // الأدوار العادية: staff/employee → يرون فرعهم فقط (لأن purchase_orders ليس له created_by_user_id)
+      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager', 'gm']
+      const BRANCH_ROLES = ['manager', 'accountant', 'supervisor', 'store_manager']
       const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
+      const userBranchId = context.branch_id
 
       let poQuery = supabase
         .from("purchase_orders")
-        .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, branch_id, cost_center_id, warehouse_id, suppliers(name, phone), branches(name)")
-        .eq("company_id", visibilityRules.companyId);
+        .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, branch_id, cost_center_id, warehouse_id, created_by_user_id, suppliers(name, phone), branches(name)")
+        .eq("company_id", companyId);
 
       // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
       if (canFilterByBranch && selectedBranchId) {
-        // المستخدم المميز اختار فرعاً معيناً
+        // المستخدم المميز اختار فرعاً معيناً من الفلتر
         poQuery = poQuery.eq("branch_id", selectedBranchId)
-      } else if (!canFilterByBranch) {
-        // ✅ تطبيق قواعد الرؤية الموحدة للمستخدمين العاديين
-        poQuery = applyDataVisibilityFilter(poQuery, visibilityRules, "purchase_orders")
+      } else if (canFilterByBranch) {
+        // المستخدم المميز بدون فلتر = جميع فروع الشركة
+        // لا تضيف أي فلتر
+      } else if (BRANCH_ROLES.includes(role.toLowerCase())) {
+        // مدير فرع / محاسب / مشرف → يرى فرعه فقط
+        if (userBranchId) {
+          poQuery = poQuery.eq("branch_id", userBranchId)
+        }
+      } else {
+        // الأدوار العادية (staff/employee) → يرون أوامر فرعهم
+        // إذا لم يكن لديهم فرع محدد، يرون أوامرهم الشخصية فقط
+        if (userBranchId) {
+          poQuery = poQuery.eq("branch_id", userBranchId)
+        } else {
+          // لا فرع محدد → محاولة بالـ created_by_user_id إن وجد
+          poQuery = (poQuery as any).or(`created_by_user_id.eq.${context.user_id},created_by_user_id.is.null`)
+        }
       }
-      // else: المستخدم المميز بدون فلتر = جميع الفروع
 
-      const { data: po } = await poQuery.order("created_at", { ascending: false });
+      const { data: po, error: poError } = await poQuery.order("created_at", { ascending: false });
 
-      // ✅ فلترة إضافية في JavaScript للحالات المعقدة
+      if (poError) {
+        console.error("[PO List] Query error:", poError)
+      }
+
+      // ✅ فلترة إضافية في JavaScript
       let filteredOrders = po || []
-      if (visibilityRules.filterByCostCenter && visibilityRules.costCenterId && po) {
-        filteredOrders = po.filter((order: any) => {
-          return !order.cost_center_id || order.cost_center_id === visibilityRules.costCenterId
-        })
-      }
 
       setOrders(filteredOrders);
 

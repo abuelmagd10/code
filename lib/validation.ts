@@ -1287,11 +1287,13 @@ export function getRoleAccessLevel(role: string): AccessLevel {
   switch (role?.toLowerCase()) {
     case 'owner':
     case 'admin':
-      return 'company'; // 🔹 المدير العام: جميع البيانات على مستوى الشركة
+    case 'general_manager': // ✅ المدير العام يرى بيانات الشركة كاملة
+    case 'gm':
+      return 'company'; // 🔹 يرى جميع البيانات على مستوى الشركة
     case 'manager':
     case 'accountant': // 🔹 المحاسب: جميع البيانات على مستوى الفرع
-      return 'branch';
     case 'supervisor':
+    case 'store_manager': // 🔹 مسؤول المخزن: يرى بيانات فرعه
       return 'branch';
     case 'sales':
     case 'staff':
