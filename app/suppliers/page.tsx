@@ -101,7 +101,7 @@ export default function SuppliersPage() {
     country: "",
     tax_id: "",
     payment_terms: "Net 30",
-    branch_id: "",
+    branch_id: "__none__",
   })
 
   // ===== حالات الأرصدة وسند الاستقبال =====

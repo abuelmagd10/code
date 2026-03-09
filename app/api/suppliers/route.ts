@@ -48,6 +48,14 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
 
     const data = addGovernanceData(body, governance)
+    console.log('🔍 [Suppliers POST] Governance context:', {
+      role: governance.role,
+      companyId: governance.companyId,
+      branchIds: governance.branchIds,
+      warehouseIds: governance.warehouseIds,
+    })
+    console.log('🔍 [Suppliers POST] Body received:', JSON.stringify(body))
+    console.log('🔍 [Suppliers POST] Data after governance:', JSON.stringify(data))
     if (user) {
       data.created_by_user_id = user.id
     }
