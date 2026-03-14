@@ -99,6 +99,34 @@ export async function POST(request: NextRequest) {
     validateGovernanceData(dataWithGovernance, governance)
     
     const supabase = await createClient()
+
+    // 🔒 التحقق من إذن إنشاء فاتورة من أمر شراء
+    if (body.purchase_order_id) {
+      const { data: po, error: poError } = await supabase
+        .from("purchase_orders")
+        .select("status")
+        .eq("id", body.purchase_order_id)
+        .single()
+      
+      if (poError || !po) {
+        return NextResponse.json({ 
+          error: "Purchase Order not found", 
+          error_ar: "لم يتم العثور على أمر الشراء" 
+        }, { status: 404 })
+      }
+
+      // ❌ منع إنشاء الفاتورة إذا كان أمر الشراء غير معتمد
+      // استثناء: الأدوار العليا يحق لها تجاوز هذه القاعدة (admin, owner, general_manager)
+      const isPrivilegedRole = ['admin', 'owner', 'general_manager'].includes(governance.role?.toLowerCase() || '')
+      
+      const allowedStatuses = ['approved', 'sent_to_vendor', 'partially_received', 'received', 'partially_billed']
+      if (!isPrivilegedRole && !allowedStatuses.includes(po.status)) {
+        return NextResponse.json({ 
+          error: `Cannot create bill from a ${po.status} purchase order`, 
+          error_ar: "لا يمكن إنشاء فاتورة من أمر شراء غير معتمد" 
+        }, { status: 403 })
+      }
+    }
     
     // 4️⃣ الإدخال في قاعدة البيانات
     const { data: newBill, error: insertError } = await supabase

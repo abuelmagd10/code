@@ -93,6 +93,17 @@ export default function EditPurchaseOrderPage() {
     try {
       setIsSaving(true)
 
+      // Fetch current status
+      const { data: currentPo } = await supabase
+        .from("purchase_orders")
+        .select("status")
+        .eq("id", orderId)
+        .single()
+      
+      const newStatus = (currentPo?.status === "rejected" || currentPo?.status === "draft") 
+        ? "pending_approval" 
+        : currentPo?.status
+
       const { error } = await supabase
         .from("purchase_orders")
         .update({
@@ -101,6 +112,7 @@ export default function EditPurchaseOrderPage() {
           po_date: formData.po_date,
           due_date: formData.due_date,
           notes: formData.notes,
+          status: newStatus,
           updated_at: new Date().toISOString()
         })
         .eq("id", orderId)

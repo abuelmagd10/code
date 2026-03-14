@@ -830,8 +830,10 @@ export default function PurchaseOrderDetailPage() {
                 </Button>
               )}
 
-              {/* Create Bill button - show if not fully billed */}
-              {permWriteBills && !isFullyBilled && remainingItems.length > 0 && (
+              {/* Create Bill button - show if not fully billed AND user is privileged AND PO is approved */}
+              {permWriteBills && !isFullyBilled && remainingItems.length > 0 && 
+                (userContext?.role === 'admin' || userContext?.role === 'owner' || userContext?.role === 'general_manager') && 
+                (po.status === 'approved' || po.status === 'partially_received' || po.status === 'received' || po.status === 'partially_billed') && (
                 <Link href={`/bills/new?from_po=${poId}`}>
                   <Button className="bg-green-600 hover:bg-green-700 text-white">
                     <Plus className="h-4 w-4 mr-1" />
@@ -841,12 +843,16 @@ export default function PurchaseOrderDetailPage() {
               )}
               {/* Edit button */}
               {permUpdate && (!linkedBillStatus || linkedBillStatus === 'draft') && (
+                // Show Edit if Privileged OR (Non-Privileged AND status is rejected)
+                ((userContext?.role === 'admin' || userContext?.role === 'owner' || userContext?.role === 'general_manager') ||
+                (po.status === 'rejected')) && (
                 <Link href={`/purchase-orders/${poId}/edit`}>
                   <Button variant="outline">
                     <Pencil className="h-4 w-4 ml-1" />
                     {appLang === 'en' ? 'Edit' : 'تعديل'}
                   </Button>
                 </Link>
+                )
               )}
               {/* 🔐 ERP Access Control: زر الإرسال - فقط للمسؤولين والمدراء */}
               {po.status === "draft" && canSendOrder && (
