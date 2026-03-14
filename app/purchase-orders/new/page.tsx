@@ -153,6 +153,9 @@ export default function NewPurchaseOrderPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      let currentUserBranchId: string | null = null
+      let isCurrentUserAdmin = false
+
       // 🔐 Enterprise Pattern: User → Branch → (Default Warehouse, Default Cost Center)
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
@@ -176,6 +179,9 @@ export default function NewPurchaseOrderPage() {
         // 🔐 Enterprise Governance: Check if user is Admin or GeneralManager
         const normalizedRole = String(userRole || '').trim().toLowerCase().replace(/\s+/g, '_')
         const adminCheck = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
+        
+        isCurrentUserAdmin = adminCheck
+        currentUserBranchId = userBranchId
         setIsAdmin(adminCheck)
 
         // 🔐 Enterprise Pattern: User → Branch → (Default Warehouse, Default Cost Center)
@@ -224,7 +230,11 @@ export default function NewPurchaseOrderPage() {
         setSuppliers(suppData || [])
       }
 
-      const { data: prodData } = await supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", companyId).order("name")
+      let prodQuery = supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", companyId).order("name")
+      if (!isCurrentUserAdmin && currentUserBranchId) {
+        prodQuery = prodQuery.or(`branch_id.eq.${currentUserBranchId},branch_id.is.null`)
+      }
+      const { data: prodData } = await prodQuery
       setProducts(prodData || [])
 
       const dbCurrencies = await getActiveCurrencies(supabase, companyId)

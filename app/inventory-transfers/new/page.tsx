@@ -203,12 +203,17 @@ export default function NewTransferPage() {
       }
 
       // جلب المنتجات
-      const { data: productsData } = await supabase
+      let productsQuery = supabase
         .from("products")
         .select("id, name, sku")
         .eq("company_id", cId)
         .eq("is_active", true)
-        .order("name")
+
+      if (!canChooseDestination && branchId) {
+        productsQuery = productsQuery.or(`branch_id.eq.${branchId},branch_id.is.null`)
+      }
+
+      const { data: productsData } = await productsQuery.order("name")
 
       setProducts(productsData || [])
     } catch (error) {

@@ -107,7 +107,11 @@ export default function NewVendorCreditPage() {
       const { data: sups } = await suppQueryVC
       setSuppliers((sups || []) as any)
 
-      const { data: prods } = await supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", loadedCompanyId)
+      let prodsQueryVC = supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", loadedCompanyId)
+      if (!isAdminVC && userBranchIdVC) {
+        prodsQueryVC = prodsQueryVC.or(`branch_id.eq.${userBranchIdVC},branch_id.is.null`)
+      }
+      const { data: prods } = await prodsQueryVC
       console.log('📦 [Vendor Credits] Loaded products:', prods?.length || 0, prods)
       setProducts((prods || []) as any)
 

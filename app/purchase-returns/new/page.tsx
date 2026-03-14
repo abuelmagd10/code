@@ -156,17 +156,19 @@ export default function NewPurchaseReturnPage() {
         billQuery = billQuery.eq("branch_id", userBranchId)
       }
 
-      // 🔐 Enterprise Governance: Filter suppliers by branch for non-admin users
+      // 🔐 Enterprise Governance: Filter suppliers and products by branch for non-admin users
       const isPrivilegedForSuppliers = PRIVILEGED_ROLES.includes(role.toLowerCase())
       let suppQuery = supabase.from("suppliers").select("id, name, phone").eq("company_id", loadedCompanyId)
+      let prodQuery = supabase.from("products").select("id, name, cost_price").eq("company_id", loadedCompanyId)
       if (!isPrivilegedForSuppliers && userBranchId) {
         suppQuery = suppQuery.eq("branch_id", userBranchId)
+        prodQuery = prodQuery.or(`branch_id.eq.${userBranchId},branch_id.is.null`)
       }
 
       const [suppRes, billRes, prodRes] = await Promise.all([
         suppQuery,
         billQuery,
-        supabase.from("products").select("id, name, cost_price").eq("company_id", loadedCompanyId)
+        prodQuery
       ])
 
       setSuppliers((suppRes.data || []) as Supplier[])

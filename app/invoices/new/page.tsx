@@ -336,10 +336,16 @@ export default function NewInvoicePage() {
 
       const { data: customersData } = await customersQuery
 
-      const { data: productsData } = await supabase
+      let productsQuery = supabase
         .from("products")
         .select("id, name, unit_price, sku, item_type, quantity_on_hand")
         .eq("company_id", companyId)
+
+      if (!canOverride && context.branch_id) {
+        productsQuery = productsQuery.or(`branch_id.eq.${context.branch_id},branch_id.is.null`)
+      }
+
+      const { data: productsData } = await productsQuery
 
       setCustomers(customersData || [])
       setProducts(productsData || [])

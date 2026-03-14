@@ -230,7 +230,11 @@ function NewBillPageContent() {
         suppQuery = suppQuery.eq("branch_id", userBranchId)
       }
       const { data: supps } = await suppQuery
-      const { data: prods } = await supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", companyId)
+      let prodsQuery = supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", companyId)
+      if (!isAdminForSupp && userBranchId) {
+        prodsQuery = prodsQuery.or(`branch_id.eq.${userBranchId},branch_id.is.null`)
+      }
+      const { data: prods } = await prodsQuery
       setSuppliers(supps || [])
       setProducts(prods || [])
 
