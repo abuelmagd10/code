@@ -99,6 +99,36 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
+    // --- Product Branch Isolation Check ---
+    if (body.items && Array.isArray(body.items) && body.items.length > 0) {
+      const productIds = body.items.map((item: any) => item.product_id).filter(Boolean);
+      if (productIds.length > 0) {
+        const { data: productsData, error: productsError } = await supabase
+          .from("products")
+          .select("id, branch_id")
+          .in("id", productIds);
+
+        if (productsError) {
+           return NextResponse.json({ error: "Failed to validate products" }, { status: 500 });
+        }
+
+        const isAdmin = ['super_admin', 'admin', 'general_manager', 'gm', 'owner'].includes(governance.role);
+        const docBranchId = dataWithGovernance.branch_id;
+
+        if (!isAdmin && docBranchId) {
+          for (const product of productsData || []) {
+            if (product.branch_id && product.branch_id !== docBranchId) {
+              return NextResponse.json({
+                error: `Product Branch Isolation Violation: Product ${product.id} (branch ${product.branch_id}) cannot be added to document (branch ${docBranchId})`,
+                error_ar: "غير مصرح باستخدام منتجات من فروع أخرى"
+              }, { status: 403 });
+            }
+          }
+        }
+      }
+    }
+    // ------------------------------------
+
     // 4️⃣ الإدخال في قاعدة البيانات
     const { data: newOrder, error: insertError } = await supabase
       .from("purchase_orders")
@@ -111,6 +141,18 @@ export async function POST(request: NextRequest) {
         error: insertError.message,
         error_ar: "فشل في إنشاء أمر الشراء"
       }, { status: 500 })
+    }
+
+    // --- Insert Items if provided ---
+    if (body.items && Array.isArray(body.items) && body.items.length > 0) {
+      const itemsToInsert = body.items.map((item: any) => ({
+        ...item,
+        purchase_order_id: newOrder.id
+      }));
+      const { error: itemsError } = await supabase.from("purchase_order_items").insert(itemsToInsert);
+      if (itemsError) {
+        console.error("Failed to insert items:", itemsError);
+      }
     }
 
     // 5️⃣ إضافة سجل تدقيق (Enterprise Requirement)

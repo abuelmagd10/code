@@ -1402,16 +1402,17 @@ export async function notifyPOApprovalRequest(params: {
   costCenterId?: string
   createdBy: string
   appLang?: 'ar' | 'en'
+  isResubmission?: boolean
 }) {
-  const { companyId, poId, poNumber, supplierName, amount, currency, branchId, costCenterId, createdBy, appLang = 'ar' } = params
+  const { companyId, poId, poNumber, supplierName, amount, currency, branchId, costCenterId, createdBy, appLang = 'ar', isResubmission = false } = params
 
   const title = appLang === 'en'
-    ? 'Purchase Order Approval Required'
-    : 'طلب موافقة على أمر شراء'
+    ? (isResubmission ? 'Resubmitted Purchase Order Approval Required' : 'Purchase Order Approval Required')
+    : (isResubmission ? 'إعادة طلب موافقة على أمر شراء (بعد التعديل)' : 'طلب موافقة على أمر شراء')
 
   const message = appLang === 'en'
-    ? `Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) requires your approval`
-    : `أمر شراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency} يحتاج إلى موافقتك`
+    ? (isResubmission ? `Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) has been modified and requires your re-approval` : `Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) requires your approval`)
+    : (isResubmission ? `تم تعديل أمر الشراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency} ويحتاج إلى إعادة الاعتماد` : `أمر شراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency} يحتاج إلى موافقتك`)
 
   // الأدوار العليا (admin/owner/GM) تستلم الإشعار بدون branchId حتى يظهر على مستوى الشركة كاملة
   // الأدوار المتوسطة (manager) تستلم الإشعار مع branchId للفرع المعني فقط
@@ -1431,7 +1432,7 @@ export async function notifyPOApprovalRequest(params: {
         costCenterId: undefined,
         assignedToRole: role,
         priority: 'high',
-        eventKey: `purchase_order:${poId}:approval_request:${role}`,
+        eventKey: `purchase_order:${poId}:approval_request:${role}${isResubmission ? `:${Date.now()}` : ''}`,
         severity: 'warning',
         category: 'approvals'
       })
@@ -1453,7 +1454,7 @@ export async function notifyPOApprovalRequest(params: {
         costCenterId,
         assignedToRole: role,
         priority: 'high',
-        eventKey: `purchase_order:${poId}:approval_request:${role}`,
+        eventKey: `purchase_order:${poId}:approval_request:${role}${isResubmission ? `:${Date.now()}` : ''}`,
         severity: 'warning',
         category: 'approvals'
       })
