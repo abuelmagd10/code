@@ -62,9 +62,9 @@ export const useOrderPermissions = () => {
       const hasPaidAmount = totalPaid > 0
       const invoiceStatus = invoice?.status
 
-      // 1️⃣ حالة المسودة: التعديل من الأمر فقط، مزامنة للفاتورة
+      // 1️⃣ حالة المسودة أو الرفض: التعديل من الأمر فقط، مزامنة للفاتورة
       // (لكن إذا كانت الفاتورة المرتبطة مرسلة أو مدفوعة، لا يمكن التعديل)
-      if (order.status === 'draft' && (!invoiceStatus || invoiceStatus === 'draft')) {
+      if ((order.status === 'draft' || order.status === 'rejected') && (!invoiceStatus || invoiceStatus === 'draft')) {
         return {
           canEdit: true,
           canDelete: !invoice, // يمكن الحذف فقط إذا لم تكن هناك فاتورة مرتبطة
@@ -185,9 +185,9 @@ export const useOrderPermissions = () => {
       const hasPaidAmount = totalPaid > 0
       const billStatus = bill?.status
 
-      // 1️⃣ حالة المسودة: التعديل من الأمر فقط، مزامنة للفاتورة
+      // 1️⃣ حالة المسودة أو الرفض: التعديل من الأمر فقط، مزامنة للفاتورة
       // (لكن إذا كانت الفاتورة المرتبطة مرسلة أو مدفوعة، لا يمكن التعديل)
-      if (order.status === 'draft' && (!billStatus || billStatus === 'draft')) {
+      if ((order.status === 'draft' || order.status === 'rejected') && (!billStatus || billStatus === 'draft')) {
         return {
           canEdit: true,
           canDelete: !bill, // يمكن الحذف فقط إذا لم تكن هناك فاتورة مرتبطة
