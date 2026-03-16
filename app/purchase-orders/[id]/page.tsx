@@ -652,8 +652,14 @@ export default function PurchaseOrderDetailPage() {
       if (error) throw error
       if (data && !data.success) throw new Error(data.error || 'Failed to approve PO')
 
-      // status becomes 'draft' or 'approved' based on RPC, currently 'draft'. Let's align with draft for billing.
-      setPo(prev => prev ? ({ ...prev, status: data.status || "draft", approved_by: user.id }) : null)
+      // status becomes 'approved' based on RPC.
+      // Explicitly set the bill_id returned from our new auto-bill creation logic
+      setPo(prev => prev ? ({ 
+        ...prev, 
+        status: data.status || "approved", 
+        approved_by: user.id,
+        bill_id: data.bill_id || prev.bill_id 
+      }) : null)
 
       // Notify creator, assuming po history might not have exact creator reliably stored since it wasn't there before
       // but if we don't have createdBy, we'll try to omit it or pass known values.
