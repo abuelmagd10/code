@@ -728,7 +728,7 @@ export default function EditPurchaseOrderPage() {
                     lang={appLang}
                     showLabels={true}
                     showWarehouse={true}
-                    disabled={!isAdmin || !canEdit}
+                    disabled={!canEdit}
                   />
                 </div>
               </CardContent>
