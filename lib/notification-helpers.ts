@@ -1416,8 +1416,14 @@ export async function notifyPOApprovalRequest(params: {
 
   // الأدوار العليا (admin/owner/GM) تستلم الإشعار بدون branchId حتى يظهر على مستوى الشركة كاملة
   // الأدوار المتوسطة (manager) تستلم الإشعار مع branchId للفرع المعني فقط
-  const topRoles = ['admin', 'owner', 'general_manager']
+  // الأدوار العليا (admin/owner/GM) تستلم الإشعار بدون branchId حتى يظهر على مستوى الشركة كاملة
+  // يتم استخدام دور 'admin' فقط لأن النظام (Frontend & Backend) مبرمج لإظهار إشعارات الـ admin تلقائياً لـ owner و general_manager
+  // هذا يمنع تكرار الإشعار 3 مرات لنفس العملية
+  const topRoles = ['admin']
   const branchRoles = ['manager']
+
+  // توحيد الـ timestamp للعملية الواحدة (جميع الإشعارات من نفس الـ Request تأخذ نفس التوقيت)
+  const resubmitTimestamp = isResubmission ? `:${Date.now()}` : ''
 
   for (const role of topRoles) {
     try {
@@ -1432,7 +1438,7 @@ export async function notifyPOApprovalRequest(params: {
         costCenterId: undefined,
         assignedToRole: role,
         priority: 'high',
-        eventKey: `purchase_order:${poId}:approval_request:${role}${isResubmission ? `:${Date.now()}` : ''}`,
+        eventKey: `purchase_order:${poId}:approval_request:${role}${resubmitTimestamp}`,
         severity: 'warning',
         category: 'approvals'
       })
@@ -1441,25 +1447,28 @@ export async function notifyPOApprovalRequest(params: {
     }
   }
 
-  for (const role of branchRoles) {
-    try {
-      await createNotification({
-        companyId,
-        referenceType: 'purchase_order',
-        referenceId: poId,
-        title,
-        message,
-        createdBy,
-        branchId,       // ← مع branchId للمدير المباشر للفرع
-        costCenterId,
-        assignedToRole: role,
-        priority: 'high',
-        eventKey: `purchase_order:${poId}:approval_request:${role}${isResubmission ? `:${Date.now()}` : ''}`,
-        severity: 'warning',
-        category: 'approvals'
-      })
-    } catch (err) {
-      console.warn(`⚠️ Failed to notify ${role} for PO approval:`, err)
+  // إرسال لمدير الفرع فقط في حالة وجود branchId
+  if (branchId) {
+    for (const role of branchRoles) {
+      try {
+        await createNotification({
+          companyId,
+          referenceType: 'purchase_order',
+          referenceId: poId,
+          title,
+          message,
+          createdBy,
+          branchId,       // ← مع branchId للمدير المباشر للفرع
+          costCenterId,
+          assignedToRole: role,
+          priority: 'high',
+          eventKey: `purchase_order:${poId}:approval_request:${role}${resubmitTimestamp}`,
+          severity: 'warning',
+          category: 'approvals'
+        })
+      } catch (err) {
+        console.warn(`⚠️ Failed to notify ${role} for PO approval:`, err)
+      }
     }
   }
 }
