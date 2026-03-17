@@ -346,9 +346,34 @@ export default function CustomersPage() {
 
       // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
       if (canFilterByBranch && selectedBranchId) {
-        // المستخدم المميز اختار فرعاً معيناً
-        const { data: branchCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).eq("branch_id", selectedBranchId);
-        allCustomers = branchCust || [];
+        // المستخدم المميز اختار فرعاً معيناً من BranchFilter
+        if (filterEmployeeId !== 'all') {
+          // فلترة مزدوجة: فرع محدد + موظف محدد
+          const { data: branchEmpCust } = await supabase.from("customers").select(customerSelectQuery)
+            .eq("company_id", activeCompanyId)
+            .eq("branch_id", selectedBranchId)
+            .eq("created_by_user_id", filterEmployeeId);
+          allCustomers = branchEmpCust || [];
+        } else {
+          const { data: branchCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).eq("branch_id", selectedBranchId);
+          allCustomers = branchCust || [];
+        }
+      } else if (filterEmployeeId !== 'all') {
+        // 🎯 الأولوية: فلتر الموظف (للمديرين) - مع الحفاظ على عزل الفرع
+        if (accessFilter.filterByBranch && accessFilter.branchId) {
+          // مدير فرع: يرى عملاء الموظف المحدد داخل فرعه فقط
+          const { data: empBranchCust } = await supabase.from("customers").select(customerSelectQuery)
+            .eq("company_id", activeCompanyId)
+            .eq("branch_id", accessFilter.branchId)
+            .eq("created_by_user_id", filterEmployeeId);
+          allCustomers = empBranchCust || [];
+        } else {
+          // owner/admin/general_manager: يرى عملاء الموظف المحدد على مستوى الشركة
+          const { data: empCust } = await supabase.from("customers").select(customerSelectQuery)
+            .eq("company_id", activeCompanyId)
+            .eq("created_by_user_id", filterEmployeeId);
+          allCustomers = empCust || [];
+        }
       } else if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
         // موظف عادي: يرى فقط العملاء الذين أنشأهم
         const { data: ownCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).eq("created_by_user_id", accessFilter.createdByUserId);
