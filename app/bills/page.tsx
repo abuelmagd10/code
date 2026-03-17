@@ -1272,14 +1272,12 @@ export default function BillsPage() {
                     )}
                   </div>
                 </div>
-                {permWrite ? (
-                  <Link href="/bills/new" className="self-start sm:self-auto">
-                    <Button className="bg-orange-600 hover:bg-orange-700 h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4">
-                      <Plus className="w-4 h-4 ml-1 sm:ml-2" />
-                      {appLang === 'en' ? 'New' : 'جديدة'}
-                    </Button>
-                  </Link>
-                ) : null}
+                <Link href="/purchase-orders/new" className="self-start sm:self-auto" title={appLang === 'en' ? 'Bills are created automatically after PO approval' : 'تُنشأ الفواتير تلقائياً بعد اعتماد أمر الشراء'}>
+                  <Button className="bg-orange-600 hover:bg-orange-700 h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4">
+                    <Plus className="w-4 h-4 ml-1 sm:ml-2" />
+                    {appLang === 'en' ? 'New Purchase Order' : 'أمر شراء جديد'}
+                  </Button>
+                </Link>
               </div>
             </div>
 
