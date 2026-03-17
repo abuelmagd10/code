@@ -83,85 +83,11 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/bills
- * إنشاء فاتورة شراء جديدة مع التحقق من الحوكمة
+ * إنشاء فاتورة شراء جديدة (معطل بحسب السياسة الجديدة)
  */
 export async function POST(request: NextRequest) {
-  try {
-    // 1️⃣ تطبيق الحوكمة (إلزامي)
-    const governance = await enforceGovernance()
-    
-    const body = await request.json()
-    
-    // 2️⃣ إضافة بيانات الحوكمة تلقائياً
-    const dataWithGovernance = addGovernanceData(body, governance)
-    
-    // 3️⃣ التحقق من صحة البيانات (إلزامي)
-    validateGovernanceData(dataWithGovernance, governance)
-    
-    const supabase = await createClient()
-
-    // 🔒 التحقق من إذن إنشاء فاتورة من أمر شراء
-    if (body.purchase_order_id) {
-      const { data: po, error: poError } = await supabase
-        .from("purchase_orders")
-        .select("status")
-        .eq("id", body.purchase_order_id)
-        .single()
-      
-      if (poError || !po) {
-        return NextResponse.json({ 
-          error: "Purchase Order not found", 
-          error_ar: "لم يتم العثور على أمر الشراء" 
-        }, { status: 404 })
-      }
-
-      // ❌ منع إنشاء الفاتورة إذا كان أمر الشراء غير معتمد
-      // استثناء: الأدوار العليا يحق لها تجاوز هذه القاعدة (admin, owner, general_manager)
-      const isPrivilegedRole = ['admin', 'owner', 'general_manager'].includes(governance.role?.toLowerCase() || '')
-      
-      const allowedStatuses = ['approved', 'sent_to_vendor', 'partially_received', 'received', 'partially_billed']
-      if (!isPrivilegedRole && !allowedStatuses.includes(po.status)) {
-        return NextResponse.json({ 
-          error: `Cannot create bill from a ${po.status} purchase order`, 
-          error_ar: "لا يمكن إنشاء فاتورة من أمر شراء غير معتمد" 
-        }, { status: 403 })
-      }
-    }
-    
-    // 4️⃣ الإدخال في قاعدة البيانات
-    const { data: newBill, error: insertError } = await supabase
-      .from("bills")
-      .insert(dataWithGovernance)
-      .select()
-      .single()
-
-    if (insertError) {
-      return NextResponse.json({ 
-        error: insertError.message, 
-        error_ar: "فشل في إنشاء فاتورة الشراء" 
-      }, { status: 500 })
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: newBill,
-      message: "Bill created successfully",
-      message_ar: "تم إنشاء فاتورة الشراء بنجاح",
-      governance: {
-        enforced: true,
-        companyId: governance.companyId,
-        branchId: dataWithGovernance.branch_id,
-        warehouseId: dataWithGovernance.warehouse_id,
-        costCenterId: dataWithGovernance.cost_center_id
-      }
-    }, { status: 201 })
-
-  } catch (error: any) {
-    return NextResponse.json({ 
-      error: error.message, 
-      error_ar: "حدث خطأ غير متوقع" 
-    }, { 
-      status: error.message.includes('Violation') ? 403 : 500 
-    })
-  }
+  return NextResponse.json({ 
+    error: "Manual creation of Purchase Bills is disabled. Bills are automatically generated upon Purchase Order approval.", 
+    error_ar: "إنشاء الفواتير اليدوي معطل. يتم إنشاء الفواتير تلقائياً عند اعتماد أوامر الشراء." 
+  }, { status: 403 })
 }
