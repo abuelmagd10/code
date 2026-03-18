@@ -889,6 +889,8 @@ export default function GoodsReceiptPage() {
           ? `Purchase bill ${selectedBill.bill_number} goods receipt was rejected by warehouse manager. Reason: ${rejectionReason.trim()}`
           : `تم رفض اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن. السبب: ${rejectionReason.trim()}`
 
+        const notifTs = Date.now()
+
         // 1️⃣ إشعار لمنشئ الفاتورة (created_by_user_id)
         if (selectedBill.created_by_user_id) {
           await createNotification({
@@ -903,7 +905,7 @@ export default function GoodsReceiptPage() {
             costCenterId: costCenterId || undefined,
             assignedToUser: selectedBill.created_by_user_id,
             priority: "high",
-            eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_creator`,
+            eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_creator:${notifTs}`,
             severity: "warning",
             category: "approvals"
           })
@@ -922,7 +924,7 @@ export default function GoodsReceiptPage() {
           costCenterId: costCenterId || undefined,
           assignedToRole: "owner",
           priority: "high",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_owner`,
+          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_owner:${notifTs}`,
           severity: "warning",
           category: "approvals"
         })
@@ -940,7 +942,7 @@ export default function GoodsReceiptPage() {
           costCenterId: costCenterId || undefined,
           assignedToRole: "general_manager",
           priority: "high",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_gm`,
+          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_gm:${notifTs}`,
           severity: "warning",
           category: "approvals"
         })
@@ -958,7 +960,7 @@ export default function GoodsReceiptPage() {
           costCenterId: costCenterId || undefined,
           assignedToRole: "accountant",
           priority: "high",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_accountant`,
+          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_accountant:${notifTs}`,
           severity: "warning",
           category: "approvals"
         })
@@ -976,7 +978,7 @@ export default function GoodsReceiptPage() {
           costCenterId: costCenterId || undefined,
           assignedToRole: "manager",
           priority: "high",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_manager`,
+          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_manager:${notifTs}`,
           severity: "warning",
           category: "approvals"
         })
