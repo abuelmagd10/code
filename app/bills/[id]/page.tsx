@@ -1314,8 +1314,50 @@ export default function BillViewPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!companyId || !user) { setPosting(false); return }
 
-      // 1. إنشاء inventory_transactions (المخزون يُحدَّث هنا فقط)
-      await postBillAtomic()
+      // 1. إضافة المخزون ذرياً (بدون تغيير حالة الفاتورة هنا)
+      const mapping = await findAccountIds(bill.company_id)
+      if (!mapping || !mapping.ap) {
+        throw new Error(appLang === 'en' ? 'Account settings not found' : 'لم يتم العثور على إعدادات الحسابات')
+      }
+
+      // التحقق من وجود حركات مخزون سابقة (idempotency)
+      const { data: existingTx } = await supabase
+        .from("inventory_transactions")
+        .select("id")
+        .eq("reference_id", bill.id)
+        .eq("transaction_type", "purchase")
+        .limit(1)
+
+      if (!existingTx || existingTx.length === 0) {
+        // استدعاء RPC للترحيل الذري (المخزون + القيود المحاسبية)
+        const { AccountingTransactionService } = await import('@/lib/accounting-transaction-service')
+        const service = new AccountingTransactionService(supabase)
+        const result = await service.postBillAtomic(
+          {
+            billId: bill.id,
+            billNumber: bill.bill_number,
+            billDate: bill.bill_date,
+            companyId: bill.company_id,
+            branchId: bill.branch_id,
+            warehouseId: bill.warehouse_id,
+            costCenterId: bill.cost_center_id,
+            subtotal: Number(bill.subtotal || 0),
+            taxAmount: Number(bill.tax_amount || 0),
+            totalAmount: Number(bill.total_amount || 0),
+            status: 'received'
+          },
+          {
+            companyId: mapping.companyId,
+            ap: mapping.ap,
+            inventory: mapping.inventory,
+            purchases: mapping.purchases,
+            vatInput: mapping.vatInput
+          }
+        )
+        if (!result.success) {
+          throw new Error(result.error || (appLang === 'en' ? 'Failed to post bill inventory' : 'فشل ترحيل مخزون الفاتورة'))
+        }
+      }
 
       // 2. تحديث حالة الفاتورة إلى "received" + اعتماد الاستلام
       const now = new Date().toISOString()
@@ -1335,17 +1377,18 @@ export default function BillViewPage() {
         await supabase.from("audit_logs").insert({
           company_id: companyId,
           user_id: user.id,
-          action: "goods_receipt_approved",
-          entity_type: "bill",
-          entity_id: bill.id,
-          new_values: {
-            bill_id: bill.id,
+          action: "APPROVE",
+          target_table: "bills",
+          record_id: bill.id,
+          record_identifier: bill.bill_number,
+          new_data: {
+            status: "received",
+            receipt_status: "received",
             branch_id: bill.branch_id || null,
             warehouse_id: bill.warehouse_id || null,
-            approved_by: user.id,
+            received_by: user.id,
             timestamp: now
-          },
-          created_at: now
+          }
         })
       } catch (auditErr) {
         console.warn("Audit log for goods_receipt_approved failed:", auditErr)
