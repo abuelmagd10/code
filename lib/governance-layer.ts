@@ -186,7 +186,7 @@ export async function createNotification(params: {
 
 /**
  * الحصول على إشعارات المستخدم
- * ✅ يدعم الآن: فلترة حسب severity و category
+ * ✅ محدث: يدعم الفلترة عبر الخادم (Server-side Filtering) للبحث والأولوية
  */
 export async function getUserNotifications(params: {
   userId: string
@@ -194,9 +194,11 @@ export async function getUserNotifications(params: {
   branchId?: string
   warehouseId?: string
   status?: NotificationStatus
-  // ✅ المعاملات الجديدة (اختيارية)
   severity?: NotificationSeverity
   category?: NotificationCategory
+  searchQuery?: string
+  priority?: string
+  referenceType?: string
 }) {
   const supabase = createClient()
 
@@ -207,7 +209,10 @@ export async function getUserNotifications(params: {
     warehouseId: params.warehouseId ?? null,
     status: params.status ?? null,
     severity: params.severity ?? null,
-    category: params.category ?? null
+    category: params.category ?? null,
+    searchQuery: params.searchQuery ?? null,
+    priority: params.priority ?? null,
+    referenceType: params.referenceType ?? null
   })
 
   const { data, error } = await supabase.rpc('get_user_notifications', {
@@ -216,9 +221,11 @@ export async function getUserNotifications(params: {
     p_branch_id: params.branchId,
     p_warehouse_id: params.warehouseId,
     p_status: params.status,
-    // ✅ المعاملات الجديدة
     p_severity: params.severity || null,
-    p_category: params.category || null
+    p_category: params.category || null,
+    p_search_query: params.searchQuery || null,
+    p_priority: params.priority || null,
+    p_reference_type: params.referenceType || null
   })
 
   if (error) {

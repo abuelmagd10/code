@@ -287,10 +287,13 @@ export function NotificationCenter({
         warehouseId,
         status,
         severity: filterSeverity !== "all" ? filterSeverity : undefined,
-        category: filterCategory !== "all" ? filterCategory : undefined
+        category: filterCategory !== "all" ? filterCategory : undefined,
+        searchQuery: searchQuery.trim() ? searchQuery : undefined,
+        priority: filterPriority !== "all" ? filterPriority : undefined,
+        referenceType: filterReferenceType !== "all" ? filterReferenceType : undefined
       })
 
-      // 🔹 Client-side filtering
+      // 🔹 Client-side filtering for branch/warehouse (Owner/Admin filters)
       let filtered = data || []
 
       // ✅ Filter by branch - عند اختيار فرع معين، نعرض فقط إشعارات ذلك الفرع
@@ -301,26 +304,6 @@ export function NotificationCenter({
       // ✅ Filter by warehouse - عند اختيار مخزن معين، نعرض فقط إشعارات ذلك المخزن
       if (filterWarehouse !== "all") {
         filtered = filtered.filter(n => n.warehouse_id === filterWarehouse)
-      }
-
-      // Filter by priority
-      if (filterPriority !== "all") {
-        filtered = filtered.filter(n => n.priority === filterPriority)
-      }
-
-      // Filter by reference type
-      if (filterReferenceType !== "all") {
-        filtered = filtered.filter(n => n.reference_type === filterReferenceType)
-      }
-
-      // Search filter
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase()
-        filtered = filtered.filter(n =>
-          n.title.toLowerCase().includes(query) ||
-          n.message.toLowerCase().includes(query) ||
-          n.reference_id.toLowerCase().includes(query)
-        )
       }
 
       // 🔹 Enrich with branch/warehouse names if not present
