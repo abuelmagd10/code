@@ -189,7 +189,7 @@ export default function PurchaseOrderDetailPage() {
           .select("role, branch_id, cost_center_id, warehouse_id")
           .eq("company_id", companyId)
           .eq("user_id", user.id)
-          .single()
+          .maybeSingle()
 
         const role = member?.role || "staff"
         const context: UserContext = {
@@ -211,7 +211,7 @@ export default function PurchaseOrderDetailPage() {
         .from("purchase_orders")
         .select("*, suppliers(*)")
         .eq("id", poId)
-        .single()
+        .maybeSingle()
 
       if (poError) {
         console.error('Error loading purchase order:', poError)
