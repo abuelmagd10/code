@@ -362,7 +362,7 @@ export default function GoodsReceiptPage() {
           )
           .eq("id", billIdFromQuery)
           .eq("company_id", companyId)
-          .eq("status", "approved")
+          .eq("status", "sent") // ✅ الفواتير المرسلة للمخزن بانتظار الاستلام تكون حالتها sent
           .maybeSingle()
 
         if (error) throw error
@@ -566,7 +566,7 @@ export default function GoodsReceiptPage() {
           "id, bill_number, bill_date, supplier_id, status, receipt_status, receipt_rejection_reason, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, created_by_user_id, suppliers(name)"
         )
         .eq("company_id", companyId)
-        .eq("status", "approved")
+        .eq("status", "sent") // ✅ الفواتير المرسلة للمخزن بانتظار الاستلام تكون حالتها sent
         .eq("branch_id", branchId)
         .eq("warehouse_id", warehouseId)
         // ✅ استبعاد الفواتير المرفوضة أو المستلمة - عرض فقط الفواتير التي بانتظار الاستلام

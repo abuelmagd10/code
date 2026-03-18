@@ -44,8 +44,8 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
 
   // المشتريات
   'bill': (id, eventKey, _category) => {
-    // ✅ إذا كان الإشعار خاص باعتماد الاستلام (approved_waiting_receipt)، نوجه إلى صفحة اعتماد الاستلام مع معرف الفاتورة
-    if (eventKey && eventKey.includes('approved_waiting_receipt')) {
+    // ✅ إذا كان الإشعار خاص باعتماد الاستلام (sent_pending_receipt أو approved_waiting_receipt)، نوجه إلى صفحة اعتماد الاستلام مع معرف الفاتورة
+    if (eventKey && (eventKey.includes('approved_waiting_receipt') || eventKey.includes('sent_pending_receipt'))) {
       return `/inventory/goods-receipt?billId=${id}`
     }
     // وإلا نوجه إلى صفحة الفاتورة العادية
