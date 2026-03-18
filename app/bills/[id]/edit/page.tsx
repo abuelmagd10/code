@@ -377,12 +377,12 @@ export default function EditBillPage() {
         }
 
         if (decreasedItems.length > 0) {
-          // Build inventory context from form state and user context
+          // Build inventory context using governance-enforced values (finalBranchId, etc.)
           const inventoryContext = userContext ? {
             company_id: userContext.company_id,
-            branch_id: branchId || userContext.branch_id || null,
-            warehouse_id: warehouseId || userContext.warehouse_id || null,
-            cost_center_id: costCenterId || userContext.cost_center_id || null,
+            branch_id: finalBranchId || null,
+            warehouse_id: finalWarehouseId || null,
+            cost_center_id: finalCostCenterId || null,
           } : undefined
 
           const { success, shortages } = await checkInventoryAvailability(supabase, decreasedItems, undefined, inventoryContext)
