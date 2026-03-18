@@ -143,7 +143,7 @@ export function BranchCostCenterSelector({
   }, [supabase, showWarehouse, disabled, branchId, onBranchChange])
 
   useEffect(() => {
-    if (loading) return
+    if (loading || disabled) return
 
     if (!branchId) {
       setFilteredCostCenters([])
@@ -178,7 +178,7 @@ export function BranchCostCenterSelector({
 
   // Filter warehouses when branch/cost center changes
   useEffect(() => {
-    if (loading) return
+    if (loading || disabled) return
     if (showWarehouse && onWarehouseChange) {
       let filtered = warehouses
       if (branchId) {
