@@ -501,8 +501,10 @@ export function NotificationCenter({
       const readIds = displayNotifications.filter(n => n.status === 'read').map(n => n.id)
       if (readIds.length === 0) return
 
+      // ✅ استخدام updateNotificationStatus للحفاظ على عزل حالة المستخدم الفردية
+      // بدلاً من التحديث المباشر بجدول الإشعارات المشترك
       await Promise.all(readIds.map(id =>
-        supabase.from('notifications').update({ status: 'archived' }).eq('id', id)
+        updateNotificationStatus(id, 'archived', userId)
       ))
 
       // ✅ إذا كان المستخدم يريد رؤية المؤرشفة، نحدث status بدلاً من الإزالة
