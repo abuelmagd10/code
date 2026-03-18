@@ -418,18 +418,11 @@ class RealtimeManager {
     // ✅ بناء الفلتر حسب نوع الجدول
     switch (table) {
       case 'notifications':
-        // الإشعارات: حسب assigned_to_user أو assigned_to_role
-        // + فلترة حسب branch/warehouse إذا كان محدداً
-        let notifFilter = filter
-        if (accessFilter.filterByBranch && branchId) {
-          notifFilter += `.and(branch_id.eq.${branchId}.or.branch_id.is.null)`
-        }
-        if (accessFilter.filterByWarehouse && warehouseId) {
-          notifFilter += `.and(warehouse_id.eq.${warehouseId}.or.warehouse_id.is.null)`
-        }
-        // فلترة حسب المستخدم أو الدور
-        notifFilter += `.and(assigned_to_user.eq.${userId}.or.assigned_to_role.eq.${role})`
-        return notifFilter
+        // ✅ استخدام company_id فقط كفلتر في Realtime channel
+        // ⚠️ Supabase Realtime لا يدعم OR conditions في الفلاتر (مثل branch_id.is.null)
+        // ✅ الفلترة التفصيلية (assigned_to_user, assigned_to_role, branch_id, warehouse_id)
+        //    تتم في shouldProcessEvent (يدعم OR logic في الكود)
+        return filter
 
       case 'depreciation':
       case 'inventory_write_offs':
