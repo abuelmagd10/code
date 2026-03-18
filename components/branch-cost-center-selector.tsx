@@ -265,6 +265,71 @@ export function BranchCostCenterSelector({
 
   const gridCols = showWarehouse ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
 
+  // ✅ عندما يكون الحقل معطلاً (للأدوار العادية)، نعرض البيانات كنص للقراءة فقط
+  // هذا يتجنب مشكلة Radix Select الذي يحتاج SelectItem مطابق لعرض النص
+  if (disabled) {
+    const selectedBranch = branches.find(b => b.id === branchId)
+    const selectedCostCenter = costCenters.find(cc => cc.id === costCenterId)
+    const selectedWarehouse = warehouses.find(w => w.id === warehouseId)
+
+    return (
+      <div className={`grid grid-cols-1 ${gridCols} gap-4 ${className}`}>
+        {/* Branch - Read Only */}
+        <div className="space-y-2">
+          {showLabels && (
+            <Label className="flex items-center gap-2 text-sm font-medium">
+              <Building2 className="w-4 h-4 text-indigo-500" />
+              {t("Branch", "الفرع")}
+              {required && <span className="text-red-500">*</span>}
+            </Label>
+          )}
+          <div className="flex h-10 w-full items-center rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground cursor-not-allowed opacity-70">
+            {selectedBranch
+              ? `${selectedBranch.name} (${selectedBranch.code})`
+              : <span className="text-gray-400">{t("Not set", "غير محدد")}</span>
+            }
+          </div>
+        </div>
+
+        {/* Cost Center - Read Only */}
+        <div className="space-y-2">
+          {showLabels && (
+            <Label className="flex items-center gap-2 text-sm font-medium">
+              <Target className="w-4 h-4 text-teal-500" />
+              {t("Cost Center", "مركز التكلفة")}
+              {required && <span className="text-red-500">*</span>}
+            </Label>
+          )}
+          <div className="flex h-10 w-full items-center rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground cursor-not-allowed opacity-70">
+            {selectedCostCenter
+              ? `${selectedCostCenter.cost_center_name} (${selectedCostCenter.cost_center_code})`
+              : <span className="text-gray-400">{t("Not set", "غير محدد")}</span>
+            }
+          </div>
+        </div>
+
+        {/* Warehouse - Read Only */}
+        {showWarehouse && onWarehouseChange && (
+          <div className="space-y-2">
+            {showLabels && (
+              <Label className="flex items-center gap-2 text-sm font-medium">
+                <Warehouse className="w-4 h-4 text-blue-500" />
+                {t("Warehouse", "المخزن")}
+                {required && <span className="text-red-500">*</span>}
+              </Label>
+            )}
+            <div className="flex h-10 w-full items-center rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground cursor-not-allowed opacity-70">
+              {selectedWarehouse
+                ? `${selectedWarehouse.name}${selectedWarehouse.code ? ` (${selectedWarehouse.code})` : ''}`
+                : <span className="text-gray-400">{t("Not set", "غير محدد")}</span>
+              }
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className={`grid grid-cols-1 ${gridCols} gap-4 ${className}`}>
       {/* Branch Selector */}
