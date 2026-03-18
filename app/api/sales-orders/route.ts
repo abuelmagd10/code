@@ -177,12 +177,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 6c️⃣ التحقق من توفر المخزون (Stock Validation)
+    // 6c️⃣ التحقق من توفر المخزون (Stock Validation) — مع اسم المنتج في الخطأ
     if (body.items && Array.isArray(body.items) && body.items.length > 0) {
       const productItems = body.items.filter((i: any) => i.item_type !== 'service' && i.product_id);
       const productIds = productItems.map((i: any) => i.product_id);
 
       if (productIds.length > 0) {
+        // جلب أسماء المنتجات لرسائل الخطأ
+        const { data: productsData } = await supabase
+          .from('products')
+          .select('id, name')
+          .in('id', productIds);
+        const productNameMap: Record<string, string> = {};
+        (productsData || []).forEach((p: any) => { productNameMap[p.id] = p.name; });
+
         const { data: txs, error: txError } = await supabase
           .from('inventory_transactions')
           .select('product_id, quantity_change')
@@ -200,10 +208,11 @@ export async function POST(request: NextRequest) {
           for (const item of productItems) {
             const reqQty = Number(item.quantity || 0);
             const avail = Math.max(0, stockMap[item.product_id] || 0);
+            const productName = productNameMap[item.product_id] || item.product_id;
             if (reqQty > avail) {
               return NextResponse.json({
-                error: `Insufficient stock for product. Requested: ${reqQty}, Available: ${avail}`,
-                error_ar: `المخزون غير كافي لأحد المنتجات. المطلوبة: ${reqQty}، المتاحة في المخزن: ${avail}`
+                error: `Insufficient stock for "${productName}". Requested: ${reqQty}, Available: ${avail}`,
+                error_ar: `المخزون غير كافٍ للمنتج: "${productName}". الكمية المطلوبة: ${reqQty}، المتاحة في المخزن: ${avail}`
               }, { status: 400 });
             }
           }
@@ -320,8 +329,25 @@ export async function POST(request: NextRequest) {
 
       console.log('✅ [SALES_ORDER] Notifications sent successfully for SO:', soNumber)
     } catch (notifError: any) {
-      // ✅ لا نفشل العملية إذا فشلت الإشعارات - نسجل الخطأ فقط
       console.error('⚠️ [SALES_ORDER] Failed to send notifications:', notifError)
+    }
+
+    // 9️⃣ إنشاء فاتورة بيع مسودة تلقائياً (Enterprise Sales Cycle)
+    let autoInvoiceResult: { success: boolean; invoice_id?: string; invoice_number?: string; already_exists?: boolean } | null = null;
+    try {
+      const { data: rpcAutoInvoice, error: rpcAutoInvoiceErr } = await supabase.rpc(
+        'create_auto_invoice_from_sales_order',
+        { p_sales_order_id: newSalesOrder.id }
+      );
+      if (!rpcAutoInvoiceErr && rpcAutoInvoice?.success) {
+        autoInvoiceResult = rpcAutoInvoice;
+        console.log('✅ [SALES_ORDER] Auto invoice created:', rpcAutoInvoice.invoice_number)
+      } else if (rpcAutoInvoiceErr) {
+        console.error('⚠️ [SALES_ORDER] Auto invoice RPC error:', rpcAutoInvoiceErr.message)
+      }
+    } catch (autoInvErr: any) {
+      // لا نُوقف العملية إذا فشل إنشاء الفاتورة التلقائية
+      console.error('⚠️ [SALES_ORDER] Auto invoice creation failed:', autoInvErr.message)
     }
 
     return NextResponse.json({
@@ -329,6 +355,7 @@ export async function POST(request: NextRequest) {
       data: newSalesOrder,
       message: "Sales order created successfully",
       message_ar: "تم إنشاء أمر البيع بنجاح",
+      auto_invoice: autoInvoiceResult,
       governance: {
         enforced: true,
         companyId: enhancedContext.companyId,
