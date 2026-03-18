@@ -298,11 +298,18 @@ export default function EditBillPage() {
     }
 
     // 🔐 ERP Access Control - التحقق من صلاحية تعديل العملية المالية
+    // ✅ لضمان استقرار الخادم وعدم كسر الحوكمة بسبب الواجهة:
+    // إذا كان الموظف عادياً (لا يملك صلاحية التخطي يمكنه التعديل ضمن نطاقه فقط),
+    // نجبر النظام على استخدام بيانات المركز الخاصة به مهما كان الوضع في الواجهة
+    const finalBranchId = (!canOverrideContext && userContext?.branch_id) ? userContext.branch_id : branchId
+    const finalCostCenterId = (!canOverrideContext && userContext?.cost_center_id) ? userContext.cost_center_id : costCenterId
+    const finalWarehouseId = (!canOverrideContext && userContext?.warehouse_id) ? userContext.warehouse_id : warehouseId
+
     if (userContext) {
       const accessResult = validateFinancialTransaction(
         userContext,
-        branchId,
-        costCenterId,
+        finalBranchId,
+        finalCostCenterId,
         canOverrideContext,
         appLang
       )
@@ -421,10 +428,10 @@ export default function EditBillPage() {
           shipping_tax_rate: shippingTaxRate,
           shipping_provider_id: shippingProviderId || null,
           adjustment,
-          // Branch, Cost Center, and Warehouse
-          branch_id: branchId || null,
-          cost_center_id: costCenterId || null,
-          warehouse_id: warehouseId || null,
+          // Branch, Cost Center, and Warehouse (استخدام القيم النهائية لتأكيد الحماية للموظف العادي)
+          branch_id: finalBranchId || null,
+          cost_center_id: finalCostCenterId || null,
+          warehouse_id: finalWarehouseId || null,
           // ✅ إذا كانت الفاتورة ضمن دورة اعتماد، نعيد تشغيل دورة الاعتماد فوراً
           ...(needsApprovalRestart
             ? {
