@@ -428,9 +428,9 @@ export default function EditBillPage() {
           // ✅ إذا كانت الفاتورة ضمن دورة اعتماد، نعيد تشغيل دورة الاعتماد فوراً
           ...(needsApprovalRestart
             ? {
-                status: "pending_approval",
-                approval_status: "pending_approval",
-                approved_by: null,
+                status: "pending_receipt",
+                approval_status: "approved",
+                approved_by: null, // Keep null or the original user, but UI will treat it as ready
                 approved_at: null,
                 receipt_status: null,
                 receipt_rejection_reason: null,
@@ -879,19 +879,19 @@ export default function EditBillPage() {
               referenceType: "bill",
               referenceId: existingBill.id,
               title: appLang === "en"
-                ? "Purchase bill pending approval"
-                : "فاتورة مشتريات بانتظار الاعتماد الإداري",
+                ? "Purchase bill pending receipt"
+                : "فاتورة مشتريات بانتظار الاستلام المخزني",
               message: appLang === "en"
-                ? `Purchase bill ${existingBill.bill_number} is pending admin approval after goods receipt rejection correction`
-                : `فاتورة مشتريات رقم ${existingBill.bill_number} عادت للاعتماد الإداري بعد تصحيح سبب رفض الاستلام`,
+                ? `Purchase bill ${existingBill.bill_number} is pending store receipt after correction`
+                : `فاتورة مشتريات رقم ${existingBill.bill_number} عادت للاستلام المخزني بعد تصحيحها`,
               createdBy: user.id,
               branchId: branchId || undefined,
               costCenterId: costCenterId || undefined,
-              assignedToRole: "owner",
+              assignedToRole: "store_manager",
               priority: "high",
-              eventKey: `bill:${existingBill.id}:pending_approval_owner_after_reject`,
+              eventKey: `bill:${existingBill.id}:pending_receipt_store_manager_after_reject`,
               severity: "warning",
-              category: "approvals",
+              category: "inventory",
             })
 
             await createNotification({
@@ -899,23 +899,23 @@ export default function EditBillPage() {
               referenceType: "bill",
               referenceId: existingBill.id,
               title: appLang === "en"
-                ? "Purchase bill pending approval"
-                : "فاتورة مشتريات بانتظار الاعتماد الإداري",
+                ? "Purchase bill pending receipt"
+                : "فاتورة مشتريات بانتظار الاستلام المخزني",
               message: appLang === "en"
-                ? `Purchase bill ${existingBill.bill_number} is pending admin approval after goods receipt rejection correction`
-                : `فاتورة مشتريات رقم ${existingBill.bill_number} عادت للاعتماد الإداري بعد تصحيح سبب رفض الاستلام`,
+                ? `Purchase bill ${existingBill.bill_number} is pending store receipt after correction`
+                : `فاتورة مشتريات رقم ${existingBill.bill_number} عادت للاستلام المخزني بعد تصحيحها`,
               createdBy: user.id,
               branchId: branchId || undefined,
               costCenterId: costCenterId || undefined,
-              assignedToRole: "general_manager",
-              priority: "high",
-              eventKey: `bill:${existingBill.id}:pending_approval_gm_after_reject`,
-              severity: "warning",
+              assignedToRole: "accountant",
+              priority: "normal",
+              eventKey: `bill:${existingBill.id}:pending_receipt_accountant_after_reject`,
+              severity: "info",
               category: "approvals",
             })
           }
         } catch (notifErr) {
-          console.warn("Failed to send re-approval notifications after goods receipt rejection fix:", notifErr)
+          console.warn("Failed to send re-receipt notifications after goods receipt rejection fix:", notifErr)
         }
       }
 

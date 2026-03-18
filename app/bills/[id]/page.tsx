@@ -236,7 +236,7 @@ export default function BillViewPage() {
     const s = String(status || "").toLowerCase()
     if (appLang === "en") {
       if (s === "draft") return "Draft"
-      if (s === "pending_approval") return "Pending Approval"
+      if (s === "pending_receipt") return "Pending Receipt"
       if (s === "approved") return "Approved"
       if (s === "rejected") return "Rejected"
       if (s === "received") return "Received"
@@ -247,7 +247,7 @@ export default function BillViewPage() {
       return status || "-"
     } else {
       if (s === "draft") return "مسودة"
-      if (s === "pending_approval") return "بانتظار الاعتماد"
+      if (s === "pending_receipt") return "بانتظار الاستلام"
       if (s === "approved") return "معتمدة إداريًا"
       if (s === "rejected") return "مرفوضة"
       if (s === "received") return "تم الاستلام"
@@ -1982,14 +1982,10 @@ export default function BillViewPage() {
                           const { error } = await supabase
                             .from("bills")
                             .update({
-                              status: "pending_approval",
-                              approval_status: "pending_approval",
-                              approved_by: null,
-                              approved_at: null,
-                              // ✅ عند إعادة الإرسال نعيد ضبط حالة الاستلام وسبب الرفض
+                              status: "pending_receipt",
+                              approval_status: "approved",
                               receipt_status: null,
                               receipt_rejection_reason: null,
-                              // ✅ مسح بيانات الرفض السابق
                               rejection_reason: null,
                               rejected_by: null,
                               rejected_at: null,
@@ -1999,20 +1995,19 @@ export default function BillViewPage() {
 
                           if (error) throw error
 
-                          // إشعارات للمالك والمدير العام داخل نفس الشركة فقط
-                          // ✅ إضافة timestamp للـ event_key لضمان إرسال إشعار جديد عند إعادة الإرسال بعد الرفض
+                          // إشعارات الاستلام المخزني
                           const isResubmission = bill.status === "rejected" || (bill.status === "approved" && (bill as any).receipt_status === "rejected")
-                          const eventKeySuffix = isResubmission ? `:resubmit:${Date.now()}` : ""
+                          const eventKeySuffix = isResubmission ? `:resubmit_receipt:${Date.now()}` : ""
                           const notificationTitle = isResubmission
-                            ? (appLang === "en" ? "Purchase bill resubmitted for approval" : "تم إعادة إرسال فاتورة المشتريات للاعتماد")
-                            : (appLang === "en" ? "Purchase bill pending approval" : "فاتورة مشتريات بانتظار الاعتماد الإداري")
+                            ? (appLang === "en" ? "Purchase bill resubmitted for receipt" : "تم إعادة إرسال فاتورة المشتريات للاستلام")
+                            : (appLang === "en" ? "Purchase bill ready for receipt" : "فاتورة مشتريات بانتظار الاستلام المخزني")
                           const notificationMessage = isResubmission
                             ? (appLang === "en"
-                              ? `Purchase bill ${bill.bill_number} has been resubmitted for admin approval after rejection`
-                              : `تم إعادة إرسال فاتورة المشتريات رقم ${bill.bill_number} للاعتماد الإداري بعد الرفض`)
+                              ? `Purchase bill ${bill.bill_number} has been resubmitted for store receipt`
+                              : `تم إعادة إرسال فاتورة المشتريات رقم ${bill.bill_number} للاستلام المخزني بعد تصحيحها`)
                             : (appLang === "en"
-                              ? `Purchase bill ${bill.bill_number} is pending admin approval`
-                              : `فاتورة مشتريات رقم ${bill.bill_number} في انتظار الاعتماد الإداري`)
+                              ? `Purchase bill ${bill.bill_number} generated from PO is waiting for goods receipt`
+                              : `فاتورة مشتريات رقم ${bill.bill_number} (حسب أمر الشراء) بانتظار الاستلام في مخزن الفرع`)
 
                           try {
                             await createNotification({
@@ -2024,11 +2019,12 @@ export default function BillViewPage() {
                               createdBy: user.id,
                               branchId: bill.branch_id || undefined,
                               costCenterId: bill.cost_center_id || undefined,
-                              assignedToRole: "owner",
+                              warehouseId: bill.warehouse_id || undefined,
+                              assignedToRole: "store_manager",
                               priority: "high",
-                              eventKey: `bill:${bill.id}:pending_approval_owner${eventKeySuffix}`,
+                              eventKey: `bill:${bill.id}:pending_receipt${eventKeySuffix}`,
                               severity: "warning",
-                              category: "approvals"
+                              category: "inventory"
                             })
 
                             await createNotification({
@@ -2040,30 +2036,30 @@ export default function BillViewPage() {
                               createdBy: user.id,
                               branchId: bill.branch_id || undefined,
                               costCenterId: bill.cost_center_id || undefined,
-                              assignedToRole: "general_manager",
-                              priority: "high",
-                              eventKey: `bill:${bill.id}:pending_approval_gm${eventKeySuffix}`,
-                              severity: "warning",
+                              assignedToRole: "accountant",
+                              priority: "normal",
+                              eventKey: `bill:${bill.id}:accountant_notice${eventKeySuffix}`,
+                              severity: "info",
                               category: "approvals"
                             })
                           } catch (notifErr) {
-                            console.warn("Bill approval notifications failed:", notifErr)
+                            console.warn("Bill receipt notifications failed:", notifErr)
                           }
 
                           toastActionSuccess(
                             toast,
                             appLang === "en" ? "Submit" : "إرسال",
-                            appLang === "en" ? "Purchase Bill for approval" : "فاتورة المشتريات للاعتماد",
+                            appLang === "en" ? "Purchase Bill for receipt" : "فاتورة المشتريات للاستلام المخزني",
                             appLang
                           )
                           await loadData()
                         } catch (err) {
-                          console.error("Error submitting bill for approval:", err)
+                          console.error("Error submitting bill for receipt:", err)
                           toastActionError(
                             toast,
                             appLang === "en" ? "Submit" : "الإرسال",
                             appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
-                            appLang === "en" ? "Failed to submit for approval" : "تعذر إرسال الفاتورة للاعتماد",
+                            appLang === "en" ? "Failed to submit for receipt" : "تعذر إرسال الفاتورة للاستلام",
                             appLang
                           )
                         } finally {
@@ -2076,159 +2072,12 @@ export default function BillViewPage() {
                     >
                       <CheckCircle className="w-4 h-4 sm:mr-1" />
                       <span className="hidden sm:inline">
-                        {posting ? "..." : (appLang === 'en' ? 'Submit for Approval' : 'إرسال للاعتماد الإداري')}
+                        {posting ? "..." : (appLang === 'en' ? 'Submit for Receipt' : 'إرسال للاستلام المخزني')}
                       </span>
                     </Button>
                   )}
 
-                {/* اعتماد إداري من المالك / المدير العام */}
-                {bill.status === "pending_approval" && canApproveAdmin && (
-                  <Button
-                    onClick={async () => {
-                      try {
-                        setPosting(true)
-                        const companyId = await getActiveCompanyId(supabase)
-                        const { data: { user } } = await supabase.auth.getUser()
-                        if (!companyId || !user) {
-                          setPosting(false)
-                          return
-                        }
-
-                        const now = new Date().toISOString()
-
-                        const { error } = await supabase
-                          .from("bills")
-                          .update({
-                            status: "approved",
-                            approval_status: "approved",
-                            approved_by: user.id,
-                            approved_at: now
-                          })
-                          .eq("id", bill.id)
-                          .eq("company_id", companyId)
-
-                        if (error) throw error
-
-                        // ✅ إرسال الإشعارات عند الموافقة الإدارية
-                        // استخدام timestamp في event_key لضمان إنشاء إشعار جديد عند كل اعتماد
-                        // (الإشعارات القديمة قد تكون مؤرشفة بعد الرفض وإعادة الاعتماد)
-                        try {
-                          const approvalTimestamp = Date.now()
-                          const approvalTitle = appLang === "en"
-                            ? "Purchase bill approved"
-                            : "تم اعتماد فاتورة المشتريات"
-                          const approvalMessage = appLang === "en"
-                            ? `Purchase bill ${bill.bill_number} has been approved and is waiting for goods receipt`
-                            : `تم اعتماد فاتورة المشتريات رقم ${bill.bill_number} وهي بانتظار اعتماد الاستلام`
-
-                          // 1️⃣ إشعار لمنشئ الفاتورة
-                          if (bill.created_by) {
-                            await createNotification({
-                              companyId,
-                              referenceType: "bill",
-                              referenceId: bill.id,
-                              title: approvalTitle,
-                              message: approvalMessage,
-                              createdBy: user.id,
-                              branchId: bill.branch_id || undefined,
-                              costCenterId: bill.cost_center_id || undefined,
-                              assignedToUser: bill.created_by,
-                              priority: "normal",
-                              eventKey: `bill:${bill.id}:approved:creator:${approvalTimestamp}`,
-                              severity: "info",
-                              category: "approvals"
-                            })
-                          }
-
-                          // 2️⃣ إشعار لمحاسب الفرع
-                          await createNotification({
-                            companyId,
-                            referenceType: "bill",
-                            referenceId: bill.id,
-                            title: approvalTitle,
-                            message: approvalMessage,
-                            createdBy: user.id,
-                            branchId: bill.branch_id || undefined,
-                            costCenterId: bill.cost_center_id || undefined,
-                            assignedToRole: "accountant",
-                            priority: "normal",
-                            eventKey: `bill:${bill.id}:approved:accountant:${approvalTimestamp}`,
-                            severity: "info",
-                            category: "approvals"
-                          })
-
-                          // 3️⃣ إشعار لمسؤول المخزن (للاستلام)
-                          await createNotification({
-                            companyId,
-                            referenceType: "bill",
-                            referenceId: bill.id,
-                            title: appLang === "en"
-                              ? "Purchase bill approved and waiting for goods receipt"
-                              : "فاتورة مشتريات معتمدة وبانتظار اعتماد الاستلام",
-                            message: appLang === "en"
-                              ? `Purchase bill ${bill.bill_number} has been approved and is waiting for goods receipt in warehouse`
-                              : `فاتورة مشتريات رقم ${bill.bill_number} معتمدة إداريًا وبانتظار اعتماد الاستلام في مخزن الفرع`,
-                            createdBy: user.id,
-                            branchId: bill.branch_id || undefined,
-                            costCenterId: bill.cost_center_id || undefined,
-                            warehouseId: bill.warehouse_id || undefined,
-                            assignedToRole: "store_manager",
-                            priority: "high",
-                            eventKey: `bill:${bill.id}:approved_waiting_receipt:${approvalTimestamp}`,
-                            severity: "info",
-                            category: "inventory"
-                          })
-                        } catch (notifErr) {
-                          console.warn("Approval notifications failed:", notifErr)
-                        }
-
-                        toastActionSuccess(
-                          toast,
-                          appLang === "en" ? "Approval" : "الاعتماد",
-                          appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
-                          appLang
-                        )
-                        await loadData()
-                      } catch (err) {
-                        console.error("Error approving bill:", err)
-                        toastActionError(
-                          toast,
-                          appLang === "en" ? "Approval" : "الاعتماد",
-                          appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
-                          appLang === "en" ? "Failed to approve bill" : "تعذر اعتماد الفاتورة",
-                          appLang
-                        )
-                      } finally {
-                        setPosting(false)
-                      }
-                    }}
-                    disabled={posting}
-                    size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                  >
-                    <CheckCircle className="w-4 h-4 sm:mr-1" />
-                    <span className="hidden sm:inline">
-                      {posting ? "..." : (appLang === 'en' ? 'Admin Approve' : 'اعتماد إداري')}
-                    </span>
-                  </Button>
-                )}
-
-                {/* 🔴 زر رفض الاعتماد الإداري */}
-                {bill.status === "pending_approval" && canApproveAdmin && (
-                  <Button
-                    onClick={() => setRejectDialogOpen(true)}
-                    disabled={posting}
-                    size="sm"
-                    variant="outline"
-                    className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400"
-                  >
-                    <AlertCircle className="w-4 h-4 sm:mr-1" />
-                    <span className="hidden sm:inline">
-                      {appLang === 'en' ? 'Reject' : 'رفض'}
-                    </span>
-                  </Button>
-                )}
-
+                {/* Approval and Reject buttons removed */}
                 {/* 📦 تحويل الفاتورة المعتمدة إلى مرسلة (المحاسب) */}
                 {bill.status === "approved" && bill.receipt_status !== 'rejected' && canSubmitForApproval && (
                   <Button
