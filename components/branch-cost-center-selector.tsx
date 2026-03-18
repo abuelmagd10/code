@@ -158,7 +158,8 @@ export function BranchCostCenterSelector({
 
     const filtered = costCenters.filter((cc) => cc.branch_id === branchId)
     setFilteredCostCenters(filtered)
-    
+
+    // ✅ لا نغيّر القيم إذا كان الحقل معطلاً (disabled) - نكتفي بعرض البيانات فقط
     if (disabled) return
 
     const branch = branches.find((b) => b.id === branchId)
@@ -193,6 +194,7 @@ export function BranchCostCenterSelector({
       }
       setFilteredWarehouses(filtered)
 
+      // ✅ لا نغيّر القيم إذا كان الحقل معطلاً (disabled) - نكتفي بعرض البيانات فقط
       if (disabled) return
 
       const branch = branchId ? branches.find((b) => b.id === branchId) : undefined
