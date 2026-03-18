@@ -1082,8 +1082,18 @@ export function validateFinancialTransaction(
   allowOverride: boolean = false,
   lang: 'ar' | 'en' = 'ar'
 ): ValidationResult {
+  // 🐛 DEBUG LOGGING
+  console.log("🐛 [validateFinancialTransaction] Debug:", {
+    userContext,
+    transactionBranchId,
+    transactionCostCenterId,
+    allowOverride,
+    lang
+  });
+
   // إذا كان المستخدم مقيداً بفرع ولم يُسمح بالتجاوز
   if (!allowOverride && userContext.branch_id && transactionBranchId && transactionBranchId !== userContext.branch_id) {
+    console.error("❌ Failed Branch Validation");
     return {
       isValid: false,
       error: {
@@ -1098,6 +1108,7 @@ export function validateFinancialTransaction(
 
   // إذا كان المستخدم مقيداً بمركز تكلفة
   if (!allowOverride && userContext.cost_center_id && transactionCostCenterId && transactionCostCenterId !== userContext.cost_center_id) {
+    console.error("❌ Failed Cost Center Validation");
     return {
       isValid: false,
       error: {
@@ -1110,6 +1121,7 @@ export function validateFinancialTransaction(
     };
   }
 
+  console.log("✅ Passed Financial Validation");
   return { isValid: true };
 }
 

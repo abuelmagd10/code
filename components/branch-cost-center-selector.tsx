@@ -127,7 +127,12 @@ export function BranchCostCenterSelector({
           setWarehouses(warehousesData || [])
         }
 
-        if (!disabled && !branchId && mappedBranches.length > 0) {
+        if (disabled) {
+          setLoading(false)
+          return
+        }
+
+        if (!branchId && mappedBranches.length > 0) {
           const mainBranch = mappedBranches.find((b: Branch) => b.is_main) || mappedBranches[0]
           onBranchChange(mainBranch.id)
         }
