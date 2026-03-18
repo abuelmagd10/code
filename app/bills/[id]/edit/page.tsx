@@ -342,9 +342,11 @@ export default function EditBillPage() {
         !isClosed &&
         (billStatus !== "draft" || receiptStatus === "rejected")
 
-      // التحقق من توفر المخزون عند تعديل فاتورة مشتريات مرسلة
-      // إذا تم تقليل الكميات، يجب التأكد من توفر المخزون للخصم
-      if (existingBill.status !== "draft") {
+      // التحقق من توفر المخزون فقط إذا كانت الفاتورة قد تم استلامها وإضافتها للمخزون بالفعل
+      // الفواتير المرفوضة أو المعلقة لم تضف للمخزون، لذا تقليل الكمية لا يخصم من المخزون الفعلي
+      const hasAddedToInventory = existingBill.receipt_status === "approved" || existingBill.status === "approved" || existingBill.status === "executed"
+      
+      if (hasAddedToInventory) {
         // جلب البنود الحالية لمقارنتها
         const { data: prevItems } = await supabase
           .from("bill_items")
