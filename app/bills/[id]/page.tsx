@@ -89,6 +89,9 @@ type Bill = {
   // Linked Purchase Order
   purchase_order_id?: string | null
   // Creator and approval fields
+  approval_status?: string | null
+  approved_by?: string | null
+  approved_at?: string | null
   created_by?: string | null
   rejection_reason?: string | null
   rejected_by?: string | null
@@ -1528,6 +1531,17 @@ export default function BillViewPage() {
         return
       }
 
+      // منع الإرسال للمخزن إذا لم تكن الفاتورة معتمدة إدارياً
+      if (newStatus === "sent" && bill.approval_status !== "approved" && bill.status !== "approved") {
+        toastActionError(
+          toast, 
+          "التحديث", 
+          "فاتورة المورد", 
+          appLang === "en" ? "Bill must be approved before sending to warehouse" : "يجب اعتماد الفاتورة إدارياً قبل إرسالها للمخزن للاستلام"
+        )
+        return
+      }
+
       // التحقق من توفر المخزون قبل الإلغاء أو الإرجاع للمسودة
       // فقط إذا كان المخزون قد أُضيف فعلاً (receipt_status === 'received')
       if ((newStatus === "draft" || newStatus === "cancelled") &&
@@ -2006,10 +2020,10 @@ export default function BillViewPage() {
                 )}
 
                 {/* 📦 إرسال للاستلام المخزني (تحويل إلى مرسلة) */}
-                {((bill.status === "draft") ||
-                  (bill.status === "approved" && bill.receipt_status !== 'received' && bill.receipt_status !== 'pending') ||
-                  (bill.status === "rejected")) &&
-                  canSubmitForApproval && (
+                {(bill.approval_status === "approved" || bill.status === "approved") &&
+                 bill.receipt_status !== 'received' && 
+                 bill.receipt_status !== 'pending' &&
+                 canSubmitForApproval && (
                   <Button
                     onClick={() => changeStatus("sent")}
                     disabled={posting}
