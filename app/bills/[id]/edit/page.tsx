@@ -989,6 +989,7 @@ export default function EditBillPage() {
                     lang={appLang}
                     showLabels={true}
                     showWarehouse={true}
+                    disabled={!canOverrideContext}
                   />
                 </div>
 
