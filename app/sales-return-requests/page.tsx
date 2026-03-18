@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { CheckCircle, XCircle, Clock, Loader2, ArrowLeft, RotateCcw, FileText } from "lucide-react"
 import Link from "next/link"
-import { toast } from "@/components/ui/use-toast"
+import { toast } from "@/hooks/use-toast"
 
 interface ReturnRequest {
   id: string
