@@ -143,16 +143,18 @@ export function BranchCostCenterSelector({
   }, [supabase, showWarehouse, disabled, branchId, onBranchChange])
 
   useEffect(() => {
-    if (loading || disabled) return
+    if (loading) return
 
     if (!branchId) {
       setFilteredCostCenters([])
-      if (costCenterId) onCostCenterChange(null)
+      if (costCenterId && !disabled) onCostCenterChange(null)
       return
     }
 
     const filtered = costCenters.filter((cc) => cc.branch_id === branchId)
     setFilteredCostCenters(filtered)
+    
+    if (disabled) return
 
     const branch = branches.find((b) => b.id === branchId)
     const defaultCostCenterId = branch?.default_cost_center_id ?? null
@@ -178,13 +180,15 @@ export function BranchCostCenterSelector({
 
   // Filter warehouses when branch/cost center changes
   useEffect(() => {
-    if (loading || disabled) return
+    if (loading) return
     if (showWarehouse && onWarehouseChange) {
       let filtered = warehouses
       if (branchId) {
         filtered = filtered.filter(w => w.branch_id === branchId)
       }
       setFilteredWarehouses(filtered)
+
+      if (disabled) return
 
       const branch = branchId ? branches.find((b) => b.id === branchId) : undefined
       const defaultWarehouseId = branch?.default_warehouse_id || null
