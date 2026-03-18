@@ -144,9 +144,10 @@ export default function BillsPage() {
 
   // Status options for multi-select - قائمة ثابتة بجميع الحالات الممكنة
   // تشمل دورة الاعتماد الجديدة لفواتير الشراء:
-  // draft -> pending_receipt -> approved -> received -> partially_paid / paid
+  // draft -> pending_approval -> approved -> received -> partially_paid / paid
   const allStatusOptions = useMemo(() => [
     { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
+    { value: "pending_approval", label: appLang === 'en' ? "Pending Approval" : "بانتظار الاعتماد" },
     { value: "pending_receipt", label: appLang === 'en' ? "Pending Receipt" : "بانتظار الاستلام" },
     { value: "approved", label: appLang === 'en' ? "Approved" : "معتمدة إداريًا" },
     { value: "received", label: appLang === 'en' ? "Received" : "تم الاستلام" },

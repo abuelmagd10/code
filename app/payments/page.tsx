@@ -893,14 +893,12 @@ export default function PaymentsPage() {
         if (!newSuppPayment.supplier_id) { setFormSupplierBills([]); return }
         if (!companyId) return
 
-        // ✅ جلب جميع الفواتير غير المدفوعة بالكامل (بما فيها Draft)
-        // نستبعد فقط: paid, cancelled, fully_returned
         let query = supabase
           .from("bills")
           .select("id, bill_number, bill_date, total_amount, paid_amount, status, branch_id, branches:branch_id(name)")
           .eq("supplier_id", newSuppPayment.supplier_id)
           .eq("company_id", companyId)
-          .in("status", ["draft", "sent", "received", "partially_paid", "partially_returned"]) // ✅ شامل Draft
+          .in("status", ["received", "partially_paid", "partially_returned"]) // ✅ فقط بعد الاستلام المخزني
 
         // 🔐 ERP Governance: فلترة حسب الفرع للمستخدمين غير المميزين
         if (userContext && !canOverrideContext && userContext.branch_id) {

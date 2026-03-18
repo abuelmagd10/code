@@ -1422,6 +1422,7 @@ export default function BillViewPage() {
       if (!companyId || !user) { setPosting(false); return }
 
       const { error } = await supabase.from("bills").update({
+        status: "rejected",
         receipt_status: "rejected",
         receipt_rejection_reason: receiptRejectionReason.trim()
       }).eq("id", bill.id)
@@ -1961,125 +1962,11 @@ export default function BillViewPage() {
                   </Link>
                 )}
 
-                {/* دورة الاعتماد الإداري لفاتورة الشراء */}
+                {/* 📦 إرسال للاستلام المخزني (تحويل إلى مرسلة) */}
                 {((bill.status === "draft") ||
-                  // ✅ السماح بإعادة إرسال الفاتورة إذا كان اعتماد الاستلام مرفوضاً
-                  (bill.status === "approved" && (bill as any).receipt_status === "rejected") ||
-                  // ✅ السماح بإعادة إرسال الفاتورة إذا تم رفضها إدارياً
+                  (bill.status === "approved" && bill.receipt_status !== 'received' && bill.receipt_status !== 'pending') ||
                   (bill.status === "rejected")) &&
                   canSubmitForApproval && (
-                    <Button
-                      onClick={async () => {
-                        try {
-                          setPosting(true)
-                          const companyId = await getActiveCompanyId(supabase)
-                          const { data: { user } } = await supabase.auth.getUser()
-                          if (!companyId || !user) {
-                            setPosting(false)
-                            return
-                          }
-
-                          const { error } = await supabase
-                            .from("bills")
-                            .update({
-                              status: "pending_receipt",
-                              approval_status: "approved",
-                              receipt_status: null,
-                              receipt_rejection_reason: null,
-                              rejection_reason: null,
-                              rejected_by: null,
-                              rejected_at: null,
-                            })
-                            .eq("id", bill.id)
-                            .eq("company_id", companyId)
-
-                          if (error) throw error
-
-                          // إشعارات الاستلام المخزني
-                          const isResubmission = bill.status === "rejected" || (bill.status === "approved" && (bill as any).receipt_status === "rejected")
-                          const eventKeySuffix = isResubmission ? `:resubmit_receipt:${Date.now()}` : ""
-                          const notificationTitle = isResubmission
-                            ? (appLang === "en" ? "Purchase bill resubmitted for receipt" : "تم إعادة إرسال فاتورة المشتريات للاستلام")
-                            : (appLang === "en" ? "Purchase bill ready for receipt" : "فاتورة مشتريات بانتظار الاستلام المخزني")
-                          const notificationMessage = isResubmission
-                            ? (appLang === "en"
-                              ? `Purchase bill ${bill.bill_number} has been resubmitted for store receipt`
-                              : `تم إعادة إرسال فاتورة المشتريات رقم ${bill.bill_number} للاستلام المخزني بعد تصحيحها`)
-                            : (appLang === "en"
-                              ? `Purchase bill ${bill.bill_number} generated from PO is waiting for goods receipt`
-                              : `فاتورة مشتريات رقم ${bill.bill_number} (حسب أمر الشراء) بانتظار الاستلام في مخزن الفرع`)
-
-                          try {
-                            await createNotification({
-                              companyId,
-                              referenceType: "bill",
-                              referenceId: bill.id,
-                              title: notificationTitle,
-                              message: notificationMessage,
-                              createdBy: user.id,
-                              branchId: bill.branch_id || undefined,
-                              costCenterId: bill.cost_center_id || undefined,
-                              warehouseId: bill.warehouse_id || undefined,
-                              assignedToRole: "store_manager",
-                              priority: "high",
-                              eventKey: `bill:${bill.id}:pending_receipt${eventKeySuffix}`,
-                              severity: "warning",
-                              category: "inventory"
-                            })
-
-                            await createNotification({
-                              companyId,
-                              referenceType: "bill",
-                              referenceId: bill.id,
-                              title: notificationTitle,
-                              message: notificationMessage,
-                              createdBy: user.id,
-                              branchId: bill.branch_id || undefined,
-                              costCenterId: bill.cost_center_id || undefined,
-                              assignedToRole: "accountant",
-                              priority: "normal",
-                              eventKey: `bill:${bill.id}:accountant_notice${eventKeySuffix}`,
-                              severity: "info",
-                              category: "approvals"
-                            })
-                          } catch (notifErr) {
-                            console.warn("Bill receipt notifications failed:", notifErr)
-                          }
-
-                          toastActionSuccess(
-                            toast,
-                            appLang === "en" ? "Submit" : "إرسال",
-                            appLang === "en" ? "Purchase Bill for receipt" : "فاتورة المشتريات للاستلام المخزني",
-                            appLang
-                          )
-                          await loadData()
-                        } catch (err) {
-                          console.error("Error submitting bill for receipt:", err)
-                          toastActionError(
-                            toast,
-                            appLang === "en" ? "Submit" : "الإرسال",
-                            appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
-                            appLang === "en" ? "Failed to submit for receipt" : "تعذر إرسال الفاتورة للاستلام",
-                            appLang
-                          )
-                        } finally {
-                          setPosting(false)
-                        }
-                      }}
-                      disabled={posting}
-                      size="sm"
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                      <CheckCircle className="w-4 h-4 sm:mr-1" />
-                      <span className="hidden sm:inline">
-                        {posting ? "..." : (appLang === 'en' ? 'Submit for Receipt' : 'إرسال للاستلام المخزني')}
-                      </span>
-                    </Button>
-                  )}
-
-                {/* Approval and Reject buttons removed */}
-                {/* 📦 تحويل الفاتورة المعتمدة إلى مرسلة (المحاسب) */}
-                {bill.status === "approved" && bill.receipt_status !== 'rejected' && canSubmitForApproval && (
                   <Button
                     onClick={() => changeStatus("sent")}
                     disabled={posting}
@@ -2088,7 +1975,67 @@ export default function BillViewPage() {
                   >
                     <Package className="w-4 h-4 sm:mr-1" />
                     <span className="hidden sm:inline">
-                      {posting ? "..." : (appLang === 'en' ? 'Convert to Sent' : 'تحويل إلى مرسلة')}
+                      {posting ? "..." : (appLang === 'en' ? 'Submit for Receipt' : 'إرسال للاستلام المخزني')}
+                    </span>
+                  </Button>
+                )}
+
+                {/* ✅ زر الاعتماد الإداري (يظهر بعد تعديل الفاتورة) */}
+                {bill.status === "pending_approval" && canApproveAdmin && (
+                  <Button
+                    onClick={async () => {
+                      try {
+                        setPosting(true)
+                        const { data: { user } } = await supabase.auth.getUser()
+                        if (!user) return
+
+                        const { error } = await supabase
+                          .from("bills")
+                          .update({
+                            status: "draft",
+                            approval_status: "approved",
+                            approved_by: user.id,
+                            approved_at: new Date().toISOString(),
+                            rejection_reason: null,
+                            rejected_by: null,
+                            rejected_at: null,
+                          })
+                          .eq("id", bill.id)
+
+                        if (error) throw error
+
+                        toastActionSuccess(toast, "الاعتماد", "تعديلات الفاتورة", appLang)
+                        await loadData()
+                      } catch (err) {
+                        console.error("Error approving bill:", err)
+                        toastActionError(toast, "الاعتماد", "الفاتورة", "تعذر اعتماد الفاتورة", appLang)
+                      } finally {
+                        setPosting(false)
+                      }
+                    }}
+                    disabled={posting}
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    <CheckCircle className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">
+                      {appLang === 'en' ? 'Approve' : 'اعتماد'}
+                    </span>
+                  </Button>
+                )}
+
+                {/* 🔴 زر رفض الاعتماد الإداري */}
+                {bill.status === "pending_approval" && canApproveAdmin && (
+                  <Button
+                    onClick={() => setRejectDialogOpen(true)}
+                    disabled={posting}
+                    size="sm"
+                    variant="outline"
+                    className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400"
+                  >
+                    <AlertCircle className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">
+                      {appLang === 'en' ? 'Reject' : 'رفض'}
                     </span>
                   </Button>
                 )}

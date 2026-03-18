@@ -428,9 +428,9 @@ export default function EditBillPage() {
           // ✅ إذا كانت الفاتورة ضمن دورة اعتماد، نعيد تشغيل دورة الاعتماد فوراً
           ...(needsApprovalRestart
             ? {
-                status: "pending_receipt",
-                approval_status: "approved",
-                approved_by: null, // Keep null or the original user, but UI will treat it as ready
+                status: "pending_approval",
+                approval_status: "pending",
+                approved_by: null,
                 approved_at: null,
                 receipt_status: null,
                 receipt_rejection_reason: null,
@@ -874,48 +874,30 @@ export default function EditBillPage() {
           const companyId = await getActiveCompanyId(supabase)
           const { data: { user } } = await supabase.auth.getUser()
           if (companyId && user && existingBill) {
-            await createNotification({
-              companyId,
-              referenceType: "bill",
-              referenceId: existingBill.id,
-              title: appLang === "en"
-                ? "Purchase bill pending receipt"
-                : "فاتورة مشتريات بانتظار الاستلام المخزني",
-              message: appLang === "en"
-                ? `Purchase bill ${existingBill.bill_number} is pending store receipt after correction`
-                : `فاتورة مشتريات رقم ${existingBill.bill_number} عادت للاستلام المخزني بعد تصحيحها`,
-              createdBy: user.id,
-              branchId: branchId || undefined,
-              costCenterId: costCenterId || undefined,
-              assignedToRole: "store_manager",
-              priority: "high",
-              eventKey: `bill:${existingBill.id}:pending_receipt_store_manager_after_reject`,
-              severity: "warning",
-              category: "inventory",
-            })
-
-            await createNotification({
-              companyId,
-              referenceType: "bill",
-              referenceId: existingBill.id,
-              title: appLang === "en"
-                ? "Purchase bill pending receipt"
-                : "فاتورة مشتريات بانتظار الاستلام المخزني",
-              message: appLang === "en"
-                ? `Purchase bill ${existingBill.bill_number} is pending store receipt after correction`
-                : `فاتورة مشتريات رقم ${existingBill.bill_number} عادت للاستلام المخزني بعد تصحيحها`,
-              createdBy: user.id,
-              branchId: branchId || undefined,
-              costCenterId: costCenterId || undefined,
-              assignedToRole: "accountant",
-              priority: "normal",
-              eventKey: `bill:${existingBill.id}:pending_receipt_accountant_after_reject`,
-              severity: "info",
-              category: "approvals",
-            })
+            for (const role of ['owner', 'general_manager']) {
+              await createNotification({
+                companyId,
+                referenceType: "bill",
+                referenceId: existingBill.id,
+                title: appLang === "en"
+                  ? "Bill modification pending approval"
+                  : "تعديل الفاتورة بانتظار الاعتماد",
+                message: appLang === "en"
+                  ? `Purchase bill ${existingBill.bill_number} has been modified after receipt rejection and requires your approval`
+                  : `تم تعديل فاتورة المشتريات رقم ${existingBill.bill_number} بعد رفض الاستلام وبانتظار اعتمادكم`,
+                createdBy: user.id,
+                branchId: branchId || undefined,
+                costCenterId: costCenterId || undefined,
+                assignedToRole: role,
+                priority: "high",
+                eventKey: `bill:${existingBill.id}:pending_approval_${role}_after_reject:${Date.now()}`,
+                severity: "warning",
+                category: "approvals",
+              })
+            }
           }
         } catch (notifErr) {
-          console.warn("Failed to send re-receipt notifications after goods receipt rejection fix:", notifErr)
+          console.warn("Failed to send re-approval notifications after goods receipt rejection fix:", notifErr)
         }
       }
 
