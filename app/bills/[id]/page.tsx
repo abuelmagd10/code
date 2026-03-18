@@ -342,13 +342,26 @@ export default function BillViewPage() {
   const loadData = async () => {
     try {
       setLoading(true)
+      const activeCompanyId = await getActiveCompanyId(supabase)
+      if (!activeCompanyId) {
+        setLoading(false)
+        return
+      }
+
+      // 🔐 منع تداخل بيانات الشركات: يجب أن تنتمي الفاتورة للشركة النشطة الحالية
       const { data: billData } = await supabase
         .from("bills")
         .select("*, shipping_providers(provider_name), receipt_status, receipt_rejection_reason, received_by, received_at, created_by, rejection_reason, rejected_by, rejected_at")
         .eq("id", id)
+        .eq("company_id", activeCompanyId)
         .single()
+      
+      if (!billData) {
+        setBill(null)
+        setLoading(false)
+        return
+      }
       setBill(billData as any)
-      if (!billData) return
 
       // Load branch and cost center names
       if (billData.branch_id) {

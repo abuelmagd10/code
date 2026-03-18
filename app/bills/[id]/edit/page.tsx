@@ -176,7 +176,14 @@ export default function EditBillPage() {
       const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId)
       setSuppliers(supps || [])
 
-      const { data: billData } = await supabase.from("bills").select("*, receipt_status, receipt_rejection_reason").eq("id", id).single()
+      // 🔐 منع تداخل بيانات الشركات: يجب أن تنتمي الفاتورة للشركة النشطة الحالية
+      const { data: billData } = await supabase
+        .from("bills")
+        .select("*, receipt_status, receipt_rejection_reason")
+        .eq("id", id)
+        .eq("company_id", companyId)
+        .single()
+      
       if (!billData) { setExistingBill(null); return }
       setExistingBill(billData as any)
       setFormData({
