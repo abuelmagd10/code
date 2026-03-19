@@ -291,6 +291,46 @@ export async function updateNotificationStatus(
   return { success: false, error: 'Invalid response from server' }
 }
 
+/**
+ * ✅ تحديد مجموعة إشعارات كمقروءة دفعة واحدة (Batch API)
+ */
+export async function batchMarkNotificationsAsRead(
+  notificationIds: string[],
+  userId: string
+): Promise<boolean> {
+  const supabase = createClient()
+  const { data, error } = await supabase.rpc('batch_mark_notifications_as_read', {
+    p_notification_ids: notificationIds,
+    p_user_id: userId
+  })
+  if (error) {
+    console.error('❌ [BATCH_MARK_READ] Error:', error)
+    throw error
+  }
+  return data
+}
+
+/**
+ * ✅ تحديث حالة مجموعة إشعارات دفعة واحدة (Batch API)
+ */
+export async function batchUpdateNotificationStatus(
+  notificationIds: string[],
+  newStatus: NotificationStatus,
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = createClient()
+  const { data, error } = await supabase.rpc('batch_update_notification_status', {
+    p_notification_ids: notificationIds,
+    p_status: newStatus,
+    p_user_id: userId
+  })
+  if (error) {
+    console.error('❌ [BATCH_UPDATE_STATUS] Error:', error)
+    throw error
+  }
+  return { success: true }
+}
+
 // =====================================================
 // Approval Workflow Functions
 // =====================================================

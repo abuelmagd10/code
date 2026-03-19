@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { getUserNotifications, markNotificationAsRead, updateNotificationStatus, type Notification, type NotificationStatus, type NotificationPriority, type NotificationSeverity, type NotificationCategory } from "@/lib/governance-layer"
+import { getUserNotifications, markNotificationAsRead, updateNotificationStatus, batchMarkNotificationsAsRead, batchUpdateNotificationStatus, type Notification, type NotificationStatus, type NotificationPriority, type NotificationSeverity, type NotificationCategory } from "@/lib/governance-layer"
 import { formatDistanceToNow } from "date-fns"
 import { ar } from "date-fns/locale/ar"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
@@ -471,13 +471,14 @@ export function NotificationCenter({
     },
   })
 
-  // 🔹 Mark all as read
+  // 🔹 Mark all as read (Batch Optimized)
   const handleMarkAllAsRead = async () => {
     try {
       const unreadIds = displayNotifications.filter(n => n.status === 'unread').map(n => n.id)
       if (unreadIds.length === 0) return
 
-      await Promise.all(unreadIds.map(id => markNotificationAsRead(id, userId)))
+      // ✅ استبدال Promise.all باستدعاء جماعي واحد لزيادة الأداء
+      await batchMarkNotificationsAsRead(unreadIds, userId)
 
       setNotifications(prev => prev.map(n =>
         unreadIds.includes(n.id)
@@ -495,17 +496,15 @@ export function NotificationCenter({
     }
   }
 
-  // 🔹 Archive all read
+  // 🔹 Archive all read (Batch Optimized)
   const handleArchiveAllRead = async () => {
     try {
       const readIds = displayNotifications.filter(n => n.status === 'read').map(n => n.id)
       if (readIds.length === 0) return
 
-      // ✅ استخدام updateNotificationStatus للحفاظ على عزل حالة المستخدم الفردية
-      // بدلاً من التحديث المباشر بجدول الإشعارات المشترك
-      await Promise.all(readIds.map(id =>
-        updateNotificationStatus(id, 'archived', userId)
-      ))
+      // ✅ استبدال Promise.all باستدعاء جماعي واحد لزيادة الأداء
+      // للحفاظ على عزل حالة المستخدم الفردية
+      await batchUpdateNotificationStatus(readIds, 'archived', userId)
 
       // ✅ إذا كان المستخدم يريد رؤية المؤرشفة، نحدث status بدلاً من الإزالة
       if (filterStatus === 'archived') {
