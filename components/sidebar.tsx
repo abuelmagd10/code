@@ -378,17 +378,21 @@ export function Sidebar() {
       companyId: activeCompanyId
     })
 
-    // ✅ جلب دور المستخدم للفلترة الصحيحة
+    // ✅ جلب دور المستخدم والفرع للفلترة الصحيحة
     let userRoleForFiltering: string | null = null
+    let userBranchIdForFiltering: string | null = null
+    let userWarehouseIdForFiltering: string | null = null
     const loadUserRole = async () => {
       try {
         const { data: member } = await supabaseHook
           .from('company_members')
-          .select('role')
+          .select('role, branch_id, warehouse_id')
           .eq('company_id', activeCompanyId)
           .eq('user_id', currentUserId)
           .maybeSingle()
         userRoleForFiltering = member?.role || null
+        userBranchIdForFiltering = member?.branch_id || null
+        userWarehouseIdForFiltering = member?.warehouse_id || null
       } catch (error: any) {
         // ✅ معالجة AbortError بشكل صحيح
         if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
@@ -430,7 +434,17 @@ export function Sidebar() {
         }
       }
 
-      // 4. التحقق من الحالة (unread فقط)
+      // 4. التحقق من الفرع والمخزن (لغير owner و admin)
+      if (userRoleForFiltering !== 'owner' && userRoleForFiltering !== 'admin') {
+        if (userBranchIdForFiltering && notification.branch_id && notification.branch_id !== userBranchIdForFiltering) {
+          return false
+        }
+        if (userWarehouseIdForFiltering && notification.warehouse_id && notification.warehouse_id !== userWarehouseIdForFiltering) {
+          return false
+        }
+      }
+
+      // 5. التحقق من الحالة (unread فقط)
       if (notification.status !== 'unread') {
         return false
       }
