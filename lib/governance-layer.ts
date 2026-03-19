@@ -274,7 +274,7 @@ export async function updateNotificationStatus(
 
   const { data, error } = await supabase.rpc('update_notification_status', {
     p_notification_id: notificationId,
-    p_new_status: newStatus,
+    p_status: newStatus,      // ✅ اسم المعامل الصحيح في DB (كان p_new_status خطأً)
     p_user_id: userId
   })
 
