@@ -1345,8 +1345,16 @@ export default function BillViewPage() {
         .eq("transaction_type", "purchase")
         .limit(1)
 
+      const now = new Date().toISOString()
+      const billUpdatePayload = {
+        status: 'received',
+        receipt_status: 'received',
+        received_by: user.id,
+        received_at: now
+      }
+
       if (!existingTx || existingTx.length === 0) {
-        // استدعاء RPC للترحيل الذري (المخزون + القيود المحاسبية)
+        // استدعاء RPC للترحيل الذري (المخزون + القيود المحاسبية + تحديث الفاتورة)
         const { AccountingTransactionService } = await import('@/lib/accounting-transaction-service')
         const service = new AccountingTransactionService(supabase)
         const result = await service.postBillAtomic(
@@ -1361,7 +1369,10 @@ export default function BillViewPage() {
             subtotal: Number(bill.subtotal || 0),
             taxAmount: Number(bill.tax_amount || 0),
             totalAmount: Number(bill.total_amount || 0),
-            status: 'received'
+            status: 'received',
+            receiptStatus: 'received',
+            receivedBy: user.id,
+            receivedAt: now
           },
           {
             companyId: mapping.companyId,
@@ -1374,17 +1385,17 @@ export default function BillViewPage() {
         if (!result.success) {
           throw new Error(result.error || (appLang === 'en' ? 'Failed to post bill inventory' : 'فشل ترحيل مخزون الفاتورة'))
         }
+      } else {
+        // إذا تم إنشاء حركات المخزون في محاولة سابقة ولم تُحدّث الفاتورة (بسبب RLS سابقاً)
+        // يتم تحديث الفاتورة هنا باستخدام الـ RPC لتجاوز RLS للـ store_manager
+        const { error: rpcError } = await supabase.rpc('post_purchase_transaction', {
+          p_transaction_type: 'post_bill',
+          p_company_id: bill.company_id,
+          p_bill_id: bill.id,
+          p_bill_update: billUpdatePayload
+        })
+        if (rpcError) throw rpcError
       }
-
-      // 2. تحديث حالة الفاتورة إلى "received" + اعتماد الاستلام
-      const now = new Date().toISOString()
-      const { error } = await supabase.from("bills").update({
-        status: "received",
-        receipt_status: "received",
-        received_by: user.id,
-        received_at: now
-      }).eq("id", bill.id)
-      if (error) throw error
 
       // 3. تحديث حالة أمر الشراء المرتبط
       await updateLinkedPurchaseOrderStatus(bill.id)

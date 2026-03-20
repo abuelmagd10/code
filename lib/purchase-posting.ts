@@ -21,6 +21,9 @@ export interface BillPostingParams {
     taxAmount: number
     totalAmount: number
     status: string
+    receiptStatus?: string
+    receivedBy?: string
+    receivedAt?: string
 }
 
 export interface BillPostingResult {
@@ -61,6 +64,9 @@ export interface BillPostingResult {
         }>
         billUpdate?: {
             status: string
+            receipt_status?: string
+            received_by?: string
+            received_at?: string
         }
     }
 }
@@ -95,7 +101,11 @@ export async function prepareBillPosting(
             costCenterId,
             subtotal,
             taxAmount,
-            totalAmount
+            totalAmount,
+            status,
+            receiptStatus,
+            receivedBy,
+            receivedAt
         } = params
 
         // Validation
@@ -205,7 +215,10 @@ export async function prepareBillPosting(
                 },
                 inventoryTransactions: inventoryTransactions.length > 0 ? inventoryTransactions : undefined,
                 billUpdate: {
-                    status: 'received' // or 'sent' depending on your flow
+                    status: status || 'received',
+                    receipt_status: receiptStatus,
+                    received_by: receivedBy,
+                    received_at: receivedAt
                 }
             }
         }
