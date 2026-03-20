@@ -300,78 +300,95 @@ export default function PurchaseOrderDetailPage() {
     },
   })
 
-  // ✅ تحديث بيانات الفواتير المرتبطة تلقائياً عند أي تغيير
-  useEffect(() => {
-    const refreshBillsData = async () => {
-      if (!poId) return
+  // ✅ جلب بيانات الفواتير المرتبطة — useCallback لإعادة الاستخدام مع Realtime
+  const refreshBillsData = useCallback(async () => {
+    if (!poId) return
 
-      // جلب جميع الفواتير المرتبطة بأمر الشراء
-      const { data: billsData } = await supabase
-        .from("bills")
-        .select("id, bill_number, bill_date, due_date, total_amount, status, paid_amount, returned_amount, return_status, original_total")
-        .or(`purchase_order_id.eq.${poId}${po?.bill_id ? `,id.eq.${po.bill_id}` : ''}`)
+    // جلب جميع الفواتير المرتبطة بأمر الشراء
+    const { data: billsData } = await supabase
+      .from("bills")
+      .select("id, bill_number, bill_date, due_date, total_amount, status, paid_amount, returned_amount, return_status, original_total")
+      .or(`purchase_order_id.eq.${poId}${po?.bill_id ? `,id.eq.${po.bill_id}` : ''}`)
 
-      if (billsData && billsData.length > 0) {
-        setLinkedBills(billsData)
+    if (billsData && billsData.length > 0) {
+      setLinkedBills(billsData)
 
-        // تحديث المدفوعات والمرتجعات
-        const billIdsArray = billsData.map((b: any) => b.id)
+      const billIdsArray = billsData.map((b: any) => b.id)
 
-        // جلب المدفوعات
-        const { data: paymentsData } = await supabase
-          .from("payments")
-          .select("id, reference_number, payment_date, amount, payment_method, notes, bill_id")
+      // جلب المدفوعات
+      const { data: paymentsData } = await supabase
+        .from("payments")
+        .select("id, reference_number, payment_date, amount, payment_method, notes, bill_id")
+        .in("bill_id", billIdsArray)
+        .order("payment_date", { ascending: false })
+      if (paymentsData) setLinkedPayments(paymentsData)
+
+      // جلب المرتجعات
+      const { data: returnsData } = await supabase
+        .from("purchase_returns")
+        .select("id, return_number, return_date, total_amount, status, reason, bill_id")
+        .in("bill_id", billIdsArray)
+        .order("return_date", { ascending: false })
+      if (returnsData) setLinkedReturns(returnsData)
+
+      // تحديث الكميات المفوترة في البنود
+      if (billIdsArray.length > 0) {
+        const { data: billItems } = await supabase
+          .from("bill_items")
+          .select("product_id, quantity, bill_id")
           .in("bill_id", billIdsArray)
-          .order("payment_date", { ascending: false })
-        if (paymentsData) setLinkedPayments(paymentsData)
 
-        // جلب المرتجعات
-        const { data: returnsData } = await supabase
-          .from("purchase_returns")
-          .select("id, return_number, return_date, total_amount, status, reason, bill_id")
-          .in("bill_id", billIdsArray)
-          .order("return_date", { ascending: false })
-        if (returnsData) setLinkedReturns(returnsData)
-
-        // تحديث الكميات المفوترة في البنود
-        if (billIdsArray.length > 0) {
-          const { data: billItems } = await supabase
-            .from("bill_items")
-            .select("product_id, quantity, bill_id")
-            .in("bill_id", billIdsArray)
-
-          if (billItems) {
-            const billedQtyMap: Record<string, number> = {}
-            billItems.forEach((bi: any) => {
-              billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
-            })
-
-            setItems(prev => prev.map(item => ({
-              ...item,
-              billed_quantity: billedQtyMap[item.product_id] || 0,
-              approved_billed_quantity: billedQtyMap[item.product_id] || 0
-            })))
-          }
+        if (billItems) {
+          const billedQtyMap: Record<string, number> = {}
+          billItems.forEach((bi: any) => {
+            billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
+          })
+          setItems(prev => prev.map(item => ({
+            ...item,
+            billed_quantity: billedQtyMap[item.product_id] || 0,
+            approved_billed_quantity: billedQtyMap[item.product_id] || 0
+          })))
         }
-
-        // 🔄 تحديث البيانات في الصفحة الرئيسية
-        router.refresh()
-      } else {
-        // لا توجد فواتير مرتبطة
-        setLinkedBills([])
-        setLinkedPayments([])
-        setLinkedReturns([])
       }
+
+      router.refresh()
+    } else {
+      setLinkedBills([])
+      setLinkedPayments([])
+      setLinkedReturns([])
     }
+  }, [poId, po?.bill_id, supabase, router])
 
-    // ✅ تحديث فوري عند تحميل الصفحة
+  // ✅ تحديث فوري عند تحميل الصفحة أو تغيير الأمر
+  useEffect(() => {
     refreshBillsData()
+  }, [refreshBillsData])
 
-    // ✅ تحديث دوري كل 3 ثواني لمراقبة التغييرات على الفواتير المرتبطة
-    const interval = setInterval(refreshBillsData, 3000)
+  // ✅ Realtime: استبدال الـ polling (كان 20 طلب/دقيقة) بـ push-based subscriptions
+  // يستمع للتغييرات على الفواتير والمدفوعات والمرتجعات ويُحدّث البيانات فوراً
+  useRealtimeTable({
+    table: 'bills',
+    enabled: !!poId,
+    onInsert: refreshBillsData,
+    onUpdate: refreshBillsData,
+    onDelete: refreshBillsData,
+  })
 
-    return () => clearInterval(interval)
-  }, [poId, router, po?.bill_id, supabase]) // ✅ يتم التحديث عند تغيير poId أو bill_id
+  useRealtimeTable({
+    table: 'payments',
+    enabled: !!poId,
+    onInsert: refreshBillsData,
+    onUpdate: refreshBillsData,
+    onDelete: refreshBillsData,
+  })
+
+  useRealtimeTable({
+    table: 'purchase_returns',
+    enabled: !!poId,
+    onInsert: refreshBillsData,
+    onUpdate: refreshBillsData,
+    onDelete: refreshBillsData,
+  })
 
   // Calculate summary
   const currency = po?.currency || 'EGP'
