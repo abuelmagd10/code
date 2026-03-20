@@ -1419,7 +1419,7 @@ export async function notifyPOApprovalRequest(params: {
   // الأدوار العليا (admin/owner/GM) تستلم الإشعار بدون branchId حتى يظهر على مستوى الشركة كاملة
   // يتم استخدام دور 'admin' فقط لأن النظام (Frontend & Backend) مبرمج لإظهار إشعارات الـ admin تلقائياً لـ owner و general_manager
   // هذا يمنع تكرار الإشعار 3 مرات لنفس العملية
-  const topRoles = ['admin']
+  const topRoles = ['owner', 'general_manager', 'admin']
   const branchRoles = ['manager']
 
   // توحيد الـ timestamp للعملية الواحدة (جميع الإشعارات من نفس الـ Request تأخذ نفس التوقيت)
@@ -1508,7 +1508,7 @@ export async function notifyPOApproved(params: {
       branchId: undefined, // ← بدون branchId لضمان وصول الإشعار للمنشئ بغض النظر عن فرعه
       costCenterId: undefined,
       priority: 'normal',
-      eventKey: `purchase_order:${poId}:approved:${Date.now()}`,
+      eventKey: `purchase_order:${poId}:approved:creator`,
       severity: 'info',
       category: 'approvals'
     })

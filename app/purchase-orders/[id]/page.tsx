@@ -665,6 +665,7 @@ export default function PurchaseOrderDetailPage() {
       // but if we don't have createdBy, we'll try to omit it or pass known values.
       const companyId = await getActiveCompanyId(supabase)
       if (companyId) {
+        // ✅ Fix 2 & 5: Notify PO Creator (branch employee) that PO is approved
         await notifyPOApproved({
           companyId,
           poId,
@@ -678,6 +679,34 @@ export default function PurchaseOrderDetailPage() {
           approvedBy: user.id,
           appLang
         })
+
+        // ✅ Fix 2: Notify store_manager that incoming goods are expected (PO Approved)
+        try {
+          const { createNotification } = await import('@/lib/notification-helpers')
+          const storeNotifTitle = appLang === 'en'
+            ? 'Incoming Goods — Purchase Order Approved'
+            : 'بضاعة قادمة — تم اعتماد أمر الشراء'
+          const storeNotifMessage = appLang === 'en'
+            ? `Purchase Order ${po.po_number} for ${po.suppliers?.name || 'supplier'} has been approved. Please prepare to receive the goods.`
+            : `تم اعتماد أمر الشراء ${po.po_number} للمورد ${po.suppliers?.name || 'المورد'}. يرجى الاستعداد لاستلام البضاعة.`
+
+          await createNotification({
+            companyId,
+            referenceType: 'purchase_order',
+            referenceId: poId,
+            title: storeNotifTitle,
+            message: storeNotifMessage,
+            createdBy: user.id,
+            branchId: po.branch_id || undefined,
+            assignedToRole: 'store_manager',
+            priority: 'normal',
+            eventKey: `purchase_order:${poId}:approved:store_manager`,
+            severity: 'info',
+            category: 'inventory'
+          })
+        } catch (storeNotifErr) {
+          console.warn('⚠️ Failed to notify store_manager on PO approval:', storeNotifErr)
+        }
       }
 
       toastActionSuccess(toast, appLang === 'en' ? "Approve" : "اعتماد", appLang === 'en' ? "Purchase Order" : "أمر الشراء")

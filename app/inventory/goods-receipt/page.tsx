@@ -779,49 +779,99 @@ export default function GoodsReceiptPage() {
 
       if (updErr) throw updErr
 
-      // ✅ إرسال إشعارات إلى accountant و manager
+      // ✅ Fix 3 & 5: Notify all relevant parties about goods receipt confirmation
       try {
+        const receiptTitle = appLang === "en"
+          ? "Goods Received — Inventory Updated"
+          : "تم استلام البضاعة وتحديث المخزون"
+        const receiptMessage = appLang === "en"
+          ? `Purchase bill ${selectedBill.bill_number} goods have been received and confirmed. Warehouse inventory updated.`
+          : `تم استلام البضاعة واعتماد الاستلام لفاتورة مشتريات رقم ${selectedBill.bill_number}. تم تحديث مخزون المستودع.`
+
+        // 1️⃣ Notify Accountant
         await createNotification({
           companyId,
           referenceType: "bill",
           referenceId: selectedBill.id,
-          title: appLang === "en"
-            ? "Purchase bill goods receipt confirmed"
-            : "تم اعتماد استلام فاتورة مشتريات",
-          message: appLang === "en"
-            ? `Purchase bill ${selectedBill.bill_number} has been received and confirmed by warehouse manager`
-            : `تم اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن`,
+          title: receiptTitle,
+          message: receiptMessage,
           createdBy: user.id,
           branchId: branchId || undefined,
           warehouseId: warehouseId || undefined,
           costCenterId: costCenterId || undefined,
           assignedToRole: "accountant",
           priority: "normal",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed`,
+          eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed:accountant`,
           severity: "info",
-          category: "approvals"
+          category: "inventory"
         })
 
+        // 2️⃣ Notify Branch Manager
         await createNotification({
           companyId,
           referenceType: "bill",
           referenceId: selectedBill.id,
-          title: appLang === "en"
-            ? "Purchase bill goods receipt confirmed"
-            : "تم اعتماد استلام فاتورة مشتريات",
-          message: appLang === "en"
-            ? `Purchase bill ${selectedBill.bill_number} has been received and confirmed by warehouse manager`
-            : `تم اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن`,
+          title: receiptTitle,
+          message: receiptMessage,
           createdBy: user.id,
           branchId: branchId || undefined,
           warehouseId: warehouseId || undefined,
           costCenterId: costCenterId || undefined,
           assignedToRole: "manager",
           priority: "normal",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed_manager`,
+          eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed:manager`,
           severity: "info",
-          category: "approvals"
+          category: "inventory"
         })
+
+        // 3️⃣ Fix 3: Notify Top Management (owner + general_manager) — no branchId for company-wide visibility
+        for (const role of ['owner', 'general_manager']) {
+          await createNotification({
+            companyId,
+            referenceType: "bill",
+            referenceId: selectedBill.id,
+            title: receiptTitle,
+            message: receiptMessage,
+            createdBy: user.id,
+            branchId: undefined, // Company-wide for top management
+            assignedToRole: role,
+            priority: "normal",
+            eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed:${role}`,
+            severity: "info",
+            category: "inventory"
+          })
+        }
+
+        // 4️⃣ Fix 3: Notify PO Creator (branch employee who initiated the purchase)
+        try {
+          const { data: billWithPO } = await supabase
+            .from('bills')
+            .select('purchase_order_id, purchase_orders!purchase_order_id(created_by_user_id)')
+            .eq('id', selectedBill.id)
+            .maybeSingle()
+
+          const poCreatorId = (billWithPO as any)?.purchase_orders?.created_by_user_id
+          if (poCreatorId) {
+            await createNotification({
+              companyId,
+              referenceType: "bill",
+              referenceId: selectedBill.id,
+              title: appLang === "en" ? "Your Purchase Order: Goods Received" : "أمر شرائك: تم استلام البضاعة",
+              message: appLang === "en"
+                ? `The goods for purchase bill ${selectedBill.bill_number} have been received and confirmed by the warehouse team.`
+                : `تم استلام واعتماد البضاعة الخاصة بفاتورة المشتريات رقم ${selectedBill.bill_number} من فريق المخزن.`,
+              createdBy: user.id,
+              assignedToUser: poCreatorId,
+              branchId: undefined,
+              priority: "normal",
+              eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed:creator`,
+              severity: "info",
+              category: "inventory"
+            })
+          }
+        } catch (creatorNotifErr) {
+          console.warn("Failed to notify PO creator on goods receipt:", creatorNotifErr)
+        }
       } catch (notifErr) {
         console.warn("Failed to send receipt confirmation notifications:", notifErr)
       }

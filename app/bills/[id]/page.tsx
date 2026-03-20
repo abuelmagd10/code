@@ -1410,9 +1410,9 @@ export default function BillViewPage() {
         console.warn("Audit log for goods_receipt_approved failed:", auditErr)
       }
 
-      // 5. إشعار للإدارة العليا بنجاح استلام البضاعة
+      // 5. إشعار للإدارة العليا بنجاح استلام البضاعة + إشعار منشئ أمر الشراء (Fix 4 & 5)
       try {
-        const receiptTimestamp = Date.now()
+        const receiptTimestamp = Date.now() // للرسالة فقط، ليس للـ eventKey
         const receiptTitle = appLang === "en"
           ? "Goods receipt approved - inventory updated"
           : "تم اعتماد استلام البضاعة وتحديث المخزون"
@@ -1420,6 +1420,7 @@ export default function BillViewPage() {
           ? `Goods for purchase bill ${bill.bill_number} have been received and warehouse inventory has been updated`
           : `تم استلام البضاعة لفاتورة المشتريات رقم ${bill.bill_number} وتم تحديث مخزون الفرع`
 
+        // 1️⃣ Notify Top Management (stable eventKey — Fix 5)
         for (const role of ['admin', 'owner', 'general_manager']) {
           await createNotification({
             companyId,
@@ -1433,10 +1434,49 @@ export default function BillViewPage() {
             warehouseId: bill.warehouse_id || undefined,
             assignedToRole: role,
             priority: "normal",
-            eventKey: `bill:${bill.id}:receipt_approved:${role}:${receiptTimestamp}`,
+            eventKey: `bill:${bill.id}:receipt_approved:${role}`,
             severity: "info",
             category: "inventory"
           })
+        }
+
+        // 2️⃣ Fix 4: Notify PO Creator (branch employee) that goods were received
+        try {
+          const poCreatorNotifTitle = appLang === "en"
+            ? "Your Purchase Order: Goods Received & Inventory Updated"
+            : "أمر شرائك: تم استلام البضاعة وتحديث المخزون"
+          const poCreatorNotifMsg = appLang === "en"
+            ? `The goods for purchase bill ${bill.bill_number} have been received and warehouse inventory has been updated successfully.`
+            : `تم استلام البضاعة وتحديث المخزون بنجاح لفاتورة المشتريات رقم ${bill.bill_number}.`
+
+          // Fetch PO creator from linked purchase order
+          if (bill.purchase_order_id) {
+            const { data: poData } = await supabase
+              .from('purchase_orders')
+              .select('created_by_user_id')
+              .eq('id', bill.purchase_order_id)
+              .maybeSingle()
+
+            const poCreatorId = (poData as any)?.created_by_user_id
+            if (poCreatorId && poCreatorId !== user.id) {
+              await createNotification({
+                companyId,
+                referenceType: "bill",
+                referenceId: bill.id,
+                title: poCreatorNotifTitle,
+                message: poCreatorNotifMsg,
+                createdBy: user.id,
+                assignedToUser: poCreatorId,
+                branchId: undefined,
+                priority: "normal",
+                eventKey: `bill:${bill.id}:receipt_approved:creator`,
+                severity: "info",
+                category: "inventory"
+              })
+            }
+          }
+        } catch (creatorNotifErr) {
+          console.warn("Failed to notify PO creator on receipt approval:", creatorNotifErr)
         }
       } catch (notifErr) {
         console.warn("Receipt approval notifications failed:", notifErr)
