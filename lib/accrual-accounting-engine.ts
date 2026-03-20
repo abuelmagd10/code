@@ -12,11 +12,12 @@
  */
 
 import { getLeafAccountIds } from "./accounts"
+import { createCompleteJournalEntry, type JournalReferenceType } from "./journal-entry-governance"
 
 export interface AccrualJournalEntry {
   id?: string
   company_id: string
-  reference_type: 'invoice' | 'invoice_cogs' | 'payment' | 'bill' | 'bill_payment' | 'write_off'
+  reference_type: 'invoice' | 'invoice_cogs' | 'customer_payment' | 'supplier_payment' | 'bill' | 'bill_payment' | 'write_off'
   reference_id: string
   entry_date: string
   description: string
@@ -397,7 +398,7 @@ export async function preparePaymentJournalFromData(
     company_id: companyId,
     // نستخدم معرف مؤقت إذا كان غير موجود (سيتم تحديثه لاحقاً أو استخدامه كمرجع)
     // في حالة Atomic Transaction، سنعتمد على الترتيب أو معرفات تم إنشاؤها مسبقاً
-    reference_type: 'payment',
+    reference_type: isCustomerPayment ? 'customer_payment' : 'supplier_payment',
     reference_id: paymentData.id || 'TEMP_PAYMENT_ID',
     entry_date: paymentData.payment_date,
     description: `${isCustomerPayment ? 'تحصيل نقدي' : 'دفع نقدي'} - ${paymentData.reference || 'دفعة'}`,
@@ -709,10 +710,8 @@ export async function createWriteOffJournal(
     // الحصول على خريطة الحسابات
     const mapping = await getAccrualAccountMapping(supabase, companyId)
 
-    // Multi-currency: use base_amount (company currency) when present
-    const totalCost = Number(
-      writeOff.base_amount ?? writeOff.total_cost ?? 0
-    )
+    // حساب المبلغ
+    const totalCost = Number(writeOff.total_cost || 0)
 
     // إذا لم توجد تكلفة، لا نسجل قيد
     if (totalCost <= 0) {
@@ -785,6 +784,9 @@ export async function createWriteOffJournal(
 
 /**
  * حفظ القيد المحاسبي في قاعدة البيانات
+ *
+ * ✅ يستخدم `create_journal_entry_atomic` عبر createCompleteJournalEntry
+ * لأن INSERT المباشر على journal_entries محظور في الإنتاج (DIRECT_POST_BLOCKED).
  */
 async function saveJournalEntry(
   supabase: any,
@@ -802,7 +804,7 @@ async function saveJournalEntry(
       `الفترة المحاسبية مقفلة: ${lockError.message || "لا يمكن إنشاء قيد في فترة محاسبية مغلقة"}`
     )
   }
-  // التحقق من توازن القيد
+  // التحقق من توازن القيد (تكرار مفيد قبل استدعاء RPC)
   const totalDebits = journalEntry.lines.reduce((sum, line) => sum + line.debit_amount, 0)
   const totalCredits = journalEntry.lines.reduce((sum, line) => sum + line.credit_amount, 0)
 
@@ -810,51 +812,35 @@ async function saveJournalEntry(
     throw new Error(`Journal entry is not balanced: Debits=${totalDebits}, Credits=${totalCredits}`)
   }
 
-  // إنشاء القيد الرئيسي
-  const { data: entry, error: entryError } = await supabase
-    .from("journal_entries")
-    .insert({
+  const referenceType = journalEntry.reference_type as JournalReferenceType
+
+  const result = await createCompleteJournalEntry(
+    supabase,
+    {
       company_id: journalEntry.company_id,
-      reference_type: journalEntry.reference_type,
+      reference_type: referenceType,
       reference_id: journalEntry.reference_id,
       entry_date: journalEntry.entry_date,
       description: journalEntry.description,
       branch_id: journalEntry.branch_id,
-      cost_center_id: journalEntry.cost_center_id
-    })
-    .select()
-    .single()
+      cost_center_id: journalEntry.cost_center_id,
+      warehouse_id: journalEntry.warehouse_id ?? null,
+    },
+    journalEntry.lines.map((line) => ({
+      account_id: line.account_id,
+      debit_amount: line.debit_amount,
+      credit_amount: line.credit_amount,
+      description: line.description,
+      branch_id: line.branch_id,
+      cost_center_id: line.cost_center_id,
+    }))
+  )
 
-  if (entryError) {
-    throw new Error(`Error creating journal entry: ${entryError.message}`)
+  if (!result.success || !result.entryId) {
+    throw new Error(result.error || "Error creating journal entry via create_journal_entry_atomic")
   }
 
-  // إنشاء سطور القيد
-  const lines = journalEntry.lines.map(line => ({
-    journal_entry_id: entry.id,
-    account_id: line.account_id,
-    debit_amount: line.debit_amount,
-    credit_amount: line.credit_amount,
-    description: line.description,
-    branch_id: line.branch_id,
-    cost_center_id: line.cost_center_id
-  }))
-
-  const { error: linesError } = await supabase
-    .from("journal_entry_lines")
-    .insert(lines)
-
-  if (linesError) {
-    // حذف القيد الرئيسي في حالة فشل إنشاء السطور
-    await supabase
-      .from("journal_entries")
-      .delete()
-      .eq("id", entry.id)
-
-    throw new Error(`Error creating journal entry lines: ${linesError.message}`)
-  }
-
-  return entry.id
+  return result.entryId
 }
 
 /**
