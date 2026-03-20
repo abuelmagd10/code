@@ -1,24 +1,34 @@
 /**
  * Audit Log Helper Functions
  * تسجيل جميع التعديلات على القيود والمستندات
+ *
+ * Phase 6: supports logBulk, session_id, metadata, approve/reject actions
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+
+// ─── Feature Flag ─────────────────────────────────────────────
+// Set ENABLE_AUDIT_LOG=false in .env to disable all audit logging (e.g. in tests)
+const ENABLE_AUDIT_LOG = process.env.ENABLE_AUDIT_LOG !== 'false'
 
 export interface AuditLogEntry {
   company_id: string
   user_id: string
   user_email?: string
   user_name?: string
-  action: "create" | "update" | "delete" | "void" | "reverse"
+  action: 'create' | 'update' | 'delete' | 'void' | 'reverse' | 'approve' | 'reject' | 'post' | 'cancel' | 'close'
   target_table: string
   record_id: string
-  record_identifier?: string // e.g., INV-001, BILL-002
+  record_identifier?: string
   old_data?: Record<string, any>
   new_data?: Record<string, any>
   changed_fields?: string[]
   reason?: string
   parent_record_id?: string
+  branch_id?: string
+  cost_center_id?: string
+  session_id?: string
+  metadata?: Record<string, any>
 }
 
 /**
@@ -30,7 +40,12 @@ function normalizeAction(action: string): string {
     'update': 'UPDATE',
     'delete': 'DELETE',
     'void': 'DELETE',
-    'reverse': 'REVERT'
+    'reverse': 'REVERT',
+    'approve': 'APPROVE',
+    'reject': 'REJECT',
+    'post': 'POST',
+    'cancel': 'CANCEL',
+    'close': 'CLOSE',
   }
   return actionMap[action.toLowerCase()] || action.toUpperCase()
 }
@@ -42,6 +57,7 @@ export async function logAuditEvent(
   supabase: SupabaseClient,
   entry: AuditLogEntry
 ): Promise<{ success: boolean; error?: string }> {
+  if (!ENABLE_AUDIT_LOG) return { success: true }
   try {
     const { error } = await supabase.from("audit_logs").insert({
       company_id: entry.company_id,
@@ -57,14 +73,131 @@ export async function logAuditEvent(
       changed_fields: entry.changed_fields,
       reason: entry.reason,
       parent_record_id: entry.parent_record_id,
+      branch_id: entry.branch_id,
+      cost_center_id: entry.cost_center_id,
+      session_id: entry.session_id,
+      metadata: entry.metadata,
     })
-
     if (error) throw error
     return { success: true }
   } catch (err: any) {
     console.error("Failed to log audit event:", err)
     return { success: false, error: err?.message }
   }
+}
+
+/**
+ * Batch insert multiple audit events in a single DB call
+ * أسرع بكثير من multiple single inserts
+ */
+export async function logBulk(
+  supabase: SupabaseClient,
+  entries: AuditLogEntry[]
+): Promise<{ success: boolean; inserted: number; error?: string }> {
+  if (!ENABLE_AUDIT_LOG || entries.length === 0) return { success: true, inserted: 0 }
+  try {
+    const rows = entries.map(entry => ({
+      company_id: entry.company_id,
+      user_id: entry.user_id,
+      user_email: entry.user_email,
+      user_name: entry.user_name,
+      action: normalizeAction(entry.action),
+      target_table: entry.target_table,
+      record_id: entry.record_id,
+      record_identifier: entry.record_identifier,
+      old_data: entry.old_data,
+      new_data: entry.new_data,
+      changed_fields: entry.changed_fields,
+      reason: entry.reason,
+      parent_record_id: entry.parent_record_id,
+      branch_id: entry.branch_id,
+      cost_center_id: entry.cost_center_id,
+      session_id: entry.session_id,
+      metadata: entry.metadata,
+    }))
+    const { error } = await supabase.from('audit_logs').insert(rows)
+    if (error) throw error
+    return { success: true, inserted: rows.length }
+  } catch (err: any) {
+    console.error('logBulk: Failed to batch-insert audit events:', err)
+    return { success: false, inserted: 0, error: err?.message }
+  }
+}
+
+/**
+ * تسجيل اعتماد (APPROVE) — server-side مباشر بدون HTTP
+ */
+export async function logApproveEvent(
+  supabase: SupabaseClient,
+  params: {
+    companyId: string
+    userId: string
+    userEmail?: string
+    userName?: string
+    targetTable: string
+    recordId: string
+    recordIdentifier?: string
+    branchId?: string
+    reason?: string
+    oldData?: Record<string, any>
+    newData?: Record<string, any>
+    sessionId?: string
+    metadata?: Record<string, any>
+  }
+): Promise<{ success: boolean; error?: string }> {
+  return logAuditEvent(supabase, {
+    company_id: params.companyId,
+    user_id: params.userId,
+    user_email: params.userEmail,
+    user_name: params.userName,
+    action: 'approve',
+    target_table: params.targetTable,
+    record_id: params.recordId,
+    record_identifier: params.recordIdentifier,
+    branch_id: params.branchId,
+    reason: params.reason,
+    old_data: params.oldData,
+    new_data: params.newData,
+    session_id: params.sessionId,
+    metadata: params.metadata,
+  })
+}
+
+/**
+ * تسجيل رفض (REJECT) — server-side مباشر بدون HTTP
+ */
+export async function logRejectEvent(
+  supabase: SupabaseClient,
+  params: {
+    companyId: string
+    userId: string
+    userEmail?: string
+    userName?: string
+    targetTable: string
+    recordId: string
+    recordIdentifier?: string
+    branchId?: string
+    reason: string  // إلزامي للرفض
+    oldData?: Record<string, any>
+    sessionId?: string
+    metadata?: Record<string, any>
+  }
+): Promise<{ success: boolean; error?: string }> {
+  return logAuditEvent(supabase, {
+    company_id: params.companyId,
+    user_id: params.userId,
+    user_email: params.userEmail,
+    user_name: params.userName,
+    action: 'reject',
+    target_table: params.targetTable,
+    record_id: params.recordId,
+    record_identifier: params.recordIdentifier,
+    branch_id: params.branchId,
+    reason: params.reason,
+    old_data: params.oldData,
+    session_id: params.sessionId,
+    metadata: params.metadata,
+  })
 }
 
 /**

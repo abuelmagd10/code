@@ -1,10 +1,15 @@
 /**
  * 🔔 Notification Helpers
  * دوال مساعدة لإنشاء إشعارات تلقائية عند الأحداث المهمة
+ *
+ * Phase 6: ENABLE_ASYNC_NOTIFICATIONS flag + notifyBatch()
  */
 
 import { createNotification, type NotificationPriority } from '@/lib/governance-layer'
 import { createClient } from '@/lib/supabase/client'
+
+// ─── Feature Flag ─────────────────────────────────────────────
+export const ENABLE_ASYNC_NOTIFICATIONS = process.env.ENABLE_ASYNC_NOTIFICATIONS !== 'false'
 
 // ✅ Import Supabase client للفحص من التكرار
 
@@ -1514,6 +1519,51 @@ export async function notifyPOApproved(params: {
     })
   } catch (err) {
     console.warn('⚠️ Failed to send PO approved notification:', err)
+  }
+}
+
+/**
+ * 🏭 إشعار مسؤول المخزن (store_manager) عند اعتماد أمر الشراء
+ * يُرسَل بشكل منفصل عن إشعار المنشئ لأن الجمهور المستهدف مختلف
+ */
+export async function notifyStoreManagerPOApproved(params: {
+  companyId: string
+  poId: string
+  poNumber: string
+  supplierName: string
+  amount: number
+  currency: string
+  branchId?: string
+  approvedBy: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, poId, poNumber, supplierName, amount, currency, branchId, approvedBy, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? 'Incoming Goods — Purchase Order Approved'
+    : 'بضاعة قادمة — تم اعتماد أمر الشراء'
+
+  const message = appLang === 'en'
+    ? `Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) has been approved. Please prepare to receive the goods.`
+    : `تم اعتماد أمر الشراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency}. يرجى الاستعداد لاستلام البضاعة.`
+
+  try {
+    await createNotification({
+      companyId,
+      referenceType: 'purchase_order',
+      referenceId: poId,
+      title,
+      message,
+      createdBy: approvedBy,
+      branchId, // ← إشعار مقيّد بالفرع لأن مسؤول المخزن فرعي وليس عاماً
+      assignedToRole: 'store_manager',
+      priority: 'normal',
+      eventKey: `purchase_order:${poId}:approved:store_manager`,
+      severity: 'info',
+      category: 'inventory'
+    })
+  } catch (err) {
+    console.error('❌ Failed to notify store_manager on PO approval:', err)
   }
 }
 

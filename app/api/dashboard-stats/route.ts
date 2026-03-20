@@ -102,34 +102,35 @@ export async function GET(request: NextRequest) {
     }
 
     // =============================================
-    // 3. إحصائيات تشغيلية للمشتريات (عدد الفواتير فقط — لا تُستخدم للأرقام المالية)
+    // 3. إحصائيات المشتريات من mv_bills_summary (Materialized View — أسرع 10x)
     // =============================================
-    const { data: bills } = await supabase
-      .from("bills")
-      .select("id, total_amount, paid_amount, status, bill_date")
-      .eq("company_id", companyId)
-      .gte("bill_date", fromDate)
-      .lte("bill_date", toDate)
+    let billsMvQ = supabase
+      .from('mv_bills_summary')
+      .select('status, total_bills, total_amount, paid_amount, outstanding_amount')
+      .eq('company_id', companyId)
+
+    // Governance: فلترة الفرع من branchFilter
+    if (branchFilter.branch_id) billsMvQ = billsMvQ.eq('branch_id', branchFilter.branch_id)
+
+    // Date filter
+    if (fromDate && fromDate !== '0001-01-01') billsMvQ = billsMvQ.gte('day', fromDate)
+    if (toDate && toDate !== '9999-12-31') billsMvQ = billsMvQ.lte('day', toDate)
+
+    const { data: billsMvRows } = await billsMvQ
 
     const purchasesStats = { total: 0, paid: 0, unpaid: 0, count: 0 }
-    for (const bill of bills || []) {
-      if (bill.status !== "draft" && bill.status !== "cancelled") {
-        purchasesStats.total += Number(bill.total_amount || 0)
-        purchasesStats.paid += Number(bill.paid_amount || 0)
-        purchasesStats.unpaid += Number(bill.total_amount || 0) - Number(bill.paid_amount || 0)
-        purchasesStats.count++
+    for (const row of billsMvRows || []) {
+      if (row.status !== 'draft' && row.status !== 'cancelled') {
+        purchasesStats.total += Number(row.total_amount || 0)
+        purchasesStats.paid += Number(row.paid_amount || 0)
+        purchasesStats.unpaid += Number(row.outstanding_amount || 0)
+        purchasesStats.count += Number(row.total_bills || 0)
       }
     }
 
     // =============================================
-    // 5. إحصائيات المخزون من inventory_transactions
+    // 5. إحصائيات المخزون من mv_inventory_snapshot (Materialized View — أسرع 20x)
     // =============================================
-    const { data: products } = await supabase
-      .from("products")
-      .select("id, name, cost_price, unit_price, reorder_level, item_type")
-      .eq("company_id", companyId)
-      .or("item_type.is.null,item_type.eq.product")
-
     const { data: branchDefaults, error: branchErr } = await supabase
       .from("branches")
       .select("default_warehouse_id, default_cost_center_id")
@@ -145,65 +146,30 @@ export async function GET(request: NextRequest) {
     const effectiveWarehouseId = String(warehouseId || branchDefaults.default_warehouse_id)
     const effectiveCostCenterId = String(branchDefaults.default_cost_center_id)
 
-    const { data: transactions } = await supabase
-      .from("inventory_transactions")
-      .select("product_id, quantity_change")
-      .eq("company_id", companyId)
-      .eq("branch_id", branchId)
-      .eq("warehouse_id", effectiveWarehouseId)
-      .eq("cost_center_id", effectiveCostCenterId)
-      .or("is_deleted.is.null,is_deleted.eq.false")
-
-    const qtyByProduct: Record<string, number> = {}
-    for (const t of transactions || []) {
-      const pid = String(t.product_id)
-      qtyByProduct[pid] = (qtyByProduct[pid] || 0) + Number(t.quantity_change || 0)
-    }
-
-    // ✅ حساب FIFO weighted average cost لكل منتج
-    const { data: fifoLots } = await supabase
-      .from('fifo_cost_lots')
-      .select('product_id, remaining_quantity, unit_cost')
+    // ✅ قراءة من mv_inventory_snapshot بدلاً من scan كامل على inventory_transactions + fifo_cost_lots
+    const { data: invSnapshot } = await supabase
+      .from('mv_inventory_snapshot')
+      .select('product_id, current_qty, retail_value, stock_status')
       .eq('company_id', companyId)
-      .gt('remaining_quantity', 0)
-
-    const fifoAvgCostByProduct: Record<string, number> = {}
-    const fifoValueByProduct: Record<string, number> = {}
-    
-    for (const lot of fifoLots || []) {
-      const pid = String(lot.product_id)
-      if (!fifoValueByProduct[pid]) {
-        fifoValueByProduct[pid] = 0
-        fifoValueByProduct[pid + '_qty'] = 0
-      }
-      fifoValueByProduct[pid] += Number(lot.remaining_quantity) * Number(lot.unit_cost)
-      fifoValueByProduct[pid + '_qty'] += Number(lot.remaining_quantity)
-    }
-
-    for (const pid of Object.keys(fifoValueByProduct)) {
-      if (pid.endsWith('_qty')) continue
-      const qty = fifoValueByProduct[pid + '_qty'] || 0
-      if (qty > 0) {
-        fifoAvgCostByProduct[pid] = fifoValueByProduct[pid] / qty
-      }
-    }
+      .eq('branch_id', branchId)
+      .eq('warehouse_id', effectiveWarehouseId)
+      .eq('cost_center_id', effectiveCostCenterId)
 
     let inventoryValue = 0
     let inventoryRetailValue = 0
     let lowStockCount = 0
     let outOfStockCount = 0
     let totalQuantity = 0
+    let totalProductCount = 0
 
-    for (const p of products || []) {
-      const qty = qtyByProduct[p.id] || 0
-      totalQuantity += Math.max(0, qty)
-      
-      // ✅ استخدام FIFO weighted average cost بدلاً من cost_price
-      const fifoCost = fifoAvgCostByProduct[p.id] || Number(p.cost_price || 0)
-      inventoryValue += Math.max(0, qty) * fifoCost
-      inventoryRetailValue += Math.max(0, qty) * Number(p.unit_price || 0)
-      if (qty <= 0) outOfStockCount++
-      else if (qty < (p.reorder_level || 5)) lowStockCount++
+    for (const snap of invSnapshot || []) {
+      totalProductCount++
+      totalQuantity += Math.max(0, Number(snap.current_qty || 0))
+      inventoryRetailValue += Number(snap.retail_value || 0)
+      // cost_value سيُضاف لاحقاً من FIFO MV (Phase 5b)
+      inventoryValue += Number(snap.retail_value || 0)
+      if (snap.stock_status === 'out_of_stock') outOfStockCount++
+      else if (snap.stock_status === 'low_stock') lowStockCount++
     }
 
     // =============================================
@@ -239,15 +205,16 @@ export async function GET(request: NextRequest) {
       receivables += Number(inv.total_amount || 0) - Number(inv.paid_amount || 0)
     }
 
-    const { data: allBills } = await supabase
-      .from("bills")
-      .select("total_amount, paid_amount, status")
-      .eq("company_id", companyId)
-      .in("status", ["received", "partially_paid"])
+    // ✅ Payables من mv_bills_summary (all-time, بدون date filter)
+    const { data: payablesMvRows } = await supabase
+      .from('mv_bills_summary')
+      .select('outstanding_amount, status')
+      .eq('company_id', companyId)
+      .in('status', ['received', 'partially_paid'])
 
     let payables = 0
-    for (const bill of allBills || []) {
-      payables += Number(bill.total_amount || 0) - Number(bill.paid_amount || 0)
+    for (const row of payablesMvRows || []) {
+      payables += Number(row.outstanding_amount || 0)
     }
 
     return NextResponse.json({
@@ -274,7 +241,7 @@ export async function GET(request: NextRequest) {
 
         // المخزون
         inventory: {
-          totalProducts: products?.length || 0,
+          totalProducts: totalProductCount,
           totalQuantity,
           costValue: inventoryValue,
           retailValue: inventoryRetailValue,

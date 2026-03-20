@@ -18,78 +18,16 @@ import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { notifyPOApproved, notifyPORejected } from "@/lib/notification-helpers"
-
-interface Supplier { id: string; name: string; email?: string; address?: string; phone?: string }
-interface POItem {
-  id: string
-  product_id: string
-  quantity: number
-  unit_price: number
-  tax_rate: number
-  discount_percent?: number
-  line_total: number
-  received_quantity: number
-  billed_quantity?: number
-  approved_billed_quantity?: number // ✅ الكميات المفوترة من الفواتير المعتمدة فقط
-  products?: { name: string; sku: string }
-}
-interface PO {
-  id: string
-  po_number: string
-  po_date: string
-  due_date: string | null
-  subtotal: number
-  tax_amount: number
-  total_amount: number
-  total?: number
-  received_amount: number
-  status: string
-  supplier_id?: string
-  suppliers?: Supplier
-  notes?: string
-  currency?: string
-  discount_type?: string
-  discount_value?: number
-  shipping?: number
-  shipping_tax_rate?: number
-  adjustment?: number
-  bill_id?: string
-  company_id?: string
-  rejection_reason?: string
-  rejected_by?: string
-  approved_by?: string
-}
-
-interface LinkedBill {
-  id: string
-  bill_number: string
-  bill_date: string
-  due_date: string | null
-  total_amount: number
-  status: string
-  paid_amount?: number
-}
-
-interface LinkedPayment {
-  id: string
-  reference_number: string
-  payment_date: string
-  amount: number
-  payment_method: string
-  notes?: string
-  bill_id?: string
-}
-
-interface LinkedReturn {
-  id: string
-  return_number: string
-  return_date: string
-  total_amount: number
-  status: string
-  reason?: string
-  bill_id?: string
-}
+import { notifyPOApproved, notifyPORejected, notifyStoreManagerPOApproved } from "@/lib/notification-helpers"
+// 🏷️ Canonical shared types — Single Source of Truth
+import type {
+  PurchaseOrder as PO,   // نستخدم PO كاسم مختصر داخل الصفحة للتوافق
+  PurchaseOrderItem as POItem,
+  Supplier,
+  LinkedBill,
+  LinkedPayment,
+  LinkedReturn,
+} from "@/types/database"
 
 export default function PurchaseOrderDetailPage() {
   const supabase = useSupabase()
@@ -680,33 +618,18 @@ export default function PurchaseOrderDetailPage() {
           appLang
         })
 
-        // ✅ Fix 2: Notify store_manager that incoming goods are expected (PO Approved)
-        try {
-          const { createNotification } = await import('@/lib/notification-helpers')
-          const storeNotifTitle = appLang === 'en'
-            ? 'Incoming Goods — Purchase Order Approved'
-            : 'بضاعة قادمة — تم اعتماد أمر الشراء'
-          const storeNotifMessage = appLang === 'en'
-            ? `Purchase Order ${po.po_number} for ${po.suppliers?.name || 'supplier'} has been approved. Please prepare to receive the goods.`
-            : `تم اعتماد أمر الشراء ${po.po_number} للمورد ${po.suppliers?.name || 'المورد'}. يرجى الاستعداد لاستلام البضاعة.`
-
-          await createNotification({
-            companyId,
-            referenceType: 'purchase_order',
-            referenceId: poId,
-            title: storeNotifTitle,
-            message: storeNotifMessage,
-            createdBy: user.id,
-            branchId: po.branch_id || undefined,
-            assignedToRole: 'store_manager',
-            priority: 'normal',
-            eventKey: `purchase_order:${poId}:approved:store_manager`,
-            severity: 'info',
-            category: 'inventory'
-          })
-        } catch (storeNotifErr) {
-          console.warn('⚠️ Failed to notify store_manager on PO approval:', storeNotifErr)
-        }
+        // ✅ إشعار مسؤول المخزن ببضاعة قادمة (PO Approved) — Fix 2: استخدام Helper الجاهز
+        await notifyStoreManagerPOApproved({
+          companyId,
+          poId,
+          poNumber: po.po_number,
+          supplierName: po.suppliers?.name || 'supplier',
+          amount: po.total_amount,
+          currency: po.currency || 'EGP',
+          branchId: po.branch_id || undefined,
+          approvedBy: user.id,
+          appLang
+        })
       }
 
       toastActionSuccess(toast, appLang === 'en' ? "Approve" : "اعتماد", appLang === 'en' ? "Purchase Order" : "أمر الشراء")

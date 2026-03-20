@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useTransition } from "react"
+import { useState, useEffect, useCallback, useTransition, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useUserContext } from "@/hooks/use-user-context"
 import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { getCachedPage, setCachedPage, invalidateCache } from "@/lib/page-cache"
 
 interface InventoryTransaction {
   id: string
@@ -76,13 +77,19 @@ export default function InventoryPage() {
   // outgoingTransfers: { productId: [{ quantity: number, warehouseName: string, warehouseId: string }] }
   const [outgoingTransfers, setOutgoingTransfers] = useState<Record<string, Array<{ quantity: number; warehouseName: string; warehouseId: string }>>>({})
   const [isLoading, setIsLoading] = useState(true)
-  const [isLoadingInventory, setIsLoadingInventory] = useState(false) // 🆕 تحميل عند تغيير المخزن
+  const [isLoadingInventory, setIsLoadingInventory] = useState(false)
   const [movementFilter, setMovementFilter] = useState<'all' | 'purchase' | 'sale'>('all')
   const [movementProductId, setMovementProductId] = useState<string>('')
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
 
-  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  // ⚡ Server-Side Pagination لجدول حركات المخزون (بدل limit(200))
+  const [txCurrentPage, setTxCurrentPage] = useState(1)
+  const [txPageSize] = useState(50)
+  const [txTotalCount, setTxTotalCount] = useState(0)
+  const txAbortRef = useRef<AbortController | null>(null)
+
+  // الـ transitions لتجنب freezing عند تغيير الفلاتر
   const [isPending, startTransition] = useTransition()
 
   const { userContext, loading: userContextLoading, error: userContextError } = useUserContext()
@@ -137,7 +144,8 @@ export default function InventoryPage() {
     table: 'inventory_transactions',
     enabled: !!userContext?.company_id && !!selectedWarehouseId,
     onInsert: (newTransaction) => {
-      // ✅ فحص التكرار قبل الإضافة
+      // ✅ إبطال الكاش عند وصول حركة جديدة
+      invalidateCache('inventory')
       setTransactions(prev => {
         if (prev.find(t => t.id === newTransaction.id)) {
           return prev; // السجل موجود بالفعل
@@ -324,10 +332,68 @@ export default function InventoryPage() {
   }
 
   /**
-   * ✅ تحميل بيانات المخزون
-   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من inventory_transactions مباشرة)
-   * ✅ يعرض: كميات المخزون الحالي، الأصناف منخفضة الكمية، حركة الصنف
-   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   * ⚡ جلب صفحة من حركات المخزون عبر /api/v2/inventory (بدل limit(200))
+   * يستقبل بارامترات الحوكمة مباشرةً لضمان عدم كسر منطق الصلاحيات الحالي
+   */
+  const fetchTransactionsPage = useCallback(async (
+    page: number,
+    context: UserContext,
+    warehouseId: string,
+    costCenterId: string
+  ) => {
+    if (txAbortRef.current) txAbortRef.current.abort()
+    txAbortRef.current = new AbortController()
+
+    const { buildPaginatedUrl } = await import('@/lib/server-pagination')
+
+    // بناء cache key يعكس جميع معاملات جلب الحركات
+    const cacheParams = {
+      entity: 'inventory' as const,
+      page,
+      pageSize: txPageSize,
+      filters: { warehouseId, costCenterId },
+    }
+
+    // ✅ Cache Hit → عرض فوري
+    const cached = getCachedPage<{ data: InventoryTransaction[]; totalCount: number }>(cacheParams)
+    if (cached) {
+      setTransactions(cached.data)
+      setTxTotalCount(cached.totalCount)
+      setTxCurrentPage(page)
+      return
+    }
+
+    const url = buildPaginatedUrl('/api/v2/inventory', {
+      page,
+      pageSize: txPageSize,
+      warehouseId,
+      costCenterId,
+    })
+
+    try {
+      const res = await fetch(url, { signal: txAbortRef.current.signal })
+      if (!res.ok) return
+      const json = await res.json()
+      const fetchedData = json.data || []
+      const fetchedTotal = json.meta?.totalCount ?? 0
+
+      setTransactions(fetchedData)
+      setTxTotalCount(fetchedTotal)
+      setTxCurrentPage(page)
+
+      // ✅ Cache Write
+      setCachedPage(cacheParams, { data: fetchedData, totalCount: fetchedTotal })
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return
+      console.error('[Inventory v2] Fetch error:', err)
+    }
+  }, [txPageSize])
+
+  /**
+   * \u2705 \u062a\u062d\u0645\u064a\u0644 \u0628\u064a\u0627\u0646\u0627\u062a \u0627\u0644\u0645\u062e\u0632\u0648\u0646
+   * \u26a0\ufe0f OPERATIONAL REPORT - \u062a\u0642\u0631\u064a\u0631 \u062a\u0634\u063a\u064a\u0644\u064a (\u0645\u0646 inventory_transactions \u0645\u0628\u0627\u0634\u0631\u0629)
+   * \u2705 \u064a\u0639\u0631\u0636: \u0643\u0645\u064a\u0627\u062a \u0627\u0644\u0645\u062e\u0632\u0648\u0646 \u0627\u0644\u062d\u0627\u0644\u064a\u060c \u0627\u0644\u0623\u0635\u0646\u0627\u0641 \u0645\u0646\u062e\u0641\u0636\u0629 \u0627\u0644\u0643\u0645\u064a\u0629\u060c \u062d\u0631\u0643\u0629 \u0627\u0644\u0635\u0646\u0641
+   * \u0631\u0627\u062c\u0639: docs/OPERATIONAL_REPORTS_GUIDE.md
    */
   const loadInventoryData = async (context: UserContext, branchId: string, warehouseId: string, costCenterId: string) => {
     try {
@@ -366,44 +432,8 @@ export default function InventoryPage() {
         createdByUserId: null
       }
       
-      // ✅ جلب حركات المخزون (تقرير تشغيلي - من inventory_transactions مباشرة)
-      // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
-      // 🔐 تطبيق الفلاتر الإلزامية على استعلامات المخزون
-      // 📌 ملاحظة: لحركات transfer_in و transfer_out، نأخذها بغض النظر عن cost_center_id
-      let transactionsQuery = supabase
-        .from("inventory_transactions")
-        .select("*, products(name, sku)")
-      
-      // تطبيق قواعد الحوكمة الموحدة (تطبق company_id, branch_id تلقائياً)
-      // لكن بدون cost_center_id و warehouse_id لأننا سنتعامل معهما يدوياً
-      transactionsQuery = applyDataVisibilityFilter(transactionsQuery, rulesWithoutCostCenter, "inventory_transactions")
-      
-      // 🔐 إضافة فلتر warehouse_id يدوياً باستخدام القيمة المحددة من selector
-      transactionsQuery = (transactionsQuery as any).eq("warehouse_id", warehouseId)
-      
-      const { data: transactionsData } = await transactionsQuery
-        .order("created_at", { ascending: false })
-        .limit(200)
-
-      // 🔐 فلترة في JavaScript: نأخذ جميع الحركات في نفس cost_center_id المحدد
-      // + جميع حركات transfer_in و transfer_out (لأنها قد تكون في cost_center_id مختلف لكن في نفس الفرع)
-      // 📌 ملاحظة: لا نفلتر بـ created_by_user_id لأن الموظف يرى كل حركات فرعه/مخزنه
-      const txs = (transactionsData || []).filter((t: any) => {
-        const txCostCenterId = String(t.cost_center_id || '')
-        const txType = String(t.transaction_type || '')
-        // نأخذ الحركات في نفس cost_center_id
-        if (txCostCenterId === costCenterId) return true
-        // نأخذ حركات transfer_in و transfer_out بغض النظر عن cost_center_id (لكن في نفس الفرع والمخزن)
-        if (txType === 'transfer_in' || txType === 'transfer_out') return true
-        return false
-      })
-
-      const sorted = txs.slice().sort((a: any, b: any) => {
-        const ad = String(a?.created_at || '')
-        const bd = String(b?.created_at || '')
-        return bd.localeCompare(ad)
-      })
-      setTransactions(sorted)
+      // ⚡ جلب حركات المخزون من /api/v2/inventory (بدل limit(200))
+      await fetchTransactionsPage(1, context, warehouseId, costCenterId)
 
       // ✅ حساب الكميات من inventory_transactions (تقرير تشغيلي)
       // 🔐 حساب الكميات من inventory_transactions مع تطبيق الفلاتر الإلزامية

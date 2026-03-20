@@ -40,6 +40,10 @@ jobs:
         run: npm run lint || echo "Linter not configured - skipping"
         continue-on-error: true
 
+      - name: Type check (TSC)
+        run: npx tsc --noEmit
+        continue-on-error: false
+
       - name: Run critical tests
         run: npm test -- tests/critical
         continue-on-error: false

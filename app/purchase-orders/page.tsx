@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition, useCallback, useRef } from "react";
 import { useSupabase } from "@/lib/supabase/hooks";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,8 @@ import { canAction } from "@/lib/authz";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getActiveCompanyId } from "@/lib/company";
-import { usePagination } from "@/lib/pagination";
+// ⚡ v2: Server-side pagination (الـ hook القديم usePagination محفوظ في lib/pagination.ts دون تغيير)
+import { buildPaginatedUrl } from "@/lib/server-pagination";
 import { DataPagination } from "@/components/data-pagination";
 import { type UserContext, canViewPurchasePrices, getAccessFilter } from "@/lib/validation";
 import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control";
@@ -31,58 +32,25 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FilterContainer } from "@/components/ui/filter-container";
 import { useRealtimeTable } from "@/hooks/use-realtime-table";
+import { getCachedPage, setCachedPage, invalidateCache, prefetchPage } from "@/lib/page-cache";
+// 🏷️ Canonical shared types — Single Source of Truth
+import type {
+  PurchaseOrder,
+  Supplier,
+  LinkedBill,
+  POItemWithProduct,
+  ReturnedQuantity,
+  ProductSummary,
+} from "@/types/database";
 
-type Supplier = { id: string; name: string; phone?: string | null };
+// نوع المنتج (خاص بهذه الصفحة — لا يُشارَك)
 type Product = { id: string; name: string; cost_price?: number; item_type?: 'product' | 'service' };
 
-type PurchaseOrder = {
-  id: string;
-  company_id: string;
-  supplier_id: string;
-  po_number: string;
-  po_date: string;
-  due_date: string | null;
-  subtotal: number;
-  tax_amount: number;
-  total_amount: number;
-  total?: number;
-  status: string;
-  notes?: string | null;
-  currency?: string;
-  bill_id?: string | null;
-  suppliers?: { name: string; phone?: string | null };
-};
-
-type LinkedBill = {
-  id: string;
-  status: string;
-  total_amount?: number;
-  paid_amount?: number;
-  returned_amount?: number;
-  return_status?: string;
-};
-
-// نوع لبنود الأمر مع المنتج
-type POItemWithProduct = {
-  purchase_order_id: string;
-  quantity: number;
-  product_id?: string | null;
-  product_name?: string | null;
-};
-
-// نوع للكميات المرتجعة لكل منتج
-type ReturnedQuantity = {
-  bill_id: string;
-  product_id: string;
-  quantity: number;
-};
-
-// نوع لعرض ملخص المنتجات
-type ProductSummary = { name: string; quantity: number; returned?: number };
-
 export default function PurchaseOrdersPage() {
+
   const supabase = useSupabase();
   const { toast } = useToast();
+
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -126,8 +94,13 @@ export default function PurchaseOrdersPage() {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
 
-  // Pagination state
-  const [pageSize, setPageSize] = useState<number>(10);
+  // ⚡ Server-Side Pagination State
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalCount, setTotalCount] = useState<number>(0);
+  const [serverLoading, setServerLoading] = useState<boolean>(false);
+  // ref لإلغاء الطلبات القديمة عند التنقل السريع
+  const fetchAbortRef = useRef<AbortController | null>(null);
 
   // Status options for multi-select - قائمة ثابتة بجميع الحالات الممكنة
   const allStatusOptions = useMemo(() => [
@@ -199,145 +172,141 @@ export default function PurchaseOrdersPage() {
     checkPerms();
   }, [supabase]);
 
+  // ⚡ دالة جلب بيانات جانبية (موردون، منتجات، شركات الشحن) — تُستدعى مرة واحدة عند التحميل الأول
+  const loadSupportingData = useCallback(async () => {
+    const companyId = await getActiveCompanyId(supabase);
+    if (!companyId) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: member } = await supabase
+      .from("company_members")
+      .select("role, branch_id, cost_center_id, warehouse_id")
+      .eq("company_id", companyId)
+      .eq("user_id", user.id)
+      .single();
+
+    const role = member?.role || "staff";
+    const context: UserContext = {
+      user_id: user.id,
+      company_id: companyId,
+      branch_id: member?.branch_id || null,
+      cost_center_id: member?.cost_center_id || null,
+      warehouse_id: member?.warehouse_id || null,
+      role: role
+    };
+    setUserContext(context);
+    setCanViewPrices(canViewPurchasePrices(context));
+
+    const accessFilter = getAccessFilter(role, user.id, member?.branch_id || null, member?.cost_center_id || null);
+
+    // ⚡ Parallel Fetching: جلب كل البيانات الجانبية بالتوازي
+    const suppQueryBase = supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId);
+    let suppQuery = suppQueryBase;
+    if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) suppQuery = suppQuery.eq("created_by_user_id", accessFilter.createdByUserId);
+    if (accessFilter.filterByBranch && accessFilter.branchId) suppQuery = suppQuery.eq("branch_id", accessFilter.branchId);
+
+    const [
+      { data: supp },
+      { data: prod },
+      { data: providersData },
+    ] = await Promise.all([
+      suppQuery.order("name"),
+      // ⚡ Lazy: نجلب فقط id, name للـ dropdown — بدون cost_price
+      supabase.from("products").select("id, name, cost_price, item_type").eq("company_id", companyId).order("name"),
+      supabase.from("shipping_providers").select("id, provider_name").order("provider_name"),
+    ]);
+
+    setSuppliers(supp || []);
+    setProducts(prod || []);
+    setShippingProviders(providersData || []);
+  }, [supabase]);
+
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const companyId = await getActiveCompanyId(supabase);
-      if (!companyId) { setLoading(false); return; }
+    loadSupportingData();
+  }, [loadSupportingData]);
 
-      // 🔐 ERP Access Control - جلب سياق المستخدم
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setLoading(false); return; }
+  // ⚡ دالة جلب أوامر الشراء من /api/v2/purchase-orders (Server-Side Pagination)
+  const fetchOrders = useCallback(async (page: number, size: number) => {
+    // إلغاء الطلب السابق
+    if (fetchAbortRef.current) fetchAbortRef.current.abort();
+    fetchAbortRef.current = new AbortController();
 
-      const { data: member } = await supabase
-        .from("company_members")
-        .select("role, branch_id, cost_center_id, warehouse_id")
-        .eq("company_id", companyId)
-        .eq("user_id", user.id)
-        .single();
-
-      const role = member?.role || "staff";
-      const context: UserContext = {
-        user_id: user.id,
-        company_id: companyId,
-        branch_id: member?.branch_id || null,
-        cost_center_id: member?.cost_center_id || null,
-        warehouse_id: member?.warehouse_id || null,
-        role: role
-      };
-      setUserContext(context);
-      setCanViewPrices(canViewPurchasePrices(context));
-
-      const canOverride = ["owner", "admin", "manager", "general_manager"].includes(role);
-
-      // 🔐 جلب الصلاحيات المشتركة للمستخدم الحالي
-      let sharedGrantorUserIds: string[] = [];
-      const { data: sharedPerms } = await supabase
-        .from("permission_sharing")
-        .select("grantor_user_id, resource_type")
-        .eq("grantee_user_id", user.id)
-        .eq("company_id", companyId)
-        .eq("is_active", true)
-        .or("resource_type.eq.all,resource_type.eq.suppliers,resource_type.eq.purchase_orders")
-
-      if (sharedPerms && sharedPerms.length > 0) {
-        sharedGrantorUserIds = sharedPerms.map((p: any) => p.grantor_user_id);
+    setServerLoading(true);
+    try {
+      // بناء cache key يعكس جميع معاملات الصفحة
+      const cacheParams = {
+        entity: 'purchase-orders' as const,
+        page,
+        pageSize: size,
+        filters: {
+          search: searchTerm,
+          statuses: filterStatuses,
+          suppliers: filterSuppliers,
+          dateFrom,
+          dateTo,
+          branchId: branchFilter.getFilteredBranchId() || '',
+        },
       }
 
-      // 🔐 ERP Access Control - بناء فلتر الوصول للموردين
-      const accessFilter = getAccessFilter(
-        role,
-        user.id,
-        member?.branch_id || null,
-        member?.cost_center_id || null
-      );
-
-      // جلب الموردين مع تطبيق الصلاحيات
-      let suppQuery = supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId);
-
-      // 🔒 تطبيق فلتر المنشئ (للموظفين)
-      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-        suppQuery = suppQuery.eq("created_by_user_id", accessFilter.createdByUserId);
+      // ✅ Cache Hit → عرض فوري
+      const cached = getCachedPage<{ orders: PurchaseOrder[]; totalCount: number }>(cacheParams)
+      if (cached) {
+        setOrders(cached.orders)
+        setTotalCount(cached.totalCount)
+        setServerLoading(false)
+        return
       }
 
-      // 🔒 تطبيق فلتر الفرع (للمدراء والمحاسبين)
-      if (accessFilter.filterByBranch && accessFilter.branchId) {
-        suppQuery = suppQuery.eq("branch_id", accessFilter.branchId);
+      const url = buildPaginatedUrl('/api/v2/purchase-orders', {
+        page,
+        pageSize: size,
+        search: searchTerm,
+        status: filterStatuses,
+        supplier: filterSuppliers,
+        dateFrom,
+        dateTo,
+        branchId: branchFilter.getFilteredBranchId() || '',
+      });
+
+      const res = await fetch(url, { signal: fetchAbortRef.current.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+
+      const newOrders: PurchaseOrder[] = json.data || [];
+      setOrders(newOrders);
+      setTotalCount(json.meta?.totalCount ?? 0);
+
+      // ✅ Cache Write — احفظ نتيجة الصفحة
+      setCachedPage(cacheParams, { orders: newOrders, totalCount: json.meta?.totalCount ?? 0 })
+
+      // 🚀 Prefetch الصفحة التالية في الخلفية (بدون انتظار)
+      const totalPagesNow = Math.ceil((json.meta?.totalCount ?? 0) / size)
+      if (page < totalPagesNow) {
+        const nextCacheParams = { ...cacheParams, page: page + 1 }
+        prefetchPage(
+          nextCacheParams,
+          async () => {
+            const nextUrl = buildPaginatedUrl('/api/v2/purchase-orders', {
+              page: page + 1,
+              pageSize: size,
+              search: searchTerm,
+              status: filterStatuses,
+              supplier: filterSuppliers,
+              dateFrom,
+              dateTo,
+              branchId: branchFilter.getFilteredBranchId() || '',
+            })
+            const nextRes = await fetch(nextUrl)
+            if (!nextRes.ok) throw new Error('prefetch failed')
+            const nextJson = await nextRes.json()
+            return { orders: nextJson.data || [], totalCount: nextJson.meta?.totalCount ?? 0 }
+          }
+        )
       }
 
-      const { data: supp } = await suppQuery.order("name");
-
-      // 🔐 جلب الموردين المشتركين (للموظفين فقط)
-      let sharedSuppliers: Supplier[] = [];
-      if (accessFilter.filterByCreatedBy && sharedGrantorUserIds.length > 0) {
-        const { data: sharedSupp } = await supabase
-          .from("suppliers")
-          .select("id, name, phone")
-          .eq("company_id", companyId)
-          .in("created_by_user_id", sharedGrantorUserIds);
-        sharedSuppliers = sharedSupp || [];
-      }
-
-      // دمج الموردين (بدون تكرار)
-      const allSupplierIds = new Set((supp || []).map((s: Supplier) => s.id));
-      const uniqueSharedSuppliers = sharedSuppliers.filter((s: Supplier) => !allSupplierIds.has(s.id));
-      const mergedSuppliers = [...(supp || []), ...uniqueSharedSuppliers];
-      setSuppliers(mergedSuppliers);
-
-      const { data: prod } = await supabase.from("products").select("id, name, cost_price, item_type").eq("company_id", companyId).order("name");
-      setProducts(prod || []);
-
-      // 🔐 ERP Access Control - تصفية أوامر الشراء حسب صلاحيات المستخدم
-      // الأدوار المميزة: owner/admin/general_manager → يرون جميع الفروع
-      // الأدوار المتوسطة: manager/accountant/supervisor → يرون فرعهم فقط
-      // الأدوار العادية: staff/employee → يرون فرعهم فقط (لأن purchase_orders ليس له created_by_user_id)
-      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager', 'gm']
-      const BRANCH_ROLES = ['manager', 'accountant', 'supervisor', 'store_manager']
-      const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
-      const selectedBranchId = branchFilter.getFilteredBranchId()
-      const userBranchId = context.branch_id
-
-      let poQuery = supabase
-        .from("purchase_orders")
-        .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, branch_id, cost_center_id, warehouse_id, created_by_user_id, suppliers(name, phone), branches(name)")
-        .eq("company_id", companyId);
-
-      // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
-      if (canFilterByBranch && selectedBranchId) {
-        // المستخدم المميز اختار فرعاً معيناً من الفلتر
-        poQuery = poQuery.eq("branch_id", selectedBranchId)
-      } else if (canFilterByBranch) {
-        // المستخدم المميز بدون فلتر = جميع فروع الشركة
-        // لا تضيف أي فلتر
-      } else if (BRANCH_ROLES.includes(role.toLowerCase())) {
-        // مدير فرع / محاسب / مشرف → يرى فرعه فقط
-        if (userBranchId) {
-          poQuery = poQuery.eq("branch_id", userBranchId)
-        }
-      } else {
-        // الأدوار العادية (staff/employee) → يرون أوامر فرعهم
-        // إذا لم يكن لديهم فرع محدد، يرون أوامرهم الشخصية فقط
-        if (userBranchId) {
-          poQuery = poQuery.eq("branch_id", userBranchId)
-        } else {
-          // لا فرع محدد → محاولة بالـ created_by_user_id إن وجد
-          poQuery = (poQuery as any).or(`created_by_user_id.eq.${context.user_id},created_by_user_id.is.null`)
-        }
-      }
-
-      const { data: po, error: poError } = await poQuery.order("created_at", { ascending: false });
-
-      if (poError) {
-        console.error("[PO List] Query error:", poError)
-      }
-
-      // ✅ فلترة إضافية في JavaScript
-      let filteredOrders = po || []
-
-      setOrders(filteredOrders);
-
-      // Load linked bills with full details
-      const billIds = (po || []).filter((o: PurchaseOrder) => o.bill_id).map((o: PurchaseOrder) => o.bill_id);
+      // تحميل الفواتير المرتبطة بالصفحة الحالية فقط
+      const billIds = newOrders.filter((o) => o.bill_id).map((o) => o.bill_id as string);
       if (billIds.length > 0) {
         const { data: bills } = await supabase
           .from("bills")
@@ -345,79 +314,69 @@ export default function PurchaseOrdersPage() {
           .in("id", billIds);
         const billMap: Record<string, LinkedBill> = {};
         (bills || []).forEach((b: any) => {
-          billMap[b.id] = {
-            id: b.id,
-            status: b.status,
-            total_amount: b.total_amount || 0,
-            paid_amount: b.paid_amount || 0,
-            returned_amount: b.returned_amount || 0,
-            return_status: b.return_status
-          };
+          billMap[b.id] = { id: b.id, status: b.status, total_amount: b.total_amount || 0, paid_amount: b.paid_amount || 0, returned_amount: b.returned_amount || 0, return_status: b.return_status };
         });
         setLinkedBills(billMap);
+      } else {
+        setLinkedBills({});
       }
 
-      // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة
-      const orderIds = (po || []).map((o: PurchaseOrder) => o.id);
+      // تحميل بنود أوامر الشراء للصفحة الحالية فقط
+      const orderIds = newOrders.map((o) => o.id);
       if (orderIds.length > 0) {
         const { data: itemsData } = await supabase
           .from("purchase_order_items")
           .select("purchase_order_id, quantity, product_id")
           .in("purchase_order_id", orderIds);
-
-        // جلب أسماء المنتجات منفصلة وربطها
-        const productIds = [...new Set((itemsData || []).map((i: { product_id: string | null }) => i.product_id).filter(Boolean))];
+        const productIds = [...new Set((itemsData || []).map((i: any) => i.product_id).filter(Boolean))];
         let productNames: Record<string, string> = {};
         if (productIds.length > 0) {
-          const { data: productsData } = await supabase
-            .from("products")
-            .select("id, name")
-            .in("id", productIds);
-          productNames = (productsData || []).reduce((acc: Record<string, string>, p: { id: string; name: string }) => {
-            acc[p.id] = p.name;
-            return acc;
-          }, {} as Record<string, string>);
+          const { data: productsData } = await supabase.from("products").select("id, name").in("id", productIds);
+          productNames = (productsData || []).reduce((acc: Record<string, string>, p: any) => { acc[p.id] = p.name; return acc; }, {});
         }
-
-        // دمج أسماء المنتجات مع البنود
-        const itemsWithNames = (itemsData || []).map((item: { product_id: string | null; purchase_order_id: string; quantity: number }) => ({
-          ...item,
-          product_name: item.product_id ? productNames[item.product_id] : null
-        }));
+        const itemsWithNames = (itemsData || []).map((item: any) => ({ ...item, product_name: item.product_id ? productNames[item.product_id] : null }));
         setOrderItems(itemsWithNames);
-      }
 
-      // تحميل شركات الشحن
-      const { data: providersData } = await supabase
-        .from("shipping_providers")
-        .select("id, provider_name")
-        .order("provider_name");
-      setShippingProviders(providersData || []);
-
-      // تحميل الكميات المرتجعة من bill_items.returned_quantity عبر الفواتير المرتبطة
-      const linkedBillIds = (po || []).map((o: PurchaseOrder) => o.bill_id).filter(Boolean);
-      if (linkedBillIds.length > 0) {
-        const { data: billItemsData } = await supabase
-          .from("bill_items")
-          .select("bill_id, product_id, returned_quantity")
-          .in("bill_id", linkedBillIds)
-          .gt("returned_quantity", 0);
-
-        // ربط الكميات المرتجعة بالفواتير
-        const returnedQty: ReturnedQuantity[] = (billItemsData || []).map((item: { bill_id: string | null; product_id: string | null; returned_quantity: number | null }) => ({
-          bill_id: item.bill_id || '',
-          product_id: item.product_id || '',
-          quantity: item.returned_quantity || 0
-        })).filter((r: ReturnedQuantity) => r.bill_id && r.product_id && r.quantity > 0);
-        setReturnedQuantities(returnedQty);
+        // تحميل الكميات المرتجعة للصفحة الحالية فقط
+        if (billIds.length > 0) {
+          const { data: billItemsData } = await supabase
+            .from("bill_items")
+            .select("bill_id, product_id, returned_quantity")
+            .in("bill_id", billIds)
+            .gt("returned_quantity", 0);
+          const returnedQty: ReturnedQuantity[] = (billItemsData || []).map((item: any) => ({ bill_id: item.bill_id || '', product_id: item.product_id || '', quantity: item.returned_quantity || 0 })).filter((r: ReturnedQuantity) => r.bill_id && r.product_id && r.quantity > 0);
+          setReturnedQuantities(returnedQty);
+        } else {
+          setReturnedQuantities([]);
+        }
       } else {
+        setOrderItems([]);
         setReturnedQuantities([]);
       }
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
+      console.error('[PO List v2] Fetch error:', err);
+    } finally {
+      setServerLoading(false);
+    }
+  }, [supabase, searchTerm, filterStatuses, filterSuppliers, dateFrom, dateTo, branchFilter]);
 
-      setLoading(false);
-    };
-    load();
-  }, [supabase, branchFilter.selectedBranchId]); // إعادة تحميل البيانات عند تغيير الفرع المحدد
+  // ⚡ جلب الصفحة الأولى عند تغيير الفلاتر
+  useEffect(() => {
+    setCurrentPage(1);
+    fetchOrders(1, pageSize);
+  }, [searchTerm, filterStatuses, filterSuppliers, dateFrom, dateTo, branchFilter.selectedBranchId, pageSize]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    fetchOrders(page, pageSize);
+  };
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1);
+    fetchOrders(1, newSize);
+  };
 
   // ✅ Realtime: الاشتراك في تحديثات أوامر الشراء
   // ⚠️ ملاحظة: Realtime لا يرسل البيانات المنضمة (joined data) مثل branches و suppliers
@@ -426,7 +385,8 @@ export default function PurchaseOrdersPage() {
     table: 'purchase_orders',
     enabled: !!userContext?.company_id,
     onInsert: async (newOrder) => {
-      // ✅ فحص التكرار قبل الإضافة
+      // ✅ إبطال الكاش عند إضافة سجل جديد
+      invalidateCache('purchase-orders')
       const existingOrder = orders.find(o => o.id === newOrder.id);
       if (existingOrder) return;
 
@@ -476,6 +436,8 @@ export default function PurchaseOrdersPage() {
       }
     },
     onUpdate: async (newOrder, oldOrder) => {
+      // ✅ إبطال الكاش عند تحديث سجل
+      invalidateCache('purchase-orders')
       // ⚠️ Realtime لا يرسل البيانات المنضمة (branches, suppliers)
       // لذا نجلب البيانات الكاملة من قاعدة البيانات لضمان دقة البيانات
       const { data: fullOrder } = await supabase
@@ -517,7 +479,8 @@ export default function PurchaseOrdersPage() {
       }
     },
     onDelete: (oldOrder) => {
-      // ✅ حذف السجل من القائمة
+      // ✅ إبطال الكاش عند حذف سجل
+      invalidateCache('purchase-orders')
       setOrders(prev => prev.filter(order => order.id !== oldOrder.id));
     },
     filter: (event) => {
@@ -530,73 +493,16 @@ export default function PurchaseOrdersPage() {
     }
   });
 
-  // 🔄 إعادة تحميل البيانات عند العودة للصفحة (للتأكد من تحديث البطاقات الإحصائية)
+  // 🔄 إعادة تحميل الصفحة الحالية عند العودة إلى tab النافذة
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // إعادة تحميل البيانات عند العودة للصفحة
-        const reload = async () => {
-          const companyId = await getActiveCompanyId(supabase);
-          if (!companyId) return;
-
-          // 🔐 ERP Access Control - جلب سياق المستخدم
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) return;
-
-          const { data: member } = await supabase
-            .from("company_members")
-            .select("role, branch_id, cost_center_id, warehouse_id")
-            .eq("company_id", companyId)
-            .eq("user_id", user.id)
-            .single();
-
-          const role = member?.role || "staff";
-          const canOverride = ["owner", "admin", "manager", "general_manager"].includes(role);
-
-          // جلب أوامر الشراء فقط (بدون إعادة تحميل كل البيانات)
-          let poQuery = supabase
-            .from("purchase_orders")
-            .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, branch_id, cost_center_id, warehouse_id, suppliers(name, phone), branches(name)")
-            .eq("company_id", companyId);
-
-          if (!canOverride && member) {
-            if (member.branch_id) poQuery = poQuery.eq("branch_id", member.branch_id);
-            if (member.cost_center_id) poQuery = poQuery.eq("cost_center_id", member.cost_center_id);
-          }
-
-          const { data: po } = await poQuery.order("created_at", { ascending: false });
-          if (po) {
-            setOrders(po);
-
-            // تحديث linked bills
-            const billIds = po.filter((o: PurchaseOrder) => o.bill_id).map((o: PurchaseOrder) => o.bill_id);
-            if (billIds.length > 0) {
-              const { data: bills } = await supabase
-                .from("bills")
-                .select("id, status, total_amount, paid_amount, returned_amount, return_status")
-                .in("id", billIds);
-              const billMap: Record<string, LinkedBill> = {};
-              (bills || []).forEach((b: any) => {
-                billMap[b.id] = {
-                  id: b.id,
-                  status: b.status,
-                  total_amount: b.total_amount || 0,
-                  paid_amount: b.paid_amount || 0,
-                  returned_amount: b.returned_amount || 0,
-                  return_status: b.return_status
-                };
-              });
-              setLinkedBills(billMap);
-            }
-          }
-        };
-        reload();
+        fetchOrders(currentPage, pageSize);
       }
     };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [supabase]);
+  }, [fetchOrders, currentPage, pageSize]);
 
   // دالة للحصول على ملخص المنتجات لأمر معين مع الكميات المرتجعة
   const getProductsSummary = (orderId: string, billId?: string | null): ProductSummary[] => {
@@ -616,64 +522,31 @@ export default function PurchaseOrdersPage() {
     });
   };
 
-  const filteredOrders = useMemo(() => {
-    return orders.filter((o) => {
-      // Status filter - Multi-select
-      if (filterStatuses.length > 0) {
-        const linkedBill = o.bill_id ? linkedBills[o.bill_id] : null;
-        const displayStatus = linkedBill ? linkedBill.status : o.status;
-        if (!filterStatuses.includes(displayStatus)) return false;
-      }
-
-      // Supplier filter - Multi-select
-      if (filterSuppliers.length > 0 && !filterSuppliers.includes(o.supplier_id)) return false;
-
-      // Products filter - show orders containing any of the selected products
-      if (filterProducts.length > 0) {
+  // ⚡ فلترة المنتجات وشركات الشحن تبقى client-side لأنها بيانات خفيفة ومحمّلة مسبقاً
+  const paginatedOrders = useMemo(() => {
+    // فلتر المنتجات وشركات الشحن فقط (الفلاتر الثقيلة نُقلت للسيرفر)
+    let result = orders;
+    if (filterProducts.length > 0) {
+      result = result.filter((o) => {
         const orderProductIds = orderItems
           .filter(item => item.purchase_order_id === o.id)
           .map(item => item.product_id)
           .filter(Boolean) as string[];
-        const hasSelectedProduct = filterProducts.some(productId => orderProductIds.includes(productId));
-        if (!hasSelectedProduct) return false;
-      }
-
-      // Shipping provider filter
-      if (filterShippingProviders.length > 0) {
+        return filterProducts.some(productId => orderProductIds.includes(productId));
+      });
+    }
+    if (filterShippingProviders.length > 0) {
+      result = result.filter((o) => {
         const orderProviderId = (o as any).shipping_provider_id;
-        if (!orderProviderId || !filterShippingProviders.includes(orderProviderId)) return false;
-      }
+        return orderProviderId && filterShippingProviders.includes(orderProviderId);
+      });
+    }
+    return result;
+  }, [orders, filterProducts, filterShippingProviders, orderItems]);
 
-      // Date range filter
-      if (dateFrom && o.po_date < dateFrom) return false;
-      if (dateTo && o.po_date > dateTo) return false;
-
-      // Search filter
-      if (!searchTerm) return true;
-      const term = searchTerm.toLowerCase();
-      return o.po_number?.toLowerCase().includes(term) ||
-        o.suppliers?.name?.toLowerCase().includes(term);
-    });
-  }, [orders, filterStatuses, filterSuppliers, filterProducts, filterShippingProviders, orderItems, searchTerm, dateFrom, dateTo, linkedBills]);
-
-  // Pagination logic
-  const {
-    currentPage,
-    totalPages,
-    totalItems,
-    paginatedItems: paginatedOrders,
-    hasNext,
-    hasPrevious,
-    goToPage,
-    nextPage,
-    previousPage,
-    setPageSize: updatePageSize
-  } = usePagination(filteredOrders, { pageSize });
-
-  const handlePageSizeChange = (newSize: number) => {
-    setPageSize(newSize);
-    updatePageSize(newSize);
-  };
+  // ⚡ Server Pagination meta
+  const totalPages = Math.ceil(totalCount / pageSize) || 1;
+  const totalItems = totalCount;
 
   // تعريف أعمدة الجدول
   const tableColumns: DataTableColumn<PurchaseOrder>[] = useMemo(() => [
@@ -967,23 +840,20 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  // Statistics - تعمل مع الفلترة
+  // ⚡ Statistics — تعمل على كل السجلات المحمّلة في الصفحة الحالية (أسرع من حساب filteredOrders الكاملة)
   const stats = useMemo(() => {
-    const total = filteredOrders.length;
-    const draft = filteredOrders.filter(o => o.status === 'draft').length;
-    const sent = filteredOrders.filter(o => o.status === 'sent').length;
-    // ✅ إصلاح: "Billed" يعني وجود فاتورة مرتبطة (bill_id) وليس حالة "billed"
-    const billed = filteredOrders.filter(o => o.bill_id != null && o.bill_id !== '').length;
-    // حساب إجمالي القيمة مع خصم المرتجعات من الفواتير المرتبطة
-    const totalValue = filteredOrders.reduce((sum, o) => {
+    const total = totalCount; // من السيرفر (count: 'exact')
+    const draft = orders.filter((o: PurchaseOrder) => o.status === 'draft').length;
+    const sent = orders.filter((o: PurchaseOrder) => o.status === 'sent').length;
+    const billed = orders.filter((o: PurchaseOrder) => o.bill_id != null && o.bill_id !== '').length;
+    const totalValue = orders.reduce((sum: number, o: PurchaseOrder) => {
       const orderTotal = o.total || o.total_amount || 0;
       const linked = o.bill_id ? linkedBills[o.bill_id] : null;
-      // إذا كانت هناك فاتورة مرتبطة بمرتجعات، نخصم المرتجع
       const returnedAmount = linked?.returned_amount || 0;
       return sum + (orderTotal - returnedAmount);
     }, 0);
     return { total, draft, sent, billed, totalValue };
-  }, [filteredOrders, linkedBills]);
+  }, [orders, totalCount, linkedBills]);
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -1170,9 +1040,9 @@ export default function PurchaseOrdersPage() {
           {/* Table */}
           <Card>
             <CardContent className="pt-6">
-              {loading ? (
+              {loading || serverLoading ? (
                 <LoadingState type="table" rows={8} />
-              ) : filteredOrders.length === 0 ? (
+              ) : paginatedOrders.length === 0 ? (
                 <EmptyState
                   icon={ClipboardList}
                   title={appLang === 'en' ? 'No purchase orders yet' : 'لا توجد أوامر شراء بعد'}
@@ -1192,11 +1062,10 @@ export default function PurchaseOrdersPage() {
                     lang={appLang}
                     minWidth="min-w-[640px]"
                     emptyMessage={appLang === 'en' ? 'No purchase orders found' : 'لا توجد أوامر شراء'}
-                    footer={{
+                   footer={{
                       render: () => {
-                        const totalOrders = filteredOrders.length
-                        // حساب إجمالي القيمة مع خصم المرتجعات من الفواتير المرتبطة
-                        const totalAmount = filteredOrders.reduce((sum, o) => {
+                        const totalOrders = totalCount
+                        const totalAmount = paginatedOrders.reduce((sum: number, o: PurchaseOrder) => {
                           const orderTotal = o.total || o.total_amount || 0;
                           const linked = o.bill_id ? linkedBills[o.bill_id] : null;
                           const returnedAmount = linked?.returned_amount || 0;
@@ -1225,13 +1094,13 @@ export default function PurchaseOrdersPage() {
                       }
                     }}
                   />
-                  {filteredOrders.length > 0 && (
+                  {totalCount > 0 && (
                     <DataPagination
                       currentPage={currentPage}
                       totalPages={totalPages}
                       totalItems={totalItems}
                       pageSize={pageSize}
-                      onPageChange={goToPage}
+                      onPageChange={handlePageChange}
                       onPageSizeChange={handlePageSizeChange}
                       lang={appLang}
                     />

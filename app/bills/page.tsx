@@ -32,7 +32,7 @@ import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/curre
 import { CompanyHeader } from "@/components/company-header"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
-import { usePagination } from "@/lib/pagination"
+import { buildPaginatedUrl } from "@/lib/server-pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { type UserContext, getAccessFilter } from "@/lib/validation"
 import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control"
@@ -45,65 +45,29 @@ import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credi
 import { createNotification } from "@/lib/governance-layer"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
+import { getCachedPage, setCachedPage, invalidateCache, prefetchPage } from "@/lib/page-cache"
+// 🏷️ Canonical shared types — Single Source of Truth
+import type {
+  Supplier,
+  Bill,
+  BillItemWithProduct,
+  ReturnedQuantity,
+  ProductSummary,
+} from "@/types/database"
 
-type Bill = {
-  id: string
-  supplier_id: string
-  bill_number: string
-  bill_date: string
-  total_amount: number
-  paid_amount?: number
-  returned_amount?: number
-  return_status?: string
-  status: string
-  receipt_status?: string | null
-  receipt_rejection_reason?: string | null
-  currency_code?: string
-  original_currency?: string
-  original_total?: number
-  original_paid?: number
-  display_currency?: string
-  display_total?: number
-  display_paid?: number
-  suppliers?: { name: string; phone?: string }
-  // Linked Purchase Order
-  purchase_order_id?: string | null
-  // Linked Goods Receipt
-  goods_receipt_id?: string | null
-  goods_receipts?: { id: string; grn_number: string } | null
-}
-
-type Supplier = { id: string; name: string; phone?: string }
-
+// نوع الدفعة (خاص بهذه الصفحة)
 type Payment = { id: string; bill_id: string | null; amount: number }
 
-// نوع لبنود الفاتورة مع المنتج
-type BillItemWithProduct = {
-  bill_id: string
-  quantity: number
-  product_id?: string | null
-  products?: { name: string } | null
-  returned_quantity?: number
-}
-
-// نوع للكميات المرتجعة لكل منتج
-type ReturnedQuantity = {
-  bill_id: string
-  product_id: string
-  quantity: number
-}
-
-// نوع لعرض ملخص المنتجات
-type ProductSummary = { name: string; quantity: number; returned?: number }
-
-// نوع للمنتجات
+// نوع للمنتجات (خاص بهذه الصفحة)
 type Product = { id: string; name: string }
+
 
 export default function BillsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
   const [loading, setLoading] = useState<boolean>(true)
   const [bills, setBills] = useState<Bill[]>([])
+
   const [suppliers, setSuppliers] = useState<Record<string, Supplier>>({})
   const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
@@ -118,6 +82,12 @@ export default function BillsPage() {
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState<string>("")
+
+  // 🚀 Server-Side Pagination State
+  const [serverTotal, setServerTotal] = useState(0)
+  const [serverPage, setServerPage] = useState(1)
+  const [serverTotalPages, setServerTotalPages] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(20)
 
   // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
   const [isPending, startTransition] = useTransition()
@@ -138,9 +108,6 @@ export default function BillsPage() {
 
   // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
   const branchFilter = useBranchFilter()
-
-  // Pagination state
-  const [pageSize, setPageSize] = useState<number>(10)
 
   // Status options for multi-select - قائمة ثابتة بجميع الحالات الممكنة
   // تشمل دورة الاعتماد الجديدة لفواتير الشراء:
@@ -347,41 +314,91 @@ export default function BillsPage() {
       }
       setUserContext(context)
 
-      // 🔐 ERP Access Control - تحميل الفواتير مع تطبيق نظام Data Visibility الموحد
-      const visibilityRules = buildDataVisibilityFilter(context)
-
-      // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
-      const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
+      // ─── 🚀 جلب الفواتير عبر Server-Side Pagination + Cache ──────────────
       const selectedBranchId = branchFilter.getFilteredBranchId()
 
-      let billsQuery = supabase
-        .from("bills")
-        .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, receipt_status, receipt_rejection_reason, display_currency, display_total, original_currency, original_total, branch_id, purchase_order_id, suppliers(name, phone), branches(name), goods_receipts!goods_receipt_id(id, grn_number)")
-        .eq("company_id", visibilityRules.companyId)
-        .neq("status", "voided")
-
-      // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
-      if (canFilterByBranch && selectedBranchId) {
-        // المستخدم المميز اختار فرعاً معيناً
-        billsQuery = billsQuery.eq("branch_id", selectedBranchId)
-      } else if (!canFilterByBranch) {
-        // ✅ تطبيق قواعد الرؤية الموحدة للمستخدمين العاديين
-        billsQuery = applyDataVisibilityFilter(billsQuery, visibilityRules, "bills")
-      }
-      // else: المستخدم المميز بدون فلتر = جميع الفروع
-
-      const { data: billData } = await billsQuery.order("bill_date", { ascending: false })
-
-      // ✅ فلترة إضافية في JavaScript للحالات المعقدة (cost_center_id مع branch_id)
-      let filteredBills = billData || []
-      if (visibilityRules.filterByCostCenter && visibilityRules.costCenterId && billData) {
-        filteredBills = billData.filter((bill: any) => {
-          return !bill.cost_center_id || bill.cost_center_id === visibilityRules.costCenterId
-        })
+      // بناء cache key يعكس الصفحة الحالية وكل الفلاتر
+      const cacheParams = {
+        entity: 'bills' as const,
+        page: serverPage,
+        pageSize,
+        filters: {
+          statuses: filterStatuses,
+          suppliers: filterSuppliers,
+          search: searchQuery.trim(),
+          dateFrom,
+          dateTo,
+          branchId: selectedBranchId || '',
+        },
       }
 
-      setBills(filteredBills)
+      // ✅ Cache Hit → عرض فوري بدون fetch
+      const cached = getCachedPage<{ bills: Bill[]; total: number; totalPages: number }>(cacheParams)
+      if (cached) {
+        setBills(cached.bills)
+        setServerTotal(cached.total)
+        setServerTotalPages(cached.totalPages)
+        setLoading(false)
+        // تحميل البيانات المرتبطة (payments/items) للصفحة المعروضة
+        const cachedBillIds = cached.bills.map(b => b.id)
+        if (cachedBillIds.length) {
+          const [payData, itemsData] = await Promise.all([
+            supabase.from("payments").select("id, bill_id, amount").eq("company_id", companyId).in("bill_id", cachedBillIds),
+            supabase.from("bill_items").select("bill_id, quantity, product_id, returned_quantity, products(name)").in("bill_id", cachedBillIds),
+          ])
+          setPayments(payData.data || [])
+          setBillItems(itemsData.data || [])
+        }
+        return
+      }
+
+      const params = new URLSearchParams({
+        page: String(serverPage),
+        pageSize: String(pageSize),
+      })
+      if (filterStatuses.length > 0) filterStatuses.forEach(s => params.append('status', s))
+      if (filterSuppliers.length > 0) filterSuppliers.forEach(s => params.append('supplier', s))
+      if (searchQuery.trim()) params.set('search', searchQuery.trim())
+      if (dateFrom) params.set('dateFrom', dateFrom)
+      if (dateTo) params.set('dateTo', dateTo)
+      if (selectedBranchId) params.set('branchId', selectedBranchId)
+
+      const billsRes = await fetch(`/api/v2/bills?${params.toString()}`)
+      if (!billsRes.ok) throw new Error('Failed to fetch bills from API v2')
+      const billsJson = await billsRes.json()
+
+      const fetchedBills: Bill[] = billsJson.data || []
+      const fetchedTotal = billsJson.meta?.totalCount ?? 0
+      const fetchedTotalPages = billsJson.meta?.totalPages ?? 1
+
+      setBills(fetchedBills)
+      setServerTotal(fetchedTotal)
+      setServerTotalPages(fetchedTotalPages)
+
+      // ✅ Cache Write — احفظ نتيجة الصفحة الحالية
+      setCachedPage(cacheParams, {
+        bills: fetchedBills,
+        total: fetchedTotal,
+        totalPages: fetchedTotalPages,
+      })
+
+      // 🚀 Prefetch الصفحة التالية في الخلفية (بدون انتظار)
+      if (serverPage < fetchedTotalPages) {
+        const nextParams = { ...cacheParams, page: serverPage + 1 }
+        const nextQueryParams = new URLSearchParams(params)
+        nextQueryParams.set('page', String(serverPage + 1))
+        prefetchPage(
+          nextParams,
+          async () => {
+            const res = await fetch(`/api/v2/bills?${nextQueryParams.toString()}`)
+            if (!res.ok) throw new Error('prefetch failed')
+            const json = await res.json()
+            return { bills: json.data || [], total: json.meta?.totalCount ?? 0, totalPages: json.meta?.totalPages ?? 1 }
+          }
+        )
+      }
+
+      setUserContext(context)
 
       // 🔐 جلب الصلاحيات المشتركة للمستخدم الحالي
       let sharedGrantorUserIds: string[] = [];
@@ -408,19 +425,15 @@ export default function BillsPage() {
       // Load all suppliers for filtering - with access control
       let suppQuery = supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId);
 
-      // 🔒 تطبيق فلتر المنشئ (للموظفين)
       if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
         suppQuery = suppQuery.eq("created_by_user_id", accessFilter.createdByUserId);
       }
-
-      // 🔒 تطبيق فلتر الفرع (للمدراء والمحاسبين)
       if (accessFilter.filterByBranch && accessFilter.branchId) {
         suppQuery = suppQuery.eq("branch_id", accessFilter.branchId);
       }
 
       const { data: allSuppliersData } = await suppQuery.order("name");
 
-      // 🔐 جلب الموردين المشتركين (للموظفين فقط)
       let sharedSuppliers: Supplier[] = [];
       if (accessFilter.filterByCreatedBy && sharedGrantorUserIds.length > 0) {
         const { data: sharedSupp } = await supabase
@@ -431,13 +444,13 @@ export default function BillsPage() {
         sharedSuppliers = sharedSupp || [];
       }
 
-      // دمج الموردين (بدون تكرار)
       const allSupplierIds = new Set((allSuppliersData || []).map((s: Supplier) => s.id));
       const uniqueSharedSuppliers = sharedSuppliers.filter((s: Supplier) => !allSupplierIds.has(s.id));
       const mergedSuppliers = [...(allSuppliersData || []), ...uniqueSharedSuppliers];
       setAllSuppliers(mergedSuppliers)
 
-      const supplierIds = Array.from(new Set((billData || []).map((b: any) => b.supplier_id)))
+      // موردي الصفحة الحالية فقط (للـ supplier map المستخدم في الجدول)
+      const supplierIds = Array.from(new Set(fetchedBills.map(b => b.supplier_id)))
       if (supplierIds.length) {
         const { data: suppData } = await supabase
           .from("suppliers")
@@ -445,7 +458,7 @@ export default function BillsPage() {
           .eq("company_id", companyId)
           .in("id", supplierIds)
         const map: Record<string, Supplier> = {}
-          ; (suppData || []).forEach((s: any) => (map[s.id] = { id: s.id, name: s.name, phone: s.phone }))
+        ;(suppData || []).forEach((s: any) => (map[s.id] = { id: s.id, name: s.name, phone: s.phone }))
         setSuppliers(map)
       } else {
         setSuppliers({})
@@ -459,7 +472,9 @@ export default function BillsPage() {
         .order("name")
       setProducts(productsData || [])
 
-      const billIds = Array.from(new Set((billData || []).map((b: any) => b.id)))
+      // ─── تحميل البيانات المرتبطة للصفحة الحالية فقط ───────────────────────
+      // مقيّد بـ billIds الصفحة الحالية → لا over-fetching
+      const billIds = fetchedBills.map(b => b.id)
       if (billIds.length) {
         const { data: payData } = await supabase
           .from("payments")
@@ -468,14 +483,12 @@ export default function BillsPage() {
           .in("bill_id", billIds)
         setPayments(payData || [])
 
-        // تحميل بنود الفواتير مع أسماء المنتجات و returned_quantity للفلترة
         const { data: itemsData } = await supabase
           .from("bill_items")
           .select("bill_id, quantity, product_id, returned_quantity, products(name)")
           .in("bill_id", billIds)
         setBillItems(itemsData || [])
 
-        // تحميل الكميات المرتجعة من vendor_credit_items
         const { data: vendorCredits } = await supabase
           .from("vendor_credits")
           .select("id, bill_id")
@@ -517,13 +530,16 @@ export default function BillsPage() {
     }
   }
 
+
   // 🔄 Realtime: تحديث قائمة الفواتير تلقائياً عند أي تغيير
   // استخدام useRef للحفاظ على reference ثابت لـ loadData
   const loadDataRef = useRef(loadData)
   loadDataRef.current = loadData
 
   const handleBillsRealtimeEvent = useCallback(() => {
-    console.log('🔄 [Bills Page] Realtime event received, refreshing bills list...')
+    console.log('🔄 [Bills Page] Realtime event received, invalidating cache and refreshing...')
+    // ✅ إبطال الكاش عند أي تغيير في البيانات
+    invalidateCache('bills')
     loadDataRef.current()
   }, [])
 
@@ -655,16 +671,12 @@ export default function BillsPage() {
     setConfirmOpen(true)
   }
 
-  // Search filter
+  // الفلاتر المحلية التي تعمل على بيانات الصفحة الحالية فقط
+  // (البحث/status/supplier/date تم نقلها لـ DB في /api/v2/bills)
+  // تبقى فلترة المنتجات وشركات الشحن محلياً لأنها تعتمد على billItems
   const filteredBills = useMemo(() => {
     return bills.filter((bill) => {
-      // فلتر الحالة - Multi-select
-      if (filterStatuses.length > 0 && !filterStatuses.includes(bill.status)) return false
-
-      // فلتر المورد - Multi-select
-      if (filterSuppliers.length > 0 && !filterSuppliers.includes(bill.supplier_id)) return false
-
-      // فلتر المنتجات - إظهار الفواتير التي تحتوي على أي من المنتجات المختارة
+      // فلتر المنتجات — يعمل على بيانات الصفحة الحالية فقط
       if (filterProducts.length > 0) {
         const billProductIds = billItems
           .filter(item => item.bill_id === bill.id)
@@ -673,45 +685,30 @@ export default function BillsPage() {
         const hasSelectedProduct = filterProducts.some(productId => billProductIds.includes(productId))
         if (!hasSelectedProduct) return false
       }
-
       // فلتر شركة الشحن
       if (filterShippingProviders.length > 0) {
         const billProviderId = (bill as any).shipping_provider_id
         if (!billProviderId || !filterShippingProviders.includes(billProviderId)) return false
       }
-
-      // فلتر نطاق التاريخ
-      if (dateFrom && bill.bill_date < dateFrom) return false
-      if (dateTo && bill.bill_date > dateTo) return false
-
-      // فلتر البحث
-      if (!searchQuery.trim()) return true
-      const q = searchQuery.trim().toLowerCase()
-      const supplierName = String(bill.suppliers?.name || suppliers[bill.supplier_id]?.name || "").toLowerCase()
-      const supplierPhone = String(bill.suppliers?.phone || suppliers[bill.supplier_id]?.phone || "").toLowerCase()
-      const billNumber = bill.bill_number ? String(bill.bill_number).toLowerCase() : ""
-      return supplierName.includes(q) || supplierPhone.includes(q) || billNumber.includes(q)
+      return true
     })
-  }, [bills, filterStatuses, filterSuppliers, filterProducts, filterShippingProviders, billItems, dateFrom, dateTo, searchQuery, suppliers])
+  }, [bills, filterProducts, filterShippingProviders, billItems])
 
-  // Pagination logic
-  const {
-    currentPage,
-    totalPages,
-    totalItems,
-    paginatedItems: paginatedBills,
-    hasNext,
-    hasPrevious,
-    goToPage,
-    nextPage,
-    previousPage,
-    setPageSize: updatePageSize
-  } = usePagination(filteredBills, { pageSize })
+  // ─── Server Pagination Handlers ──────────────────────────────────────────
+  const handlePageChange = (newPage: number) => {
+    setServerPage(newPage)
+  }
 
   const handlePageSizeChange = (newSize: number) => {
     setPageSize(newSize)
-    updatePageSize(newSize)
+    setServerPage(1) // إعادة للصفحة الأولى عند تغيير الحجم
   }
+
+  // إعادة تحميل عند تغيير الصفحة أو حجمها
+  useEffect(() => {
+    loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverPage, pageSize])
 
   // تعريف أعمدة الجدول
   const tableColumns: DataTableColumn<Bill>[] = useMemo(() => [
@@ -1496,7 +1493,7 @@ export default function BillsPage() {
                   <>
                     <DataTable
                       columns={tableColumns}
-                      data={paginatedBills}
+                      data={filteredBills}
                       keyField="id"
                       lang={appLang}
                       minWidth="min-w-[700px]"
@@ -1542,13 +1539,13 @@ export default function BillsPage() {
                         }
                       }}
                     />
-                    {filteredBills.length > 0 && (
+                    {serverTotal > 0 && (
                       <DataPagination
-                        currentPage={currentPage}
-                        totalPages={totalPages}
-                        totalItems={totalItems}
+                        currentPage={serverPage}
+                        totalPages={serverTotalPages}
+                        totalItems={serverTotal}
                         pageSize={pageSize}
-                        onPageChange={goToPage}
+                        onPageChange={handlePageChange}
                         onPageSizeChange={handlePageSizeChange}
                         lang={appLang}
                       />
