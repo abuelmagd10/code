@@ -358,6 +358,9 @@ export class AccountingTransactionService {
             taxAmount: number
             totalAmount: number
             status: string
+            receiptStatus?: string
+            receivedBy?: string
+            receivedAt?: string
         },
         accountMapping: {
             companyId: string
