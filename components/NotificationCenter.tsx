@@ -364,10 +364,11 @@ export function NotificationCenter({
       if (!['owner', 'admin', 'general_manager'].includes(userRole)) return false
     }
 
-    // 3. التحقق من الدور المخصص له
+    // 3. التحقق من الدور المخصص له (إلغاء التجاوز الشامل للأدوار العليا لمنع تكرار الإشعارات)
     if (notification.assigned_to_role && notification.assigned_to_role !== userRole) {
-      if (!['owner', 'admin', 'general_manager'].includes(userRole)) {
-        if (!(notification.assigned_to_role === 'admin' && userRole === 'owner')) return false
+      // المالك فقط يمكنه رؤية إشعارات الأدوار الإدارية كاستثناء، وغيرها يجب أن يتطابق الدور
+      if (!(notification.assigned_to_role === 'admin' && userRole === 'owner')) {
+        return false
       }
     }
 
