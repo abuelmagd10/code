@@ -1424,7 +1424,10 @@ export async function notifyPOApprovalRequest(params: {
   // الأدوار العليا (admin/owner/GM) تستلم الإشعار بدون branchId حتى يظهر على مستوى الشركة كاملة
   // يتم استخدام دور 'admin' فقط لأن النظام (Frontend & Backend) مبرمج لإظهار إشعارات الـ admin تلقائياً لـ owner و general_manager
   // هذا يمنع تكرار الإشعار 3 مرات لنفس العملية
-  const topRoles = ['owner', 'general_manager', 'admin']
+  // الأدوار العليا تستلم الإشعار على مستوى الشركة كاملة (بدون branchId)
+  // ⚠️ نستخدم 'admin' فقط — النظام يُظهر إشعارات 'admin' تلقائياً لـ owner و general_manager
+  // استخدام الأدوار الثلاثة معاً يُسبب تكرار الإشعار 3 مرات لنفس المستخدم
+  const topRoles = ['admin']
   const branchRoles = ['manager']
 
   // توحيد الـ timestamp للعملية الواحدة (جميع الإشعارات من نفس الـ Request تأخذ نفس التوقيت)
