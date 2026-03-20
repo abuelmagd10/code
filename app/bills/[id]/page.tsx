@@ -2154,18 +2154,18 @@ export default function BillViewPage() {
                           try {
                             const { data: poData } = await supabase
                               .from("purchase_orders")
-                              .select("id, po_number, created_by")
+                              .select("id, po_number, created_by_user_id")
                               .eq("id", bill.purchase_order_id)
                               .single()
 
-                            if (poData?.created_by) {
+                            if (poData?.created_by_user_id) {
                               await notifyBillApprovedToPOCreator({
                                 companyId: bill.company_id,
                                 billId: bill.id,
                                 billNumber: bill.bill_number,
                                 purchaseOrderId: poData.id,
                                 poNumber: poData.po_number,
-                                poCreatedBy: poData.created_by,
+                                poCreatedBy: poData.created_by_user_id,
                                 approvedBy: user.id,
                                 branchId: bill.branch_id,
                                 costCenterId: bill.cost_center_id,
