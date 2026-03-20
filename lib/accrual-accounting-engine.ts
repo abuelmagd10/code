@@ -523,19 +523,41 @@ async function resolveJournalEntryIdForBill(
       { p_company_id: companyId, p_bill_id: billId }
     )
     if (!rpcErr && rpcId) return String(rpcId)
-  } catch {
-    // الدالة غير منشورة بعد أو خطأ شبكة — نكمل بالاستعلام المباشر
+    if (rpcErr && typeof console !== "undefined" && console.debug) {
+      console.debug("[resolveJournalEntryIdForBill] RPC:", rpcErr.message || rpcErr)
+    }
+  } catch (e: any) {
+    if (typeof console !== "undefined" && console.debug) {
+      console.debug("[resolveJournalEntryIdForBill] RPC exception:", e?.message || e)
+    }
   }
 
+  // بدون فلتر reference_type: قد يُخزَّن المرجع كـ bill أو غيره حسب مسار الإنشاء
   const { data: rows } = await supabase
     .from("journal_entries")
     .select("id")
     .eq("company_id", companyId)
-    .eq("reference_type", "bill")
     .eq("reference_id", billId)
+    .order("created_at", { ascending: false })
     .limit(1)
 
   if (rows && rows.length > 0) return rows[0].id as string
+
+  // المتصفح: جلب المعرف عبر API خادمي (service role) عندما RLS يمنع قراءة journal_entries
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/bills/${encodeURIComponent(billId)}/journal-entry-id`, {
+        credentials: "include",
+      })
+      if (res.ok) {
+        const body = (await res.json()) as { journal_entry_id?: string | null }
+        if (body?.journal_entry_id) return String(body.journal_entry_id)
+      }
+    } catch {
+      // تجاهل — نكمل إلى محاولة إنشاء القيد أو الخطأ
+    }
+  }
+
   return null
 }
 
