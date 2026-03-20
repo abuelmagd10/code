@@ -283,8 +283,10 @@ export async function updateNotificationStatus(
     throw error
   }
 
-  // ✅ data هو JSONB object
-  if (data && typeof data === 'object' && 'success' in data) {
+  // ✅ الدالة في SQL تعيد boolean
+  if (data === true) {
+    return { success: true }
+  } else if (data && typeof data === 'object' && 'success' in data) {
     return data as { success: boolean; error?: string; notification_id?: string; old_status?: string; new_status?: string }
   }
 
