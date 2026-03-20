@@ -18,7 +18,7 @@ import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { notifyPOApproved, notifyPORejected, notifyStoreManagerPOApproved } from "@/lib/notification-helpers"
+import { notifyPOApproved, notifyPORejected } from "@/lib/notification-helpers"
 // 🏷️ Canonical shared types — Single Source of Truth
 import type {
   PurchaseOrder as PO,   // نستخدم PO كاسم مختصر داخل الصفحة للتوافق
@@ -624,6 +624,7 @@ export default function PurchaseOrderDetailPage() {
         await notifyPOApproved({
           companyId,
           poId,
+          linkedBillId: data.bill_id || po.bill_id || null,
           poNumber: po.po_number,
           supplierName: po.suppliers?.name || "Unknown",
           amount: po.total_amount || 0,
@@ -635,18 +636,6 @@ export default function PurchaseOrderDetailPage() {
           appLang
         })
 
-        // ✅ إشعار مسؤول المخزن ببضاعة قادمة (PO Approved) — Fix 2: استخدام Helper الجاهز
-        await notifyStoreManagerPOApproved({
-          companyId,
-          poId,
-          poNumber: po.po_number,
-          supplierName: po.suppliers?.name || 'supplier',
-          amount: po.total_amount,
-          currency: po.currency || 'EGP',
-          branchId: po.branch_id || undefined,
-          approvedBy: user.id,
-          appLang
-        })
       }
 
       toastActionSuccess(toast, appLang === 'en' ? "Approve" : "اعتماد", appLang === 'en' ? "Purchase Order" : "أمر الشراء")

@@ -1484,6 +1484,7 @@ export async function notifyPOApprovalRequest(params: {
 export async function notifyPOApproved(params: {
   companyId: string
   poId: string
+  linkedBillId?: string | null
   poNumber: string
   supplierName: string
   amount: number
@@ -1494,7 +1495,7 @@ export async function notifyPOApproved(params: {
   approvedBy: string
   appLang?: 'ar' | 'en'
 }) {
-  const { companyId, poId, poNumber, supplierName, amount, currency, branchId, costCenterId, createdBy, approvedBy, appLang = 'ar' } = params
+  const { companyId, poId, linkedBillId, poNumber, supplierName, amount, currency, branchId, costCenterId, createdBy, approvedBy, appLang = 'ar' } = params
 
   const title = appLang === 'en'
     ? `Purchase Order Approved`
@@ -1507,8 +1508,8 @@ export async function notifyPOApproved(params: {
   try {
     await createNotification({
       companyId,
-      referenceType: 'purchase_order',
-      referenceId: poId,
+      referenceType: linkedBillId ? 'bill' : 'purchase_order',
+      referenceId: linkedBillId || poId,
       title,
       message,
       createdBy: approvedBy,
