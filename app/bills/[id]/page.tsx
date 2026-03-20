@@ -50,6 +50,7 @@ import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inven
 import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-reversal"
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
 import { createNotification } from "@/lib/governance-layer"
+import { notifyBillApprovedToPOCreator } from "@/lib/notification-helpers"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
@@ -2147,6 +2148,34 @@ export default function BillViewPage() {
                           .eq("id", bill.id)
 
                         if (error) throw error
+
+                        // ✅ إرسال إشعار لمنشئ أمر الشراء إذا كانت الفاتورة مرتبطة بأمر شراء
+                        if (bill.purchase_order_id) {
+                          try {
+                            const { data: poData } = await supabase
+                              .from("purchase_orders")
+                              .select("id, po_number, created_by")
+                              .eq("id", bill.purchase_order_id)
+                              .single()
+
+                            if (poData?.created_by) {
+                              await notifyBillApprovedToPOCreator({
+                                companyId: bill.company_id,
+                                billId: bill.id,
+                                billNumber: bill.bill_number,
+                                purchaseOrderId: poData.id,
+                                poNumber: poData.po_number,
+                                poCreatedBy: poData.created_by,
+                                approvedBy: user.id,
+                                branchId: bill.branch_id,
+                                costCenterId: bill.cost_center_id,
+                                appLang,
+                              })
+                            }
+                          } catch (notifyErr) {
+                            console.warn("Failed to notify PO creator after bill approval:", notifyErr)
+                          }
+                        }
 
                         toastActionSuccess(toast, "الاعتماد", "تعديلات الفاتورة", appLang)
                         await loadData()

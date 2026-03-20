@@ -1750,3 +1750,51 @@ export async function notifyPRRejected(params: {
     category: 'approvals'
   })
 }
+
+/**
+ * إشعار منشئ أمر الشراء عند اعتماد الفاتورة المعدّلة إدارياً
+ * يُرسل إلى: منشئ أمر الشراء المرتبط بالفاتورة
+ */
+export async function notifyBillApprovedToPOCreator(params: {
+  companyId: string
+  billId: string
+  billNumber: string
+  purchaseOrderId: string
+  poNumber: string
+  poCreatedBy: string   // الـ user_id لمنشئ أمر الشراء
+  approvedBy: string    // الـ user_id للمعتمِد
+  branchId?: string | null
+  costCenterId?: string | null
+  appLang?: 'ar' | 'en'
+}) {
+  const {
+    companyId, billId, billNumber, purchaseOrderId, poNumber,
+    poCreatedBy, approvedBy, branchId, costCenterId, appLang = 'ar'
+  } = params
+
+  const title = appLang === 'en'
+    ? `Purchase Bill #${billNumber} Approved`
+    : `تم اعتماد فاتورة الشراء #${billNumber}`
+
+  const message = appLang === 'en'
+    ? `Your purchase bill #${billNumber} linked to PO #${poNumber} has been approved by management and is ready for inventory receipt.`
+    : `تم اعتماد فاتورة الشراء رقم ${billNumber} المرتبطة بأمر الشراء ${poNumber} من قبل الإدارة وأصبحت جاهزة لاستلام المخزون.`
+
+  const eventKey = `bill:${billId}:approved:po_creator_notified`
+
+  await createNotification({
+    companyId,
+    referenceType: 'bill',
+    referenceId: billId,
+    title,
+    message,
+    createdBy: approvedBy,
+    assignedToUser: poCreatedBy,
+    branchId: branchId || undefined,
+    costCenterId: costCenterId || undefined,
+    priority: 'normal' as NotificationPriority,
+    eventKey,
+    severity: 'info',
+    category: 'approvals'
+  })
+}
