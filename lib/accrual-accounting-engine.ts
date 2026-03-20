@@ -480,13 +480,13 @@ export async function createPaymentJournal(
       throw new Error(`Payment not found: ${paymentError?.message}`)
     }
 
-    // التحقق من عدم وجود قيد دفع سابق
+    // التحقق من عدم وجود قيد دفع سابق (أنواع المرجع الحالية + legacy: payment)
     const { data: existingPayment } = await supabase
       .from("journal_entries")
       .select("id")
       .eq("company_id", companyId)
-      .eq("reference_type", "payment")
       .eq("reference_id", paymentId)
+      .in("reference_type", ["customer_payment", "supplier_payment", "payment"])
       .limit(1)
 
     if (existingPayment && existingPayment.length > 0) {
@@ -506,6 +506,37 @@ export async function createPaymentJournal(
     console.error('Error creating payment journal:', error)
     throw error
   }
+}
+
+/**
+ * العثور على قيد فاتورة المشتريات الموجود (مرحّل) حتى لو كان SELECT على journal_entries
+ * محجوبًا لدى بعض الأدوار (مثل store_manager) — يعتمد على RPC SECURITY DEFINER عند توفره.
+ */
+async function resolveJournalEntryIdForBill(
+  supabase: any,
+  companyId: string,
+  billId: string
+): Promise<string | null> {
+  try {
+    const { data: rpcId, error: rpcErr } = await supabase.rpc(
+      "get_journal_entry_id_for_bill_receipt",
+      { p_company_id: companyId, p_bill_id: billId }
+    )
+    if (!rpcErr && rpcId) return String(rpcId)
+  } catch {
+    // الدالة غير منشورة بعد أو خطأ شبكة — نكمل بالاستعلام المباشر
+  }
+
+  const { data: rows } = await supabase
+    .from("journal_entries")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("reference_type", "bill")
+    .eq("reference_id", billId)
+    .limit(1)
+
+  if (rows && rows.length > 0) return rows[0].id as string
+  return null
 }
 
 /**
@@ -538,18 +569,11 @@ export async function createPurchaseInventoryJournal(
       return null
     }
 
-    // التحقق من عدم وجود قيد سابق
-    const { data: existingBill } = await supabase
-      .from("journal_entries")
-      .select("id")
-      .eq("company_id", companyId)
-      .eq("reference_type", "bill")
-      .eq("reference_id", billId)
-      .limit(1)
-
-    if (existingBill && existingBill.length > 0) {
+    // التحقق من عدم وجود قيد سابق (يشمل حالة القيد المرحّل من اعتماد أمر الشراء / إرسال الفاتورة)
+    const existingJeId = await resolveJournalEntryIdForBill(supabase, companyId, billId)
+    if (existingJeId) {
       console.log(`Bill journal already exists for ${bill.bill_number}`)
-      return existingBill[0].id
+      return existingJeId
     }
 
     // الحصول على خريطة الحسابات
@@ -640,7 +664,21 @@ export async function createPurchaseInventoryJournal(
     })
 
     // حفظ القيد في قاعدة البيانات
-    return await saveJournalEntry(supabase, journalEntry)
+    try {
+      return await saveJournalEntry(supabase, journalEntry)
+    } catch (saveErr: any) {
+      const msg = saveErr?.message || String(saveErr)
+      // إن كان القيد موجودًا ومُرحَّلاً ولم يظهر في SELECT بسبب RLS، نعيد جلب المعرف عبر RPC
+      if (
+        msg.includes("Cannot add lines to a posted journal entry") ||
+        msg.includes("posted journal") ||
+        msg.includes("DUPLICATE_JE")
+      ) {
+        const retryId = await resolveJournalEntryIdForBill(supabase, companyId, billId)
+        if (retryId) return retryId
+      }
+      throw saveErr
+    }
 
   } catch (error) {
     console.error('Error creating purchase inventory journal:', error)
