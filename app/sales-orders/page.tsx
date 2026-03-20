@@ -1225,8 +1225,8 @@ function SalesOrdersContent() {
             console.error('Error details:', JSON.stringify(costCenterError, null, 2));
           } else if (costCenterData) {
             console.log('Cost center data structure:', costCenterData);
-            // Try different possible name fields
-            const name = costCenterData.name || costCenterData.title || costCenterData.label || costCenterData.code;
+            // Try different possible name fields (العمود الصحيح هو cost_center_name)
+            const name = costCenterData.cost_center_name || costCenterData.name || costCenterData.title || costCenterData.label || costCenterData.code;
             if (name) {
               info.costCenterName = name;
               console.log('Cost center name fetched:', name);
