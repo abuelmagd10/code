@@ -1487,9 +1487,22 @@ export default function BillViewPage() {
       }).eq("id", bill.id)
       if (error) throw error
 
-      // إشعار لمنشئ الفاتورة بالرفض
+      // إشعار لمنشئ الفاتورة بالرفض أو لمنشئ أمر الشراء (موظف الفرع) وللإدارة العليا
       try {
-        if (bill.created_by) {
+        let poCreatorId = null
+        if (bill.purchase_order_id) {
+          const { data: po } = await supabase
+            .from('purchase_orders')
+            .select('created_by_user_id')
+            .eq('id', bill.purchase_order_id)
+            .maybeSingle()
+          if (po && po.created_by_user_id) {
+            poCreatorId = po.created_by_user_id
+          }
+        }
+
+        const targetUserId = poCreatorId || bill.created_by
+        if (targetUserId) {
           await createNotification({
             companyId,
             referenceType: "bill",
@@ -1500,9 +1513,30 @@ export default function BillViewPage() {
               : `تم رفض استلام البضاعة للفاتورة رقم ${bill.bill_number}. السبب: ${receiptRejectionReason.trim()}`,
             createdBy: user.id,
             branchId: bill.branch_id || undefined,
-            assignedToUser: bill.created_by,
+            assignedToUser: targetUserId,
             priority: "high",
-            eventKey: `bill:${bill.id}:receipt_rejected:${Date.now()}`,
+            eventKey: `bill:${bill.id}:receipt_rejected_user:${Date.now()}`,
+            severity: "error",
+            category: "inventory"
+          })
+        }
+
+        // إشعار للإدارة العليا
+        const targetRoles = ["owner", "general_manager"]
+        for (const r of targetRoles) {
+          await createNotification({
+            companyId,
+            referenceType: "bill",
+            referenceId: bill.id,
+            title: appLang === "en" ? "Goods receipt rejected" : "تم رفض استلام البضاعة",
+            message: appLang === "en"
+              ? `The goods receipt for bill ${bill.bill_number} was rejected. Reason: ${receiptRejectionReason.trim()}`
+              : `تم رفض استلام البضاعة للفاتورة رقم ${bill.bill_number}. السبب: ${receiptRejectionReason.trim()}`,
+            createdBy: user.id,
+            branchId: bill.branch_id || undefined,
+            assignedToRole: r,
+            priority: "high",
+            eventKey: `bill:${bill.id}:receipt_rejected_${r}:${Date.now()}`,
             severity: "error",
             category: "inventory"
           })

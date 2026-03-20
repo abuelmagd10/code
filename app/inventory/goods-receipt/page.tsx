@@ -880,7 +880,7 @@ export default function GoodsReceiptPage() {
 
       if (updErr) throw updErr
 
-      // ✅ إرسال إشعارات رفض الاستلام إلى: منشئ الفاتورة + owner + general_manager + accountant + manager
+      // ✅ إشعار لمنشئ الفاتورة (أو منشئ أمر الشراء للفرع) وللإدارة العليا بالرفض
       try {
         const rejectionTitle = appLang === "en"
           ? "Purchase bill goods receipt rejected"
@@ -891,8 +891,30 @@ export default function GoodsReceiptPage() {
 
         const notifTs = Date.now()
 
-        // 1️⃣ إشعار لمنشئ الفاتورة (created_by_user_id)
-        if (selectedBill.created_by_user_id) {
+        let poCreatorId = null
+
+        // استخراج purchase_order_id من الفاتورة إذا كان موجوداً
+        const { data: bData } = await supabase
+          .from('bills')
+          .select('purchase_order_id')
+          .eq('id', selectedBill.id)
+          .maybeSingle()
+
+        if (bData && bData.purchase_order_id) {
+          const { data: po } = await supabase
+            .from('purchase_orders')
+            .select('created_by_user_id')
+            .eq('id', bData.purchase_order_id)
+            .maybeSingle()
+          if (po && po.created_by_user_id) {
+            poCreatorId = po.created_by_user_id
+          }
+        }
+
+        const targetUserId = poCreatorId || selectedBill.created_by_user_id
+
+        // 1️⃣ إشعار لموظف الفرع الأصلي (أو منشئ الفاتورة)
+        if (targetUserId) {
           await createNotification({
             companyId,
             referenceType: "bill",
@@ -903,7 +925,7 @@ export default function GoodsReceiptPage() {
             branchId: branchId || undefined,
             warehouseId: warehouseId || undefined,
             costCenterId: costCenterId || undefined,
-            assignedToUser: selectedBill.created_by_user_id,
+            assignedToUser: targetUserId,
             priority: "high",
             eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_creator:${notifTs}`,
             severity: "warning",
@@ -911,77 +933,26 @@ export default function GoodsReceiptPage() {
           })
         }
 
-        // 2️⃣ إشعار للـ owner
-        await createNotification({
-          companyId,
-          referenceType: "bill",
-          referenceId: selectedBill.id,
-          title: rejectionTitle,
-          message: rejectionMessage,
-          createdBy: user.id,
-          branchId: branchId || undefined,
-          warehouseId: warehouseId || undefined,
-          costCenterId: costCenterId || undefined,
-          assignedToRole: "owner",
-          priority: "high",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_owner:${notifTs}`,
-          severity: "warning",
-          category: "approvals"
-        })
-
-        // 3️⃣ إشعار للـ general_manager
-        await createNotification({
-          companyId,
-          referenceType: "bill",
-          referenceId: selectedBill.id,
-          title: rejectionTitle,
-          message: rejectionMessage,
-          createdBy: user.id,
-          branchId: branchId || undefined,
-          warehouseId: warehouseId || undefined,
-          costCenterId: costCenterId || undefined,
-          assignedToRole: "general_manager",
-          priority: "high",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_gm:${notifTs}`,
-          severity: "warning",
-          category: "approvals"
-        })
-
-        // 4️⃣ إشعار للـ accountant (للتناسق مع إشعارات الاستلام الناجح)
-        await createNotification({
-          companyId,
-          referenceType: "bill",
-          referenceId: selectedBill.id,
-          title: rejectionTitle,
-          message: rejectionMessage,
-          createdBy: user.id,
-          branchId: branchId || undefined,
-          warehouseId: warehouseId || undefined,
-          costCenterId: costCenterId || undefined,
-          assignedToRole: "accountant",
-          priority: "high",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_accountant:${notifTs}`,
-          severity: "warning",
-          category: "approvals"
-        })
-
-        // 5️⃣ إشعار للـ manager (للتناسق مع إشعارات الاستلام الناجح)
-        await createNotification({
-          companyId,
-          referenceType: "bill",
-          referenceId: selectedBill.id,
-          title: rejectionTitle,
-          message: rejectionMessage,
-          createdBy: user.id,
-          branchId: branchId || undefined,
-          warehouseId: warehouseId || undefined,
-          costCenterId: costCenterId || undefined,
-          assignedToRole: "manager",
-          priority: "high",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_manager:${notifTs}`,
-          severity: "warning",
-          category: "approvals"
-        })
+        // 2️⃣ إشعار للـ الإدارة العليا
+        const targetRoles = ["owner", "general_manager"]
+        for (const r of targetRoles) {
+          await createNotification({
+            companyId,
+            referenceType: "bill",
+            referenceId: selectedBill.id,
+            title: rejectionTitle,
+            message: rejectionMessage,
+            createdBy: user.id,
+            branchId: branchId || undefined,
+            warehouseId: warehouseId || undefined,
+            costCenterId: costCenterId || undefined,
+            assignedToRole: r,
+            priority: "high",
+            eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_${r}:${notifTs}`,
+            severity: "warning",
+            category: "approvals"
+          })
+        }
       } catch (notifErr) {
         console.warn("Failed to send rejection notifications:", notifErr)
       }
