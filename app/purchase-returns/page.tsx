@@ -15,7 +15,7 @@ import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useToast } from "@/hooks/use-toast"
-import { notifyPurchaseReturnConfirmed, notifyWarehouseAllocationConfirmed, notifyPRApproved, notifyPRRejected } from "@/lib/notification-helpers"
+import { notifyPurchaseReturnConfirmed, notifyWarehouseAllocationConfirmed, notifyPRApproved, notifyPRRejected, notifyPurchaseReturnPendingApproval, notifyWarehouseReturnRejected } from "@/lib/notification-helpers"
 import { createNotification } from "@/lib/governance-layer"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
@@ -84,6 +84,12 @@ export default function PurchaseReturnsPage() {
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false)
   const [prToReject, setPrToReject] = useState<PurchaseReturn | null>(null)
   const [rejectionReason, setRejectionReason] = useState('')
+
+  // Warehouse rejection state
+  const [isWarehouseRejectDialogOpen, setIsWarehouseRejectDialogOpen] = useState(false)
+  const [prToWarehouseReject, setPrToWarehouseReject] = useState<PurchaseReturn | null>(null)
+  const [warehouseRejectionReason, setWarehouseRejectionReason] = useState('')
+  const [isWarehouseRejecting, setIsWarehouseRejecting] = useState(false)
 
   // Refund recording state
   const [isRefundDialogOpen, setIsRefundDialogOpen] = useState(false)
@@ -242,7 +248,41 @@ export default function PurchaseReturnsPage() {
         toast({ title: appLang === 'en' ? '❌ Approval Failed' : '❌ فشل الاعتماد', description: result?.error || error?.message, variant: 'destructive' })
         return
       }
-      // الإشعارات تدار آلياً بالزمن الفعلي عبر Database Event Router
+
+      // Notify creator that their return was approved
+      if (pr.created_by) {
+        try {
+          await notifyPRApproved({
+            companyId,
+            prId: pr.id,
+            prNumber: pr.return_number,
+            supplierName: (pr.suppliers as any)?.name || '',
+            amount: pr.total_amount,
+            currency: appCurrency,
+            createdBy: pr.created_by,
+            approvedBy: currentUserId!,
+            branchId: pr.branch_id || undefined,
+            appLang,
+          })
+        } catch (e) { console.warn('notifyPRApproved failed:', e) }
+      }
+
+      // Notify store manager to execute warehouse confirmation
+      try {
+        await notifyPurchaseReturnPendingApproval({
+          companyId,
+          purchaseReturnId: pr.id,
+          returnNumber: pr.return_number,
+          supplierName: (pr.suppliers as any)?.name || '',
+          totalAmount: pr.total_amount,
+          currency: appCurrency,
+          warehouseId: pr.warehouse_id || '',
+          branchId: pr.branch_id || undefined,
+          createdBy: currentUserId!,
+          createdByName: currentUserName,
+          appLang,
+        })
+      } catch (e) { console.warn('notifyPurchaseReturnPendingApproval failed:', e) }
 
       toast({ title: appLang === 'en' ? '✅ Return Approved' : '✅ تم اعتماد المرتجع', description: pr.return_number })
       loadReturns()
@@ -273,7 +313,24 @@ export default function PurchaseReturnsPage() {
         return
       }
 
-      // الإشعارات تدار آلياً بالزمن الفعلي عبر Database Event Router
+      // Notify the creator that admin rejected their return
+      if (prToReject.created_by) {
+        try {
+          await notifyPRRejected({
+            companyId,
+            prId: prToReject.id,
+            prNumber: prToReject.return_number,
+            supplierName: (prToReject.suppliers as any)?.name || '',
+            amount: prToReject.total_amount,
+            currency: appCurrency,
+            reason: rejectionReason.trim(),
+            createdBy: prToReject.created_by,
+            rejectedBy: currentUserId!,
+            branchId: prToReject.branch_id || undefined,
+            appLang,
+          })
+        } catch (e) { console.warn('notifyPRRejected failed:', e) }
+      }
 
       toast({ title: appLang === 'en' ? '✅ Return Rejected' : '✅ تم رفض المرتجع', description: prToReject.return_number })
       setIsRejectDialogOpen(false)
@@ -284,6 +341,66 @@ export default function PurchaseReturnsPage() {
       toast({ title: '❌ Error', description: String(err), variant: 'destructive' })
     } finally {
       setIsApproving(false)
+    }
+  }
+
+  // ===================== رفض اعتماد التسليم من مسؤول المخزن =====================
+  const handleWarehouseReject = async () => {
+    if (!prToWarehouseReject || !currentUserId || !warehouseRejectionReason.trim()) return
+    setIsWarehouseRejecting(true)
+    try {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      const { data: result, error } = await supabase.rpc('reject_warehouse_return', {
+        p_purchase_return_id: prToWarehouseReject.id,
+        p_rejected_by: currentUserId,
+        p_reason: warehouseRejectionReason.trim(),
+      })
+
+      if (error || !result?.success) {
+        toast({
+          title: appLang === 'en' ? '❌ Rejection Failed' : '❌ فشل الرفض',
+          description: result?.error || error?.message,
+          variant: 'destructive'
+        })
+        return
+      }
+
+      // Notify creator that warehouse rejected the return
+      const createdBy = result?.created_by || prToWarehouseReject.created_by
+      if (createdBy) {
+        try {
+          await notifyWarehouseReturnRejected({
+            companyId,
+            prId: prToWarehouseReject.id,
+            prNumber: prToWarehouseReject.return_number,
+            supplierName: (prToWarehouseReject.suppliers as any)?.name || '',
+            amount: prToWarehouseReject.total_amount,
+            currency: appCurrency,
+            reason: warehouseRejectionReason.trim(),
+            createdBy,
+            rejectedBy: currentUserId,
+            branchId: prToWarehouseReject.branch_id || undefined,
+            appLang,
+          })
+        } catch (e) { console.warn('notifyWarehouseReturnRejected failed:', e) }
+      }
+
+      toast({
+        title: appLang === 'en' ? '✅ Warehouse Rejected' : '✅ تم رفض المرتجع من المخزن',
+        description: appLang === 'en'
+          ? `Return ${prToWarehouseReject.return_number} rejected. Creator has been notified to edit and resubmit.`
+          : `تم رفض المرتجع ${prToWarehouseReject.return_number}. تم إشعار المنشئ للتعديل وإعادة الإرسال.`,
+      })
+      setIsWarehouseRejectDialogOpen(false)
+      setPrToWarehouseReject(null)
+      setWarehouseRejectionReason('')
+      loadReturns()
+    } catch (err) {
+      toast({ title: '❌ Error', description: String(err), variant: 'destructive' })
+    } finally {
+      setIsWarehouseRejecting(false)
     }
   }
 
@@ -528,6 +645,34 @@ export default function PurchaseReturnsPage() {
     const isMultiAlloc = allocations.length > 1
     const status = row?.status || wfStatus
 
+    // Phase 1: Waiting for admin approval
+    if (wfStatus === 'pending_admin_approval') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
+          <Clock className="w-3 h-3" />
+          {appLang === 'en' ? 'Pending Admin' : 'بانتظار الإدارة'}
+        </span>
+      )
+    }
+    // Phase 2: Admin approved, waiting for warehouse
+    if (wfStatus === 'pending_warehouse') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+          <Clock className="w-3 h-3" />
+          {appLang === 'en' ? 'Pending Warehouse' : 'بانتظار المخزن'}
+        </span>
+      )
+    }
+    // Warehouse rejected
+    if (wfStatus === 'warehouse_rejected') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300">
+          <XCircle className="w-3 h-3" />
+          {appLang === 'en' ? 'Warehouse Rejected' : 'مرفوض من المخزن'}
+        </span>
+      )
+    }
+    // Legacy: pending_approval
     if (status === 'pending_approval' || wfStatus === 'pending_approval') {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
@@ -760,8 +905,19 @@ export default function PurchaseReturnsPage() {
         const pr = row as PurchaseReturn
         const allocations = pr.allocations || []
         const isMultiAlloc = allocations.length > 1
-        const isPending = pr.workflow_status === 'pending_approval' || pr.workflow_status === 'partial_approval'
         const isPrivileged = PRIVILEGED_ROLES.includes(currentUserRole)
+
+        // Admin approval gate: only show for pending_admin_approval
+        const isPendingAdminApproval = pr.workflow_status === 'pending_admin_approval'
+
+        // Warehouse confirmation gate: only show after admin approval
+        const isPendingWarehouse = pr.workflow_status === 'pending_warehouse'
+
+        // Legacy pending states (for backward compat with old records)
+        const isLegacyPending = pr.workflow_status === 'pending_approval' || pr.workflow_status === 'partial_approval'
+
+        // Combined pending (any pending state)
+        const isPending = isPendingAdminApproval || isPendingWarehouse || isLegacyPending
 
         // تخصيصات مخزن هذا المسؤول (Phase 2)
         const myAllocations = allocations.filter(a =>
@@ -773,21 +929,22 @@ export default function PurchaseReturnsPage() {
           (!currentWarehouseId || pr.warehouse_id === currentWarehouseId)
 
         // Phase 1 بدون مسؤول مخزن: warehouse_id غير مُدار أو لا يوجد warehouse_id
-        const isPhase1UnmanagedWarehouse = isPrivileged && isPending && !isMultiAlloc &&
+        // يظهر هذا الزر فقط بعد موافقة الإدارة (pending_warehouse)
+        const isPhase1UnmanagedWarehouse = isPrivileged && (isPendingWarehouse || isLegacyPending) && !isMultiAlloc &&
           (!pr.warehouse_id || !managedWarehouseIds.has(pr.warehouse_id))
 
         return (
           <div className="flex flex-col items-center gap-1">
             <div className="flex items-center gap-1.5 justify-center">
-              {/* Enterprise: Approve/Reject buttons for privileged roles */}
-              {isPrivileged && pr.status === 'pending_approval' && (
+              {/* المرحلة 1: اعتماد إداري — يظهر فقط عند pending_admin_approval */}
+              {isPrivileged && isPendingAdminApproval && (
                 <>
                   <Button
                     size="sm"
                     className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-7 px-2"
                     onClick={() => handleApprovePR(pr)}
                     disabled={isApproving}
-                    title={appLang === 'en' ? 'Approve Return' : 'اعتماد المرتجع'}
+                    title={appLang === 'en' ? 'Admin Approve Return' : 'اعتماد المرتجع إدارياً'}
                   >
                     <CheckCircle2 className="w-3 h-3 mr-1" />
                     {appLang === 'en' ? 'Approve' : 'اعتماد'}
@@ -798,31 +955,45 @@ export default function PurchaseReturnsPage() {
                     className="border-red-400 text-red-600 hover:bg-red-50 text-xs h-7 px-2"
                     onClick={() => { setPrToReject(pr); setIsRejectDialogOpen(true) }}
                     disabled={isApproving}
-                    title={appLang === 'en' ? 'Reject Return' : 'رفض المرتجع'}
+                    title={appLang === 'en' ? 'Admin Reject Return' : 'رفض المرتجع إدارياً'}
                   >
                     <XCircle className="w-3 h-3 mr-1" />
                     {appLang === 'en' ? 'Reject' : 'رفض'}
                   </Button>
                 </>
               )}
-              {/* Phase 1: زر اعتماد مرتجع مخزن واحد لمسؤول المخزن */}
-              {isStoreManager && isPending && !isMultiAlloc && isPhase1MyWarehouse && (
-                <Button
-                  size="sm"
-                  className="bg-green-600 hover:bg-green-700 text-white text-xs h-7 px-2"
-                  onClick={() => confirmDelivery(pr)}
-                  disabled={confirmingId === pr.id}
-                  title={appLang === 'en' ? 'Confirm Delivery to Supplier' : 'اعتماد تسليم البضاعة للمورد'}
-                >
-                  {confirmingId === pr.id ? (
-                    <span className="animate-spin">⏳</span>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-3 h-3 mr-1" />
-                      {appLang === 'en' ? 'Confirm' : 'اعتماد'}
-                    </>
-                  )}
-                </Button>
+
+              {/* المرحلة 2: اعتماد مسؤول المخزن — يظهر فقط بعد موافقة الإدارة */}
+              {isStoreManager && (isPendingWarehouse || isLegacyPending) && !isMultiAlloc && isPhase1MyWarehouse && (
+                <>
+                  <Button
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 text-white text-xs h-7 px-2"
+                    onClick={() => confirmDelivery(pr)}
+                    disabled={confirmingId === pr.id}
+                    title={appLang === 'en' ? 'Confirm Delivery to Supplier' : 'اعتماد تسليم البضاعة للمورد'}
+                  >
+                    {confirmingId === pr.id ? (
+                      <span className="animate-spin">⏳</span>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3 h-3 mr-1" />
+                        {appLang === 'en' ? 'Confirm' : 'اعتماد'}
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-rose-400 text-rose-600 hover:bg-rose-50 text-xs h-7 px-2"
+                    onClick={() => { setPrToWarehouseReject(pr); setIsWarehouseRejectDialogOpen(true) }}
+                    disabled={isWarehouseRejecting}
+                    title={appLang === 'en' ? 'Warehouse Reject' : 'رفض من المخزن'}
+                  >
+                    <XCircle className="w-3 h-3 mr-1" />
+                    {appLang === 'en' ? 'Reject' : 'رفض'}
+                  </Button>
+                </>
               )}
 
               {/* Phase 1: زر اعتماد للأدوار العليا عند غياب مسؤول المخزن */}
@@ -1144,11 +1315,12 @@ export default function PurchaseReturnsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Admin rejection dialog */}
       <Dialog open={isRejectDialogOpen} onOpenChange={(open) => { setIsRejectDialogOpen(open); if (!open) { setPrToReject(null); setRejectionReason('') } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="text-red-600">
-              {appLang === 'en' ? '❌ Reject Purchase Return' : '❌ رفض مرتجع المشتريات'}
+              {appLang === 'en' ? '❌ Admin Reject Purchase Return' : '❌ رفض مرتجع المشتريات إدارياً'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -1160,7 +1332,7 @@ export default function PurchaseReturnsPage() {
               </p>
             )}
             <Textarea
-              placeholder={appLang === 'en' ? 'Enter rejection reason (required)…' : 'أدخل سبب الرفض (إلزامي)…'}
+              placeholder={appLang === 'en' ? 'Enter rejection reason (required)…' : 'أدخل سبب الرفض الإداري (إلزامي)…'}
               value={rejectionReason}
               onChange={(e) => setRejectionReason(e.target.value)}
               rows={3}
@@ -1177,6 +1349,50 @@ export default function PurchaseReturnsPage() {
               disabled={isApproving || !rejectionReason.trim()}
             >
               {isApproving ? '⏳' : (appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Warehouse rejection dialog */}
+      <Dialog open={isWarehouseRejectDialogOpen} onOpenChange={(open) => { setIsWarehouseRejectDialogOpen(open); if (!open) { setPrToWarehouseReject(null); setWarehouseRejectionReason('') } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-rose-600">
+              {appLang === 'en' ? '🏭 Warehouse Reject Return' : '🏭 رفض المرتجع من المخزن'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {prToWarehouseReject && (
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {appLang === 'en'
+                  ? `Return: ${prToWarehouseReject.return_number} — Supplier: ${(prToWarehouseReject.suppliers as any)?.name || '—'}`
+                  : `المرتجع: ${prToWarehouseReject.return_number} — المورد: ${(prToWarehouseReject.suppliers as any)?.name || '—'}`}
+              </p>
+            )}
+            <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded p-2">
+              {appLang === 'en'
+                ? '⚠️ Rejecting will notify the creator to edit and resubmit. A full approval cycle will restart.'
+                : '⚠️ الرفض سيُشعر المنشئ للتعديل وإعادة الإرسال. ستبدأ دورة الاعتماد من جديد.'}
+            </p>
+            <Textarea
+              placeholder={appLang === 'en' ? 'Enter warehouse rejection reason (required)…' : 'أدخل سبب رفض المخزن (إلزامي)…'}
+              value={warehouseRejectionReason}
+              onChange={(e) => setWarehouseRejectionReason(e.target.value)}
+              rows={3}
+              className="resize-none"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setIsWarehouseRejectDialogOpen(false); setPrToWarehouseReject(null); setWarehouseRejectionReason('') }}>
+              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+            </Button>
+            <Button
+              className="bg-rose-600 hover:bg-rose-700 text-white"
+              onClick={handleWarehouseReject}
+              disabled={isWarehouseRejecting || !warehouseRejectionReason.trim()}
+            >
+              {isWarehouseRejecting ? '⏳' : (appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض')}
             </Button>
           </DialogFooter>
         </DialogContent>

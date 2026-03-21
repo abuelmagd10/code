@@ -1804,3 +1804,59 @@ export async function notifyBillApprovedToPOCreator(params: {
     category: 'approvals'
   })
 }
+
+// ===========================================================
+// 🏭 Warehouse Return Rejection Notification
+// ===========================================================
+
+/**
+ * Notify the purchase return creator when the warehouse manager rejects
+ * the return. Creator can then edit and resubmit for a new approval cycle.
+ */
+export async function notifyWarehouseReturnRejected(params: {
+  companyId: string
+  prId: string
+  prNumber: string
+  supplierName: string
+  amount: number
+  currency: string
+  reason: string
+  createdBy: string
+  rejectedBy: string
+  branchId?: string
+  costCenterId?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const {
+    companyId, prId, prNumber, supplierName, amount, currency,
+    reason, createdBy, rejectedBy, branchId, costCenterId, appLang = 'ar'
+  } = params
+
+  const title = appLang === 'en'
+    ? '🏭 Purchase Return Rejected by Warehouse'
+    : '🏭 رفض مسؤول المخزن مرتجع المشتريات'
+
+  const message = appLang === 'en'
+    ? `Warehouse manager rejected return ${prNumber} (${supplierName}, ${amount} ${currency}). Reason: ${reason}. You can edit and resubmit.`
+    : `رفض مسؤول المخزن المرتجع ${prNumber} (${supplierName}، ${amount} ${currency}). السبب: ${reason}. يمكنك التعديل وإعادة الإرسال.`
+
+  try {
+    await createNotification({
+      companyId,
+      referenceType: 'purchase_return',
+      referenceId: prId,
+      title,
+      message,
+      createdBy: rejectedBy,
+      assignedToUser: createdBy,
+      branchId,
+      costCenterId,
+      priority: 'high' as NotificationPriority,
+      eventKey: `purchase_return:${prId}:warehouse_rejected`,
+      severity: 'error',
+      category: 'approvals'
+    })
+  } catch (err) {
+    console.warn('⚠️ Failed to send warehouse rejection notification:', err)
+  }
+}

@@ -15,8 +15,7 @@ import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/curre
 import { getActiveCompanyId } from "@/lib/company"
 import { canReturnBill, getBillOperationError, billRequiresJournalEntries } from "@/lib/validation"
 import { validatePurchaseReturnStock, formatStockShortageMessage } from "@/lib/purchase-return-validation"
-import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-reversal"
-import { notifyPurchaseReturnPendingApproval } from "@/lib/notification-helpers"
+import { notifyPRApprovalRequest } from "@/lib/notification-helpers"
 
 type Supplier = { id: string; name: string; phone?: string | null }
 type Bill = { id: string; bill_number: string; supplier_id: string; total_amount: number; status: string; receipt_status?: string | null; branch_id?: string | null; cost_center_id?: string | null; warehouse_id?: string | null }
@@ -670,7 +669,7 @@ export default function NewPurchaseReturnPage() {
         p_purchase_return: {
           return_number: form.return_number,
           return_date: form.return_date,
-          status: 'completed',
+          status: 'pending_approval',
           subtotal: filteredGroups.reduce((s, g) => s + (g?.subtotal || 0), 0),
           tax_amount: filteredGroups.reduce((s, g) => s + (g?.tax_amount || 0), 0),
           total_amount: filteredGroups.reduce((s, g) => s + (g?.total_amount || 0), 0),
@@ -694,34 +693,31 @@ export default function NewPurchaseReturnPage() {
     const purchaseReturnId = (rpcResult as any)?.purchase_return_id
     const allocationIds: string[] = (rpcResult as any)?.allocation_ids || []
 
-    // إشعارات لكل مخزن
+    // إشعار للإدارة العليا (pending_admin_approval — نفس سياسة المرتجع الفردي)
     const selectedSupplier = suppliers.find(s => s.id === form.supplier_id)
-    for (const alloc of warehouseAllocations.filter(a => a.warehouseId)) {
+    if (purchaseReturnId) {
       try {
-        const groupData = filteredGroups.find((g: any) => g?.warehouse_id === alloc.warehouseId)
-        await notifyPurchaseReturnPendingApproval({
+        const totalAmt = filteredGroups.reduce((s: number, g: any) => s + (g?.total_amount || 0), 0)
+        await notifyPRApprovalRequest({
           companyId,
-          purchaseReturnId,
-          returnNumber: form.return_number,
+          prId: purchaseReturnId,
+          prNumber: form.return_number,
           supplierName: selectedSupplier?.name || form.supplier_id,
-          totalAmount: groupData?.total_amount || 0,
+          amount: totalAmt,
           currency: baseCurrency,
-          warehouseId: alloc.warehouseId,
-          branchId: groupData?.branch_id || undefined,
           createdBy: currentUserId || '',
-          createdByName: currentUserName,
           appLang,
         })
       } catch (notifyErr) {
-        console.warn('⚠️ Multi-warehouse notification failed (non-critical):', notifyErr)
+        console.warn('⚠️ Multi-warehouse admin notification failed (non-critical):', notifyErr)
       }
     }
 
     toast({
-      title: appLang === 'en' ? '📋 Multi-Warehouse Return Created' : '📋 تم إنشاء المرتجع متعدد المخازن',
+      title: appLang === 'en' ? '📋 Multi-Warehouse Return Submitted for Admin Approval' : '📋 تم إرسال المرتجع متعدد المخازن للاعتماد الإداري',
       description: appLang === 'en'
-        ? `Return ${form.return_number} created for ${filteredGroups.length} warehouses. Each manager will confirm their warehouse.`
-        : `تم إنشاء مرتجع ${form.return_number} لـ ${filteredGroups.length} مخازن. سيعتمد كل مسؤول مخزنه.`,
+        ? `Return ${form.return_number} for ${filteredGroups.length} warehouses is pending admin approval.`
+        : `مرتجع ${form.return_number} لـ ${filteredGroups.length} مخازن بانتظار موافقة الإدارة العليا.`,
     })
     router.push("/purchase-returns")
   }
@@ -875,21 +871,12 @@ export default function NewPurchaseReturnPage() {
       }
 
       // ===================== تحديد workflow_status =====================
-      // إذا اختار المالك/المدير مخزن مختلف عن مخزن الفاتورة → pending_approval
-      // شرط ضروري: يجب أن تكون الفاتورة محددة لتفعيل pending_approval
-      const isDifferentWarehouse = isPrivileged && !!form.bill_id && !!effectiveSelectedWarehouseId && !!selectedBill && effectiveSelectedWarehouseId !== (selectedBill.warehouse_id || '')
-      const workflowStatus = isDifferentWarehouse ? 'pending_approval' : 'confirmed'
+      // جميع المرتجعات بدون استثناء تبدأ بـ pending_admin_approval
+      // لا يوجد خصم مخزون أو أثر مالي حتى موافقة الإدارة ثم المخزن
+      const workflowStatus = 'pending_admin_approval'
 
-      // ===================== التحقق من المخزون (UX pre-check) =====================
-      // للمرتجعات المعلقة: التحقق من المخزن المختار
-      const stockCheckWarehouseId = effectiveWarehouseId || billWarehouseId
-      if (stockCheckWarehouseId && workflowStatus === 'confirmed') {
-        const stockValidation = await validatePurchaseReturnStock(supabase, validItems, stockCheckWarehouseId, companyId)
-        if (!stockValidation.success) {
-          toastActionError(toast, "الحفظ", "المرتجع", formatStockShortageMessage(stockValidation.shortages, appLang))
-          return
-        }
-      }
+      // ملاحظة: التحقق من المخزون يتم في مرحلة اعتماد المخزن (confirm_purchase_return_delivery_v2)
+      // لا حاجة لفحص مسبق هنا لأن المرتجع يُحفظ كـ pending ولا يُنفَّذ فوراً
 
       // ===================== جلب الحسابات =====================
       const { data: accounts } = await supabase
@@ -1057,7 +1044,7 @@ export default function NewPurchaseReturnPage() {
           p_purchase_return: {
             return_number: form.return_number,
             return_date: form.return_date,
-            status: 'completed',
+            status: 'pending_approval',
             subtotal: finalBaseSubtotal,
             tax_amount: finalBaseTax,
             total_amount: finalBaseTotal,
@@ -1087,12 +1074,12 @@ export default function NewPurchaseReturnPage() {
           p_journal_entry: needsJournalEntry ? {
             entry_date: form.return_date,
             description: `مرتجع مشتريات رقم ${form.return_number}`,
-            status: 'posted',
+            status: 'draft',
           } : null,
           p_journal_lines: (needsJournalEntry && journalLines.length > 0) ? journalLines : null,
           p_vendor_credit: vendorCreditData,
           p_vendor_credit_items: vendorCreditItemsData,
-          p_bill_update: workflowStatus === 'pending_approval' ? null : billUpdateData,
+          p_bill_update: null,
           p_workflow_status: workflowStatus,
           p_created_by: currentUserId || null,
         }
@@ -1118,7 +1105,7 @@ export default function NewPurchaseReturnPage() {
               return_number: form.return_number,
               supplier_id: form.supplier_id,
               total_amount: finalBaseTotal,
-              status: workflowStatus === 'pending_approval' ? 'pending_approval' : 'completed',
+              status: 'pending_approval',
             },
           })
         } catch (auditErr) {
@@ -1126,98 +1113,34 @@ export default function NewPurchaseReturnPage() {
         }
       }
 
-      // ===================== 🔔 إشعارات (pending_approval) =====================
-      if (workflowStatus === 'pending_approval' && purchaseReturnId) {
+      // ===================== 🔔 إشعارات الإدارة (pending_admin_approval) =====================
+      // جميع المرتجعات تُرسل إشعاراً للإدارة العليا فقط - لا إشعار للمخزن في هذه المرحلة
+      if (purchaseReturnId) {
         try {
           const selectedSupplier = suppliers.find(s => s.id === form.supplier_id)
-          await notifyPurchaseReturnPendingApproval({
+          await notifyPRApprovalRequest({
             companyId,
-            purchaseReturnId,
-            returnNumber: form.return_number,
+            prId: purchaseReturnId,
+            prNumber: form.return_number,
             supplierName: selectedSupplier?.name || form.supplier_id,
-            totalAmount: finalBaseTotal,
+            amount: finalBaseTotal,
             currency: baseCurrency,
-            warehouseId: effectiveWarehouseId || billWarehouseId || '',
-            branchId: billBranchId || undefined,
             createdBy: currentUserId || '',
-            createdByName: currentUserName,
+            branchId: billBranchId || undefined,
+            costCenterId: billCostCenterId || undefined,
             appLang,
           })
         } catch (notifyErr) {
-          console.warn('⚠️ Notification failed (non-critical):', notifyErr)
-        }
-
-        toast({
-          title: appLang === 'en' ? '📋 Return Created - Pending Approval' : '📋 تم إنشاء المرتجع - بانتظار الاعتماد',
-          description: appLang === 'en'
-            ? 'Warehouse manager has been notified to confirm delivery. Stock will be deducted after approval.'
-            : 'تم إشعار مسؤول المخزن لتأكيد التسليم. سيتم خصم المخزون بعد الاعتماد.',
-        })
-        router.push("/purchase-returns")
-        return
-      }
-
-      // ===================== 🔄 FIFO Reversal (post-commit، best-effort) =====================
-      // يُنفَّذ بعد commit الـ Transaction الأساسي - الفشل يُظهر تحذيراً فقط
-      if (purchaseReturnId && form.bill_id && billBranchId && billWarehouseId && billCostCenterId) {
-        const returnItemsForFIFO = validItems
-          .filter(item => item.product_id && item.quantity > 0)
-          .map(item => ({
-            productId: item.product_id!,
-            quantity: item.quantity,
-            billItemId: item.bill_item_id || undefined,
-          }))
-
-        if (returnItemsForFIFO.length > 0) {
-          try {
-            const fifoResult = await processPurchaseReturnFIFOReversal(supabase, {
-              billId: form.bill_id,
-              purchaseReturnId,
-              returnItems: returnItemsForFIFO,
-              companyId,
-              branchId: billBranchId,
-              costCenterId: billCostCenterId,
-              warehouseId: billWarehouseId,
-            })
-
-            if (!fifoResult.success) {
-              console.warn("⚠️ FIFO reversal failed (non-critical):", fifoResult.error)
-              toast({
-                title: appLang === 'en' ? "⚠️ Warning" : "⚠️ تنبيه",
-                description: appLang === 'en'
-                  ? "Return saved successfully. FIFO cost adjustment failed — please contact your accountant."
-                  : "تم حفظ المرتجع بنجاح. تسوية تكلفة FIFO لم تكتمل — يرجى مراجعة المحاسب.",
-              })
-            } else {
-              console.log(`✅ FIFO reversed: ${fifoResult.reversedLots} lots, cost: ${fifoResult.totalReversedCost}`)
-            }
-          } catch (fifoErr) {
-            console.warn("⚠️ FIFO reversal exception (non-critical):", fifoErr)
-          }
+          console.warn('⚠️ Admin notification failed (non-critical):', notifyErr)
         }
       }
 
-      // ===================== Legacy: Supplier Debit Credit (للفواتير غير المدفوعة) =====================
-      if (form.settlement_method === "debit_note" && total > 0 && form.bill_id && !needsJournalEntry && purchaseReturnId) {
-        const previousReturns = billPreviousReturnedAmount
-        const remainingPayable = billTotalAmount - billPaidAmount - previousReturns
-        const excessReturn = finalBaseTotal - remainingPayable
-
-        if (excessReturn > 0) {
-          await supabase.from("supplier_debit_credits").insert({
-            company_id: companyId,
-            supplier_id: form.supplier_id,
-            purchase_return_id: purchaseReturnId,
-            debit_number: "SD-" + form.return_number,
-            debit_date: form.return_date,
-            amount: excessReturn,
-            applied_amount: 0,
-            status: "active",
-            notes: `إشعار مدين للمرتجع ${form.return_number} (المرتجع ${total} > المتبقي ${remainingPayable})`,
-          })
-          console.log(`✅ Supplier Debit Credit created: ${excessReturn}`)
-        }
-      }
+      toast({
+        title: appLang === 'en' ? '📋 Return Submitted for Admin Approval' : '📋 تم إرسال المرتجع للاعتماد الإداري',
+        description: appLang === 'en'
+          ? 'Management has been notified. Inventory will only be deducted after admin approval + warehouse confirmation.'
+          : 'تم إشعار الإدارة العليا. سيتم خصم المخزون فقط بعد موافقة الإدارة ثم اعتماد مسؤول المخزن.',
+      })
 
       toastActionSuccess(toast, "الإنشاء", "المرتجع")
       router.push("/purchase-returns")
