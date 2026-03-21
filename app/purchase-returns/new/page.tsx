@@ -1088,7 +1088,6 @@ export default function NewPurchaseReturnPage() {
             entry_date: form.return_date,
             description: `مرتجع مشتريات رقم ${form.return_number}`,
             status: 'posted',
-            validation_status: 'valid',
           } : null,
           p_journal_lines: (needsJournalEntry && journalLines.length > 0) ? journalLines : null,
           p_vendor_credit: vendorCreditData,
