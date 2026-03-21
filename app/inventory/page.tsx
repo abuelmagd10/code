@@ -454,18 +454,9 @@ export default function InventoryPage() {
       
       const { data: allTransactionsRaw } = await allTransactionsQuery
       
-      // 🔐 فلترة في JavaScript: نأخذ جميع الحركات في نفس cost_center_id المحدد
-      // + جميع حركات transfer_in و transfer_out (لأنها قد تكون في cost_center_id مختلف لكن في نفس الفرع)
-      // 📌 ملاحظة: لا نفلتر بـ created_by_user_id لأن الموظف يرى كل حركات فرعه/مخزنه
-      const allTransactions = (allTransactionsRaw || []).filter((t: any) => {
-        const txCostCenterId = String(t.cost_center_id || '')
-        const txType = String(t.transaction_type || '')
-        // نأخذ الحركات في نفس cost_center_id
-        if (txCostCenterId === costCenterId) return true
-        // نأخذ حركات transfer_in و transfer_out بغض النظر عن cost_center_id (لكن في نفس الفرع والمخزن)
-        if (txType === 'transfer_in' || txType === 'transfer_out') return true
-        return false
-      })
+      // 🔐 فلترة المخرجات: نعتمد على المخزن (warehouse_id) لعرض الأرصدة الفعليه
+      // ولا نفلتر بـ cost_center_id لأن المنتجات متواجدة في المخزن بغض النظر عن مركز التكلفة المحاسبي المحمل عليه الفاتورة
+      const allTransactions = (allTransactionsRaw || [])
 
       const agg: Record<string, number> = {}
       const purchasesAgg: Record<string, number> = {}
