@@ -86,17 +86,20 @@ export async function GET(request: NextRequest) {
  * PUT /api/matching-exceptions/[id]
  * حل استثناء مطابقة
  */
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PUT(request: NextRequest) {
   try {
     // 1️⃣ تطبيق الحوكمة (إلزامي)
     const governance = await enforceGovernance()
 
-    const { id } = await params
     const body = await request.json()
-    const { resolution_notes } = body
+    const { id, resolution_notes } = body
+
+    if (!id) {
+      return NextResponse.json({
+        error: "id is required",
+        error_ar: "معرف الاستثناء مطلوب"
+      }, { status: 400 })
+    }
 
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()

@@ -242,10 +242,7 @@ export default function PurchaseReturnsPage() {
         toast({ title: appLang === 'en' ? '❌ Approval Failed' : '❌ فشل الاعتماد', description: result?.error || error?.message, variant: 'destructive' })
         return
       }
-
-          category: 'inventory',
-        })
-      } catch (notifyErr) { console.warn('Store manager notification failed:', notifyErr) }
+      // الإشعارات تدار آلياً بالزمن الفعلي عبر Database Event Router
 
       toast({ title: appLang === 'en' ? '✅ Return Approved' : '✅ تم اعتماد المرتجع', description: pr.return_number })
       loadReturns()
