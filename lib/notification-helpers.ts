@@ -1643,31 +1643,29 @@ export async function notifyPRApprovalRequest(params: {
   const { companyId, prId, prNumber, supplierName, amount, currency, createdBy, branchId, costCenterId, appLang = 'ar' } = params
 
   const title = appLang === 'en'
-    ? 'Purchase Return Pending Approval'
-    : 'مرتجع مشتريات بانتظار الموافقة'
+    ? 'Purchase Return Pending Admin Approval'
+    : 'مطلوب اعتماد مرتجع مشتريات'
 
   const message = appLang === 'en'
     ? `Purchase return ${prNumber} from supplier ${supplierName} for ${amount} ${currency} requires your approval`
-    : `مرتجع مشتريات ${prNumber} من المورد ${supplierName} بقيمة ${amount} ${currency} يحتاج اعتمادك`
+    : `مرتجع مشتريات رقم ${prNumber} للمورد ${supplierName} بقيمة ${amount} ${currency} يحتاج إلى اعتمادك`
 
-  const roles = ['admin', 'owner', 'general_manager']
-  for (const role of roles) {
-    await createNotification({
-      companyId,
-      referenceType: 'purchase_return',
-      referenceId: prId,
-      title,
-      message,
-      createdBy,
-      branchId,
-      costCenterId,
-      assignedToRole: role,
-      priority: 'high' as NotificationPriority,
-      eventKey: `purchase_return:${prId}:pending:${role}`,
-      severity: 'warning',
-      category: 'approvals'
-    })
-  }
+  // إشعار واحد فقط بدون تحديد دور — يظهر لجميع الأدوار العليا دفعة واحدة
+  // هذا يمنع تكرار الإشعار لأن eventKey واحد فقط لكل مرتجع
+  await createNotification({
+    companyId,
+    referenceType: 'purchase_return',
+    referenceId: prId,
+    title,
+    message,
+    createdBy,
+    branchId,
+    costCenterId,
+    priority: 'high' as NotificationPriority,
+    eventKey: `purchase_return:${prId}:pending_admin_approval`,
+    severity: 'warning',
+    category: 'approvals'
+  })
 }
 
 /**
