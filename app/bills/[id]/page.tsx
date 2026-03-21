@@ -50,7 +50,7 @@ import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inven
 import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-reversal"
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
 import { createNotification } from "@/lib/governance-layer"
-import { notifyBillApprovedToPOCreator } from "@/lib/notification-helpers"
+import { notifyBillApprovedToPOCreator, notifyPRApprovalRequest } from "@/lib/notification-helpers"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
@@ -669,7 +669,7 @@ export default function BillViewPage() {
           return_number: returnNumber,
           return_date: returnDate,
           status: 'pending_approval',
-          workflow_status: 'pending_approval',
+          workflow_status: 'pending_admin_approval',
           settlement_method: returnMethod,
           reason: returnNotes || (appLang === 'en' ? 'Purchase return request' : 'طلب مرتجع مشتريات'),
           notes: returnNotes || null,
@@ -726,31 +726,20 @@ export default function BillViewPage() {
         })
       } catch (auditErr) { console.warn('Audit log failed:', auditErr) }
 
-      // 4. إشعار للإدارة العليا للموافقة
+      // 4. إشعار للإدارة العليا للموافقة (eventKey ثابت لمنع التكرار)
       try {
-        const notifTs = Date.now()
-        const title = appLang === 'en' ? 'Purchase Return Approval Required' : 'مطلوب اعتماد مرتجع مشتريات'
-        const message = appLang === 'en'
-          ? `Purchase return ${returnNumber} for bill ${bill.bill_number} (${returnTotal.toFixed(2)}) requires your approval`
-          : `مرتجع مشتريات رقم ${returnNumber} للفاتورة ${bill.bill_number} بقيمة ${returnTotal.toFixed(2)} يحتاج إلى اعتمادك`
-
-        for (const role of ['admin', 'owner', 'general_manager']) {
-          await createNotification({
-            companyId,
-            referenceType: 'purchase_return',
-            referenceId: prData.id,
-            title,
-            message,
-            createdBy: user.id,
-            branchId: bill.branch_id || undefined,
-            costCenterId: bill.cost_center_id || undefined,
-            assignedToRole: role,
-            priority: 'high',
-            eventKey: `purchase_return:${prData.id}:pending_approval:${role}:${notifTs}`,
-            severity: 'warning',
-            category: 'approvals',
-          })
-        }
+        await notifyPRApprovalRequest({
+          companyId,
+          prId: prData.id,
+          prNumber: returnNumber,
+          supplierName: supplier?.name || bill.bill_number,
+          amount: returnTotal,
+          currency: bill.currency_code || 'EGP',
+          createdBy: user.id,
+          branchId: bill.branch_id || undefined,
+          costCenterId: bill.cost_center_id || undefined,
+          appLang,
+        })
       } catch (notifErr) { console.warn('Notification failed:', notifErr) }
 
       setReturnOpen(false)
