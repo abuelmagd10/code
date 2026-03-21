@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Plus, Search, RotateCcw, Eye, CheckCircle2, Clock, AlertTriangle, Ban, XCircle } from "lucide-react"
+import { Plus, Search, RotateCcw, Eye, CheckCircle2, Clock, AlertTriangle, Ban, XCircle, Pencil } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
@@ -1030,6 +1030,31 @@ export default function PurchaseReturnsPage() {
                   {appLang === 'en' ? 'Refund' : 'استرداد'}
                 </Button>
               )}
+
+              {/* زر تعديل وإعادة إرسال — للمنشئ فقط عند الرفض الإداري أو رفض المخزن */}
+              {(pr.workflow_status === 'rejected' || pr.workflow_status === 'warehouse_rejected') &&
+                pr.created_by === currentUserId && (
+                <Button
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-7 px-2"
+                  onClick={() => router.push(`/purchase-returns/new?edit=${pr.id}`)}
+                  title={appLang === 'en' ? 'Edit & Resubmit for Approval' : 'تعديل وإعادة إرسال للاعتماد'}
+                >
+                  <Pencil className="w-3 h-3 mr-1" />
+                  {appLang === 'en' ? 'Edit & Resubmit' : 'تعديل وإعادة إرسال'}
+                </Button>
+              )}
+
+              {/* زر عرض التفاصيل */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7"
+                onClick={() => router.push(`/purchase-returns/${pr.id}`)}
+                title={appLang === 'en' ? 'View Return Details' : 'عرض تفاصيل المرتجع'}
+              >
+                <Eye className="w-3.5 h-3.5" />
+              </Button>
 
               {pr.bills ? (
                 <Button

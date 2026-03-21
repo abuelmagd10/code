@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Trash2, Plus, Warehouse, AlertTriangle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
@@ -59,8 +59,14 @@ const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
 export default function NewPurchaseReturnPage() {
   const supabase = useSupabase()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // Edit mode: ?edit=<returnId>
+  const editReturnId = searchParams.get('edit')
+  const isEditMode = !!editReturnId
+  const [editReturnLoaded, setEditReturnLoaded] = useState(false)
 
   // تهيئة اللغة بعد hydration
   useEffect(() => {
@@ -191,6 +197,65 @@ export default function NewPurchaseReturnPage() {
       setCashBankAccounts((acctData || []) as AccountOption[])
     })()
   }, [supabase])
+
+  // وضع التعديل: تحميل بيانات المرتجع المرفوض وملء النموذج
+  useEffect(() => {
+    if (!editReturnId || !companyId || editReturnLoaded) return
+    ;(async () => {
+      const { data: pr } = await supabase
+        .from('purchase_returns')
+        .select(`
+          id, return_number, return_date, settlement_method, reason, notes,
+          supplier_id, bill_id, branch_id, cost_center_id, warehouse_id,
+          original_currency, workflow_status, status,
+          purchase_return_items(
+            id, bill_item_id, product_id, quantity, unit_price,
+            tax_rate, discount_percent, line_total,
+            products(name, cost_price)
+          )
+        `)
+        .eq('id', editReturnId)
+        .single()
+
+      if (!pr) return
+      if (!['rejected', 'warehouse_rejected'].includes(pr.workflow_status)) {
+        toast({ title: '⚠️ لا يمكن تعديل هذا المرتجع', description: 'يمكن التعديل فقط على المرتجعات المرفوضة', variant: 'destructive' })
+        router.push('/purchase-returns')
+        return
+      }
+
+      // ملء النموذج ببيانات المرتجع
+      setForm(f => ({
+        ...f,
+        supplier_id: pr.supplier_id || '',
+        bill_id: pr.bill_id || '',
+        return_number: pr.return_number || f.return_number,
+        return_date: pr.return_date || f.return_date,
+        settlement_method: (pr.settlement_method || 'debit_note') as any,
+        reason: pr.reason || '',
+        notes: pr.notes || '',
+        currency: pr.original_currency || 'EGP',
+      }))
+
+      // ملء بنود المرتجع
+      if (pr.purchase_return_items && pr.purchase_return_items.length > 0) {
+        const loadedItems: ItemRow[] = pr.purchase_return_items.map((item: any) => ({
+          bill_item_id: item.bill_item_id,
+          product_id: item.product_id,
+          product_name: item.products?.name || '',
+          quantity: item.quantity,
+          max_quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_rate: item.tax_rate,
+          discount_percent: item.discount_percent,
+          line_total: item.line_total,
+        }))
+        setItems(loadedItems)
+      }
+
+      setEditReturnLoaded(true)
+    })()
+  }, [editReturnId, companyId, editReturnLoaded, supabase])
 
   // جلب رصيد المخزن المختار لكل منتج في بنود المرتجع
   useEffect(() => {
@@ -1032,6 +1097,72 @@ export default function NewPurchaseReturnPage() {
         line_total: item.line_total,
       })) : null
 
+      // ===================== 🔥 وضع التعديل: تحديث المرتجع المرفوض وإعادة إرساله =====================
+      if (isEditMode && editReturnId) {
+        const returnItems = validItems.map(item => ({
+          bill_item_id: item.bill_item_id,
+          product_id: item.product_id,
+          description: item.product_name,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_rate: item.tax_rate,
+          discount_percent: item.discount_percent,
+          line_total: item.line_total,
+        }))
+
+        const { data: resubmitResult, error: resubmitError } = await supabase.rpc(
+          'resubmit_purchase_return',
+          {
+            p_return_id: editReturnId,
+            p_user_id: currentUserId,
+            p_purchase_return: {
+              reason: form.reason,
+              notes: form.notes,
+              settlement_method: form.settlement_method,
+              return_date: form.return_date,
+              subtotal: finalBaseSubtotal,
+              tax_amount: finalBaseTax,
+              total_amount: finalBaseTotal,
+              original_subtotal: effectiveSubtotal,
+              original_tax_amount: effectiveTaxAmount,
+              original_total_amount: effectiveTotal,
+            },
+            p_return_items: returnItems,
+          }
+        )
+
+        if (resubmitError || !(resubmitResult as any)?.success) {
+          throw new Error(`فشل إعادة إرسال المرتجع: ${resubmitError?.message || (resubmitResult as any)?.error || 'خطأ غير معروف'}`)
+        }
+
+        const selectedSupplier = suppliers.find(s => s.id === form.supplier_id)
+        try {
+          await notifyPRApprovalRequest({
+            companyId,
+            prId: editReturnId,
+            prNumber: form.return_number,
+            supplierName: selectedSupplier?.name || form.supplier_id,
+            amount: finalBaseTotal,
+            currency: baseCurrency,
+            createdBy: currentUserId || '',
+            branchId: billBranchId || undefined,
+            costCenterId: billCostCenterId || undefined,
+            appLang,
+          })
+        } catch (notifyErr) {
+          console.warn('⚠️ Admin resubmit notification failed (non-critical):', notifyErr)
+        }
+
+        toast({
+          title: appLang === 'en' ? '✅ Return Resubmitted for Approval' : '✅ تمت إعادة إرسال المرتجع للاعتماد',
+          description: appLang === 'en'
+            ? 'Management has been notified to review the updated return.'
+            : 'تم إشعار الإدارة العليا لمراجعة المرتجع المعدّل.',
+        })
+        router.push('/purchase-returns')
+        return
+      }
+
       // ===================== 🔥 الاستدعاء الأتومي (Transaction واحدة) =====================
       // pending_approval: ينشئ المرتجع والقيد (draft) بدون خصم مخزون
       // confirmed: ينشئ كل شيء فوراً
@@ -1158,7 +1289,11 @@ export default function NewPurchaseReturnPage() {
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base sm:text-lg">{appLang === 'en' ? 'New Purchase Return' : 'مرتجع مشتريات جديد'}</CardTitle>
+            <CardTitle className="text-base sm:text-lg">
+              {isEditMode
+                ? (appLang === 'en' ? '✏️ Edit & Resubmit Return' : '✏️ تعديل وإعادة إرسال المرتجع')
+                : (appLang === 'en' ? 'New Purchase Return' : 'مرتجع مشتريات جديد')}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
