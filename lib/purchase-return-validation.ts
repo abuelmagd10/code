@@ -43,33 +43,14 @@ export async function getProductStockInWarehouse(
   companyId: string
 ): Promise<number> {
   try {
-    const { data: wh } = await supabase
-      .from("warehouses")
-      .select("branch_id")
-      .eq("company_id", companyId)
-      .eq("id", warehouseId)
-      .single()
-
-    const branchId = String(wh?.branch_id || "")
-    if (!branchId) return 0
-
-    const { data: branchDefaults } = await supabase
-      .from("branches")
-      .select("default_cost_center_id")
-      .eq("company_id", companyId)
-      .eq("id", branchId)
-      .single()
-
-    const costCenterId = String(branchDefaults?.default_cost_center_id || "")
-    if (!costCenterId) return 0
-
-    // جلب جميع حركات المخزون لهذا المنتج في هذا المخزن
+    // ✅ الفلتر الصحيح: warehouse_id + product_id فقط
+    // لا نفلتر بـ branch_id أو cost_center_id لأن حركات المخزون
+    // قد تُسجَّل بـ cost_center_id مختلف عن default للفرع،
+    // مما كان يُعيد صفراً رغم وجود مخزون حقيقي في المخزن.
     const { data: transactions, error } = await supabase
       .from("inventory_transactions")
       .select("quantity_change, is_deleted")
       .eq("company_id", companyId)
-      .eq("branch_id", branchId)
-      .eq("cost_center_id", costCenterId)
       .eq("product_id", productId)
       .eq("warehouse_id", warehouseId)
 
@@ -78,7 +59,7 @@ export async function getProductStockInWarehouse(
       return 0
     }
 
-    // حساب الرصيد (quantity_change موجب للشراء، سالب للبيع)
+    // حساب الرصيد (quantity_change موجب للشراء، سالب للبيع/المرتجع)
     const stock = (transactions || [])
       .filter((t: any) => !t.is_deleted)
       .reduce((sum: number, t: any) => sum + Number(t.quantity_change || 0), 0)
