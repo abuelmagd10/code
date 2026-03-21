@@ -1148,6 +1148,7 @@ export default function NewPurchaseReturnPage() {
             branchId: billBranchId || undefined,
             costCenterId: billCostCenterId || undefined,
             appLang,
+            isResubmit: true,
           })
         } catch (notifyErr) {
           console.warn('⚠️ Admin resubmit notification failed (non-critical):', notifyErr)

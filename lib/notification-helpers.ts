@@ -1639,19 +1639,24 @@ export async function notifyPRApprovalRequest(params: {
   branchId?: string
   costCenterId?: string
   appLang?: 'ar' | 'en'
+  isResubmit?: boolean
 }) {
-  const { companyId, prId, prNumber, supplierName, amount, currency, createdBy, branchId, costCenterId, appLang = 'ar' } = params
+  const { companyId, prId, prNumber, supplierName, amount, currency, createdBy, branchId, costCenterId, appLang = 'ar', isResubmit = false } = params
 
   const title = appLang === 'en'
-    ? 'Purchase Return Pending Admin Approval'
-    : 'مطلوب اعتماد مرتجع مشتريات'
+    ? isResubmit ? 'Purchase Return Resubmitted for Approval' : 'Purchase Return Pending Admin Approval'
+    : isResubmit ? 'تمت إعادة إرسال مرتجع مشتريات للاعتماد' : 'مطلوب اعتماد مرتجع مشتريات'
 
   const message = appLang === 'en'
     ? `Purchase return ${prNumber} from supplier ${supplierName} for ${amount} ${currency} requires your approval`
     : `مرتجع مشتريات رقم ${prNumber} للمورد ${supplierName} بقيمة ${amount} ${currency} يحتاج إلى اعتمادك`
 
-  // إشعار واحد فقط بدون تحديد دور — يظهر لجميع الأدوار العليا دفعة واحدة
-  // هذا يمنع تكرار الإشعار لأن eventKey واحد فقط لكل مرتجع
+  // للإرسال الأول: eventKey ثابت لمنع التكرار
+  // لإعادة الإرسال: eventKey يحتوي timestamp حتى يصل دائماً كإشعار جديد
+  const eventKey = isResubmit
+    ? `purchase_return:${prId}:pending_admin_approval:resubmit:${Date.now()}`
+    : `purchase_return:${prId}:pending_admin_approval`
+
   await createNotification({
     companyId,
     referenceType: 'purchase_return',
@@ -1662,7 +1667,7 @@ export async function notifyPRApprovalRequest(params: {
     branchId,
     costCenterId,
     priority: 'high' as NotificationPriority,
-    eventKey: `purchase_return:${prId}:pending_admin_approval`,
+    eventKey,
     severity: 'warning',
     category: 'approvals'
   })
