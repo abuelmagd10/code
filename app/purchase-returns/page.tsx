@@ -243,41 +243,6 @@ export default function PurchaseReturnsPage() {
         return
       }
 
-      // 1. إشعار للمنشئ بالموافقة
-      if (pr.created_by && currentUserId !== pr.created_by) {
-        try {
-          await notifyPRApproved({
-            companyId,
-            prId: pr.id,
-            prNumber: pr.return_number,
-            supplierName: (pr.suppliers as any)?.name || '',
-            amount: pr.total_amount,
-            currency: appCurrency,
-            createdBy: pr.created_by,
-            approvedBy: currentUserId,
-            branchId: pr.branch_id || undefined,
-            appLang,
-          })
-        } catch (notifyErr) { console.warn('Notification failed:', notifyErr) }
-      }
-
-      // 2. إشعار لمسؤول المخزن لاعتماد تسليم البضاعة للمورد
-      try {
-        await createNotification({
-          companyId,
-          referenceType: 'purchase_return',
-          referenceId: pr.id,
-          title: appLang === 'en' ? 'Purchase Return Approved - Warehouse Confirmation Required' : 'تمت الموافقة على المرتجع - مطلوب اعتماد المخزن',
-          message: appLang === 'en'
-            ? `Return ${pr.return_number} for supplier ${(pr.suppliers as any)?.name || ''} has been approved. Please confirm goods delivery to supplier.`
-            : `تمت الموافقة على المرتجع ${pr.return_number} للمورد ${(pr.suppliers as any)?.name || ''}. يرجى اعتماد تسليم البضاعة للمورد.`,
-          createdBy: currentUserId,
-          branchId: pr.branch_id || undefined,
-          warehouseId: pr.warehouse_id || undefined,
-          assignedToRole: 'store_manager',
-          priority: 'high',
-          eventKey: `purchase_return:${pr.id}:approved_pending_warehouse:${Date.now()}`,
-          severity: 'info',
           category: 'inventory',
         })
       } catch (notifyErr) { console.warn('Store manager notification failed:', notifyErr) }
@@ -311,23 +276,7 @@ export default function PurchaseReturnsPage() {
         return
       }
 
-      if (prToReject.created_by && currentUserId !== prToReject.created_by) {
-        try {
-          await notifyPRRejected({
-            companyId,
-            prId: prToReject.id,
-            prNumber: prToReject.return_number,
-            supplierName: (prToReject.suppliers as any)?.name || '',
-            amount: prToReject.total_amount,
-            currency: appCurrency,
-            reason: rejectionReason.trim(),
-            createdBy: prToReject.created_by,
-            rejectedBy: currentUserId,
-            branchId: prToReject.branch_id || undefined,
-            appLang,
-          })
-        } catch (notifyErr) { console.warn('Notification failed:', notifyErr) }
-      }
+      // الإشعارات تدار آلياً بالزمن الفعلي عبر Database Event Router
 
       toast({ title: appLang === 'en' ? '✅ Return Rejected' : '✅ تم رفض المرتجع', description: prToReject.return_number })
       setIsRejectDialogOpen(false)
@@ -372,7 +321,7 @@ export default function PurchaseReturnsPage() {
       if (!companyId) return
 
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
-        'confirm_purchase_return_delivery',
+        'confirm_purchase_return_delivery_v2',
         {
           p_purchase_return_id: pr.id,
           p_confirmed_by: currentUserId,
@@ -391,90 +340,9 @@ export default function PurchaseReturnsPage() {
         return
       }
 
-      const supplierName = (pr.suppliers as any)?.name || ''
-
-      // 1. إنشاء إشعار دائن للمورد (Vendor Credit) تلقائياً بعد تأكيد التسليم
-      try {
-        const { syncVendorCredit } = await import('@/lib/supplier-balance')
-        // نحتاج bill_id للـ syncVendorCredit
-        if (pr.bills?.id) {
-          const { data: billCompany } = await supabase
-            .from('bills')
-            .select('company_id, supplier_id')
-            .eq('id', pr.bills.id)
-            .single()
-          if (billCompany) {
-            await syncVendorCredit(supabase, billCompany.company_id, billCompany.supplier_id, pr.bills.id)
-          }
-        }
-      } catch (vendorCreditErr) {
-        console.warn('⚠️ Vendor credit sync failed (non-critical):', vendorCreditErr)
-      }
-
-      // 2. سجل تدقيق لخصم المخزون
-      try {
-        if (currentUserId) {
-          await supabase.from('audit_logs').insert({
-            company_id: companyId,
-            user_id: currentUserId,
-            action: 'purchase_return_warehouse_confirmed',
-            entity_type: 'purchase_return',
-            entity_id: pr.id,
-            new_values: {
-              return_number: pr.return_number,
-              warehouse_id: pr.warehouse_id,
-              branch_id: pr.branch_id,
-              confirmed_by: currentUserId,
-              timestamp: new Date().toISOString(),
-            },
-            created_at: new Date().toISOString(),
-          })
-        }
-      } catch (auditErr) { console.warn('Audit log failed:', auditErr) }
-
-      // 3. إشعار للمنشئ بتأكيد التسليم
-      if (pr.created_by) {
-        try {
-          await notifyPurchaseReturnConfirmed({
-            companyId,
-            purchaseReturnId: pr.id,
-            returnNumber: pr.return_number,
-            supplierName,
-            totalAmount: pr.total_amount,
-            currency: appCurrency,
-            confirmedByName: currentUserName,
-            createdBy: pr.created_by,
-            appLang,
-          })
-        } catch (notifyErr) {
-          console.warn('⚠️ Creator notification failed:', notifyErr)
-        }
-      }
-
-      // 4. إشعار للإدارة العليا بنجاح تسليم البضاعة وخصم المخزون
-      try {
-        const confirmTs = Date.now()
-        const adminTitle = appLang === 'en' ? 'Purchase Return Confirmed - Inventory Deducted' : 'تم اعتماد المرتجع وخصم المخزون'
-        const adminMessage = appLang === 'en'
-          ? `Return ${pr.return_number} for supplier ${supplierName} confirmed by warehouse. Stock has been deducted and vendor credit created.`
-          : `تم اعتماد تسليم المرتجع ${pr.return_number} للمورد ${supplierName} من قِبَل المخزن. تم خصم المخزون وإنشاء إشعار دائن للمورد.`
-        for (const role of ['admin', 'owner', 'general_manager']) {
-          await createNotification({
-            companyId,
-            referenceType: 'purchase_return',
-            referenceId: pr.id,
-            title: adminTitle,
-            message: adminMessage,
-            createdBy: currentUserId,
-            branchId: pr.branch_id || undefined,
-            assignedToRole: role,
-            priority: 'normal',
-            eventKey: `purchase_return:${pr.id}:confirmed:${role}:${confirmTs}`,
-            severity: 'info',
-            category: 'inventory',
-          })
-        }
-      } catch (notifyErr) { console.warn('⚠️ Admin notification failed:', notifyErr) }
+      // تم إزالة جميع الأكواد الخاصة بإنشاء Vendor Credit والإشعارات والـ Audit Logs
+      // حيث أصبحت جميعها تنفذ ذرياً (Atomic) داخل الـ DB RPC (confirm_purchase_return_delivery_v2) 
+      // بما يضمن الموثوقية التامة.
 
       toast({
         title: appLang === 'en' ? '✅ Delivery Confirmed' : '✅ تم اعتماد التسليم',
@@ -623,31 +491,17 @@ export default function PurchaseReturnsPage() {
       } catch (auditErr) { console.warn('Audit log failed:', auditErr) }
 
       // 3. إشعار للإدارة العليا بتأكيد استلام المبلغ المسترد
+      // أصبح يدار عبر نظام DB events
       try {
-        const refundTs = Date.now()
-        const supplierName = (prToRefund.suppliers as any)?.name || ''
-        const refundTitle = appLang === 'en' ? 'Supplier Refund Received' : 'تم استلام الاسترداد من المورد'
-        const refundMessage = appLang === 'en'
-          ? `Refund of ${prToRefund.total_amount.toFixed(2)} for return ${prToRefund.return_number} (${supplierName}) has been received and recorded.`
-          : `تم استلام مبلغ الاسترداد ${prToRefund.total_amount.toFixed(2)} للمرتجع ${prToRefund.return_number} من المورد ${supplierName} وتسجيله.`
-
-        for (const role of ['admin', 'owner', 'general_manager']) {
-          await createNotification({
-            companyId,
-            referenceType: 'purchase_return',
-            referenceId: prToRefund.id,
-            title: refundTitle,
-            message: refundMessage,
-            createdBy: currentUserId,
-            branchId: prToRefund.branch_id || undefined,
-            assignedToRole: role,
-            priority: 'normal',
-            eventKey: `purchase_return:${prToRefund.id}:refund_received:${role}:${refundTs}`,
-            severity: 'info',
-            category: 'approvals',
-          })
-        }
-      } catch (notifyErr) { console.warn('Refund notification failed:', notifyErr) }
+        await supabase.rpc('emit_system_event_manual', {
+            p_company_id: companyId,
+            p_event_type: 'purchase_return.closed',
+            p_reference_type: 'purchase_return',
+            p_reference_id: prToRefund.id,
+            p_user_id: currentUserId,
+            p_payload: { return_number: prToRefund.return_number }
+        });
+      } catch (e) { }
 
       setIsRefundDialogOpen(false)
       setPrToRefund(null)

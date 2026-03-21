@@ -18,7 +18,7 @@ import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { notifyPOApproved, notifyPORejected } from "@/lib/notification-helpers"
+import { notifyPOApproved, notifyPORejected, notifyManagementPOApproved } from "@/lib/notification-helpers"
 // 🏷️ Canonical shared types — Single Source of Truth
 import type {
   PurchaseOrder as PO,   // نستخدم PO كاسم مختصر داخل الصفحة للتوافق
@@ -632,6 +632,19 @@ export default function PurchaseOrderDetailPage() {
           branchId: userContext.branch_id || undefined,
           costCenterId: userContext.cost_center_id || undefined,
           createdBy: poCreatedBy || "",
+          approvedBy: user.id,
+          appLang
+        })
+
+        // ✅ User Request: Alert Management securely without notifying the store manager prematurely.
+        await notifyManagementPOApproved({
+          companyId,
+          poId,
+          poNumber: po.po_number,
+          supplierName: po.suppliers?.name || "Unknown",
+          amount: po.total_amount || 0,
+          currency: po.currency || "EGP",
+          branchId: userContext.branch_id || undefined,
           approvedBy: user.id,
           appLang
         })

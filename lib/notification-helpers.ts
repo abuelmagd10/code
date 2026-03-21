@@ -1527,10 +1527,11 @@ export async function notifyPOApproved(params: {
 }
 
 /**
- * 🏭 إشعار مسؤول المخزن (store_manager) عند اعتماد أمر الشراء
- * يُرسَل بشكل منفصل عن إشعار المنشئ لأن الجمهور المستهدف مختلف
+ * 🏭 إشعار الإدارة العليا (Management) عند اعتماد أمر الشراء
+ * تم استبدال إشعار مسؤول المخزن بناءً على سياسة فصل الصلاحيات (Separation of Duties).
+ * مسؤول المخزن يجب ألا يتدخل إلا في مرحلة الاستلام الفعلي للفاتورة.
  */
-export async function notifyStoreManagerPOApproved(params: {
+export async function notifyManagementPOApproved(params: {
   companyId: string
   poId: string
   poNumber: string
@@ -1551,23 +1552,27 @@ export async function notifyStoreManagerPOApproved(params: {
     ? `Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) has been approved. Please prepare to receive the goods.`
     : `تم اعتماد أمر الشراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency}. يرجى الاستعداد لاستلام البضاعة.`
 
-  try {
-    await createNotification({
-      companyId,
-      referenceType: 'purchase_order',
-      referenceId: poId,
-      title,
-      message,
-      createdBy: approvedBy,
-      branchId, // ← إشعار مقيّد بالفرع لأن مسؤول المخزن فرعي وليس عاماً
-      assignedToRole: 'store_manager',
-      priority: 'normal',
-      eventKey: `purchase_order:${poId}:approved:store_manager`,
-      severity: 'info',
-      category: 'inventory'
-    })
-  } catch (err) {
-    console.error('❌ Failed to notify store_manager on PO approval:', err)
+  const managementRoles = ['admin', 'owner', 'general_manager']
+
+  for (const role of managementRoles) {
+    try {
+        await createNotification({
+        companyId,
+        referenceType: 'purchase_order',
+        referenceId: poId,
+        title,
+        message,
+        createdBy: approvedBy,
+        branchId: undefined, // إشعار عام للإدارة بغض النظر عن الفرع
+        assignedToRole: role,
+        priority: 'normal',
+        eventKey: `purchase_order:${poId}:approved:management:${role}`,
+        severity: 'info',
+        category: 'inventory'
+        })
+    } catch (err) {
+        console.error(`❌ Failed to notify ${role} on PO approval:`, err)
+    }
   }
 }
 
