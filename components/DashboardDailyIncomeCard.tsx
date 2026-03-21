@@ -45,8 +45,21 @@ export default function DashboardDailyIncomeCard({
   const [loading, setLoading] = useState(true)
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
   const [scopeLabel, setScopeLabel] = useState<string>("")
-  const [branchIdParam, setBranchIdParam] = useState<string | null>(null)
+  // 🔐 مزامنة مع Global Scope Switcher: الافتراضي = userBranchId إذا وجد
+  const [branchIdParam, setBranchIdParam] = useState<string | null>(userBranchId || null)
   const [alertLimits, setAlertLimits] = useState<{ min_daily_cash?: number; max_daily_expense?: number } | null>(null)
+
+  // 🔁 مزامنة مع Global Scope: عند تغيير الـ Scope من page.tsx يتبعه هذا الـ Widget تلقائياً
+  useEffect(() => {
+    // غير المميزين: مُقيَّدون بفرعهم دائماً (الـ API يُطبِّق ذلك)
+    if (!canSeeAllBranches) {
+      setBranchIdParam(userBranchId || null)
+      return
+    }
+    // المميزون: عند اختيار فرع في الـ Scope Switcher الرئيسي → نُزامن
+    // لكن نسمح لهم بالتغيير يدوياً داخل البطاقة (لا نُعيَّد التغيير)
+    setBranchIdParam(userBranchId || null)
+  }, [userBranchId, canSeeAllBranches])
 
   const fetchData = useCallback(async () => {
     if (!companyId) return

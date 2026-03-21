@@ -272,21 +272,52 @@ export default function AdvancedDashboardCharts({
   }
 
   const loadInventoryData = async () => {
-    // جلب المنتجات مع كمياتها وأسعار التكلفة (بدون الخدمات)
+    // 🔐 Branch Isolation: جلب الكميات من inventory_transactions مع فلتر الفرع
+    // بدلاً من products.quantity_on_hand (company-level فقط)
+    let txnQuery = supabase
+      .from('inventory_transactions')
+      .select('product_id, quantity_change')
+      .eq('company_id', companyId)
+      .or('is_deleted.is.null,is_deleted.eq.false')
+
+    if (branchId) txnQuery = txnQuery.eq('branch_id', branchId)
+
+    const { data: txns } = await txnQuery
+    if (!txns || txns.length === 0) { setInventoryData([]); return }
+
+    // تجميع الكميات لكل منتج
+    const qtyMap: Record<string, number> = {}
+    for (const t of txns) {
+      const pid = String(t.product_id)
+      qtyMap[pid] = (qtyMap[pid] || 0) + Number(t.quantity_change || 0)
+    }
+
+    // أعلى 8 منتجات بكمية موجبة
+    const topProductIds = Object.entries(qtyMap)
+      .filter(([, qty]) => qty > 0)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 8)
+      .map(([id]) => id)
+
+    if (topProductIds.length === 0) { setInventoryData([]); return }
+
     const { data: products } = await supabase
       .from('products')
-      .select('id, name, quantity_on_hand, cost_price, item_type')
-      .eq('company_id', companyId)
-      .or('item_type.is.null,item_type.eq.product')
-      .gt('quantity_on_hand', 0)
-      .order('quantity_on_hand', { ascending: false })
-      .limit(8)
+      .select('id, name, cost_price')
+      .in('id', topProductIds)
 
-    const data = (products || []).map((p: any) => ({
-      name: p.name?.length > 15 ? p.name.substring(0, 15) + '...' : p.name,
-      quantity: Number(p.quantity_on_hand || 0),
-      value: Number(p.quantity_on_hand || 0) * Number(p.cost_price || 0)
-    }))
+    const productMap = new Map((products || []).map((p: any) => [p.id, p]))
+
+    const data = topProductIds.map(pid => {
+      const p = productMap.get(pid) as any
+      const qty = qtyMap[pid]
+      const name = p?.name || pid
+      return {
+        name: name.length > 15 ? name.substring(0, 15) + '...' : name,
+        quantity: qty,
+        value: qty * Number(p?.cost_price || 0)
+      }
+    })
 
     setInventoryData(data)
   }

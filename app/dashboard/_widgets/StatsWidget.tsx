@@ -58,14 +58,16 @@ export default async function StatsWidget({
     console.warn('[StatsWidget] GL fetch failed:', e)
   }
 
-  // عدد الفواتير (بسيط، بدون COGS)
-  const { count: invoicesCount } = await supabase
+  // 🔐 Branch Isolation: عدد الفواتير مع فلتر الفرع
+  let countQuery = supabase
     .from('invoices')
     .select('id', { count: 'exact', head: true })
     .eq('company_id', companyId)
     .in('status', ['sent', 'partially_paid', 'paid'])
     .gte('invoice_date', from)
     .lte('invoice_date', to)
+  if (branchId) countQuery = countQuery.eq('branch_id', branchId)
+  const { count: invoicesCount } = await countQuery
 
   return (
     <DashboardStats

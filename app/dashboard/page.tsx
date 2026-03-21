@@ -361,6 +361,7 @@ export default async function DashboardPage({
                   toDate={toDate}
                   selectedAccountIds={selectedAccountIds}
                   selectedGroups={selectedGroups}
+                  branchId={branchId}
                 />
               </Suspense>
 
