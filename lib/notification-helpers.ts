@@ -1651,26 +1651,31 @@ export async function notifyPRApprovalRequest(params: {
     ? `Purchase return ${prNumber} from supplier ${supplierName} for ${amount} ${currency} requires your approval`
     : `مرتجع مشتريات رقم ${prNumber} للمورد ${supplierName} بقيمة ${amount} ${currency} يحتاج إلى اعتمادك`
 
-  // للإرسال الأول: eventKey ثابت لمنع التكرار
-  // لإعادة الإرسال: eventKey يحتوي timestamp حتى يصل دائماً كإشعار جديد
-  const eventKey = isResubmit
+  // للإرسال الأول: eventKey ثابت لكل دور لمنع تكرار نفس الدور
+  // لإعادة الإرسال: يُضاف timestamp لضمان وصول الإشعار كجديد
+  const baseKey = isResubmit
     ? `purchase_return:${prId}:pending_admin_approval:resubmit:${Date.now()}`
     : `purchase_return:${prId}:pending_admin_approval`
 
-  await createNotification({
-    companyId,
-    referenceType: 'purchase_return',
-    referenceId: prId,
-    title,
-    message,
-    createdBy,
-    branchId,
-    costCenterId,
-    priority: 'high' as NotificationPriority,
-    eventKey,
-    severity: 'warning',
-    category: 'approvals'
-  })
+  // إرسال لكل دور مميز بشكل منفصل — يضمن أن كل دور يرى الإشعار مرة واحدة فقط
+  // ولا يصل لأدوار المستخدمين العاديين
+  for (const role of ['admin', 'owner', 'general_manager']) {
+    await createNotification({
+      companyId,
+      referenceType: 'purchase_return',
+      referenceId: prId,
+      title,
+      message,
+      createdBy,
+      branchId,
+      costCenterId,
+      assignedToRole: role,
+      priority: 'high' as NotificationPriority,
+      eventKey: `${baseKey}:${role}`,
+      severity: 'warning',
+      category: 'approvals'
+    })
+  }
 }
 
 /**
