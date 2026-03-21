@@ -21,6 +21,8 @@ import {
   notifyPRRejected,
   notifyPurchaseReturnPendingApproval,
   notifyWarehouseReturnRejected,
+  notifyManagementPRWarehouseConfirmed,
+  notifyManagementPRWarehouseRejected,
 } from "@/lib/notification-helpers"
 
 const PRIVILEGED_ROLES  = ['owner', 'admin', 'general_manager']
@@ -247,7 +249,7 @@ export default function PurchaseReturnDetailPage() {
 
   // ─── Warehouse Confirm ───────────────────────────────────────────────────
   const handleConfirmDelivery = async () => {
-    if (!pr || !currentUserId) return
+    if (!pr || !currentUserId || !companyId) return
     setIsConfirming(true)
     try {
       const { error } = await supabase.rpc('confirm_purchase_return_delivery_v2', {
@@ -262,6 +264,14 @@ export default function PurchaseReturnDetailPage() {
         toast({ title: t('❌ فشل الاعتماد', '❌ Confirmation Failed'), description: error.message, variant: 'destructive' })
         return
       }
+      // إشعار الإدارة العليا بالاعتماد
+      notifyManagementPRWarehouseConfirmed({
+        companyId, prId: pr.id, prNumber: pr.return_number,
+        supplierName: pr.suppliers?.name || '', amount: pr.total_amount,
+        currency: appCurrency, confirmedBy: currentUserId,
+        branchId: pr.branch_id || undefined, appLang,
+      }).catch(console.warn)
+
       toast({ title: t('✅ تم اعتماد تسليم المرتجع', '✅ Delivery Confirmed'), description: pr.return_number })
       loadPR()
     } catch (err) {
@@ -284,6 +294,7 @@ export default function PurchaseReturnDetailPage() {
         return
       }
       const createdBy = result?.created_by || pr.created_by
+      // إشعار المنشئ بالرفض
       if (createdBy) {
         notifyWarehouseReturnRejected({
           companyId, prId: pr.id, prNumber: pr.return_number,
@@ -293,6 +304,15 @@ export default function PurchaseReturnDetailPage() {
           branchId: pr.branch_id || undefined, appLang,
         }).catch(console.warn)
       }
+      // إشعار الإدارة العليا بالرفض
+      notifyManagementPRWarehouseRejected({
+        companyId, prId: pr.id, prNumber: pr.return_number,
+        supplierName: pr.suppliers?.name || '', amount: pr.total_amount,
+        currency: appCurrency, reason: warehouseRejectionReason.trim(),
+        rejectedBy: currentUserId,
+        branchId: pr.branch_id || undefined, appLang,
+      }).catch(console.warn)
+
       toast({ title: t('✅ تم رفض المرتجع من المخزن', '✅ Warehouse Rejected'), description: pr.return_number })
       setIsWarehouseRejectDialogOpen(false)
       setWarehouseRejectionReason('')

@@ -1818,6 +1818,103 @@ export async function notifyBillApprovedToPOCreator(params: {
 // ===========================================================
 
 /**
+ * Notify upper management when the warehouse confirms a purchase return delivery
+ */
+export async function notifyManagementPRWarehouseConfirmed(params: {
+  companyId: string
+  prId: string
+  prNumber: string
+  supplierName: string
+  amount: number
+  currency: string
+  confirmedBy: string
+  branchId?: string
+  costCenterId?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, prId, prNumber, supplierName, amount, currency, confirmedBy, branchId, costCenterId, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? '✅ Purchase Return Confirmed by Warehouse'
+    : '✅ تم اعتماد مرتجع مشتريات من المخزن'
+
+  const message = appLang === 'en'
+    ? `Warehouse confirmed return ${prNumber} (${supplierName}, ${amount} ${currency}). Inventory has been deducted and the return is now completed.`
+    : `اعتمد مسؤول المخزن المرتجع ${prNumber} (${supplierName}، ${amount} ${currency}). تم خصم المخزون واكتملت دورة المرتجع.`
+
+  for (const role of ['admin', 'owner', 'general_manager']) {
+    try {
+      await createNotification({
+        companyId,
+        referenceType: 'purchase_return',
+        referenceId: prId,
+        title,
+        message,
+        createdBy: confirmedBy,
+        assignedToRole: role,
+        branchId,
+        costCenterId,
+        priority: 'normal' as NotificationPriority,
+        eventKey: `purchase_return:${prId}:warehouse_confirmed:${role}`,
+        severity: 'success' as any,
+        category: 'approvals'
+      })
+    } catch (err) {
+      console.warn(`⚠️ Failed to send warehouse confirmation notification to ${role}:`, err)
+    }
+  }
+}
+
+/**
+ * Notify upper management when the warehouse manager rejects a purchase return
+ */
+export async function notifyManagementPRWarehouseRejected(params: {
+  companyId: string
+  prId: string
+  prNumber: string
+  supplierName: string
+  amount: number
+  currency: string
+  reason: string
+  rejectedBy: string
+  branchId?: string
+  costCenterId?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, prId, prNumber, supplierName, amount, currency, reason, rejectedBy, branchId, costCenterId, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? '🏭 Purchase Return Rejected by Warehouse'
+    : '🏭 رفض مسؤول المخزن مرتجع مشتريات'
+
+  const message = appLang === 'en'
+    ? `Warehouse manager rejected return ${prNumber} (${supplierName}, ${amount} ${currency}). Reason: ${reason}. Creator has been notified to edit and resubmit.`
+    : `رفض مسؤول المخزن المرتجع ${prNumber} (${supplierName}، ${amount} ${currency}). السبب: ${reason}. تم إشعار المنشئ للتعديل وإعادة الإرسال.`
+
+  for (const role of ['admin', 'owner', 'general_manager']) {
+    try {
+      await createNotification({
+        companyId,
+        referenceType: 'purchase_return',
+        referenceId: prId,
+        title,
+        message,
+        createdBy: rejectedBy,
+        assignedToRole: role,
+        branchId,
+        costCenterId,
+        priority: 'normal' as NotificationPriority,
+        eventKey: `purchase_return:${prId}:warehouse_rejected_mgmt:${role}`,
+        severity: 'warning',
+        category: 'approvals'
+      })
+    } catch (err) {
+      console.warn(`⚠️ Failed to send warehouse rejection notification to ${role}:`, err)
+    }
+  }
+}
+
+/**
  * Notify the purchase return creator when the warehouse manager rejects
  * the return. Creator can then edit and resubmit for a new approval cycle.
  */

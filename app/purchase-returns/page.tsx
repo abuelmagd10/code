@@ -15,7 +15,7 @@ import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useToast } from "@/hooks/use-toast"
-import { notifyPurchaseReturnConfirmed, notifyWarehouseAllocationConfirmed, notifyPRApproved, notifyPRRejected, notifyPurchaseReturnPendingApproval, notifyWarehouseReturnRejected } from "@/lib/notification-helpers"
+import { notifyPurchaseReturnConfirmed, notifyWarehouseAllocationConfirmed, notifyPRApproved, notifyPRRejected, notifyPurchaseReturnPendingApproval, notifyWarehouseReturnRejected, notifyManagementPRWarehouseConfirmed, notifyManagementPRWarehouseRejected } from "@/lib/notification-helpers"
 import { createNotification } from "@/lib/governance-layer"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
@@ -367,7 +367,7 @@ export default function PurchaseReturnsPage() {
         return
       }
 
-      // Notify creator that warehouse rejected the return
+      // إشعار المنشئ بالرفض
       const createdBy = result?.created_by || prToWarehouseReject.created_by
       if (createdBy) {
         try {
@@ -386,6 +386,21 @@ export default function PurchaseReturnsPage() {
           })
         } catch (e) { console.warn('notifyWarehouseReturnRejected failed:', e) }
       }
+      // إشعار الإدارة العليا بالرفض
+      try {
+        await notifyManagementPRWarehouseRejected({
+          companyId,
+          prId: prToWarehouseReject.id,
+          prNumber: prToWarehouseReject.return_number,
+          supplierName: (prToWarehouseReject.suppliers as any)?.name || '',
+          amount: prToWarehouseReject.total_amount,
+          currency: appCurrency,
+          reason: warehouseRejectionReason.trim(),
+          rejectedBy: currentUserId,
+          branchId: prToWarehouseReject.branch_id || undefined,
+          appLang,
+        })
+      } catch (e) { console.warn('notifyManagementPRWarehouseRejected failed:', e) }
 
       toast({
         title: appLang === 'en' ? '✅ Warehouse Rejected' : '✅ تم رفض المرتجع من المخزن',
@@ -454,9 +469,20 @@ export default function PurchaseReturnsPage() {
         return
       }
 
-      // تم إزالة جميع الأكواد الخاصة بإنشاء Vendor Credit والإشعارات والـ Audit Logs
-      // حيث أصبحت جميعها تنفذ ذرياً (Atomic) داخل الـ DB RPC (confirm_purchase_return_delivery_v2) 
-      // بما يضمن الموثوقية التامة.
+      // إشعار الإدارة العليا بالاعتماد
+      try {
+        await notifyManagementPRWarehouseConfirmed({
+          companyId,
+          prId: pr.id,
+          prNumber: pr.return_number,
+          supplierName: (pr.suppliers as any)?.name || '',
+          amount: pr.total_amount,
+          currency: appCurrency,
+          confirmedBy: currentUserId,
+          branchId: pr.branch_id || undefined,
+          appLang,
+        })
+      } catch (e) { console.warn('notifyManagementPRWarehouseConfirmed failed:', e) }
 
       toast({
         title: appLang === 'en' ? '✅ Delivery Confirmed' : '✅ تم اعتماد التسليم',
