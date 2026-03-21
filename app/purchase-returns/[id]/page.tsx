@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter, useParams } from "next/navigation"
-import { ArrowRight, CheckCircle2, XCircle, Clock, AlertTriangle, Package, FileText, Pencil } from "lucide-react"
+import {
+  ArrowRight, ArrowLeft, CheckCircle2, XCircle, Clock,
+  AlertTriangle, Package, FileText, Pencil, RotateCcw,
+  DollarSign, User, Calendar, Warehouse, Building2, Hash
+} from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
 
 const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
 
@@ -54,21 +56,37 @@ type ReturnDetail = {
   }>
 }
 
-export default function PurchaseReturnDetailPage() {
-  const supabase = useSupabase()
-  const router = useRouter()
-  const params = useParams()
-  const returnId = params.id as string
+const WORKFLOW_BADGES: Record<string, { ar: string; en: string; cls: string }> = {
+  pending_admin_approval: { ar: 'بانتظار اعتماد الإدارة', en: 'Pending Admin Approval', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' },
+  pending_warehouse:      { ar: 'بانتظار اعتماد المخزن',  en: 'Pending Warehouse',      cls: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
+  completed:              { ar: 'مكتمل',                   en: 'Completed',              cls: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' },
+  confirmed:              { ar: 'مؤكد',                    en: 'Confirmed',              cls: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' },
+  rejected:               { ar: 'مرفوض إدارياً',           en: 'Admin Rejected',         cls: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' },
+  warehouse_rejected:     { ar: 'مرفوض من المخزن',         en: 'Warehouse Rejected',     cls: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300' },
+  pending_approval:       { ar: 'بانتظار الاعتماد',        en: 'Pending Approval',       cls: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' },
+}
 
-  const [pr, setPr] = useState<ReturnDetail | null>(null)
+const SETTLEMENT_LABELS: Record<string, { ar: string; en: string }> = {
+  debit_note:    { ar: 'إشعار خصم',    en: 'Debit Note' },
+  cash:          { ar: 'نقداً',         en: 'Cash' },
+  bank_transfer: { ar: 'تحويل بنكي',   en: 'Bank Transfer' },
+  credit:        { ar: 'رصيد دائن',    en: 'Credit' },
+}
+
+export default function PurchaseReturnDetailPage() {
+  const supabase  = useSupabase()
+  const router    = useRouter()
+  const params    = useParams()
+  const returnId  = params.id as string
+
+  const [pr, setPr]           = useState<ReturnDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [currentUserRole, setCurrentUserRole] = useState<string>('viewer')
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserId, setCurrentUserId]     = useState<string | null>(null)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
-  const [userNames, setUserNames] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch {}
   }, [])
 
   useEffect(() => {
@@ -80,16 +98,11 @@ export default function PurchaseReturnDetailPage() {
       if (!user) return
       setCurrentUserId(user.id)
 
-      const { data: companyData } = await supabase
-        .from('companies').select('user_id').eq('id', companyId).single()
-      const { data: memberData } = await supabase
-        .from('company_members')
-        .select('role')
-        .eq('company_id', companyId)
-        .eq('user_id', user.id)
-        .single()
-      const isOwner = companyData?.user_id === user.id
-      setCurrentUserRole(isOwner ? 'owner' : (memberData?.role || 'viewer'))
+      const [{ data: companyData }, { data: memberData }] = await Promise.all([
+        supabase.from('companies').select('user_id').eq('id', companyId).single(),
+        supabase.from('company_members').select('role').eq('company_id', companyId).eq('user_id', user.id).single(),
+      ])
+      setCurrentUserRole(companyData?.user_id === user.id ? 'owner' : (memberData?.role || 'viewer'))
 
       const { data } = await supabase
         .from('purchase_returns')
@@ -113,72 +126,36 @@ export default function PurchaseReturnDetailPage() {
         .eq('id', returnId)
         .single()
 
-      if (data) {
-        setPr(data as unknown as ReturnDetail)
-
-        // جلب أسماء المستخدمين
-        const userIds = [data.created_by, data.approved_by, data.rejected_by, data.warehouse_rejected_by]
-          .filter(Boolean) as string[]
-        if (userIds.length > 0) {
-          const { data: profiles } = await supabase
-            .from('company_members')
-            .select('user_id, users:auth_user_id(email)')
-            .in('user_id', userIds)
-          // fallback: استخدم auth.users عبر profiles
-          const names: Record<string, string> = {}
-          for (const uid of userIds) {
-            names[uid] = uid.slice(0, 8) + '...'
-          }
-          setUserNames(names)
-        }
-      }
+      if (data) setPr(data as unknown as ReturnDetail)
       setLoading(false)
     })()
   }, [returnId, supabase])
 
   const isPrivileged = PRIVILEGED_ROLES.includes(currentUserRole)
-  const isCreator = pr?.created_by === currentUserId
+  const isCreator    = pr?.created_by === currentUserId
+  const isRejected   = pr?.workflow_status === 'rejected' || pr?.workflow_status === 'warehouse_rejected'
+  const dir          = appLang === 'ar' ? 'rtl' : 'ltr'
+
+  const t = (ar: string, en: string) => appLang === 'en' ? en : ar
 
   function getWorkflowBadge(wfStatus: string) {
-    const map: Record<string, { label: string; labelEn: string; color: string }> = {
-      pending_admin_approval: { label: 'بانتظار اعتماد الإدارة', labelEn: 'Pending Admin Approval', color: 'bg-orange-100 text-orange-800 border-orange-300' },
-      pending_warehouse:      { label: 'بانتظار اعتماد المخزن', labelEn: 'Pending Warehouse', color: 'bg-blue-100 text-blue-800 border-blue-300' },
-      completed:              { label: 'مكتمل', labelEn: 'Completed', color: 'bg-green-100 text-green-800 border-green-300' },
-      confirmed:              { label: 'مؤكد', labelEn: 'Confirmed', color: 'bg-green-100 text-green-800 border-green-300' },
-      rejected:               { label: 'مرفوض إدارياً', labelEn: 'Admin Rejected', color: 'bg-red-100 text-red-800 border-red-300' },
-      warehouse_rejected:     { label: 'مرفوض من المخزن', labelEn: 'Warehouse Rejected', color: 'bg-rose-100 text-rose-800 border-rose-300' },
-      pending_approval:       { label: 'بانتظار الاعتماد', labelEn: 'Pending Approval', color: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
-    }
-    const info = map[wfStatus] || { label: wfStatus, labelEn: wfStatus, color: 'bg-gray-100 text-gray-700 border-gray-300' }
+    const info = WORKFLOW_BADGES[wfStatus] ?? { ar: wfStatus, en: wfStatus, cls: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' }
     return (
-      <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium border ${info.color}`}>
-        {appLang === 'en' ? info.labelEn : info.label}
+      <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${info.cls}`}>
+        {appLang === 'en' ? info.en : info.ar}
       </span>
     )
   }
 
-  function formatDate(d: string | null) {
-    if (!d) return '—'
-    return new Date(d).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })
-  }
-
-  function formatCurrency(n: number, currency = 'EGP') {
-    return `${n.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
-  }
-
-  const settlementLabels: Record<string, { ar: string; en: string }> = {
-    debit_note:    { ar: 'إشعار خصم', en: 'Debit Note' },
-    cash:          { ar: 'نقداً', en: 'Cash' },
-    bank_transfer: { ar: 'تحويل بنكي', en: 'Bank Transfer' },
-    credit:        { ar: 'رصيد دائن', en: 'Credit' },
-  }
+  const formatDate  = (d: string | null) => d ? new Date(d).toLocaleDateString(appLang === 'ar' ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+  const formatMoney = (n: number) => n.toLocaleString(appLang === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   if (loading) {
     return (
-      <div className="flex h-screen bg-background" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900" dir={dir}>
         <Sidebar />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="text-muted-foreground animate-pulse">{appLang === 'en' ? 'Loading...' : 'جارٍ التحميل...'}</div>
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden flex items-center justify-center">
+          <p className="text-gray-500 dark:text-gray-400 animate-pulse">{t('جارٍ التحميل...', 'Loading...')}</p>
         </main>
       </div>
     )
@@ -186,223 +163,309 @@ export default function PurchaseReturnDetailPage() {
 
   if (!pr) {
     return (
-      <div className="flex h-screen bg-background" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900" dir={dir}>
         <Sidebar />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="text-muted-foreground">{appLang === 'en' ? 'Return not found.' : 'لم يُعثر على المرتجع.'}</div>
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden flex items-center justify-center">
+          <p className="text-red-600 dark:text-red-400">{t('لم يُعثر على المرتجع.', 'Return not found.')}</p>
         </main>
       </div>
     )
   }
 
-  return (
-    <div className="flex h-screen bg-background" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
-      <Sidebar />
-      <main className="flex-1 overflow-auto p-4 sm:p-6">
-        <div className="max-w-4xl mx-auto space-y-6">
+  const currency = pr.original_currency || 'EGP'
+  const items    = pr.purchase_return_items || []
 
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <Button variant="outline" size="sm" onClick={() => router.push('/purchase-returns')}>
-              <ArrowRight className="w-4 h-4 mr-1" />
-              {appLang === 'en' ? 'Back to Returns' : 'قائمة المرتجعات'}
-            </Button>
-            <h1 className="text-xl font-bold">
-              {appLang === 'en' ? 'Return Details' : 'تفاصيل المرتجع'} — {pr.return_number}
-            </h1>
-            <div className="flex gap-2">
-              {/* زر تعديل وإعادة إرسال للمنشئ */}
-              {isCreator && (pr.workflow_status === 'rejected' || pr.workflow_status === 'warehouse_rejected') && (
+  return (
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900" dir={dir}>
+      <Sidebar />
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-6 max-w-full">
+
+          {/* ─── Header ─── */}
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
+            {/* Title + status */}
+            <div className="flex items-center gap-3 min-w-0">
+              <Button
+                variant="ghost" size="icon"
+                className="dark:text-gray-300 flex-shrink-0"
+                onClick={() => router.push('/purchase-returns')}
+              >
+                {appLang === 'ar' ? <ArrowRight className="h-5 w-5" /> : <ArrowLeft className="h-5 w-5" />}
+              </Button>
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2 truncate">
+                  <RotateCcw className="h-5 w-5 sm:h-6 sm:w-6 flex-shrink-0 text-orange-500" />
+                  {pr.return_number}
+                </h1>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  {getWorkflowBadge(pr.workflow_status)}
+                  {pr.suppliers?.name && (
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                      {t('المورد:', 'Supplier:')} {pr.suppliers.name}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {isCreator && isRejected && (
                 <Button
-                  size="sm"
                   className="bg-blue-600 hover:bg-blue-700 text-white"
                   onClick={() => router.push(`/purchase-returns/new?edit=${pr.id}`)}
                 >
-                  <Pencil className="w-4 h-4 mr-1" />
-                  {appLang === 'en' ? 'Edit & Resubmit' : 'تعديل وإعادة إرسال'}
+                  <Pencil className="h-4 w-4 mr-1" />
+                  {t('تعديل وإعادة إرسال', 'Edit & Resubmit')}
                 </Button>
               )}
               {pr.bills && (
                 <Button
                   variant="outline"
-                  size="sm"
+                  className="dark:border-gray-600 dark:text-gray-300"
                   onClick={() => router.push(`/bills/${pr.bills!.id}`)}
                 >
-                  <FileText className="w-4 h-4 mr-1" />
-                  {appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}
+                  <FileText className="h-4 w-4 mr-1" />
+                  {t('عرض الفاتورة', 'View Bill')}
                 </Button>
               )}
             </div>
           </div>
 
-          {/* Status Banner */}
-          <Card className="border-2">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">{appLang === 'en' ? 'Workflow Status' : 'حالة سير العمل'}</p>
-                  {getWorkflowBadge(pr.workflow_status)}
+          {/* ─── Rejection alert ─── */}
+          {pr.rejection_reason && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2">
+              <XCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-red-800 dark:text-red-200">{t('سبب الرفض الإداري:', 'Admin Rejection Reason:')}</p>
+                <p className="text-sm text-red-700 dark:text-red-300 mt-0.5">{pr.rejection_reason}</p>
+              </div>
+            </div>
+          )}
+          {pr.warehouse_rejection_reason && (
+            <div className="p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-rose-800 dark:text-rose-200">{t('سبب رفض مسؤول المخزن:', 'Warehouse Rejection Reason:')}</p>
+                <p className="text-sm text-rose-700 dark:text-rose-300 mt-0.5">{pr.warehouse_rejection_reason}</p>
+              </div>
+            </div>
+          )}
+
+          {/* ─── Summary stat cards ─── */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                  <RotateCcw className="h-5 w-5 text-orange-600 dark:text-orange-400" />
                 </div>
-                <div className="text-right">
-                  <p className="text-sm text-muted-foreground">{appLang === 'en' ? 'Total Amount' : 'الإجمالي'}</p>
-                  <p className="text-2xl font-bold text-primary">{formatCurrency(pr.total_amount, pr.original_currency)}</p>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{t('المجموع قبل الضريبة', 'Subtotal')}</p>
+                  <p className="text-base sm:text-lg font-bold text-orange-600 dark:text-orange-400">{formatMoney(pr.subtotal)}</p>
                 </div>
               </div>
-
-              {/* Rejection reason */}
-              {pr.rejection_reason && (
-                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm font-medium text-red-700 flex items-center gap-1">
-                    <XCircle className="w-4 h-4" />
-                    {appLang === 'en' ? 'Admin Rejection Reason' : 'سبب الرفض الإداري'}
-                  </p>
-                  <p className="text-sm text-red-600 mt-1">{pr.rejection_reason}</p>
-                </div>
-              )}
-              {pr.warehouse_rejection_reason && (
-                <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-lg">
-                  <p className="text-sm font-medium text-rose-700 flex items-center gap-1">
-                    <AlertTriangle className="w-4 h-4" />
-                    {appLang === 'en' ? 'Warehouse Rejection Reason' : 'سبب رفض المخزن'}
-                  </p>
-                  <p className="text-sm text-rose-600 mt-1">{pr.warehouse_rejection_reason}</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Info Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{appLang === 'en' ? 'Return Information' : 'معلومات المرتجع'}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <InfoRow label={appLang === 'en' ? 'Return Number' : 'رقم المرتجع'} value={pr.return_number} />
-                <InfoRow label={appLang === 'en' ? 'Return Date' : 'تاريخ المرتجع'} value={formatDate(pr.return_date)} />
-                <InfoRow
-                  label={appLang === 'en' ? 'Settlement Method' : 'طريقة التسوية'}
-                  value={appLang === 'en' ? (settlementLabels[pr.settlement_method]?.en || pr.settlement_method) : (settlementLabels[pr.settlement_method]?.ar || pr.settlement_method)}
-                />
-                <InfoRow label={appLang === 'en' ? 'Supplier' : 'المورد'} value={pr.suppliers?.name || '—'} />
-                <InfoRow label={appLang === 'en' ? 'Bill' : 'الفاتورة'} value={pr.bills?.bill_number || '—'} />
-                {pr.branches?.name && <InfoRow label={appLang === 'en' ? 'Branch' : 'الفرع'} value={pr.branches.name} />}
-                {pr.warehouses?.name && <InfoRow label={appLang === 'en' ? 'Warehouse' : 'المخزن'} value={pr.warehouses.name} />}
-              </CardContent>
             </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{appLang === 'en' ? 'Financial Summary' : 'الملخص المالي'}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <InfoRow label={appLang === 'en' ? 'Subtotal' : 'المجموع قبل الضريبة'} value={formatCurrency(pr.subtotal, pr.original_currency)} />
-                <InfoRow label={appLang === 'en' ? 'Tax' : 'الضريبة'} value={formatCurrency(pr.tax_amount, pr.original_currency)} />
-                <Separator />
-                <InfoRow label={appLang === 'en' ? 'Total' : 'الإجمالي'} value={formatCurrency(pr.total_amount, pr.original_currency)} bold />
-              </CardContent>
+            <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+                  <DollarSign className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{t('الضريبة', 'Tax')}</p>
+                  <p className="text-base sm:text-lg font-bold text-yellow-600 dark:text-yellow-400">{formatMoney(pr.tax_amount)}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4 col-span-2 sm:col-span-2">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                  <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{t('الإجمالي', 'Total Amount')}</p>
+                  <p className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">
+                    {formatMoney(pr.total_amount)} <span className="text-sm font-normal">{currency}</span>
+                  </p>
+                </div>
+              </div>
             </Card>
           </div>
 
-          {/* Return Reason */}
-          {pr.reason && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{appLang === 'en' ? 'Return Reason' : 'سبب الإرجاع'}</CardTitle>
+          {/* ─── Details + Financial ─── */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+            {/* Return Info */}
+            <Card className="dark:bg-gray-800 dark:border-gray-700">
+              <CardHeader className="pb-3 border-b dark:border-gray-700">
+                <CardTitle className="text-base text-gray-900 dark:text-white">{t('بيانات المرتجع', 'Return Details')}</CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm">{pr.reason}</p>
-                {pr.notes && <p className="text-sm text-muted-foreground mt-2">{pr.notes}</p>}
+              <CardContent className="space-y-3 pt-4">
+                <DetailRow icon={<Hash className="h-4 w-4" />}    label={t('رقم المرتجع', 'Return #')}       value={pr.return_number} />
+                <DetailRow icon={<Calendar className="h-4 w-4" />} label={t('تاريخ المرتجع', 'Return Date')}   value={formatDate(pr.return_date)} />
+                <DetailRow icon={<User className="h-4 w-4" />}    label={t('المورد', 'Supplier')}             value={pr.suppliers?.name || '—'} />
+                <DetailRow icon={<FileText className="h-4 w-4" />} label={t('الفاتورة المرجعية', 'Bill')}      value={pr.bills?.bill_number || '—'} />
+                {pr.branches?.name  && <DetailRow icon={<Building2 className="h-4 w-4" />} label={t('الفرع', 'Branch')}   value={pr.branches.name} />}
+                {pr.warehouses?.name && <DetailRow icon={<Warehouse className="h-4 w-4" />} label={t('المخزن', 'Warehouse')} value={pr.warehouses.name} />}
+                <DetailRow
+                  icon={<DollarSign className="h-4 w-4" />}
+                  label={t('طريقة التسوية', 'Settlement')}
+                  value={appLang === 'en'
+                    ? (SETTLEMENT_LABELS[pr.settlement_method]?.en || pr.settlement_method)
+                    : (SETTLEMENT_LABELS[pr.settlement_method]?.ar || pr.settlement_method)}
+                />
               </CardContent>
             </Card>
-          )}
 
-          {/* Return Items */}
-          {pr.purchase_return_items && pr.purchase_return_items.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Package className="w-4 h-4" />
-                  {appLang === 'en' ? 'Return Items' : 'بنود المرتجع'}
-                </CardTitle>
+            {/* Approval Timeline */}
+            <Card className="dark:bg-gray-800 dark:border-gray-700">
+              <CardHeader className="pb-3 border-b dark:border-gray-700">
+                <CardTitle className="text-base text-gray-900 dark:text-white">{t('مسار الاعتماد', 'Approval Timeline')}</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-muted-foreground">
-                        <th className="text-right py-2 px-2">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
-                        <th className="text-right py-2 px-2">{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
-                        <th className="text-right py-2 px-2">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                        <th className="text-right py-2 px-2">{appLang === 'en' ? 'Tax' : 'الضريبة'}</th>
-                        <th className="text-right py-2 px-2">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pr.purchase_return_items.map((item) => (
-                        <tr key={item.id} className="border-b hover:bg-muted/30">
-                          <td className="py-2 px-2 font-medium">{item.products?.name || item.description || '—'}</td>
-                          <td className="py-2 px-2">{item.quantity}</td>
-                          <td className="py-2 px-2">{formatCurrency(item.unit_price, pr.original_currency)}</td>
-                          <td className="py-2 px-2">{item.tax_rate}%</td>
-                          <td className="py-2 px-2 font-medium">{formatCurrency(item.line_total, pr.original_currency)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Workflow Timeline */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{appLang === 'en' ? 'Approval Timeline' : 'مسار الاعتماد'}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
+              <CardContent className="space-y-4 pt-4">
                 <TimelineStep
-                  icon={<Clock className="w-4 h-4 text-blue-500" />}
-                  label={appLang === 'en' ? 'Return Created' : 'تم إنشاء المرتجع'}
-                  date={formatDate(pr.return_date)}
+                  icon={<Clock className="h-4 w-4 text-blue-500" />}
+                  label={t('تم إنشاء المرتجع', 'Return Created')}
+                  sublabel={formatDate(pr.return_date)}
                   done
                 />
+                {(pr.workflow_status === 'pending_admin_approval' || pr.workflow_status === 'pending_approval') && (
+                  <TimelineStep
+                    icon={<Clock className="h-4 w-4 text-amber-500 animate-pulse" />}
+                    label={t('بانتظار اعتماد الإدارة العليا', 'Awaiting Admin Approval')}
+                    sublabel=""
+                    done
+                  />
+                )}
                 {pr.approved_at && (
                   <TimelineStep
-                    icon={<CheckCircle2 className="w-4 h-4 text-green-500" />}
-                    label={appLang === 'en' ? 'Admin Approved' : 'تمت الموافقة الإدارية'}
-                    date={formatDate(pr.approved_at)}
+                    icon={<CheckCircle2 className="h-4 w-4 text-green-500" />}
+                    label={t('تمت الموافقة الإدارية', 'Admin Approved')}
+                    sublabel={formatDate(pr.approved_at)}
+                    done
+                  />
+                )}
+                {pr.workflow_status === 'pending_warehouse' && (
+                  <TimelineStep
+                    icon={<Clock className="h-4 w-4 text-blue-500 animate-pulse" />}
+                    label={t('بانتظار اعتماد مسؤول المخزن', 'Awaiting Warehouse Confirmation')}
+                    sublabel=""
                     done
                   />
                 )}
                 {pr.rejected_at && (
                   <TimelineStep
-                    icon={<XCircle className="w-4 h-4 text-red-500" />}
-                    label={appLang === 'en' ? `Admin Rejected — ${pr.rejection_reason || ''}` : `رُفض إدارياً — ${pr.rejection_reason || ''}`}
-                    date={formatDate(pr.rejected_at)}
+                    icon={<XCircle className="h-4 w-4 text-red-500" />}
+                    label={t('رُفض إدارياً', 'Admin Rejected')}
+                    sublabel={formatDate(pr.rejected_at)}
                     done
                   />
                 )}
                 {pr.warehouse_rejected_at && (
                   <TimelineStep
-                    icon={<AlertTriangle className="w-4 h-4 text-rose-500" />}
-                    label={appLang === 'en' ? `Warehouse Rejected — ${pr.warehouse_rejection_reason || ''}` : `رُفض من المخزن — ${pr.warehouse_rejection_reason || ''}`}
-                    date={formatDate(pr.warehouse_rejected_at)}
+                    icon={<AlertTriangle className="h-4 w-4 text-rose-500" />}
+                    label={t('رُفض من مسؤول المخزن', 'Warehouse Rejected')}
+                    sublabel={formatDate(pr.warehouse_rejected_at)}
                     done
                   />
                 )}
-                {pr.workflow_status === 'completed' && (
+                {(pr.workflow_status === 'completed' || pr.workflow_status === 'confirmed') && (
                   <TimelineStep
-                    icon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />}
-                    label={appLang === 'en' ? 'Warehouse Confirmed — Return Completed' : 'تأكيد المخزن — المرتجع مكتمل'}
-                    date=""
+                    icon={<CheckCircle2 className="h-4 w-4 text-emerald-600" />}
+                    label={t('تم تأكيد المخزن — المرتجع مكتمل ✅', 'Warehouse Confirmed — Completed ✅')}
+                    sublabel=""
                     done
                   />
                 )}
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* ─── Reason & Notes ─── */}
+          {(pr.reason || pr.notes) && (
+            <Card className="dark:bg-gray-800 dark:border-gray-700">
+              <CardHeader className="pb-3 border-b dark:border-gray-700">
+                <CardTitle className="text-base text-gray-900 dark:text-white">{t('سبب الإرجاع والملاحظات', 'Reason & Notes')}</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-2">
+                {pr.reason && <p className="text-sm text-gray-800 dark:text-gray-200">{pr.reason}</p>}
+                {pr.notes  && <p className="text-sm text-gray-500 dark:text-gray-400">{pr.notes}</p>}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ─── Return Items ─── */}
+          {items.length > 0 && (
+            <Card className="dark:bg-gray-800 dark:border-gray-700">
+              <CardHeader className="pb-3 border-b dark:border-gray-700">
+                <CardTitle className="text-base text-gray-900 dark:text-white flex items-center gap-2">
+                  <Package className="h-4 w-4" />
+                  {t('بنود المرتجع', 'Return Items')} ({items.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 px-0 sm:px-6">
+                {/* Desktop table */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b dark:border-gray-700 text-gray-500 dark:text-gray-400">
+                        <th className="text-right py-2 px-3 font-medium">{t('المنتج', 'Product')}</th>
+                        <th className="text-right py-2 px-3 font-medium">{t('الكمية', 'Qty')}</th>
+                        <th className="text-right py-2 px-3 font-medium">{t('سعر الوحدة', 'Unit Price')}</th>
+                        <th className="text-right py-2 px-3 font-medium">{t('ضريبة', 'Tax')}</th>
+                        <th className="text-right py-2 px-3 font-medium">{t('خصم', 'Disc')}</th>
+                        <th className="text-right py-2 px-3 font-medium">{t('الإجمالي', 'Total')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item) => (
+                        <tr key={item.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
+                          <td className="py-2.5 px-3 font-medium text-gray-900 dark:text-white">
+                            {item.products?.name || item.description || '—'}
+                          </td>
+                          <td className="py-2.5 px-3 text-gray-700 dark:text-gray-300">{item.quantity}</td>
+                          <td className="py-2.5 px-3 text-gray-700 dark:text-gray-300">{formatMoney(item.unit_price)}</td>
+                          <td className="py-2.5 px-3 text-gray-700 dark:text-gray-300">{item.tax_rate}%</td>
+                          <td className="py-2.5 px-3 text-gray-700 dark:text-gray-300">{item.discount_percent}%</td>
+                          <td className="py-2.5 px-3 font-semibold text-gray-900 dark:text-white">{formatMoney(item.line_total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-gray-50 dark:bg-gray-700/30">
+                        <td colSpan={5} className="py-2.5 px-3 text-right font-semibold text-gray-700 dark:text-gray-300">
+                          {t('الإجمالي', 'Total')}
+                        </td>
+                        <td className="py-2.5 px-3 font-bold text-gray-900 dark:text-white">
+                          {formatMoney(pr.total_amount)} {currency}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Mobile cards */}
+                <div className="sm:hidden space-y-3 px-4">
+                  {items.map((item) => (
+                    <div key={item.id} className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border dark:border-gray-700 space-y-2">
+                      <p className="font-medium text-sm text-gray-900 dark:text-white">
+                        {item.products?.name || item.description || '—'}
+                      </p>
+                      <div className="grid grid-cols-2 gap-1 text-xs text-gray-600 dark:text-gray-400">
+                        <span>{t('الكمية:', 'Qty:')} {item.quantity}</span>
+                        <span>{t('السعر:', 'Price:')} {formatMoney(item.unit_price)}</span>
+                        <span>{t('ضريبة:', 'Tax:')} {item.tax_rate}%</span>
+                        <span className="font-semibold text-gray-900 dark:text-white">{t('الإجمالي:', 'Total:')} {formatMoney(item.line_total)}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {/* Mobile total */}
+                  <div className="flex justify-between items-center pt-2 border-t dark:border-gray-700">
+                    <span className="font-semibold text-gray-700 dark:text-gray-300">{t('الإجمالي', 'Total')}</span>
+                    <span className="font-bold text-gray-900 dark:text-white">{formatMoney(pr.total_amount)} {currency}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
         </div>
       </main>
@@ -410,22 +473,27 @@ export default function PurchaseReturnDetailPage() {
   )
 }
 
-function InfoRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+// ─── Helper components ─────────────────────────────────────────────────────
+
+function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="flex justify-between items-center">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className={`text-sm ${bold ? 'font-bold text-base' : 'font-medium'}`}>{value}</span>
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 min-w-0">
+        <span className="flex-shrink-0">{icon}</span>
+        <span className="text-sm truncate">{label}</span>
+      </div>
+      <span className="text-sm font-medium text-gray-900 dark:text-white text-right">{value}</span>
     </div>
   )
 }
 
-function TimelineStep({ icon, label, date, done }: { icon: React.ReactNode; label: string; date: string; done: boolean }) {
+function TimelineStep({ icon, label, sublabel, done }: { icon: React.ReactNode; label: string; sublabel: string; done: boolean }) {
   return (
     <div className={`flex items-start gap-3 ${done ? '' : 'opacity-40'}`}>
-      <div className="mt-0.5">{icon}</div>
+      <div className="mt-0.5 flex-shrink-0">{icon}</div>
       <div>
-        <p className="text-sm font-medium">{label}</p>
-        {date && <p className="text-xs text-muted-foreground">{date}</p>}
+        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{label}</p>
+        {sublabel && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{sublabel}</p>}
       </div>
     </div>
   )
