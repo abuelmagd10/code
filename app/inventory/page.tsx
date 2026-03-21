@@ -197,7 +197,7 @@ export default function InventoryPage() {
       }
       // ✅ فقط الحركات في نفس الشركة والمخزن المحدد
       return record.company_id === userContext.company_id && 
-             (!selectedWarehouseId || record.warehouse_id === selectedWarehouseId);
+             (selectedWarehouseId === 'all' || !selectedWarehouseId || record.warehouse_id === selectedWarehouseId);
     }
   });
 
@@ -236,33 +236,48 @@ export default function InventoryPage() {
       }
       // ✅ فقط النقل في نفس الشركة والمخزن المحدد (مصدر أو وجهة)
       return record.company_id === userContext.company_id && 
-             (!selectedWarehouseId || 
+             (selectedWarehouseId === 'all' || !selectedWarehouseId || 
               record.source_warehouse_id === selectedWarehouseId || 
               record.destination_warehouse_id === selectedWarehouseId);
     }
   });
 
   const applyBranchDefaults = useCallback(async (companyId: string, branchId: string) => {
-    const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
-    const defaults = await getBranchDefaults(supabase, branchId)
+    let defaults: any = {}
+    if (branchId !== 'all') {
+      const { getBranchDefaults } = await import("@/lib/governance-branch-defaults")
+      defaults = await getBranchDefaults(supabase, branchId)
+      setSelectedWarehouseId(defaults.default_warehouse_id || "")
+      setSelectedCostCenterId(defaults.default_cost_center_id || "")
+    } else {
+      setSelectedWarehouseId("all")
+      setSelectedCostCenterId("all")
+    }
 
     setSelectedBranchId(branchId)
-    setSelectedWarehouseId(defaults.default_warehouse_id || "")
-    setSelectedCostCenterId(defaults.default_cost_center_id || "")
 
-    // 🔐 جلب المخازن الخاصة بالفرع فقط (لا يُسمح بمزج فرع مع مخزن فرع آخر)
-    const { data: warehousesRes } = await supabase
+    // 🔐 جلب المخازن الخاصة بالفرع فقط (أو كل مخازن الشركة إذا كان branchId = 'all')
+    let query = supabase
       .from("warehouses")
       .select("id, name, code, branch_id, is_main, branches(name, branch_name)")
       .eq("company_id", companyId)
       .eq("is_active", true)
-      .eq("branch_id", branchId) // 🔐 إلزامي: فقط مخازن هذا الفرع
       .order("is_main", { ascending: false })
       .order("name")
 
-    setWarehouses(warehousesRes || [])
+    if (branchId !== 'all') {
+      query = query.eq("branch_id", branchId)
+    }
+
+    const { data: warehousesRes } = await query
+
+    const finalWarehouses = branchId === 'all' 
+      ? [{ id: 'all', name: appLang === 'en' ? 'All Warehouses' : 'كل المخازن' }, ...(warehousesRes || [])] 
+      : (warehousesRes || [])
+
+    setWarehouses(finalWarehouses as any[])
     return defaults
-  }, [supabase])
+  }, [supabase, appLang])
 
   const loadData = async (context: UserContext) => {
     try {
@@ -289,14 +304,14 @@ export default function InventoryPage() {
           .eq("is_active", true)
           .order("name")
         if (branchesError) throw branchesError
-        setBranches(branchesRes || [])
+        
+        const allOption = { id: 'all', name: appLang === 'en' ? 'All Company (All Branches)' : 'الشركة كلها (جميع الفروع)' }
+        setBranches([allOption, ...(branchesRes || [])] as any[])
+        
         const branchIdFromContext = String(context.branch_id || "")
-        const firstBranchId = String((branchesRes || [])[0]?.id || "")
-        const branchIdToUse = branchIdFromContext || firstBranchId
-        if (!branchIdToUse) {
-          toastActionError(toast, "الحوكمة", "المخزون", "لا توجد فروع مفعلة للشركة")
-          return
-        }
+        // إذا كان يملك حق الوصول لكل شيء، نجعل الافتراضي "all"
+        const branchIdToUse = branchIdFromContext || 'all'
+        
         await applyBranchDefaults(companyId, branchIdToUse)
       } else {
         // Employee/Accountant/Branch Manager - فرعهم فقط
@@ -401,7 +416,7 @@ export default function InventoryPage() {
       const companyId = context.company_id
       
       // 🔐 التأكد من أن warehouse ينتمي للفرع المحدد
-      if (warehouseId) {
+      if (warehouseId && warehouseId !== 'all' && branchId !== 'all') {
         const { data: warehouse } = await supabase
           .from("warehouses")
           .select("id, branch_id")
@@ -433,7 +448,7 @@ export default function InventoryPage() {
       }
       
       // ⚡ جلب حركات المخزون من /api/v2/inventory (بدل limit(200))
-      await fetchTransactionsPage(1, context, warehouseId, costCenterId)
+      await fetchTransactionsPage(1, context, warehouseId === 'all' ? '' : warehouseId, costCenterId === 'all' ? '' : costCenterId)
 
       // ✅ حساب الكميات من inventory_transactions (تقرير تشغيلي)
       // 🔐 حساب الكميات من inventory_transactions مع تطبيق الفلاتر الإلزامية
@@ -449,8 +464,10 @@ export default function InventoryPage() {
       // لكن بدون cost_center_id و warehouse_id لأننا سنتعامل معهما يدوياً
       allTransactionsQuery = applyDataVisibilityFilter(allTransactionsQuery, rulesWithoutCostCenter, "inventory_transactions")
       
-      // 🔐 إضافة فلتر warehouse_id يدوياً باستخدام القيمة المحددة من selector
-      allTransactionsQuery = (allTransactionsQuery as any).eq("warehouse_id", warehouseId)
+      // 🔐 إضافة فلتر warehouse_id يدوياً باستخدام القيمة المحددة من selector إذا لم يكن "الكل"
+      if (warehouseId !== 'all') {
+        allTransactionsQuery = (allTransactionsQuery as any).eq("warehouse_id", warehouseId)
+      }
       
       const { data: allTransactionsRaw } = await allTransactionsQuery
       
@@ -544,9 +561,12 @@ export default function InventoryPage() {
           )
         `)
         .eq("company_id", companyId)
-        .eq("destination_warehouse_id", warehouseId)
         .is("deleted_at", null)
         .in("status", ["pending", "in_transit", "received"]) // فقط النقل النشطة
+
+      if (warehouseId !== 'all') {
+        incomingQuery = incomingQuery.eq("destination_warehouse_id", warehouseId)
+      }
 
       // ✅ فلترة حسب الصلاحيات
       if (!isOwnerOrAdmin) {
@@ -583,9 +603,12 @@ export default function InventoryPage() {
           )
         `)
         .eq("company_id", companyId)
-        .eq("source_warehouse_id", warehouseId)
         .is("deleted_at", null)
         .in("status", ["pending", "in_transit", "received"]) // فقط النقل النشطة
+
+      if (warehouseId !== 'all') {
+        outgoingQuery = outgoingQuery.eq("source_warehouse_id", warehouseId)
+      }
 
       // ✅ فلترة حسب الصلاحيات
       if (!isOwnerOrAdmin) {
@@ -783,14 +806,16 @@ export default function InventoryPage() {
                       value={selectedWarehouseId}
                       onValueChange={(value) => {
                         // 🔐 التأكد من أن المخزن ينتمي للفرع المحدد
-                        const warehouse = filteredWarehouses.find(w => w.id === value)
-                        if (warehouse && warehouse.branch_id !== selectedBranchId) {
-                          toastActionError(toast, "الحوكمة", "المخزون", "المخزن المحدد لا ينتمي للفرع المحدد")
-                          return
+                        if (value !== 'all' && selectedBranchId !== 'all') {
+                          const warehouse = filteredWarehouses.find(w => w.id === value)
+                          if (warehouse && warehouse.branch_id !== selectedBranchId) {
+                            toastActionError(toast, "الحوكمة", "المخزون", "المخزن المحدد لا ينتمي للفرع المحدد")
+                            return
+                          }
                         }
                         setSelectedWarehouseId(value)
                       }}
-                      disabled={!isAdmin || !selectedBranchId} // 🔐 disabled للمستخدمين العاديين
+                      disabled={(!isAdmin || !selectedBranchId) && filteredWarehouses.length === 0}
                     >
                       <SelectTrigger className="w-[180px] sm:w-[220px] bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
                         <SelectValue placeholder={appLang === 'en' ? 'Select warehouse' : 'اختر المخزن'} />
