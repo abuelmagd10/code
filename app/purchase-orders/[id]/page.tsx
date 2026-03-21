@@ -3,7 +3,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -758,7 +757,6 @@ export default function PurchaseOrderDetailPage() {
   if (isLoading) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <Sidebar />
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
           <p className="py-8 text-center">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</p>
         </main>
@@ -769,7 +767,6 @@ export default function PurchaseOrderDetailPage() {
   if (!po) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <Sidebar />
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
           <p className="py-8 text-center text-red-600">{appLang === 'en' ? 'Purchase order not found' : 'لم يتم العثور على أمر الشراء'}</p>
         </main>
@@ -779,7 +776,6 @@ export default function PurchaseOrderDetailPage() {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 max-w-full">
           {/* Header */}

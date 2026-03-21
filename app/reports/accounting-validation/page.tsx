@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -260,7 +259,6 @@ export default function AccountingValidationPage() {
 
   return (
     <div className="flex min-h-screen bg-gray-50" dir={dir}>
-      <Sidebar />
       <main className="flex-1 p-6 overflow-auto">
         <div className="max-w-4xl mx-auto">
           {/* Header */}

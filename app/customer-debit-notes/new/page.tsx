@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Plus, Trash2, Save } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { Sidebar } from "@/components/sidebar"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
@@ -381,7 +380,6 @@ export default function NewCustomerDebitNotePage() {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
         <Card>
           <CardHeader>

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -284,7 +283,6 @@ export default function FixedAssetsReportsPage() {
   if (!canAccess) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <Sidebar />
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto flex items-center justify-center">
           <Card className="max-w-md">
             <CardHeader>
@@ -301,7 +299,6 @@ export default function FixedAssetsReportsPage() {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
       <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">

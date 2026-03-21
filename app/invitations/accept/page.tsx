@@ -2,8 +2,6 @@
 
 import { Suspense, useEffect, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { Sidebar } from "@/components/sidebar"
-
 // ✅ Force dynamic rendering to avoid SSR hydration issues with useSearchParams
 export const dynamic = 'force-dynamic'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -463,7 +461,6 @@ function AcceptInvitationsContent() {
   // For logged-in users without token - show list of pending invitations
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">الدعوات المعلقة</h1>

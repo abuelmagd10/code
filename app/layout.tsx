@@ -13,6 +13,7 @@ import { PermissionsProvider } from "@/lib/permissions-context"
 import { AccessProvider } from "@/lib/access-context"
 import { RealtimeProvider } from "@/lib/realtime-provider"
 import { AppShell } from "@/components/app-shell"
+import { SidebarLayoutProvider } from "@/components/SidebarLayoutProvider"
 // dynamic with ssr:false must live inside a Client Component — see client-loader.tsx
 import { AIAssistantClientLoader } from "@/components/ai-assistant/client-loader"
 
@@ -114,6 +115,7 @@ export default function RootLayout({
                 <AccessProvider>
                   <RealtimeProvider autoSubscribe={['notifications']}>
                     <AppShell>
+                      <SidebarLayoutProvider />
                       <ErrorBoundary>
                         {children}
                       </ErrorBoundary>

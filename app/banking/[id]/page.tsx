@@ -1,7 +1,6 @@
 "use client"
 
 import React, { useEffect, useMemo, useState } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -392,7 +391,6 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-8 overflow-x-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

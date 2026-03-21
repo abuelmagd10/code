@@ -3,7 +3,6 @@
 import { useEffect, useState, use } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -163,7 +162,6 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
     if (loading || !drawing) {
         return (
             <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-                <Sidebar />
                 <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
                     <div className="animate-pulse max-w-2xl mx-auto space-y-4">
                         <div className="h-8 bg-gray-200 dark:bg-slate-800 rounded w-1/3" />
@@ -178,7 +176,6 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
 
     return (
         <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-            <Sidebar />
             <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
                 <div className="max-w-2xl mx-auto space-y-6">
                     <div className="flex items-center gap-4">

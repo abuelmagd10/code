@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -146,7 +145,6 @@ export default function SalesReturnRequestsPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <Sidebar />
         <main className="flex-1 md:mr-64 p-4 pt-20 md:pt-8 flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </main>
@@ -157,7 +155,6 @@ export default function SalesReturnRequestsPage() {
   if (!isPrivileged) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <Sidebar />
         <main className="flex-1 md:mr-64 p-4 pt-20 md:pt-8 flex items-center justify-center">
           <Card className="max-w-md w-full text-center p-8">
             <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
@@ -172,7 +169,6 @@ export default function SalesReturnRequestsPage() {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-6 max-w-6xl mx-auto">
 

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useCallback, useTransition } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FilterContainer } from "@/components/ui/filter-container"
 import { LoadingState } from "@/components/ui/loading-state"
@@ -397,7 +396,6 @@ export default function FixedAssetsPage() {
   if (isLoading) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <Sidebar />
         <main className="flex-1 p-4 md:p-6 lg:p-8">
           <LoadingState type="table" rows={8} />
         </main>
@@ -407,8 +405,6 @@ export default function FixedAssetsPage() {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
-
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <ListErrorBoundary listType="generic" lang={appLang}>

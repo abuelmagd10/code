@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, use } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -477,7 +476,6 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
   if (!hydrated || isLoading) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <Sidebar />
         <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -489,7 +487,6 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Header */}

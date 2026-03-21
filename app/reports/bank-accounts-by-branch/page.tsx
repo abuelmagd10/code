@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, useMemo } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -135,7 +134,6 @@ export default function BankAccountsByBranchReport() {
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
       <main className={`flex-1 ${appLang === 'ar' ? 'md:mr-64' : 'md:ml-64'} p-4 md:p-8 pt-20 md:pt-8 space-y-6`}>
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>

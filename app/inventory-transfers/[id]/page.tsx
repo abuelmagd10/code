@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, use, useCallback, useRef } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -1033,7 +1032,6 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   if (!hydrated || isLoading) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <Sidebar />
         <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
           <div className="animate-pulse space-y-4 max-w-4xl mx-auto">
             <div className="h-24 bg-gray-200 dark:bg-slate-800 rounded-2xl"></div>
@@ -1047,7 +1045,6 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   if (!transfer) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <Sidebar />
         <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
           <div className="text-center py-12">
             <p className="text-gray-500">{appLang === 'en' ? 'Transfer not found' : 'طلب النقل غير موجود'}</p>
@@ -1065,7 +1062,6 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
         <div className="space-y-6 max-w-4xl mx-auto">
           {/* Header */}

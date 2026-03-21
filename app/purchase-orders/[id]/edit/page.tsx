@@ -2,7 +2,6 @@
 
 import type React from "react"
 import { useEffect, useMemo, useState } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -616,7 +615,6 @@ export default function EditPurchaseOrderPage() {
   if (isLoading || !hydrated) {
     return (
       <div className="flex min-h-screen bg-white dark:bg-slate-950">
-        <Sidebar />
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-orange-600" />
@@ -628,7 +626,6 @@ export default function EditPurchaseOrderPage() {
 
   return (
     <div className="flex min-h-screen bg-white dark:bg-slate-950" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
-      <Sidebar />
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="max-w-full space-y-4 sm:space-y-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -177,7 +176,6 @@ export default function ShippingReportPage() {
   if (permChecked && !canRead) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <Sidebar />
         <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
           <Alert className="bg-red-50 dark:bg-red-900/20 border-red-200">
             <AlertDescription className="text-red-800 dark:text-red-200">
@@ -191,7 +189,6 @@ export default function ShippingReportPage() {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
         <div className="space-y-6">
           {/* Header */}

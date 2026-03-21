@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -425,7 +424,6 @@ export default function NewTransferPage() {
   if (!hydrated || isLoading) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <Sidebar />
         <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
           <div className="animate-pulse space-y-4 max-w-4xl mx-auto">
             <div className="h-24 bg-gray-200 dark:bg-slate-800 rounded-2xl"></div>
@@ -438,7 +436,6 @@ export default function NewTransferPage() {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
         <div className="space-y-6 max-w-4xl mx-auto">
           {/* Header */}

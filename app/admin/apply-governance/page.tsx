@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2, CheckCircle, XCircle, AlertCircle } from "lucide-react"
-import { Sidebar } from "@/components/sidebar"
 import { CompanyHeader } from "@/components/company-header"
 
 export default function ApplyGovernancePage() {
@@ -59,7 +58,6 @@ export default function ApplyGovernancePage() {
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-      <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <CompanyHeader />
         <main className="flex-1 overflow-y-auto p-6">

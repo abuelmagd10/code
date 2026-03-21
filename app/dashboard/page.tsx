@@ -4,7 +4,6 @@
  * كل Widget تجلب بياناتها بشكل مستقل داخل <Suspense>
  */
 import { Suspense } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
@@ -190,8 +189,6 @@ export default async function DashboardPage({
   // ── 6. Render Shell (فوري) + Suspense Widgets (تتدفق تدريجياً) ──
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
-
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 max-w-full">
 

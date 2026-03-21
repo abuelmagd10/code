@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, useMemo } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -166,7 +165,6 @@ export default function BankTransactionsReport() {
 
   return (
     <div className="flex min-h-screen" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
-      <Sidebar />
       <main className="flex-1 p-6 bg-gray-50 dark:bg-gray-900">
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between">

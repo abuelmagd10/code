@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -62,7 +61,6 @@ export default function BalanceSheetAuditPage() {
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
         <div className="max-w-6xl mx-auto space-y-6">
           <div className="flex justify-between items-center">

@@ -3,7 +3,6 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -38,7 +37,6 @@ export default function NewJournalEntryPage() {
   if (!isSupabaseConfigured()) {
     return (
       <div className="flex min-h-screen">
-        <Sidebar />
         <div className="flex-1 p-8">
           <div className="text-center text-red-500">
             Supabase is not properly configured. Please check your environment variables.
@@ -386,7 +384,6 @@ export default function NewJournalEntryPage() {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-8 max-w-full">
