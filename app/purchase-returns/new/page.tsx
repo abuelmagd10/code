@@ -787,6 +787,7 @@ export default function NewPurchaseReturnPage() {
 
       // ===================== التحقق من الفاتورة =====================
       let billStatus: string | null = null
+      let billReceiptStatus: string | null = null
       let billPaidAmount = 0
       let billTotalAmount = 0
       let billPreviousReturnedAmount = 0
@@ -794,11 +795,12 @@ export default function NewPurchaseReturnPage() {
       if (form.bill_id) {
         const { data: billCheck } = await supabase
           .from("bills")
-          .select("status, paid_amount, total_amount, returned_amount")
+          .select("status, paid_amount, total_amount, returned_amount, receipt_status")
           .eq("id", form.bill_id)
           .single()
 
         billStatus = billCheck?.status || null
+        billReceiptStatus = billCheck?.receipt_status || null
         billPaidAmount = Number(billCheck?.paid_amount || 0)
         billTotalAmount = Number(billCheck?.total_amount || 0)
         billPreviousReturnedAmount = Number(billCheck?.returned_amount || 0)
@@ -825,7 +827,10 @@ export default function NewPurchaseReturnPage() {
       }
 
       const validItems = effectiveItems.filter(i => i.quantity > 0)
-      const needsJournalEntry = billStatus === 'paid' || billStatus === 'partially_paid'
+      
+      // الفاتورة تعتبر نهائية (لا يمكن تعديل إجمالياتها) إذا كانت مدفوعة كلياً/جزئياً أو تم استلام بضاعتها
+      const isFinalizedBill = billStatus === 'paid' || billStatus === 'partially_paid' || billReceiptStatus === 'received'
+      const needsJournalEntry = isFinalizedBill
       const returnMethod = form.settlement_method
 
       // ===================== الحوكمة (الفرع / المخزن / مركز التكلفة) =====================
@@ -1002,9 +1007,8 @@ export default function NewPurchaseReturnPage() {
       if (form.bill_id) {
         const newReturnedAmount = billPreviousReturnedAmount + finalBaseTotal
         const newReturnStatus = newReturnedAmount >= billTotalAmount ? 'full' : 'partial'
-        const isPaidBill = billStatus === 'paid' || billStatus === 'partially_paid'
 
-        if (isPaidBill) {
+        if (isFinalizedBill) {
           billUpdateData = { returned_amount: newReturnedAmount, return_status: newReturnStatus }
         } else {
           const newTotal = Math.max(billTotalAmount - finalBaseTotal, 0)
