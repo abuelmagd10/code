@@ -242,7 +242,7 @@ export async function notifyPurchaseReturnPendingApproval(params: {
 
   // نضمّن warehouse_id في event_key لتجنب الدمج بين إشعارات مخازن مختلفة
   const warehouseSuffix = warehouseId ? `:${warehouseId}` : ''
-  const eventKey = `purchase_return:${purchaseReturnId}:pending_approval${warehouseSuffix}`
+  const eventKey = `purchase_return:${purchaseReturnId}:pending_approval${warehouseSuffix}:${Date.now()}`
 
   // إشعار لمسؤول المخزن
   await createNotification({
@@ -1715,7 +1715,7 @@ export async function notifyPRApproved(params: {
     branchId,
     costCenterId,
     priority: 'normal' as NotificationPriority,
-    eventKey: `purchase_return:${prId}:approved`,
+    eventKey: `purchase_return:${prId}:approved:${Date.now()}`,
     severity: 'success' as any,
     category: 'approvals'
   })
@@ -1759,7 +1759,7 @@ export async function notifyPRRejected(params: {
     branchId,
     costCenterId,
     priority: 'high' as NotificationPriority,
-    eventKey: `purchase_return:${prId}:rejected`,
+    eventKey: `purchase_return:${prId}:rejected:${Date.now()}`,
     severity: 'error',
     category: 'approvals'
   })
@@ -1904,7 +1904,7 @@ export async function notifyManagementPRWarehouseRejected(params: {
         branchId,
         costCenterId,
         priority: 'normal' as NotificationPriority,
-        eventKey: `purchase_return:${prId}:warehouse_rejected_mgmt:${role}`,
+        eventKey: `purchase_return:${prId}:warehouse_rejected_mgmt:${role}:${Date.now()}`,
         severity: 'warning',
         category: 'approvals'
       })
@@ -1957,7 +1957,7 @@ export async function notifyWarehouseReturnRejected(params: {
       branchId,
       costCenterId,
       priority: 'high' as NotificationPriority,
-      eventKey: `purchase_return:${prId}:warehouse_rejected`,
+      eventKey: `purchase_return:${prId}:warehouse_rejected:${Date.now()}`,
       severity: 'error',
       category: 'approvals'
     })
