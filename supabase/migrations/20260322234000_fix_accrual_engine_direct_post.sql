@@ -16,19 +16,17 @@ BEGIN
   -- إيقاف تشغيل التريجرز الأخرى مؤقتاً لتجنب التداخل العودي أو قيود التعديل (enforce_je_integrity)
   PERFORM set_config('app.allow_direct_post', 'true', true);
 
-  -- جلب حسابات الشركة (تفترض وجود جدول ثوابت أو Accounts Mapping)
-  SELECT 
-    ap_account_id, ar_account_id, cash_account_id,
-    inventory_account_id, cogs_account_id, sales_account_id, purchases_account_id
-  INTO 
-    v_ap_id, v_ar_id, v_cash_id,
-    v_inventory_id, v_cogs_id, v_sales_id, v_purchases_id
-  FROM company_accounting_settings
-  WHERE company_id = NEW.company_id 
-  LIMIT 1;
+  -- جلب حسابات الشركة من شجرة الحسابات (chart_of_accounts)
+  SELECT id INTO v_ar_id FROM chart_of_accounts WHERE company_id = NEW.company_id AND sub_type = 'accounts_receivable' LIMIT 1;
+  SELECT id INTO v_ap_id FROM chart_of_accounts WHERE company_id = NEW.company_id AND sub_type = 'accounts_payable' LIMIT 1;
+  SELECT id INTO v_sales_id FROM chart_of_accounts WHERE company_id = NEW.company_id AND account_type = 'income' LIMIT 1;
+  SELECT id INTO v_inventory_id FROM chart_of_accounts WHERE company_id = NEW.company_id AND sub_type = 'inventory' LIMIT 1;
+  SELECT id INTO v_cogs_id FROM chart_of_accounts WHERE company_id = NEW.company_id AND (sub_type = 'cost_of_goods_sold' OR account_code = '5000') LIMIT 1;
+  SELECT id INTO v_cash_id FROM chart_of_accounts WHERE company_id = NEW.company_id AND (sub_type = 'cash' OR sub_type = 'bank' OR account_type = 'asset') LIMIT 1;
 
-  IF NOT FOUND THEN
+  IF v_ap_id IS NULL OR v_inventory_id IS NULL THEN
     RAISE LOG 'Accounting settings missing for company_id: %', NEW.company_id;
+    -- Instead of crashing or doing nothing, we'll gracefully exit the trigger.
     RETURN NEW;
   END IF;
 
