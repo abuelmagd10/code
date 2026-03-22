@@ -1,7 +1,8 @@
 -- ==========================================================================
--- Fix transition_purchase_return_state: audit_logs uses wrong column names
--- entity_type → entity
--- new_values  → new_data
+-- Fix transition_purchase_return_state: audit_logs correct writable columns
+-- entity       → target_table  (entity is GENERATED ALWAYS from target_table)
+-- entity_id    → record_id     (entity_id is GENERATED ALWAYS from record_id)
+-- new_values   → new_data
 -- ==========================================================================
 CREATE OR REPLACE FUNCTION public.transition_purchase_return_state(
   p_pr_id      UUID,
@@ -92,11 +93,13 @@ BEGIN
     )
     ON CONFLICT (event_key) DO NOTHING;
 
-    -- 5. Unified Audit Log — fixed column names
+    -- 5. Unified Audit Log
+    -- target_table and record_id are the writable columns;
+    -- entity and entity_id are GENERATED ALWAYS AS target_table/record_id
     INSERT INTO audit_logs (
-        company_id, user_id, action, entity, entity_id, new_data, created_at
+        company_id, user_id, action, target_table, record_id, new_data, created_at
     ) VALUES (
-        p_company_id, p_user_id, 'purchase_return_state_transition', 'purchase_return', p_pr_id,
+        p_company_id, p_user_id, 'purchase_return_state_transition', 'purchase_returns', p_pr_id,
         jsonb_build_object(
             'from_state', v_old_state,
             'to_state', p_new_state,
