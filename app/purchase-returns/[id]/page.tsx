@@ -19,6 +19,7 @@ import {
   notifyPRApproved,
   notifyPRRejected,
   notifyPurchaseReturnPendingApproval,
+  notifyPurchaseReturnConfirmed,
   notifyWarehouseReturnRejected,
   notifyManagementPRWarehouseConfirmed,
   notifyManagementPRWarehouseRejected,
@@ -282,12 +283,24 @@ export default function PurchaseReturnDetailPage() {
         toast({ title: t('❌ فشل الاعتماد', '❌ Confirmation Failed'), description: error.message, variant: 'destructive' })
         return
       }
-      // إشعار الإدارة العليا بالاعتماد
+      if (pr.created_by && pr.created_by !== currentUserId) {
+        notifyPurchaseReturnConfirmed({
+          companyId,
+          purchaseReturnId: pr.id,
+          returnNumber: pr.return_number,
+          supplierName: pr.suppliers?.name || '',
+          totalAmount: pr.total_amount,
+          currency: appCurrency,
+          createdBy: pr.created_by,
+          appLang,
+        }).catch(console.warn)
+      }
       notifyManagementPRWarehouseConfirmed({
         companyId, prId: pr.id, prNumber: pr.return_number,
         supplierName: pr.suppliers?.name || '', amount: pr.total_amount,
         currency: appCurrency, confirmedBy: currentUserId,
-        branchId: pr.branch_id || undefined, appLang,
+        prCreatorUserId: pr.created_by || undefined,
+        appLang,
       }).catch(console.warn)
 
       toast({ title: t('✅ تم اعتماد تسليم المرتجع', '✅ Delivery Confirmed'), description: pr.return_number })

@@ -300,7 +300,8 @@ export async function notifyPurchaseReturnPendingApproval(params: {
 
 /**
  * إشعار اعتماد تسليم مرتجع المشتريات
- * يُرسل إلى: المالك / المدير العام الذي أنشأ المرتجع
+ * يُرسل إلى: منشئ المرتجع (assigned_to_user)
+ * بدون branch_id حتى يظهر في صندوق المستخدم حتى مع فلتر الفرع في الواجهة (نفس أسلوب notifyPOApproved)
  */
 export async function notifyPurchaseReturnConfirmed(params: {
   companyId: string
@@ -322,19 +323,24 @@ export async function notifyPurchaseReturnConfirmed(params: {
     ? `Return #${returnNumber} for ${supplierName} (${totalAmount} ${currency}) has been confirmed and goods delivered to supplier${confirmedByName ? ` by ${confirmedByName}` : ''}.`
     : `تم اعتماد مرتجع رقم ${returnNumber} للمورد ${supplierName} (${totalAmount} ${currency}) وتسليم البضاعة${confirmedByName ? ` بواسطة ${confirmedByName}` : ''}.`
 
-  await createNotification({
-    companyId,
-    referenceType: 'purchase_return',
-    referenceId: purchaseReturnId,
-    title,
-    message,
-    createdBy,
-    assignedToUser: createdBy,
-    priority: 'normal' as NotificationPriority,
-    eventKey: `purchase_return:${purchaseReturnId}:confirmed`,
-    severity: 'info',
-    category: 'inventory',
-  })
+  try {
+    await createNotification({
+      companyId,
+      referenceType: 'purchase_return',
+      referenceId: purchaseReturnId,
+      title,
+      message,
+      createdBy,
+      assignedToUser: createdBy,
+      // عدم تمرير branchId / costCenterId — وإلا قد يُخفى الإشعار عن المنشئ عند عدم تطابق فرع الجلسة
+      priority: 'normal' as NotificationPriority,
+      eventKey: `purchase_return:${purchaseReturnId}:confirmed:creator`,
+      severity: 'info',
+      category: 'inventory',
+    })
+  } catch (err) {
+    console.warn('⚠️ notifyPurchaseReturnConfirmed failed:', err)
+  }
 }
 
 /**
@@ -1836,6 +1842,8 @@ export async function notifyBillApprovedToPOCreator(params: {
 
 /**
  * Notify upper management when the warehouse confirms a purchase return delivery
+ * لا يُمرَّر branch_id على الإشعار حتى لا يُفلتر عن المديرين ذوي الأدوار مثل gm أو جلسة فرع مختلف
+ * prCreatorUserId: يُستبعد من fan-out الإدارة لأن notifyPurchaseReturnConfirmed يغطي المنشئ
  */
 export async function notifyManagementPRWarehouseConfirmed(params: {
   companyId: string
@@ -1845,11 +1853,16 @@ export async function notifyManagementPRWarehouseConfirmed(params: {
   amount: number
   currency: string
   confirmedBy: string
+  /** منشئ المرتجع — لا نكرر له إشعار الإدارة */
+  prCreatorUserId?: string | null
   branchId?: string
   costCenterId?: string
   appLang?: 'ar' | 'en'
 }) {
-  const { companyId, prId, prNumber, supplierName, amount, currency, confirmedBy, branchId, costCenterId, appLang = 'ar' } = params
+  const {
+    companyId, prId, prNumber, supplierName, amount, currency, confirmedBy,
+    prCreatorUserId, appLang = 'ar',
+  } = params
 
   const title = appLang === 'en'
     ? '✅ Purchase Return Confirmed by Warehouse'
@@ -1862,7 +1875,11 @@ export async function notifyManagementPRWarehouseConfirmed(params: {
   // Fan-out إلى مستخدمين (assigned_to_user): get_user_notifications يطابق assigned_to_role بدقة
   // ولا يصل لمن دوره gm / … إلخ. الـ RPC يجمع كل الأدوار الإدارية من company_members.
   const managerIds = await getPrivilegedManagerUserIds(companyId)
-  const targets = managerIds.filter((id) => id !== confirmedBy)
+  const targets = managerIds.filter((id) => {
+    if (id === confirmedBy) return false
+    if (prCreatorUserId && id === prCreatorUserId) return false
+    return true
+  })
   if (targets.length > 0) {
     for (const uid of targets) {
       try {
@@ -1874,8 +1891,7 @@ export async function notifyManagementPRWarehouseConfirmed(params: {
           message,
           createdBy: confirmedBy,
           assignedToUser: uid,
-          branchId: branchId || undefined,
-          costCenterId: costCenterId || undefined,
+          // بدون branch/cost_center — يظهر لكل المستلمين المحددين بـ user_id بغض النظر عن فرع الجلسة
           priority: 'normal' as NotificationPriority,
           eventKey: `purchase_return:${prId}:warehouse_confirmed:mgmt:${uid}:${Date.now()}`,
           severity: 'success' as any,
@@ -1898,8 +1914,6 @@ export async function notifyManagementPRWarehouseConfirmed(params: {
         title,
         message,
         createdBy: confirmedBy,
-        branchId: branchId || undefined,
-        costCenterId: costCenterId || undefined,
         assignedToRole: role,
         priority: 'normal' as NotificationPriority,
         eventKey: `purchase_return:${prId}:warehouse_confirmed:mgmt:${role}:${Date.now()}`,

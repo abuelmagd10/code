@@ -469,7 +469,23 @@ export default function PurchaseReturnsPage() {
         return
       }
 
-      // إشعار الإدارة العليا بالاعتماد
+      // إشعار منشئ المرتجع (فرع الفاتورة / المنشئ)
+      if (pr.created_by && pr.created_by !== currentUserId) {
+        try {
+          await notifyPurchaseReturnConfirmed({
+            companyId,
+            purchaseReturnId: pr.id,
+            returnNumber: pr.return_number,
+            supplierName: (pr.suppliers as any)?.name || '',
+            totalAmount: pr.total_amount,
+            currency: appCurrency,
+            createdBy: pr.created_by,
+            appLang,
+          })
+        } catch (e) { console.warn('notifyPurchaseReturnConfirmed failed:', e) }
+      }
+
+      // إشعار الإدارة العليا بالاعتماد (بدون ربط فرع على الإشعار — يظهر لجميع المستلمين)
       try {
         await notifyManagementPRWarehouseConfirmed({
           companyId,
@@ -479,7 +495,7 @@ export default function PurchaseReturnsPage() {
           amount: pr.total_amount,
           currency: appCurrency,
           confirmedBy: currentUserId,
-          branchId: pr.branch_id || undefined,
+          prCreatorUserId: pr.created_by || undefined,
           appLang,
         })
       } catch (e) { console.warn('notifyManagementPRWarehouseConfirmed failed:', e) }
