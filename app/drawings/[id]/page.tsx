@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, use } from "react"
+import { useEffect, useState, use, useRef } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -90,7 +90,7 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
         }
     }
 
-    const loadDataRef = React.useRef(loadData)
+    const loadDataRef = useRef(loadData)
     loadDataRef.current = loadData
 
     useRealtimeTable({
