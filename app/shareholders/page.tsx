@@ -697,6 +697,31 @@ export default function ShareholdersPage() {
 
       if (contribError) throw contribError
 
+      // ERP Fix: Fetch a default branch since journal_entries requires a NOT NULL branch_id
+      let entryBranchId = branchId;
+      if (!entryBranchId) {
+        const { data: mainBranch } = await supabase
+          .from("branches")
+          .select("id")
+          .eq("company_id", companyId)
+          .eq("is_main", true)
+          .maybeSingle();
+        entryBranchId = mainBranch?.id || null;
+      }
+      if (!entryBranchId) {
+        const { data: anyBranch } = await supabase
+          .from("branches")
+          .select("id")
+          .eq("company_id", companyId)
+          .limit(1)
+          .maybeSingle();
+        entryBranchId = anyBranch?.id || null;
+      }
+      if (!entryBranchId) {
+        await supabase.from("capital_contributions").delete().eq("id", contribution.id);
+        throw new Error("No branch available to record the journal entry. Please create a branch first.");
+      }
+
       // 5. إنشاء القيد المحاسبي (Double Entry)
       const { data: journalEntry, error: entryError } = await supabase
         .from("journal_entries")
@@ -707,6 +732,7 @@ export default function ShareholdersPage() {
             reference_id: contribution.id,
             entry_date: contributionForm.contribution_date,
             description: `مساهمة رأس مال من ${shareholder.name} - ${contributionAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            branch_id: entryBranchId,
           },
         ])
         .select("id")
@@ -729,6 +755,7 @@ export default function ShareholdersPage() {
           debit_amount: contributionAmount,
           credit_amount: 0,
           description: `استلام مساهمة رأس مال من ${shareholder.name}`,
+          branch_id: entryBranchId,
         },
         {
           journal_entry_id: journalEntry.id,
@@ -736,6 +763,7 @@ export default function ShareholdersPage() {
           debit_amount: 0,
           credit_amount: contributionAmount,
           description: `مساهمة رأس مال من ${shareholder.name}`,
+          branch_id: entryBranchId,
         },
       ]
 
