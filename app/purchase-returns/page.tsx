@@ -396,6 +396,7 @@ export default function PurchaseReturnsPage() {
           currency: appCurrency,
           reason: warehouseRejectionReason.trim(),
           rejectedBy: currentUserId,
+          creatorUserId: createdBy || undefined,
           branchId: prToWarehouseReject.branch_id || undefined,
           appLang,
         })

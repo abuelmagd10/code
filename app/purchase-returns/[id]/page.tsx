@@ -309,6 +309,7 @@ export default function PurchaseReturnDetailPage() {
         supplierName: pr.suppliers?.name || '', amount: pr.total_amount,
         currency: appCurrency, reason: warehouseRejectionReason.trim(),
         rejectedBy: currentUserId,
+        creatorUserId: createdBy || undefined,
         branchId: pr.branch_id || undefined, appLang,
       }).catch(console.warn)
 
