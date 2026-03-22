@@ -164,6 +164,25 @@ export default function PurchaseReturnDetailPage() {
 
   useEffect(() => { loadPR() }, [returnId])
 
+  // ─── Realtime: auto-reload when this purchase return changes ────────────
+  useEffect(() => {
+    if (!returnId) return
+    const channel = supabase
+      .channel(`purchase_return:${returnId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'purchase_returns',
+          filter: `id=eq.${returnId}`,
+        },
+        () => { loadPR() }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [returnId])
+
   const isPrivileged   = PRIVILEGED_ROLES.includes(currentUserRole)
   const isStoreManager = STORE_MANAGER_ROLES.includes(currentUserRole)
   const isCreator      = pr?.created_by === currentUserId
