@@ -17,7 +17,7 @@ AS $$
   SELECT DISTINCT cm.user_id
   FROM public.company_members cm
   WHERE cm.company_id = p_company_id
-    AND cm.role IN (
+    AND lower(trim(cm.role::text)) IN (
       'owner',
       'admin',
       'general_manager',

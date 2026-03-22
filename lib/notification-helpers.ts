@@ -1859,9 +1859,36 @@ export async function notifyManagementPRWarehouseConfirmed(params: {
     ? `Warehouse confirmed return ${prNumber} (${supplierName}, ${amount} ${currency}). Inventory has been deducted and the return is now completed.`
     : `اعتمد مسؤول المخزن المرتجع ${prNumber} (${supplierName}، ${amount} ${currency}). تم خصم المخزون واكتملت دورة المرتجع.`
 
-  // Use role-based targeting so the notification always reaches admin/owner/general_manager
-  // even when the confirmer is the only privileged user in the company.
-  // The notification system fans 'admin' notifications out to owner & general_manager automatically.
+  // Fan-out إلى مستخدمين (assigned_to_user): get_user_notifications يطابق assigned_to_role بدقة
+  // ولا يصل لمن دوره gm / … إلخ. الـ RPC يجمع كل الأدوار الإدارية من company_members.
+  const managerIds = await getPrivilegedManagerUserIds(companyId)
+  const targets = managerIds.filter((id) => id !== confirmedBy)
+  if (targets.length > 0) {
+    for (const uid of targets) {
+      try {
+        await createNotification({
+          companyId,
+          referenceType: 'purchase_return',
+          referenceId: prId,
+          title,
+          message,
+          createdBy: confirmedBy,
+          assignedToUser: uid,
+          branchId: branchId || undefined,
+          costCenterId: costCenterId || undefined,
+          priority: 'normal' as NotificationPriority,
+          eventKey: `purchase_return:${prId}:warehouse_confirmed:mgmt:${uid}:${Date.now()}`,
+          severity: 'success' as any,
+          category: 'approvals'
+        })
+      } catch (err) {
+        console.warn(`⚠️ Failed to send warehouse confirmation notification to user ${uid}:`, err)
+      }
+    }
+    return
+  }
+
+  console.warn('⚠️ notifyManagementPRWarehouseConfirmed: RPC returned no managers — fallback to role-based')
   for (const role of ['admin', 'owner', 'general_manager']) {
     try {
       await createNotification({
@@ -1871,11 +1898,11 @@ export async function notifyManagementPRWarehouseConfirmed(params: {
         title,
         message,
         createdBy: confirmedBy,
-        branchId: undefined, // company-wide visibility
-        costCenterId: undefined,
+        branchId: branchId || undefined,
+        costCenterId: costCenterId || undefined,
         assignedToRole: role,
         priority: 'normal' as NotificationPriority,
-        eventKey: `purchase_return:${prId}:warehouse_confirmed:mgmt:${role}`,
+        eventKey: `purchase_return:${prId}:warehouse_confirmed:mgmt:${role}:${Date.now()}`,
         severity: 'success' as any,
         category: 'approvals'
       })
@@ -1903,7 +1930,7 @@ export async function notifyManagementPRWarehouseRejected(params: {
   costCenterId?: string
   appLang?: 'ar' | 'en'
 }) {
-  const { companyId, prId, prNumber, supplierName, amount, currency, reason, rejectedBy, branchId, costCenterId, appLang = 'ar' } = params
+  const { companyId, prId, prNumber, supplierName, amount, currency, reason, rejectedBy, creatorUserId, branchId, costCenterId, appLang = 'ar' } = params
 
   const title = appLang === 'en'
     ? '🏭 Purchase Return Rejected by Warehouse'
@@ -1913,9 +1940,39 @@ export async function notifyManagementPRWarehouseRejected(params: {
     ? `Warehouse manager rejected return ${prNumber} (${supplierName}, ${amount} ${currency}). Reason: ${reason}. Creator has been notified to edit and resubmit.`
     : `رفض مسؤول المخزن المرتجع ${prNumber} (${supplierName}، ${amount} ${currency}). السبب: ${reason}. تم إشعار المنشئ للتعديل وإعادة الإرسال.`
 
-  // Use role-based targeting so the notification always reaches admin/owner/general_manager
-  // even when the rejector is the only privileged user in the company.
-  // The notification system fans 'admin' notifications out to owner & general_manager automatically.
+  const managerIds = await getPrivilegedManagerUserIds(companyId)
+  const targets = managerIds.filter((id) => {
+    if (id === rejectedBy) return false
+    if (creatorUserId && id === creatorUserId) return false
+    return true
+  })
+
+  if (targets.length > 0) {
+    for (const uid of targets) {
+      try {
+        await createNotification({
+          companyId,
+          referenceType: 'purchase_return',
+          referenceId: prId,
+          title,
+          message,
+          createdBy: rejectedBy,
+          assignedToUser: uid,
+          branchId: branchId || undefined,
+          costCenterId: costCenterId || undefined,
+          priority: 'high' as NotificationPriority,
+          eventKey: `purchase_return:${prId}:warehouse_rejected_mgmt:${uid}:${Date.now()}`,
+          severity: 'warning',
+          category: 'approvals'
+        })
+      } catch (err) {
+        console.warn(`⚠️ Failed to send warehouse rejection notification to user ${uid}:`, err)
+      }
+    }
+    return
+  }
+
+  console.warn('⚠️ notifyManagementPRWarehouseRejected: RPC returned no managers — fallback to role-based')
   for (const role of ['admin', 'owner', 'general_manager']) {
     try {
       await createNotification({
@@ -1925,11 +1982,11 @@ export async function notifyManagementPRWarehouseRejected(params: {
         title,
         message,
         createdBy: rejectedBy,
-        branchId: undefined, // company-wide visibility
-        costCenterId: undefined,
+        branchId: branchId || undefined,
+        costCenterId: costCenterId || undefined,
         assignedToRole: role,
         priority: 'high' as NotificationPriority,
-        eventKey: `purchase_return:${prId}:warehouse_rejected_mgmt:${role}`,
+        eventKey: `purchase_return:${prId}:warehouse_rejected_mgmt:${role}:${Date.now()}`,
         severity: 'warning',
         category: 'approvals'
       })
