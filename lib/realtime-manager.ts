@@ -56,6 +56,7 @@ export type RealtimeTable =
   | 'customers' // ✅ العملاء
   | 'suppliers' // ✅ الموردين
   | 'products' // ✅ المنتجات
+  | 'chart_of_accounts' // ✅ الدليل المحاسبي
   // 🔄 جداول المعاملات المالية
   | 'payments' // ✅ المدفوعات
   | 'journal_entries' // ✅ القيود المحاسبية
@@ -65,6 +66,7 @@ export type RealtimeTable =
   | 'vendor_credits' // ✅ أرصدة الموردين
   | 'customer_debit_notes' // ✅ إشعارات مدين العملاء
   | 'expenses' // ✅ المصروفات
+  | 'shareholder_drawings' // ✅ مسحوبات الشركاء
   // 🔐 جداول الحوكمة (Governance)
   | 'company_members'
   | 'user_branch_access' // ✅ الفروع المسموحة للمستخدم (دعم فروع متعددة)
@@ -303,6 +305,7 @@ class RealtimeManager {
       'customers': 'customers',
       'suppliers': 'suppliers',
       'products': 'products',
+      'chart_of_accounts': 'chart_of_accounts',
       // 🔄 جداول المعاملات المالية
       'payments': 'payments',
       'journal_entries': 'journal_entries',
@@ -312,6 +315,7 @@ class RealtimeManager {
       'vendor_credits': 'vendor_credits',
       'customer_debit_notes': 'customer_debit_notes',
       'expenses': 'expenses',
+      'shareholder_drawings': 'shareholder_drawings',
       // 🔐 جداول الحوكمة
       'company_members': 'company_members',
       'user_branch_access': 'user_branch_access',
@@ -480,6 +484,8 @@ class RealtimeManager {
       case 'vendor_credits':
       case 'customer_debit_notes':
       case 'expenses':
+      case 'shareholder_drawings':
+      case 'chart_of_accounts':
         // ✅ استخدام company_id فقط - الفلترة التفصيلية في shouldProcessEvent
         return filter
 
@@ -678,7 +684,7 @@ class RealtimeManager {
 
     // ✅ جداول البيانات الأساسية (Master Data) - مرئية لجميع المستخدمين في الشركة
     // هذه الجداول لا تحتاج فحص created_by_user_id لأنها بيانات مشتركة
-    const masterDataTables: RealtimeTable[] = ['customers', 'suppliers', 'products']
+    const masterDataTables: RealtimeTable[] = ['customers', 'suppliers', 'products', 'chart_of_accounts']
     if (masterDataTables.includes(table)) {
       console.log(`✅ [RealtimeManager] Event approved: master data table (${table}) visible to all`, {
         recordId: record.id,

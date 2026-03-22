@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useMemo, useTransition } from "react"
+import { useState, useEffect, useRef, useMemo, useTransition, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -27,6 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface Account {
   id: string
@@ -637,6 +638,22 @@ function ChartOfAccountsPage() {
       setIsLoading(false)
     }
   }
+
+  const loadAccountsRef = useRef(loadAccounts)
+  loadAccountsRef.current = loadAccounts
+
+  const handleAccountsRealtimeEvent = useCallback(() => {
+    console.log('🔄 [Chart of Accounts] Realtime event received, refreshing list...')
+    loadAccountsRef.current()
+  }, [])
+
+  useRealtimeTable({
+    table: 'chart_of_accounts',
+    enabled: true,
+    onInsert: handleAccountsRealtimeEvent,
+    onUpdate: handleAccountsRealtimeEvent,
+    onDelete: handleAccountsRealtimeEvent,
+  })
 
   const normalizeCashBankParents = async (companyId: string, list: Account[]) => {
     try {

@@ -11,6 +11,8 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { ArrowRight, FileCheck } from "lucide-react"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useCallback } from "react"
 
 type VendorCredit = {
   id: string
@@ -72,59 +74,71 @@ export default function VendorCreditViewPage() {
   const [branch, setBranch] = useState<any>(null)
   const [costCenter, setCostCenter] = useState<any>(null)
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!id) return
-      ; (async () => {
-        const { data: vc } = await supabase.from("vendor_credits").select("*").eq("id", id).single()
-        if (vc) {
-          setCredit(vc as any)
-          const { data: sup } = await supabase.from("suppliers").select("id, name").eq("id", vc.supplier_id).single()
-          setSupplier(sup as any)
-          const { data: rows } = await supabase.from("vendor_credit_items").select("id, description, quantity, unit_price, discount_percent, tax_rate, line_total").eq("vendor_credit_id", id)
-          setItems((rows || []) as any)
+    const { data: vc } = await supabase.from("vendor_credits").select("*").eq("id", id).single()
+    if (vc) {
+      setCredit(vc as any)
+      const { data: sup } = await supabase.from("suppliers").select("id, name").eq("id", vc.supplier_id).single()
+      setSupplier(sup as any)
+      const { data: rows } = await supabase.from("vendor_credit_items").select("id, description, quantity, unit_price, discount_percent, tax_rate, line_total").eq("vendor_credit_id", id)
+      setItems((rows || []) as any)
 
-          // جلب معلومات المرتجع المرتبط
-          if (vc.source_purchase_return_id) {
-            const { data: pr } = await supabase
-              .from("purchase_returns")
-              .select("id, return_number, return_date, status")
-              .eq("id", vc.source_purchase_return_id)
-              .single()
-            setPurchaseReturn(pr)
-          }
+      // جلب معلومات المرتجع المرتبط
+      if (vc.source_purchase_return_id) {
+        const { data: pr } = await supabase
+          .from("purchase_returns")
+          .select("id, return_number, return_date, status")
+          .eq("id", vc.source_purchase_return_id)
+          .single()
+        setPurchaseReturn(pr)
+      }
 
-          // جلب معلومات الفاتورة المصدر
-          if (vc.source_purchase_invoice_id) {
-            const { data: bill } = await supabase
-              .from("bills")
-              .select("id, bill_number, bill_date, status")
-              .eq("id", vc.source_purchase_invoice_id)
-              .single()
-            setSourceBill(bill)
-          }
+      // جلب معلومات الفاتورة المصدر
+      if (vc.source_purchase_invoice_id) {
+        const { data: bill } = await supabase
+          .from("bills")
+          .select("id, bill_number, bill_date, status")
+          .eq("id", vc.source_purchase_invoice_id)
+          .single()
+        setSourceBill(bill)
+      }
 
-          // جلب معلومات الفرع
-          if (vc.branch_id) {
-            const { data: br } = await supabase
-              .from("branches")
-              .select("id, name")
-              .eq("id", vc.branch_id)
-              .single()
-            setBranch(br)
-          }
+      // جلب معلومات الفرع
+      if (vc.branch_id) {
+        const { data: br } = await supabase
+          .from("branches")
+          .select("id, name")
+          .eq("id", vc.branch_id)
+          .single()
+        setBranch(br)
+      }
 
-          // جلب معلومات مركز التكلفة
-          if (vc.cost_center_id) {
-            const { data: cc } = await supabase
-              .from("cost_centers")
-              .select("id, name")
-              .eq("id", vc.cost_center_id)
-              .single()
-            setCostCenter(cc)
-          }
-        }
-      })()
-  }, [id])
+      // جلب معلومات مركز التكلفة
+      if (vc.cost_center_id) {
+        const { data: cc } = await supabase
+          .from("cost_centers")
+          .select("id, name")
+          .eq("id", vc.cost_center_id)
+          .single()
+        setCostCenter(cc)
+      }
+    }
+  }, [id, supabase])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  useRealtimeTable({
+    table: 'vendor_credits',
+    enabled: !!id,
+    onUpdate: (record) => {
+      if (record?.id === id) {
+        loadData()
+      }
+    }
+  })
 
   if (!credit) return null
 

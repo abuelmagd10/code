@@ -16,6 +16,7 @@ import { MultiSelect } from "@/components/ui/multi-select"
 import { Filter, X, Search, Calendar, Check, Ban } from "lucide-react"
 import { usePermissions } from "@/lib/permissions-context"
 import { notifyBankVoucherRequestCreated, notifyBankVoucherApproved, notifyBankVoucherRejected } from "@/lib/notification-helpers"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string; branch_id?: string | null; cost_center_id?: string | null; branch_name?: string; cost_center_name?: string }
 type BankVoucherRequest = {
@@ -124,8 +125,6 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
     return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
   }, [])
 
-  useEffect(() => { loadData() }, [accountId])
-
   // Load currencies on mount
   useEffect(() => {
     const loadCurrencies = async () => {
@@ -216,6 +215,19 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       }
     } finally { setLoading(false) }
   }
+
+  useEffect(() => { loadData() }, [accountId])
+
+  const loadDataRef = React.useRef(loadData)
+  loadDataRef.current = loadData
+
+  useRealtimeTable({
+    table: 'journal_entries',
+    enabled: !!accountId,
+    onInsert: () => loadDataRef.current(),
+    onUpdate: () => loadDataRef.current(),
+    onDelete: () => loadDataRef.current(),
+  })
 
   // Calculate balance using display amounts when available
   const balance = useMemo(() => {

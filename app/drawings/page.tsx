@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { getDrawings } from "@/app/actions/drawings"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 export default function DrawingsPage() {
     const supabase = useSupabase()
@@ -51,6 +52,17 @@ export default function DrawingsPage() {
             setLoading(false)
         }
     }, [supabase])
+
+    const loadDrawingsRef = useRef(loadDrawings)
+    loadDrawingsRef.current = loadDrawings
+
+    useRealtimeTable({
+        table: 'shareholder_drawings',
+        enabled: true,
+        onInsert: () => loadDrawingsRef.current(),
+        onUpdate: () => loadDrawingsRef.current(),
+        onDelete: () => loadDrawingsRef.current(),
+    })
 
     useEffect(() => {
         loadDrawings()

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -15,7 +15,8 @@ import { getActiveCompanyId } from "@/lib/company"
 import { ArrowLeft, ArrowRight, Pencil, Send, CheckCircle, XCircle, Receipt, DollarSign, Calendar, FileText, AlertCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createNotification } from "@/lib/governance-layer"
-import { createExpenseJournalEntry, checkDuplicateJournalEntry } from "@/lib/journal-entry-governance"
+import { checkDuplicateJournalEntry, createExpenseJournalEntry } from "@/lib/journal-entry-governance"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 type Expense = {
   id: string
@@ -98,10 +99,6 @@ export default function ExpenseDetailPage() {
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
-  useEffect(() => {
-    loadExpense()
-  }, [params.id])
-
   const loadExpense = async () => {
     try {
       setLoading(true)
@@ -163,6 +160,23 @@ export default function ExpenseDetailPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    loadExpense()
+  }, [params.id])
+
+  const loadExpenseRef = useRef(loadExpense)
+  loadExpenseRef.current = loadExpense
+
+  useRealtimeTable({
+    table: 'expenses',
+    enabled: !!params.id,
+    onUpdate: (payload) => {
+      if (payload?.id === params.id) {
+        loadExpenseRef.current()
+      }
+    }
+  })
 
   const handleSubmitForApproval = async () => {
     if (!expense) return

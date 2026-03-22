@@ -22,6 +22,7 @@ import { getDrawingById, submitDrawingForApproval, approveDrawing, rejectDrawing
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { createNotification } from "@/lib/governance-layer"
+import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 const statusLabels: Record<string, { ar: string; en: string; className: string }> = {
     draft: { ar: 'مسودة', en: 'Draft', className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
@@ -88,6 +89,19 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
             setLoading(false)
         }
     }
+
+    const loadDataRef = React.useRef(loadData)
+    loadDataRef.current = loadData
+
+    useRealtimeTable({
+        table: 'shareholder_drawings',
+        enabled: !!resolvedParams.id,
+        onUpdate: (payload) => {
+            if (payload?.id === resolvedParams.id) {
+                loadDataRef.current()
+            }
+        }
+    })
 
     const handleSubmitForApproval = async () => {
         if (!drawing?.id) return
