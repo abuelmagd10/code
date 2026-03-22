@@ -452,7 +452,7 @@ export default function PurchaseReturnDetailPage() {
                 </Button>
               )}
 
-              {pr.bills && (
+              {pr.bills && !isStoreManager && (
                 <Button variant="outline" className="dark:border-gray-600 dark:text-gray-300" onClick={() => router.push(`/bills/${pr.bills!.id}`)}>
                   <FileText className="h-4 w-4 mr-1" />
                   {t('عرض الفاتورة', 'View Bill')}
