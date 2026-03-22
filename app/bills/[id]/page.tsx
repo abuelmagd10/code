@@ -1717,12 +1717,9 @@ export default function BillViewPage() {
         await updateLinkedPurchaseOrderStatus(bill.id)
         console.log(`✅ BILL Sent: Awaiting warehouse receipt approval (inventory NOT yet updated)`)
       } else if (newStatus === "draft" || newStatus === "cancelled") {
-        // عكس المخزون فقط إذا كان قد أُضيف فعلاً (بعد اعتماد الاستلام)
-        if (bill.receipt_status === 'received') {
-          await reverseBillInventory()
-          // عكس القيود المحاسبية إن وجدت (للفواتير المدفوعة سابقاً)
-          await reverseBillJournals()
-        }
+        // قاعدة البيانات تتكفل تلقائياً بالقيود المحاسبية وحركات المخزون عند العودة إلى مسودة
+        // عبر Database Trigger: accrual_accounting_engine
+        // لا نحتاج لأي تدخل يدوي هنا.
         // تحديث حالة أمر الشراء المرتبط
         await updateLinkedPurchaseOrderStatus(bill.id)
       }
@@ -1734,73 +1731,11 @@ export default function BillViewPage() {
     }
   }
 
-  const reverseBillInventory = async () => {
-    try {
-      if (!bill) return
-      const mapping = await findAccountIds(bill.company_id)
-      if (!mapping || !mapping.inventory) return
-      const { data: billItems } = await supabase
-        .from("bill_items")
-        .select("product_id, quantity, products(item_type)")
-        .eq("bill_id", bill.id)
-
-      // فلترة المنتجات فقط (وليس الخدمات)
-      const productItems = (billItems || []).filter((it: any) => !!it.product_id && it.products?.item_type !== 'service')
-
-      // Create reversal journal entry
-      const { data: revEntry } = await supabase
-        .from("journal_entries")
-        .insert({ company_id: bill.company_id, reference_type: "bill_reversal", reference_id: bill.id, entry_date: new Date().toISOString().slice(0, 10), description: `عكس شراء للفاتورة ${bill.bill_number}` })
-        .select()
-        .single()
-      const reversalTx = productItems.map((it: any) => ({
-        company_id: bill.company_id,
-        product_id: it.product_id,
-        transaction_type: "purchase_reversal",
-        quantity_change: -Number(it.quantity || 0),
-        journal_entry_id: revEntry?.id,
-        reference_id: bill.id,
-        notes: `عكس شراء للفاتورة ${bill.bill_number}`,
-      }))
-      if (reversalTx.length > 0) {
-        const { error: invErr } = await supabase
-          .from("inventory_transactions")
-          .upsert(reversalTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
-        if (invErr) console.warn("Failed upserting purchase reversal inventory transactions", invErr)
-        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
-        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
-      }
-    } catch (e) {
-      console.warn("Error reversing inventory for bill", e)
-    }
-  }
-
-  // ===== عكس القيود المحاسبية للفاتورة =====
-  const reverseBillJournals = async () => {
-    try {
-      if (!bill) return
-
-      // حذف جميع القيود المحاسبية المرتبطة بالفاتورة
-      const { data: billEntries, error: jeErr } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("reference_id", bill.id)
-        .in("reference_type", ["bill", "bill_payment", "purchase_return"])
-
-      if (jeErr) throw jeErr
-
-      if (billEntries && billEntries.length > 0) {
-        const jeIds = billEntries.map((je: any) => je.id)
-        // حذف السطور أولاً (foreign key constraint)
-        await supabase.from("journal_entry_lines").delete().in("journal_entry_id", jeIds)
-        // ثم حذف القيود
-        await supabase.from("journal_entries").delete().in("id", jeIds)
-        console.log(`✅ تم عكس القيود المحاسبية للفاتورة ${bill.bill_number}`)
-      }
-    } catch (e) {
-      console.warn("Error reversing bill journals:", e)
-    }
-  }
+  // ==========================================
+  // مُلاحظة: تم الاستغناء عن reverseBillInventory و reverseBillJournals
+  // لأن الـ Database Triggers الخاصة بالمحاسبة تتكفل بتعطيل
+  // (Soft Delete) القيود والمخزون بشكل آلي ومحكم.
+  // ==========================================
 
   const handleDelete = async () => {
     if (!bill) return
