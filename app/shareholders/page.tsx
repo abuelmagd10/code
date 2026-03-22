@@ -273,14 +273,29 @@ export default function ShareholdersPage() {
       throw error
     }
 
-    if (data) {
-      setSettings({
-        id: data.id,
-        debit_account_id: data.debit_account_id || undefined,
-        credit_account_id: data.credit_account_id || undefined,
-        dividends_payable_account_id: data.dividends_payable_account_id || undefined
-      })
+    let debitId = data?.debit_account_id;
+    let payableId = data?.dividends_payable_account_id;
+
+    // === ERP Auto-Mapping: Auto-select 3200 and 2150 if missing ===
+    if (!debitId || !payableId) {
+      const { data: defaultAccs } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code")
+        .eq("company_id", company_id)
+        .in("account_code", ["3200", "2150"])
+
+      if (defaultAccs) {
+        if (!debitId) debitId = defaultAccs.find((a: any) => a.account_code === "3200")?.id;
+        if (!payableId) payableId = defaultAccs.find((a: any) => a.account_code === "2150")?.id;
+      }
     }
+
+    setSettings({
+      id: data?.id,
+      debit_account_id: debitId || undefined,
+      credit_account_id: data?.credit_account_id || undefined,
+      dividends_payable_account_id: payableId || undefined
+    })
   }
 
   // === ERP Governance: Check Retained Earnings Balance ===
@@ -1385,48 +1400,56 @@ export default function ShareholdersPage() {
               <CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Profit distribution by percentages' : 'توزيع الأرباح حسب النِسَب'}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Default accounts selection */}
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Retained Earnings Account (Debit)' : 'حساب الأرباح المحتجزة (مدين)'}</Label>
-                    <select
-                      className="w-full px-3 py-2 border rounded-lg text-sm"
-                      value={settings.debit_account_id || ""}
-                      onChange={(e) => setSettings({ ...settings, debit_account_id: e.target.value })}
-                    >
-                      <option value="" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Select account' : 'اختر حسابًا'}</option>
-                      {accounts.map((acc) => (
-                        <option key={acc.id} value={acc.id}>
-                          {acc.account_code} - {acc.account_name} ({acc.account_type})
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Account code 3200 - Retained Earnings (Equity)' : 'رمز الحساب 3200 - الأرباح المحتجزة (حقوق الملكية)'}</p>
+              {/* Default accounts selection - Admin Only */}
+              {permWrite && (
+                <div className="space-y-4 mb-6 pb-6 border-b border-gray-200 dark:border-gray-800">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertCircle className="w-5 h-5 text-indigo-500" />
+                    <h3 className="font-semibold text-gray-800 dark:text-gray-200" suppressHydrationWarning>
+                      {(hydrated && appLang === 'en') ? 'Profit Distribution Settings (Admin Only)' : 'إعدادات توزيع الأرباح (للمسؤولين فقط)'}
+                    </h3>
                   </div>
-                  <div>
-                    <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Dividends Payable Account (Credit)' : 'حساب الأرباح الموزعة المستحقة (دائن)'}</Label>
-                    <select
-                      className="w-full px-3 py-2 border rounded-lg text-sm"
-                      value={settings.dividends_payable_account_id || ""}
-                      onChange={(e) => setSettings({ ...settings, dividends_payable_account_id: e.target.value })}
-                    >
-                      <option value="" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Select account' : 'اختر حسابًا'}</option>
-                      {accounts.map((acc) => (
-                        <option key={acc.id} value={acc.id}>
-                          {acc.account_code} - {acc.account_name} ({acc.account_type})
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Account code 2150 - Dividends Payable (Current Liability)' : 'رمز الحساب 2150 - الأرباح الموزعة المستحقة (التزام متداول)'}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Retained Earnings Account (Debit)' : 'حساب الأرباح المحتجزة (مدين)'}</Label>
+                      <select
+                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow"
+                        value={settings.debit_account_id || ""}
+                        onChange={(e) => setSettings({ ...settings, debit_account_id: e.target.value })}
+                      >
+                        <option value="" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Select account' : 'اختر حسابًا'}</option>
+                        {accounts.map((acc) => (
+                          <option key={acc.id} value={acc.id}>
+                            {acc.account_code} - {acc.account_name} ({acc.account_type})
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Account code 3200 - Retained Earnings (Equity)' : 'رمز الحساب 3200 - الأرباح المحتجزة (حقوق الملكية)'}</p>
+                    </div>
+                    <div>
+                      <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Dividends Payable Account (Credit)' : 'حساب الأرباح الموزعة المستحقة (دائن)'}</Label>
+                      <select
+                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow"
+                        value={settings.dividends_payable_account_id || ""}
+                        onChange={(e) => setSettings({ ...settings, dividends_payable_account_id: e.target.value })}
+                      >
+                        <option value="" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Select account' : 'اختر حسابًا'}</option>
+                        {accounts.map((acc) => (
+                          <option key={acc.id} value={acc.id}>
+                            {acc.account_code} - {acc.account_name} ({acc.account_type})
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Account code 2150 - Dividends Payable (Current Liability)' : 'رمز الحساب 2150 - الأرباح الموزعة المستحقة (التزام متداول)'}</p>
+                    </div>
+                  </div>
+                  <div className="flex justify-start">
+                    <Button type="button" variant="secondary" onClick={saveDefaultAccounts} disabled={isSavingDefaults} className="w-full md:w-auto mt-2">
+                      {isSavingDefaults ? ((hydrated && appLang === 'en') ? 'Saving...' : 'جاري الحفظ...') : ((hydrated && appLang === 'en') ? 'Save default accounts' : 'حفظ الحسابات الافتراضية')}
+                    </Button>
                   </div>
                 </div>
-                <div className="flex justify-start">
-                  <Button type="button" onClick={saveDefaultAccounts} disabled={isSavingDefaults} className="w-full md:w-auto">
-                    {isSavingDefaults ? ((hydrated && appLang === 'en') ? 'Saving...' : 'جاري الحفظ...') : ((hydrated && appLang === 'en') ? 'Save default accounts' : 'حفظ الحسابات الافتراضية')}
-                  </Button>
-                </div>
-              </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
