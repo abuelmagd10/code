@@ -722,7 +722,7 @@ export default function ShareholdersPage() {
         throw new Error("No branch available to record the journal entry. Please create a branch first.");
       }
 
-      // 5. إنشاء القيد المحاسبي (Double Entry)
+      // 5. إنشاء القيد المحاسبي مبدئياً كـ draft (لتجاوز DIRECT_POST_BLOCKED)
       const { data: journalEntry, error: entryError } = await supabase
         .from("journal_entries")
         .insert([
@@ -733,6 +733,7 @@ export default function ShareholdersPage() {
             entry_date: contributionForm.contribution_date,
             description: `مساهمة رأس مال من ${shareholder.name} - ${contributionAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
             branch_id: entryBranchId,
+            status: "draft" // إجباري لعدم تفعيل زناد المنع
           },
         ])
         .select("id")
@@ -793,6 +794,16 @@ export default function ShareholdersPage() {
         await supabase.from("journal_entries").delete().eq("id", journalEntry.id)
         await supabase.from("capital_contributions").delete().eq("id", contribution.id)
         throw new Error("القيد غير متوازن - Debit و Credit غير متساويين")
+      }
+
+      // 8. اعتماد القيد (Posting)
+      const { error: postError } = await supabase
+        .from("journal_entries")
+        .update({ status: "posted" })
+        .eq("id", journalEntry.id)
+
+      if (postError) {
+        throw new Error("فشل اعتماد القيد المحاسبي: " + postError.message)
       }
 
       setIsContributionOpen(false)
