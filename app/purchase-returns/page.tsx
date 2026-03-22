@@ -616,9 +616,9 @@ export default function PurchaseReturnsPage() {
           company_id: companyId,
           user_id: currentUserId,
           action: 'purchase_return_refund_received',
-          entity_type: 'purchase_return',
+          entity: 'purchase_return',
           entity_id: prToRefund.id,
-          new_values: {
+          new_data: {
             return_number: prToRefund.return_number,
             total_amount: prToRefund.total_amount,
             settlement_method: prToRefund.settlement_method,
