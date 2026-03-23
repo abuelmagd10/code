@@ -1098,7 +1098,7 @@ export default function PurchaseReturnsPage() {
                 <Eye className="w-3.5 h-3.5" />
               </Button>
 
-              {pr.bills ? (
+              {!isStoreManager && pr.bills ? (
                 <Button
                   variant="outline"
                   size="sm"
