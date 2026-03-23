@@ -118,6 +118,14 @@ export default function NewPurchaseReturnPage() {
   const [cashBankAccounts, setCashBankAccounts] = useState<AccountOption[]>([])
   const [selectedRefundAccountId, setSelectedRefundAccountId] = useState<string>('')
 
+  // إعادة ضبط طريقة التسوية وحساب الاسترداد عند اختيار فاتورة غير مدفوعة (شامل وضع التعديل)
+  useEffect(() => {
+    if (!isBillPaid && form.bill_id) {
+      setForm(prev => ({ ...prev, settlement_method: 'debit_note' as any }))
+      setSelectedRefundAccountId('')
+    }
+  }, [isBillPaid, form.bill_id])
+
   // Multi-currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [exchangeRate, setExchangeRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
@@ -801,7 +809,7 @@ export default function NewPurchaseReturnPage() {
         toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "A purchase bill must be selected to create a return" : "يجب تحديد فاتورة شراء لإنشاء المرتجع")
         return
       }
-      if ((form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer') && !selectedRefundAccountId) {
+      if (isBillPaid && (form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer') && !selectedRefundAccountId) {
         toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Please select the refund account (cash/bank)" : "يرجى اختيار حساب الاسترداد (نقدية/بنك)")
         return
       }
