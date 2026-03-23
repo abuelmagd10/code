@@ -38,8 +38,7 @@ BEGIN
   IF TG_TABLE_NAME = 'bills' AND OLD.status IN ('sent', 'received', 'paid', 'partially_paid') AND NEW.status IN ('draft', 'cancelled', 'pending_approval') THEN
     UPDATE journal_entries 
        SET is_deleted = TRUE, 
-           deleted_at = NOW(),
-           description = CONCAT(COALESCE(description, ''), ' [Auto Soft-Deleted: Bill reverted to ', NEW.status, ']')
+           deleted_at = NOW()
      WHERE reference_type = 'bill' 
        AND reference_id = NEW.id 
        AND (is_deleted IS NULL OR is_deleted = FALSE);
@@ -50,8 +49,7 @@ BEGIN
   IF TG_TABLE_NAME = 'invoices' AND OLD.status IN ('sent', 'paid', 'partially_paid') AND NEW.status IN ('draft', 'cancelled', 'pending_approval') THEN
     UPDATE journal_entries 
        SET is_deleted = TRUE, 
-           deleted_at = NOW(),
-           description = CONCAT(COALESCE(description, ''), ' [Auto Soft-Deleted: Invoice reverted to ', NEW.status, ']')
+           deleted_at = NOW()
      WHERE reference_type IN ('invoice', 'invoice_cogs') 
        AND reference_id = NEW.id 
        AND (is_deleted IS NULL OR is_deleted = FALSE);
