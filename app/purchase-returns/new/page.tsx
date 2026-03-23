@@ -96,10 +96,6 @@ export default function NewPurchaseReturnPage() {
   const [warehouseAllocations, setWarehouseAllocations] = useState<WarehouseAllocation[]>([])
   const isMultiWarehouse = warehouseAllocations.length > 1
 
-  // الفاتورة مدفوعة كلياً أو جزئياً: يُظهر العملة وطريقة التسوية وحساب الاسترداد
-  const selectedBill = bills.find(b => b.id === form.bill_id)
-  const isBillPaid = !!selectedBill && ['paid', 'partially_paid'].includes(selectedBill.status)
-
   const [form, setForm] = useState({
     supplier_id: "",
     bill_id: "",
@@ -113,6 +109,10 @@ export default function NewPurchaseReturnPage() {
 
   const [items, setItems] = useState<ItemRow[]>([])
   const [saving, setSaving] = useState(false)
+
+  // الفاتورة مدفوعة كلياً أو جزئياً: يُظهر العملة وطريقة التسوية وحساب الاسترداد
+  const selectedBill = bills.find(b => b.id === form.bill_id)
+  const isBillPaid = !!selectedBill && ['paid', 'partially_paid'].includes(selectedBill.status)
 
   // حسابات النقدية والبنوك (لاختيار المستخدم عند الاسترداد النقدي/البنكي)
   const [cashBankAccounts, setCashBankAccounts] = useState<AccountOption[]>([])
