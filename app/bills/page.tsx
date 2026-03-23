@@ -1628,68 +1628,79 @@ export default function BillsPage() {
                     </div>
                   </div>
 
-                  {/* Currency and Method selection */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-                      <Select value={returnCurrency} onValueChange={setReturnCurrency}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {currencies.length > 0 ? (
-                            currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)
-                          ) : (
-                            <>
-                              <SelectItem value="EGP">EGP</SelectItem>
-                              <SelectItem value="USD">USD</SelectItem>
-                              <SelectItem value="EUR">EUR</SelectItem>
-                              <SelectItem value="SAR">SAR</SelectItem>
-                            </>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>{appLang === 'en' ? 'Refund Method' : 'طريقة الاسترداد'}</Label>
-                      <Select value={returnMethod} onValueChange={(v: 'cash' | 'bank' | 'credit') => setReturnMethod(v)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="cash">{appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}</SelectItem>
-                          <SelectItem value="bank">{appLang === 'en' ? 'Bank Refund' : 'استرداد بنكي'}</SelectItem>
-                          <SelectItem value="credit">{appLang === 'en' ? 'Credit to Supplier Account' : 'رصيد على حساب المورد'}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {returnMethod !== 'credit' && (
+                  {/* Currency and Method selection — تُظهر فقط إذا كانت الفاتورة مدفوعة */}
+                  {returnBillData.paymentStatus !== 'unpaid' ? (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-2">
-                        <Label>{appLang === 'en' ? 'Refund Account' : 'حساب الاسترداد'}</Label>
-                        <Select value={returnAccountId} onValueChange={setReturnAccountId}>
-                          <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Auto-select' : 'اختيار تلقائي'} /></SelectTrigger>
+                        <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
+                        <Select value={returnCurrency} onValueChange={setReturnCurrency}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {returnAccounts.map(acc => (
-                              <SelectItem key={acc.id} value={acc.id}>{acc.account_code || ''} {acc.account_name}</SelectItem>
-                            ))}
+                            {currencies.length > 0 ? (
+                              currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)
+                            ) : (
+                              <>
+                                <SelectItem value="EGP">EGP</SelectItem>
+                                <SelectItem value="USD">USD</SelectItem>
+                                <SelectItem value="EUR">EUR</SelectItem>
+                                <SelectItem value="SAR">SAR</SelectItem>
+                              </>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>
-                    )}
-                  </div>
+
+                      <div className="space-y-2">
+                        <Label>{appLang === 'en' ? 'Refund Method' : 'طريقة الاسترداد'}</Label>
+                        <Select value={returnMethod} onValueChange={(v: 'cash' | 'bank' | 'credit') => setReturnMethod(v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="cash">{appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}</SelectItem>
+                            <SelectItem value="bank">{appLang === 'en' ? 'Bank Refund' : 'استرداد بنكي'}</SelectItem>
+                            <SelectItem value="credit">{appLang === 'en' ? 'Credit to Supplier Account' : 'رصيد على حساب المورد'}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {returnMethod !== 'credit' && (
+                        <div className="space-y-2">
+                          <Label>{appLang === 'en' ? 'Refund Account' : 'حساب الاسترداد'}</Label>
+                          <Select value={returnAccountId} onValueChange={setReturnAccountId}>
+                            <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Auto-select' : 'اختيار تلقائي'} /></SelectTrigger>
+                            <SelectContent>
+                              {returnAccounts.map(acc => (
+                                <SelectItem key={acc.id} value={acc.id}>{acc.account_code || ''} {acc.account_name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* الفاتورة غير مدفوعة: إشعار مدين فقط */
+                    <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg text-sm text-amber-800 dark:text-amber-200">
+                      📋 {appLang === 'en'
+                        ? 'Refund Method: Debit Note only (bill is unpaid — no cash/bank refund applicable)'
+                        : 'طريقة الاسترداد: إشعار مدين فقط (الفاتورة غير مدفوعة — لا يُطبق استرداد نقدي أو بنكي)'}
+                    </div>
+                  )}
 
                   {/* Exchange rate info */}
-                  {returnCurrency !== appCurrency && returnTotal > 0 && (
+                  {returnBillData.paymentStatus !== 'unpaid' && returnCurrency !== appCurrency && returnTotal > 0 && (
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
                       <div>{appLang === 'en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {returnCurrency} = {returnExRate.rate.toFixed(4)} {appCurrency}</strong> ({returnExRate.source})</div>
                       <div>{appLang === 'en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(returnTotal * returnExRate.rate).toFixed(2)} {appCurrency}</strong></div>
                     </div>
                   )}
 
-                  {/* Info about refund method */}
-                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded text-sm text-yellow-800 dark:text-yellow-200">
-                    {returnMethod === 'cash' && (appLang === 'en' ? '💰 Cash will be returned to the cash account' : '💰 سيتم إرجاع المبلغ إلى حساب النقد')}
-                    {returnMethod === 'bank' && (appLang === 'en' ? '🏦 Amount will be returned to the bank account' : '🏦 سيتم إرجاع المبلغ إلى الحساب البنكي')}
-                    {returnMethod === 'credit' && (appLang === 'en' ? '📝 Amount will reduce your payable to the supplier' : '📝 سيتم تخفيض المبلغ المستحق للمورد')}
-                  </div>
+                  {/* Info about refund method — تُظهر فقط للفواتير المدفوعة */}
+                  {returnBillData.paymentStatus !== 'unpaid' && (
+                    <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded text-sm text-yellow-800 dark:text-yellow-200">
+                      {returnMethod === 'cash' && (appLang === 'en' ? '💰 Cash will be returned to the cash account' : '💰 سيتم إرجاع المبلغ إلى حساب النقد')}
+                      {returnMethod === 'bank' && (appLang === 'en' ? '🏦 Amount will be returned to the bank account' : '🏦 سيتم إرجاع المبلغ إلى الحساب البنكي')}
+                      {returnMethod === 'credit' && (appLang === 'en' ? '📝 Amount will reduce your payable to the supplier' : '📝 سيتم تخفيض المبلغ المستحق للمورد')}
+                    </div>
+                  )}
 
                   {/* Post-return preview */}
                   {returnTotal > 0 && (
