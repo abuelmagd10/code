@@ -43,6 +43,7 @@ type PurchaseReturn = {
   total_amount: number
   status: string
   workflow_status: string
+  financial_status: string | null
   reason: string
   rejection_reason?: string | null
   is_locked?: boolean
@@ -620,6 +621,7 @@ export default function PurchaseReturnsPage() {
         .update({
           status: 'closed',
           workflow_status: 'closed',
+          financial_status: 'refund_recorded',
           notes: prToRefund.reason + (refundNotes ? ` | استلام الاسترداد: ${refundNotes}` : ' | تم استلام الاسترداد'),
         })
         .eq('id', prToRefund.id)

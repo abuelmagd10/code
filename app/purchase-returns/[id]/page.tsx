@@ -34,6 +34,7 @@ type ReturnDetail = {
   return_date: string
   status: string
   workflow_status: string
+  financial_status: string | null
   reason: string
   notes: string | null
   settlement_method: string
@@ -139,7 +140,7 @@ export default function PurchaseReturnDetailPage() {
     const { data } = await supabase
       .from('purchase_returns')
       .select(`
-        id, return_number, return_date, status, workflow_status,
+        id, return_number, return_date, status, workflow_status, financial_status,
         reason, notes, settlement_method,
         subtotal, tax_amount, total_amount, original_currency,
         is_locked, created_by, approved_by, approved_at,
@@ -494,6 +495,32 @@ export default function PurchaseReturnDetailPage() {
                   'هذا المرتجع بانتظار تأكيد التسليم من مسؤول المخزن. تأكد من استلام البضاعة من المورد ثم اعتمد.',
                   'This return is awaiting warehouse delivery confirmation. Verify that goods were returned to the supplier, then confirm.'
                 )}
+              </p>
+            </div>
+          )}
+
+          {/* FIX 2: Pending Refund Banner */}
+          {pr.financial_status === 'pending_refund' && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-lg flex items-start gap-2">
+              <span className="text-lg flex-shrink-0">💰</span>
+              <div>
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                  {t('⏳ في انتظار تسجيل الاسترداد النقدي/البنكي', '⏳ Pending Cash/Bank Refund from Supplier')}
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                  {t(
+                    'تم استكمال المرتجع محاسبياً. يجب تسجيل استلام المبلغ من المورد لإتمام الدورة المالية.',
+                    'Return is accounting-complete. Record the supplier refund receipt to close the financial cycle.'
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
+          {pr.financial_status === 'refund_recorded' && (
+            <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg flex items-start gap-2">
+              <span className="text-lg flex-shrink-0">✅</span>
+              <p className="text-sm text-green-800 dark:text-green-200">
+                {t('تم تسجيل الاسترداد — الدورة المالية مكتملة', 'Refund Recorded — Financial Cycle Complete')}
               </p>
             </div>
           )}

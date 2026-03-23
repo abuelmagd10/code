@@ -758,6 +758,7 @@ export default function NewPurchaseReturnPage() {
           original_total_amount: allocTotal,
           exchange_rate_used: exchangeRate.rate,
           exchange_rate_id: exchangeRate.rateId || null,
+          exchange_rate_at_return: exchangeRate.rate,  // FIX 1: snapshot for FX gain/loss at confirmation
         },
         p_warehouse_groups: filteredGroups,
         p_created_by: currentUserId || null,
@@ -1203,6 +1204,7 @@ export default function NewPurchaseReturnPage() {
             original_total_amount: effectiveTotal,
             exchange_rate_used: exchangeRate.rate,
             exchange_rate_id: exchangeRate.rateId || null,
+            exchange_rate_at_return: exchangeRate.rate,  // FIX 1: snapshot for FX gain/loss at confirmation
           },
           p_return_items: validItems.map(item => ({
             bill_item_id: item.bill_item_id,
