@@ -336,10 +336,10 @@ export default async function DashboardPage({
 
           {/* ── Widget 7: تحليلات الأعمال المتقدمة (Client Component — مستقل) ── */}
           {companyId && (
-            <AdvancedDashboardCharts
+                <AdvancedDashboardCharts
               companyId={companyId}
               defaultCurrency={currency}
-              appLang={appLang}
+                  appLang={appLang}
               fromDate={fromDate}
               toDate={toDate}
               branchId={branchId}

@@ -96,6 +96,10 @@ export default function NewPurchaseReturnPage() {
   const [warehouseAllocations, setWarehouseAllocations] = useState<WarehouseAllocation[]>([])
   const isMultiWarehouse = warehouseAllocations.length > 1
 
+  // الفاتورة مدفوعة كلياً أو جزئياً: يُظهر العملة وطريقة التسوية وحساب الاسترداد
+  const selectedBill = bills.find(b => b.id === form.bill_id)
+  const isBillPaid = !!selectedBill && ['paid', 'partially_paid'].includes(selectedBill.status)
+
   const [form, setForm] = useState({
     supplier_id: "",
     bill_id: "",
@@ -1313,7 +1317,15 @@ export default function NewPurchaseReturnPage() {
                   value={form.bill_id}
                   onChange={e => {
                     const newBillId = e.target.value
-                    setForm({ ...form, bill_id: newBillId })
+                    const newBill = bills.find(b => b.id === newBillId)
+                    const newIsPaid = !!newBill && ['paid', 'partially_paid'].includes(newBill.status)
+                    setForm({
+                      ...form,
+                      bill_id: newBillId,
+                      // إعادة تعيين طريقة التسوية لإشعار مدين إذا الفاتورة غير مدفوعة
+                      settlement_method: newIsPaid ? form.settlement_method : 'debit_note',
+                    })
+                    setSelectedRefundAccountId('')
                     // إذا تم مسح الفاتورة، نمسح المخزن المختار أيضاً
                     if (!newBillId) {
                       setSelectedWarehouseId('')
@@ -1624,37 +1636,49 @@ export default function NewPurchaseReturnPage() {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <Label>{appLang === 'en' ? 'Settlement Method' : 'طريقة التسوية'}</Label>
-                <select className="w-full border rounded px-2 py-2" value={form.settlement_method} onChange={e => { setForm({ ...form, settlement_method: e.target.value as any }); setSelectedRefundAccountId('') }}>
-                  <option value="debit_note">{appLang === 'en' ? 'Debit Note' : 'إشعار مدين'}</option>
-                  <option value="cash">{appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}</option>
-                  <option value="bank_transfer">{appLang === 'en' ? 'Bank Transfer' : 'تحويل بنكي'}</option>
-                </select>
-              </div>
-              <div>
-                <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-                <select className="w-full border rounded px-2 py-2" value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}>
-                  {currencies.length > 0 ? (
-                    currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)
-                  ) : (
-                    <>
-                      <option value="EGP">EGP</option>
-                      <option value="USD">USD</option>
-                      <option value="EUR">EUR</option>
-                      <option value="SAR">SAR</option>
-                    </>
-                  )}
-                </select>
-              </div>
-              <div className="md:col-span-2">
+              {/* طريقة التسوية: تُظهر فقط إذا كانت الفاتورة مدفوعة */}
+              {isBillPaid ? (
+                <div>
+                  <Label>{appLang === 'en' ? 'Settlement Method' : 'طريقة التسوية'}</Label>
+                  <select className="w-full border rounded px-2 py-2" value={form.settlement_method} onChange={e => { setForm({ ...form, settlement_method: e.target.value as any }); setSelectedRefundAccountId('') }}>
+                    <option value="debit_note">{appLang === 'en' ? 'Debit Note' : 'إشعار مدين'}</option>
+                    <option value="cash">{appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}</option>
+                    <option value="bank_transfer">{appLang === 'en' ? 'Bank Transfer' : 'تحويل بنكي'}</option>
+                  </select>
+                </div>
+              ) : (
+                <div className="flex items-end">
+                  <div className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                    📋 {appLang === 'en' ? 'Settlement: Debit Note (bill unpaid)' : 'طريقة التسوية: إشعار مدين (الفاتورة غير مدفوعة)'}
+                  </div>
+                </div>
+              )}
+              {/* العملة: تُظهر فقط إذا كانت الفاتورة مدفوعة */}
+              {isBillPaid && (
+                <div>
+                  <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
+                  <select className="w-full border rounded px-2 py-2" value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}>
+                    {currencies.length > 0 ? (
+                      currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)
+                    ) : (
+                      <>
+                        <option value="EGP">EGP</option>
+                        <option value="USD">USD</option>
+                        <option value="EUR">EUR</option>
+                        <option value="SAR">SAR</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+              )}
+              <div className={isBillPaid ? 'md:col-span-2' : 'md:col-span-3'}>
                 <Label>{appLang === 'en' ? 'Reason' : 'السبب'}</Label>
                 <Input value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} placeholder={appLang === 'en' ? 'Return reason...' : 'سبب المرتجع...'} />
               </div>
             </div>
 
-            {/* حساب الاسترداد: يظهر فقط عند اختيار نقدي أو بنكي */}
-            {(form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer') && (
+            {/* حساب الاسترداد: يظهر فقط عند اختيار نقدي أو بنكي وإذا كانت الفاتورة مدفوعة */}
+            {isBillPaid && (form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer') && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label className="flex items-center gap-1">
