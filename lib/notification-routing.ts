@@ -59,10 +59,14 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
 
   // المالية
   'payment': (id) => `/payments?highlight=${id}`,
+  'payment_approval': (id) => `/payments?highlight=${id}`,       // ✅ اعتماد دفعة المورد
+  'payment_pending_approval': (id) => `/payments?highlight=${id}`, // ✅ alias
+  'payment_approved': (id) => `/payments?highlight=${id}`,       // ✅ تمت الموافقة
+  'payment_rejected': (id) => `/payments?highlight=${id}`,       // ✅ تم الرفض
   'journal_entry': (id) => `/journal-entries/${id}`,
   'depreciation': (id) => `/fixed-assets?highlight=depreciation-${id}`,
-  'expense': (id) => `/expenses/${id}`, // ✅ إضافة route للمصروفات
-  'bank_voucher': (id) => `/banking?request=${id}`, // Route for bank voucher requests
+  'expense': (id) => `/expenses/${id}`,
+  'bank_voucher': (id) => `/banking?request=${id}`,
 
   // الموافقات
   'approval_request': (id) => `/approvals?highlight=${id}`,
