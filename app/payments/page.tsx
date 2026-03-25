@@ -895,7 +895,7 @@ export default function PaymentsPage() {
 
         let query = supabase
           .from("bills")
-          .select("id, bill_number, bill_date, total_amount, paid_amount, status, branch_id, branches:branch_id(name)")
+          .select("id, bill_number, bill_date, total_amount, paid_amount, returned_amount, status, branch_id, branches:branch_id(name)")
           .eq("supplier_id", newSuppPayment.supplier_id)
           .eq("company_id", companyId)
           .in("status", ["received", "partially_paid", "partially_returned"]) // ✅ فقط بعد الاستلام المخزني
@@ -905,7 +905,8 @@ export default function PaymentsPage() {
           query = query.eq("branch_id", userContext.branch_id)
         }
 
-        const { data: bills } = await query.select("id, bill_number, bill_date, total_amount, paid_amount, returned_amount, status, branch_id, branches:branch_id(name)", { count: undefined } as any).order("bill_date", { ascending: false })
+        const { data: bills, error: billsFetchErr } = await query.order("bill_date", { ascending: false })
+        if (billsFetchErr) console.error("Error loading supplier bills:", billsFetchErr)
         setFormSupplierBills(bills || [])
       } catch (e) {
         console.error("Error loading supplier bills:", e)
@@ -1148,8 +1149,18 @@ export default function PaymentsPage() {
         return
       }
 
-      if (!newSuppPayment.supplier_id || newSuppPayment.amount <= 0) return
-      if (!companyId) return
+      // ❗ Guard: reset saving if supplier/amount/company missing
+      if (!newSuppPayment.supplier_id || newSuppPayment.amount <= 0 || !companyId) {
+        toast({
+          title: appLang === 'en' ? 'Missing Fields' : 'حقول مفقودة',
+          description: appLang === 'en'
+            ? 'Please select a supplier, enter an amount greater than 0, and ensure you are connected.'
+            : 'يرجى اختيار مورد، وإدخال مبلغ أكبر من صفر.',
+          variant: 'destructive'
+        })
+        setSaving(false)
+        return
+      }
 
       // 🔍 التحقق من كفاية الرصيد قبل إنشاء الدفعة
       const balanceCheck = await checkAccountBalance(
@@ -2341,9 +2352,19 @@ export default function PaymentsPage() {
       if (!payment || !billId || rawAmount <= 0) return
       setSaving(true)
       const mapping = await findAccountIds()
-      if (!mapping || !mapping.ap || !mapping.cash) return
+      if (!mapping || !mapping.ap) {
+        toast({ title: appLang === 'en' ? 'AP Account Missing' : 'حساب AP مفقود', description: appLang === 'en' ? 'Configure Accounts Payable in chart of accounts.' : 'يرجى إعداد حساب الذمم الدائنة في شجرة الحسابات.', variant: 'destructive' })
+        setSaving(false); return
+      }
+      if (!mapping.cash && !mapping.bank) {
+        toast({ title: appLang === 'en' ? 'No Cash/Bank Account' : 'لا يوجد حساب نقد/بنك', description: appLang === 'en' ? 'No cash or bank account found in chart of accounts.' : 'لم يتم العثور على حساب نقدي أو بنكي في شجرة الحسابات.', variant: 'destructive' })
+        setSaving(false); return
+      }
       const { data: bill } = await supabase.from("bills").select("*").eq("id", billId).single()
-      if (!bill) return
+      if (!bill) {
+        toast({ title: appLang === 'en' ? 'Bill Not Found' : 'الفاتورة غير موجودة', description: appLang === 'en' ? 'Could not load the selected bill.' : 'تعذر تحميل الفاتورة المختارة.', variant: 'destructive' })
+        setSaving(false); return
+      }
 
       // 🔐 ERP Governance: التحقق من صلاحية الدفع على هذه الفاتورة
       if (!canPayOnDocument(bill.branch_id)) {
@@ -2364,6 +2385,17 @@ export default function PaymentsPage() {
       )
       const remaining = netOutstandingOvr
       const amount = Math.min(rawAmount, remaining)
+      if (amount <= 0) {
+        toast({
+          title: appLang === 'en' ? 'Bill fully settled' : 'الفاتورة مسددة بالكامل',
+          description: appLang === 'en'
+            ? 'Net outstanding is 0 after deducting returns. No payment needed.'
+            : 'الصافي المستحق = 0 بعد خصم المرتجعات. لا توجد دفعة مطلوبة.',
+          variant: 'destructive'
+        })
+        setSaving(false)
+        return
+      }
 
       // Track state for potential rollback
       const originalPaid = Number(bill.paid_amount || 0)
