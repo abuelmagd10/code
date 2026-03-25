@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
+import { formatSupabaseError } from "@/lib/error-messages"
 import {
   notifyPRApproved,
   notifyPRRejected,
@@ -281,7 +282,11 @@ export default function PurchaseReturnDetailPage() {
         ),
       })
       if (error) {
-        toast({ title: t('❌ فشل الاعتماد', '❌ Confirmation Failed'), description: error.message, variant: 'destructive' })
+        toast({
+          title: t('❌ فشل الاعتماد', '❌ Confirmation Failed'),
+          description: formatSupabaseError(error, appLang),
+          variant: 'destructive'
+        })
         return
       }
       if (pr.created_by && pr.created_by !== currentUserId) {

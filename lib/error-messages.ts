@@ -177,6 +177,35 @@ export const getErrorMessage = (errorKey: string, lang: 'ar' | 'en' = 'ar'): str
   return message ? message[lang] : commonErrorMessages.UNEXPECTED_ERROR[lang]
 }
 
+export const formatSupabaseError = (
+  error: {
+    message?: string | null
+    details?: string | null
+    hint?: string | null
+    code?: string | null
+  } | null | undefined,
+  lang: 'ar' | 'en' = 'ar'
+): string => {
+  if (!error) return getErrorMessage('UNEXPECTED_ERROR', lang)
+
+  const parts = [error.message, error.details, error.hint]
+    .map((part) => (typeof part === 'string' ? part.trim() : ''))
+    .filter(Boolean)
+
+  const uniqueParts = parts.filter((part, index) => parts.indexOf(part) === index)
+  const message = uniqueParts.join(' | ')
+
+  if (!message) {
+    return error.code
+      ? `${getErrorMessage('OPERATION_FAILED', lang)} (${error.code})`
+      : getErrorMessage('OPERATION_FAILED', lang)
+  }
+
+  return error.code && !message.includes(error.code)
+    ? `${message} (${error.code})`
+    : message
+}
+
 export const formatValidationError = (field: string, errorType: string, lang: 'ar' | 'en' = 'ar'): string => {
   const fieldNames = {
     ar: {

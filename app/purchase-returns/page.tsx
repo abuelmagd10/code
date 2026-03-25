@@ -19,6 +19,7 @@ import { createNotification } from "@/lib/governance-layer"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { formatSupabaseError } from "@/lib/error-messages"
 
 type WarehouseAllocation = {
   id: string
@@ -464,7 +465,7 @@ export default function PurchaseReturnsPage() {
       if (rpcError) {
         toast({
           title: appLang === 'en' ? '❌ Confirmation Failed' : '❌ فشل الاعتماد',
-          description: rpcError.message,
+          description: formatSupabaseError(rpcError, appLang),
           variant: 'destructive',
         })
         return
@@ -545,7 +546,7 @@ export default function PurchaseReturnsPage() {
       if (rpcError) {
         toast({
           title: appLang === 'en' ? '❌ Confirmation Failed' : '❌ فشل الاعتماد',
-          description: rpcError.message,
+          description: formatSupabaseError(rpcError, appLang),
           variant: 'destructive',
         })
         return
