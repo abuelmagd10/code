@@ -1253,6 +1253,8 @@ export default function PaymentsPage() {
         original_currency: paymentCurrency,
         // ✅ Audit trail
         created_by: currentUserId,
+        // ✅ Branch tagging - use user's branch so it's queryable
+        branch_id: userContext?.branch_id || null,
         // ✅ Role-based status
         status: isPrivilegedRole ? 'approved' : 'pending_approval',
         ...(isPrivilegedRole ? { approved_by: currentUserId, approved_at: new Date().toISOString() } : {}),
@@ -3191,7 +3193,11 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{p.payment_date}</td>
                       <td className="px-2 py-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
-                          {(p.bill_id && billBranchMap[p.bill_id] ? branchNames[billBranchMap[p.bill_id]] : null) || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
+                          {/* ✅ أولوية: فرع فاتورة الشراء → فرع الدفعة → رئيسي */}
+                          {(p.bill_id && billBranchMap[p.bill_id]
+                            ? branchNames[billBranchMap[p.bill_id]]
+                            : null
+                          ) || (p.branch_id ? branchNames[p.branch_id] : null) || p.branches?.name || (appLang === 'en' ? 'Main' : 'رئيسي')}
                         </span>
                       </td>
                       <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
