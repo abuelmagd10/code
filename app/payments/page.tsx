@@ -73,6 +73,14 @@ interface Payment {
   branch_id?: string | null;
   cost_center_id?: string | null;
   branches?: { name: string } | null;
+  // ✅ Approval Workflow
+  status?: string; // 'pending_approval' | 'approved' | 'rejected'
+  created_by?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  rejected_by?: string | null;
+  rejected_at?: string | null;
+  rejection_reason?: string | null;
 }
 
 interface Branch { id: string; name: string }
@@ -211,6 +219,12 @@ export default function PaymentsPage() {
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [deletingPayment, setDeletingPayment] = useState<Payment | null>(null)
   const [editFields, setEditFields] = useState({ payment_date: "", payment_method: "", reference_number: "", notes: "", account_id: "" })
+
+  // ✅ Approval Workflow state
+  const [rejectOpen, setRejectOpen] = useState(false)
+  const [rejectionReason, setRejectionReason] = useState("")
+  const [approvingPaymentId, setApprovingPaymentId] = useState<string | null>(null)
+  const [rejectingPayment, setRejectingPayment] = useState<Payment | null>(null)
 
   // === إصلاح أمني: صلاحيات التعديل والحذف ===
   const [permUpdate, setPermUpdate] = useState(false)
@@ -1214,6 +1228,11 @@ export default function PaymentsPage() {
         }
       }
       // Attempt insert including account_id; fallback if column not exists
+      // ✅ APPROVAL WORKFLOW: determine role
+      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      const isPrivilegedRole = !!(userContext?.role && PRIVILEGED_ROLES.includes(userContext.role))
+      const currentUserId = (await supabase.auth.getUser()).data.user?.id || null
+
       const basePayload: any = {
         company_id: companyId,
         supplier_id: newSuppPayment.supplier_id,
@@ -1223,16 +1242,20 @@ export default function PaymentsPage() {
         reference_number: newSuppPayment.ref || null,
         notes: newSuppPayment.notes || null,
         account_id: newSuppPayment.account_id || null,
-        // Multi-currency support - store original and converted values
+        // Multi-currency support
         currency_code: paymentCurrency,
         exchange_rate: exchangeRate,
         exchange_rate_used: exchangeRate,
-        exchange_rate_id: exchangeRateId || null, // Reference to exchange_rates table
-        rate_source: rateSource, // 'api', 'manual', 'database'
+        exchange_rate_id: exchangeRateId || null,
+        rate_source: rateSource,
         base_currency_amount: paymentCurrency !== baseCurrency ? newSuppPayment.amount * exchangeRate : newSuppPayment.amount,
-        // Store original values (never modified)
         original_amount: newSuppPayment.amount,
         original_currency: paymentCurrency,
+        // ✅ Audit trail
+        created_by: currentUserId,
+        // ✅ Role-based status
+        status: isPrivilegedRole ? 'approved' : 'pending_approval',
+        ...(isPrivilegedRole ? { approved_by: currentUserId, approved_at: new Date().toISOString() } : {}),
       }
       let insertErr: any = null
       let insertedPayment: any = null
@@ -1244,6 +1267,7 @@ export default function PaymentsPage() {
           .single()
         insertErr = error || null
         insertedPayment = data || null
+
       }
       if (insertErr) {
         const msg = String(insertErr?.message || insertErr || "")
@@ -1262,12 +1286,53 @@ export default function PaymentsPage() {
       }
 
       // === منطق القيود المحاسبية ===
-      // إذا تم اختيار فاتورة للربط المباشر: لا ننشئ قيد سلفة، بل سنربط الدفعة بالفاتورة
-      // وقيد الدفع سيكون: مدين حسابات دائنة / دائن النقد
-      // إذا لم يتم اختيار فاتورة: ننشئ قيد سلفة (مدين سلف للموردين / دائن النقد)
+      // ✅ APPROVAL WORKFLOW: skip journal entries and bill linking for pending payments
+      if (!isPrivilegedRole) {
+        // 🔔 Non-privileged: notify managers for approval
+        const { data: managers } = await supabase
+          .from("company_members")
+          .select("user_id")
+          .eq("company_id", companyId)
+          .in("role", ["owner", "admin", "general_manager"])
+        if (managers && managers.length > 0) {
+          const supplierName = suppliers.find(s => s.id === newSuppPayment.supplier_id)?.name || 'مورد'
+          const notifInserts = managers.map((m: any) => ({
+            company_id: companyId,
+            reference_type: "payment_approval",
+            reference_id: insertedPayment?.id,
+            created_by: currentUserId,
+            assigned_to_user: m.user_id,
+            title: appLang === 'en' ? 'Payment Pending Approval' : 'طلب اعتماد دفعة',
+            message: appLang === 'en'
+              ? `A supplier payment of ${newSuppPayment.amount.toFixed(2)} for "${supplierName}" requires your approval.`
+              : `تحتاج دفعة بمبلغ ${newSuppPayment.amount.toFixed(2)} للمورد "${supplierName}" إلى اعتمادك.`,
+            priority: "high",
+            event_key: "payment_pending_approval",
+            status: "unread",
+          }))
+          await supabase.from("notifications").insert(notifInserts)
+        }
+        // Reset form and refresh list
+        setNewSuppPayment({ supplier_id: "", amount: 0, date: newSuppPayment.date, method: "cash", ref: "", notes: "", account_id: "" })
+        setSelectedFormBillId("")
+        const { data: suppPays } = await supabase
+          .from("payments").select("*")
+          .eq("company_id", companyId)
+          .not("supplier_id", "is", null)
+          .order("payment_date", { ascending: false })
+        setSupplierPayments(suppPays || [])
+        toast({
+          title: appLang === 'en' ? '⏳ Pending Approval' : '⏳ في انتظار الاعتماد',
+          description: appLang === 'en'
+            ? 'Your payment request has been submitted and is awaiting approval from a manager.'
+            : 'تم تقديم طلب الدفع وهو في انتظار اعتماد المدير. لن تتأثر الفاتورة حتى يتم الاعتماد.',
+        })
+        return
+      }
 
+      // === Privileged role: execute journal entries immediately ===
       const mapping = await findAccountIds()
-      const willLinkToBill = !!selectedFormBillId // هل سيتم الربط بفاتورة؟
+      const willLinkToBill = !!selectedFormBillId
 
       if (mapping && !willLinkToBill) {
         // لا توجد فاتورة محددة - إنشاء قيد سلفة فقط
@@ -1326,6 +1391,141 @@ export default function PaymentsPage() {
         ? err
         : (err?.message || err?.hint || err?.details || err?.error || "فشل إنشاء الدفعة")
       toastActionError(toast, "الإنشاء", "دفعة المورد", String(msg))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ✅ APPROVAL WORKFLOW: Approve a pending payment (privileged roles only)
+  const approvePayment = async (payment: Payment) => {
+    if (!companyId) return
+    try {
+      setSaving(true)
+      const currentUserId = (await supabase.auth.getUser()).data.user?.id || null
+
+      // 1. Update payment status to approved
+      const { error: updateErr } = await supabase.from("payments").update({
+        status: 'approved',
+        approved_by: currentUserId,
+        approved_at: new Date().toISOString(),
+      }).eq("id", payment.id)
+      if (updateErr) throw updateErr
+
+      // 2. Execute journal entries + bill linking (same as privileged immediate path)
+      const mapping = await findAccountIds()
+      if (mapping) {
+        const paymentCurr = payment.original_currency || payment.currency_code || baseCurrency
+        const exRate = payment.exchange_rate_used || payment.exchange_rate || 1
+
+        if (payment.bill_id) {
+          // Apply payment to bill directly
+          await applyPaymentToBillWithOverrides(payment, payment.bill_id, Number(payment.amount || 0), "")
+        } else {
+          // Standalone advance payment
+          const cashAccountId = payment.account_id || mapping.cash || mapping.bank
+          const advanceId = mapping.supplierAdvance
+          if (cashAccountId && advanceId) {
+            const { data: entry } = await supabase.from("journal_entries").insert({
+              company_id: mapping.companyId,
+              reference_type: "supplier_payment",
+              reference_id: payment.id,
+              entry_date: payment.payment_date,
+              description: `سداد مورّد كسلفة (${payment.payment_method || 'نقد'})`,
+              branch_id: mapping.branchId!,
+              cost_center_id: mapping.costCenterId || null,
+            }).select().single()
+            if (entry?.id) {
+              await supabase.from("journal_entry_lines").insert([
+                { journal_entry_id: entry.id, account_id: advanceId, debit_amount: payment.amount, credit_amount: 0, description: "سلف للموردين", original_debit: payment.amount, original_credit: 0, original_currency: paymentCurr, exchange_rate_used: exRate },
+                { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: payment.amount, description: "نقد/بنك", original_debit: 0, original_credit: payment.amount, original_currency: paymentCurr, exchange_rate_used: exRate },
+              ])
+            }
+          }
+        }
+      }
+
+      // 3. Notify the payment creator
+      if (payment.created_by) {
+        const supplierName = suppliers.find(s => s.id === payment.supplier_id)?.name || 'مورد'
+        await supabase.from("notifications").insert({
+          company_id: companyId,
+          reference_type: "payment_approval",
+          reference_id: payment.id,
+          created_by: currentUserId,
+          assigned_to_user: payment.created_by,
+          title: appLang === 'en' ? '✅ Payment Approved' : '✅ تمت الموافقة على الدفعة',
+          message: appLang === 'en'
+            ? `Your payment of ${Number(payment.amount).toFixed(2)} for "${supplierName}" has been approved.`
+            : `تمت الموافقة على دفعتك بمبلغ ${Number(payment.amount).toFixed(2)} للمورد "${supplierName}".`,
+          priority: "normal",
+          event_key: "payment_approved",
+          status: "unread",
+        })
+      }
+
+      // 4. Refresh list
+      const { data: suppPays } = await supabase.from("payments").select("*")
+        .eq("company_id", companyId).not("supplier_id", "is", null)
+        .order("payment_date", { ascending: false })
+      setSupplierPayments(suppPays || [])
+      setApprovingPaymentId(null)
+      toast({
+        title: appLang === 'en' ? '✅ Payment Approved' : '✅ تمت الموافقة',
+        description: appLang === 'en' ? 'Payment has been approved and posted to accounts.' : 'تمت الموافقة على الدفعة وتم تسجيل القيود المحاسبية.',
+      })
+    } catch (err: any) {
+      toastActionError(toast, "الاعتماد", "الدفعة", String(err?.message || err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ✅ APPROVAL WORKFLOW: Reject a pending payment (privileged roles only)
+  const rejectPayment = async () => {
+    if (!rejectingPayment || !companyId || !rejectionReason.trim()) return
+    try {
+      setSaving(true)
+      const currentUserId = (await supabase.auth.getUser()).data.user?.id || null
+      const { error: updateErr } = await supabase.from("payments").update({
+        status: 'rejected',
+        rejected_by: currentUserId,
+        rejected_at: new Date().toISOString(),
+        rejection_reason: rejectionReason.trim(),
+      }).eq("id", rejectingPayment.id)
+      if (updateErr) throw updateErr
+
+      // Notify the payment creator
+      if (rejectingPayment.created_by) {
+        const supplierName = suppliers.find(s => s.id === rejectingPayment.supplier_id)?.name || 'مورد'
+        await supabase.from("notifications").insert({
+          company_id: companyId,
+          reference_type: "payment_approval",
+          reference_id: rejectingPayment.id,
+          created_by: currentUserId,
+          assigned_to_user: rejectingPayment.created_by,
+          title: appLang === 'en' ? '❌ Payment Rejected' : '❌ تم رفض الدفعة',
+          message: appLang === 'en'
+            ? `Your payment of ${Number(rejectingPayment.amount).toFixed(2)} for "${supplierName}" was rejected. Reason: ${rejectionReason.trim()}`
+            : `تم رفض دفعتك بمبلغ ${Number(rejectingPayment.amount).toFixed(2)} للمورد "${supplierName}". السبب: ${rejectionReason.trim()}`,
+          priority: "high",
+          event_key: "payment_rejected",
+          status: "unread",
+        })
+      }
+
+      const { data: suppPays } = await supabase.from("payments").select("*")
+        .eq("company_id", companyId).not("supplier_id", "is", null)
+        .order("payment_date", { ascending: false })
+      setSupplierPayments(suppPays || [])
+      setRejectOpen(false)
+      setRejectingPayment(null)
+      setRejectionReason("")
+      toast({
+        title: appLang === 'en' ? '❌ Payment Rejected' : '❌ تم رفض الدفعة',
+        description: appLang === 'en' ? 'The payment has been rejected.' : 'تم رفض الدفعة وإشعار المنشئ.',
+      })
+    } catch (err: any) {
+      toastActionError(toast, "الرفض", "الدفعة", String(err?.message || err))
     } finally {
       setSaving(false)
     }
@@ -2976,16 +3176,21 @@ export default function PaymentsPage() {
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Supplier Bill' : 'فاتورة المورد المرتبطة'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Purchase Order' : 'أمر الشراء المرتبط'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Action' : 'إجراء'}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {supplierPayments.map((p) => (
-                    <tr key={p.id} className="border-b">
+                  {supplierPayments.map((p) => {
+                    const PRIV = ['owner', 'admin', 'general_manager']
+                    const isPriv = !!(userContext?.role && PRIV.includes(userContext.role))
+                    const isPending = p.status === 'pending_approval'
+                    const isRejected = p.status === 'rejected'
+                    return (
+                    <tr key={p.id} className={`border-b ${isPending ? 'bg-yellow-50 dark:bg-yellow-900/10' : isRejected ? 'bg-red-50 dark:bg-red-900/10 opacity-60' : ''}`}>
                       <td className="px-2 py-2">{p.payment_date}</td>
                       <td className="px-2 py-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
-                          {/* ✅ عرض الفرع: من فاتورة الشراء المرتبطة (billBranchMap) → من الدفعة → fallback */}
                           {(p.bill_id && billBranchMap[p.bill_id] ? branchNames[billBranchMap[p.bill_id]] : null) || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
                         </span>
                       </td>
@@ -2997,36 +3202,46 @@ export default function PaymentsPage() {
                           <Link href={`/bills/${p.bill_id}`} className="text-blue-600 hover:underline">
                             {billNumbers[p.bill_id] || p.bill_id}
                           </Link>
-                        ) : (
-                          "غير مرتبط"
-                        )}
+                        ) : ("غير مرتبط")}
                       </td>
                       <td className="px-2 py-2">
                         {(() => {
-                          // ✅ أولاً: تحقق من purchase_order_id المباشر في الدفعة
                           if (p.purchase_order_id) {
                             const poNumber = poNumbers[p.purchase_order_id]
-                            return poNumber ? (
-                              <Link href={`/purchase-orders/${p.purchase_order_id}`} className="text-blue-600 hover:underline">
-                                {poNumber}
-                              </Link>
-                            ) : p.purchase_order_id
+                            return poNumber ? (<Link href={`/purchase-orders/${p.purchase_order_id}`} className="text-blue-600 hover:underline">{poNumber}</Link>) : p.purchase_order_id
                           }
-                          // ✅ ثانياً: تحقق من purchase_order_id من الفاتورة المرتبطة
                           if (p.bill_id && billToPoMap[p.bill_id]) {
                             const poId = billToPoMap[p.bill_id]
                             const poNumber = poNumbers[poId]
-                            return poNumber ? (
-                              <Link href={`/purchase-orders/${poId}`} className="text-blue-600 hover:underline">
-                                {poNumber}
-                              </Link>
-                            ) : poId
+                            return poNumber ? (<Link href={`/purchase-orders/${poId}`} className="text-blue-600 hover:underline">{poNumber}</Link>) : poId
                           }
                           return "غير مرتبط"
                         })()}
                       </td>
+                      {/* ✅ Status Badge */}
                       <td className="px-2 py-2">
-                        <div className="flex gap-2">
+                        {isPending && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                            ⏳ {appLang === 'en' ? 'Pending' : 'في الانتظار'}
+                          </span>
+                        )}
+                        {p.status === 'approved' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                            ✅ {appLang === 'en' ? 'Approved' : 'معتمد'}
+                          </span>
+                        )}
+                        {isRejected && (
+                          <div>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                              ❌ {appLang === 'en' ? 'Rejected' : 'مرفوض'}
+                            </span>
+                            {p.rejection_reason && <p className="text-xs text-red-600 mt-0.5">{p.rejection_reason}</p>}
+                          </div>
+                        )}
+                        {!p.status && <span className="text-xs text-gray-400">—</span>}
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="flex gap-2 flex-wrap">
                           {!p.bill_id && permWrite && (
                             <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
                           )}
@@ -3055,10 +3270,22 @@ export default function PaymentsPage() {
                           {permDelete && (
                             <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
                           )}
+                          {/* ✅ Approve/Reject buttons for privileged roles on pending payments */}
+                          {isPriv && isPending && (
+                            <>
+                              <Button variant="outline" size="sm" className="text-green-700 border-green-300 hover:bg-green-50" disabled={saving} onClick={() => approvePayment(p)}>
+                                {appLang === 'en' ? '✅ Approve' : '✅ اعتماد'}
+                              </Button>
+                              <Button variant="outline" size="sm" className="text-red-700 border-red-300 hover:bg-red-50" disabled={saving} onClick={() => { setRejectingPayment(p); setRejectionReason(''); setRejectOpen(true) }}>
+                                {appLang === 'en' ? '❌ Reject' : '❌ رفض'}
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -3797,6 +4024,39 @@ export default function PaymentsPage() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setApplyBillOpen(false)}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
               <Button onClick={applyPaymentToBill} disabled={saving || !applyDocId || applyAmount <= 0}>{appLang === 'en' ? 'Apply' : 'تطبيق'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ✅ Rejection Reason Dialog */}
+        <Dialog open={rejectOpen} onOpenChange={(open) => { setRejectOpen(open); if (!open) { setRejectingPayment(null); setRejectionReason("") } }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{appLang === 'en' ? '❌ Reject Payment' : '❌ رفض الدفعة'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {appLang === 'en'
+                  ? `You are about to reject a payment of ${Number(rejectingPayment?.amount || 0).toFixed(2)}. Please provide a reason (required).`
+                  : `أنت على وشك رفض دفعة بمبلغ ${Number(rejectingPayment?.amount || 0).toFixed(2)}. يرجى توضيح سبب الرفض (إلزامي).`}
+              </p>
+              <div>
+                <Label>{appLang === 'en' ? 'Rejection Reason' : 'سبب الرفض'} *</Label>
+                <textarea
+                  className="w-full border rounded px-3 py-2 text-sm mt-1 min-h-[80px] dark:bg-slate-800 dark:border-slate-600"
+                  placeholder={appLang === 'en' ? 'Enter reason for rejection...' : 'أدخل سبب الرفض...'}
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setRejectOpen(false); setRejectingPayment(null); setRejectionReason("") }}>
+                {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+              </Button>
+              <Button variant="destructive" disabled={saving || !rejectionReason.trim()} onClick={rejectPayment}>
+                {saving ? (appLang === 'en' ? 'Rejecting...' : 'جاري الرفض...') : (appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض')}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
