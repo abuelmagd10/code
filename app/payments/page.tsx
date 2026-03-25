@@ -1305,18 +1305,15 @@ export default function PaymentsPage() {
         // Reset form and refresh list
         setNewSuppPayment({ supplier_id: "", amount: 0, date: newSuppPayment.date, method: "cash", ref: "", notes: "", account_id: "" })
         setSelectedFormBillId("")
-        const { data: suppPays } = await supabase
-          .from("payments").select("*")
-          .eq("company_id", companyId)
-          .not("supplier_id", "is", null)
-          .order("payment_date", { ascending: false })
-        setSupplierPayments(suppPays || [])
+        // 🔐 إعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة لجلب Joins
+        await reloadPaymentsWithFilters()
         toast({
           title: appLang === 'en' ? '⏳ Pending Approval' : '⏳ في انتظار الاعتماد',
           description: appLang === 'en'
             ? 'Your payment request has been submitted and is awaiting approval from a manager.'
             : 'تم تقديم طلب الدفع وهو في انتظار اعتماد المدير. لن تتأثر الفاتورة حتى يتم الاعتماد.',
         })
+        setSaving(false)
         return
       }
 
