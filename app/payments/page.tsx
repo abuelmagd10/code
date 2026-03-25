@@ -695,16 +695,16 @@ export default function PaymentsPage() {
         suppPaysQuery = suppPaysQuery.eq("branch_id", selectedBranchId)
       }
 
+      // 🔐 المستخدم العادي: تطبيق فلتر الفرع مباشرة في الاستعلام (ERP standard)
+      if (!isPrivileged && userBranchId) {
+        suppPaysQuery = suppPaysQuery.eq("branch_id", userBranchId)
+      }
+
       const { data: suppPays } = await suppPaysQuery.order("payment_date", { ascending: false })
 
-      // 🔐 للمستخدم العادي: حفظ المدفوعات الخام للفلترة لاحقاً
-      if (!isPrivileged && userBranchId) {
-        setRawSupplierPayments(suppPays || [])
-        setSupplierPayments([])
-      } else {
-        setSupplierPayments(suppPays || [])
-        setRawSupplierPayments([])
-      }
+      // ✅ المستخدم العادي يرى مدفوعات فرعه فقط (مفلترة في القاعدة)
+      setSupplierPayments(suppPays || [])
+      setRawSupplierPayments([])
     } catch (err) {
       console.error("Error reloading payments with filters:", err)
     }
