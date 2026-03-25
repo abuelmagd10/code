@@ -53,7 +53,8 @@ export function CustomerPaymentAllocationUI({
   useEffect(() => {
     async function fetchInvoices() {
       if (!customerId || !open) return;
-      const companyId = getActiveCompanyId() || ""
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
       const service = new PaymentService(supabase)
       try {
         const outstanding = await service.getOutstandingCustomerInvoices(companyId, customerId)
@@ -71,8 +72,9 @@ export function CustomerPaymentAllocationUI({
     async function loadRate() {
       if (currency === baseCurrency) { setExchangeRate(1); return; }
       try {
-        const companyId = getActiveCompanyId() || ""
-        const rateObj = await getExchangeRate(supabase, currency, baseCurrency, companyId)
+        const companyId = await getActiveCompanyId(supabase)
+        if (!companyId) return
+        const rateObj = await getExchangeRate(supabase, currency, baseCurrency, undefined, companyId)
         setExchangeRate(rateObj?.rate || 1)
       } catch { setExchangeRate(1) }
     }
@@ -111,7 +113,7 @@ export function CustomerPaymentAllocationUI({
 
     setLoading(true)
     try {
-      const companyId = getActiveCompanyId()
+      const companyId = await getActiveCompanyId(supabase)
       if (!companyId) throw new Error("No active company")
 
       const { data: { user } } = await supabase.auth.getUser()
@@ -241,19 +243,16 @@ export function CustomerPaymentAllocationUI({
             {/* Currency */}
             <div>
               <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-              <div className="flex gap-2 mt-1">
+              <div className="flex gap-2 mt-1 items-center">
                 <select
                   className="flex-1 border rounded px-3 py-2 bg-white dark:bg-slate-800"
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value)}
                 >
-                  {currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+                  {currencies.map((c: any) => <option key={c.code} value={c.code}>{c.code}</option>)}
                 </select>
                 {currency !== baseCurrency && (
-                  <div className="flex items-center gap-1 text-xs text-gray-500">
-                    <span>Rate:</span>
-                    <span className="font-semibold">{exchangeRate}</span>
-                  </div>
+                  <span className="text-xs text-gray-500 whitespace-nowrap">Rate: <strong>{exchangeRate}</strong></span>
                 )}
               </div>
             </div>
@@ -273,9 +272,9 @@ export function CustomerPaymentAllocationUI({
 
           {/* Summary Bar */}
           {amount > 0 && (
-            <div className="flex gap-6 items-center p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 mt-2">
+            <div className="flex flex-wrap gap-6 items-center p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 mt-2">
               <div className="text-sm">
-                <span className="text-gray-500">{appLang === 'en' ? 'Total Receipt: ' : 'إجمالي التحصيل: '}</span>
+                <span className="text-gray-500">{appLang === 'en' ? 'Total: ' : 'الإجمالي: '}</span>
                 <span className="font-bold text-emerald-700 dark:text-emerald-300">{amount.toFixed(2)} {currSymbol}</span>
               </div>
               <div className="text-sm">
@@ -283,7 +282,7 @@ export function CustomerPaymentAllocationUI({
                 <span className="font-bold text-blue-600">{totalAllocated.toFixed(2)} {currSymbol}</span>
               </div>
               <div className="text-sm">
-                <span className="text-gray-500">{appLang === 'en' ? 'Advance (Unallocated): ' : 'سلفة (غير موزع): '}</span>
+                <span className="text-gray-500">{appLang === 'en' ? 'Unallocated: ' : 'غير موزع (سلفة): '}</span>
                 <span className={`font-bold ${unallocated < 0 ? 'text-red-500' : 'text-amber-600'}`}>
                   {unallocated.toFixed(2)} {currSymbol}
                 </span>

@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { 
   FileText, ListChecks, History, Activity, 
-  CheckCircle2, XCircle, Clock, UserCircle, AlertCircle
+  CheckCircle2, XCircle, Clock, UserCircle, AlertCircle, RefreshCcw
 } from "lucide-react"
 
 interface PaymentDetailsModalProps {
@@ -69,7 +69,7 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
         // Fetch user profiles for the logs if possible (we assume there's a profiles or company_members we can use)
         // Since we don't know the full schema of users, we'll try to fetch company_members for names.
         if (logsData && logsData.length > 0) {
-          const userIds = [...new Set(logsData.map(l => l.changed_by).filter(Boolean))]
+          const userIds = [...new Set(logsData.map((l: any) => l.changed_by).filter(Boolean))]
           if (userIds.length > 0) {
             const { data: members } = await supabase
               .from("company_members")
@@ -82,7 +82,7 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
               if (m.profile?.full_name) userMap.set(m.user_id, m.profile.full_name)
             })
             
-            logsData.forEach(l => {
+            logsData.forEach((l: any) => {
               l.user_name = userMap.get(l.changed_by) || l.changed_by
             })
           }

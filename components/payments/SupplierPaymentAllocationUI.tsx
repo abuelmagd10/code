@@ -53,7 +53,8 @@ export function SupplierPaymentAllocationUI({
     async function fetchBills() {
       if (!supplierId || !open) return;
       
-      const companyId = getActiveCompanyId() || ""
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
       const service = new PaymentService(supabase)
       try {
         const outstandingBills = await service.getOutstandingSupplierBills(companyId, supplierId)
@@ -99,7 +100,7 @@ export function SupplierPaymentAllocationUI({
 
     setLoading(true)
     try {
-      const companyId = getActiveCompanyId()
+      const companyId = await getActiveCompanyId(supabase)
       if (!companyId) throw new Error("No active company")
 
       // Get user branch

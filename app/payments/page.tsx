@@ -2828,13 +2828,13 @@ export default function PaymentsPage() {
                   appLang={appLang}
                   customers={customers}
                   accounts={accounts}
-                  currencies={activeCurrencies}
+                  currencies={currencies}
                   baseCurrency={baseCurrency}
                   currencySymbols={currencySymbols}
                   onSuccess={async () => {
                     const { data: custPays } = await supabase
                       .from("payments").select("*")
-                      .eq("company_id", mapping?.companyId || "")
+                      .eq("company_id", companyId || "")
                       .not("customer_id", "is", null)
                       .order("payment_date", { ascending: false })
                     setCustomerPayments(custPays || [])
