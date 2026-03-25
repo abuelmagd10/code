@@ -42,6 +42,10 @@ import { validateBankAccountAccess, type UserContext, getAccessFilter } from "@/
 import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { BranchFilter } from "@/components/BranchFilter"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { SupplierPaymentAllocationUI } from "@/components/payments/SupplierPaymentAllocationUI"
+import { CustomerPaymentAllocationUI } from "@/components/payments/CustomerPaymentAllocationUI"
+import { PaymentDetailsModal } from "@/components/payments/PaymentDetailsModal"
+import { Eye } from "lucide-react"
 
 interface Customer { 
   id: string; 
@@ -130,12 +134,15 @@ interface AccountMapping {
   customerAdvance: string | undefined;
   branchId: string | null;
   costCenterId: string | null;
+  fxGain?: string;
+  fxLoss?: string;
 }
 
 export default function PaymentsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [selectedPaymentDetailsId, setSelectedPaymentDetailsId] = useState<string | null>(null)
   const [online, setOnline] = useState<boolean>(true)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -1384,82 +1391,93 @@ export default function PaymentsPage() {
     }
   }
 
-  // ✅ APPROVAL WORKFLOW: Approve a pending payment (privileged roles only)
+  // ✅ APPROVAL WORKFLOW: Approve a pending payment (Multi-Level)
   const approvePayment = async (payment: Payment) => {
     if (!companyId) return
     try {
       setSaving(true)
       const currentUserId = (await supabase.auth.getUser()).data.user?.id || null
 
-      // 1. Update payment status to approved
-      const { error: updateErr } = await supabase.from("payments").update({
-        status: 'approved',
-        approved_by: currentUserId,
-        approved_at: new Date().toISOString(),
-      }).eq("id", payment.id)
-      if (updateErr) throw updateErr
+      // 1. Process stage securely via DB RPC
+      const { error: rpcErr } = await supabase.rpc('process_payment_approval_stage', {
+        p_payment_id: payment.id,
+        p_action: 'APPROVE',
+        p_rejection_reason: null
+      })
+      if (rpcErr) throw rpcErr
 
-      // 2. Execute journal entries + bill linking (same as privileged immediate path)
-      const mapping = await findAccountIds()
-      if (mapping) {
-        const paymentCurr = payment.original_currency || payment.currency_code || baseCurrency
-        const exRate = payment.exchange_rate_used || payment.exchange_rate || 1
+      // 2. Fetch updated payment status to see if it reached final approval
+      const { data: updatedPayment, error: fetchErr } = await supabase
+        .from('payments')
+        .select('status, approved_by')
+        .eq('id', payment.id)
+        .single()
+      if (fetchErr) throw fetchErr
 
-        if (payment.bill_id) {
-          // Apply payment to bill directly
-          await applyPaymentToBillWithOverrides(payment, payment.bill_id, Number(payment.amount || 0), "")
-        } else {
-          // Standalone advance payment
-          const cashAccountId = payment.account_id || mapping.cash || mapping.bank
-          const advanceId = mapping.supplierAdvance
-          if (cashAccountId && advanceId) {
-            const { data: entry } = await supabase.from("journal_entries").insert({
-              company_id: mapping.companyId,
-              reference_type: "supplier_payment",
-              reference_id: payment.id,
-              entry_date: payment.payment_date,
-              description: `سداد مورّد كسلفة (${payment.payment_method || 'نقد'})`,
-              branch_id: mapping.branchId!,
-              cost_center_id: mapping.costCenterId || null,
-            }).select().single()
-            if (entry?.id) {
-              await supabase.from("journal_entry_lines").insert([
-                { journal_entry_id: entry.id, account_id: advanceId, debit_amount: payment.amount, credit_amount: 0, description: "سلف للموردين", original_debit: payment.amount, original_credit: 0, original_currency: paymentCurr, exchange_rate_used: exRate },
-                { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: payment.amount, description: "نقد/بنك", original_debit: 0, original_credit: payment.amount, original_currency: paymentCurr, exchange_rate_used: exRate },
-              ])
+      // 3. Only if FULLY approved do we generate journal entries and link bills
+      if (updatedPayment.status === 'approved') {
+        const mapping = await findAccountIds()
+        if (mapping) {
+          const paymentCurr = payment.original_currency || payment.currency_code || baseCurrency
+          const exRate = payment.exchange_rate_used || payment.exchange_rate || 1
+
+          if (payment.bill_id) {
+            // Apply payment to bill directly
+            await applyPaymentToBillWithOverrides(payment, payment.bill_id, Number(payment.amount || 0), "")
+          } else {
+            // Check if there are allocations, if so we don't need a single standalone advance entry
+            const { data: allocations } = await supabase.from('payment_allocations').select('*').eq('payment_id', payment.id)
+            if (!allocations || allocations.length === 0) {
+              // Standalone advance payment (legacy)
+              const cashAccountId = payment.account_id || mapping.cash || mapping.bank
+              const advanceId = mapping.supplierAdvance
+              if (cashAccountId && advanceId) {
+                const { data: entry } = await supabase.from("journal_entries").insert({
+                  company_id: mapping.companyId,
+                  reference_type: "supplier_payment",
+                  reference_id: payment.id,
+                  entry_date: payment.payment_date,
+                  description: `سداد مورّد كسلفة (${payment.payment_method || 'نقد'})`,
+                  branch_id: mapping.branchId!,
+                  cost_center_id: mapping.costCenterId || null,
+                }).select().single()
+                if (entry?.id) {
+                  await supabase.from("journal_entry_lines").insert([
+                    { journal_entry_id: entry.id, account_id: advanceId, debit_amount: payment.amount, credit_amount: 0, description: "سلف للموردين", original_debit: payment.amount, original_credit: 0, original_currency: paymentCurr, exchange_rate_used: exRate },
+                    { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: payment.amount, description: "نقد/بنك", original_debit: 0, original_credit: payment.amount, original_currency: paymentCurr, exchange_rate_used: exRate },
+                  ])
+                }
+              }
             }
           }
         }
-      }
-
-      // 3. Notify the payment creator
-      if (payment.created_by) {
-        const supplierName = suppliers.find(s => s.id === payment.supplier_id)?.name || 'مورد'
-        await supabase.from("notifications").insert({
-          company_id: companyId,
-          reference_type: "payment_approval",
-          reference_id: payment.id,
-          created_by: currentUserId,
-          assigned_to_user: payment.created_by,
-          title: appLang === 'en' ? '✅ Payment Approved' : '✅ تمت الموافقة على الدفعة',
-          message: appLang === 'en'
-            ? `Your payment of ${Number(payment.amount).toFixed(2)} for "${supplierName}" has been approved.`
-            : `تمت الموافقة على دفعتك بمبلغ ${Number(payment.amount).toFixed(2)} للمورد "${supplierName}".`,
-          priority: "normal",
-          event_key: "payment_approved",
-          status: "unread",
-        })
+        
+        // Notify creator of final approval
+        if (payment.created_by) {
+          const supplierName = suppliers.find(s => s.id === payment.supplier_id)?.name || 'مورد'
+          await supabase.from("notifications").insert({
+            company_id: companyId,
+            reference_type: "payment_approval",
+            reference_id: payment.id,
+            created_by: currentUserId,
+            assigned_to_user: payment.created_by,
+            title: appLang === 'en' ? '✅ Payment Approved' : '✅ تمت الموافقة النهائية على الدفعة',
+            message: appLang === 'en'
+              ? `Your payment of ${Number(payment.amount).toFixed(2)} for "${supplierName}" has been finally approved and posted.`
+              : `تمت الموافقة النهائية على دفعتك بمبلغ ${Number(payment.amount).toFixed(2)} للمورد "${supplierName}" وتم قيدها دفترياً.`,
+            priority: "normal",
+            event_key: "payment_approved",
+            status: "unread"
+          })
+        }
       }
 
       // 4. Refresh list
-      const { data: suppPays } = await supabase.from("payments").select("*")
-        .eq("company_id", companyId).not("supplier_id", "is", null)
-        .order("payment_date", { ascending: false })
-      setSupplierPayments(suppPays || [])
+      await reloadPaymentsWithFilters()
       setApprovingPaymentId(null)
       toast({
-        title: appLang === 'en' ? '✅ Payment Approved' : '✅ تمت الموافقة',
-        description: appLang === 'en' ? 'Payment has been approved and posted to accounts.' : 'تمت الموافقة على الدفعة وتم تسجيل القيود المحاسبية.',
+        title: appLang === 'en' ? '✅ Stage Approved' : '✅ تمت الموافقة',
+        description: updatedPayment.status === 'approved' ? (appLang === 'en' ? 'Payment posted to accounts.' : 'تم تسجيل القيود المحاسبية.') : (appLang === 'en' ? 'Stage approved successfully.' : 'تم إتمام مرحلة الاعتماد بنجاح.'),
       })
     } catch (err: any) {
       toastActionError(toast, "الاعتماد", "الدفعة", String(err?.message || err))
@@ -1588,6 +1606,10 @@ export default function PaymentsPage() {
       branchId = defBranch?.id ?? null
     }
 
+    // 📌 أرباح وخسائر فروق صرف العملة
+    const fxGain = byCode("4200") || byNameIncludes("أرباح فروق صرف") || byNameIncludes("fx gain") || byNameIncludes("exchange gain")
+    const fxLoss = byCode("5200") || byNameIncludes("خسائر فروق صرف") || byNameIncludes("fx loss") || byNameIncludes("exchange loss")
+
     return { 
       companyId, 
       ar, 
@@ -1602,7 +1624,9 @@ export default function PaymentsPage() {
       supplierAdvance, 
       customerAdvance,
       branchId,
-      costCenterId: userContext?.cost_center_id || null
+      costCenterId: userContext?.cost_center_id || null,
+      fxGain,
+      fxLoss
     }
   }
 
@@ -2143,10 +2167,21 @@ export default function PaymentsPage() {
         // Calculate FX Gain/Loss if invoice and payment have different exchange rates
         const invoiceRate = inv.exchange_rate_used || inv.exchange_rate || 1
         const payExRate2 = (selectedPayment as any).exchange_rate_used || (selectedPayment as any).exchange_rate || 1
-        if (invoiceRate !== payExRate2 && companyId) {
+        if (invoiceRate !== payExRate2 && companyId && mapping.fxGain && mapping.fxLoss && mapping.ar) {
           const fxResult = calculateFXGainLoss(amount, invoiceRate, payExRate2)
           if (fxResult.hasGainLoss && Math.abs(fxResult.amount) >= 0.01) {
-            await createFXGainLossEntry(supabase, companyId, fxResult, 'payment', selectedPayment.id, '', '', '', `فرق صرف - فاتورة ${inv.invoice_number}`, paymentCurrency)
+            await createFXGainLossEntry(
+              supabase, 
+              companyId, 
+              fxResult, 
+              'payment', 
+              selectedPayment.id, 
+              mapping.fxGain, 
+              mapping.fxLoss, 
+              mapping.ar, 
+              `فرق صرف - فاتورة ${inv.invoice_number}`, 
+              paymentCurrency
+            )
           }
         }
 
@@ -2680,6 +2715,26 @@ export default function PaymentsPage() {
       if (payLinesErr) throw payLinesErr
       console.log(`✅ تم إنشاء قيد السداد للفاتورة ${bill.bill_number} - مبلغ: ${amount}`)
 
+      // Calculate FX Gain/Loss if bill and payment have different exchange rates
+      const payExRate3 = payment.exchange_rate_used || payment.exchange_rate || 1
+      if (billExRate2 !== payExRate3 && mapping.fxGain && mapping.fxLoss && mapping.ap) {
+        const fxResult = calculateFXGainLoss(amount, billExRate2, payExRate3)
+        if (fxResult.hasGainLoss && Math.abs(fxResult.amount) >= 0.01) {
+          await createFXGainLossEntry(
+            supabase,
+            mapping.companyId,
+            fxResult,
+            'supplier_payment',
+            payment.id,
+            mapping.fxGain,
+            mapping.fxLoss,
+            mapping.ap,
+            `فرق صرف - فاتورة المورد ${bill.bill_number}`,
+            billCurrency2
+          )
+        }
+      }
+
       await supabase.from("advance_applications").insert({
         company_id: mapping.companyId,
         customer_id: null,
@@ -2766,7 +2821,27 @@ export default function PaymentsPage() {
 
         <Card>
           <CardContent className="pt-6 space-y-6">
-            <h2 className="text-xl font-semibold">{appLang === 'en' ? 'Customer Payments' : 'مدفوعات العملاء'}</h2>
+            <div className="flex justify-between items-center gap-4">
+              <h2 className="text-xl font-semibold">{appLang === 'en' ? 'Customer Payments' : 'مدفوعات العملاء'}</h2>
+              {permWrite && (
+                <CustomerPaymentAllocationUI
+                  appLang={appLang}
+                  customers={customers}
+                  accounts={accounts}
+                  currencies={activeCurrencies}
+                  baseCurrency={baseCurrency}
+                  currencySymbols={currencySymbols}
+                  onSuccess={async () => {
+                    const { data: custPays } = await supabase
+                      .from("payments").select("*")
+                      .eq("company_id", mapping?.companyId || "")
+                      .not("customer_id", "is", null)
+                      .order("payment_date", { ascending: false })
+                    setCustomerPayments(custPays || [])
+                  }}
+                />
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
                 <Label>{appLang === 'en' ? 'Customer' : 'العميل'}</Label>
@@ -2956,6 +3031,9 @@ export default function PaymentsPage() {
                       </td>
                       <td className="px-2 py-2">
                         <div className="flex gap-2">
+                          <Button variant="ghost" size="icon" title={appLang === 'en' ? 'View Details' : 'عرض التفاصيل'} onClick={() => setSelectedPaymentDetailsId(p.id)}>
+                            <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          </Button>
                           {!p.invoice_id && permWrite && (
                             <Button variant="outline" onClick={() => openApplyToInvoice(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Invoice' : 'تطبيق على فاتورة'}</Button>
                           )}
@@ -3086,8 +3164,20 @@ export default function PaymentsPage() {
                   )}
                 </div>
               </div>
-              <div className="flex gap-2">
-                <Button onClick={createSupplierPayment} disabled={saving || !online || !newSuppPayment.supplier_id || newSuppPayment.amount <= 0 || !newSuppPayment.account_id}>{appLang === 'en' ? 'Create' : 'إنشاء'}</Button>
+              <div className="flex gap-2 w-full md:col-span-5 mt-2">
+                <Button onClick={createSupplierPayment} disabled={saving || !online || !newSuppPayment.supplier_id || newSuppPayment.amount <= 0 || !newSuppPayment.account_id}>{appLang === 'en' ? 'Create Single Payment' : 'إنشاء دفعة لمورد'}</Button>
+                
+                <div className="mr-auto">
+                  <SupplierPaymentAllocationUI
+                    appLang={appLang}
+                    suppliers={suppliers}
+                    accounts={accounts}
+                    currencies={currencies}
+                    baseCurrency={baseCurrency}
+                    currencySymbols={currencySymbols}
+                    onSuccess={reloadPaymentsWithFilters}
+                  />
+                </div>
               </div>
             </div>
 
@@ -3170,9 +3260,14 @@ export default function PaymentsPage() {
                 </thead>
                 <tbody>
                   {supplierPayments.map((p) => {
-                    const PRIV = ['owner', 'admin', 'general_manager']
-                    const isPriv = !!(userContext?.role && PRIV.includes(userContext.role))
-                    const isPending = p.status === 'pending_approval'
+                    const userRole = userContext?.role || ''
+                    // ✅ Multi-Level Approval check
+                    let canApprove = false;
+                    if (p.status === 'pending_approval' && ['owner', 'admin', 'general_manager', 'manager'].includes(userRole)) canApprove = true;
+                    if (p.status === 'pending_manager' && ['owner', 'admin', 'general_manager', 'manager'].includes(userRole)) canApprove = true;
+                    if (p.status === 'pending_director' && ['owner', 'admin', 'general_manager'].includes(userRole)) canApprove = true;
+                    
+                    const isPending = p.status?.startsWith('pending_')
                     const isRejected = p.status === 'rejected'
                     return (
                     <tr key={p.id} className={`border-b ${isPending ? 'bg-yellow-50 dark:bg-yellow-900/10' : isRejected ? 'bg-red-50 dark:bg-red-900/10 opacity-60' : ''}`}>
@@ -3217,9 +3312,15 @@ export default function PaymentsPage() {
                       {/* ✅ Status Badge */}
                       <td className="px-2 py-2">
                         {isPending && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
-                            ⏳ {appLang === 'en' ? 'Pending' : 'في الانتظار'}
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                              ⏳ {appLang === 'en' ? 'Pending' : 'في الانتظار'}
+                            </span>
+                            <span className="text-[10px] text-yellow-600 dark:text-yellow-400 font-semibold px-1">
+                              {p.status === 'pending_manager' && (appLang === 'en' ? 'Manager Approval' : 'اعتماد مدير الإدارة')}
+                              {p.status === 'pending_director' && (appLang === 'en' ? 'Director Approval' : 'اعتماد الإدارة العليا')}
+                            </span>
+                          </div>
                         )}
                         {p.status === 'approved' && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
@@ -3238,6 +3339,9 @@ export default function PaymentsPage() {
                       </td>
                       <td className="px-2 py-2">
                         <div className="flex gap-2 flex-wrap">
+                          <Button variant="ghost" size="icon" title={appLang === 'en' ? 'View Details' : 'عرض التفاصيل'} onClick={() => setSelectedPaymentDetailsId(p.id)}>
+                            <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          </Button>
                           {!p.bill_id && permWrite && (
                             <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
                           )}
@@ -3267,7 +3371,7 @@ export default function PaymentsPage() {
                             <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
                           )}
                           {/* ✅ Approve/Reject buttons for privileged roles on pending payments */}
-                          {isPriv && isPending && (
+                          {canApprove && isPending && (
                             <>
                               <Button variant="outline" size="sm" className="text-green-700 border-green-300 hover:bg-green-50" disabled={saving} onClick={() => approvePayment(p)}>
                                 {appLang === 'en' ? '✅ Approve' : '✅ اعتماد'}
@@ -4057,6 +4161,13 @@ export default function PaymentsPage() {
           </DialogContent>
         </Dialog>
       </main>
+      
+      <PaymentDetailsModal 
+        paymentId={selectedPaymentDetailsId} 
+        isOpen={!!selectedPaymentDetailsId} 
+        onClose={() => setSelectedPaymentDetailsId(null)} 
+        appLang={appLang} 
+      />
     </div>
   )
 }
