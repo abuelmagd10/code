@@ -1213,6 +1213,12 @@ export default function PaymentsPage() {
       const isPrivilegedRole = !!(userContext?.role && PRIVILEGED_ROLES.includes(userContext.role))
       const currentUserId = (await supabase.auth.getUser()).data.user?.id || null
 
+      // ✅ Get the bill's branch_id if a bill is selected (use it over user's branch for accuracy)
+      const selectedBillData = selectedFormBillId
+        ? formSupplierBills.find((b: any) => b.id === selectedFormBillId)
+        : null
+      const billBranchId = (selectedBillData as any)?.branch_id || null
+
       const basePayload: any = {
         company_id: companyId,
         supplier_id: newSuppPayment.supplier_id,
@@ -1233,8 +1239,10 @@ export default function PaymentsPage() {
         original_currency: paymentCurrency,
         // ✅ Audit trail
         created_by: currentUserId,
-        // ✅ Branch tagging - use user's branch so it's queryable
-        branch_id: userContext?.branch_id || null,
+        // ✅ Branch: bill's branch takes priority over user's branch
+        branch_id: billBranchId || userContext?.branch_id || null,
+        // ✅ Store bill_id even for pending (triggers only fire for status='approved')
+        ...(selectedFormBillId ? { bill_id: selectedFormBillId } : {}),
         // ✅ Role-based status
         status: isPrivilegedRole ? 'approved' : 'pending_approval',
         ...(isPrivilegedRole ? { approved_by: currentUserId, approved_at: new Date().toISOString() } : {}),
