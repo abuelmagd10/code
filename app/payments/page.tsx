@@ -2882,14 +2882,21 @@ export default function PaymentsPage() {
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Total' : 'المبلغ'}</th>
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Paid' : 'المدفوع'}</th>
-                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
+                      <th className="px-2 py-2 text-right text-orange-600">{appLang === 'en' ? 'Returns' : 'المرتجعات'}</th>
+                      <th className="px-2 py-2 text-right text-red-600">{appLang === 'en' ? 'Net Outstanding' : 'الصافي المستحق'}</th>
                       <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Select' : 'اختيار'}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {formSupplierBills.map((b) => {
-                      const remaining = Math.max(Number(b.total_amount || 0) - Number(b.paid_amount || 0), 0)
-                      if (remaining <= 0) return null
+                      // ✅ Net Outstanding = total - returned - paid (ERP standard)
+                      const returnedAmt = Number((b as any).returned_amount || 0)
+                      const netOutstanding = Math.max(
+                        Number(b.total_amount || 0) - returnedAmt - Number(b.paid_amount || 0),
+                        0
+                      )
+                      // Only show bills with net outstanding > 0
+                      if (netOutstanding <= 0) return null
                       return (
                         <tr key={b.id} className="border-b">
                           <td className="px-2 py-2">{b.bill_number}</td>
@@ -2901,23 +2908,27 @@ export default function PaymentsPage() {
                           </td>
                           <td className="px-2 py-2">{Number(b.total_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
                           <td className="px-2 py-2">{Number(b.paid_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
-                          <td className="px-2 py-2 font-semibold">{remaining.toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
+                          <td className="px-2 py-2 text-orange-600">
+                            {returnedAmt > 0 ? `-${returnedAmt.toFixed(2)} ${currencySymbols[baseCurrency] || baseCurrency}` : '-'}
+                          </td>
+                          <td className="px-2 py-2 font-semibold text-red-600">{netOutstanding.toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
                           <td className="px-2 py-2">
                             <Button variant={selectedFormBillId === b.id ? "default" : "outline"} size="sm" onClick={() => {
                               setSelectedFormBillId(b.id)
-                              setNewSuppPayment({ ...newSuppPayment, amount: remaining })
+                              // ✅ Auto-fill with net outstanding (not gross remaining)
+                              setNewSuppPayment({ ...newSuppPayment, amount: netOutstanding })
                             }}>{appLang === 'en' ? 'Select' : 'اختيار'}</Button>
                           </td>
                         </tr>
                       )
                     })}
                     {formSupplierBills.length === 0 && (
-                      <tr><td colSpan={7} className="px-2 py-2 text-center text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No unpaid bills for this supplier' : 'لا توجد فواتير غير مسددة بالكامل لهذا المورد'}</td></tr>
+                      <tr><td colSpan={8} className="px-2 py-2 text-center text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No unpaid bills for this supplier' : 'لا توجد فواتير غير مسددة بالكامل لهذا المورد'}</td></tr>
                     )}
                   </tbody>
                 </table>
                 {selectedFormBillId && (
-                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">تم اختيار الفاتورة، وتم تعبئة خانة المبلغ تلقائيًا بالمبلغ المتبقي.</p>
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Bill selected; amount auto-filled with net outstanding.' : 'تم اختيار الفاتورة، وتم تعبئة خانة المبلغ تلقائيًا بالصافي المستحق.'}</p>
                 )}
               </div>
             )}
