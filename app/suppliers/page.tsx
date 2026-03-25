@@ -377,11 +377,12 @@ export default function SuppliersPage() {
           console.error(`❌ خطأ في جلب فواتير المورد ${supplier.name}:`, billsError)
         } else if (bills && bills.length > 0) {
           for (const bill of bills) {
-            // ✅ حساب المتبقي من الفاتورة = إجمالي الفاتورة الحالي - المدفوع
-            // ملاحظة: total_amount هو الإجمالي الحالي (بعد المرتجعات)، لذلك لا نطرح returned_amount مرة أخرى
+            // ✅ حساب المتبقي من الفاتورة = إجمالي الفاتورة الأساسي - المدفوع - قيمة المرتجعات
+            // ملاحظة: total_amount يمثل القيمة الأصلية للفاتورة. المرتجعات تسجل في returned_amount.
             const totalAmount = Number(bill.total_amount || 0)
             const paidAmount = Number(bill.paid_amount || 0)
-            const remaining = totalAmount - paidAmount
+            const returnedAmount = Number(bill.returned_amount || 0)
+            const remaining = totalAmount - paidAmount - returnedAmount
 
             if (remaining > 0) {
               payables += remaining

@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
     // ✅ Use 'received' and 'partially_paid' for bills (not 'sent' which is for invoices)
     const { data: bills, error: billsError } = await admin
       .from("bills")
-      .select("id, bill_number, bill_date, due_date, total_amount, status, suppliers(id, name)")
+      .select("id, bill_number, bill_date, due_date, total_amount, returned_amount, status, suppliers(id, name)")
       .eq("company_id", companyId)
       .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
       .in("status", ["received", "partially_paid"])
