@@ -2473,12 +2473,24 @@ export default function BillViewPage() {
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
                       <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Paid' : 'المدفوع'}</span><span className="text-green-600">{paidTotal.toFixed(2)} {currencySymbol}</span></div>
-                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Remaining' : 'المتبقي'}</span><span className="font-semibold text-red-600">{Math.max((bill.total_amount || 0) - paidTotal, 0).toFixed(2)} {currencySymbol}</span></div>
+                      {Number((bill as any).returned_amount || 0) > 0 && (
+                        <div className="flex items-center justify-between text-orange-600 dark:text-orange-400"><span>{appLang === 'en' ? 'Returns' : 'المرتجعات'}</span><span>-{Number((bill as any).returned_amount || 0).toFixed(2)} {currencySymbol}</span></div>
+                      )}
+                      <div className="flex items-center justify-between font-semibold">
+                        <span>{appLang === 'en' ? 'Net Outstanding' : 'الصافي المستحق'}</span>
+                        <span className="text-red-600">
+                          {Math.max(
+                            (bill.total_amount || 0) - paidTotal - Number((bill as any).returned_amount || 0),
+                            0
+                          ).toFixed(2)} {currencySymbol}
+                        </span>
+                      </div>
                       {bill.status !== 'draft' && bill.status !== 'voided' && bill.status !== 'paid' && (
                         <div>
                           <Link href={`/payments?bill_id=${bill.id}`} className="text-blue-600 hover:underline">{appLang === 'en' ? 'Record/Pay' : 'سجل/ادفع'}</Link>
                         </div>
                       )}
+
                       {/* Branch and Cost Center */}
                       {branchName && (
                         <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">

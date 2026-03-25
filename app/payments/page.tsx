@@ -101,6 +101,7 @@ interface BillRow {
   bill_date?: string;
   total_amount: number;
   paid_amount: number;
+  returned_amount?: number;
   status: string;
   branch_id?: string | null;
   branches?: { name: string } | null;
@@ -904,7 +905,7 @@ export default function PaymentsPage() {
           query = query.eq("branch_id", userContext.branch_id)
         }
 
-        const { data: bills } = await query.order("bill_date", { ascending: false })
+        const { data: bills } = await query.select("id, bill_number, bill_date, total_amount, paid_amount, returned_amount, status, branch_id, branches:branch_id(name)", { count: undefined } as any).order("bill_date", { ascending: false })
         setFormSupplierBills(bills || [])
       } catch (e) {
         console.error("Error loading supplier bills:", e)
@@ -1509,7 +1510,7 @@ export default function PaymentsPage() {
     setApplyDocId("")
     const { data: bills } = await supabase
       .from("bills")
-      .select("id, bill_number, total_amount, paid_amount, status")
+      .select("id, bill_number, total_amount, paid_amount, returned_amount, status")
       .eq("supplier_id", p.supplier_id)
       .in("status", ["sent", "received", "partially_paid"]) // قابلة للدفع - لا تشمل draft
       .order("bill_date", { ascending: false })
@@ -2067,7 +2068,12 @@ export default function PaymentsPage() {
         return
       }
 
-      const remaining = Math.max(Number(bill.total_amount || 0) - Number(bill.paid_amount || 0), 0)
+      // 🔐 Net Outstanding = total - returned - paid (overpayment guard)
+      const netOutstanding = Math.max(
+        Number(bill.total_amount || 0) - Number(bill.returned_amount || 0) - Number(bill.paid_amount || 0),
+        0
+      )
+      const remaining = netOutstanding
       const amount = Math.min(applyAmount, remaining)
 
       // 🔍 التحقق من كفاية الرصيد قبل تطبيق الدفعة
@@ -2105,7 +2111,9 @@ export default function PaymentsPage() {
       }
       {
         const newPaid = originalPaid + amount
-        const newStatus = newPaid >= Number(bill.total_amount || 0) ? "paid" : "partially_paid"
+        // Use net amount (total - returned) for status determination
+        const netAmount = Math.max(Number(bill.total_amount || 0) - Number(bill.returned_amount || 0), 0)
+        const newStatus = newPaid >= netAmount ? "paid" : "partially_paid"
         const { error: billErr } = await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", bill.id)
         if (billErr) {
           await supabase.from("payments").update({ bill_id: null }).eq("id", selectedPayment.id)
@@ -2349,7 +2357,12 @@ export default function PaymentsPage() {
         setSaving(false)
         return
       }
-      const remaining = Math.max(Number(bill.total_amount || 0) - Number(bill.paid_amount || 0), 0)
+      // 🔐 Net Outstanding = total - returned - paid (overpayment guard)
+      const netOutstandingOvr = Math.max(
+        Number(bill.total_amount || 0) - Number(bill.returned_amount || 0) - Number(bill.paid_amount || 0),
+        0
+      )
+      const remaining = netOutstandingOvr
       const amount = Math.min(rawAmount, remaining)
 
       // Track state for potential rollback
@@ -2372,7 +2385,9 @@ export default function PaymentsPage() {
       // 2) Update bill totals/status
       {
         const newPaid = originalPaid + amount
-        const newStatus = newPaid >= Number(bill.total_amount || 0) ? "paid" : "partially_paid"
+        // Use net amount (total - returned) for status determination
+        const netAmountOvr = Math.max(Number(bill.total_amount || 0) - Number(bill.returned_amount || 0), 0)
+        const newStatus = newPaid >= netAmountOvr ? "paid" : "partially_paid"
         const { error: billErr } = await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", bill.id)
         if (billErr) {
           if (linkedPayment) {
