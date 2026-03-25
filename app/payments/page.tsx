@@ -683,10 +683,10 @@ export default function PaymentsPage() {
         setRawCustomerPayments([])
       }
 
-      // جلب مدفوعات الموردين
+      // جلب مدفوعات الموردين مع فرع الفاتورة مباشرةً
       let suppPaysQuery = supabase
         .from("payments")
-        .select("*, branches:branch_id(name)")
+        .select("*, branches:branch_id(name), bill:bill_id(id, branch_id, bill_branches:branch_id(name), purchase_order_id)")
         .eq("company_id", companyId)
         .not("supplier_id", "is", null)
 
@@ -3173,11 +3173,13 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{p.payment_date}</td>
                       <td className="px-2 py-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
-                          {/* ✅ أولوية: فرع فاتورة الشراء → فرع الدفعة → رئيسي */}
-                          {(p.bill_id && billBranchMap[p.bill_id]
-                            ? branchNames[billBranchMap[p.bill_id]]
-                            : null
-                          ) || (p.branch_id ? branchNames[p.branch_id] : null) || p.branches?.name || (appLang === 'en' ? 'Main' : 'رئيسي')}
+                          {/* ✅ أولوية 1: فرع فاتورة الشراء (join مباشر) → كالتالي (الخريطة) → فرع الدفعة */}
+                          {((p as any).bill?.bill_branches?.name)
+                            || ((p as any).bill?.branch_id ? branchNames[(p as any).bill.branch_id] : null)
+                            || (p.bill_id && billBranchMap[p.bill_id] ? branchNames[billBranchMap[p.bill_id]] : null)
+                            || (p.branch_id ? branchNames[p.branch_id] : null)
+                            || p.branches?.name
+                            || (appLang === 'en' ? 'Main' : 'رئيسي')}
                         </span>
                       </td>
                       <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
