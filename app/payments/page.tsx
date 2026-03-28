@@ -44,7 +44,7 @@ import { BranchFilter } from "@/components/BranchFilter"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { SupplierPaymentAllocationUI } from "@/components/payments/SupplierPaymentAllocationUI"
 import { CustomerPaymentAllocationUI } from "@/components/payments/CustomerPaymentAllocationUI"
-import { notifyPaymentApprovalRequest } from "@/lib/notification-helpers"
+import { notifyPaymentApprovalRequest, notifyPaymentApproved, notifyPaymentRejected } from "@/lib/notification-helpers"
 import { PaymentDetailsModal } from "@/components/payments/PaymentDetailsModal"
 import { Eye } from "lucide-react"
 
@@ -1479,19 +1479,16 @@ export default function PaymentsPage() {
         // Notify creator of final approval
         if (payment.created_by) {
           const supplierName = suppliers.find(s => s.id === payment.supplier_id)?.name || 'مورد'
-          await supabase.from("notifications").insert({
-            company_id: companyId,
-            reference_type: "payment_approval",
-            reference_id: payment.id,
-            created_by: currentUserId,
-            assigned_to_user: payment.created_by,
-            title: appLang === 'en' ? '✅ Payment Approved' : '✅ تمت الموافقة النهائية على الدفعة',
-            message: appLang === 'en'
-              ? `Your payment of ${Number(payment.amount).toFixed(2)} for "${supplierName}" has been finally approved and posted.`
-              : `تمت الموافقة النهائية على دفعتك بمبلغ ${Number(payment.amount).toFixed(2)} للمورد "${supplierName}" وتم قيدها دفترياً.`,
-            priority: "normal",
-            event_key: "payment_approved",
-            status: "unread"
+          await notifyPaymentApproved({
+            companyId,
+            paymentId: payment.id,
+            partyName: supplierName,
+            amount: Number(payment.amount),
+            currency: payment.original_currency || payment.currency_code || baseCurrency,
+            createdBy: payment.created_by,
+            approvedBy: currentUserId || '',
+            paymentType: 'supplier',
+            appLang
           })
         }
       }
@@ -1527,19 +1524,17 @@ export default function PaymentsPage() {
       // Notify the payment creator
       if (rejectingPayment.created_by) {
         const supplierName = suppliers.find(s => s.id === rejectingPayment.supplier_id)?.name || 'مورد'
-        await supabase.from("notifications").insert({
-          company_id: companyId,
-          reference_type: "payment_approval",
-          reference_id: rejectingPayment.id,
-          created_by: currentUserId,
-          assigned_to_user: rejectingPayment.created_by,
-          title: appLang === 'en' ? '❌ Payment Rejected' : '❌ تم رفض الدفعة',
-          message: appLang === 'en'
-            ? `Your payment of ${Number(rejectingPayment.amount).toFixed(2)} for "${supplierName}" was rejected. Reason: ${rejectionReason.trim()}`
-            : `تم رفض دفعتك بمبلغ ${Number(rejectingPayment.amount).toFixed(2)} للمورد "${supplierName}". السبب: ${rejectionReason.trim()}`,
-          priority: "high",
-          event_key: "payment_rejected",
-          status: "unread",
+        await notifyPaymentRejected({
+          companyId,
+          paymentId: rejectingPayment.id,
+          partyName: supplierName,
+          amount: Number(rejectingPayment.amount),
+          currency: rejectingPayment.original_currency || rejectingPayment.currency_code || baseCurrency,
+          reason: rejectionReason.trim(),
+          createdBy: rejectingPayment.created_by,
+          rejectedBy: currentUserId || '',
+          paymentType: 'supplier',
+          appLang
         })
       }
 
