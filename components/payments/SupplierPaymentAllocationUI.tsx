@@ -12,6 +12,7 @@ import { NumericInput } from "@/components/ui/numeric-input"
 import { getExchangeRate } from "@/lib/currency-service"
 import { getActiveCompanyId } from "@/lib/company"
 import { getAccessFilter, UserContext } from "@/lib/validation"
+import { notifyPaymentApprovalRequest } from "@/lib/notification-helpers"
 
 export function SupplierPaymentAllocationUI({ 
   appLang, 
@@ -103,9 +104,9 @@ export function SupplierPaymentAllocationUI({
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) throw new Error("No active company")
 
-      // Get user branch
+      // Get user branch and role
       const { data: { user } } = await supabase.auth.getUser()
-      const { data: member } = await supabase.from('company_members').select('branch_id').eq('user_id', user?.id).eq('company_id', companyId).single()
+      const { data: member } = await supabase.from('company_members').select('branch_id, role').eq('user_id', user?.id).eq('company_id', companyId).single()
       const branchId = member?.branch_id
 
       const allocArray: PaymentAllocationInput[] = Object.entries(allocations)
@@ -114,7 +115,7 @@ export function SupplierPaymentAllocationUI({
 
       const service = new PaymentService(supabase)
       
-      await service.createSupplierPaymentWithAllocations({
+      const paymentId = await service.createSupplierPaymentWithAllocations({
         company_id: companyId,
         supplier_id: supplierId,
         payment_amount: amount,
@@ -127,6 +128,22 @@ export function SupplierPaymentAllocationUI({
         base_currency_amount: amount * exchangeRate,
         allocations: allocArray
       })
+
+      // 🔔 Non-privileged users: send notification for approval
+      if (member?.role && !['admin', 'owner', 'general_manager'].includes(member.role)) {
+        const supplierName = suppliers.find(s => s.id === supplierId)?.name || 'مورد'
+        await notifyPaymentApprovalRequest({
+          companyId,
+          paymentId,
+          partyName: supplierName,
+          amount,
+          currency,
+          branchId,
+          createdBy: user?.id || '',
+          paymentType: 'supplier',
+          appLang
+        })
+      }
 
       toast({ title: appLang === 'en' ? "Success" : "نجاح", description: appLang === 'en' ? "Payment created successfully" : "تم إنشاء الدفعة بنجاح" })
       setOpen(false)

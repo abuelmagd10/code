@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { getActiveCompanyId } from "@/lib/company"
 import { getExchangeRate } from "@/lib/currency-service"
+import { notifyPaymentApprovalRequest } from "@/lib/notification-helpers"
 
 export function CustomerPaymentAllocationUI({
   appLang,
@@ -119,7 +120,7 @@ export function CustomerPaymentAllocationUI({
       const { data: { user } } = await supabase.auth.getUser()
       const { data: member } = await supabase
         .from('company_members')
-        .select('branch_id')
+        .select('branch_id, role')
         .eq('user_id', user?.id)
         .eq('company_id', companyId)
         .single()
@@ -129,7 +130,7 @@ export function CustomerPaymentAllocationUI({
         .map(([invId, amt]) => ({ invoice_id: invId, amount: amt }))
 
       const service = new PaymentService(supabase)
-      await service.createCustomerPaymentWithAllocations({
+      const paymentId = await service.createCustomerPaymentWithAllocations({
         company_id: companyId,
         customer_id: customerId,
         payment_amount: amount,
@@ -144,6 +145,22 @@ export function CustomerPaymentAllocationUI({
         notes: notes || undefined,
         allocations: allocArray,
       })
+
+      // 🔔 Non-privileged users: send notification for approval
+      if (member?.role && !['admin', 'owner', 'general_manager'].includes(member.role)) {
+        const customerName = customers.find(c => c.id === customerId)?.name || 'عميل'
+        await notifyPaymentApprovalRequest({
+          companyId,
+          paymentId,
+          partyName: customerName,
+          amount,
+          currency,
+          branchId: member?.branch_id || "",
+          createdBy: user?.id || '',
+          paymentType: 'customer',
+          appLang
+        })
+      }
 
       toast({
         title: appLang === 'en' ? "Success" : "نجاح",

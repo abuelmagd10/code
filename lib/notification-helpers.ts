@@ -1416,6 +1416,136 @@ export async function notifyBankVoucherRejected(params: {
 }
 
 // =====================================================
+// 🔔 Payment Approval Notifications
+// =====================================================
+
+export async function notifyPaymentApprovalRequest(params: {
+  companyId: string
+  paymentId: string
+  partyName: string // اسم المورد أو العميل
+  amount: number
+  currency: string
+  branchId?: string
+  costCenterId?: string
+  createdBy: string
+  paymentType: 'supplier' | 'customer' // للتفرقة في نصوص الإشعار
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, paymentId, partyName, amount, currency, branchId, costCenterId, createdBy, paymentType, appLang = 'ar' } = params
+
+  const isSupplier = paymentType === 'supplier'
+  const title = appLang === 'en' 
+    ? `Payment Pending Approval` 
+    : `طلب اعتماد دفعة`
+
+  const message = appLang === 'en'
+    ? `A ${isSupplier ? 'supplier payment' : 'customer receipt'} of ${amount.toFixed(2)} ${currency} for "${partyName}" requires your approval.`
+    : `تحتاج ${isSupplier ? 'دفعة بمبلغ' : 'سند قبض بمبلغ'} ${amount.toFixed(2)} ${currency} ل${isSupplier ? 'لمورد' : 'لعميل'} "${partyName}" إلى اعتمادك.`
+
+  // الأدوار العليا تستلم الإشعار لمعرفة طلب الاعتماد
+  const managementRoles = ['admin', 'owner', 'general_manager']
+
+  for (const role of managementRoles) {
+    try {
+      await createNotification({
+        companyId,
+        referenceType: 'payment_approval',
+        referenceId: paymentId,
+        title,
+        message,
+        createdBy,
+        branchId, // إرسال الفرع لمعرفة مكان الإنشاء
+        costCenterId,
+        assignedToRole: role,
+        priority: 'high',
+        eventKey: `payment_approval:${paymentId}:request:${role}`,
+        severity: 'warning',
+        category: 'approvals'
+      })
+    } catch (err) {
+      console.warn(`⚠️ Failed to notify ${role} for payment approval:`, err)
+    }
+  }
+}
+
+export async function notifyPaymentApproved(params: {
+  companyId: string
+  paymentId: string
+  partyName: string
+  amount: number
+  currency: string
+  createdBy: string
+  approvedBy: string
+  paymentType: 'supplier' | 'customer'
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, paymentId, partyName, amount, currency, createdBy, approvedBy, paymentType, appLang = 'ar' } = params
+
+  const isSupplier = paymentType === 'supplier'
+  const title = appLang === 'en' ? `Payment Approved` : `تم اعتماد الدفعة`
+  const message = appLang === 'en'
+    ? `Your ${isSupplier ? 'supplier payment' : 'customer receipt'} of ${amount.toFixed(2)} ${currency} for "${partyName}" has been approved.`
+    : `تم اعتماد ${isSupplier ? 'الدفعة' : 'سند القبض'} بمبلغ ${amount.toFixed(2)} ${currency} ل${isSupplier ? 'لمورد' : 'لعميل'} "${partyName}".`
+
+  try {
+    await createNotification({
+      companyId,
+      referenceType: 'payment_approval',
+      referenceId: paymentId,
+      title,
+      message,
+      createdBy: approvedBy,
+      assignedToUser: createdBy,
+      priority: 'normal',
+      eventKey: `payment_approval:${paymentId}:approved`,
+      severity: 'info',
+      category: 'approvals'
+    })
+  } catch (err) {
+    console.warn(`⚠️ Failed to notify payment approved:`, err)
+  }
+}
+
+export async function notifyPaymentRejected(params: {
+  companyId: string
+  paymentId: string
+  partyName: string
+  amount: number
+  currency: string
+  reason: string
+  createdBy: string
+  rejectedBy: string
+  paymentType: 'supplier' | 'customer'
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, paymentId, partyName, amount, currency, reason, createdBy, rejectedBy, paymentType, appLang = 'ar' } = params
+
+  const isSupplier = paymentType === 'supplier'
+  const title = appLang === 'en' ? `Payment Rejected` : `تم رفض الدفعة`
+  const message = appLang === 'en'
+    ? `Your ${isSupplier ? 'supplier payment' : 'customer receipt'} of ${amount.toFixed(2)} ${currency} for "${partyName}" was rejected. Reason: ${reason}`
+    : `تم رفض ${isSupplier ? 'الدفعة' : 'سند القبض'} بمبلغ ${amount.toFixed(2)} ${currency} ل${isSupplier ? 'لمورد' : 'لعميل'} "${partyName}". السبب: ${reason}`
+
+  try {
+    await createNotification({
+      companyId,
+      referenceType: 'payment_approval',
+      referenceId: paymentId,
+      title,
+      message,
+      createdBy: rejectedBy,
+      assignedToUser: createdBy,
+      priority: 'high',
+      eventKey: `payment_approval:${paymentId}:rejected`,
+      severity: 'error',
+      category: 'approvals'
+    })
+  } catch (err) {
+    console.warn(`⚠️ Failed to notify payment rejected:`, err)
+  }
+}
+
+// =====================================================
 // 🔔 Purchase Order Approval Notifications
 // =====================================================
 
