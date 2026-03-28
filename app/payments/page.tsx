@@ -44,6 +44,7 @@ import { BranchFilter } from "@/components/BranchFilter"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { SupplierPaymentAllocationUI } from "@/components/payments/SupplierPaymentAllocationUI"
 import { CustomerPaymentAllocationUI } from "@/components/payments/CustomerPaymentAllocationUI"
+import { notifyPaymentApprovalRequest } from "@/lib/notification-helpers"
 import { PaymentDetailsModal } from "@/components/payments/PaymentDetailsModal"
 import { Eye } from "lucide-react"
 
@@ -1313,29 +1314,25 @@ export default function PaymentsPage() {
       // === منطق القيود المحاسبية ===
       // ✅ APPROVAL WORKFLOW: skip journal entries and bill linking for pending payments
       if (!isPrivilegedRole) {
-        // 🔔 Non-privileged: notify managers for approval
-        const { data: managers } = await supabase
-          .from("company_members")
-          .select("user_id")
-          .eq("company_id", companyId)
-          .in("role", ["owner", "admin", "general_manager"])
-        if (managers && managers.length > 0) {
+        // 🔔 Non-privileged: notify managers for approval via SECURITY DEFINER RPC
+        // ✅ استخدام notifyPaymentApprovalRequest بدلاً من الاستعلام المباشر عن company_members
+        // لأن RLS تمنع المستخدمين العاديين من رؤية بيانات الأدوار الإدارية
+        try {
           const supplierName = suppliers.find(s => s.id === newSuppPayment.supplier_id)?.name || 'مورد'
-          const notifInserts = managers.map((m: any) => ({
-            company_id: companyId,
-            reference_type: "payment_approval",
-            reference_id: insertedPayment?.id,
-            created_by: currentUserId,
-            assigned_to_user: m.user_id,
-            title: appLang === 'en' ? 'Payment Pending Approval' : 'طلب اعتماد دفعة',
-            message: appLang === 'en'
-              ? `A supplier payment of ${newSuppPayment.amount.toFixed(2)} for "${supplierName}" requires your approval.`
-              : `تحتاج دفعة بمبلغ ${newSuppPayment.amount.toFixed(2)} للمورد "${supplierName}" إلى اعتمادك.`,
-            priority: "high",
-            event_key: "payment_pending_approval",
-            status: "unread",
-          }))
-          await supabase.from("notifications").insert(notifInserts)
+          await notifyPaymentApprovalRequest({
+            companyId,
+            paymentId: insertedPayment?.id || '',
+            partyName: supplierName,
+            amount: newSuppPayment.amount,
+            currency: paymentCurrency,
+            branchId: userContext?.branch_id || undefined,
+            createdBy: currentUserId || '',
+            paymentType: 'supplier',
+            appLang
+          })
+        } catch (notifErr) {
+          console.warn('⚠️ Failed to send payment approval notification:', notifErr)
+          // لا نوقف العملية بسبب فشل الإشعار
         }
         // Reset form and refresh list
         setNewSuppPayment({ supplier_id: "", amount: 0, date: newSuppPayment.date, method: "cash", ref: "", notes: "", account_id: "" })
