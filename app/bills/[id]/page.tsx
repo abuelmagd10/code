@@ -101,7 +101,7 @@ type Bill = {
 type Supplier = { id: string; name: string }
 type BillItem = { id: string; product_id: string; description: string | null; quantity: number; returned_quantity?: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number }
 type Product = { id: string; name: string; sku: string }
-type Payment = { id: string; bill_id: string | null; amount: number }
+type Payment = { id: string; bill_id: string | null; amount: number; status: string }
 type PaymentDetail = {
   id: string;
   bill_id: string | null;
@@ -430,14 +430,16 @@ export default function BillViewPage() {
           ; (prodData || []).forEach((p: any) => map[p.id] = p)
         setProducts(map)
       }
-      const { data: payData } = await supabase.from("payments").select("id, bill_id, amount").eq("bill_id", id)
+      const { data: payData } = await supabase.from("payments").select("id, bill_id, amount, status")
+        .eq("bill_id", id).eq("status", "approved")  // ✅ فقط المعتمدة — المرفوضة والمعلقة لا تدخل في الحساب
       setPayments((payData || []) as any)
 
-      // Load detailed payments with user info
+      // Load detailed payments with user info — approved only
       const { data: payDetailData } = await supabase
         .from("payments")
         .select("id, bill_id, amount, payment_date, payment_method, reference_number, notes, created_at")
         .eq("bill_id", id)
+        .eq("status", "approved")  // ✅ المعتمدة فقط
         .order("payment_date", { ascending: false })
       setPaymentsDetail((payDetailData || []) as any)
 
