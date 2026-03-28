@@ -31,29 +31,33 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
     async function fetchData() {
       setLoading(true)
       try {
-        // 1. Fetch Payment details with relations (excluding chart_of_accounts to avoid strict schema relation errors)
+        // 1. Fetch Payment details without strict relation joins to avoid PostgREST crashes
         const { data: pData, error: pErr } = await supabase
           .from("payments")
-          .select(`
-            *,
-            supplier:suppliers(name),
-            customer:customers(name)
-          `)
+          .select("*")
           .eq("id", paymentId)
           .single()
         
         if (pErr) console.error("Error fetching payment:", pErr)
         
-        // جلب تفاصيل الحساب بشكل منفصل لتفادي أخطاء الربط في قاعدة البيانات
-        if (pData?.account_id) {
-          const { data: accData } = await supabase
-            .from("chart_of_accounts")
-            .select("account_name")
-            .eq("id", pData.account_id)
-            .maybeSingle()
+        if (pData) {
+          // جلب تفاصيل الحساب بشكل منفصل لتفادي أخطاء الربط في قاعدة البيانات
+          if (pData.account_id) {
+            const { data: accData } = await supabase
+              .from("chart_of_accounts")
+              .select("account_name")
+              .eq("id", pData.account_id)
+              .maybeSingle()
+            if (accData) pData.account = accData
+          }
           
-          if (accData) {
-            pData.account = accData
+          // جلب المورد أو العميل بشكل منفصل لتجنب انهيار الاستعلام في حال فقدان مفاتيح Foreign Key
+          if (pData.supplier_id) {
+            const { data: suppData } = await supabase.from("suppliers").select("name").eq("id", pData.supplier_id).maybeSingle()
+            if (suppData) pData.supplier = suppData
+          } else if (pData.customer_id) {
+            const { data: custData } = await supabase.from("customers").select("name").eq("id", pData.customer_id).maybeSingle()
+            if (custData) pData.customer = custData
           }
         }
         
