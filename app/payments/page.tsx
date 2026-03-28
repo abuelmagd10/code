@@ -649,9 +649,7 @@ export default function PaymentsPage() {
   }, []);
 
   // 🔄 Realtime: تحديث قائمة المدفوعات تلقائياً عند أي تغيير
-  const reloadPaymentsRef = useRef<() => void>(() => {
-    window.location.reload()
-  })
+  const reloadPaymentsRef = useRef<() => void>(() => {})
 
   // 🔄 دالة مشتركة لإعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
   const reloadPaymentsWithFilters = useCallback(async () => {
@@ -715,6 +713,11 @@ export default function PaymentsPage() {
       console.error("Error reloading payments with filters:", err)
     }
   }, [companyId, userContext, branchFilter, supabase])
+
+  // تعيين الريفرينس للدالة الأحدث بدون التسبب في إعادة إنشاء handlePaymentsRealtimeEvent
+  useEffect(() => {
+    reloadPaymentsRef.current = reloadPaymentsWithFilters
+  }, [reloadPaymentsWithFilters])
 
   const handlePaymentsRealtimeEvent = useCallback(() => {
     console.log('🔄 [Payments] Realtime event received, refreshing payments list...')
