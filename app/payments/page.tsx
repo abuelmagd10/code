@@ -930,8 +930,8 @@ export default function PaymentsPage() {
 
         // 🔐 ERP Governance: فلترة حسب الفرع للمستخدمين غير المميزين
         if (userContext && !canOverrideContext && userContext.branch_id) {
-          // ✅ Some bills might have branch_id=null but are linked to a PO with the correct branch_id
-          query = query.or(`branch_id.eq.${userContext.branch_id},purchase_order:purchase_order_id(branch_id).eq.${userContext.branch_id}`)
+          // ✅ يرى فواتير فرعه + الفواتير بدون branch_id (فواتير عامة للشركة)
+          query = query.or(`branch_id.eq.${userContext.branch_id},branch_id.is.null`)
         }
 
         const { data: bills, error: billsFetchErr } = await query.order("bill_date", { ascending: false })
