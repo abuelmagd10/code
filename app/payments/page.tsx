@@ -595,9 +595,13 @@ export default function PaymentsPage() {
           .eq("company_id", activeCompanyId)
           .not("supplier_id", "is", null)
 
-        // 🔐 المستخدم المميز: يمكنه فلترة بفرع معين (اختياري)
+        // 🔐 الأدوار المميزة: فلترة اختيارية بالفرع المحدد
         if (isPrivileged && selectedBranchId) {
           suppPaysQuery = suppPaysQuery.eq("branch_id", selectedBranchId)
+        }
+        // 🔐 الأدوار العادية: فلترة مباشرة بفرع المستخدم في القاعدة (ERP standard)
+        if (!isPrivileged && userBranchId) {
+          suppPaysQuery = suppPaysQuery.eq("branch_id", userBranchId)
         }
 
         const { data: suppPays, error: suppPaysErr } = await suppPaysQuery
@@ -606,15 +610,9 @@ export default function PaymentsPage() {
           toastActionError(toast, "الجلب", "مدفوعات الموردين", "تعذر جلب مدفوعات الموردين")
         }
 
-        // 🔐 للمستخدم العادي: حفظ المدفوعات الخام للفلترة لاحقاً
-        if (!isPrivileged && userBranchId) {
-          setRawSupplierPayments(suppPays || [])
-          // لا نعرض شيء حتى يتم الفلترة بناءً على فرع الفاتورة
-          setSupplierPayments([])
-        } else {
-          setSupplierPayments(suppPays || [])
-          setRawSupplierPayments([])
-        }
+        // ✅ دائماً نعرض المدفوعات مباشرة (مفلترة في القاعدة)
+        setSupplierPayments(suppPays || [])
+        setRawSupplierPayments([])
 
         // 🔐 جلب قائمة الفروع للعرض في الجداول
         const { data: branchesData } = await supabase
@@ -801,25 +799,53 @@ export default function PaymentsPage() {
   }, [rawCustomerPayments, pendingBranchFilter, supabase])
 
   // Load bill numbers and branch_ids for displayed supplier payments
-  // ✅ يعمل بناءً على supplierPayments المحدّثة مباشرة
+  // ✅ يدعم كلاً من: bill_id مباشر على الدفعة + payment_allocations (نظام التوزيع الجديد)
   useEffect(() => {
     ;(async () => {
       try {
-        // ✅ استخدام supplierPayments فقط (rawSupplierPayments = [] دائماً الآن)
-        const paymentsToProcess = supplierPayments
-        const ids = Array.from(new Set((paymentsToProcess || []).map((p) => p.bill_id).filter(Boolean))) as string[]
-        if (!ids.length) {
+        const paymentsToProcess = rawSupplierPayments.length > 0 ? rawSupplierPayments : supplierPayments
+        if (!paymentsToProcess.length) {
           setBillNumbers({})
           setBillBranchMap({})
           setBillToPoMap({})
           setPoNumbers({})
           return
         }
-        // ✅ جلب branch_id مع بيانات الفاتورة لعرض الفرع الصحيح في قائمة المدفوعات
-        const { data: bills } = await supabase.from("bills").select("id, bill_number, purchase_order_id, branch_id").in("id", ids)
+
+        // 1. bill_ids المباشرة على الدفعة (النظام القديم)
+        const directBillIds = Array.from(new Set(paymentsToProcess.map((p) => p.bill_id).filter(Boolean))) as string[]
+
+        // 2. bill_ids من payment_allocations (نظام التوزيع الجديد)
+        const paymentIds = paymentsToProcess.map((p) => p.id)
+        let allocBillIds: string[] = []
+        if (paymentIds.length > 0) {
+          const { data: allocs } = await supabase
+            .from("payment_allocations")
+            .select("payment_id, bill_id")
+            .in("payment_id", paymentIds)
+            .not("bill_id", "is", null)
+          allocBillIds = Array.from(new Set((allocs || []).map((a: any) => a.bill_id).filter(Boolean))) as string[]
+        }
+
+        const ids = Array.from(new Set([...directBillIds, ...allocBillIds]))
+        if (!ids.length) {
+          setBillNumbers({})
+          setBillBranchMap({})
+          setBillToPoMap({})
+          setPoNumbers({})
+          // 🔐 للمستخدم العادي: إذا لا توجد فواتير مرتبطة → قائمة فارغة
+          if (rawSupplierPayments.length > 0) setSupplierPayments([])
+          return
+        }
+
+        // ✅ جلب branch_id مع بيانات الفاتورة
+        const { data: bills } = await supabase
+          .from("bills")
+          .select("id, bill_number, purchase_order_id, branch_id")
+          .in("id", ids)
         const map: Record<string, string> = {}
         const branchMap: Record<string, string> = {} // bill_id -> branch_id
-        const billPoMap: Record<string, string> = {} // bill_id -> purchase_order_id
+        const billPoMap: Record<string, string> = {}  // bill_id -> purchase_order_id
         ;(bills || []).forEach((r: any) => {
           map[r.id] = r.bill_number
           if (r.branch_id) branchMap[r.id] = r.branch_id
@@ -829,7 +855,7 @@ export default function PaymentsPage() {
         setBillBranchMap(branchMap)
         setBillToPoMap(billPoMap)
 
-        // ✅ جلب أرقام أوامر الشراء المرتبطة بالفواتير
+        // ✅ جلب أرقام أوامر الشراء
         const poIds = Array.from(new Set((bills || []).map((b: any) => b.purchase_order_id).filter(Boolean))) as string[]
         if (poIds.length > 0) {
           const { data: pos } = await supabase.from("purchase_orders").select("id, po_number").in("id", poIds)
@@ -839,6 +865,7 @@ export default function PaymentsPage() {
         } else {
           setPoNumbers({})
         }
+
       } catch (e) { /* ignore */ }
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
