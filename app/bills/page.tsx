@@ -56,7 +56,7 @@ import type {
 } from "@/types/database"
 
 // نوع الدفعة (خاص بهذه الصفحة)
-type Payment = { id: string; bill_id: string | null; amount: number }
+type Payment = { id: string; bill_id: string | null; amount: number; status: string }
 
 // نوع للمنتجات (خاص بهذه الصفحة)
 type Product = { id: string; name: string }
@@ -343,7 +343,7 @@ export default function BillsPage() {
         const cachedBillIds = cached.bills.map(b => b.id)
         if (cachedBillIds.length) {
           const [payData, itemsData] = await Promise.all([
-            supabase.from("payments").select("id, bill_id, amount").eq("company_id", companyId).in("bill_id", cachedBillIds),
+            supabase.from("payments").select("id, bill_id, amount, status").eq("company_id", companyId).eq("status", "approved").in("bill_id", cachedBillIds),
             supabase.from("bill_items").select("bill_id, quantity, product_id, returned_quantity, products(name)").in("bill_id", cachedBillIds),
           ])
           setPayments(payData.data || [])
@@ -478,8 +478,9 @@ export default function BillsPage() {
       if (billIds.length) {
         const { data: payData } = await supabase
           .from("payments")
-          .select("id, bill_id, amount")
+          .select("id, bill_id, amount, status")
           .eq("company_id", companyId)
+          .eq("status", "approved")   // ✅ فقط الدفعات المعتمدة — المرفوضة والمعلقة لا تُعرض
           .in("bill_id", billIds)
         setPayments(payData || [])
 
