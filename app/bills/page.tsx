@@ -167,14 +167,16 @@ export default function BillsPage() {
   // يستخدم المدفوعات الفعلية من جدول payments كأولوية
   // ملاحظة: total_amount هو المبلغ الحالي بعد خصم المرتجعات
   const getDisplayAmount = (bill: Bill, field: 'total' | 'paid' = 'total'): number => {
+    const returnedAmount = Number((bill as any).returned_amount || 0)
+
     if (field === 'total') {
-      // استخدام total_amount مباشرة لأنه يمثل المبلغ الحالي بعد المرتجعات
+      // حساب الإجمالي الصافي = الإجمالي الأصلي - قيمة المرتجعات
       // display_total يستخدم فقط إذا كانت العملة مختلفة ومحولة
       if (bill.display_currency === appCurrency && bill.display_total != null) {
-        return bill.display_total
+        return Math.max(0, Number(bill.display_total || 0) - returnedAmount)
       }
-      // total_amount هو المبلغ الصحيح (بعد خصم المرتجعات)
-      return bill.total_amount
+      // إرجاع الصافي بعد خصم المرتجعات
+      return Math.max(0, Number(bill.total_amount || 0) - returnedAmount)
     }
     // For paid amount: استخدام المدفوعات الفعلية من جدول payments أولاً
     const actualPaid = paidByBill[bill.id] || 0
@@ -183,9 +185,9 @@ export default function BillsPage() {
     }
     // Fallback to stored paid_amount
     if (bill.display_currency === appCurrency && bill.display_paid != null) {
-      return bill.display_paid
+      return Number(bill.display_paid || 0)
     }
-    return bill.paid_amount ?? 0
+    return Number(bill.paid_amount || 0)
   }
 
   // Listen for currency changes
