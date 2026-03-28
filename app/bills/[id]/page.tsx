@@ -2399,7 +2399,7 @@ export default function BillViewPage() {
                           </div>
                           <div className="flex items-center justify-between font-semibold text-blue-600 pt-2 border-t border-gray-200 dark:border-gray-700">
                             <span>{appLang === 'en' ? 'Net Total' : 'الإجمالي الصافي'}</span>
-                            <span>{bill.total_amount.toFixed(2)} {currencySymbol}</span>
+                            <span>{Math.max(((bill as any).original_total || bill.total_amount) - Number((bill as any).returned_amount || 0), 0).toFixed(2)} {currencySymbol}</span>
                           </div>
                         </>
                       ) : (
