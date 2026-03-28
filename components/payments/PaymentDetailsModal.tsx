@@ -31,17 +31,31 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
     async function fetchData() {
       setLoading(true)
       try {
-        // 1. Fetch Payment details with relations
-        const { data: pData } = await supabase
+        // 1. Fetch Payment details with relations (excluding chart_of_accounts to avoid strict schema relation errors)
+        const { data: pData, error: pErr } = await supabase
           .from("payments")
           .select(`
             *,
             supplier:suppliers(name),
-            customer:customers(name),
-            account:chart_of_accounts(account_name)
+            customer:customers(name)
           `)
           .eq("id", paymentId)
           .single()
+        
+        if (pErr) console.error("Error fetching payment:", pErr)
+        
+        // جلب تفاصيل الحساب بشكل منفصل لتفادي أخطاء الربط في قاعدة البيانات
+        if (pData?.account_id) {
+          const { data: accData } = await supabase
+            .from("chart_of_accounts")
+            .select("account_name")
+            .eq("id", pData.account_id)
+            .maybeSingle()
+          
+          if (accData) {
+            pData.account = accData
+          }
+        }
         
         setPayment(pData)
 
