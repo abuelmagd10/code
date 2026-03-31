@@ -884,13 +884,15 @@ export default function NewPurchaseReturnPage() {
           return
         }
 
-        if (billRequiresJournalEntries(billStatus)) {
+        // عند تعديل مرتجع مرفوض وإعادة إرساله، لا نمنع الحفظ بسبب غياب قيد سابق للفاتورة
+        // لأن العملية هنا إعادة اعتماد لنفس المستند وليست إنشاء مرتجع جديد.
+        if (billRequiresJournalEntries(billStatus) && !isEditMode) {
           const { data: existingBillEntry } = await supabase
             .from("journal_entries")
             .select("id")
             .eq("reference_id", form.bill_id)
             .eq("reference_type", "bill")
-            .single()
+            .maybeSingle()
 
           if (!existingBillEntry) {
             toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Cannot return paid bill without journal entries." : "لا يمكن عمل مرتجع لفاتورة مدفوعة بدون قيود محاسبية.")
