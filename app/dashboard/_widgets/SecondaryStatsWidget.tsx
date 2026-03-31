@@ -1,6 +1,11 @@
 /**
  * SecondaryStatsWidget — Async Server Component
  * يجلب ملخص الفواتير والمشتريات (الذمم + الشهر الحالي) بشكل مستقل
+ *
+ * ✅ إصلاح AP/AR:
+ *   1. استعلامات الذمم المدينة/الدائنة بدون فلتر تاريخ — تشمل جميع الفواتير المعلقة
+ *   2. returned_amount مُضمَّن في استعلام bills لطرح المرتجعات من الذمم الدائنة
+ *   3. فلتر التاريخ يُطبَّق فقط على استعلامات إيرادات/مصروفات الشهر الحالي
  */
 import { createClient } from "@/lib/supabase/server"
 import DashboardSecondaryStats from "@/components/DashboardSecondaryStats"
@@ -26,29 +31,51 @@ export default async function SecondaryStatsWidget({
   const from = fromDate || curYmStart
   const to   = toDate   || curYmEnd
 
-  // فواتير مبيعات — نحتاج total + paid + returned لحساب الذمم
-  let invQuery = supabase
+  // ─── 1. الذمم المدينة — جميع فواتير المبيعات المفتوحة (بدون فلتر تاريخ) ───────
+  // يجب ألّا يقتصر على الشهر الحالي — الذمة تشمل أي فاتورة قديمة غير مسددة
+  let arQuery = supabase
+    .from('invoices')
+    .select('id, total_amount, paid_amount, returned_amount, invoice_date, status, display_total, display_currency, display_rate')
+    .eq('company_id', companyId)
+    .in('status', ['sent', 'partially_paid'])
+    .limit(500)
+  if (branchId) arQuery = arQuery.eq('branch_id', branchId)
+  const { data: arData } = await arQuery
+
+  // ─── 2. الذمم الدائنة — جميع فواتير المشتريات المفتوحة (بدون فلتر تاريخ) ───────
+  // ✅ returned_amount مُضمَّن لخصم المرتجعات من الرصيد بغض النظر عن حالة السداد
+  let apQuery = supabase
+    .from('bills')
+    .select('id, total_amount, paid_amount, returned_amount, bill_date, status, display_total, display_currency, display_rate')
+    .eq('company_id', companyId)
+    .in('status', ['sent', 'partially_paid'])
+    .limit(500)
+  if (branchId) apQuery = apQuery.eq('branch_id', branchId)
+  const { data: apData } = await apQuery
+
+  // ─── 3. إيرادات/مصروفات الشهر الحالي (مع فلتر التاريخ) ───────────────────────
+  // هذا هو الاستعلام الوحيد الذي يستخدم from/to — دخل/مصروف الشهر الحالي فقط
+  let monthlyInvQuery = supabase
     .from('invoices')
     .select('id, total_amount, paid_amount, returned_amount, invoice_date, status, display_total, display_currency, display_rate')
     .eq('company_id', companyId)
     .in('status', ['sent', 'partially_paid', 'paid'])
     .gte('invoice_date', from)
     .lte('invoice_date', to)
-    .limit(200)
-  if (branchId) invQuery = invQuery.eq('branch_id', branchId)
-  const { data: invoicesData } = await invQuery
+    .limit(500)
+  if (branchId) monthlyInvQuery = monthlyInvQuery.eq('branch_id', branchId)
+  const { data: monthlyInvData } = await monthlyInvQuery
 
-  // فواتير شراء
-  let billsQuery = supabase
+  let monthlyBillQuery = supabase
     .from('bills')
-    .select('id, total_amount, paid_amount, bill_date, status, display_total, display_currency, display_rate')
+    .select('id, total_amount, paid_amount, returned_amount, bill_date, status, display_total, display_currency, display_rate')
     .eq('company_id', companyId)
     .in('status', ['sent', 'partially_paid', 'paid'])
     .gte('bill_date', from)
     .lte('bill_date', to)
-    .limit(200)
-  if (branchId) billsQuery = billsQuery.eq('branch_id', branchId)
-  const { data: billsData } = await billsQuery
+    .limit(500)
+  if (branchId) monthlyBillQuery = monthlyBillQuery.eq('branch_id', branchId)
+  const { data: monthlyBillData } = await monthlyBillQuery
 
   // GL الشهري (إيرادات + مصروفات الشهر الحالي)
   let glMonthlyRevenue: number | undefined
@@ -61,8 +88,10 @@ export default async function SecondaryStatsWidget({
 
   return (
     <DashboardSecondaryStats
-      invoicesData={invoicesData || []}
-      billsData={billsData || []}
+      invoicesData={monthlyInvData || []}
+      billsData={monthlyBillData || []}
+      arData={arData || []}
+      apData={apData || []}
       defaultCurrency={currency}
       appLang={appLang}
       glMonthlyRevenue={glMonthlyRevenue}

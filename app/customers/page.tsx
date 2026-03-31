@@ -639,11 +639,12 @@ export default function CustomersPage() {
           })
         }
       } else {
-        // Fallback: إذا لم يوجد حساب AR، استخدم الطريقة القديمة
+        // Fallback: إذا لم يوجد حساب AR، استخدم الطريقة التشغيلية
         console.warn("⚠️ حساب Accounts Receivable غير موجود، استخدام الطريقة القديمة")
         const { data: allInvoicesData } = await supabase
           .from("invoices")
-          .select("customer_id, total_amount, paid_amount, status")
+          // ✅ إضافة returned_amount لخصم المرتجعات من الرصيد محاسبياً
+          .select("customer_id, total_amount, paid_amount, returned_amount, status")
           .eq("company_id", activeCompanyId)
 
           ; (allInvoicesData || []).forEach((inv: any) => {
@@ -658,7 +659,11 @@ export default function CustomersPage() {
             }
 
             if (["sent", "partially_paid"].includes(status)) {
-              const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
+              // ✅ طرح المرتجعات من الرصيد — المرتجع يُقلل الذمم بغض النظر عن حالة السداد
+              const due = Math.max(
+                Number(inv.total_amount || 0) - Number(inv.paid_amount || 0) - Number(inv.returned_amount || 0),
+                0
+              )
               recMap[cid] = (recMap[cid] || 0) + due
             }
           })

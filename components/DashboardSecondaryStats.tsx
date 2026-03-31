@@ -30,6 +30,16 @@ interface Bill {
 interface DashboardSecondaryStatsProps {
   invoicesData: Invoice[]
   billsData: Bill[]
+  /**
+   * ✅ بيانات الذمم المدينة — جميع فواتير المبيعات المعلقة (بدون فلتر تاريخ)
+   * مستقلة عن invoicesData التي تُستخدم لحسابات الشهر الحالي فقط
+   */
+  arData?: Invoice[]
+  /**
+   * ✅ بيانات الذمم الدائنة — جميع فواتير المشتريات المعلقة (بدون فلتر تاريخ)
+   * تشمل returned_amount لضمان طرح المرتجعات من الرصيد
+   */
+  apData?: Bill[]
   defaultCurrency: string
   appLang: string
   // GL-First: إيرادات/مصروفات الشهر من دفتر الأستاذ العام
@@ -40,6 +50,8 @@ interface DashboardSecondaryStatsProps {
 export default function DashboardSecondaryStats({
   invoicesData,
   billsData,
+  arData,
+  apData,
   defaultCurrency,
   appLang,
   glMonthlyRevenue,
@@ -74,8 +86,11 @@ export default function DashboardSecondaryStats({
   const MONTHLY_INVOICE_EXCLUDED = ["draft", "cancelled", "voided"]
   const MONTHLY_BILL_EXCLUDED    = ["draft", "cancelled", "voided"]
 
-  // الذمم المدينة = ما لم يُسدَّد من الفواتير المرسلة/المتأخرة/المدفوعة جزئياً
-  const receivablesOutstanding = invoicesData
+  // ─── الذمم المدينة ────────────────────────────────────────────────────────────
+  // يستخدم arData إذا كانت متوفرة (جميع الفواتير المعلقة بدون فلتر تاريخ)
+  // وإلّا يرجع إلى invoicesData (التوافق مع الإصدارات القديمة)
+  const arSource = arData ?? invoicesData
+  const receivablesOutstanding = arSource
     .filter((i) => !OUTSTANDING_INVOICE_EXCLUDED.includes(String(i.status || "").toLowerCase()))
     .reduce((sum, i) => {
       const total = getDisplayAmount(i.total_amount || 0, i.display_total, i.display_currency, appCurrency)
@@ -84,21 +99,25 @@ export default function DashboardSecondaryStats({
       return sum + Math.max(total - paid - returned, 0)
     }, 0)
 
-  // الذمم الدائنة = ما لم يُسدَّد للموردين من الفواتير المرسلة/المتأخرة/المدفوعة جزئياً
-  const payablesOutstanding = billsData
+  // ─── الذمم الدائنة ────────────────────────────────────────────────────────────
+  // يستخدم apData إذا كانت متوفرة (تشمل returned_amount + بدون فلتر تاريخ)
+  // وإلّا يرجع إلى billsData (التوافق مع الإصدارات القديمة)
+  const apSource = apData ?? billsData
+  const payablesOutstanding = apSource
     .filter((b) => !OUTSTANDING_BILL_EXCLUDED.includes(String(b.status || "").toLowerCase()))
     .reduce((sum, b) => {
       const total = getDisplayAmount(b.total_amount || 0, b.display_total, b.display_currency, appCurrency)
       const paid = Number(b.paid_amount || 0)
+      // ✅ returned_amount مخصوم دائماً — المرتجع يُقلل الالتزام بغض النظر عن حالة السداد
       const returned = Number(b.returned_amount || 0)
       return sum + Math.max(total - paid - returned, 0)
     }, 0)
 
-  // عدد المستندات المعلقة — يستخدم نفس فلتر الذمم لضمان التوافق
-  const pendingInvoicesCount = invoicesData.filter(
+  // عدد المستندات المعلقة — يستخدم نفس مصادر الذمم لضمان التوافق
+  const pendingInvoicesCount = arSource.filter(
     (i) => !OUTSTANDING_INVOICE_EXCLUDED.includes(String(i.status || "").toLowerCase())
   ).length
-  const pendingBillsCount = billsData.filter(
+  const pendingBillsCount = apSource.filter(
     (b) => !OUTSTANDING_BILL_EXCLUDED.includes(String(b.status || "").toLowerCase())
   ).length
 
