@@ -811,8 +811,15 @@ export default function PurchaseReturnsPage() {
     const items = pr.purchase_return_items || []
     if (!items.length) return null
     if (isStoreManager && currentWarehouseId) {
+      const isSingleWarehouseReturns = pr.warehouse_id === currentWarehouseId || 
+        (pr.allocations?.length === 1 && pr.allocations[0].warehouse_id === currentWarehouseId);
+
       const qty = items
-        .filter(i => i.warehouse_id === currentWarehouseId)
+        .filter(i => 
+          isSingleWarehouseReturns ||
+          i.warehouse_id === currentWarehouseId ||
+          (i.warehouse_allocation_id && pr.allocations?.find(a => a.id === i.warehouse_allocation_id)?.warehouse_id === currentWarehouseId)
+        )
         .reduce((s, i) => s + Number(i.quantity), 0)
       return qty > 0 ? qty : null
     }
