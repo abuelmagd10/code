@@ -1077,7 +1077,9 @@ export default function PurchaseReturnsPage() {
 
               {/* زر تسجيل استلام الاسترداد - للمرتجعات المكتملة بتسوية نقدية/بنكية */}
               {isPrivileged &&
-                (pr.status === 'returned' || pr.workflow_status === 'confirmed') &&
+                (pr.status === 'returned' || pr.workflow_status === 'confirmed' || pr.status === 'completed' || pr.workflow_status === 'completed') &&
+                pr.status !== 'closed' && pr.workflow_status !== 'closed' &&
+                pr.financial_status !== 'refund_recorded' &&
                 (pr.settlement_method === 'cash' || pr.settlement_method === 'bank_transfer' || pr.settlement_method === 'bank') && (
                 <Button
                   size="sm"
