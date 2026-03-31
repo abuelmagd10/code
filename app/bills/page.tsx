@@ -831,11 +831,22 @@ export default function BillsPage() {
       format: (_, row) => {
         const displayTotal = getDisplayAmount(row, 'total');
         const displayPaid = getDisplayAmount(row, 'paid');
-        const remaining = displayTotal - displayPaid;
+        const remaining = Math.max(0, displayTotal - displayPaid);
+        const overpaid = Math.max(0, displayPaid - displayTotal);
         return (
-          <span className={remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>
-            {remaining.toFixed(2)} {currencySymbol}
-          </span>
+          <div className="flex flex-col gap-1 items-end justify-center min-h-[44px]">
+            <span className={remaining > 0 ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-green-600 dark:text-green-400 font-semibold'}>
+              {remaining.toFixed(2)} {currencySymbol}
+            </span>
+            {overpaid > 0 && (
+              <span 
+                className="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-800" 
+                title={appLang === 'en' ? 'Transferred to Supplier Balance' : 'تم تحويل الزيادة لرصيد المورد'}
+              >
+                +{overpaid.toFixed(2)} {appLang === 'en' ? 'Advance' : 'سلفة'}
+              </span>
+            )}
+          </div>
         );
       }
     },
@@ -1059,12 +1070,13 @@ export default function BillsPage() {
       setReturnAccountId('')
 
       // Store bill financial details for display in form
-      const originalTotal = Number(bill.total_amount || 0) + Number((bill as any).returned_amount || 0)
-      const paidAmount = Number((bill as any).paid_amount || 0)
+      const originalTotal = Number(bill.total_amount || 0)
       const previouslyReturned = Number((bill as any).returned_amount || 0)
-      const remainingAmount = Math.max(0, Number(bill.total_amount || 0) - paidAmount)
+      const netTotal = Math.max(0, originalTotal - previouslyReturned)
+      const paidAmount = Number((bill as any).paid_amount || 0)
+      const remainingAmount = Math.max(0, netTotal - paidAmount)
       let paymentStatus: 'unpaid' | 'partial' | 'paid' = 'unpaid'
-      if (paidAmount >= originalTotal) {
+      if (paidAmount >= netTotal) {
         paymentStatus = 'paid'
       } else if (paidAmount > 0) {
         paymentStatus = 'partial'
@@ -1328,8 +1340,8 @@ export default function BillsPage() {
                   <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-2 sm:p-4 pt-0">
-                  <div className={`text-sm sm:text-2xl font-bold truncate ${filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0) - filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    {(filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0) - filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0)).toFixed(0)} {currencySymbol}
+                  <div className={`text-sm sm:text-2xl font-bold truncate ${filteredBills.reduce((sum, b) => sum + Math.max(0, getDisplayAmount(b, 'total') - getDisplayAmount(b, 'paid')), 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {filteredBills.reduce((sum, b) => sum + Math.max(0, getDisplayAmount(b, 'total') - getDisplayAmount(b, 'paid')), 0).toFixed(0)} {currencySymbol}
                   </div>
                 </CardContent>
               </Card>
@@ -1496,7 +1508,7 @@ export default function BillsPage() {
                           const totalBills = filteredBills.length
                           const totalAmount = filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0)
                           const totalPaid = filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0)
-                          const totalDue = totalAmount - totalPaid
+                          const totalDue = filteredBills.reduce((sum, b) => sum + Math.max(0, getDisplayAmount(b, 'total') - getDisplayAmount(b, 'paid')), 0)
 
                           return (
                             <tr>
