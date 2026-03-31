@@ -810,6 +810,13 @@ export default function PurchaseReturnsPage() {
   const getUserQty = (pr: PurchaseReturn): number | null => {
     const items = pr.purchase_return_items || []
     if (!items.length) return null
+
+    // For higher ranking roles, show the total quantity across all warehouses
+    if (!isRestrictedRole) {
+      const qty = items.reduce((s, i) => s + Number(i.quantity), 0)
+      return qty > 0 ? qty : null
+    }
+
     if (isStoreManager && currentWarehouseId) {
       const isSingleWarehouseReturns = pr.warehouse_id === currentWarehouseId || 
         (pr.allocations?.length === 1 && pr.allocations[0].warehouse_id === currentWarehouseId);
@@ -910,8 +917,8 @@ export default function PurchaseReturnsPage() {
       hidden: 'md',
       format: (value) => value
     },
-    // عمود الكمية: للمسؤول المخزن والمحاسب فقط
-    ...(isRestrictedRole ? [{
+    // عمود الكمية
+    {
       key: 'purchase_return_items' as keyof PurchaseReturn,
       header: appLang === 'en' ? 'Qty' : 'الكمية',
       type: 'text' as const,
@@ -925,7 +932,7 @@ export default function PurchaseReturnsPage() {
           </span>
         ) : <span className="text-gray-400">—</span>
       }
-    }] : []),
+    },
     // عمود المبلغ: للأدوار المميزة فقط
     ...(!isRestrictedRole ? [{
       key: 'total_amount' as keyof PurchaseReturn,
