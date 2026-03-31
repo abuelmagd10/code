@@ -811,8 +811,16 @@ export default function PurchaseReturnsPage() {
     const items = pr.purchase_return_items || []
     if (!items.length) return null
     if (isStoreManager && currentWarehouseId) {
+      const myAllocationIds = new Set(
+        (pr.allocations || [])
+          .filter(a => a.warehouse_id === currentWarehouseId)
+          .map(a => a.id)
+      )
       const qty = items
-        .filter(i => i.warehouse_id === currentWarehouseId)
+        .filter(i =>
+          i.warehouse_id === currentWarehouseId ||
+          (i.warehouse_allocation_id !== null && myAllocationIds.has(i.warehouse_allocation_id))
+        )
         .reduce((s, i) => s + Number(i.quantity), 0)
       return qty > 0 ? qty : null
     }
