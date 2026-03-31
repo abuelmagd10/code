@@ -126,7 +126,7 @@ export function SupplierReceiptDialog({
           reference_type: "supplier_debit_receipt",
           reference_id: supplierId,
           entry_date: receiptDate,
-          description: receiptNotes || (appLang === 'en' ? `Supplier debit receipt - ${supplierName}` : `استقبال رصيد مدين من المورد - ${supplierName}`),
+          description: receiptNotes || (appLang === 'en' ? `Supplier cash refund - ${supplierName}` : `استرداد نقدي من المورد - ${supplierName}`),
         })
         .select()
         .single()
@@ -168,34 +168,38 @@ export function SupplierReceiptDialog({
         if (linesError) throw linesError
       }
 
-      // ===== تحديث جدول supplier_debit_credits لخصم المبلغ المستلم =====
+      // ===== تحديث جدول vendor_credits لخصم المبلغ المسترد =====
       const { data: debits } = await supabase
-        .from("supplier_debit_credits")
-        .select("id, amount, used_amount, applied_amount")
+        .from("vendor_credits")
+        .select("id, total_amount, applied_amount")
         .eq("company_id", activeCompanyId)
         .eq("supplier_id", supplierId)
-        .eq("status", "active")
-        .order("debit_date", { ascending: true })
+        .in("status", ["open", "partially_applied"])
+        .order("credit_date", { ascending: true })
 
       let remainingToDeduct = receiptAmount
       if (debits && debits.length > 0) {
         for (const debit of debits) {
           if (remainingToDeduct <= 0) break
-          // حساب المتاح = المبلغ - المستخدم - المطبق
-          const usedAmt = Number(debit.used_amount || 0)
+          
+          const totalAmt = Number(debit.total_amount || 0)
           const appliedAmt = Number(debit.applied_amount || 0)
-          const totalUsed = usedAmt + appliedAmt
-          const available = Number(debit.amount || 0) - totalUsed
+          const available = totalAmt - appliedAmt
+          
           if (available <= 0) continue
 
           const deductAmount = Math.min(available, remainingToDeduct)
-          const newUsedAmount = usedAmt + deductAmount
-          const newStatus = (newUsedAmount + appliedAmt) >= Number(debit.amount || 0) ? "used" : "active"
+          const newAppliedAmount = appliedAmt + deductAmount
+          
+          let newStatus = "partially_applied"
+          if (newAppliedAmount >= totalAmt) {
+            newStatus = "applied"
+          }
 
           await supabase
-            .from("supplier_debit_credits")
+            .from("vendor_credits")
             .update({
-              used_amount: newUsedAmount,
+              applied_amount: newAppliedAmount,
               status: newStatus,
               updated_at: new Date().toISOString()
             })
@@ -205,7 +209,7 @@ export function SupplierReceiptDialog({
         }
       }
 
-      toastActionSuccess(toast, appLang === 'en' ? 'Receipt' : 'الاستقبال', appLang === 'en' ? 'Supplier debit receipt completed' : 'تم استقبال رصيد المورد بنجاح')
+      toastActionSuccess(toast, appLang === 'en' ? 'Cash Refund' : 'الاسترداد', appLang === 'en' ? 'Supplier cash refund completed' : 'تم استرداد السلفة النقدية من المورد بنجاح')
 
       // Reset form
       setReceiptAmount(0)
@@ -219,7 +223,7 @@ export function SupplierReceiptDialog({
 
     } catch (error: any) {
       console.error("Receipt error:", error)
-      toastActionError(toast, appLang === 'en' ? 'Receipt' : 'الاستقبال', appLang === 'en' ? 'Supplier debit' : 'رصيد المورد', String(error?.message || error || ''), appLang, 'OPERATION_FAILED')
+      toastActionError(toast, appLang === 'en' ? 'Receipt' : 'الاسترداد', appLang === 'en' ? 'Supplier refund' : 'استرداد السلفة', String(error?.message || error || ''), appLang, 'OPERATION_FAILED')
     } finally {
       setIsProcessing(false)
     }
@@ -229,16 +233,16 @@ export function SupplierReceiptDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{appLang==='en' ? 'Receive Supplier Debit' : 'استقبال رصيد المورد المدين'}</DialogTitle>
+          <DialogTitle>{appLang==='en' ? 'Vendor Cash Refund' : 'استرداد نقدي (سلفة مورد)'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
             <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Supplier' : 'المورد'}: <span className="font-semibold">{supplierName}</span></p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Available Debit Balance' : 'الرصيد المدين المتاح'}: <span className="font-semibold text-blue-600">{maxAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</span></p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Available Refund Balance' : 'رصيد السلفة المتاح للاسترداد'}: <span className="font-semibold text-blue-600">{maxAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</span></p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Receipt Amount' : 'مبلغ الاستقبال'}</Label>
+              <Label>{appLang==='en' ? 'Refund Amount' : 'مبلغ الاسترداد'}</Label>
               <Input
                 type="number"
                 value={receiptAmount}
@@ -277,7 +281,7 @@ export function SupplierReceiptDialog({
             <Input type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>{appLang==='en' ? 'Receipt Method' : 'طريقة الاستقبال'}</Label>
+            <Label>{appLang==='en' ? 'Refund Method' : 'طريقة الاسترداد'}</Label>
             <Select value={receiptMethod} onValueChange={setReceiptMethod}>
               <SelectTrigger>
                 <SelectValue />
@@ -312,7 +316,7 @@ export function SupplierReceiptDialog({
               className="bg-blue-600 hover:bg-blue-700"
               disabled={isProcessing || !receiptAmount || receiptAmount <= 0 || receiptAmount > maxAmount || !receiptAccountId}
             >
-              {isProcessing ? (appLang==='en' ? 'Processing...' : 'جاري المعالجة...') : (appLang==='en' ? 'Confirm Receipt' : 'تأكيد الاستقبال')}
+              {isProcessing ? (appLang==='en' ? 'Processing...' : 'جاري المعالجة...') : (appLang==='en' ? 'Confirm Refund' : 'تأكيد الاسترداد')}
             </Button>
           </div>
         </div>

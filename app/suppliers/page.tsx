@@ -595,7 +595,7 @@ export default function SuppliersPage() {
     },
     {
       key: 'id',
-      header: appLang === 'en' ? 'Payables' : 'ذمم دائنة',
+      header: appLang === 'en' ? 'Payables' : 'مطلوبات (ذمم دائنة)',
       type: 'currency',
       align: 'right',
       format: (_, row) => {
@@ -610,7 +610,7 @@ export default function SuppliersPage() {
     },
     {
       key: 'id',
-      header: appLang === 'en' ? 'Debit Credits' : 'رصيد مدين',
+      header: appLang === 'en' ? 'Supplier Advance' : 'مستحقات لنا (سلفة مورد)',
       type: 'currency',
       align: 'right',
       hidden: 'sm',
@@ -646,7 +646,7 @@ export default function SuppliersPage() {
                 title={!permWrite ? (appLang === 'en' ? 'No permission to create receipt' : 'لا توجد صلاحية لإنشاء سند') : (appLang === 'en' ? 'Create receipt' : 'إنشاء سند')}
               >
                 <ArrowDownLeft className="w-4 h-4" />
-                {appLang === 'en' ? 'Receipt' : 'سند'}
+                {appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}
               </Button>
             )}
             <Button
@@ -891,14 +891,14 @@ export default function SuppliersPage() {
                           <td className="px-3 py-4">
                             <div className="flex flex-col gap-1">
                               <div className="flex items-center justify-between gap-4">
-                                <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Payables:' : 'الذمم الدائنة:'}</span>
+                                <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Payables:' : 'إجمالي المطلوب (ذمم دائنة):'}</span>
                                 <span className="text-orange-600 dark:text-orange-400 font-semibold">
                                   {currencySymbol}{totalPayables.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
                               </div>
                               {totalDebitCredits > 0 && (
                                 <div className="flex items-center justify-between gap-4">
-                                  <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Debit Credits:' : 'الأرصدة المدينة:'}</span>
+                                  <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Supplier Advances:' : 'إجمالي المستحق لنا (سلف موردين):'}</span>
                                   <span className="text-blue-600 dark:text-blue-400 font-semibold">
                                     {currencySymbol}{totalDebitCredits.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>
