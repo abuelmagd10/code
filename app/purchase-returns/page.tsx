@@ -177,7 +177,7 @@ export default function PurchaseReturnsPage() {
         let query = supabase
           .from("purchase_returns")
           .select(`
-            id, return_number, return_date, total_amount, status, workflow_status,
+            id, return_number, return_date, total_amount, status, workflow_status, financial_status,
             reason, settlement_method, warehouse_id, branch_id, created_by,
             suppliers(name),
             bills(id, bill_number),
