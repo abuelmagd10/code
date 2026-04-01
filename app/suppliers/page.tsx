@@ -261,12 +261,24 @@ export default function SuppliersPage() {
       }
       setSuppliers(data || [])
 
-      // تحميل الحسابات للاستخدام في سند الاستقبال
-      const { data: accountsData, error: accountsError } = await supabase
+      // ===== تحميل الحسابات للاستخدام في سند استرداد السلفة =====
+      // 🔒 ERP Rule: يُعرض فقط الخزن والبنوك (cash / bank)
+      // 🔒 فلترة الفرع: الأدوار العادية → الفرع فقط، الأدوار المميزة → جميع الفروع
+      let accountsQuery = supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type, sub_type")
+        .select("id, account_code, account_name, account_type, sub_type, branch_id")
         .eq("company_id", companyId)
-        .in("account_type", ["asset", "liability"])
+        .eq("account_type", "asset")
+        .in("sub_type", ["cash", "bank"])
+
+      // Branch isolation: regular roles see only their branch's accounts
+      if (!canFilterByBranch && userBranchId) {
+        // المستخدم العادي: فقط حسابات فرعه
+        accountsQuery = accountsQuery.eq("branch_id", userBranchId)
+      }
+      // الأدوار المميزة: لا يوجد شرط على branch_id → جميع الفروع
+
+      const { data: accountsData, error: accountsError } = await accountsQuery
 
       if (accountsError) {
         // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
@@ -284,7 +296,7 @@ export default function SuppliersPage() {
           setIsLoading(false)
           return
         }
-        console.error("Error loading accounts:", accountsError)
+        console.error("Error loading cash/bank accounts:", accountsError)
       }
       setAccounts(accountsData || [])
 

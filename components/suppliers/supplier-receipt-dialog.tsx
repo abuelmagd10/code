@@ -293,17 +293,41 @@ export function SupplierReceiptDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>{appLang==='en' ? 'Account' : 'الحساب'}</Label>
+            <Label>{appLang==='en' ? 'Cash / Bank Account' : 'حساب الخزنة / البنك'}</Label>
             <Select value={receiptAccountId} onValueChange={setReceiptAccountId}>
               <SelectTrigger>
-                <SelectValue placeholder={appLang==='en' ? 'Select account' : 'اختر الحساب'} />
+                <SelectValue placeholder={appLang==='en' ? 'Select cash or bank account' : 'اختر حساب الخزنة أو البنك'} />
               </SelectTrigger>
               <SelectContent>
-                {accounts.map((acc) => (
-                  <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                ))}
+                {accounts.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-gray-500">
+                    {appLang==='en' ? 'No cash/bank accounts found for your branch' : 'لا توجد حسابات خزنة أو بنك لفرعك'}
+                  </div>
+                ) : (
+                  accounts.map((acc) => (
+                    <SelectItem key={acc.id} value={acc.id}>
+                      <span className="flex items-center gap-2">
+                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                          acc.sub_type === 'bank'
+                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                            : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                        }`}>
+                          {acc.sub_type === 'bank'
+                            ? (appLang === 'en' ? 'Bank' : 'بنك')
+                            : (appLang === 'en' ? 'Cash' : 'خزنة')}
+                        </span>
+                        {acc.account_code} - {acc.account_name}
+                      </span>
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {appLang==='en'
+                ? '🔒 Only cash and bank accounts are shown'
+                : '🔒 تظهر فقط حسابات الخزنة والبنك'}
+            </p>
           </div>
           <div className="space-y-2">
             <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
