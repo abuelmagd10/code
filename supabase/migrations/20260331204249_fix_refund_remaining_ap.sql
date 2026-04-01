@@ -1,7 +1,5 @@
--- Fix: DIRECT_POST_BLOCKED error when warehouse manager confirms a purchase return.
--- The function inserts journal entries with status='posted' directly, which is blocked
--- by the enforce_je_integrity trigger. We bypass it by setting app.allow_direct_post=true
--- before the journal_entries INSERT and resetting it after.
+-- Fix: In confirm_purchase_return_delivery_v2, the remaining AP incorrectly ignored returned_amount,
+-- leading to over-deduction from AP when a bill already had previous returns, preventing vendor_credit generation.
 
 CREATE OR REPLACE FUNCTION public.confirm_purchase_return_delivery_v2(
   p_purchase_return_id uuid,
@@ -39,6 +37,7 @@ DECLARE
   v_vc_tax NUMERIC(18, 4);
   v_round_fix NUMERIC(18, 4);
   v_bill_returned NUMERIC(18, 4);
+  v_vc_ratio NUMERIC(18, 8);
 BEGIN
   SELECT * INTO v_pr
   FROM purchase_returns

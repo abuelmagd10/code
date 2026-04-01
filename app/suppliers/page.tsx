@@ -9,12 +9,15 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
-import { toastActionError } from "@/lib/notifications"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Plus, Edit2, Trash2, Search, Truck, ArrowDownLeft } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, Truck, ArrowDownLeft, Clock, CheckCircle2, XCircle } from "lucide-react"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { SupplierReceiptDialog } from "@/components/suppliers/supplier-receipt-dialog"
 import { getExchangeRate, getActiveCurrencies, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
@@ -23,6 +26,7 @@ import { useRouter } from "next/navigation"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { BranchFilter } from "@/components/BranchFilter"
+import { notifyVendorRefundDecision } from "@/lib/notification-helpers"
 
 interface Supplier {
   id: string
@@ -119,6 +123,17 @@ export default function SuppliersPage() {
   const [receiptNotes, setReceiptNotes] = useState("")
   const [receiptExRate, setReceiptExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'default' })
 
+  // ===== حالات طلبات استرداد الموردين (Approval Workflow) =====
+  const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+  const isPrivilegedRole = PRIVILEGED_ROLES.includes(currentUserRole.toLowerCase())
+  const [refundRequests, setRefundRequests] = useState<any[]>([])
+  const [refundRequestsLoading, setRefundRequestsLoading] = useState(false)
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
+  const [selectedRequestForReject, setSelectedRequestForReject] = useState<any | null>(null)
+  const [rejectReason, setRejectReason] = useState("")
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [currentUserBranchId, setCurrentUserBranchId] = useState<string | null>(null)
+
   useEffect(() => {
     (async () => {
       setPermView(await canAction(supabase, 'suppliers', 'read'))
@@ -207,6 +222,7 @@ export default function SuppliersPage() {
         userRole = isOwner ? "owner" : (memberData?.role || "viewer")
         userBranchId = memberData?.branch_id || null
         setCurrentUserRole(userRole)
+        setCurrentUserBranchId(userBranchId)
       }
 
       // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
@@ -318,9 +334,40 @@ export default function SuppliersPage() {
     }
   }
 
+  // ===== دالة جلب طلبات الاسترداد المعلقة =====
+  const loadRefundRequests = async () => {
+    try {
+      setRefundRequestsLoading(true)
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+      const { data, error } = await supabase
+        .from('vendor_refund_requests')
+        .select('*, supplier:suppliers(id, name)')
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false })
+      if (error) {
+        console.error('Error loading refund requests:', error)
+        return
+      }
+      setRefundRequests(data || [])
+    } catch (err) {
+      console.error('loadRefundRequests error:', err)
+    } finally {
+      setRefundRequestsLoading(false)
+    }
+  }
+
+  // تشغيل جلب الطلبات عند تحديد الدور (للأدوار المميزة فقط)
+  useEffect(() => {
+    if (currentUserRole && PRIVILEGED_ROLES.includes(currentUserRole.toLowerCase())) {
+      loadRefundRequests()
+    }
+  }, [currentUserRole])
+
   // 🔄 Realtime: تحديث قائمة الموردين تلقائياً عند أي تغيير
   const loadSuppliersRef = useRef(loadSuppliers)
   loadSuppliersRef.current = loadSuppliers
+
 
   const handleSuppliersRealtimeEvent = useCallback(() => {
     console.log('🔄 [Suppliers] Realtime event received, refreshing suppliers list...')
@@ -836,7 +883,28 @@ export default function SuppliersPage() {
             </div>
           </div>
 
-          <Card>
+          <Tabs defaultValue="suppliers" className="space-y-4">
+            <TabsList className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 p-1 w-full flex overflow-x-auto justify-start h-auto rounded-xl">
+              <TabsTrigger value="suppliers" className="flex-1 min-w-[150px] py-2.5 px-4 data-[state=active]:bg-orange-50 dark:data-[state=active]:bg-orange-900/20 data-[state=active]:text-orange-600 dark:data-[state=active]:text-orange-400 rounded-lg transition-all">
+                <Truck className="w-4 h-4 ml-2 mr-2" />
+                {appLang === 'en' ? 'Suppliers Directory' : 'دليل الموردين'}
+              </TabsTrigger>
+              {isPrivilegedRole && (
+                <TabsTrigger value="refund_approvals" className="flex-1 min-w-[150px] py-2.5 px-4 data-[state=active]:bg-orange-50 dark:data-[state=active]:bg-orange-900/20 data-[state=active]:text-orange-600 dark:data-[state=active]:text-orange-400 rounded-lg transition-all">
+                  <CheckCircle2 className="w-4 h-4 ml-2 mr-2" />
+                  {appLang === 'en' ? 'Refund Approvals' : 'اعتمادات الاسترداد'}
+                  {refundRequests.filter(r => r.status === 'pending_approval').length > 0 && (
+                    <Badge variant="destructive" className="ml-2 mr-2 px-1.5 py-0 min-w-5 flex justify-center h-5 rounded-full text-xs">
+                      {refundRequests.filter(r => r.status === 'pending_approval').length}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              )}
+            </TabsList>
+
+            <TabsContent value="suppliers" className="space-y-4 m-0">
+
+              <Card>
             <CardContent className="pt-6 space-y-4">
               {/* 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
               <BranchFilter
@@ -924,8 +992,117 @@ export default function SuppliersPage() {
                   }}
                 />
               )}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {isPrivilegedRole && (
+              <TabsContent value="refund_approvals" className="space-y-4 m-0">
+                <Card className="border-orange-100 dark:border-orange-900/30">
+                  <CardHeader className="bg-orange-50/50 dark:bg-orange-900/10 border-b border-orange-50 dark:border-orange-900/20">
+                    <CardTitle className="flex items-center gap-2 text-orange-800 dark:text-orange-300">
+                      <CheckCircle2 className="w-5 h-5" />
+                      {appLang === 'en' ? 'Pending Refund Requests' : 'طلبات استرداد النقدية المعلقة'}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-6">
+                    {refundRequestsLoading ? (
+                      <TableSkeleton cols={5} rows={3} className="mt-4" />
+                    ) : refundRequests.filter(r => r.status === 'pending_approval').length === 0 ? (
+                      <div className="text-center py-12 px-4 border-2 border-dashed border-gray-200 dark:border-slate-800 rounded-xl">
+                        <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3 opacity-50" />
+                        <p className="text-gray-500 font-medium">{appLang === 'en' ? 'No pending requests.' : 'لا توجد طلبات معلقة للاعتماد.'}</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {refundRequests.filter(r => r.status === 'pending_approval').map(req => (
+                          <div key={req.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-white dark:bg-slate-900 border border-orange-200 dark:border-orange-800/50 rounded-xl shadow-sm hover:shadow-md transition-shadow gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className="font-bold text-gray-900 dark:text-white text-lg">{req.supplier?.name}</span>
+                                <Badge variant="outline" className="bg-orange-100 text-orange-700 border-none dark:bg-orange-900/40 dark:text-orange-300">
+                                  {appLang === 'en' ? 'Pending Approval' : 'قيد المراجعة'}
+                                </Badge>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                                <span className="flex items-center gap-1.5 bg-gray-100 dark:bg-slate-800 px-2.5 py-1 rounded-md">
+                                  <Clock className="w-4 h-4" /> 
+                                  {new Date(req.created_at).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-gray-400">|</span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-200">{appLang === 'en' ? 'Amount:' : 'المبلغ المطلوب:'}</span>
+                                  <span className="font-bold text-orange-600 dark:text-orange-400 text-base">{req.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} {req.currency}</span>
+                                </div>
+                              </div>
+                              {req.notes && (
+                                <p className="text-sm mt-3 text-gray-700 dark:text-gray-300 bg-orange-50/50 dark:bg-orange-900/10 p-3 rounded-lg border border-orange-100 dark:border-orange-900/20 italic">
+                                  "{req.notes}"
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex w-full sm:w-auto gap-2 border-t sm:border-t-0 border-gray-100 dark:border-slate-800 pt-3 sm:pt-0 mt-2 sm:mt-0">
+                                <Button
+                                  variant="outline"
+                                  className="flex-1 sm:flex-none text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 border-red-200 dark:border-red-900/30"
+                                  onClick={() => { setSelectedRequestForReject(req); setRejectDialogOpen(true) }}
+                                  disabled={actionLoading === req.id}
+                                >
+                                  <XCircle className="w-4 h-4 ml-1 mr-1" />
+                                  {appLang === 'en' ? 'Reject' : 'رفض'}
+                                </Button>
+                                <Button
+                                  variant="default"
+                                  className="flex-1 sm:flex-none bg-green-600 hover:bg-green-700 text-white shadow-sm"
+                                  disabled={actionLoading === req.id}
+                                  onClick={async () => {
+                                    setActionLoading(req.id)
+                                    try {
+                                      const companyId = await getActiveCompanyId(supabase)
+                                      if (!companyId) throw new Error('No company')
+                                      const { data: result } = await supabase.rpc('approve_vendor_refund_request', {
+                                        p_request_id: req.id,
+                                        p_company_id: companyId,
+                                        p_action: 'approve'
+                                      })
+                                      if (!result?.success) throw new Error(result?.error || 'Unknown error')
+                                      // Notification
+                                      try {
+                                        const { data: { user } } = await supabase.auth.getUser()
+                                        if (user) {
+                                          notifyVendorRefundDecision({
+                                            companyId, requestId: req.id,
+                                            supplierName: req.supplier?.name || '',
+                                            amount: req.amount, currency: req.currency,
+                                            action: 'approved',
+                                            decidedBy: user.id, createdBy: req.created_by,
+                                            branchId: req.branch_id, appLang
+                                          }).catch(console.warn)
+                                        }
+                                      } catch {}
+                                      toastActionSuccess(toast, appLang === 'en' ? 'Approved' : 'تم الاعتماد', appLang === 'en' ? 'Refund processed successfully' : 'تم تنفيذ الاسترداد النقدي بنجاح وتحديث الأرصدة')
+                                      loadRefundRequests()
+                                      loadSuppliers()
+                                    } catch (err: any) {
+                                      toastActionError(toast, 'اعتماد', 'الاسترداد', err?.message || '', appLang, 'OPERATION_FAILED')
+                                    } finally {
+                                      setActionLoading(null)
+                                    }
+                                  }}
+                                >
+                                  <CheckCircle2 className="w-4 h-4 ml-1 mr-1" />
+                                  {appLang === 'en' ? 'Approve & Execute' : 'اعتماد وتنفيذ'}
+                                </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
+          </Tabs>
         </div>
 
         {/* نافذة سند استقبال الأموال */}
@@ -953,8 +1130,77 @@ export default function SuppliersPage() {
             setReceiptNotes={setReceiptNotes}
             receiptExRate={receiptExRate}
             onReceiptComplete={loadSuppliers}
+            userRole={currentUserRole}
+            branchId={currentUserBranchId || undefined}
           />
         )}
+
+        {/* ديالوج رفض الطلب */}
+        <Dialog open={rejectDialogOpen} onOpenChange={(v) => { setRejectDialogOpen(v); if (!v) { setRejectReason(""); setSelectedRequestForReject(null) } }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{appLang === 'en' ? 'Reject Refund Request' : 'رفض طلب الاسترداد'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {appLang === 'en' ? 'Please provide a reason for rejection:' : 'يرجى تقديم سبب الرفض:'}
+              </p>
+              <Textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder={appLang === 'en' ? 'Enter rejection reason...' : 'أدخل سبب الرفض...'}
+                rows={3}
+              />
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>
+                  {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={!rejectReason.trim() || actionLoading === selectedRequestForReject?.id}
+                  onClick={async () => {
+                    if (!selectedRequestForReject || !rejectReason.trim()) return
+                    setActionLoading(selectedRequestForReject.id)
+                    try {
+                      const companyId = await getActiveCompanyId(supabase)
+                      if (!companyId) throw new Error('No company')
+                      const { data: result } = await supabase.rpc('approve_vendor_refund_request', {
+                        p_request_id: selectedRequestForReject.id,
+                        p_company_id: companyId,
+                        p_action: 'reject',
+                        p_reason: rejectReason.trim(),
+                      })
+                      if (!result?.success) throw new Error(result?.error || 'Unknown error')
+                      // إشعار المنشئ
+                      try {
+                        const { data: { user } } = await supabase.auth.getUser()
+                        if (user) {
+                          notifyVendorRefundDecision({
+                            companyId, requestId: selectedRequestForReject.id,
+                            supplierName: selectedRequestForReject.supplier?.name || '',
+                            amount: selectedRequestForReject.amount, currency: selectedRequestForReject.currency,
+                            action: 'rejected', rejectionReason: rejectReason.trim(),
+                            decidedBy: user.id, createdBy: selectedRequestForReject.created_by,
+                            branchId: selectedRequestForReject.branch_id, appLang,
+                          }).catch(console.warn)
+                        }
+                      } catch { }
+                      toastActionSuccess(toast, appLang === 'en' ? 'Rejected' : 'الرفض', appLang === 'en' ? 'Request rejected' : 'تم رفض الطلب')
+                      setRejectDialogOpen(false)
+                      loadRefundRequests()
+                    } catch (err: any) {
+                      toastActionError(toast, 'رفض', 'الطلب', err?.message || '', appLang, 'OPERATION_FAILED')
+                    } finally {
+                      setActionLoading(null)
+                    }
+                  }}
+                >
+                  {appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض'}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   )

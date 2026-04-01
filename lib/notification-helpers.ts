@@ -90,6 +90,105 @@ export async function notifyRefundRequestCreated(params: {
   })
 }
 
+// =====================================================================
+// 🏷️ Vendor Refund Approval Workflow Notifications
+// =====================================================================
+
+/**
+ * إشعار للأدوار الإدارية عند رفع طلب استرداد سلفة مورد جديد
+ * يُرسَل عند إنشاء الطلب بواسطة دور غير مميز (محاسب / مستخدم عادي)
+ */
+export async function notifyVendorRefundRequestCreated(params: {
+  companyId: string
+  requestId: string
+  supplierName: string
+  amount: number
+  currency: string
+  branchId?: string
+  createdBy: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, requestId, supplierName, amount, currency, branchId, createdBy, appLang = 'ar' } = params
+
+  const title = appLang === 'en'
+    ? `Vendor Refund Request — ${supplierName}`
+    : `طلب استرداد سلفة مورد — ${supplierName}`
+
+  const message = appLang === 'en'
+    ? `A new vendor refund request of ${amount.toLocaleString()} ${currency} for supplier "${supplierName}" is awaiting your approval.`
+    : `تم رفع طلب استرداد نقدي بقيمة ${amount.toLocaleString()} ${currency} للمورد "${supplierName}" ويحتاج إلى اعتمادك.`
+
+  const roles = ['owner', 'admin', 'general_manager']
+  for (const role of roles) {
+    await createNotification({
+      companyId,
+      referenceType: 'vendor_refund_request',
+      referenceId: requestId,
+      title,
+      message,
+      createdBy,
+      branchId,
+      assignedToRole: role,
+      priority: 'high' as NotificationPriority,
+      eventKey: `vendor_refund_request:${requestId}:created:${role}`,
+      severity: 'warning',
+      category: 'approvals',
+    })
+  }
+}
+
+/**
+ * إشعار للمحاسب/المنشئ عند اعتماد أو رفض طلب الاسترداد
+ */
+export async function notifyVendorRefundDecision(params: {
+  companyId: string
+  requestId: string
+  supplierName: string
+  amount: number
+  currency: string
+  action: 'approved' | 'rejected'
+  rejectionReason?: string
+  decidedBy: string
+  createdBy: string   // المستخدم الذي رفع الطلب — يستقبل الإشعار
+  branchId?: string
+  appLang?: 'ar' | 'en'
+}) {
+  const { companyId, requestId, supplierName, amount, currency, action, rejectionReason, decidedBy, createdBy, branchId, appLang = 'ar' } = params
+
+  const isApproved = action === 'approved'
+
+  const title = appLang === 'en'
+    ? isApproved
+      ? `✅ Refund Approved — ${supplierName}`
+      : `❌ Refund Rejected — ${supplierName}`
+    : isApproved
+      ? `✅ تم اعتماد الاسترداد — ${supplierName}`
+      : `❌ تم رفض الاسترداد — ${supplierName}`
+
+  const message = appLang === 'en'
+    ? isApproved
+      ? `Your refund request of ${amount.toLocaleString()} ${currency} for "${supplierName}" has been approved and processed.`
+      : `Your refund request of ${amount.toLocaleString()} ${currency} for "${supplierName}" was rejected. Reason: ${rejectionReason || 'No reason provided'}`
+    : isApproved
+      ? `تم اعتماد طلب الاسترداد البالغ ${amount.toLocaleString()} ${currency} للمورد "${supplierName}" وتنفيذه.`
+      : `تم رفض طلب الاسترداد البالغ ${amount.toLocaleString()} ${currency} للمورد "${supplierName}". السبب: ${rejectionReason || 'لم يُذكر سبب'}`
+
+  await createNotification({
+    companyId,
+    referenceType: 'vendor_refund_request',
+    referenceId: requestId,
+    title,
+    message,
+    createdBy: decidedBy,
+    branchId,
+    assignedToUser: createdBy,
+    priority: isApproved ? ('normal' as NotificationPriority) : ('high' as NotificationPriority),
+    eventKey: `vendor_refund_request:${requestId}:${action}`,
+    severity: isApproved ? 'info' : 'warning',
+    category: 'finance',
+  })
+}
+
 /**
  * إنشاء إشعار عند الموافقة على طلب استرداد (الموافقة الأولى)
  * ✅ محدث: يدعم event_key و severity و category
