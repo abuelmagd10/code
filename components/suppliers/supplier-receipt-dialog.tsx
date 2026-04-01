@@ -119,12 +119,16 @@ export function SupplierReceiptDialog({
       // القيد المحاسبي (عكس سند صرف العميل):
       // مدين: النقد/البنك (دخول المبلغ) - receiptAccountId
       // دائن: رصيد المورد المدين (تقليل المستحق لنا) - supplierDebit
+      //
+      // 🔑 نستخدم UUID فريد لكل عملية استرداد لتفادي trigger الـ DUPLICATE_JOURNAL_VIOLATION
+      // (الـ trigger يمنع إدخال قيدين بنفس reference_type و reference_id)
+      const receiptRefId = crypto.randomUUID()
       const { data: entry, error: entryError } = await supabase
         .from("journal_entries")
         .insert({
           company_id: activeCompanyId,
           reference_type: "supplier_debit_receipt",
-          reference_id: supplierId,
+          reference_id: receiptRefId,
           entry_date: receiptDate,
           description: receiptNotes || (appLang === 'en' ? `Supplier cash refund - ${supplierName}` : `استرداد نقدي من المورد - ${supplierName}`),
         })
