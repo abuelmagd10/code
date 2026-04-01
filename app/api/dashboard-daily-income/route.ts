@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { getDailyIncomeByBranch } from "@/lib/dashboard-daily-income"
 
@@ -9,11 +9,23 @@ const PRIVILEGED_ROLES = ["owner", "admin", "general_manager"]
  * GET /api/dashboard-daily-income
  * Query: date (YYYY-MM-DD, default today), branchId (optional, for privileged users only)
  * Returns daily Cash+Bank income per branch (GL-First). Non-privileged users get their branch only.
+ *
+ * Architecture:
+ *   - Auth/permission check uses user-scoped client (RLS applies).
+ *   - GL data fetch uses service-role client (bypasses RLS on journal_entries/journal_entry_lines).
+ *   - Branch isolation is enforced at the application layer before calling getDailyIncomeByBranch.
  */
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
-    const { user, companyId, branchId: memberBranchId, costCenterId, member, error } = await secureApiRequest(request, {
+    const {
+      user,
+      companyId,
+      branchId: memberBranchId,
+      costCenterId,
+      member,
+      error
+    } = await secureApiRequest(request, {
       requireAuth: true,
       requireCompany: true,
       requirePermission: { resource: "dashboard", action: "read" },
@@ -32,13 +44,18 @@ export async function GET(request: NextRequest) {
 
     let options: { branchId?: string | null; costCenterId?: string | null } = {}
     if (isPrivileged) {
+      // Privileged users can optionally filter by a specific branch
       if (requestedBranchId) options.branchId = requestedBranchId
     } else {
+      // Non-privileged: always restrict to their assigned branch
       options.branchId = memberBranchId || undefined
       if (costCenterId) options.costCenterId = costCenterId
     }
 
-    const rows = await getDailyIncomeByBranch(supabase, companyId, date, options)
+    // Use service-role client for GL data to bypass RLS on journal_entries/journal_entry_lines.
+    // User identity and branch authorization are already enforced above via secureApiRequest.
+    const serviceSupabase = createServiceClient()
+    const rows = await getDailyIncomeByBranch(serviceSupabase, companyId, date, options)
 
     // Optional: fetch alert limits for KPI (min_daily_cash, max_daily_expense)
     let alertLimits: { min_daily_cash?: number; max_daily_expense?: number } | null = null
@@ -57,7 +74,7 @@ export async function GET(request: NextRequest) {
         }
       }
     } catch {
-      // ignore
+      // ignore — alert limits are optional
     }
 
     return NextResponse.json({
