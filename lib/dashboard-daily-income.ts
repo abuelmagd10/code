@@ -47,8 +47,10 @@ function getAccountFlowType(account: { sub_type?: string | null; account_name?: 
 
 /**
  * Get daily income (Cash + Bank) per branch for a given date, with separate cash and bank amounts.
- * Cash = المتحصل النقدي بالخزنة (Cash in Treasury), Bank = الإيداعات البنكية (Bank Deposits), Total = نقد + بنك.
- * Uses direct GL query to support cash/bank breakdown (MV does not provide it).
+ * Uses a two-step query approach for reliable branch filtering:
+ *   Step 1: Get journal_entry IDs for the given date/company/branch
+ *   Step 2: Get journal_entry_lines for those IDs restricted to cash/bank accounts
+ * This avoids nested Supabase JS filter issues and uuid[] RPC type conversion problems.
  */
 export async function getDailyIncomeByBranch(
   supabase: SupabaseClient,
@@ -82,120 +84,45 @@ export async function getDailyIncomeByBranch(
     else cashAccountIds.add(a.id) // default ambiguous to cash
   }
 
-  // 2) Fetch journal lines for that date using direct SQL for reliable branch filtering
-  let sqlQuery = `
-    SELECT
-      jel.account_id,
-      jel.debit_amount,
-      jel.credit_amount,
-      je.branch_id
-    FROM journal_entry_lines jel
-    INNER JOIN journal_entries je ON je.id = jel.journal_entry_id
-    WHERE jel.account_id = ANY($1::uuid[])
-      AND je.company_id = $2
-      AND je.status = 'posted'
-      AND je.entry_date = $3
-  `
-  const sqlParams: any[] = [accountIds, companyId, dateOnly]
-  let paramIdx = 4
+  // 2) Step 1: Fetch journal entry IDs + branch_id for the given date/company/branch
+  //    We do this as a SEPARATE query to avoid unreliable nested join filters in Supabase JS
+  let jeQuery = supabase
+    .from("journal_entries")
+    .select("id, branch_id")
+    .eq("company_id", companyId)
+    .eq("status", "posted")
+    .eq("entry_date", dateOnly)
 
   if (options?.branchId) {
-    sqlQuery += ` AND je.branch_id = $${paramIdx++}`
-    sqlParams.push(options.branchId)
+    jeQuery = jeQuery.eq("branch_id", options.branchId)
   }
   if (options?.costCenterId) {
-    sqlQuery += ` AND je.cost_center_id = $${paramIdx++}`
-    sqlParams.push(options.costCenterId)
+    jeQuery = jeQuery.eq("cost_center_id", options.costCenterId)
   }
 
-  // Use Supabase RPC for direct SQL execution
-  const { data: lines, error: linesErr } = await (supabase as any).rpc(
-    "run_daily_income_query",
-    {
-      p_account_ids: accountIds,
-      p_company_id: companyId,
-      p_date: dateOnly,
-      p_branch_id: options?.branchId ?? null,
-      p_cost_center_id: options?.costCenterId ?? null,
-    }
+  const { data: journalEntries, error: jeErr } = await jeQuery
+  if (jeErr) throw new Error(`Failed to load journal entries: ${jeErr.message}`)
+  if (!journalEntries || journalEntries.length === 0) return []
+
+  const jeIds = journalEntries.map((je: any) => je.id)
+  const jeBranchMap = new Map<string, string | null>(
+    journalEntries.map((je: any) => [je.id, je.branch_id ?? null])
   )
-  if (linesErr) {
-    // Fallback: use the original Supabase query approach if RPC is not available
-    let fallbackQuery = supabase
-      .from("journal_entry_lines")
-      .select(`
-        account_id,
-        debit_amount,
-        credit_amount,
-        journal_entries!inner (
-          entry_date,
-          company_id,
-          branch_id,
-          status,
-          cost_center_id
-        )
-      `)
-      .in("account_id", accountIds)
-      .eq("journal_entries.company_id", companyId)
-      .eq("journal_entries.status", "posted")
-      .eq("journal_entries.entry_date", dateOnly)
 
-    if (options?.branchId) {
-      fallbackQuery = fallbackQuery.eq("journal_entries.branch_id", options.branchId)
-    }
-    if (options?.costCenterId) {
-      fallbackQuery = fallbackQuery.eq("journal_entries.cost_center_id", options.costCenterId)
-    }
+  // 3) Step 2: Fetch journal lines for those entry IDs, restricted to cash/bank accounts
+  const { data: lines, error: linesErr } = await supabase
+    .from("journal_entry_lines")
+    .select("journal_entry_id, account_id, debit_amount, credit_amount")
+    .in("journal_entry_id", jeIds)
+    .in("account_id", accountIds)
 
-    const { data: fallbackLines, error: fallbackErr } = await fallbackQuery
-    if (fallbackErr) throw new Error(`GL daily income fetch failed: ${fallbackErr.message}`)
+  if (linesErr) throw new Error(`GL daily income lines fetch failed: ${linesErr.message}`)
 
-    // Process fallback lines (nested structure)
-    const byBranchCashFb = new Map<string | null, number>()
-    const byBranchBankFb = new Map<string | null, number>()
-    for (const line of fallbackLines || []) {
-      const je = (line as any).journal_entries
-      const branchId = je?.branch_id ?? null
-      const debit = Number(line.debit_amount || 0)
-      const credit = Number(line.credit_amount || 0)
-      const net = debit - credit
-      const accountId = (line as any).account_id
-      if (cashAccountIds.has(accountId)) {
-        byBranchCashFb.set(branchId, (byBranchCashFb.get(branchId) ?? 0) + net)
-      } else if (bankAccountIds.has(accountId)) {
-        byBranchBankFb.set(branchId, (byBranchBankFb.get(branchId) ?? 0) + net)
-      }
-    }
-    const allBranchIdsFb = new Set([...byBranchCashFb.keys(), ...byBranchBankFb.keys()])
-    const branchIdsFb = [...allBranchIdsFb].filter(Boolean) as string[]
-    let branchNamesFb: Record<string, string> = {}
-    if (branchIdsFb.length > 0) {
-      const { data: branches } = await supabase
-        .from("branches")
-        .select("id, name")
-        .in("id", branchIdsFb)
-      branchNamesFb = Object.fromEntries((branches || []).map((b: any) => [b.id, b.name || ""]))
-    }
-    const resultFb: DailyIncomeByBranchRow[] = []
-    for (const branchId of allBranchIdsFb) {
-      const cashIncome = Math.round((byBranchCashFb.get(branchId) ?? 0) * 100) / 100
-      const bankIncome = Math.round((byBranchBankFb.get(branchId) ?? 0) * 100) / 100
-      const totalIncome = Math.round((cashIncome + bankIncome) * 100) / 100
-      resultFb.push({ branchId, branchName: branchId ? (branchNamesFb[branchId] || null) : null, cashIncome, bankIncome, totalIncome })
-    }
-    resultFb.sort((a, b) => { if (!a.branchId) return -1; if (!b.branchId) return 1; return (a.branchName || "").localeCompare(b.branchName || "") })
-    return resultFb
-  }
-
-  // Process RPC response (flat structure: account_id, debit_amount, credit_amount, branch_id)
-  const processedLines = lines || []
-
-  // 3) Group by branch: cash (نقد بالخزنة) and bank (إيداعات بنكية) separately
+  // 4) Group by branch: cash and bank separately
   const byBranchCash = new Map<string | null, number>()
   const byBranchBank = new Map<string | null, number>()
-  for (const line of processedLines) {
-    // RPC returns flat: { account_id, debit_amount, credit_amount, branch_id }
-    const branchId = (line as any).branch_id ?? null
+  for (const line of lines || []) {
+    const branchId = jeBranchMap.get((line as any).journal_entry_id) ?? null
     const debit = Number((line as any).debit_amount || 0)
     const credit = Number((line as any).credit_amount || 0)
     const net = debit - credit
