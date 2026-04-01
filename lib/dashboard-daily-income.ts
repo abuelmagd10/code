@@ -96,9 +96,10 @@ export async function getDailyIncomeByBranch(
   if (options?.branchId) {
     jeQuery = jeQuery.eq("branch_id", options.branchId)
   }
-  if (options?.costCenterId) {
-    jeQuery = jeQuery.eq("cost_center_id", options.costCenterId)
-  }
+  // Note: cost_center_id is intentionally NOT filtered here.
+  // Branch isolation is the correct security boundary for GL daily income.
+  // Cost center is an optional allocation tag; many journal entries don't carry it,
+  // so filtering by it would silently exclude valid transactions.
 
   const { data: journalEntries, error: jeErr } = await jeQuery
   if (jeErr) throw new Error(`Failed to load journal entries: ${jeErr.message}`)
