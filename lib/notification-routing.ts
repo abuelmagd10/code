@@ -14,6 +14,7 @@ export type ReferenceType =
   | 'inventory_transfer'
   | 'approval_request'
   | 'refund_request'
+  | 'vendor_refund_request'
   | 'depreciation'
   | 'journal_entry'
   | 'payment'
@@ -56,6 +57,7 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'purchase_return': (id) => `/purchase-returns/${id}`, // ✅ صفحة تفاصيل المرتجع
   'vendor_credit': (id) => `/vendor-credits?highlight=${id}`,
   'supplier_debit_receipt': (id) => `/suppliers?highlight=receipt-${id}`,
+  'vendor_refund_request': (id) => `/suppliers?tab=refunds&highlight=${id}`, // ✅ طلب استرداد سلفة مورد
 
   // المالية
   'payment': (id) => `/payments?highlight=${id}`,

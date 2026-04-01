@@ -732,6 +732,7 @@ export function NotificationCenter({
       'inventory_transfer': { ar: 'نقل مخزون', en: 'Inventory Transfer' },
       'approval_request': { ar: 'طلب اعتماد', en: 'Approval Request' },
       'refund_request': { ar: 'طلب استرداد', en: 'Refund Request' },
+      'vendor_refund_request': { ar: 'طلب استرداد سلفة مورد', en: 'Vendor Refund Request' },
       'depreciation': { ar: 'إهلاك', en: 'Depreciation' },
       'journal_entry': { ar: 'قيد يومي', en: 'Journal Entry' },
       'payment': { ar: 'دفعة', en: 'Payment' },
