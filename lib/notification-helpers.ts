@@ -1541,8 +1541,10 @@ export async function notifyPaymentApprovalRequest(params: {
     ? `A ${isSupplier ? 'supplier payment' : 'customer receipt'} of ${amount.toFixed(2)} ${currency} for "${partyName}" requires your approval.`
     : `تحتاج ${isSupplier ? 'دفعة بمبلغ' : 'سند قبض بمبلغ'} ${amount.toFixed(2)} ${currency} ل${isSupplier ? 'لمورد' : 'لعميل'} "${partyName}" إلى اعتمادك.`
 
-  // الأدوار العليا تستلم الإشعار لمعرفة طلب الاعتماد
-  const managementRoles = ['admin', 'owner', 'general_manager']
+  // ⚠️ نستخدم 'admin' + 'general_manager' فقط (بدون owner)
+  // الـ RPC (get_user_notifications) يُظهر إشعارات 'admin' لـ 'owner' تلقائياً
+  // إضافة 'owner' تُسبب تكرار الإشعار مرتين لنفس المستخدم
+  const managementRoles = ['admin', 'general_manager']
 
   for (const role of managementRoles) {
     try {
@@ -1804,7 +1806,9 @@ export async function notifyManagementPOApproved(params: {
     ? `Purchase Order ${poNumber} for ${supplierName} (${amount} ${currency}) has been approved. Please prepare to receive the goods.`
     : `تم اعتماد أمر الشراء ${poNumber} للمورد ${supplierName} بقيمة ${amount} ${currency}. يرجى الاستعداد لاستلام البضاعة.`
 
-  const managementRoles = ['admin', 'owner', 'general_manager']
+  // ⚠️ نستخدم 'admin' فقط — النظام يُظهر إشعارات 'admin' تلقائياً لـ owner و general_manager
+  // استخدام الأدوار الثلاثة معاً يُسبب تكرار الإشعار 3 مرات لنفس المستخدم
+  const managementRoles = ['admin']
 
   for (const role of managementRoles) {
     try {
@@ -1909,9 +1913,10 @@ export async function notifyPRApprovalRequest(params: {
     ? `purchase_return:${prId}:pending_admin_approval:resubmit:${Date.now()}`
     : `purchase_return:${prId}:pending_admin_approval`
 
-  // إرسال لكل دور مميز بشكل منفصل — يضمن أن كل دور يرى الإشعار مرة واحدة فقط
-  // ولا يصل لأدوار المستخدمين العاديين
-  for (const role of ['admin', 'owner', 'general_manager']) {
+  // ⚠️ نستخدم 'admin' + 'general_manager' فقط (بدون owner)
+  // الـ RPC (get_user_notifications) يُظهر إشعارات 'admin' لـ 'owner' تلقائياً
+  // إضافة 'owner' تُسبب تكرار الإشعار مرتين لنفس المستخدم
+  for (const role of ['admin', 'general_manager']) {
     await createNotification({
       companyId,
       referenceType: 'purchase_return',
@@ -2134,7 +2139,8 @@ export async function notifyManagementPRWarehouseConfirmed(params: {
   }
 
   console.warn('⚠️ notifyManagementPRWarehouseConfirmed: RPC returned no managers — fallback to role-based')
-  for (const role of ['admin', 'owner', 'general_manager']) {
+  // ⚠️ بدون owner — يرى إشعارات admin تلقائياً عبر RPC
+  for (const role of ['admin', 'general_manager']) {
     try {
       await createNotification({
         companyId,
@@ -2216,7 +2222,8 @@ export async function notifyManagementPRWarehouseRejected(params: {
   }
 
   console.warn('⚠️ notifyManagementPRWarehouseRejected: RPC returned no managers — fallback to role-based')
-  for (const role of ['admin', 'owner', 'general_manager']) {
+  // ⚠️ بدون owner — يرى إشعارات admin تلقائياً عبر RPC
+  for (const role of ['admin', 'general_manager']) {
     try {
       await createNotification({
         companyId,
