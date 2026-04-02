@@ -144,7 +144,7 @@ export default function PurchaseReturnDetailPage() {
         id, return_number, return_date, status, workflow_status, financial_status,
         reason, notes, settlement_method,
         subtotal, tax_amount, total_amount, original_currency,
-        is_locked, created_by, approved_by, approved_at,
+        is_locked, created_by, confirmed_by, approved_by, approved_at,
         rejected_by, rejected_at, rejection_reason,
         warehouse_rejected_by, warehouse_rejected_at, warehouse_rejection_reason,
         branch_id, warehouse_id,
@@ -161,7 +161,25 @@ export default function PurchaseReturnDetailPage() {
       .eq('id', returnId)
       .single()
 
-    if (data) setPr(data as unknown as ReturnDetail)
+    if (data) {
+      const returnData = data as unknown as ReturnDetail & { confirmed_by?: string, confirmer_name?: string }
+      
+      if (returnData.confirmed_by) {
+        try {
+          const { data: userProfile } = await supabase
+            .from('user_profiles')
+            .select('display_name, username')
+            .eq('user_id', returnData.confirmed_by)
+            .maybeSingle()
+          
+          if (userProfile) {
+            returnData.confirmer_name = userProfile.display_name || userProfile.username || undefined
+          }
+        } catch { /* ignore */ }
+      }
+      
+      setPr(returnData)
+    }
     setLoading(false)
   }
 
@@ -639,14 +657,31 @@ export default function PurchaseReturnDetailPage() {
           </div>
 
           {/* ─── Reason & Notes ─── */}
-          {(pr.reason || pr.notes) && (
+          {(pr.reason || pr.notes || (pr as any).confirmer_name) && (
             <Card className="dark:bg-gray-800 dark:border-gray-700">
               <CardHeader className="pb-3 border-b dark:border-gray-700">
-                <CardTitle className="text-base text-gray-900 dark:text-white">{t('سبب الإرجاع والملاحظات', 'Reason & Notes')}</CardTitle>
+                <CardTitle className="text-base text-gray-900 dark:text-white">{t('تفاصيل وملاحظات الاستلام', 'Details & Notes')}</CardTitle>
               </CardHeader>
-              <CardContent className="pt-4 space-y-2">
-                {pr.reason && <p className="text-sm text-gray-800 dark:text-gray-200">{pr.reason}</p>}
-                {pr.notes  && <p className="text-sm text-gray-500 dark:text-gray-400">{pr.notes}</p>}
+              <CardContent className="pt-4 space-y-3">
+                {(pr as any).confirmer_name && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <span className="font-medium text-gray-700 dark:text-gray-300">{t('مسؤول المخزن المُستلِم:', 'Confirmed by Warehouse Manager:')}</span>
+                    <span className="font-bold text-gray-900 dark:text-white">{(pr as any).confirmer_name}</span>
+                  </div>
+                )}
+                {pr.reason && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700 dark:text-gray-300">{t('سبب الإرجاع:', 'Reason:')} </span>
+                    <span className="text-gray-800 dark:text-gray-200">{pr.reason}</span>
+                  </div>
+                )}
+                {pr.notes && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700 dark:text-gray-300">{t('ملاحظات:', 'Notes:')} </span>
+                    <span className="text-gray-600 dark:text-gray-400">{pr.notes}</span>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

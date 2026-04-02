@@ -1,0 +1,130 @@
+[
+  {
+    "id": "959598b8-3679-47eb-a64f-144eba10eeb3",
+    "debit_amount": 5,
+    "credit_amount": 0,
+    "description": "Inventory",
+    "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+    "journal_entry_id": "362522f4-ba64-4ea9-82b0-5bc4b9f40667"
+  },
+  {
+    "id": "5b83c8df-ed50-4907-bc41-320d9026b0b2",
+    "debit_amount": 0,
+    "credit_amount": 5,
+    "description": "Accounts Payable",
+    "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+    "journal_entry_id": "362522f4-ba64-4ea9-82b0-5bc4b9f40667"
+  },
+  {
+    "id": "aaa11111-1111-1111-1111-111111111111",
+    "debit_amount": 70200,
+    "credit_amount": 0,
+    "description": "مخزون - BILL-0001",
+    "account_id": "2adbf822-b7f8-4597-a450-d8bbcc0879a3",
+    "journal_entry_id": "9b2b222d-2393-4098-b005-bc09769b4dad"
+  },
+  {
+    "id": "aaa22222-2222-2222-2222-222222222222",
+    "debit_amount": 0,
+    "credit_amount": 65400,
+    "description": "الموردين - BILL-0001",
+    "account_id": "540cd482-13f7-4f73-b856-0b3955148f7c",
+    "journal_entry_id": "9b2b222d-2393-4098-b005-bc09769b4dad"
+  },
+  {
+    "id": "5d80c17c-b070-4307-9c73-049a228d3374",
+    "debit_amount": 5,
+    "credit_amount": 0,
+    "description": "Inventory",
+    "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+    "journal_entry_id": "1197c085-b007-4446-8bf4-9907b3092e7f"
+  },
+  {
+    "id": "d8d13d40-3dd1-4881-8e20-3dda1376bc8f",
+    "debit_amount": 0,
+    "credit_amount": 5,
+    "description": "Accounts Payable",
+    "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+    "journal_entry_id": "1197c085-b007-4446-8bf4-9907b3092e7f"
+  },
+  {
+    "id": "cbec960d-109b-4a01-805a-3827bf8b4787",
+    "debit_amount": 7000,
+    "credit_amount": 0,
+    "description": "المخزون",
+    "account_id": "2adbf822-b7f8-4597-a450-d8bbcc0879a3",
+    "journal_entry_id": "6ae3dae1-c594-46cc-a70f-19aa34d5bbb6"
+  },
+  {
+    "id": "7b16178f-dc66-4bf7-afe0-7c47d1017595",
+    "debit_amount": 0,
+    "credit_amount": 7000,
+    "description": "الحسابات الدائنة",
+    "account_id": "540cd482-13f7-4f73-b856-0b3955148f7c",
+    "journal_entry_id": "6ae3dae1-c594-46cc-a70f-19aa34d5bbb6"
+  },
+  {
+    "id": "d9de414e-5432-4ec8-9888-8b1301f35bb2",
+    "debit_amount": 7000,
+    "credit_amount": 0,
+    "description": "قيمة المشتريات",
+    "account_id": "2adbf822-b7f8-4597-a450-d8bbcc0879a3",
+    "journal_entry_id": "6ae3dae1-c594-46cc-a70f-19aa34d5bbb6"
+  },
+  {
+    "id": "fcde5834-0194-4765-98be-55ca0689d4b9",
+    "debit_amount": 70200,
+    "credit_amount": 0,
+    "description": "قيمة المشتريات",
+    "account_id": "2adbf822-b7f8-4597-a450-d8bbcc0879a3",
+    "journal_entry_id": "9b2b222d-2393-4098-b005-bc09769b4dad"
+  },
+  {
+    "id": "079f4638-d0e8-4f08-afe4-ed8aecdef11a",
+    "debit_amount": 0,
+    "credit_amount": 75000,
+    "description": "إصلاح: تسوية قيد غير متوازن",
+    "account_id": "a6b4b695-aa80-47b9-b8e8-9251dd89b103",
+    "journal_entry_id": "9b2b222d-2393-4098-b005-bc09769b4dad"
+  },
+  {
+    "id": "bfb4c109-5693-4c3c-8a3c-a72aa53a984d",
+    "debit_amount": 5,
+    "credit_amount": 0,
+    "description": "Inventory",
+    "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+    "journal_entry_id": "70f2c29e-7b15-4687-a354-450b0f3c0085"
+  },
+  {
+    "id": "0aab9ada-e41b-4182-a793-493be0da536f",
+    "debit_amount": 0,
+    "credit_amount": 5,
+    "description": "Accounts Payable",
+    "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+    "journal_entry_id": "70f2c29e-7b15-4687-a354-450b0f3c0085"
+  },
+  {
+    "id": "41da0dbf-bc8c-4865-b853-db346b641b45",
+    "debit_amount": 5,
+    "credit_amount": 0,
+    "description": "Inventory",
+    "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+    "journal_entry_id": "1370b855-484f-4ac2-81af-cbf0d19accba"
+  },
+  {
+    "id": "fd6b3cbc-2e66-4bdd-8624-91b9f3a4205e",
+    "debit_amount": 0,
+    "credit_amount": 5,
+    "description": "Accounts Payable",
+    "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+    "journal_entry_id": "1370b855-484f-4ac2-81af-cbf0d19accba"
+  },
+  {
+    "id": "d7cca7ae-8a59-45d9-a4d5-94ef49586063",
+    "debit_amount": 0,
+    "credit_amount": 7000,
+    "description": "إصلاح: تسوية قيد غير متوازن",
+    "account_id": "a6b4b695-aa80-47b9-b8e8-9251dd89b103",
+    "journal_entry_id": "6ae3dae1-c594-46cc-a70f-19aa34d5bbb6"
+  }
+]

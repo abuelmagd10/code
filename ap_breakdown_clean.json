@@ -1,0 +1,22 @@
+{
+  "totalAP": 3,
+  "breakdown": {
+    "Purchase - BILL-0002": 10,
+    "مرتجع مشتريات PR-BILL-0001-1774972253475": -2,
+    "تم ": 2,
+    "Reversal: Purchase - BILL-0001": -10,
+    "Reversal: مرتجع مشتريات رقم PRET-30011": 2,
+    "Reversal: دفعة فاتورة شراء": 3,
+    "Reversal: Purchase - BILL-0002": -10,
+    "Reversal: مرتجع مشتريات PR-BILL-0001-1774972253475": 2,
+    "Reversal: تم ": -2,
+    "Reversal: Reversal: Purchase - BILL-0001": 5,
+    "Reversal: Reversal: مرتجع مشتريات PR-BILL-0001-1774972253475": -2,
+    "Reversal: Reversal: Purchase - BILL-0002": 5,
+    "Purchase - BILL-0001": 10,
+    "Reversal: Reversal: دفعة فاتورة شراء": -3,
+    "Reversal: Reversal: مرتجع مشتريات رقم PRET-30011": -2,
+    "مرتجع مشتريات رقم PRET-30011": -2,
+    "دفعة فاتورة شراء": -3
+  }
+}

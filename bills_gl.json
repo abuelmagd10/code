@@ -1,0 +1,524 @@
+[
+  {
+    "id": "f70a6002-4fb2-454e-a868-f98431e8ce96",
+    "description": "مرتجع مشتريات جزئي - فاتورة BILL-0001",
+    "status": "posted",
+    "entry_date": "2025-12-06",
+    "reference_type": "purchase_return",
+    "reference_id": "cec5aa99-335a-4ddc-8fab-5b5b38c7ccdf",
+    "created_at": "2025-12-06T20:02:27.742235+00:00",
+    "reversal_of_entry_id": null,
+    "lines": [
+      {
+        "id": "2d76b757-c7d3-4906-9026-dfb4e394af72",
+        "account_id": "540cd482-13f7-4f73-b856-0b3955148f7c",
+        "description": "تقليل الذمم الدائنة - مرتجع مشتريات",
+        "debit_amount": 4800,
+        "credit_amount": 0
+      },
+      {
+        "id": "d9f64209-148f-4a22-a5be-156b2b119bee",
+        "account_id": "2adbf822-b7f8-4597-a450-d8bbcc0879a3",
+        "description": "خروج مخزون - مرتجع مشتريات",
+        "debit_amount": 0,
+        "credit_amount": 4800
+      }
+    ]
+  },
+  {
+    "id": "559062cd-0a95-409e-b497-c5b52030adc6",
+    "description": "استرداد نقدي من المورد - فاتورة BILL-0001",
+    "status": "posted",
+    "entry_date": "2025-12-06",
+    "reference_type": "purchase_return_refund",
+    "reference_id": "cec5aa99-335a-4ddc-8fab-5b5b38c7ccdf",
+    "created_at": "2025-12-06T20:02:58.025384+00:00",
+    "reversal_of_entry_id": null,
+    "lines": [
+      {
+        "id": "56c9d9c4-96a6-450f-bbff-649e09f5393d",
+        "account_id": "540cd482-13f7-4f73-b856-0b3955148f7c",
+        "description": "استرداد مستلم من المورد",
+        "debit_amount": 0,
+        "credit_amount": 4800
+      },
+      {
+        "id": "fb1c3b49-4728-4ad0-9161-6274fe607e33",
+        "account_id": "a0a115bd-4ed3-4785-ad18-5407631c2f1d",
+        "description": "نقدية مستلمة من المورد - مرتجع",
+        "debit_amount": 4800,
+        "credit_amount": 0
+      }
+    ]
+  },
+  {
+    "id": "33379a1b-aed9-4fbc-b9b0-3310f960d286",
+    "description": "دفعة على فاتورة شراء BILL-0001",
+    "status": "posted",
+    "entry_date": "2025-10-01",
+    "reference_type": "bill_payment",
+    "reference_id": "e625c5c8-5d1f-40b4-993e-4582debf4901",
+    "created_at": "2025-12-24T14:06:59.418193+00:00",
+    "reversal_of_entry_id": null,
+    "lines": [
+      {
+        "id": "261f76bb-9972-4fe2-b998-71b537a8eed5",
+        "account_id": "a0a115bd-4ed3-4785-ad18-5407631c2f1d",
+        "description": "النقد/البنك",
+        "debit_amount": 0,
+        "credit_amount": 70200
+      },
+      {
+        "id": "5e7d05ae-1488-4a09-abed-6b8c491dc8df",
+        "account_id": "540cd482-13f7-4f73-b856-0b3955148f7c",
+        "description": "إصلاح تلقائي: توازن قيد الدفع",
+        "debit_amount": 70200,
+        "credit_amount": 0
+      }
+    ]
+  },
+  {
+    "id": "6ae3dae1-c594-46cc-a70f-19aa34d5bbb6",
+    "description": "فاتورة شراء BILL-0002",
+    "status": "posted",
+    "entry_date": "2025-11-01",
+    "reference_type": "bill",
+    "reference_id": "dccb2627-5d16-45bc-b6dc-8c2238c8a19a",
+    "created_at": "2025-12-26T09:32:48.063407+00:00",
+    "reversal_of_entry_id": null,
+    "lines": [
+      {
+        "id": "cbec960d-109b-4a01-805a-3827bf8b4787",
+        "account_id": "2adbf822-b7f8-4597-a450-d8bbcc0879a3",
+        "description": "المخزون",
+        "debit_amount": 7000,
+        "credit_amount": 0
+      },
+      {
+        "id": "7b16178f-dc66-4bf7-afe0-7c47d1017595",
+        "account_id": "540cd482-13f7-4f73-b856-0b3955148f7c",
+        "description": "الحسابات الدائنة",
+        "debit_amount": 0,
+        "credit_amount": 7000
+      },
+      {
+        "id": "d9de414e-5432-4ec8-9888-8b1301f35bb2",
+        "account_id": "2adbf822-b7f8-4597-a450-d8bbcc0879a3",
+        "description": "قيمة المشتريات",
+        "debit_amount": 7000,
+        "credit_amount": 0
+      },
+      {
+        "id": "d7cca7ae-8a59-45d9-a4d5-94ef49586063",
+        "account_id": "a6b4b695-aa80-47b9-b8e8-9251dd89b103",
+        "description": "إصلاح: تسوية قيد غير متوازن",
+        "debit_amount": 0,
+        "credit_amount": 7000
+      }
+    ]
+  },
+  {
+    "id": "9b2b222d-2393-4098-b005-bc09769b4dad",
+    "description": "فاتورة شراء BILL-0001",
+    "status": "posted",
+    "entry_date": "2025-10-01",
+    "reference_type": "bill",
+    "reference_id": "cec5aa99-335a-4ddc-8fab-5b5b38c7ccdf",
+    "created_at": "2025-12-26T09:35:31.91626+00:00",
+    "reversal_of_entry_id": null,
+    "lines": [
+      {
+        "id": "aaa11111-1111-1111-1111-111111111111",
+        "account_id": "2adbf822-b7f8-4597-a450-d8bbcc0879a3",
+        "description": "مخزون - BILL-0001",
+        "debit_amount": 70200,
+        "credit_amount": 0
+      },
+      {
+        "id": "aaa22222-2222-2222-2222-222222222222",
+        "account_id": "540cd482-13f7-4f73-b856-0b3955148f7c",
+        "description": "الموردين - BILL-0001",
+        "debit_amount": 0,
+        "credit_amount": 65400
+      },
+      {
+        "id": "fcde5834-0194-4765-98be-55ca0689d4b9",
+        "account_id": "2adbf822-b7f8-4597-a450-d8bbcc0879a3",
+        "description": "قيمة المشتريات",
+        "debit_amount": 70200,
+        "credit_amount": 0
+      },
+      {
+        "id": "079f4638-d0e8-4f08-afe4-ed8aecdef11a",
+        "account_id": "a6b4b695-aa80-47b9-b8e8-9251dd89b103",
+        "description": "إصلاح: تسوية قيد غير متوازن",
+        "debit_amount": 0,
+        "credit_amount": 75000
+      }
+    ]
+  },
+  {
+    "id": "729d6e69-46b7-471c-b8e0-94f8913ac671",
+    "description": "قيد محاسبي لمدفوعة فاتورة: BILL-0002",
+    "status": "posted",
+    "entry_date": "2025-11-01",
+    "reference_type": "bill_payment",
+    "reference_id": "97fe34d8-5fd7-4ff7-b0ab-1596068b8012",
+    "created_at": "2026-01-19T11:01:39.207391+00:00",
+    "reversal_of_entry_id": null,
+    "lines": [
+      {
+        "id": "c1790560-f122-4e7b-8eb4-0a3e3fadceca",
+        "account_id": "540cd482-13f7-4f73-b856-0b3955148f7c",
+        "description": "خصم من حساب الموردين",
+        "debit_amount": 7000,
+        "credit_amount": 0
+      },
+      {
+        "id": "33e4b898-be7f-4e3a-a09b-f6b55e82aa80",
+        "account_id": "f66f3019-8c50-41bb-9ace-955cc89a5bf6",
+        "description": "دفع نقدي/بنكي",
+        "debit_amount": 0,
+        "credit_amount": 7000
+      }
+    ]
+  },
+  {
+    "id": "70f2c29e-7b15-4687-a354-450b0f3c0085",
+    "description": "Purchase - BILL-0001",
+    "status": "posted",
+    "entry_date": "2026-03-28",
+    "reference_type": "bill",
+    "reference_id": "2009e030-14da-4ebc-aa38-b5b3dfdb65da",
+    "created_at": "2026-03-28T21:28:19.364206+00:00",
+    "reversal_of_entry_id": null,
+    "lines": [
+      {
+        "id": "bfb4c109-5693-4c3c-8a3c-a72aa53a984d",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "Inventory",
+        "debit_amount": 5,
+        "credit_amount": 0
+      },
+      {
+        "id": "0aab9ada-e41b-4182-a793-493be0da536f",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "Accounts Payable",
+        "debit_amount": 0,
+        "credit_amount": 5
+      }
+    ]
+  },
+  {
+    "id": "1370b855-484f-4ac2-81af-cbf0d19accba",
+    "description": "Purchase - BILL-0001",
+    "status": "posted",
+    "entry_date": "2026-03-28",
+    "reference_type": "bill",
+    "reference_id": "2009e030-14da-4ebc-aa38-b5b3dfdb65da",
+    "created_at": "2026-03-28T21:34:47.92881+00:00",
+    "reversal_of_entry_id": null,
+    "lines": [
+      {
+        "id": "41da0dbf-bc8c-4865-b853-db346b641b45",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "Inventory",
+        "debit_amount": 5,
+        "credit_amount": 0
+      },
+      {
+        "id": "fd6b3cbc-2e66-4bdd-8624-91b9f3a4205e",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "Accounts Payable",
+        "debit_amount": 0,
+        "credit_amount": 5
+      }
+    ]
+  },
+  {
+    "id": "362522f4-ba64-4ea9-82b0-5bc4b9f40667",
+    "description": "Purchase - BILL-0002",
+    "status": "posted",
+    "entry_date": "2026-03-31",
+    "reference_type": "bill",
+    "reference_id": "4491e319-fe92-4da0-a8e7-3c6f35af0945",
+    "created_at": "2026-03-31T15:45:24.347637+00:00",
+    "reversal_of_entry_id": null,
+    "lines": [
+      {
+        "id": "959598b8-3679-47eb-a64f-144eba10eeb3",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "Inventory",
+        "debit_amount": 5,
+        "credit_amount": 0
+      },
+      {
+        "id": "5b83c8df-ed50-4907-bc41-320d9026b0b2",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "Accounts Payable",
+        "debit_amount": 0,
+        "credit_amount": 5
+      }
+    ]
+  },
+  {
+    "id": "1197c085-b007-4446-8bf4-9907b3092e7f",
+    "description": "Purchase - BILL-0002",
+    "status": "posted",
+    "entry_date": "2026-03-31",
+    "reference_type": "bill",
+    "reference_id": "4491e319-fe92-4da0-a8e7-3c6f35af0945",
+    "created_at": "2026-03-31T15:49:26.918362+00:00",
+    "reversal_of_entry_id": null,
+    "lines": [
+      {
+        "id": "5d80c17c-b070-4307-9c73-049a228d3374",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "Inventory",
+        "debit_amount": 5,
+        "credit_amount": 0
+      },
+      {
+        "id": "d8d13d40-3dd1-4881-8e20-3dda1376bc8f",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "Accounts Payable",
+        "debit_amount": 0,
+        "credit_amount": 5
+      }
+    ]
+  },
+  {
+    "id": "85015dad-2486-4a21-b59e-deba4a4727c8",
+    "description": "مرتجع مشتريات PR-BILL-0001-1774972253475",
+    "status": "posted",
+    "entry_date": "2026-03-31",
+    "reference_type": "purchase_return",
+    "reference_id": "e0c30ec3-51d5-4c20-8a9a-8c6d3b14ba0e",
+    "created_at": "2026-03-31T16:09:02.835025+00:00",
+    "reversal_of_entry_id": null,
+    "lines": [
+      {
+        "id": "2fd4cabe-4886-42cf-b329-02f6f0fcb5da",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "تخفيض ذمم دائنة (AP) — مرتجع مشتريات",
+        "debit_amount": 2,
+        "credit_amount": 0
+      },
+      {
+        "id": "dc0f667b-eb3a-42e4-b93e-53d2c97559c0",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "مخزون مرتجع للمورد",
+        "debit_amount": 0,
+        "credit_amount": 2
+      }
+    ]
+  },
+  {
+    "id": "d6319a47-1ba1-4b87-a2d3-e4298e33cca3",
+    "description": "Reversal: Purchase - BILL-0001",
+    "status": "posted",
+    "entry_date": "2026-04-02",
+    "reference_type": "reversal",
+    "reference_id": "70f2c29e-7b15-4687-a354-450b0f3c0085",
+    "created_at": "2026-04-02T08:40:27.797437+00:00",
+    "reversal_of_entry_id": "70f2c29e-7b15-4687-a354-450b0f3c0085",
+    "lines": [
+      {
+        "id": "7e3a8cf6-878b-426e-beb1-935e89393620",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "Inventory (عكسي)",
+        "debit_amount": 0,
+        "credit_amount": 5
+      },
+      {
+        "id": "b0c6ac66-f9a0-433a-a631-3dcd514d970d",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "Accounts Payable (عكسي)",
+        "debit_amount": 5,
+        "credit_amount": 0
+      }
+    ]
+  },
+  {
+    "id": "710199f5-6983-4850-8614-b5fcdd72be79",
+    "description": "Reversal: Purchase - BILL-0001",
+    "status": "posted",
+    "entry_date": "2026-04-02",
+    "reference_type": "reversal",
+    "reference_id": "1370b855-484f-4ac2-81af-cbf0d19accba",
+    "created_at": "2026-04-02T08:40:28.54746+00:00",
+    "reversal_of_entry_id": "1370b855-484f-4ac2-81af-cbf0d19accba",
+    "lines": [
+      {
+        "id": "1ef33ad1-79c8-461b-be91-d93f95a2c5fb",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "Inventory (عكسي)",
+        "debit_amount": 0,
+        "credit_amount": 5
+      },
+      {
+        "id": "c6f2b682-1001-4fd8-8456-ab1ed31298b0",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "Accounts Payable (عكسي)",
+        "debit_amount": 5,
+        "credit_amount": 0
+      }
+    ]
+  },
+  {
+    "id": "39f94661-21e8-4558-9545-590872d0b975",
+    "description": "Reversal: Purchase - BILL-0002",
+    "status": "posted",
+    "entry_date": "2026-04-02",
+    "reference_type": "reversal",
+    "reference_id": "362522f4-ba64-4ea9-82b0-5bc4b9f40667",
+    "created_at": "2026-04-02T08:40:29.189191+00:00",
+    "reversal_of_entry_id": "362522f4-ba64-4ea9-82b0-5bc4b9f40667",
+    "lines": [
+      {
+        "id": "82563013-6aed-4cf0-862d-c44a6ff88baa",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "Inventory (عكسي)",
+        "debit_amount": 0,
+        "credit_amount": 5
+      },
+      {
+        "id": "10a14e17-20c7-4649-8b60-c94f9de2be72",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "Accounts Payable (عكسي)",
+        "debit_amount": 5,
+        "credit_amount": 0
+      }
+    ]
+  },
+  {
+    "id": "4a4f40ef-e365-471c-993d-8a56a2586775",
+    "description": "Reversal: Purchase - BILL-0002",
+    "status": "posted",
+    "entry_date": "2026-04-02",
+    "reference_type": "reversal",
+    "reference_id": "1197c085-b007-4446-8bf4-9907b3092e7f",
+    "created_at": "2026-04-02T08:40:29.408362+00:00",
+    "reversal_of_entry_id": "1197c085-b007-4446-8bf4-9907b3092e7f",
+    "lines": [
+      {
+        "id": "0dcb7204-a84c-4ef0-b5ab-6154e29a6479",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "Inventory (عكسي)",
+        "debit_amount": 0,
+        "credit_amount": 5
+      },
+      {
+        "id": "e2f886ed-8acc-42b9-94d2-937f3c7f0831",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "Accounts Payable (عكسي)",
+        "debit_amount": 5,
+        "credit_amount": 0
+      }
+    ]
+  },
+  {
+    "id": "a435445b-a7c0-4bca-83b7-1d68754cb111",
+    "description": "Reversal: مرتجع مشتريات PR-BILL-0001-1774972253475",
+    "status": "posted",
+    "entry_date": "2026-04-02",
+    "reference_type": "reversal",
+    "reference_id": "85015dad-2486-4a21-b59e-deba4a4727c8",
+    "created_at": "2026-04-02T08:40:29.606406+00:00",
+    "reversal_of_entry_id": "85015dad-2486-4a21-b59e-deba4a4727c8",
+    "lines": [
+      {
+        "id": "f60c87be-1707-4a02-8cbd-313ae42b04c6",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "تخفيض ذمم دائنة (AP) — مرتجع مشتريات (عكسي)",
+        "debit_amount": 0,
+        "credit_amount": 2
+      },
+      {
+        "id": "91eccca7-5965-4567-8199-ceb1e0b2ce60",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "مخزون مرتجع للمورد (عكسي)",
+        "debit_amount": 2,
+        "credit_amount": 0
+      }
+    ]
+  },
+  {
+    "id": "5f835f35-94f3-4f7b-beb8-fc5383b46c72",
+    "description": "Reversal: Reversal: Purchase - BILL-0001",
+    "status": "posted",
+    "entry_date": "2026-04-02",
+    "reference_type": "reversal",
+    "reference_id": "710199f5-6983-4850-8614-b5fcdd72be79",
+    "created_at": "2026-04-02T17:15:33.083513+00:00",
+    "reversal_of_entry_id": "710199f5-6983-4850-8614-b5fcdd72be79",
+    "lines": [
+      {
+        "id": "f1e70b4b-1ce8-4aca-86fe-0e2aa8280361",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "Inventory (عكسي) (عكسي)",
+        "debit_amount": 5,
+        "credit_amount": 0
+      },
+      {
+        "id": "d1fa33bc-57e9-4339-8796-149d3ccce950",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "Accounts Payable (عكسي) (عكسي)",
+        "debit_amount": 0,
+        "credit_amount": 5
+      }
+    ]
+  },
+  {
+    "id": "b867cea8-194d-48f7-a8b6-3cdde501991e",
+    "description": "Reversal: Reversal: مرتجع مشتريات PR-BILL-0001-1774972253475",
+    "status": "posted",
+    "entry_date": "2026-04-02",
+    "reference_type": "reversal",
+    "reference_id": "a435445b-a7c0-4bca-83b7-1d68754cb111",
+    "created_at": "2026-04-02T17:15:33.815417+00:00",
+    "reversal_of_entry_id": "a435445b-a7c0-4bca-83b7-1d68754cb111",
+    "lines": [
+      {
+        "id": "b4f16221-9614-4908-8e41-40f3c0dcea27",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "تخفيض ذمم دائنة (AP) — مرتجع مشتريات (عكسي) (عكسي)",
+        "debit_amount": 2,
+        "credit_amount": 0
+      },
+      {
+        "id": "371bd5ce-ccc5-4f29-b0bc-73c9bc2668c9",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "مخزون مرتجع للمورد (عكسي) (عكسي)",
+        "debit_amount": 0,
+        "credit_amount": 2
+      }
+    ]
+  },
+  {
+    "id": "994db813-5d11-4045-8241-e624aaab97d0",
+    "description": "Reversal: Reversal: Purchase - BILL-0002",
+    "status": "posted",
+    "entry_date": "2026-04-02",
+    "reference_type": "reversal",
+    "reference_id": "4a4f40ef-e365-471c-993d-8a56a2586775",
+    "created_at": "2026-04-02T17:15:34.089735+00:00",
+    "reversal_of_entry_id": "4a4f40ef-e365-471c-993d-8a56a2586775",
+    "lines": [
+      {
+        "id": "7b5567dc-ba83-45c6-97bf-c11266764b46",
+        "account_id": "7783fbd3-178e-410e-8e73-cad321efaabe",
+        "description": "Inventory (عكسي) (عكسي)",
+        "debit_amount": 5,
+        "credit_amount": 0
+      },
+      {
+        "id": "8c27b4af-65db-469c-b078-966489975de4",
+        "account_id": "a928ba96-a3cf-4fd0-9e2a-89a59797d589",
+        "description": "Accounts Payable (عكسي) (عكسي)",
+        "debit_amount": 0,
+        "credit_amount": 5
+      }
+    ]
+  }
+]

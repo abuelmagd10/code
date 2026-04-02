@@ -1,0 +1,218 @@
+[
+  {
+    "jes": [
+      {
+        "id": "70f2c29e-7b15-4687-a354-450b0f3c0085",
+        "description": "Purchase - BILL-0001",
+        "status": "posted",
+        "entry_date": "2026-03-28",
+        "reference_type": "bill",
+        "reference_id": "2009e030-14da-4ebc-aa38-b5b3dfdb65da",
+        "created_at": "2026-03-28T21:28:19.364206+00:00",
+        "reversal_of_entry_id": null
+      },
+      {
+        "id": "1370b855-484f-4ac2-81af-cbf0d19accba",
+        "description": "Purchase - BILL-0001",
+        "status": "posted",
+        "entry_date": "2026-03-28",
+        "reference_type": "bill",
+        "reference_id": "2009e030-14da-4ebc-aa38-b5b3dfdb65da",
+        "created_at": "2026-03-28T21:34:47.92881+00:00",
+        "reversal_of_entry_id": null
+      },
+      {
+        "id": "6ae3dae1-c594-46cc-a70f-19aa34d5bbb6",
+        "description": "فاتورة شراء BILL-0002",
+        "status": "posted",
+        "entry_date": "2025-11-01",
+        "reference_type": "bill",
+        "reference_id": "dccb2627-5d16-45bc-b6dc-8c2238c8a19a",
+        "created_at": "2025-12-26T09:32:48.063407+00:00",
+        "reversal_of_entry_id": null
+      },
+      {
+        "id": "9b2b222d-2393-4098-b005-bc09769b4dad",
+        "description": "فاتورة شراء BILL-0001",
+        "status": "posted",
+        "entry_date": "2025-10-01",
+        "reference_type": "bill",
+        "reference_id": "cec5aa99-335a-4ddc-8fab-5b5b38c7ccdf",
+        "created_at": "2025-12-26T09:35:31.91626+00:00",
+        "reversal_of_entry_id": null
+      },
+      {
+        "id": "362522f4-ba64-4ea9-82b0-5bc4b9f40667",
+        "description": "Purchase - BILL-0002",
+        "status": "posted",
+        "entry_date": "2026-03-31",
+        "reference_type": "bill",
+        "reference_id": "4491e319-fe92-4da0-a8e7-3c6f35af0945",
+        "created_at": "2026-03-31T15:45:24.347637+00:00",
+        "reversal_of_entry_id": null
+      },
+      {
+        "id": "1197c085-b007-4446-8bf4-9907b3092e7f",
+        "description": "Purchase - BILL-0002",
+        "status": "posted",
+        "entry_date": "2026-03-31",
+        "reference_type": "bill",
+        "reference_id": "4491e319-fe92-4da0-a8e7-3c6f35af0945",
+        "created_at": "2026-03-31T15:49:26.918362+00:00",
+        "reversal_of_entry_id": null
+      },
+      {
+        "id": "85015dad-2486-4a21-b59e-deba4a4727c8",
+        "description": "مرتجع مشتريات PR-BILL-0001-1774972253475",
+        "status": "posted",
+        "entry_date": "2026-03-31",
+        "reference_type": "purchase_return",
+        "reference_id": "e0c30ec3-51d5-4c20-8a9a-8c6d3b14ba0e",
+        "created_at": "2026-03-31T16:09:02.835025+00:00",
+        "reversal_of_entry_id": null
+      },
+      {
+        "id": "f70a6002-4fb2-454e-a868-f98431e8ce96",
+        "description": "مرتجع مشتريات جزئي - فاتورة BILL-0001",
+        "status": "posted",
+        "entry_date": "2025-12-06",
+        "reference_type": "purchase_return",
+        "reference_id": "cec5aa99-335a-4ddc-8fab-5b5b38c7ccdf",
+        "created_at": "2025-12-06T20:02:27.742235+00:00",
+        "reversal_of_entry_id": null
+      },
+      {
+        "id": "559062cd-0a95-409e-b497-c5b52030adc6",
+        "description": "استرداد نقدي من المورد - فاتورة BILL-0001",
+        "status": "posted",
+        "entry_date": "2025-12-06",
+        "reference_type": "purchase_return_refund",
+        "reference_id": "cec5aa99-335a-4ddc-8fab-5b5b38c7ccdf",
+        "created_at": "2025-12-06T20:02:58.025384+00:00",
+        "reversal_of_entry_id": null
+      },
+      {
+        "id": "33379a1b-aed9-4fbc-b9b0-3310f960d286",
+        "description": "دفعة على فاتورة شراء BILL-0001",
+        "status": "posted",
+        "entry_date": "2025-10-01",
+        "reference_type": "bill_payment",
+        "reference_id": "e625c5c8-5d1f-40b4-993e-4582debf4901",
+        "created_at": "2025-12-24T14:06:59.418193+00:00",
+        "reversal_of_entry_id": null
+      },
+      {
+        "id": "d6319a47-1ba1-4b87-a2d3-e4298e33cca3",
+        "description": "Reversal: Purchase - BILL-0001",
+        "status": "posted",
+        "entry_date": "2026-04-02",
+        "reference_type": "reversal",
+        "reference_id": "70f2c29e-7b15-4687-a354-450b0f3c0085",
+        "created_at": "2026-04-02T08:40:27.797437+00:00",
+        "reversal_of_entry_id": "70f2c29e-7b15-4687-a354-450b0f3c0085"
+      },
+      {
+        "id": "710199f5-6983-4850-8614-b5fcdd72be79",
+        "description": "Reversal: Purchase - BILL-0001",
+        "status": "posted",
+        "entry_date": "2026-04-02",
+        "reference_type": "reversal",
+        "reference_id": "1370b855-484f-4ac2-81af-cbf0d19accba",
+        "created_at": "2026-04-02T08:40:28.54746+00:00",
+        "reversal_of_entry_id": "1370b855-484f-4ac2-81af-cbf0d19accba"
+      },
+      {
+        "id": "39f94661-21e8-4558-9545-590872d0b975",
+        "description": "Reversal: Purchase - BILL-0002",
+        "status": "posted",
+        "entry_date": "2026-04-02",
+        "reference_type": "reversal",
+        "reference_id": "362522f4-ba64-4ea9-82b0-5bc4b9f40667",
+        "created_at": "2026-04-02T08:40:29.189191+00:00",
+        "reversal_of_entry_id": "362522f4-ba64-4ea9-82b0-5bc4b9f40667"
+      },
+      {
+        "id": "4a4f40ef-e365-471c-993d-8a56a2586775",
+        "description": "Reversal: Purchase - BILL-0002",
+        "status": "posted",
+        "entry_date": "2026-04-02",
+        "reference_type": "reversal",
+        "reference_id": "1197c085-b007-4446-8bf4-9907b3092e7f",
+        "created_at": "2026-04-02T08:40:29.408362+00:00",
+        "reversal_of_entry_id": "1197c085-b007-4446-8bf4-9907b3092e7f"
+      },
+      {
+        "id": "a435445b-a7c0-4bca-83b7-1d68754cb111",
+        "description": "Reversal: مرتجع مشتريات PR-BILL-0001-1774972253475",
+        "status": "posted",
+        "entry_date": "2026-04-02",
+        "reference_type": "reversal",
+        "reference_id": "85015dad-2486-4a21-b59e-deba4a4727c8",
+        "created_at": "2026-04-02T08:40:29.606406+00:00",
+        "reversal_of_entry_id": "85015dad-2486-4a21-b59e-deba4a4727c8"
+      },
+      {
+        "id": "729d6e69-46b7-471c-b8e0-94f8913ac671",
+        "description": "قيد محاسبي لمدفوعة فاتورة: BILL-0002",
+        "status": "posted",
+        "entry_date": "2025-11-01",
+        "reference_type": "bill_payment",
+        "reference_id": "97fe34d8-5fd7-4ff7-b0ab-1596068b8012",
+        "created_at": "2026-01-19T11:01:39.207391+00:00",
+        "reversal_of_entry_id": null
+      }
+    ],
+    "rev_jes": [
+      {
+        "id": "4a4f40ef-e365-471c-993d-8a56a2586775",
+        "description": "Reversal: Purchase - BILL-0002",
+        "status": "posted",
+        "entry_date": "2026-04-02",
+        "reference_type": "reversal",
+        "reference_id": "1197c085-b007-4446-8bf4-9907b3092e7f",
+        "created_at": "2026-04-02T08:40:29.408362+00:00",
+        "reversal_of_entry_id": "1197c085-b007-4446-8bf4-9907b3092e7f"
+      },
+      {
+        "id": "710199f5-6983-4850-8614-b5fcdd72be79",
+        "description": "Reversal: Purchase - BILL-0001",
+        "status": "posted",
+        "entry_date": "2026-04-02",
+        "reference_type": "reversal",
+        "reference_id": "1370b855-484f-4ac2-81af-cbf0d19accba",
+        "created_at": "2026-04-02T08:40:28.54746+00:00",
+        "reversal_of_entry_id": "1370b855-484f-4ac2-81af-cbf0d19accba"
+      },
+      {
+        "id": "39f94661-21e8-4558-9545-590872d0b975",
+        "description": "Reversal: Purchase - BILL-0002",
+        "status": "posted",
+        "entry_date": "2026-04-02",
+        "reference_type": "reversal",
+        "reference_id": "362522f4-ba64-4ea9-82b0-5bc4b9f40667",
+        "created_at": "2026-04-02T08:40:29.189191+00:00",
+        "reversal_of_entry_id": "362522f4-ba64-4ea9-82b0-5bc4b9f40667"
+      },
+      {
+        "id": "d6319a47-1ba1-4b87-a2d3-e4298e33cca3",
+        "description": "Reversal: Purchase - BILL-0001",
+        "status": "posted",
+        "entry_date": "2026-04-02",
+        "reference_type": "reversal",
+        "reference_id": "70f2c29e-7b15-4687-a354-450b0f3c0085",
+        "created_at": "2026-04-02T08:40:27.797437+00:00",
+        "reversal_of_entry_id": "70f2c29e-7b15-4687-a354-450b0f3c0085"
+      },
+      {
+        "id": "a435445b-a7c0-4bca-83b7-1d68754cb111",
+        "description": "Reversal: مرتجع مشتريات PR-BILL-0001-1774972253475",
+        "status": "posted",
+        "entry_date": "2026-04-02",
+        "reference_type": "reversal",
+        "reference_id": "85015dad-2486-4a21-b59e-deba4a4727c8",
+        "created_at": "2026-04-02T08:40:29.606406+00:00",
+        "reversal_of_entry_id": "85015dad-2486-4a21-b59e-deba4a4727c8"
+      }
+    ]
+  }
+]
