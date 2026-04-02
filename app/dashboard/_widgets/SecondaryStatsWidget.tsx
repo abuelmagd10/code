@@ -103,6 +103,7 @@ export default async function SecondaryStatsWidget({
       `)
       .eq("journal_entries.company_id", companyId)
       .eq("journal_entries.status", "posted")
+      .eq("journal_entries.is_deleted", false)
       .in("chart_of_accounts.sub_type", ["accounts_receivable", "accounts_payable"])
 
     if (branchId) fallbackQuery = fallbackQuery.eq("journal_entries.branch_id", branchId)
