@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
         debit_amount,
         credit_amount,
         journal_entry_id,
-        journal_entries!inner(entry_date, company_id, status, is_deleted, deleted_at),
+        journal_entries!inner(entry_date, company_id, status, is_deleted, deleted_at, reference_type),
         chart_of_accounts!inner(account_type, account_code, account_name, sub_type)
       `)
       .in("journal_entry_id", journalEntryIds)
@@ -175,38 +175,61 @@ export async function GET(request: NextRequest) {
     salesCount = salesEntryIds.size
 
     // ✅ حساب المشتريات — من GL فقط (Zero Financial Numbers Outside GL، لا fallback إلى bills)
+    // المشكلة السابقة: كان الكود يبحث فقط عن account_type = 'expense' و sub_type = 'purchases'
+    // في نظام الجرد المستمر، المشتريات تضاف للمخزون (asset -> inventory) ولا تذهب للمصروفات مباشرة.
+    // الحل المعتمد: البحث عن قيود المشتريات (reference_type = 'bill') وجمع المبالغ المدينة للحسابات (inventory أو purchases)
     let journalPurchasesTotal = 0
     let journalPurchasesCount = 0
-    const purchasesLines = periodLines.filter((line: any) => {
-      const coa = line.chart_of_accounts
-      return coa?.account_type === "expense" && 
-             (coa?.sub_type === "purchases" || coa?.account_code === "5110")
-    })
-    const purchaseReturnsLines = periodLines.filter((line: any) => {
-      const coa = line.chart_of_accounts
-      return coa?.account_type === "expense" && 
-             (coa?.sub_type === "purchase_returns" || coa?.account_code === "5120")
-    })
+    
     const purchasesEntryIds = new Set<string>()
     
-    // المشتريات تزيد بالمدين
+    // المشتريات الفعلية (الفواتير)
+    const purchasesLines = periodLines.filter((line: any) => {
+      const entryDesc = line.journal_entries?.reference_type
+      const coa = line.chart_of_accounts
+      
+      // يجب أن يكون القيد ناتج عن فاتورة شراء
+      if (entryDesc !== "bill") return false;
+      
+      // تحديد خطوط القيد التي تمثل المشتريات (إما مخزون أو مصروفات)
+      const isInventory = coa?.account_type === "asset" && coa?.sub_type === "inventory";
+      const isExpense = coa?.account_type === "expense";
+      
+      return isInventory || isExpense;
+    })
+
+    // مردودات المشتريات
+    const purchaseReturnsLines = periodLines.filter((line: any) => {
+      const entryDesc = line.journal_entries?.reference_type
+      const coa = line.chart_of_accounts
+      
+      if (entryDesc !== "purchase_return") return false;
+      
+      // المردودات تقلل المخزون أو تقيد كمصروف (دائن)
+      const isInventory = coa?.account_type === "asset" && coa?.sub_type === "inventory";
+      const isExpense = coa?.account_type === "expense";
+      
+      return isInventory || isExpense;
+    })
+    
+    // المشتريات تزيد بالمدين (أصول مخزون أو مصروفات)
     for (const line of purchasesLines) {
       const debit = Number(line.debit_amount || 0)
       const credit = Number(line.credit_amount || 0)
-      const amount = debit - credit
+      const amount = debit - credit // القيمة الصافية للمشتريات
       if (amount > 0.01) {
         journalPurchasesTotal += amount
         purchasesEntryIds.add(line.journal_entry_id)
       }
     }
     
-    // مردودات المشتريات تزيد بالدائن (نطرحها من المشتريات)
+    // مردودات المشتريات تزيد بالدائن (نطرحها من إجمالي المشتريات)
     for (const line of purchaseReturnsLines) {
       const debit = Number(line.debit_amount || 0)
       const credit = Number(line.credit_amount || 0)
-      const amount = credit - debit // مردودات تزيد بالدائن
+      const amount = credit - debit // المردودات دائنة (تخفض المخزون/المصروف)
       if (amount > 0.01) {
-        journalPurchasesTotal = Math.max(0, journalPurchasesTotal - amount) // طرح مردودات المشتريات
+        journalPurchasesTotal = Math.max(0, journalPurchasesTotal - amount)
       }
     }
     
