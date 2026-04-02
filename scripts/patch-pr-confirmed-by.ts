@@ -77,15 +77,7 @@ async function main() {
         count++;
       }
     } else {
-      console.log(`Warning: Could not identify confirmer for PR ${pr.id}. Falling back to created_by...`);
-      const { data: prData } = await supabase.from('purchase_returns').select('created_by').eq('id', pr.id).single();
-      if (prData?.created_by) {
-        await supabase.from('purchase_returns').update({ confirmed_by: prData.created_by }).eq('id', pr.id);
-        console.log(`Successfully padded PR ${pr.id} with creator user_id: ${prData.created_by}`);
-        count++;
-      } else {
-        console.log(`Could not resolve ANY user for PR ${pr.id}.`);
-      }
+      console.log(`Warning: Could not identify confirmer for PR ${pr.id}`);
     }
   }
 
