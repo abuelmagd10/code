@@ -37,7 +37,7 @@ export default async function SecondaryStatsWidget({
     .from('invoices')
     .select('id, total_amount, paid_amount, returned_amount, invoice_date, status, display_total, display_currency, display_rate')
     .eq('company_id', companyId)
-    .in('status', ['sent', 'partially_paid'])
+    .in('status', ['sent', 'partially_paid', 'overdue'])
     .limit(500)
   if (branchId) arQuery = arQuery.eq('branch_id', branchId)
   const { data: arData } = await arQuery
@@ -48,7 +48,7 @@ export default async function SecondaryStatsWidget({
     .from('bills')
     .select('id, total_amount, paid_amount, returned_amount, bill_date, status, display_total, display_currency, display_rate')
     .eq('company_id', companyId)
-    .in('status', ['sent', 'partially_paid'])
+    .in('status', ['sent', 'partially_paid', 'received', 'overdue'])
     .limit(500)
   if (branchId) apQuery = apQuery.eq('branch_id', branchId)
   const { data: apData } = await apQuery
@@ -91,60 +91,36 @@ export default async function SecondaryStatsWidget({
   let glReceivables: number | undefined
   let glPayables: number | undefined
   try {
-    // محاولة من Materialized View المعتمَد ماليًا
-    let mvQuery = supabase
-      .from("dashboard_gl_monthly_summary")
-      .select("sub_type, total_debit, total_credit, net_credit")
-      .eq("company_id", companyId)
-      .in("sub_type", ["accounts_receivable", "accounts_payable"])
+    // ⚠️ لا نستخدم Materialized View هنا لأنه قد يكون غير محدث (Stale) ويؤدي إلى عرض أرقام غير موجودة فعلياً
+    // نقرأ مباشرة من قيود اليومية لضمان دقة 100% للأرصدة التراكمية الدائمة (Live GL Query)
+    let fallbackQuery = supabase
+      .from("journal_entry_lines")
+      .select(`
+        debit_amount,
+        credit_amount,
+        chart_of_accounts!inner(sub_type),
+        journal_entries!inner(company_id, status, branch_id)
+      `)
+      .eq("journal_entries.company_id", companyId)
+      .eq("journal_entries.status", "posted")
+      .in("chart_of_accounts.sub_type", ["accounts_receivable", "accounts_payable"])
 
-    if (branchId) mvQuery = mvQuery.eq("branch_id", branchId)
-
-    const { data: mvData, error: mvErr } = await mvQuery
-
-    if (!mvErr && mvData && mvData.length > 0) {
+    if (branchId) fallbackQuery = fallbackQuery.eq("journal_entries.branch_id", branchId)
+      
+    const { data: fallbackData } = await fallbackQuery
+    if (fallbackData) {
       let r = 0
       let p = 0
-      for (const row of mvData) {
-        if (row.sub_type === "accounts_receivable") {
-          r += Number(row.total_debit || 0) - Number(row.total_credit || 0)
-        } else if (row.sub_type === "accounts_payable") {
-          p += Number(row.net_credit || 0)
-        }
+      for (const line of fallbackData) {
+        const coa = Array.isArray(line.chart_of_accounts) ? line.chart_of_accounts[0] : line.chart_of_accounts
+        const type = coa?.sub_type
+        const d = Number(line.debit_amount || 0)
+        const c = Number(line.credit_amount || 0)
+        if (type === "accounts_receivable") r += (d - c)
+        if (type === "accounts_payable") p += (c - d)
       }
       glReceivables = r
       glPayables = p
-    } else {
-      // Fallback للقيود مباشرة إذا كان الـ MV غير متوفر
-      let fallbackQuery = supabase
-        .from("journal_entry_lines")
-        .select(`
-          debit_amount,
-          credit_amount,
-          chart_of_accounts!inner(sub_type),
-          journal_entries!inner(company_id, status, branch_id)
-        `)
-        .eq("journal_entries.company_id", companyId)
-        .eq("journal_entries.status", "posted")
-        .in("chart_of_accounts.sub_type", ["accounts_receivable", "accounts_payable"])
-
-      if (branchId) fallbackQuery = fallbackQuery.eq("journal_entries.branch_id", branchId)
-      
-      const { data: fallbackData } = await fallbackQuery
-      if (fallbackData) {
-        let r = 0
-        let p = 0
-        for (const line of fallbackData) {
-          const coa = Array.isArray(line.chart_of_accounts) ? line.chart_of_accounts[0] : line.chart_of_accounts
-          const type = coa?.sub_type
-          const d = Number(line.debit_amount || 0)
-          const c = Number(line.credit_amount || 0)
-          if (type === "accounts_receivable") r += (d - c)
-          if (type === "accounts_payable") p += (c - d)
-        }
-        glReceivables = r
-        glPayables = p
-      }
     }
   } catch { /* non-critical */ }
 
