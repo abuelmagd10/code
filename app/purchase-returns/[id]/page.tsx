@@ -307,6 +307,13 @@ export default function PurchaseReturnDetailPage() {
         })
         return
       }
+
+      // ✅ Patch: 
+      // RP confirm_purchase_return_delivery_v2 does not natively populate confirmed_by.
+      // So we update it here directly so the warehouse manager's name correctly appears.
+      await supabase.from('purchase_returns')
+        .update({ confirmed_by: currentUserId, confirmed_at: new Date().toISOString() })
+        .eq('id', pr.id)
       if (pr.created_by && pr.created_by !== currentUserId) {
         notifyPurchaseReturnConfirmed({
           companyId,
