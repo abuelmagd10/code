@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Package, CheckCircle, Warehouse, Building2, AlertCircle, Loader2 } from "lucide-react"
+import { Package, CheckCircle, Warehouse, Building2, AlertCircle, Loader2, Eye } from "lucide-react"
 import { createPurchaseInventoryJournal } from "@/lib/accrual-accounting-engine"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { createNotification } from "@/lib/governance-layer"
@@ -38,6 +38,9 @@ type BillForReceipt = {
   total_amount: number
   suppliers?: { name: string }
   created_by_user_id?: string | null  // منشئ الفاتورة
+  received_by?: string | null
+  received_at?: string | null
+  received_by_name?: string | null
 }
 
 type BillItemRow = {
@@ -102,6 +105,8 @@ export default function GoodsReceiptPage() {
   const [selectedBill, setSelectedBill] = useState<BillForReceipt | null>(null)
   const [receiptItems, setReceiptItems] = useState<ReceiptItem[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<"pending" | "received">("pending")
+  const activeTabRef = useRef<"pending" | "received">("pending")
   const [branchName, setBranchName] = useState<string | null>(null)
   const [warehouseName, setWarehouseName] = useState<string | null>(null)
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
@@ -301,10 +306,11 @@ export default function GoodsReceiptPage() {
   }, [userContext, userContextLoading, isOwnerAdmin, selectedBranchId, supabase])
 
   useEffect(() => {
+    activeTabRef.current = activeTab
     if (!userContextLoading && userContext) {
       loadBills(userContext)
     }
-  }, [userContextLoading, userContext, selectedBranchId, selectedWarehouseId])
+  }, [userContextLoading, userContext, selectedBranchId, selectedWarehouseId, activeTab])
 
   // ✅ [Fix] جلب أسماء الفرع والمخزن لجميع الأدوار غير الإدارية (بما فيها accountant)
   // المشكلة: loadBills تُعيد مبكراً لبعض الأدوار مما يُبقي branchName/warehouseName كـ null
@@ -357,18 +363,17 @@ export default function GoodsReceiptPage() {
         const { data: billData, error } = await supabase
           .from("bills")
           .select(
-            "id, bill_number, bill_date, supplier_id, status, receipt_status, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, created_by_user_id, suppliers(name)"
+            "id, bill_number, bill_date, supplier_id, status, receipt_status, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, created_by_user_id, received_by, received_at, suppliers(name)"
           )
           .eq("id", billIdFromQuery)
           .eq("company_id", companyId)
-          .eq("status", "sent") // ✅ الفواتير المرسلة للمخزن بانتظار الاستلام تكون حالتها sent
           .maybeSingle()
 
         if (error) throw error
         if (!billData) return
 
-        // ✅ لا نفتح الـ dialog تلقائياً للفواتير المرفوضة أو المستلمة
-        if (billData.receipt_status === "rejected" || billData.receipt_status === "received") {
+        // ✅ لا نفتح الـ dialog تلقائياً للفواتير المرفوضة
+        if (billData.receipt_status === "rejected") {
           return
         }
 
@@ -456,6 +461,7 @@ export default function GoodsReceiptPage() {
 
   const loadBills = async (context: UserContext) => {
     const requestId = Date.now()
+    const isReceivedTab = activeTabRef.current === "received"
     loadRequestRef.current = requestId
     try {
       setLoading(true)
@@ -562,22 +568,48 @@ export default function GoodsReceiptPage() {
       let q = supabase
         .from("bills")
         .select(
-          "id, bill_number, bill_date, supplier_id, status, receipt_status, receipt_rejection_reason, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, created_by_user_id, suppliers(name)"
+          "id, bill_number, bill_date, supplier_id, status, receipt_status, receipt_rejection_reason, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, created_by_user_id, received_by, received_at, suppliers(name)"
         )
         .eq("company_id", companyId)
-        .eq("status", "sent") // ✅ الفواتير المرسلة للمخزن بانتظار الاستلام تكون حالتها sent
         .eq("branch_id", branchId)
         .eq("warehouse_id", warehouseId)
-        // ✅ استبعاد الفواتير المرفوضة أو المستلمة - عرض فقط الفواتير التي بانتظار الاستلام
-        .or("receipt_status.is.null,receipt_status.eq.pending")
+        
+      if (isReceivedTab) {
+        q = q.eq("receipt_status", "received").eq("status", "received")
+      } else {
+        q = q.eq("status", "sent").or("receipt_status.is.null,receipt_status.eq.pending")
+      }
 
       q = applyDataVisibilityFilter(q, rules, "bills")
 
-      const { data, error } = await q.order("bill_date", { ascending: true })
+      const { data, error } = await q.order(isReceivedTab ? "received_at" : "bill_date", { ascending: false })
       if (error) throw error
 
+      let fetchedBills = (data || []) as BillForReceipt[]
+      
+      // جلب أسماء المستلمين إن وجدت
+      if (isReceivedTab && fetchedBills.length > 0) {
+        const receivedByIds = [...new Set(fetchedBills.map(b => b.received_by).filter(Boolean))] as string[]
+        if (receivedByIds.length > 0) {
+          const { data: usersData } = await supabase
+            .from("user_profiles")
+            .select("user_id, display_name, username")
+            .in("user_id", receivedByIds)
+            
+          const usersMap = new Map()
+          if (usersData) {
+            usersData.forEach((u: any) => usersMap.set(u.user_id, u.display_name || u.username))
+          }
+          
+          fetchedBills = fetchedBills.map(b => ({
+            ...b,
+            received_by_name: b.received_by ? usersMap.get(b.received_by) : null
+          }))
+        }
+      }
+
       if (loadRequestRef.current !== requestId) return
-      setBills((data || []) as BillForReceipt[])
+      setBills(fetchedBills)
     } catch (err) {
       console.error("Error loading bills for goods receipt:", err)
       toastActionError(
@@ -1151,13 +1183,39 @@ export default function GoodsReceiptPage() {
             </CardHeader>
           </Card>
 
+          {/* Tabs */}
+          <div className="flex border-b border-gray-200 dark:border-slate-800 mb-6">
+            <button
+              onClick={() => setActiveTab("pending")}
+              className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 ${
+                activeTab === "pending"
+                  ? "border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              {appLang === "en" ? "Pending Receipt" : "بانتظار الاعتماد"}
+            </button>
+            <button
+              onClick={() => setActiveTab("received")}
+              className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 ${
+                activeTab === "received"
+                  ? "border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              {appLang === "en" ? "Received History" : "سجل الاستلام"}
+            </button>
+          </div>
+
           {/* Content */}
           <Card className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800">
             <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Package className="w-5 h-5 text-emerald-600" />
                 <CardTitle className="text-base sm:text-lg">
-                  {appLang === "en" ? "Bills awaiting warehouse receipt" : "فواتير بانتظار اعتماد الاستلام من المخزن"}
+                  {activeTab === "pending" 
+                    ? (appLang === "en" ? "Bills awaiting warehouse receipt" : "فواتير بانتظار اعتماد الاستلام من المخزن")
+                    : (appLang === "en" ? "Completed goods receipts" : "فواتير تم استلامها وإدخالها للمخزن")}
                 </CardTitle>
               </div>
               {hasBills && (
@@ -1178,9 +1236,13 @@ export default function GoodsReceiptPage() {
                 <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
                   <AlertCircle className="w-10 h-10 mb-3 text-gray-300 dark:text-gray-600" />
                   <p className="text-sm">
-                    {appLang === "en"
-                      ? "No approved purchase bills pending warehouse receipt in your branch/warehouse."
-                      : "لا توجد فواتير مشتريات معتمدة وبانتظار اعتماد الاستلام في فرعك ومخزنك."}
+                    {activeTab === "pending"
+                      ? (appLang === "en"
+                        ? "No approved purchase bills pending warehouse receipt in your branch/warehouse."
+                        : "لا توجد فواتير مشتريات معتمدة وبانتظار اعتماد الاستلام في فرعك ومخزنك.")
+                      : (appLang === "en" 
+                        ? "No received bills found in your branch/warehouse." 
+                        : "لا توجد سجلات استلام فواتير سابقة في فرعك ومخزنك.")}
                   </p>
                 </div>
               ) : (
@@ -1192,6 +1254,9 @@ export default function GoodsReceiptPage() {
                         <th className="px-3 py-2 text-right">{appLang === "en" ? "Supplier" : "المورد"}</th>
                         <th className="px-3 py-2 text-right">{appLang === "en" ? "Date" : "التاريخ"}</th>
                         <th className="px-3 py-2 text-right">{appLang === "en" ? "Amount" : "المبلغ"}</th>
+                        {activeTab === "received" && (
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Received By" : "مسئول المخزن"}</th>
+                        )}
                         <th className="px-3 py-2 text-center">{appLang === "en" ? "Status" : "الحالة"}</th>
                         <th className="px-3 py-2 text-center">{appLang === "en" ? "Action" : "الإجراء"}</th>
                       </tr>
@@ -1206,28 +1271,51 @@ export default function GoodsReceiptPage() {
                             {bill.suppliers?.name || bill.supplier_id}
                           </td>
                           <td className="px-3 py-2">
-                            {new Date(bill.bill_date).toLocaleDateString(
+                            {new Date(activeTab === "received" && bill.received_at ? bill.received_at : bill.bill_date).toLocaleDateString(
                               appLang === "en" ? "en" : "ar"
                             )}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {Number(bill.total_amount || 0).toFixed(2)}
                           </td>
+                          {activeTab === "received" && (
+                            <td className="px-3 py-2 font-medium text-emerald-700 dark:text-emerald-400">
+                              {bill.received_by_name || bill.received_by || "-"}
+                            </td>
+                          )}
                           <td className="px-3 py-2 text-center">
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                              {appLang === "en" ? "Approved" : "معتمدة إداريًا"}
-                            </span>
+                            {activeTab === "received" ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                                {appLang === "en" ? "Received" : "تم الاستلام"}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                                {appLang === "en" ? "Approved" : "معتمدة إداريًا"}
+                              </span>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-center">
-                            <Button
-                              size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                              disabled={processing}
-                              onClick={() => openReceiptDialog(bill)}
-                            >
-                              <CheckCircle className="w-4 h-4 mr-1" />
-                              {appLang === "en" ? "Confirm Receipt" : "اعتماد الاستلام"}
-                            </Button>
+                            {activeTab === "received" ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={processing}
+                                onClick={() => openReceiptDialog(bill)}
+                              >
+                                <Eye className="w-4 h-4 mr-1" />
+                                {appLang === "en" ? "View Details" : "عرض التفاصيل"}
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                disabled={processing}
+                                onClick={() => openReceiptDialog(bill)}
+                              >
+                                <CheckCircle className="w-4 h-4 mr-1" />
+                                {appLang === "en" ? "Confirm Receipt" : "اعتماد الاستلام"}
+                              </Button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1288,6 +1376,16 @@ export default function GoodsReceiptPage() {
                     </span>
                     <span className="font-medium">{warehouseName || selectedBill.warehouse_id || "-"}</span>
                   </div>
+                  {activeTab === "received" && (
+                    <div>
+                      <span className="block text-gray-400 mb-1">
+                        {appLang === "en" ? "Received By" : "مسئول المخزن المستلم"}
+                      </span>
+                      <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                        {selectedBill.received_by_name || selectedBill.received_by || "-"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1335,34 +1433,38 @@ export default function GoodsReceiptPage() {
               </div>
             </div>
             <DialogFooter className="mt-4 flex-shrink-0 gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setRejectDialogOpen(true)
-                }}
-                disabled={processing}
-                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-              >
-                <AlertCircle className="w-4 h-4 mr-1" />
-                {appLang === "en" ? "Reject Receipt" : "رفض الاستلام"}
-              </Button>
+              {activeTab === "pending" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setRejectDialogOpen(true)
+                  }}
+                  disabled={processing}
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                >
+                  <AlertCircle className="w-4 h-4 mr-1" />
+                  {appLang === "en" ? "Reject Receipt" : "رفض الاستلام"}
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setDialogOpen(false)}
                 disabled={processing}
               >
-                {appLang === "en" ? "Cancel" : "إلغاء"}
+                {activeTab === "received" ? (appLang === "en" ? "Close" : "إغلاق") : (appLang === "en" ? "Cancel" : "إلغاء")}
               </Button>
-              <Button
-                type="submit"
-                disabled={processing || receiptItems.length === 0}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              >
-                {processing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                {appLang === "en" ? "Confirm Goods Receipt" : "تأكيد اعتماد الاستلام"}
-              </Button>
+              {activeTab === "pending" && (
+                <Button
+                  type="submit"
+                  disabled={processing || receiptItems.length === 0}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  {processing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+                  {appLang === "en" ? "Confirm Goods Receipt" : "تأكيد اعتماد الاستلام"}
+                </Button>
+              )}
             </DialogFooter>
           </form>
         </DialogContent>
