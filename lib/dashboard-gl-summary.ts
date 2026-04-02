@@ -59,6 +59,7 @@ export async function getGLSummary(
     `)
     .eq("journal_entries.company_id", companyId)
     .eq("journal_entries.status", "posted")
+    .eq("journal_entries.is_deleted", false)
     .gte("journal_entries.entry_date", fromDate)
     .lte("journal_entries.entry_date", toDate)
 
