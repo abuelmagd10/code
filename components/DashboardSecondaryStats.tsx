@@ -40,6 +40,14 @@ interface DashboardSecondaryStatsProps {
    * تشمل returned_amount لضمان طرح المرتجعات من الرصيد
    */
   apData?: Bill[]
+  /**
+   * ✅ بيانات الذمم المدينة من دفتر الأستاذ العام (إن وجدت)
+   */
+  glReceivables?: number
+  /**
+   * ✅ بيانات الذمم الدائنة من دفتر الأستاذ العام (إن وجدت)
+   */
+  glPayables?: number
   defaultCurrency: string
   appLang: string
   // GL-First: إيرادات/مصروفات الشهر من دفتر الأستاذ العام
@@ -52,6 +60,8 @@ export default function DashboardSecondaryStats({
   billsData,
   arData,
   apData,
+  glReceivables,
+  glPayables,
   defaultCurrency,
   appLang,
   glMonthlyRevenue,
@@ -86,9 +96,7 @@ export default function DashboardSecondaryStats({
   const MONTHLY_INVOICE_EXCLUDED = ["draft", "cancelled", "voided"]
   const MONTHLY_BILL_EXCLUDED    = ["draft", "cancelled", "voided"]
 
-  // ─── الذمم المدينة ────────────────────────────────────────────────────────────
-  // يستخدم arData إذا كانت متوفرة (جميع الفواتير المعلقة بدون فلتر تاريخ)
-  // وإلّا يرجع إلى invoicesData (التوافق مع الإصدارات القديمة)
+  // ─── الذمم المدينة (تشغيلي للـ fallback ولعدد المستندات) ─────────────────────────
   const arSource = arData ?? invoicesData
   const receivablesOutstanding = arSource
     .filter((i) => !OUTSTANDING_INVOICE_EXCLUDED.includes(String(i.status || "").toLowerCase()))
@@ -99,46 +107,41 @@ export default function DashboardSecondaryStats({
       return sum + Math.max(total - paid - returned, 0)
     }, 0)
 
-  // ─── الذمم الدائنة ────────────────────────────────────────────────────────────
-  // يستخدم apData إذا كانت متوفرة (تشمل returned_amount + بدون فلتر تاريخ)
-  // وإلّا يرجع إلى billsData (التوافق مع الإصدارات القديمة)
-  const apSource = apData ?? billsData
+  // ─── الذمم الدائنة (تشغيلي للـ fallback ولعدد المستندات) ─────────────────────────
+  const apSource: Bill[] = apData ?? billsData
   const payablesOutstanding = apSource
-    .filter((b) => !OUTSTANDING_BILL_EXCLUDED.includes(String(b.status || "").toLowerCase()))
-    .reduce((sum, b) => {
+    .filter((b: Bill) => !OUTSTANDING_BILL_EXCLUDED.includes(String(b.status || "").toLowerCase()))
+    .reduce((sum: number, b: Bill) => {
       const total = getDisplayAmount(b.total_amount || 0, b.display_total, b.display_currency, appCurrency)
       const paid = Number(b.paid_amount || 0)
-      // ✅ returned_amount مخصوم دائماً — المرتجع يُقلل الالتزام بغض النظر عن حالة السداد
       const returned = Number(b.returned_amount || 0)
       return sum + Math.max(total - paid - returned, 0)
     }, 0)
 
   // عدد المستندات المعلقة — يستخدم نفس مصادر الذمم لضمان التوافق
   const pendingInvoicesCount = arSource.filter(
-    (i) => !OUTSTANDING_INVOICE_EXCLUDED.includes(String(i.status || "").toLowerCase())
+    (i: Invoice) => !OUTSTANDING_INVOICE_EXCLUDED.includes(String(i.status || "").toLowerCase())
   ).length
   const pendingBillsCount = apSource.filter(
-    (b) => !OUTSTANDING_BILL_EXCLUDED.includes(String(b.status || "").toLowerCase())
+    (b: Bill) => !OUTSTANDING_BILL_EXCLUDED.includes(String(b.status || "").toLowerCase())
   ).length
 
   const now = new Date()
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
 
-  // دخل الشهر = مجموع الفواتير − مرتجعات البيع (للشهر الحالي فقط)
-  // يشمل الفواتير المسددة (paid) لأنها إيراد حقيقي محقق
+  // دخل الشهر
   const incomeThisMonth = invoicesData
-    .filter((i) => String(i.invoice_date || "").startsWith(ym) && !MONTHLY_INVOICE_EXCLUDED.includes(String(i.status || "").toLowerCase()))
-    .reduce((sum, i) => {
+    .filter((i: Invoice) => String(i.invoice_date || "").startsWith(ym) && !MONTHLY_INVOICE_EXCLUDED.includes(String(i.status || "").toLowerCase()))
+    .reduce((sum: number, i: Invoice) => {
       const gross = getDisplayAmount(i.total_amount || 0, i.display_total, i.display_currency, appCurrency)
       const returned = Number(i.returned_amount || 0)
       return sum + Math.max(gross - returned, 0)
     }, 0)
 
-  // مصروف الشهر = مجموع فواتير الموردين − مرتجعات الشراء (للشهر الحالي فقط)
-  // يشمل الفواتير المسددة (paid) لأنها مصروف حقيقي محقق
+  // مصروف الشهر
   const expenseThisMonth = billsData
-    .filter((b) => String(b.bill_date || "").startsWith(ym) && !MONTHLY_BILL_EXCLUDED.includes(String(b.status || "").toLowerCase()))
-    .reduce((sum, b) => {
+    .filter((b: Bill) => String(b.bill_date || "").startsWith(ym) && !MONTHLY_BILL_EXCLUDED.includes(String(b.status || "").toLowerCase()))
+    .reduce((sum: number, b: Bill) => {
       const gross = getDisplayAmount(b.total_amount || 0, b.display_total, b.display_currency, appCurrency)
       const returned = Number(b.returned_amount || 0)
       return sum + Math.max(gross - returned, 0)
@@ -153,24 +156,54 @@ export default function DashboardSecondaryStats({
             <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
               <Wallet className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
-            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-              {appLang==='en' ? 'Receivables' : 'ذمم مدينة'}
-            </span>
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium text-blue-700 dark:text-blue-300 block truncate">
+                {appLang==='en' ? 'Receivables' : 'ذمم مدينة'}
+              </span>
+              {glReceivables !== undefined && (
+                <span className="text-[10px] font-semibold bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-1.5 py-0.5 rounded inline-block mt-0.5">
+                  GL
+                </span>
+              )}
+            </div>
           </div>
-          <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{formatNumber(receivablesOutstanding)}</p>
-          <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">
-            {currency}
-            {pendingInvoicesCount > 0 && (
-              <span className="mr-1 text-blue-400">
-                · {pendingInvoicesCount} {appLang === 'en' ? 'pending' : 'فاتورة معلقة'}
-              </span>
-            )}
-            {receivablesOutstanding === 0 && pendingInvoicesCount === 0 && (
-              <span className="mr-1 text-emerald-500">
-                · {appLang === 'en' ? 'All invoices settled' : 'جميع الفواتير مسددة'}
-              </span>
-            )}
-          </p>
+          
+          {glReceivables !== undefined ? (
+            <>
+              <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{formatNumber(glReceivables)}</p>
+              <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">
+                {currency}
+                {pendingInvoicesCount > 0 && (
+                  <span className="mr-1 text-blue-400">
+                    · {pendingInvoicesCount} {appLang === 'en' ? 'pending' : 'فاتورة معلقة'}
+                  </span>
+                )}
+                {glReceivables === 0 && pendingInvoicesCount === 0 && (
+                  <span className="mr-1 text-emerald-500">
+                    · {appLang === 'en' ? 'All invoices settled' : 'جميع الفواتير مسددة'}
+                  </span>
+                )}
+              </p>
+              {Math.abs(glReceivables - receivablesOutstanding) > 1 && (
+                <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 truncate" title={appLang === 'en' ? `Operational (invoices): ${currency}${formatNumber(receivablesOutstanding)}` : `تشغيلي (فواتير): ${currency}${formatNumber(receivablesOutstanding)}`}>
+                  ⚡ {appLang === 'en' ? 'Operational:' : 'تشغيلي:'} {currency}{formatNumber(receivablesOutstanding)}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{formatNumber(receivablesOutstanding)}</p>
+              <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">
+                {currency}
+                {pendingInvoicesCount > 0 && (
+                  <span className="mr-1 text-blue-400">
+                    · {pendingInvoicesCount} {appLang === 'en' ? 'pending' : 'فاتورة معلقة'}
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-amber-600/70 mt-0.5">{appLang === 'en' ? '⚡ Operational' : '⚡ تشغيلي'}</p>
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -181,24 +214,54 @@ export default function DashboardSecondaryStats({
             <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
               <CreditCard className="w-5 h-5 text-red-600 dark:text-red-400" />
             </div>
-            <span className="text-sm font-medium text-red-700 dark:text-red-300">
-              {appLang==='en' ? 'Payables' : 'ذمم دائنة'}
-            </span>
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium text-red-700 dark:text-red-300 block truncate">
+                {appLang==='en' ? 'Payables' : 'ذمم دائنة'}
+              </span>
+              {glPayables !== undefined && (
+                <span className="text-[10px] font-semibold bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200 px-1.5 py-0.5 rounded inline-block mt-0.5">
+                  GL
+                </span>
+              )}
+            </div>
           </div>
-          <p className="text-2xl font-bold text-red-700 dark:text-red-300">{formatNumber(payablesOutstanding)}</p>
-          <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-1">
-            {currency}
-            {pendingBillsCount > 0 && (
-              <span className="mr-1 text-red-400">
-                · {pendingBillsCount} {appLang === 'en' ? 'pending' : 'فاتورة معلقة'}
-              </span>
-            )}
-            {payablesOutstanding === 0 && pendingBillsCount === 0 && (
-              <span className="mr-1 text-emerald-500">
-                · {appLang === 'en' ? 'All bills settled' : 'جميع الفواتير مسددة'}
-              </span>
-            )}
-          </p>
+
+          {glPayables !== undefined ? (
+            <>
+              <p className="text-2xl font-bold text-red-700 dark:text-red-300">{formatNumber(glPayables)}</p>
+              <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-1">
+                {currency}
+                {pendingBillsCount > 0 && (
+                  <span className="mr-1 text-red-400">
+                    · {pendingBillsCount} {appLang === 'en' ? 'pending' : 'فاتورة معلقة'}
+                  </span>
+                )}
+                {glPayables === 0 && pendingBillsCount === 0 && (
+                  <span className="mr-1 text-emerald-500">
+                    · {appLang === 'en' ? 'All bills settled' : 'جميع الفواتير مسددة'}
+                  </span>
+                )}
+              </p>
+              {Math.abs(glPayables - payablesOutstanding) > 1 && (
+                <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 truncate" title={appLang === 'en' ? `Operational (bills): ${currency}${formatNumber(payablesOutstanding)}` : `تشغيلي (فواتير مشتريات): ${currency}${formatNumber(payablesOutstanding)}`}>
+                  ⚡ {appLang === 'en' ? 'Operational:' : 'تشغيلي:'} {currency}{formatNumber(payablesOutstanding)}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-bold text-red-700 dark:text-red-300">{formatNumber(payablesOutstanding)}</p>
+              <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-1">
+                {currency}
+                {pendingBillsCount > 0 && (
+                  <span className="mr-1 text-red-400">
+                    · {pendingBillsCount} {appLang === 'en' ? 'pending' : 'فاتورة معلقة'}
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-amber-600/70 mt-0.5">{appLang === 'en' ? '⚡ Operational' : '⚡ تشغيلي'}</p>
+            </>
+          )}
         </CardContent>
       </Card>
 

@@ -86,12 +86,76 @@ export default async function SecondaryStatsWidget({
     glMonthlyExpense = glCurrent.cogs + glCurrent.operatingExpenses
   } catch { /* non-critical */ }
 
+  // ─── 4. GL الذمم المدينة والدائنة (All-Time) ──────────────────────────────────
+  // يجب أن يكون الرصيد التراكمي (بدون فلتر from/to)
+  let glReceivables: number | undefined
+  let glPayables: number | undefined
+  try {
+    // محاولة من Materialized View المعتمَد ماليًا
+    let mvQuery = supabase
+      .from("dashboard_gl_monthly_summary")
+      .select("sub_type, total_debit, total_credit, net_credit")
+      .eq("company_id", companyId)
+      .in("sub_type", ["accounts_receivable", "accounts_payable"])
+
+    if (branchId) mvQuery = mvQuery.eq("branch_id", branchId)
+
+    const { data: mvData, error: mvErr } = await mvQuery
+
+    if (!mvErr && mvData && mvData.length > 0) {
+      let r = 0
+      let p = 0
+      for (const row of mvData) {
+        if (row.sub_type === "accounts_receivable") {
+          r += Number(row.total_debit || 0) - Number(row.total_credit || 0)
+        } else if (row.sub_type === "accounts_payable") {
+          p += Number(row.net_credit || 0)
+        }
+      }
+      glReceivables = r
+      glPayables = p
+    } else {
+      // Fallback للقيود مباشرة إذا كان الـ MV غير متوفر
+      let fallbackQuery = supabase
+        .from("journal_entry_lines")
+        .select(`
+          debit_amount,
+          credit_amount,
+          chart_of_accounts!inner(sub_type),
+          journal_entries!inner(company_id, status, branch_id)
+        `)
+        .eq("journal_entries.company_id", companyId)
+        .eq("journal_entries.status", "posted")
+        .in("chart_of_accounts.sub_type", ["accounts_receivable", "accounts_payable"])
+
+      if (branchId) fallbackQuery = fallbackQuery.eq("journal_entries.branch_id", branchId)
+      
+      const { data: fallbackData } = await fallbackQuery
+      if (fallbackData) {
+        let r = 0
+        let p = 0
+        for (const line of fallbackData) {
+          const coa = Array.isArray(line.chart_of_accounts) ? line.chart_of_accounts[0] : line.chart_of_accounts
+          const type = coa?.sub_type
+          const d = Number(line.debit_amount || 0)
+          const c = Number(line.credit_amount || 0)
+          if (type === "accounts_receivable") r += (d - c)
+          if (type === "accounts_payable") p += (c - d)
+        }
+        glReceivables = r
+        glPayables = p
+      }
+    }
+  } catch { /* non-critical */ }
+
   return (
     <DashboardSecondaryStats
       invoicesData={monthlyInvData || []}
       billsData={monthlyBillData || []}
       arData={arData || []}
       apData={apData || []}
+      glReceivables={glReceivables}
+      glPayables={glPayables}
       defaultCurrency={currency}
       appLang={appLang}
       glMonthlyRevenue={glMonthlyRevenue}
@@ -99,3 +163,4 @@ export default async function SecondaryStatsWidget({
     />
   )
 }
+

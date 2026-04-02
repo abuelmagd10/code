@@ -191,30 +191,70 @@ export async function GET(request: NextRequest) {
       .eq("company_id", companyId)
 
     // =============================================
-    // 7. الذمم المدينة والدائنة
+    // 7. الذمم المدينة والدائنة (GL-ONLY - Zero Financial Numbers Outside GL)
     // =============================================
-    const { data: allInvoices } = await supabase
-      .from("invoices")
-      .select("total_amount, paid_amount, status")
-      .eq("company_id", companyId)
-      .in("status", ["sent", "partially_paid"])
-      .or("is_deleted.is.null,is_deleted.eq.false")
-
     let receivables = 0
-    for (const inv of allInvoices || []) {
-      receivables += Number(inv.total_amount || 0) - Number(inv.paid_amount || 0)
-    }
-
-    // ✅ Payables من mv_bills_summary (all-time, بدون date filter)
-    const { data: payablesMvRows } = await supabase
-      .from('mv_bills_summary')
-      .select('outstanding_amount, status')
-      .eq('company_id', companyId)
-      .in('status', ['received', 'partially_paid'])
-
     let payables = 0
-    for (const row of payablesMvRows || []) {
-      payables += Number(row.outstanding_amount || 0)
+
+    try {
+      // ✅ استعلام الأرصدة التراكمية (all-time) من Materialized View المعتمَد ماليًا
+      let mvQuery = supabase
+        .from("dashboard_gl_monthly_summary")
+        .select("sub_type, total_debit, total_credit, net_credit")
+        .eq("company_id", companyId)
+        .in("sub_type", ["accounts_receivable", "accounts_payable"])
+
+      if (branchFilter.branch_id) {
+        mvQuery = mvQuery.eq("branch_id", branchFilter.branch_id)
+      }
+
+      const { data: mvData, error: mvErr } = await mvQuery
+
+      if (!mvErr && mvData && mvData.length > 0) {
+        for (const row of mvData) {
+          if (row.sub_type === "accounts_receivable") {
+            // الأصول = مدين - دائن
+            receivables += Number(row.total_debit || 0) - Number(row.total_credit || 0)
+          } else if (row.sub_type === "accounts_payable") {
+            // الخصوم = دائن - مدين (وهو ما يمثله net_credit)
+            payables += Number(row.net_credit || 0)
+          }
+        }
+      } else {
+        // Fallback إلى journal_entry_lines في حال لم يكن الـ MV مُحدثاً أو متاحاً
+        let fallbackQuery = supabase
+          .from("journal_entry_lines")
+          .select(`
+            debit_amount,
+            credit_amount,
+            chart_of_accounts!inner(sub_type),
+            journal_entries!inner(company_id, status, branch_id)
+          `)
+          .eq("journal_entries.company_id", companyId)
+          .eq("journal_entries.status", "posted")
+          .in("chart_of_accounts.sub_type", ["accounts_receivable", "accounts_payable"])
+
+        if (branchFilter.branch_id) {
+          fallbackQuery = fallbackQuery.eq("journal_entries.branch_id", branchFilter.branch_id)
+        }
+
+        const { data: fallbackData } = await fallbackQuery
+        for (const line of fallbackData || []) {
+          const coa = Array.isArray(line.chart_of_accounts) ? line.chart_of_accounts[0] : line.chart_of_accounts
+          const subType = coa?.sub_type
+
+          const debit = Number(line.debit_amount || 0)
+          const credit = Number(line.credit_amount || 0)
+
+          if (subType === "accounts_receivable") {
+            receivables += (debit - credit)
+          } else if (subType === "accounts_payable") {
+            payables += (credit - debit)
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error calculating AR/AP from GL:", err)
     }
 
     return NextResponse.json({
