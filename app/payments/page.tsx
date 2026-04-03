@@ -594,7 +594,7 @@ export default function PaymentsPage() {
         // جلب مدفوعات الموردين
         let suppPaysQuery = supabase
           .from("payments")
-          .select("*, branches:branch_id(name)")
+          .select("*, branches:branch_id(name), bill:bill_id(id, total_amount, returned_amount, branch_id, bill_branches:branch_id(name), purchase_order_id, purchase_order:purchase_order_id(branch_id, po_branches:branch_id(name)))")
           .eq("company_id", activeCompanyId)
           .not("supplier_id", "is", null)
 
@@ -692,7 +692,7 @@ export default function PaymentsPage() {
       // جلب مدفوعات الموردين مع فرع الفاتورة وأمر الشراء مباشرةً
       let suppPaysQuery = supabase
         .from("payments")
-        .select("*, branches:branch_id(name), bill:bill_id(id, branch_id, bill_branches:branch_id(name), purchase_order_id, purchase_order:purchase_order_id(branch_id, po_branches:branch_id(name)))")
+        .select("*, branches:branch_id(name), bill:bill_id(id, total_amount, returned_amount, branch_id, bill_branches:branch_id(name), purchase_order_id, purchase_order:purchase_order_id(branch_id, po_branches:branch_id(name)))")
         .eq("company_id", companyId)
         .not("supplier_id", "is", null)
 
@@ -3330,7 +3330,8 @@ export default function PaymentsPage() {
                   <tr className="border-b bg-gray-50 dark:bg-slate-900">
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Paid Amount' : 'المدفوع'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Net Bill' : 'صافي الفاتورة'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Reference' : 'مرجع'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Supplier Bill' : 'فاتورة المورد المرتبطة'}</th>
@@ -3347,9 +3348,18 @@ export default function PaymentsPage() {
                     if (p.status === 'pending_approval' && ['owner', 'admin', 'general_manager', 'manager'].includes(userRole)) canApprove = true;
                     if (p.status === 'pending_manager' && ['owner', 'admin', 'general_manager', 'manager'].includes(userRole)) canApprove = true;
                     if (p.status === 'pending_director' && ['owner', 'admin', 'general_manager'].includes(userRole)) canApprove = true;
-                    
+
                     const isPending = p.status?.startsWith('pending_')
                     const isRejected = p.status === 'rejected'
+
+                    // ✅ Net Bill Amount & Overpayment detection
+                    const paidAmt = getDisplayAmount(p)
+                    const billTotalAmt = (p as any).bill?.total_amount != null ? Number((p as any).bill.total_amount) : null
+                    const billReturnedAmt = Number((p as any).bill?.returned_amount || 0)
+                    const netBillAmt = billTotalAmt !== null ? Math.max(0, billTotalAmt - billReturnedAmt) : null
+                    const isOverpayment = netBillAmt !== null && paidAmt > netBillAmt + 0.001
+                    const advanceAmt = isOverpayment ? paidAmt - (netBillAmt ?? 0) : 0
+
                     return (
                     <tr key={p.id} className={`border-b ${isPending ? 'bg-yellow-50 dark:bg-yellow-900/10' : isRejected ? 'bg-red-50 dark:bg-red-900/10 opacity-60' : ''}`}>
                       <td className="px-2 py-2">{p.payment_date}</td>
@@ -3366,7 +3376,27 @@ export default function PaymentsPage() {
                             || (appLang === 'en' ? 'Main' : 'رئيسي')}
                         </span>
                       </td>
-                      <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
+                      {/* ✅ Paid Amount with Overpayment badge */}
+                      <td className="px-2 py-2">
+                        <div className="flex flex-col gap-0.5 items-end">
+                          <span>{paidAmt.toFixed(2)} {currencySymbol}</span>
+                          {isOverpayment && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 whitespace-nowrap">
+                              +{advanceAmt.toFixed(2)} {currencySymbol} {appLang === 'en' ? 'Advance' : 'سلفة'}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      {/* ✅ Net Bill Amount column */}
+                      <td className="px-2 py-2 text-right">
+                        {netBillAmt !== null ? (
+                          <span className={`font-medium ${isOverpayment ? 'text-amber-700 dark:text-amber-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                            {netBillAmt.toFixed(2)} {currencySymbol}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
                       <td className="px-2 py-2">{p.account_id ? (accountNames[p.account_id] || "-") : "-"}</td>
                       <td className="px-2 py-2">
