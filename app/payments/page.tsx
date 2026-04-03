@@ -2799,6 +2799,19 @@ export default function PaymentsPage() {
     )
   }
 
+  // ✅ دالة مساعدة لتحديد ما إذا كان الحساب نقدياً
+  const isCashAccount = (accountId?: string | null) => {
+    if (!accountId) return false;
+    const acc = accounts.find((a: any) => a.id === accountId);
+    if (!acc) return false;
+    const st = String((acc as any).sub_type || '').toLowerCase();
+    if (st === 'cash') return true;
+    if (st === 'bank') return false;
+    const nmLower = String((acc as any).account_name || '').toLowerCase();
+    if (nmLower.includes('cash') || /خزينة|نقد|صندوق|كاش/.test(nmLower)) return true;
+    return false;
+  };
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
@@ -2879,7 +2892,19 @@ export default function PaymentsPage() {
               </div>
               <div>
                 <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
-                <select className="w-full border rounded px-2 py-1" value={newCustPayment.account_id} onChange={(e) => setNewCustPayment({ ...newCustPayment, account_id: e.target.value })}>
+                <select 
+                  className="w-full border rounded px-2 py-1" 
+                  value={newCustPayment.account_id} 
+                  onChange={(e) => {
+                    const accId = e.target.value;
+                    const cashOnly = isCashAccount(accId);
+                    setNewCustPayment({ 
+                      ...newCustPayment, 
+                      account_id: accId,
+                      method: cashOnly && newCustPayment.method !== 'cash' ? 'cash' : newCustPayment.method
+                    });
+                  }}
+                >
                   <option value="">{appLang === 'en' ? 'Select payment account' : 'اختر حساب الدفع'}</option>
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>
@@ -2898,8 +2923,12 @@ export default function PaymentsPage() {
                 <Label>{appLang === 'en' ? 'Method' : 'طريقة'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={newCustPayment.method} onChange={(e) => setNewCustPayment({ ...newCustPayment, method: e.target.value })}>
                   <option value="cash">{appLang === 'en' ? 'Cash' : 'كاش'}</option>
-                  <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
-                  <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
+                  {!isCashAccount(newCustPayment.account_id) && (
+                    <>
+                      <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
+                      <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
+                    </>
+                  )}
                 </select>
               </div>
               {(newCustPayment.method === 'transfer' || newCustPayment.method === 'check') && (
@@ -3119,7 +3148,19 @@ export default function PaymentsPage() {
               </div>
               <div>
                 <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
-                <select className="w-full border rounded px-2 py-1" value={newSuppPayment.account_id} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, account_id: e.target.value })}>
+                <select 
+                  className="w-full border rounded px-2 py-1" 
+                  value={newSuppPayment.account_id} 
+                  onChange={(e) => {
+                    const accId = e.target.value;
+                    const cashOnly = isCashAccount(accId);
+                    setNewSuppPayment({ 
+                      ...newSuppPayment, 
+                      account_id: accId,
+                      method: cashOnly && newSuppPayment.method !== 'cash' ? 'cash' : newSuppPayment.method
+                    });
+                  }}
+                >
                   <option value="">{appLang === 'en' ? 'Select payment account' : 'اختر حساب السداد'}</option>
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>
@@ -3138,8 +3179,12 @@ export default function PaymentsPage() {
                 <Label>{appLang === 'en' ? 'Method' : 'طريقة'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={newSuppPayment.method} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, method: e.target.value })}>
                   <option value="cash">{appLang === 'en' ? 'Cash' : 'كاش'}</option>
-                  <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
-                  <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
+                  {!isCashAccount(newSuppPayment.account_id) && (
+                    <>
+                      <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
+                      <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
+                    </>
+                  )}
                 </select>
               </div>
               {(newSuppPayment.method === 'transfer' || newSuppPayment.method === 'check') && (
@@ -3445,8 +3490,12 @@ export default function PaymentsPage() {
                     <Label>{appLang === 'en' ? 'Payment Method' : 'طريقة الدفع'}</Label>
                     <select className="w-full border rounded px-2 py-1" value={editFields.payment_method} onChange={(e) => setEditFields({ ...editFields, payment_method: e.target.value })}>
                       <option value="cash">{appLang === 'en' ? 'Cash' : 'كاش'}</option>
-                      <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
-                      <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
+                      {!isCashAccount(editFields.account_id) && (
+                        <>
+                          <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
+                          <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
+                        </>
+                      )}
                     </select>
                   </div>
                   {(editFields.payment_method === 'transfer' || editFields.payment_method === 'check') && (
@@ -3462,6 +3511,10 @@ export default function PaymentsPage() {
                       value={editFields.account_id} 
                       onChange={async (e) => {
                         const newAccountId = e.target.value
+                        const cashOnly = isCashAccount(newAccountId)
+                        if (cashOnly && editFields.payment_method !== 'cash') {
+                          setEditFields(prev => ({ ...prev, payment_method: 'cash' }))
+                        }
                         const oldAccountId = editingPayment?.account_id || ""
                         
                         // التحقق من رصيد الحساب عند تغيير الحساب
