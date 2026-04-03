@@ -157,6 +157,7 @@ export default function PaymentsPage() {
   const [billNumbers, setBillNumbers] = useState<Record<string, string>>({})
   const [poNumbers, setPoNumbers] = useState<Record<string, string>>({})
   const [billToPoMap, setBillToPoMap] = useState<Record<string, string>>({})
+  const [billAmountsMap, setBillAmountsMap] = useState<Record<string, {total: number, returned: number}>>({})
   const [accountNames, setAccountNames] = useState<Record<string, string>>({}) // Map bill_id -> purchase_order_id
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchNames, setBranchNames] = useState<Record<string, string>>({})
@@ -594,7 +595,7 @@ export default function PaymentsPage() {
         // جلب مدفوعات الموردين
         let suppPaysQuery = supabase
           .from("payments")
-          .select("*, branches:branch_id(name), bill:bill_id(id, total_amount, returned_amount, branch_id, bill_branches:branch_id(name), purchase_order_id, purchase_order:purchase_order_id(branch_id, po_branches:branch_id(name)))")
+          .select("*, branches:branch_id(name)")
           .eq("company_id", activeCompanyId)
           .not("supplier_id", "is", null)
 
@@ -692,7 +693,7 @@ export default function PaymentsPage() {
       // جلب مدفوعات الموردين مع فرع الفاتورة وأمر الشراء مباشرةً
       let suppPaysQuery = supabase
         .from("payments")
-        .select("*, branches:branch_id(name), bill:bill_id(id, total_amount, returned_amount, branch_id, bill_branches:branch_id(name), purchase_order_id, purchase_order:purchase_order_id(branch_id, po_branches:branch_id(name)))")
+        .select("*, branches:branch_id(name)")
         .eq("company_id", companyId)
         .not("supplier_id", "is", null)
 
@@ -815,6 +816,7 @@ export default function PaymentsPage() {
           setBillBranchMap({})
           setBillToPoMap({})
           setPoNumbers({})
+          setBillAmountsMap({})
           return
         }
 
@@ -839,6 +841,7 @@ export default function PaymentsPage() {
           setBillBranchMap({})
           setBillToPoMap({})
           setPoNumbers({})
+          setBillAmountsMap({})
           // 🔐 للمستخدم العادي: إذا لا توجد فواتير مرتبطة → قائمة فارغة
           if (rawSupplierPayments.length > 0) setSupplierPayments([])
           return
@@ -847,19 +850,22 @@ export default function PaymentsPage() {
         // ✅ جلب branch_id مع بيانات الفاتورة
         const { data: bills } = await supabase
           .from("bills")
-          .select("id, bill_number, purchase_order_id, branch_id")
+          .select("id, bill_number, purchase_order_id, branch_id, total_amount, returned_amount")
           .in("id", ids)
         const map: Record<string, string> = {}
         const branchMap: Record<string, string> = {} // bill_id -> branch_id
         const billPoMap: Record<string, string> = {}  // bill_id -> purchase_order_id
+        const amountsMap: Record<string, {total: number, returned: number}> = {} // bill_id -> amounts
         ;(bills || []).forEach((r: any) => {
           map[r.id] = r.bill_number
           if (r.branch_id) branchMap[r.id] = r.branch_id
           if (r.purchase_order_id) billPoMap[r.id] = r.purchase_order_id
+          amountsMap[r.id] = { total: Number(r.total_amount || 0), returned: Number(r.returned_amount || 0) }
         })
         setBillNumbers(map)
         setBillBranchMap(branchMap)
         setBillToPoMap(billPoMap)
+        setBillAmountsMap(amountsMap)
 
         // ✅ جلب أرقام أوامر الشراء
         const poIds = Array.from(new Set((bills || []).map((b: any) => b.purchase_order_id).filter(Boolean))) as string[]
@@ -3354,8 +3360,9 @@ export default function PaymentsPage() {
 
                     // ✅ Net Bill Amount & Overpayment detection
                     const paidAmt = getDisplayAmount(p)
-                    const billTotalAmt = (p as any).bill?.total_amount != null ? Number((p as any).bill.total_amount) : null
-                    const billReturnedAmt = Number((p as any).bill?.returned_amount || 0)
+                    const billAmtInfo = p.bill_id ? billAmountsMap[p.bill_id] : null
+                    const billTotalAmt = billAmtInfo?.total ?? null
+                    const billReturnedAmt = billAmtInfo?.returned ?? 0
                     const netBillAmt = billTotalAmt !== null ? Math.max(0, billTotalAmt - billReturnedAmt) : null
                     const isOverpayment = netBillAmt !== null && paidAmt > netBillAmt + 0.001
                     const advanceAmt = isOverpayment ? paidAmt - (netBillAmt ?? 0) : 0
