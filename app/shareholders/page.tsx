@@ -29,6 +29,7 @@ interface Shareholder {
   national_id?: string
   percentage: number
   notes?: string
+  total_contribution?: number
 }
 
 interface ContributionForm {
@@ -206,12 +207,30 @@ export default function ShareholdersPage() {
   }, [])
 
   const loadShareholders = async (company_id: string) => {
-    const { data } = await supabase
+    const { data: shData } = await supabase
       .from("shareholders")
       .select("id, name, email, phone, national_id, percentage, notes")
       .eq("company_id", company_id)
       .order("created_at", { ascending: true })
-    setShareholders((data || []) as Shareholder[])
+
+    const { data: contribData } = await supabase
+      .from("capital_contributions")
+      .select("shareholder_id, amount")
+      .eq("company_id", company_id)
+
+    const map = new Map<string, number>()
+    if (contribData) {
+      contribData.forEach((c: any) => {
+        map.set(c.shareholder_id, (map.get(c.shareholder_id) || 0) + Number(c.amount || 0))
+      })
+    }
+
+    const merged = (shData || []).map((s: any) => ({
+      ...s,
+      total_contribution: map.get(s.id) || 0
+    }))
+
+    setShareholders(merged as Shareholder[])
   }
 
   const loadAccounts = async (company_id: string) => {
@@ -1261,6 +1280,7 @@ export default function ShareholdersPage() {
                         <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Email' : 'البريد'}</TableHead>
                         <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Phone' : 'الهاتف'}</TableHead>
                         <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Percentage (%)' : 'النسبة (%)'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Contribution Amount' : 'مبلغ المساهمة'}</TableHead>
                         <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Actions' : 'إجراءات'}</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1271,6 +1291,7 @@ export default function ShareholdersPage() {
                           <TableCell>{s.email || (hydrated && appLang === 'en' ? '-' : "-")}</TableCell>
                           <TableCell>{s.phone || (hydrated && appLang === 'en' ? '-' : "-")}</TableCell>
                           <TableCell>{Number(s.percentage || 0).toFixed(2)}%</TableCell>
+                          <TableCell>{(s.total_contribution || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                           <TableCell className="space-x-2 rtl:space-x-reverse">
                             {permUpdate && (
                               <Button variant="outline" size="sm" onClick={() => handleEdit(s)}>
