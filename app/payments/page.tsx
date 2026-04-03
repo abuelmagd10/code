@@ -529,13 +529,15 @@ export default function PaymentsPage() {
           toastActionError(toast, "الجلب", "شجرة الحسابات", "تعذر جلب الحسابات")
         }
 
-        // ✅ استخدام filterCashBankAccounts للحصول على حسابات النقد والبنك (نفس المنطق في صفحة الأعمال المصرفية)
-        // هذا يضمن ظهور نفس الحسابات في جميع الصفحات
+        // ✅ استخدام filterCashBankAccounts للحصول على حسابات النقد والبنك
         const { filterCashBankAccounts } = await import("@/lib/accounts")
-        const cashBankAccounts = filterCashBankAccounts(accs || [], true)
+        let cashBankAccounts = filterCashBankAccounts(accs || [], true)
 
-        // ✅ حسابات النقد والبنك مرئية لجميع المستخدمين في الشركة (حسابات دفع مشتركة)
-        // لا نطبق فلتر الفرع/مركز التكلفة على حسابات النقد والبنك
+        // ✅ فلترة حسابات النقد والبنك للأدوار العادية لتظهر التابعة لفرعهم فقط (أو الحسابات العامة بدون فرع)
+        if (currentRole !== "owner" && currentRole !== "admin" && currentRole !== "general_manager" && currentBranchId) {
+          cashBankAccounts = cashBankAccounts.filter((a: any) => !a.branch_id || a.branch_id === currentBranchId)
+        }
+
         setAccounts(cashBankAccounts as any)
 
         // 🔐 ERP Access Control - جلب المدفوعات مع تطبيق الصلاحيات
