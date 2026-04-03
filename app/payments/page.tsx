@@ -533,9 +533,9 @@ export default function PaymentsPage() {
         const { filterCashBankAccounts } = await import("@/lib/accounts")
         let cashBankAccounts = filterCashBankAccounts(accs || [], true)
 
-        // ✅ فلترة حسابات النقد والبنك للأدوار العادية لتظهر التابعة لفرعهم فقط (أو الحسابات العامة بدون فرع)
+        // ✅ فلترة حسابات النقد والبنك للأدوار العادية لتظهر التابعة لفرعهم فقط
         if (currentRole !== "owner" && currentRole !== "admin" && currentRole !== "general_manager" && currentBranchId) {
-          cashBankAccounts = cashBankAccounts.filter((a: any) => !a.branch_id || a.branch_id === currentBranchId)
+          cashBankAccounts = cashBankAccounts.filter((a: any) => a.branch_id === currentBranchId)
         }
 
         setAccounts(cashBankAccounts as any)
