@@ -453,6 +453,7 @@ export default function BankingPage() {
           branch_id: effectiveBranchId,
           reference_type: "bank_transfer",
           entry_date: transfer.date,
+          status: "draft",
           description:
             transfer.description ||
             (appLang === "en"
@@ -503,6 +504,13 @@ export default function BankingPage() {
           },
         ]);
       if (linesErr) throw linesErr;
+
+      // Mark as posted after lines are inserted
+      const { error: updateErr } = await supabase
+        .from("journal_entries")
+        .update({ status: "posted" })
+        .eq("id", entry.id);
+      if (updateErr) throw updateErr;
 
       setTransfer({
         ...transfer,
