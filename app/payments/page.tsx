@@ -2900,6 +2900,12 @@ export default function PaymentsPage() {
                   <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
                 </select>
               </div>
+              {(newCustPayment.method === 'transfer' || newCustPayment.method === 'check') && (
+                <div>
+                  <Label>{appLang === 'en' ? 'Transfer/Check No. (Optional)' : 'رقم التحويل/الشيك (اختياري)'}</Label>
+                  <Input value={newCustPayment.ref} onChange={(e) => setNewCustPayment({ ...newCustPayment, ref: e.target.value })} placeholder="..." />
+                </div>
+              )}
               <div>
                 <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
                 <div className="flex gap-2 items-center">
@@ -3134,6 +3140,12 @@ export default function PaymentsPage() {
                   <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
                 </select>
               </div>
+              {(newSuppPayment.method === 'transfer' || newSuppPayment.method === 'check') && (
+                <div>
+                  <Label>{appLang === 'en' ? 'Transfer/Check No. (Optional)' : 'رقم التحويل/الشيك (اختياري)'}</Label>
+                  <Input value={newSuppPayment.ref} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, ref: e.target.value })} placeholder="..." />
+                </div>
+              )}
               <div>
                 <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
                 <div className="flex gap-2 items-center">
@@ -3435,10 +3447,12 @@ export default function PaymentsPage() {
                       <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
                     </select>
                   </div>
-                  <div>
-                    <Label>{appLang === 'en' ? 'Reference' : 'مرجع'}</Label>
-                    <Input value={editFields.reference_number} onChange={(e) => setEditFields({ ...editFields, reference_number: e.target.value })} />
-                  </div>
+                  {(editFields.payment_method === 'transfer' || editFields.payment_method === 'check') && (
+                    <div>
+                      <Label>{appLang === 'en' ? 'Transfer/Check No. (Optional)' : 'رقم التحويل/الشيك (اختياري)'}</Label>
+                      <Input value={editFields.reference_number} onChange={(e) => setEditFields({ ...editFields, reference_number: e.target.value })} />
+                    </div>
+                  )}
                   <div>
                     <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
                     <select 
