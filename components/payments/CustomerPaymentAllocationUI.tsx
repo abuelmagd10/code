@@ -50,6 +50,19 @@ export function CustomerPaymentAllocationUI({
   const [invoices, setInvoices] = useState<any[]>([])
   const [allocations, setAllocations] = useState<Record<string, number>>({})
 
+  // ✅ دالة مساعدة لتحديد ما إذا كان الحساب نقدياً
+  const isCashAccount = (id?: string | null) => {
+    if (!id) return false;
+    const acc = accounts.find((a: any) => a.id === id);
+    if (!acc) return false;
+    const st = String((acc as any).sub_type || '').toLowerCase();
+    if (st === 'cash') return true;
+    if (st === 'bank') return false;
+    const nmLower = String((acc as any).account_name || '').toLowerCase();
+    if (nmLower.includes('cash') || /خزينة|نقد|صندوق|كاش/.test(nmLower)) return true;
+    return false;
+  };
+
   // Fetch Invoices when customer changes
   useEffect(() => {
     async function fetchInvoices() {
@@ -224,7 +237,11 @@ export function CustomerPaymentAllocationUI({
               <select
                 className="w-full border rounded px-3 py-2 mt-1 bg-white dark:bg-slate-800"
                 value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
+                onChange={(e) => {
+                  const newId = e.target.value;
+                  setAccountId(newId);
+                  if (isCashAccount(newId) && method !== 'cash') setMethod('cash');
+                }}
               >
                 <option value="">{appLang === 'en' ? 'Select Account' : 'اختر حسابًا'}</option>
                 {accounts.map(a => <option key={a.id} value={a.id}>{a.account_name}</option>)}
@@ -252,8 +269,12 @@ export function CustomerPaymentAllocationUI({
                 onChange={(e) => setMethod(e.target.value)}
               >
                 <option value="cash">{appLang === 'en' ? 'Cash' : 'نقداً'}</option>
-                <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
-                <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
+                {!isCashAccount(accountId) && (
+                  <>
+                    <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
+                    <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
+                  </>
+                )}
               </select>
             </div>
 
