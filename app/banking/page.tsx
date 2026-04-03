@@ -442,10 +442,15 @@ export default function BankingPage() {
       if (!cid) cid = await getActiveCompanyId(supabase);
       if (!cid) return;
 
+      // Find the source account to get its branch
+      const sourceAccount = accounts.find((a) => a.id === transfer.from_id);
+      const effectiveBranchId = sourceAccount?.branch_id || userContext?.branch_id || null;
+
       const { data: entry, error: entryErr } = await supabase
         .from("journal_entries")
         .insert({
           company_id: cid,
+          branch_id: effectiveBranchId,
           reference_type: "bank_transfer",
           entry_date: transfer.date,
           description:
