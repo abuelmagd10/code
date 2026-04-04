@@ -38,7 +38,7 @@ export async function PATCH(
     // جلب الطلب
     const { data: request, error: reqErr } = await supabase
       .from("sales_return_requests")
-      .select("*, invoices:invoice_id(invoice_number, returned_amount, total_amount, warehouse_id, branch_id, cost_center_id)")
+      .select("*, invoices:invoice_id(invoice_number, returned_amount, total_amount, paid_amount, customer_id, warehouse_id, branch_id, cost_center_id)")
       .eq("id", id)
       .eq("company_id", companyId)
       .maybeSingle()
@@ -109,6 +109,51 @@ export async function PATCH(
       .from("sales_return_requests")
       .update({ status: "approved", reviewed_by: user?.id, reviewed_at: new Date().toISOString() })
       .eq("id", id)
+
+    // 5️⃣ المرحلة الثانية: إنشاء قيد GL عكسي (Sales Return GL Reversal)
+    try {
+      const { data: glResult, error: glErr } = await supabase.rpc(
+        'create_sales_return_gl_reversal',
+        {
+          p_company_id: companyId,
+          p_invoice_id: request.invoice_id,
+          p_return_amount: totalReturnAmount,
+          p_return_request_id: id,
+          p_user_id: user?.id || null
+        }
+      )
+      if (glErr) console.warn('⚠️ [SRR] GL Reversal RPC error:', glErr.message)
+      else if (!glResult?.success) console.warn('⚠️ [SRR] GL Reversal failed:', glResult?.error)
+      else console.log('✅ [SRR] GL Reversal created:', glResult?.journal_entry_id)
+    } catch (glEx: any) {
+      console.warn('⚠️ [SRR] GL Reversal exception (non-fatal):', glEx.message)
+    }
+
+    // 6️⃣ المرحلة الثالثة: إدراج رصيد دائن في customer_credit_ledger (للفواتير المدفوعة)
+    try {
+      const invoice = request.invoices
+      const invoicePaidAmount = Number(invoice?.paid_amount || 0)
+      const customerId = request.customer_id || invoice?.customer_id
+
+      if (invoicePaidAmount > 0 && totalReturnAmount > 0 && customerId) {
+        const creditAmount = Math.min(totalReturnAmount, invoicePaidAmount)
+        const { error: creditErr } = await supabase
+          .from('customer_credit_ledger')
+          .insert({
+            company_id: companyId,
+            customer_id: customerId,
+            source_type: 'sales_return',
+            source_id: id,
+            amount: creditAmount,
+            description: `رصيد دائن من مرتجع الفاتورة ${invoice?.invoice_number || request.invoice_id}`,
+            created_by: user?.id || null
+          })
+        if (creditErr) console.warn('⚠️ [SRR] Credit Ledger insert error:', creditErr.message)
+        else console.log('✅ [SRR] Customer Credit Ledger entry created:', creditAmount)
+      }
+    } catch (creditEx: any) {
+      console.warn('⚠️ [SRR] Credit Ledger exception (non-fatal):', creditEx.message)
+    }
 
     asyncAuditLog({
       companyId, userId: user?.id || "", userEmail: user?.email,

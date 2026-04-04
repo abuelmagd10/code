@@ -31,7 +31,7 @@ export async function POST(
         // 3. جلب تاريخ الفاتورة للتحقق من Period Lock
         const { data: invoice } = await supabase
             .from('invoices')
-            .select('invoice_date, status')
+            .select('invoice_date, status, invoice_number, branch_id')
             .eq('id', invoiceId)
             .eq('company_id', companyId)
             .maybeSingle()
@@ -73,6 +73,29 @@ export async function POST(
                 success: false,
                 error: result.error
             }, { status: 400 })
+        }
+
+        // ✅ المرحلة 1: إشعار مسؤول المخزن عند اعتماد الفاتورة (Draft → Sent)
+        try {
+            const { createNotification } = await import('@/lib/governance-layer')
+            await createNotification({
+                companyId,
+                referenceType: 'invoice',
+                referenceId: invoiceId,
+                title: 'فاتورة جاهزة للشحن',
+                message: `الفاتورة رقم (${invoice?.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
+                createdBy: user.id,
+                branchId: invoice?.branch_id || undefined,
+                assignedToRole: 'warehouse_manager',
+                priority: 'high',
+                eventKey: `invoice:${invoiceId}:sent:warehouse_manager`,
+                severity: 'warning',
+                category: 'inventory'
+            })
+            console.log('✅ [INVOICE_POST] Warehouse notification sent for invoice:', invoice?.invoice_number)
+        } catch (notifErr: any) {
+            // الإشعار غير حرج — لا نوقف العملية بسببه
+            console.warn('⚠️ [INVOICE_POST] Warehouse notification failed:', notifErr.message)
         }
 
         return NextResponse.json({
