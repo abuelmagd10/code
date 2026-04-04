@@ -229,9 +229,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 7️⃣ الإدخال في قاعدة البيانات
+    // ✅ استخراج items قبل الإدراج (ليست عموداً في جدول sales_orders)
+    const { items: _bodyItems, ...orderDataToInsert } = finalData
     const { data: newSalesOrder, error: insertError } = await supabase
       .from("sales_orders")
-      .insert(finalData)
+      .insert(orderDataToInsert)
       .select()
       .single()
 
