@@ -39,7 +39,13 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'stock_transfer': (id) => `/inventory-transfers/${id}`, // ✅ إضافة alias
 
   // المبيعات
-  'invoice': (id) => `/invoices/${id}`,
+  'invoice': (id, eventKey) => {
+    // ✅ إذا كان الإشعار خاص بموافقة إرسال المخزن، نوجه لصفحة موافقات الإرسال
+    if (eventKey && eventKey.includes(':sent:')) {
+      return `/inventory/dispatch-approvals?invoiceId=${id}`
+    }
+    return `/invoices/${id}`
+  },
   'sales_order': (id) => `/sales-orders/${id}`,
   'sales_return_request': (id) => `/sales-return-requests?highlight=${id}`, // ✅ طلب مرتجع مبيعات
   'sales_return': (id) => `/sales-returns/${id}`,                           // ✅ مرتجع مبيعات مؤكد
