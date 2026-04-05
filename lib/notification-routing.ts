@@ -25,6 +25,8 @@ export type ReferenceType =
   | 'customer_voucher'
   | 'expense'
   | 'bank_voucher'
+  | 'sales_return_request'
+  | 'sales_return'
 
 /**
  * خريطة reference_type إلى route
@@ -39,6 +41,8 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   // المبيعات
   'invoice': (id) => `/invoices/${id}`,
   'sales_order': (id) => `/sales-orders/${id}`,
+  'sales_return_request': (id) => `/sales-return-requests?highlight=${id}`, // ✅ طلب مرتجع مبيعات
+  'sales_return': (id) => `/sales-returns/${id}`,                           // ✅ مرتجع مبيعات مؤكد
   'customer_debit_note': (id) => `/customer-debit-notes?highlight=${id}`,
   'customer_credit_refund': (id) => `/customers?highlight=refund-${id}`,
   'customer_voucher': (id) => `/payments?highlight=${id}`,
