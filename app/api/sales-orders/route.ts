@@ -290,7 +290,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 8️⃣ إرسال الإشعارات بعد إنشاء أمر البيع بنجاح
+    // 8️⃣ إنشاء الفاتورة أولاً ثم إرسال الإشعارات
     try {
       // ✅ جلب userId الفعلي من Supabase auth (enhancedContext.userId غير موجود في GovernanceContext)
       const { data: { user: authUser } } = await supabase.auth.getUser()
@@ -325,11 +325,13 @@ export async function POST(request: NextRequest) {
         message: string
         eventKey: string
         category: string
+        referenceType?: string
+        referenceId?: string
       }) => {
         const { error: notifErr } = await supabase.rpc('create_notification', {
           p_company_id: companyId,
-          p_reference_type: 'sales_order',
-          p_reference_id: newSalesOrder.id,
+          p_reference_type: params.referenceType || 'sales_order',
+          p_reference_id: params.referenceId || newSalesOrder.id,
           p_title: params.title,
           p_message: params.message,
           p_created_by: createdById,
@@ -350,16 +352,42 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 1️⃣ إشعار لمحاسب الفرع (نفس الشركة + نفس الفرع)
+      // 8a️⃣ إنشاء فاتورة بيع مسودة تلقائياً أولاً (قبل الإشعارات)
+      // ✅ يجب أن يكون قبل إشعار المحاسب حتى يُوجّه إلى الفاتورة وليس أمر البيع
+      let autoInvoiceResult: { success: boolean; invoice_id?: string; invoice_number?: string; already_exists?: boolean } | null = null;
+      try {
+        const { data: rpcAutoInvoice, error: rpcAutoInvoiceErr } = await supabase.rpc(
+          'create_auto_invoice_from_sales_order',
+          { p_sales_order_id: newSalesOrder.id }
+        );
+        if (!rpcAutoInvoiceErr && rpcAutoInvoice?.success) {
+          autoInvoiceResult = rpcAutoInvoice;
+          console.log('✅ [SALES_ORDER] Auto invoice created:', rpcAutoInvoice.invoice_number)
+        } else if (rpcAutoInvoiceErr) {
+          console.error('⚠️ [SALES_ORDER] Auto invoice RPC error:', rpcAutoInvoiceErr.message)
+        }
+      } catch (autoInvErr: any) {
+        console.error('⚠️ [SALES_ORDER] Auto invoice creation failed:', autoInvErr.message)
+      }
+
+      // 1️⃣ إشعار لمحاسب الفرع — يُوجَّه للفاتورة إن وُجدت، وإلا لأمر البيع
+      const accountantRefType = autoInvoiceResult?.invoice_id ? 'invoice' : 'sales_order'
+      const accountantRefId   = autoInvoiceResult?.invoice_id ?? newSalesOrder.id
+      const accountantMsg     = autoInvoiceResult?.invoice_id
+        ? `تم إنشاء فاتورة بيع جديدة رقم (${autoInvoiceResult.invoice_number}) في فرعكم وبانتظار المتابعة`
+        : `تم إنشاء أمر بيع جديد في فرعكم رقم (${soNumber}) وبانتظار المتابعة`
+
       await sendNotification({
         branchId: branchIdForNotif,
         costCenterId: enhancedContext.cost_center_id || null,
         warehouseId: enhancedContext.warehouse_id || null,
         assignedToRole: 'accountant',
-        title: 'أمر بيع جديد في فرعكم',
-        message: `تم إنشاء أمر بيع جديد في فرعكم رقم (${soNumber}) وبانتظار المتابعة`,
+        title: autoInvoiceResult?.invoice_id ? 'فاتورة بيع جديدة في فرعكم' : 'أمر بيع جديد في فرعكم',
+        message: accountantMsg,
         eventKey: `sales_order:${newSalesOrder.id}:created:accountant`,
-        category: 'finance'
+        category: 'finance',
+        referenceType: accountantRefType,
+        referenceId: accountantRefId,
       })
 
       // 2️⃣ إشعار لمالك الشركة (جميع الفروع - بدون branch_id)
@@ -392,30 +420,11 @@ export async function POST(request: NextRequest) {
       console.error('⚠️ [SALES_ORDER] Failed to send notifications:', notifError)
     }
 
-    // 9️⃣ إنشاء فاتورة بيع مسودة تلقائياً (Enterprise Sales Cycle)
-    let autoInvoiceResult: { success: boolean; invoice_id?: string; invoice_number?: string; already_exists?: boolean } | null = null;
-    try {
-      const { data: rpcAutoInvoice, error: rpcAutoInvoiceErr } = await supabase.rpc(
-        'create_auto_invoice_from_sales_order',
-        { p_sales_order_id: newSalesOrder.id }
-      );
-      if (!rpcAutoInvoiceErr && rpcAutoInvoice?.success) {
-        autoInvoiceResult = rpcAutoInvoice;
-        console.log('✅ [SALES_ORDER] Auto invoice created:', rpcAutoInvoice.invoice_number)
-      } else if (rpcAutoInvoiceErr) {
-        console.error('⚠️ [SALES_ORDER] Auto invoice RPC error:', rpcAutoInvoiceErr.message)
-      }
-    } catch (autoInvErr: any) {
-      // لا نُوقف العملية إذا فشل إنشاء الفاتورة التلقائية
-      console.error('⚠️ [SALES_ORDER] Auto invoice creation failed:', autoInvErr.message)
-    }
-
     return NextResponse.json({
       success: true,
       data: newSalesOrder,
       message: "Sales order created successfully",
       message_ar: "تم إنشاء أمر البيع بنجاح",
-      auto_invoice: autoInvoiceResult,
       governance: {
         enforced: true,
         companyId: enhancedContext.companyId,
