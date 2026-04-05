@@ -742,20 +742,7 @@ export default function EditInvoicePage() {
         const shippingValidation = await validateShippingProvider(supabase, invoiceId)
 
         if (shippingValidation.valid && shippingValidation.shippingProviderId) {
-          // ✅ نظام بضائع لدى الغير: نقل من المستودع → بضائع لدى الغير
-          const success = await transferToThirdParty({
-            supabase,
-            companyId: mapping.companyId,
-            invoiceId,
-            shippingProviderId: shippingValidation.shippingProviderId,
-            branchId: branchId || null,
-            costCenterId: costCenterId || null,
-            warehouseId: warehouseId || null
-          })
-
-          if (success) {
-            console.log(`✅ INV Edit: تم نقل البضائع إلى "${shippingValidation.providerName}" (بضائع لدى الغير)`)
-          }
+          console.log(`✅ INV Edit: Invoice requires warehouse approval (shipping provider assigned). Skipping direct inventory deduction.`)
           return
         }
 

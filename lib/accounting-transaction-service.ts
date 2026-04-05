@@ -43,7 +43,7 @@ export class AccountingTransactionService {
                 .select(`
            product_id, quantity,
            invoices!inner (
-             branch_id, cost_center_id, warehouse_id, status, invoice_date
+             branch_id, cost_center_id, warehouse_id, status, invoice_date, shipping_provider_id
            )
         `)
                 .eq('invoice_id', invoiceId)
@@ -89,7 +89,12 @@ export class AccountingTransactionService {
             let allCogsTx: any[] = []
             let totalTransactionCOGS = 0
 
-            if (inventoryAlreadyDeducted) {
+            const requiresWarehouseApproval = !!invoiceData.shipping_provider_id;
+
+            if (requiresWarehouseApproval) {
+                console.log('Invoice requires warehouse approval (shipping provider assigned). Skipping direct inventory deduction and COGS in postInvoiceAtomic.')
+                // Inventory will be formally deducted when Warehouse Manager approves via `approve_sales_delivery` RPC.
+            } else if (inventoryAlreadyDeducted) {
                 console.log('Inventory already deducted. Skipping FIFO calculation and using existing COGS.')
                 // جلب إجمالي COGS من cogs_transactions المسجلة سابقاً
                 const { data: cogsData, error: cogsError } = await this.supabase
@@ -142,7 +147,7 @@ export class AccountingTransactionService {
                 .maybeSingle()
 
             let cogsJournal = null
-            if (!existingCOGSJournal && totalTransactionCOGS > 0) {
+            if (!requiresWarehouseApproval && !existingCOGSJournal && totalTransactionCOGS > 0) {
                 cogsJournal = await prepareCOGSJournalOnDelivery(
                     this.supabase,
                     invoiceId,

@@ -2063,138 +2063,11 @@ export default function InvoiceDetailPage() {
   // ===== دالة خصم المخزون فقط بدون قيود محاسبية =====
   // 📌 نظام بضائع لدى الغير (Goods with Third Party)
   // تُستخدم عند إرسال الفاتورة (حالة sent)
-  // إذا كان هناك shipping_provider_id → نقل إلى بضائع لدى الغير
-  // وإلا → خصم مباشر من المخزون (النمط القديم)
+  // النظام الجديد: يقوم باستدعاء الـ API الخاص بالترحيل الذري
+  // والذي يتحقق من شركة الشحن، ويرسل الإشعارات، ويقوم بترحيل الإيراد (ويؤجل خصم المخزون إن تطلب اعتماد مدير المخزن).
   const deductInventoryOnly = async () => {
     try {
       if (!invoice) return
-      const mapping = await findAccountIds()
-      if (!mapping) {
-        console.error("❌ Failed to get account mapping - mapping is null")
-        return
-      }
-
-      console.log("🔍 Account mapping retrieved:", {
-        companyId: mapping.companyId,
-        hasAR: !!mapping.ar,
-        hasRevenue: !!mapping.revenue,
-        hasInventory: !!mapping.inventory
-      })
-
-      // التحقق من عدم وجود معاملات مخزون سابقة لهذه الفاتورة
-      const { data: existingTx } = await supabase
-        .from("inventory_transactions")
-        .select("id")
-        .eq("reference_id", invoiceId)
-        .eq("transaction_type", "sale")
-        .limit(1)
-      if (existingTx && existingTx.length > 0) return
-
-      // 📌 التحقق من وجود شركة شحن - نظام بضائع لدى الغير
-      const shippingValidation = await validateShippingProvider(supabase, invoiceId)
-
-      if (shippingValidation.valid && shippingValidation.shippingProviderId) {
-        // ✅ نظام بضائع لدى الغير: نقل من المستودع → بضائع لدى الغير
-        const success = await transferToThirdParty({
-          supabase,
-          companyId: mapping.companyId,
-          invoiceId,
-          shippingProviderId: shippingValidation.shippingProviderId,
-          branchId: invoice.branch_id || null,
-          costCenterId: invoice.cost_center_id || null,
-          warehouseId: invoice.warehouse_id || null
-        })
-
-        if (success) {
-          console.log(`✅ INV ${invoice.invoice_number}: تم نقل البضائع إلى "${shippingValidation.providerName}" (بضائع لدى الغير)`)
-        } else {
-          console.warn(`⚠️ Failed to transfer to third-party for invoice ${invoice.invoice_number} - falling back to direct COGS`)
-          // Fallback: إذا فشل transferToThirdParty, استخدم FIFO + COGS مباشرة
-          // (لا return - استمر في الكود أدناه)
-        }
-
-        // ===== Accrual Basis: Create AR/Revenue/VAT + COGS journals at Sent time =====
-        if (success) {
-          // 1) AR / Revenue / VAT journal (reference_type: 'invoice')
-          const invDupCheck = await checkDuplicateJournalEntry(supabase, mapping.companyId, 'invoice', invoiceId)
-          if (!invDupCheck.exists && mapping.ar && mapping.revenue) {
-            const { data: invJE, error: invJEErr } = await supabase
-              .from('journal_entries')
-              .insert({
-                company_id: mapping.companyId,
-                reference_type: 'invoice',
-                reference_id: invoiceId,
-                entry_date: invoice.invoice_date,
-                description: `فاتورة مبيعات ${invoice.invoice_number}`,
-                status: 'draft',
-                branch_id: invoice.branch_id || null,
-                cost_center_id: invoice.cost_center_id || null,
-                warehouse_id: invoice.warehouse_id || null,
-              })
-              .select().single()
-
-            if (!invJEErr && invJE) {
-              const invLines: any[] = [
-                { journal_entry_id: invJE.id, account_id: mapping.ar, debit_amount: Number(invoice.total_amount || 0), credit_amount: 0, description: 'الذمم المدينة (العملاء)', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
-                { journal_entry_id: invJE.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: Number(invoice.subtotal || invoice.total_amount || 0), description: 'إيراد المبيعات', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
-              ]
-              if (mapping.vatPayable && Number(invoice.tax_amount || 0) > 0) {
-                invLines.push({ journal_entry_id: invJE.id, account_id: mapping.vatPayable, debit_amount: 0, credit_amount: Number(invoice.tax_amount || 0), description: 'ضريبة القيمة المضافة المستحقة', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null })
-              }
-              await supabase.from('journal_entry_lines').insert(invLines)
-              await supabase.from('journal_entries').update({ status: 'posted' }).eq('id', invJE.id)
-              console.log(`✅ Accrual: AR/Revenue journal created for sent invoice ${invoice.invoice_number}`)
-            }
-          }
-
-          // 2) COGS / Inventory journal (reference_type: 'invoice_cogs')
-          if (mapping.cogs && mapping.inventory) {
-            const cogsDupCheck = await checkDuplicateJournalEntry(supabase, mapping.companyId, 'invoice_cogs', invoiceId)
-            if (!cogsDupCheck.exists) {
-              const { data: tpiItems } = await supabase
-                .from('third_party_inventory')
-                .select('quantity, unit_cost')
-                .eq('invoice_id', invoiceId)
-                .eq('company_id', mapping.companyId)
-              const totalCOGS = (tpiItems || []).reduce((sum: number, item: any) =>
-                sum + (Number(item.quantity || 0) * Number(item.unit_cost || 0)), 0)
-
-              if (totalCOGS > 0.01) {
-                const { data: cogsJE, error: cogsJEErr } = await supabase
-                  .from('journal_entries')
-                  .insert({
-                    company_id: mapping.companyId,
-                    reference_type: 'invoice_cogs',
-                    reference_id: invoiceId,
-                    entry_date: invoice.invoice_date,
-                    description: `تكلفة البضاعة المباعة - ${invoice.invoice_number}`,
-                    status: 'draft',
-                    branch_id: invoice.branch_id || null,
-                    cost_center_id: invoice.cost_center_id || null,
-                  })
-                  .select().single()
-
-                if (!cogsJEErr && cogsJE) {
-                  await supabase.from('journal_entry_lines').insert([
-                    { journal_entry_id: cogsJE.id, account_id: mapping.cogs, debit_amount: totalCOGS, credit_amount: 0, description: 'تكلفة البضاعة المباعة', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
-                    { journal_entry_id: cogsJE.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: totalCOGS, description: 'خصم من المخزون', branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
-                  ])
-                  await supabase.from('journal_entries').update({ status: 'posted' }).eq('id', cogsJE.id)
-                  console.log(`✅ Accrual: COGS journal created for sent invoice ${invoice.invoice_number}: ${totalCOGS.toFixed(2)}`)
-                }
-              }
-            }
-          }
-
-          console.log(`✅ INV ${invoice.invoice_number}: تم نقل البضائع إلى "${shippingValidation.providerName}" (بضائع لدى الغير)`)
-          return
-        }
-      }
-
-      // ✅ ERP Professional: Atomic Posting via Server-Side Service (Accrual & Atomic)
-      // This replaces the client-side FIFO logic with a robust, atomic RPC transaction.
-      // يضمن هذا الاستبدال تنفيذ العملية بشكل ذري (Atomic Transaction) في الخادم
-      // ويحقق مبدأ الاستحقاق (Accrual) بإنشاء القيود فوراً
 
       console.log("📌 Calling Atomic Posting API...")
       const response = await fetch(`/api/invoices/${invoiceId}/post`, {
@@ -2211,10 +2084,8 @@ export default function InvoiceDetailPage() {
 
       console.log("✅ Atomic Posting Successful:", result.data)
 
-      // لا حاجة لإنشاء inventory_transactions يدوياً هنا لأن الـ API قام بذلك
-
     } catch (err) {
-      console.error("Error deducting inventory for invoice:", err)
+      console.error("Error executing atomic posting for invoice:", err)
     }
   }
 
