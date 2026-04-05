@@ -1069,6 +1069,7 @@ export default function UsersSettingsPage() {
         { value: 'customer_debit_notes', label: 'إشعارات دائن العملاء' },
         { value: 'customer_credits', label: 'الأرصدة الدائنة للعملاء' },
         { value: 'sales_return_requests', label: 'طلبات مرتجعات المبيعات' },
+        { value: 'customer_refund_requests', label: 'طلبات استرداد العملاء' },
       ]
     },
     purchases: {
