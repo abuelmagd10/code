@@ -258,7 +258,12 @@ export default function DispatchApprovalsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <FilterContainer>
+          <FilterContainer
+            title="البحث والفلاتر"
+            activeCount={searchQuery ? 1 : 0}
+            onClear={() => setSearchQuery("")}
+            defaultOpen={true}
+          >
             <div className="relative w-full md:w-72">
               <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                 <Search className="h-4 w-4 text-gray-400" />
@@ -279,7 +284,7 @@ export default function DispatchApprovalsPage() {
             <EmptyState 
               title="لا توجد طلبات معلقة"
               description="لا يوجد فواتير معلقة لاعتماد المخزن في الوقت الحالي."
-              icon={<Check className="w-10 h-10 text-green-500" />}
+              icon={Check}
             />
           ) : (
             <DataTable 
