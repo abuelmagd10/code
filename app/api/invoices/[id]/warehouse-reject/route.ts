@@ -25,7 +25,7 @@ export async function POST(
         // 2. Fetch invoice
         const { data: invoice } = await supabase
             .from('invoices')
-            .select('invoice_number, branch_id, customer_id, paid_amount, created_by_user_id')
+            .select('invoice_number, branch_id, customer_id, paid_amount, created_by_user_id, posted_by_user_id')
             .eq('id', invoiceId)
             .eq('company_id', companyId)
             .maybeSingle()
@@ -33,6 +33,9 @@ export async function POST(
         if (!invoice) {
             return NextResponse.json({ success: false, error: "الفاتورة غير موجودة" }, { status: 404 })
         }
+
+        // من سيستلم إشعار الرفض: تفضيل posted_by (من رحّل الفاتورة)، وإلا created_by (fallback)
+        const invoiceSenderId = invoice.posted_by_user_id || invoice.created_by_user_id
 
         // 3. Optional User Notes
         let notes: string | null = null;
@@ -94,8 +97,8 @@ export async function POST(
                 console.warn('⚠️ [WAREHOUSE_REJECT] Accountant draft-revert notification failed:', notifErr.message)
             }
 
-            // A2. إشعار شخصي لمُرسِل الفاتورة (Invoice Sender)
-            if (invoice.created_by_user_id) {
+            // A2. إشعار شخصي لمُرسِل الفاتورة (invoiceSenderId = posted_by أو created_by)
+            if (invoiceSenderId) {
                 try {
                     await supabase.rpc('create_notification', {
                         p_company_id: companyId,
@@ -108,7 +111,7 @@ export async function POST(
                         p_cost_center_id: null,
                         p_warehouse_id: null,
                         p_assigned_to_role: null,
-                        p_assigned_to_user: invoice.created_by_user_id,
+                        p_assigned_to_user: invoiceSenderId,
                         p_priority: 'high',
                         p_event_key: `invoice:${invoiceId}:warehouse_rejected_draft:sender:${nowTs}`,
                         p_severity: 'error',
@@ -179,8 +182,8 @@ export async function POST(
             console.warn('⚠️ [WAREHOUSE_REJECT] Accountant notification failed:', notifErr.message)
         }
 
-        // B2. إشعار شخصي لمُرسِل الفاتورة (Invoice Sender)
-        if (invoice.created_by_user_id) {
+        // B2. إشعار شخصي لمُرسِل الفاتورة (invoiceSenderId = posted_by أو created_by)
+        if (invoiceSenderId) {
             try {
                 await supabase.rpc('create_notification', {
                     p_company_id: companyId,
@@ -193,7 +196,7 @@ export async function POST(
                     p_cost_center_id: null,
                     p_warehouse_id: null,
                     p_assigned_to_role: null,
-                    p_assigned_to_user: invoice.created_by_user_id,
+                    p_assigned_to_user: invoiceSenderId,
                     p_priority: 'high',
                     p_event_key: `invoice:${invoiceId}:warehouse_rejected:sender:${nowTsB}`,
                     p_severity: 'error',

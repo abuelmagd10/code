@@ -69,7 +69,7 @@ export async function POST(
         if (invoice.warehouse_status === 'rejected') {
             const { error: resetErr } = await supabase
                 .from('invoices')
-                .update({ warehouse_status: 'pending' })
+                .update({ warehouse_status: 'pending', posted_by_user_id: user.id })
                 .eq('id', invoiceId)
                 .eq('company_id', companyId)
 
@@ -77,6 +77,17 @@ export async function POST(
                 console.warn('⚠️ [INVOICE_POST] Failed to reset warehouse_status to pending:', resetErr.message)
             } else {
                 console.log('✅ [INVOICE_POST] warehouse_status reset to pending (was rejected) for invoice:', invoice.invoice_number)
+            }
+        } else {
+            // حفظ من قام بالترحيل لأول مرة
+            const { error: posterErr } = await supabase
+                .from('invoices')
+                .update({ posted_by_user_id: user.id })
+                .eq('id', invoiceId)
+                .eq('company_id', companyId)
+
+            if (posterErr) {
+                console.warn('⚠️ [INVOICE_POST] Failed to save posted_by_user_id:', posterErr.message)
             }
         }
 
