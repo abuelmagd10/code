@@ -292,18 +292,28 @@ export async function POST(request: NextRequest) {
 
     // 8️⃣ إرسال الإشعارات بعد إنشاء أمر البيع بنجاح
     try {
+      // ✅ جلب userId الفعلي من Supabase auth (enhancedContext.userId غير موجود في GovernanceContext)
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      const createdById = authUser?.id || ''
+
+      if (!createdById) {
+        console.warn('⚠️ [SALES_ORDER] Cannot send notifications: user ID not found')
+      }
+
       // جلب اسم الفرع للإشعارات
       let branchName = 'غير محدد'
-      if (enhancedContext.branchId) {
+      const branchIdForNotif = enhancedContext.branch_id || enhancedContext.branchId || null
+      if (branchIdForNotif) {
         const { data: branchData } = await supabase
           .from('branches')
           .select('name, branch_name')
-          .eq('id', enhancedContext.branchId)
+          .eq('id', branchIdForNotif)
           .maybeSingle()
         branchName = branchData?.name || branchData?.branch_name || 'غير محدد'
       }
 
       const soNumber = newSalesOrder.so_number || 'غير محدد'
+      const companyId = enhancedContext.companyId || enhancedContext.company_id || finalData.company_id
 
       // helper: استدعاء create_notification مباشراً عبر server-side supabase
       const sendNotification = async (params: {
@@ -317,12 +327,12 @@ export async function POST(request: NextRequest) {
         category: string
       }) => {
         const { error: notifErr } = await supabase.rpc('create_notification', {
-          p_company_id: enhancedContext.companyId,
+          p_company_id: companyId,
           p_reference_type: 'sales_order',
           p_reference_id: newSalesOrder.id,
           p_title: params.title,
           p_message: params.message,
-          p_created_by: enhancedContext.userId,
+          p_created_by: createdById,
           p_branch_id: params.branchId ?? null,
           p_cost_center_id: params.costCenterId ?? null,
           p_warehouse_id: params.warehouseId ?? null,
@@ -335,14 +345,16 @@ export async function POST(request: NextRequest) {
         })
         if (notifErr) {
           console.error(`⚠️ [SALES_ORDER] Failed to notify ${params.assignedToRole}:`, notifErr.message)
+        } else {
+          console.log(`✅ [SALES_ORDER] Notified ${params.assignedToRole} successfully`)
         }
       }
 
       // 1️⃣ إشعار لمحاسب الفرع (نفس الشركة + نفس الفرع)
       await sendNotification({
-        branchId: enhancedContext.branchId,
-        costCenterId: enhancedContext.costCenterId,
-        warehouseId: enhancedContext.warehouseId,
+        branchId: branchIdForNotif,
+        costCenterId: enhancedContext.cost_center_id || null,
+        warehouseId: enhancedContext.warehouse_id || null,
         assignedToRole: 'accountant',
         title: 'أمر بيع جديد في فرعكم',
         message: `تم إنشاء أمر بيع جديد في فرعكم رقم (${soNumber}) وبانتظار المتابعة`,
