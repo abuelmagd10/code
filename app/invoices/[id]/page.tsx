@@ -301,7 +301,7 @@ export default function InvoiceDetailPage() {
           
           if (!isCashBank) return false
           if (isPrivilegedUser) return true
-          return !a.branch_id || a.branch_id === userBranchId
+          return a.branch_id === userBranchId
         })
         setCashBankAccounts(list)
         // اختَر افتراضياً أول حساب بنكي إن وُجِد
@@ -337,7 +337,7 @@ export default function InvoiceDetailPage() {
           
           if (!isMatch) return false
           if (isPrivilegedUser) return true
-          return !a.branch_id || a.branch_id === userBranchId
+          return a.branch_id === userBranchId
         })
         setRefundAccounts(list)
         if (!refundAccountId && list.length > 0) {
