@@ -860,6 +860,64 @@ export default function InvoiceDetailPage() {
               if (auditErr) console.warn("Audit log failed:", auditErr)
             }
 
+            // 🔔 إشعار مسؤولي المخزن في الفرع عند تحويل الفاتورة إلى مرسلة
+            if (invoice.company_id && invoice.branch_id) {
+              try {
+                const warehouseRoles = ['warehouse_manager', 'store_manager']
+                const { data: warehouseManagers } = await supabase
+                  .from('company_members')
+                  .select('user_id, role')
+                  .eq('company_id', invoice.company_id)
+                  .in('role', warehouseRoles)
+                  .eq('branch_id', invoice.branch_id)
+
+                if (warehouseManagers && warehouseManagers.length > 0) {
+                  for (const manager of warehouseManagers) {
+                    await supabase.rpc('create_notification', {
+                      p_company_id: invoice.company_id,
+                      p_reference_type: 'invoice',
+                      p_reference_id: invoiceId,
+                      p_title: 'فاتورة جاهزة للشحن',
+                      p_message: `الفاتورة رقم (${invoice.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
+                      p_created_by: auditUserId || invoice.company_id,
+                      p_branch_id: invoice.branch_id,
+                      p_cost_center_id: null,
+                      p_warehouse_id: null,
+                      p_assigned_to_role: manager.role,
+                      p_assigned_to_user: manager.user_id,
+                      p_priority: 'high',
+                      p_event_key: `invoice:${invoiceId}:sent:${manager.user_id}`,
+                      p_severity: 'warning',
+                      p_category: 'inventory'
+                    })
+                    console.log(`✅ [SENT] Notification sent to ${manager.role} (${manager.user_id})`)
+                  }
+                } else {
+                  // Fallback: إرسال بالدور فقط إن لم يوجد مستخدم محدد
+                  console.warn(`⚠️ [SENT] No store/warehouse manager found in branch ${invoice.branch_id}. Sending role fallback.`)
+                  await supabase.rpc('create_notification', {
+                    p_company_id: invoice.company_id,
+                    p_reference_type: 'invoice',
+                    p_reference_id: invoiceId,
+                    p_title: 'فاتورة جاهزة للشحن',
+                    p_message: `الفاتورة رقم (${invoice.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
+                    p_created_by: auditUserId || invoice.company_id,
+                    p_branch_id: invoice.branch_id,
+                    p_cost_center_id: null,
+                    p_warehouse_id: null,
+                    p_assigned_to_role: 'store_manager',
+                    p_assigned_to_user: null,
+                    p_priority: 'high',
+                    p_event_key: `invoice:${invoiceId}:sent:store_manager`,
+                    p_severity: 'warning',
+                    p_category: 'inventory'
+                  })
+                }
+              } catch (notifErr: any) {
+                console.warn('⚠️ [SENT] Warehouse notification failed:', notifErr?.message)
+              }
+            }
+
           } else if (newStatus === "paid" || newStatus === "partially_paid") {
             // ✅ إذا كانت الفاتورة في حالة "paid" مباشرة (بدون المرور بـ "sent")
             // يجب خصم المخزون وإنشاء COGS إذا لم يتم ذلك من قبل
