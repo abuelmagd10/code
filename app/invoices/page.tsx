@@ -1202,7 +1202,8 @@ export default function InvoicesPage() {
                 const isReturned = returnedAmount > 0;
                 const isWarehouseApproved = (row as any).warehouse_status === 'approved';
                 const isCancelled = row.status === 'cancelled' || row.status === 'voided';
-                const canEditInvoice = !isPaid && !isReturned && !isWarehouseApproved && !isCancelled;
+                const isSent = row.status === 'sent' || row.status === 'invoiced';
+                const canEditInvoice = !isPaid && !isReturned && !isWarehouseApproved && !isCancelled && !isSent;
                 
                 if (canEditInvoice) {
                   return (
@@ -1223,6 +1224,7 @@ export default function InvoicesPage() {
                         if (isWarehouseApproved) reason = appLang === 'en' ? 'Cannot edit invoice after warehouse approval. Use Returns instead.' : 'لا يمكن تعديل الفاتورة بعد اعتماد المخزن. استخدم المرتجعات بدلا من ذلك.';
                         else if (isPaid) reason = appLang === 'en' ? 'Cannot edit paid invoice. Use Returns instead.' : 'لا يمكن تعديل فاتورة مدفوعة. استخدم المرتجعات بدلاً من ذلك.';
                         else if (isReturned) reason = appLang === 'en' ? 'Cannot edit returned invoice.' : 'لا يمكن تعديل فاتورة مرتجعة.';
+                        else if (isSent) reason = appLang === 'en' ? 'Cannot edit sent invoice. Modify order instead or void.' : 'لا يمكن تعديل فاتورة مرسلة.';
                         else if (isCancelled) reason = appLang === 'en' ? 'Cannot edit cancelled invoice.' : 'لا يمكن تعديل فاتورة ملغاة.';
                         
                         toast({

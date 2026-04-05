@@ -2460,8 +2460,9 @@ export default function InvoiceDetailPage() {
                   const isPaid = invoice.status === 'paid' || invoice.status === 'partially_paid' || (invoice.paid_amount || 0) > 0;
                   const isReturned = invoice.status === 'returned' || invoice.status === 'partially_returned' || invoice.status === 'fully_returned' || (invoice.returned_amount || 0) > 0;
                   const isWarehouseApproved = invoice.warehouse_status === 'approved';
+                  const isSent = invoice.status === 'sent' || invoice.status === 'invoiced';
                   const isCancelled = invoice.status === 'cancelled' || invoice.status === 'voided';
-                  const canEditInvoice = permUpdate && !isPaid && !isReturned && !isWarehouseApproved && !isCancelled;
+                  const canEditInvoice = permUpdate && !isPaid && !isReturned && !isWarehouseApproved && !isCancelled && !isSent;
 
                   if (canEditInvoice) {
                     return (
@@ -2483,6 +2484,7 @@ export default function InvoiceDetailPage() {
                           else if (isWarehouseApproved) reason = appLang === 'en' ? 'Cannot edit invoice after warehouse approval. Use Returns instead.' : 'لا يمكن تعديل الفاتورة بعد اعتماد المخزن. استخدم المرتجعات بدلا من ذلك.';
                           else if (isPaid) reason = appLang === 'en' ? 'Cannot edit paid invoice. Use Returns instead.' : 'لا يمكن تعديل الفاتورة المدفوعة. استخدم المرتجعات بدلاً من ذلك.';
                           else if (isReturned) reason = appLang === 'en' ? 'Cannot edit returned invoice.' : 'لا يمكن تعديل فاتورة مرتجعة.';
+                          else if (isSent) reason = appLang === 'en' ? 'Cannot edit sent invoice. Modify order instead or void.' : 'لا يمكن تعديل فاتورة مرسلة.';
                           else if (isCancelled) reason = appLang === 'en' ? 'Cannot edit cancelled invoice.' : 'لا يمكن تعديل فاتورة ملغاة.';
                           
                           toast({
@@ -2500,9 +2502,11 @@ export default function InvoiceDetailPage() {
                                 ? (appLang === 'en' ? 'Invoice is paid' : 'الفاتورة مدفوعة')
                                 : isReturned
                                   ? (appLang === 'en' ? 'Invoice is returned' : 'الفاتورة مرتجعة')
-                                  : isCancelled
-                                    ? (appLang === 'en' ? 'Invoice is cancelled' : 'الفاتورة ملغاة')
-                                    : undefined
+                                  : isSent
+                                    ? (appLang === 'en' ? 'Invoice is sent' : 'الفاتورة مرسلة')
+                                    : isCancelled
+                                      ? (appLang === 'en' ? 'Invoice is cancelled' : 'الفاتورة ملغاة')
+                                      : undefined
                         }
                       >
                         {appLang === 'en' ? 'Edit' : 'تعديل'}
