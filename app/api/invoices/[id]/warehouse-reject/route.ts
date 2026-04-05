@@ -25,7 +25,7 @@ export async function POST(
         // 2. Fetch invoice
         const { data: invoice } = await supabase
             .from('invoices')
-            .select('invoice_number, branch_id, customer_id, paid_amount')
+            .select('invoice_number, branch_id, customer_id, paid_amount, created_by_user_id')
             .eq('id', invoiceId)
             .eq('company_id', companyId)
             .maybeSingle()
@@ -69,14 +69,16 @@ export async function POST(
         // 5. SCENARIO A — Reverted to Draft (unpaid invoice)
         // ================================================================
         if (revertedToDraft) {
-            // Notify Accountant
+            const nowTs = Date.now()
+
+            // A1. إشعار محاسب الفرع (Accountant)
             try {
                 await supabase.rpc('create_notification', {
                     p_company_id: companyId,
                     p_reference_type: 'invoice',
                     p_reference_id: invoiceId,
                     p_title: 'تم إرجاع الفاتورة إلى مسودة',
-                    p_message: `تم إرجاع الفاتورة رقم (${invoice.invoice_number}) إلى حالة المسودة بسبب رفض المخزن إخراج البضاعة. لا توجد دفعات مسجلة — لا يوجد أي تأثير محاسبي. ملاحظات: ${notes || 'لا يوجد'}`,
+                    p_message: `تم إرجاع الفاتورة رقم (${invoice.invoice_number}) إلى حالة المسودة بسبب رفض مسؤول المخزن إخراج البضاعة. لا توجد دفعات مسجلة — لا يوجد أي تأثير محاسبي. ملاحظات: ${notes || 'لا يوجد'}`,
                     p_created_by: user.id,
                     p_branch_id: invoice.branch_id || null,
                     p_cost_center_id: null,
@@ -84,7 +86,7 @@ export async function POST(
                     p_assigned_to_role: 'accountant',
                     p_assigned_to_user: null,
                     p_priority: 'medium',
-                    p_event_key: `invoice:${invoiceId}:warehouse_rejected_draft:accountant`,
+                    p_event_key: `invoice:${invoiceId}:warehouse_rejected_draft:accountant:${nowTs}`,
                     p_severity: 'warning',
                     p_category: 'inventory'
                 })
@@ -92,27 +94,52 @@ export async function POST(
                 console.warn('⚠️ [WAREHOUSE_REJECT] Accountant draft-revert notification failed:', notifErr.message)
             }
 
-            // Optional: Notify Management
+            // A2. إشعار شخصي لمُرسِل الفاتورة (Invoice Sender)
+            if (invoice.created_by_user_id) {
+                try {
+                    await supabase.rpc('create_notification', {
+                        p_company_id: companyId,
+                        p_reference_type: 'invoice',
+                        p_reference_id: invoiceId,
+                        p_title: 'رفض المخزن إخراج بضاعة فاتورتك',
+                        p_message: `تم رفض إخراج بضاعة الفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن. الفاتورة لم تكن مدفوعة وتم إرجاعها إلى مسودة تلقائياً. سبب الرفض: ${notes || 'لم يتم تحديد سبب'}. يمكنك مراجعة الفاتورة وإعادة إرسالها.`,
+                        p_created_by: user.id,
+                        p_branch_id: invoice.branch_id || null,
+                        p_cost_center_id: null,
+                        p_warehouse_id: null,
+                        p_assigned_to_role: null,
+                        p_assigned_to_user: invoice.created_by_user_id,
+                        p_priority: 'high',
+                        p_event_key: `invoice:${invoiceId}:warehouse_rejected_draft:sender:${nowTs}`,
+                        p_severity: 'error',
+                        p_category: 'inventory'
+                    })
+                } catch (notifErr: any) {
+                    console.warn('⚠️ [WAREHOUSE_REJECT] Sender draft-revert notification failed:', notifErr.message)
+                }
+            }
+
+            // A3. إشعار الأدوار العليا (Owner / General Manager)
             try {
                 await supabase.rpc('create_notification', {
                     p_company_id: companyId,
                     p_reference_type: 'invoice',
                     p_reference_id: invoiceId,
                     p_title: 'رفض تسليم فاتورة — إرجاع إلى مسودة',
-                    p_message: `تم رفض تسليم الفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن. الفاتورة لم تكن مدفوعة وتم إرجاعها إلى مسودة تلقائياً. ملاحظات: ${notes || 'لا يوجد'}`,
+                    p_message: `تم رفض تسليم الفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن. الفاتورة لم تكن مدفوعة وتم إرجاعها إلى مسودة تلقائياً بدون تأثير محاسبي. سبب الرفض: ${notes || 'لم يتم تحديد سبب'}`,
                     p_created_by: user.id,
                     p_branch_id: invoice.branch_id || null,
                     p_cost_center_id: null,
                     p_warehouse_id: null,
-                    p_assigned_to_role: 'general_manager',
+                    p_assigned_to_role: 'owner',
                     p_assigned_to_user: null,
-                    p_priority: 'low',
-                    p_event_key: `invoice:${invoiceId}:warehouse_rejected_draft:management`,
+                    p_priority: 'medium',
+                    p_event_key: `invoice:${invoiceId}:warehouse_rejected_draft:owner:${nowTs}`,
                     p_severity: 'info',
                     p_category: 'inventory'
                 })
             } catch (notifErr: any) {
-                console.warn('⚠️ [WAREHOUSE_REJECT] Management draft-revert notification failed:', notifErr.message)
+                console.warn('⚠️ [WAREHOUSE_REJECT] Owner draft-revert notification failed:', notifErr.message)
             }
 
             return NextResponse.json({
@@ -127,8 +154,9 @@ export async function POST(
         // ================================================================
         // 6. SCENARIO B — Rejected with Customer Credit (paid invoice)
         // ================================================================
+        const nowTsB = Date.now()
 
-        // Notify Accountant
+        // B1. إشعار محاسب الفرع (Accountant)
         try {
             await supabase.rpc('create_notification', {
                 p_company_id: companyId,
@@ -143,7 +171,7 @@ export async function POST(
                 p_assigned_to_role: 'accountant',
                 p_assigned_to_user: null,
                 p_priority: 'high',
-                p_event_key: `invoice:${invoiceId}:warehouse_rejected:accountant`,
+                p_event_key: `invoice:${invoiceId}:warehouse_rejected:accountant:${nowTsB}`,
                 p_severity: 'error',
                 p_category: 'inventory'
             })
@@ -151,29 +179,52 @@ export async function POST(
             console.warn('⚠️ [WAREHOUSE_REJECT] Accountant notification failed:', notifErr.message)
         }
 
-        // 6. Notify Management (only if credit was created)
-        if (creditCreated) {
+        // B2. إشعار شخصي لمُرسِل الفاتورة (Invoice Sender)
+        if (invoice.created_by_user_id) {
             try {
                 await supabase.rpc('create_notification', {
                     p_company_id: companyId,
                     p_reference_type: 'invoice',
                     p_reference_id: invoiceId,
-                    p_title: 'رفض تسليم فاتورة مدفوعة',
-                    p_message: `الفاتورة رقم (${invoice.invoice_number}) كانت مدفوعة وتم رفض تسليمها من المخزن. تم تحويل مبلغ ${creditAmount} إلى رصيد دائن للعميل تلقائياً.`,
+                    p_title: 'رفض المخزن إخراج بضاعة فاتورتك المدفوعة',
+                    p_message: `تم رفض إخراج بضاعة الفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن. الفاتورة كانت مدفوعة جزئياً مبلغ ${creditAmount} وتم تحويل هذا المبلغ إلى رصيد دائن للعميل. سبب الرفض: ${notes || 'لم يتم تحديد سبب'}.`,
                     p_created_by: user.id,
                     p_branch_id: invoice.branch_id || null,
                     p_cost_center_id: null,
                     p_warehouse_id: null,
-                    p_assigned_to_role: 'general_manager',
-                    p_assigned_to_user: null,
+                    p_assigned_to_role: null,
+                    p_assigned_to_user: invoice.created_by_user_id,
                     p_priority: 'high',
-                    p_event_key: `invoice:${invoiceId}:warehouse_rejected_paid:management`,
-                    p_severity: 'warning',
-                    p_category: 'finance'
+                    p_event_key: `invoice:${invoiceId}:warehouse_rejected:sender:${nowTsB}`,
+                    p_severity: 'error',
+                    p_category: 'inventory'
                 })
             } catch (notifErr: any) {
-                console.warn('⚠️ [WAREHOUSE_REJECT] Management notification failed:', notifErr.message)
+                console.warn('⚠️ [WAREHOUSE_REJECT] Sender notification failed:', notifErr.message)
             }
+        }
+
+        // B3. إشعار الأدوار العليا (Owner)
+        try {
+            await supabase.rpc('create_notification', {
+                p_company_id: companyId,
+                p_reference_type: 'invoice',
+                p_reference_id: invoiceId,
+                p_title: 'رفض تسليم فاتورة مدفوعة',
+                p_message: `الفاتورة رقم (${invoice.invoice_number}) كانت مدفوعة جزئياً (${creditAmount}) وتم رفض تسليمها من المخزن. تم تحويل مبلغ الدفعة إلى رصيد دائن للعميل تلقائياً. سبب الرفض: ${notes || 'لم يتم تحديد سبب'}`,
+                p_created_by: user.id,
+                p_branch_id: invoice.branch_id || null,
+                p_cost_center_id: null,
+                p_warehouse_id: null,
+                p_assigned_to_role: 'owner',
+                p_assigned_to_user: null,
+                p_priority: 'high',
+                p_event_key: `invoice:${invoiceId}:warehouse_rejected_paid:owner:${nowTsB}`,
+                p_severity: 'warning',
+                p_category: 'finance'
+            })
+        } catch (notifErr: any) {
+            console.warn('⚠️ [WAREHOUSE_REJECT] Owner notification failed:', notifErr.message)
         }
 
         return NextResponse.json({
