@@ -22,9 +22,10 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
 import {
   RefreshCw, CheckCircle, XCircle, Clock, FileText,
-  DollarSign, Search, AlertCircle
+  DollarSign, Search, AlertCircle, Banknote, Building2
 } from "lucide-react"
 import Link from "next/link"
 
@@ -43,9 +44,16 @@ interface RefundRequest {
   approved_at: string | null
   executed_at: string | null
   created_at: string
-  // joined
   customers?: { name: string }
-  invoices?: { invoice_number: string }
+  invoices?: { invoice_number: string; branch_id?: string }
+}
+
+interface CashBankAccount {
+  id: string
+  account_code: string
+  account_name: string
+  sub_type: "cash" | "bank"
+  branch_id: string | null
 }
 
 const STATUS_CONFIG = {
@@ -82,11 +90,20 @@ export default function CustomerRefundRequestsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [userRole, setUserRole] = useState<string>("employee")
 
-  // Action Dialog
+  // General Action Dialog (approve / reject)
   const [selectedRequest, setSelectedRequest] = useState<RefundRequest | null>(null)
-  const [modalMode, setModalMode] = useState<"approve" | "reject" | "execute">("approve")
+  const [modalMode, setModalMode] = useState<"approve" | "reject">("approve")
   const [modalNotes, setModalNotes] = useState("")
   const [isModalOpen, setIsModalOpen] = useState(false)
+
+  // Execute Dialog (separate — needs account selection)
+  const [executeRequest, setExecuteRequest] = useState<RefundRequest | null>(null)
+  const [isExecuteModalOpen, setIsExecuteModalOpen] = useState(false)
+  const [cashAccounts, setCashAccounts] = useState<CashBankAccount[]>([])
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("")
+  const [executionDate, setExecutionDate] = useState<string>(new Date().toISOString().slice(0, 10))
+  const [executeNotes, setExecuteNotes] = useState<string>("")
+  const [accountsLoading, setAccountsLoading] = useState(false)
 
   // Lang & Hydration
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
@@ -131,7 +148,13 @@ export default function CustomerRefundRequestsPage() {
 
       let query = supabase
         .from("customer_refund_requests")
-        .select(`id, company_id, customer_id, invoice_id, source_type, amount, status, notes, requested_by, approved_by, executed_by, approved_at, executed_at, created_at, customers(name), invoices(invoice_number)`)
+        .select(`
+          id, company_id, customer_id, invoice_id, source_type, amount,
+          status, notes, requested_by, approved_by, executed_by,
+          approved_at, executed_at, created_at,
+          customers(name),
+          invoices(invoice_number, branch_id)
+        `)
         .eq("company_id", companyId)
         .order("created_at", { ascending: false })
 
@@ -149,11 +172,36 @@ export default function CustomerRefundRequestsPage() {
     }
   }
 
-  const handleActionClick = (req: RefundRequest, mode: "approve" | "reject" | "execute") => {
+  // Load cash/bank accounts for execute dialog
+  const loadAccounts = async (req: RefundRequest) => {
+    try {
+      setAccountsLoading(true)
+      const branchId = (req.invoices as any)?.branch_id || ""
+      const res = await fetch(`/api/customer-refund-requests/accounts?branch_id=${branchId}`)
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error)
+      setCashAccounts(result.data || [])
+    } catch (err: any) {
+      toast({ title: appLang === 'en' ? "Error" : "خطأ", description: err.message, variant: "destructive" })
+    } finally {
+      setAccountsLoading(false)
+    }
+  }
+
+  const handleActionClick = (req: RefundRequest, mode: "approve" | "reject") => {
     setSelectedRequest(req)
     setModalMode(mode)
     setModalNotes("")
     setIsModalOpen(true)
+  }
+
+  const handleExecuteClick = async (req: RefundRequest) => {
+    setExecuteRequest(req)
+    setSelectedAccountId("")
+    setExecutionDate(new Date().toISOString().slice(0, 10))
+    setExecuteNotes("")
+    setIsExecuteModalOpen(true)
+    await loadAccounts(req)
   }
 
   const handleConfirmAction = async () => {
@@ -176,13 +224,46 @@ export default function CustomerRefundRequestsPage() {
       toast({
         title: modalMode === "approve"
           ? (appLang === 'en' ? "✅ Approved" : "✅ تم الاعتماد")
-          : modalMode === "execute"
-            ? (appLang === 'en' ? "✅ Executed" : "✅ تم التنفيذ")
-            : (appLang === 'en' ? "❌ Rejected" : "❌ تم الرفض"),
+          : (appLang === 'en' ? "❌ Rejected" : "❌ تم الرفض"),
         description: result.message
       })
       setIsModalOpen(false)
       setSelectedRequest(null)
+      await loadData()
+    } catch (err: any) {
+      toast({ title: appLang === 'en' ? "Error" : "خطأ", description: err.message, variant: "destructive" })
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleConfirmExecute = async () => {
+    if (!executeRequest) return
+    if (!selectedAccountId) {
+      toast({ title: appLang === 'en' ? "Required" : "مطلوب", description: appLang === 'en' ? "Please select a cash/bank account." : "يرجى اختيار حساب النقدية أو البنك.", variant: "destructive" })
+      return
+    }
+
+    try {
+      setActionLoading(executeRequest.id)
+      const res = await fetch(`/api/customer-refund-requests/${executeRequest.id}/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id:     selectedAccountId,
+          execution_date: executionDate,
+          notes:          executeNotes || null
+        })
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || "فشل في تنفيذ الاسترداد")
+
+      toast({
+        title: appLang === 'en' ? "✅ Refund Executed" : "✅ تم تنفيذ الاسترداد",
+        description: `${result.message}${result.entry_number ? ` — ${appLang === 'en' ? 'Entry' : 'قيد'}: ${result.entry_number}` : ""}`
+      })
+      setIsExecuteModalOpen(false)
+      setExecuteRequest(null)
       await loadData()
     } catch (err: any) {
       toast({ title: appLang === 'en' ? "Error" : "خطأ", description: err.message, variant: "destructive" })
@@ -211,7 +292,7 @@ export default function CustomerRefundRequestsPage() {
   )
 
   const counts = {
-    pending: requests.filter(r => r.status === "pending").length,
+    pending:  requests.filter(r => r.status === "pending").length,
     approved: requests.filter(r => r.status === "approved").length,
     executed: requests.filter(r => r.status === "executed").length,
   }
@@ -293,15 +374,15 @@ export default function CustomerRefundRequestsPage() {
         if (r.status === "approved") {
           return (
             <Button size="sm" className="h-7 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white"
-              onClick={() => handleActionClick(r, "execute")} disabled={actionLoading === r.id}>
-              <RefreshCw className="w-3 h-3 ml-1" />
+              onClick={() => handleExecuteClick(r)} disabled={actionLoading === r.id}>
+              <Banknote className="w-3 h-3 ml-1" />
               {appLang === 'en' ? "Execute Refund" : "تنفيذ الاسترداد"}
             </Button>
           )
         }
         return (
           <span className="text-xs text-gray-400">
-            {r.status === "executed" ? (appLang === 'en' ? "Completed" : "مكتمل") : (appLang === 'en' ? "Cancelled" : "ملغى")}
+            {r.status === "executed" ? (appLang === 'en' ? "Completed ✓" : "مكتمل ✓") : (appLang === 'en' ? "Cancelled" : "ملغى")}
           </span>
         )
       }
@@ -320,7 +401,9 @@ export default function CustomerRefundRequestsPage() {
         <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
           <ERPPageHeader
             title={appLang === 'en' ? 'Customer Refund Requests' : 'طلبات استرداد العملاء'}
-            description={appLang === 'en' ? 'Manage and approve customer cash refund requests from rejected deliveries' : 'إدارة واعتماد طلبات استرداد الأموال النقدية من حالات رفض التسليم'}
+            description={appLang === 'en'
+              ? 'Manage and approve customer cash refund requests from rejected deliveries'
+              : 'إدارة واعتماد طلبات استرداد الأموال النقدية من حالات رفض التسليم'}
             lang={appLang}
           />
         </div>
@@ -328,11 +411,11 @@ export default function CustomerRefundRequestsPage() {
         {/* Stats Cards */}
         <div className="grid grid-cols-3 gap-3 sm:gap-4">
           {([
-            { key: "pending", ar: "معلقة", en: "Pending", color: "text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20", count: counts.pending },
-            { key: "approved", ar: "معتمدة", en: "Approved", color: "text-blue-600 bg-blue-50 dark:bg-blue-900/20", count: counts.approved },
-            { key: "executed", ar: "منفّذة", en: "Executed", color: "text-green-600 bg-green-50 dark:bg-green-900/20", count: counts.executed },
+            { key: "pending",  ar: "معلقة",  en: "Pending",  color: "text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20", count: counts.pending },
+            { key: "approved", ar: "معتمدة", en: "Approved", color: "text-blue-600 bg-blue-50 dark:bg-blue-900/20",      count: counts.approved },
+            { key: "executed", ar: "منفّذة", en: "Executed", color: "text-green-600 bg-green-50 dark:bg-green-900/20",   count: counts.executed },
           ] as const).map(s => (
-            <Card key={s.key} className={`border-0 shadow-sm ${s.color} cursor-pointer`}
+            <Card key={s.key} className={`border-0 shadow-sm ${s.color} cursor-pointer transition-transform hover:scale-[1.02]`}
               onClick={() => setFilterStatus(s.key)}>
               <CardContent className="p-4 text-center">
                 <p className="text-2xl sm:text-3xl font-bold">{s.count}</p>
@@ -342,7 +425,7 @@ export default function CustomerRefundRequestsPage() {
           ))}
         </div>
 
-        {/* Main Card */}
+        {/* Main Table Card */}
         <Card className="dark:bg-slate-900 dark:border-slate-800">
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -408,25 +491,19 @@ export default function CustomerRefundRequestsPage() {
                 action={searchQuery ? { label: appLang === 'en' ? "Clear" : "مسح", onClick: () => setSearchQuery("") } : undefined}
               />
             ) : (
-              <DataTable
-                data={filtered}
-                columns={columns}
-                keyField="id"
-              />
+              <DataTable data={filtered} columns={columns} keyField="id" />
             )}
           </CardContent>
         </Card>
 
-        {/* Action Dialog */}
+        {/* ─── Approve / Reject Dialog ─── */}
         <Dialog open={isModalOpen} onOpenChange={v => { if (!v) { setIsModalOpen(false); setSelectedRequest(null) } }}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>
                 {modalMode === "approve"
-                  ? (appLang === 'en' ? "Approve Refund Request" : "اعتماد طلب الاسترداد")
-                  : modalMode === "execute"
-                    ? (appLang === 'en' ? "Execute Refund" : "تنفيذ الاسترداد النقدي")
-                    : (appLang === 'en' ? "Reject Refund Request" : "رفض طلب الاسترداد")}
+                  ? (appLang === 'en' ? "✅ Approve Refund Request" : "✅ اعتماد طلب الاسترداد")
+                  : (appLang === 'en' ? "❌ Reject Refund Request" : "❌ رفض طلب الاسترداد")}
               </DialogTitle>
               <DialogDescription>
                 {selectedRequest?.customers?.name} —{" "}
@@ -438,21 +515,12 @@ export default function CustomerRefundRequestsPage() {
             </DialogHeader>
 
             <div className="space-y-4 py-2">
-              {/* Info box */}
               {modalMode === "approve" && (
                 <div className="flex gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 text-sm">
                   <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
                   <span>{appLang === 'en'
-                    ? "By approving, the request will be cleared for cash refund execution."
-                    : "عند الاعتماد، سيُحال الطلب للتنفيذ النقدي من قِبل المحاسب."}</span>
-                </div>
-              )}
-              {modalMode === "execute" && (
-                <div className="flex gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 text-sm">
-                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                  <span>{appLang === 'en'
-                    ? "Executing the refund will debit Customer Liability and credit Cash/Bank. This action cannot be undone."
-                    : "عند التنفيذ سيتم: Dr مديونية العميل / Cr صندوق أو بنك. لا يمكن التراجع عن هذا الإجراء."}</span>
+                    ? "By approving, the request will be cleared for cash refund GL execution."
+                    : "عند الاعتماد، سيُحال الطلب لمرحلة التنفيذ المحاسبي."}</span>
                 </div>
               )}
               {modalMode === "reject" && (
@@ -463,14 +531,12 @@ export default function CustomerRefundRequestsPage() {
                     : "عند الرفض، سيُلغى الطلب. يظل رصيد العميل الدائن كما هو."}</span>
                 </div>
               )}
-
-              {/* Notes */}
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">
+                <Label>
                   {modalMode === "reject"
                     ? <>{appLang === 'en' ? "Rejection Reason" : "سبب الرفض"} <span className="text-red-500">*</span></>
                     : (appLang === 'en' ? "Notes (optional)" : "ملاحظات (اختياري)")}
-                </label>
+                </Label>
                 <Textarea
                   placeholder={modalMode === "reject"
                     ? (appLang === 'en' ? "Enter rejection reason..." : "أدخل سبب الرفض...")
@@ -489,23 +555,155 @@ export default function CustomerRefundRequestsPage() {
               <Button
                 onClick={handleConfirmAction}
                 disabled={actionLoading !== null || (modalMode === "reject" && !modalNotes.trim())}
-                className={
-                  modalMode === "approve" ? "bg-green-600 hover:bg-green-700" :
-                  modalMode === "execute" ? "bg-blue-600 hover:bg-blue-700" :
-                  "bg-red-600 hover:bg-red-700"
-                }
+                className={modalMode === "approve" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}
               >
                 {actionLoading !== null
                   ? (appLang === 'en' ? "Processing..." : "جاري المعالجة...")
                   : modalMode === "approve"
                     ? (appLang === 'en' ? "Confirm Approval" : "تأكيد الاعتماد")
-                    : modalMode === "execute"
-                      ? (appLang === 'en' ? "Execute Refund" : "تنفيذ الاسترداد")
-                      : (appLang === 'en' ? "Confirm Rejection" : "تأكيد الرفض")}
+                    : (appLang === 'en' ? "Confirm Rejection" : "تأكيد الرفض")}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* ─── Execute Refund Dialog — Branch-Aware Treasury ─── */}
+        <Dialog open={isExecuteModalOpen} onOpenChange={v => {
+          if (!v) { setIsExecuteModalOpen(false); setExecuteRequest(null); setCashAccounts([]) }
+        }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Banknote className="w-5 h-5 text-blue-600" />
+                {appLang === 'en' ? "Execute Cash Refund" : "تنفيذ الاسترداد النقدي"}
+              </DialogTitle>
+              <DialogDescription>
+                {executeRequest?.customers?.name} —{" "}
+                {appLang === 'en' ? "Amount:" : "المبلغ:"}{" "}
+                <span className="font-bold text-emerald-600">
+                  {Number(executeRequest?.amount || 0).toLocaleString()}
+                </span>
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-5 py-2">
+              {/* Warning */}
+              <div className="flex gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-300 text-sm">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-medium">{appLang === 'en' ? "GL Entry will be posted:" : "القيد المحاسبي المُرحَّل:"}</p>
+                  <p className="text-xs mt-0.5 opacity-80">
+                    {appLang === 'en'
+                      ? "Dr Accounts Receivable (AR)  /  Cr Selected Cash/Bank"
+                      : "مدين: ذمم مدينة (العملاء)  /  دائن: الحساب المختار"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Account Selection */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1">
+                  <Building2 className="w-3.5 h-3.5" />
+                  {appLang === 'en' ? "Cash / Bank Account" : "حساب النقدية أو البنك"}
+                  <span className="text-red-500">*</span>
+                </Label>
+                {accountsLoading ? (
+                  <div className="h-10 bg-gray-100 dark:bg-slate-800 rounded animate-pulse" />
+                ) : (
+                  <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={appLang === 'en' ? "Select account..." : "اختر الحساب..."} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cashAccounts.length === 0 ? (
+                        <div className="p-3 text-sm text-gray-500 text-center">
+                          {appLang === 'en' ? "No cash/bank accounts found" : "لا توجد حسابات نقدية أو بنكية"}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Cash accounts group */}
+                          {cashAccounts.filter(a => a.sub_type === 'cash').length > 0 && (
+                            <>
+                              <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                                💵 {appLang === 'en' ? 'Cash' : 'صناديق نقدية'}
+                              </div>
+                              {cashAccounts.filter(a => a.sub_type === 'cash').map(acc => (
+                                <SelectItem key={acc.id} value={acc.id}>
+                                  <span className="font-mono text-xs text-gray-500 ml-2">{acc.account_code}</span>
+                                  {acc.account_name}
+                                </SelectItem>
+                              ))}
+                            </>
+                          )}
+                          {/* Bank accounts group */}
+                          {cashAccounts.filter(a => a.sub_type === 'bank').length > 0 && (
+                            <>
+                              <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase mt-1">
+                                🏦 {appLang === 'en' ? 'Bank' : 'حسابات بنكية'}
+                              </div>
+                              {cashAccounts.filter(a => a.sub_type === 'bank').map(acc => (
+                                <SelectItem key={acc.id} value={acc.id}>
+                                  <span className="font-mono text-xs text-gray-500 ml-2">{acc.account_code}</span>
+                                  {acc.account_name}
+                                </SelectItem>
+                              ))}
+                            </>
+                          )}
+                        </>
+                      )}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {/* Execution Date */}
+              <div className="space-y-1.5">
+                <Label>{appLang === 'en' ? "Execution Date" : "تاريخ التنفيذ"}</Label>
+                <Input
+                  type="date"
+                  value={executionDate}
+                  onChange={e => setExecutionDate(e.target.value)}
+                  max={new Date().toISOString().slice(0, 10)}
+                />
+              </div>
+
+              {/* Notes */}
+              <div className="space-y-1.5">
+                <Label>{appLang === 'en' ? "Notes (optional)" : "ملاحظات (اختياري)"}</Label>
+                <Textarea
+                  placeholder={appLang === 'en' ? "Additional notes for the journal entry..." : "ملاحظات إضافية للقيد المحاسبي..."}
+                  value={executeNotes}
+                  onChange={e => setExecuteNotes(e.target.value)}
+                  className="min-h-[60px]"
+                />
+              </div>
+
+              {/* Irreversible warning */}
+              <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                {appLang === 'en'
+                  ? "This action is irreversible. A posted journal entry cannot be deleted."
+                  : "هذا الإجراء لا يمكن التراجع عنه. القيد المرحَّل لا يمكن حذفه."}
+              </p>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => { setIsExecuteModalOpen(false); setExecuteRequest(null); setCashAccounts([]) }}>
+                {appLang === 'en' ? "Cancel" : "إلغاء"}
+              </Button>
+              <Button
+                onClick={handleConfirmExecute}
+                disabled={actionLoading !== null || !selectedAccountId || accountsLoading}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {actionLoading !== null
+                  ? (appLang === 'en' ? "Posting..." : "جاري الترحيل...")
+                  : (appLang === 'en' ? "Post & Execute Refund" : "ترحيل وتنفيذ الاسترداد")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
       </main>
     </div>
   )
