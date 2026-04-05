@@ -292,8 +292,6 @@ export async function POST(request: NextRequest) {
 
     // 8️⃣ إرسال الإشعارات بعد إنشاء أمر البيع بنجاح
     try {
-      const { createNotification } = await import('@/lib/governance-layer')
-
       // جلب اسم الفرع للإشعارات
       let branchName = 'غير محدد'
       if (enhancedContext.branchId) {
@@ -307,57 +305,77 @@ export async function POST(request: NextRequest) {
 
       const soNumber = newSalesOrder.so_number || 'غير محدد'
 
+      // helper: استدعاء create_notification مباشراً عبر server-side supabase
+      const sendNotification = async (params: {
+        branchId?: string | null
+        costCenterId?: string | null
+        warehouseId?: string | null
+        assignedToRole: string
+        title: string
+        message: string
+        eventKey: string
+        category: string
+      }) => {
+        const { error: notifErr } = await supabase.rpc('create_notification', {
+          p_company_id: enhancedContext.companyId,
+          p_reference_type: 'sales_order',
+          p_reference_id: newSalesOrder.id,
+          p_title: params.title,
+          p_message: params.message,
+          p_created_by: enhancedContext.userId,
+          p_branch_id: params.branchId ?? null,
+          p_cost_center_id: params.costCenterId ?? null,
+          p_warehouse_id: params.warehouseId ?? null,
+          p_assigned_to_role: params.assignedToRole,
+          p_assigned_to_user: null,
+          p_priority: 'normal',
+          p_event_key: params.eventKey,
+          p_severity: 'info',
+          p_category: params.category
+        })
+        if (notifErr) {
+          console.error(`⚠️ [SALES_ORDER] Failed to notify ${params.assignedToRole}:`, notifErr.message)
+        }
+      }
+
       // 1️⃣ إشعار لمحاسب الفرع (نفس الشركة + نفس الفرع)
-      await createNotification({
-        companyId: enhancedContext.companyId,
-        referenceType: 'sales_order',
-        referenceId: newSalesOrder.id,
-        title: 'أمر بيع جديد في فرعكم',
-        message: `تم إنشاء أمر بيع جديد في فرعكم رقم (${soNumber}) وبانتظار المتابعة`,
-        createdBy: enhancedContext.userId,
+      await sendNotification({
         branchId: enhancedContext.branchId,
         costCenterId: enhancedContext.costCenterId,
         warehouseId: enhancedContext.warehouseId,
         assignedToRole: 'accountant',
-        priority: 'normal',
+        title: 'أمر بيع جديد في فرعكم',
+        message: `تم إنشاء أمر بيع جديد في فرعكم رقم (${soNumber}) وبانتظار المتابعة`,
         eventKey: `sales_order:${newSalesOrder.id}:created:accountant`,
-        severity: 'info',
         category: 'finance'
       })
 
-      // 2️⃣ إشعار لمالك الشركة (نفس الشركة فقط - جميع الفروع)
-      await createNotification({
-        companyId: enhancedContext.companyId,
-        referenceType: 'sales_order',
-        referenceId: newSalesOrder.id,
+      // 2️⃣ إشعار لمالك الشركة (جميع الفروع - بدون branch_id)
+      await sendNotification({
+        branchId: null,
+        costCenterId: null,
+        warehouseId: null,
+        assignedToRole: 'owner',
         title: 'أمر بيع جديد',
         message: `تم إنشاء أمر بيع جديد رقم (${soNumber}) في فرع (${branchName})`,
-        createdBy: enhancedContext.userId,
-        // ✅ لا نحدد branchId هنا لأن المالك يرى جميع الفروع
-        assignedToRole: 'owner',
-        priority: 'normal',
         eventKey: `sales_order:${newSalesOrder.id}:created:owner`,
-        severity: 'info',
         category: 'sales'
       })
 
-      // 3️⃣ إشعار للمدير العام (نفس الشركة فقط - جميع الفروع)
-      await createNotification({
-        companyId: enhancedContext.companyId,
-        referenceType: 'sales_order',
-        referenceId: newSalesOrder.id,
+      // 3️⃣ إشعار للمدير العام (جميع الفروع - بدون branch_id)
+      await sendNotification({
+        branchId: null,
+        costCenterId: null,
+        warehouseId: null,
+        assignedToRole: 'general_manager',
         title: 'أمر بيع جديد',
         message: `تم إنشاء أمر بيع جديد رقم (${soNumber}) في فرع (${branchName})`,
-        createdBy: enhancedContext.userId,
-        // ✅ لا نحدد branchId هنا لأن المدير العام يرى جميع الفروع
-        assignedToRole: 'general_manager',
-        priority: 'normal',
         eventKey: `sales_order:${newSalesOrder.id}:created:general_manager`,
-        severity: 'info',
         category: 'sales'
       })
 
       console.log('✅ [SALES_ORDER] Notifications sent successfully for SO:', soNumber)
+
     } catch (notifError: any) {
       console.error('⚠️ [SALES_ORDER] Failed to send notifications:', notifError)
     }
