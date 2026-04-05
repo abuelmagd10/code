@@ -129,6 +129,7 @@ export function EnhancedSidebar() {
                                       : href.includes('/sales-orders') ? 'sales_orders'
                                         : href.includes('/sales-returns') ? 'sales_returns'
                                           : href.includes('/vendor-credits') ? 'vendor_credits'
+                                            : href.includes('/customer-credits') ? 'customer_credits'
                                             : href.includes('/purchase-orders') ? 'purchase_orders'
                                               : href.includes('/purchase-returns') ? 'purchase_returns'
                                                 : href.includes('/journal-entries') ? 'journal_entries'
@@ -375,6 +376,7 @@ export function EnhancedSidebar() {
                     { label: (appLanguage === 'en' ? 'Sales Orders' : 'أوامر البيع'), href: `/sales-orders${q}`, icon: ShoppingCart },
                     { label: (appLanguage === 'en' ? 'Sales Invoices' : 'فواتير المبيعات'), href: `/invoices${q}`, icon: FileText },
                     { label: (appLanguage === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'), href: `/sales-returns${q}`, icon: FileText },
+                    { label: (appLanguage === 'en' ? 'Customer Credit Balances' : 'الأرصدة الدائنة للعملاء'), href: `/customer-credits${q}`, icon: DollarSign },
                   ]
                 },
                 {

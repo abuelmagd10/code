@@ -208,6 +208,13 @@ export default function InvoiceDetailPage() {
   const CREDIT_REFUND_ROLES = ['owner', 'admin', 'general_manager', 'accountant', 'manager']
   const canSeeCreditRefundButton = CREDIT_REFUND_ROLES.includes(currentUserRole) || permPayWrite
 
+  // 💳 رصيد العميل الدائن من customer_credit_ledger (المصدر الجديد)
+  const [ledgerCreditBalance, setLedgerCreditBalance] = useState(0)
+  const [showApplyCreditDialog, setShowApplyCreditDialog] = useState(false)
+  const [applyingCredit, setApplyingCredit] = useState(false)
+  const [creditApplyAmount, setCreditApplyAmount] = useState('')
+
+
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -482,6 +489,15 @@ export default function InvoiceDetailPage() {
             setCustomerCreditFromDB(0)
             setCustomerCreditDisbursed(0)
           }
+        }
+
+        // 💳 جلب رصيد العميل من customer_credit_ledger (المصدر الجديد)
+        if (invoiceData?.customer_id) {
+          try {
+            const ledgerRes = await fetch(`/api/customer-credits/${invoiceData.customer_id}`)
+            const ledgerJson = await ledgerRes.json()
+            if (ledgerJson.success) setLedgerCreditBalance(Number(ledgerJson.data.balance || 0))
+          } catch { /* non-critical */ }
         }
 
         // Load returns (sales_returns) for this invoice
@@ -3105,6 +3121,113 @@ export default function InvoiceDetailPage() {
                 <span className="text-xs text-purple-500 dark:text-purple-400 shrink-0 italic">
                   {appLang === 'en' ? 'Already refunded to customer' : 'تم ردّه للعميل مسبقاً'}
                 </span>
+              </div>
+            )}
+
+            {/* ======= بانر رصيد العميل الدائن من customer_credit_ledger ======= */}
+            {ledgerCreditBalance > 0.009 && ['sent', 'partially_paid'].includes(invoice.status) && canSeeCreditRefundButton && (
+              <div className={`print:hidden rounded-xl border-2 border-emerald-300 dark:border-emerald-700 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3`}>
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-emerald-100 dark:bg-emerald-900/40 rounded-xl flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-emerald-800 dark:text-emerald-300 text-sm">
+                      {appLang === 'en' ? '💰 Customer has an available credit balance!' : '💰 لدى العميل رصيد دائن متاح!'}
+                    </p>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      {appLang === 'en' ? 'Available credit from approved return: ' : 'رصيد متاح من مرتجع معتمد: '}
+                      <span className="font-bold text-base">{currencySymbol}{ledgerCreditBalance.toFixed(2)}</span>
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => {
+                      const remaining = Math.max(0, invoice.total_amount - invoice.paid_amount)
+                      setCreditApplyAmount(String(Math.min(ledgerCreditBalance, remaining).toFixed(2)))
+                      setShowApplyCreditDialog(true)
+                    }}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2 shadow-sm"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    {appLang === 'en' ? 'Apply Credit' : 'تطبيق الرصيد'}
+                  </button>
+                  <a href={`/customer-credits/${invoice.customer_id}`} target="_blank" rel="noreferrer"
+                    className="px-3 py-2 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-400 text-sm rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    {appLang === 'en' ? 'Ledger' : 'السجل'}
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* Apply Credit Dialog */}
+            {showApplyCreditDialog && (
+              <div className="print:hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-700 p-6 w-full max-w-md mx-4">
+                  <h3 className="font-bold text-lg text-emerald-700 dark:text-emerald-400 flex items-center gap-2 mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    {appLang === 'en' ? 'Apply Credit to Invoice' : 'تطبيق الرصيد على الفاتورة'}
+                  </h3>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-4 border border-emerald-200 dark:border-emerald-800 mb-4">
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400">{appLang === 'en' ? 'Available Credit' : 'الرصيد المتاح'}</p>
+                    <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{currencySymbol}{ledgerCreditBalance.toFixed(2)}</p>
+                  </div>
+                  <div className="space-y-2 mb-4">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {appLang === 'en' ? 'Amount to Apply' : 'المبلغ المراد تطبيقه'}
+                    </label>
+                    <div className="relative">
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">{currencySymbol}</span>
+                      <input
+                        type="number" min="0.01" step="0.01"
+                        value={creditApplyAmount}
+                        onChange={e => setCreditApplyAmount(e.target.value)}
+                        className="w-full h-10 px-4 pr-9 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-400">
+                      {appLang === 'en'
+                        ? `Remaining balance: ${currencySymbol}${Math.max(0, invoice.total_amount - invoice.paid_amount).toFixed(2)}`
+                        : `المتبقي في الفاتورة: ${currencySymbol}${Math.max(0, invoice.total_amount - invoice.paid_amount).toFixed(2)}`}
+                    </p>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setShowApplyCreditDialog(false)} disabled={applyingCredit}
+                      className="px-4 py-2 border rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800">
+                      {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!creditApplyAmount || Number(creditApplyAmount) <= 0) return
+                        setApplyingCredit(true)
+                        try {
+                          const res = await fetch(`/api/customer-credits/${invoice.customer_id}/apply`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ invoiceId: invoice.id, amount: Number(creditApplyAmount) })
+                          })
+                          const json = await res.json()
+                          if (json.success) {
+                            setShowApplyCreditDialog(false)
+                            setLedgerCreditBalance(0)
+                            await loadInvoice()
+                          } else {
+                            alert(json.error || (appLang === 'en' ? 'Failed to apply credit' : 'فشل تطبيق الرصيد'))
+                          }
+                        } catch { alert(appLang === 'en' ? 'Network error' : 'خطأ في الشبكة') }
+                        finally { setApplyingCredit(false) }
+                      }}
+                      disabled={applyingCredit || !creditApplyAmount}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg flex items-center gap-2 disabled:opacity-50">
+                      {applyingCredit
+                        ? <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                        : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+                      {appLang === 'en' ? 'Apply Credit' : 'تطبيق الرصيد'}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 

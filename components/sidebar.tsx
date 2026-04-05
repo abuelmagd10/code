@@ -205,6 +205,7 @@ export function Sidebar() {
     if (href.includes('/estimates')) return 'estimates'
     // المشتريات
     if (href.includes('/vendor-credits')) return 'vendor_credits'
+    if (href.includes('/customer-credits')) return 'customer_credits'
     if (href.includes('/purchase-orders')) return 'purchase_orders'
     if (href.includes('/purchase-returns')) return 'purchase_returns'
     if (href.includes('/bills')) return 'bills'
@@ -1054,6 +1055,7 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Sales Invoices' : 'فواتير المبيعات'), href: `/invoices${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'), href: `/sales-returns${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Customer Debit Notes' : 'إشعارات مدين العملاء'), href: `/customer-debit-notes${q}`, icon: FileText },
+                    { label: (lang === 'en' ? 'Customer Credit Balances' : 'الأرصدة الدائنة للعملاء'), href: `/customer-credits${q}`, icon: DollarSign },
                   ]
                 },
                 {
