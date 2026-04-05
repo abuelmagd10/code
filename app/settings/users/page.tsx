@@ -1067,6 +1067,8 @@ export default function UsersSettingsPage() {
         { value: 'sales_returns', label: 'مرتجعات المبيعات' },
         { value: 'sent_invoice_returns', label: 'مرتجعات الفواتير المرسلة' },
         { value: 'customer_debit_notes', label: 'إشعارات دائن العملاء' },
+        { value: 'customer_credits', label: 'الأرصدة الدائنة للعملاء' },
+        { value: 'sales_return_requests', label: 'طلبات مرتجعات المبيعات' },
       ]
     },
     purchases: {
@@ -1143,6 +1145,7 @@ export default function UsersSettingsPage() {
         { value: 'profile', label: 'الملف الشخصي' },
         { value: 'orders_rules', label: 'قواعد الطلبات' },
         { value: 'accounting_maintenance', label: 'صيانة المحاسبة' },
+        { value: 'commissions', label: 'قواعد العمولات' },
       ]
     },
     permissions: {
@@ -1166,10 +1169,10 @@ export default function UsersSettingsPage() {
     owner: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
     admin: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
     manager: [
-      'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses'
+      'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sales_return_requests', 'sent_invoice_returns', 'customer_debit_notes', 'customer_credits', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses'
     ],
     accountant: [
-      'dashboard', 'reports', 'invoices', 'customers', 'sales_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts', 'banking', 'annual_closing', 'accounting_periods', 'shareholders', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'taxes', 'exchange_rates', 'accounting_maintenance', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt'
+      'dashboard', 'reports', 'invoices', 'customers', 'sales_returns', 'sales_return_requests', 'customer_debit_notes', 'customer_credits', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts', 'banking', 'annual_closing', 'accounting_periods', 'shareholders', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'taxes', 'exchange_rates', 'accounting_maintenance', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt'
     ],
     store_manager: [
       'dashboard', 'products', 'inventory', 'product_availability', 'inventory_transfers', 'third_party_inventory', 'write_offs', 'inventory_goods_receipt', 'purchase_orders', 'sales_orders', 'shipping'
