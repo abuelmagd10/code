@@ -13,6 +13,7 @@ import {
   CardDescription,
 } from "@/components/ui/card"
 import { ERPPageHeader } from "@/components/erp-page-header"
+import { CompanyHeader } from "@/components/company-header"
 import { Package, Check, X, Box, Info, Search } from "lucide-react"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import {
@@ -54,6 +55,26 @@ export default function DispatchApprovalsPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<DispatchInvoice | null>(null)
   const [notes, setNotes] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
+  
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [hydrated, setHydrated] = useState(false)
+
+  useEffect(() => {
+    setHydrated(true)
+    try {
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+    } catch { }
+
+    const handler = () => {
+      try {
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+      } catch { }
+    }
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
 
   useEffect(() => {
     loadPendingInvoices()
@@ -172,7 +193,7 @@ export default function DispatchApprovalsPage() {
 
   const columns: DataTableColumn<DispatchInvoice>[] = [
     {
-      header: "رقم الفاتورة",
+      header: appLang === 'en' ? "Invoice #" : "رقم الفاتورة",
       key: "invoice_number",
       format: (_: any, inv: DispatchInvoice) => (
         <div className="font-medium text-blue-600 dark:text-blue-400">
@@ -181,41 +202,41 @@ export default function DispatchApprovalsPage() {
       )
     },
     {
-      header: "التاريخ",
+      header: appLang === 'en' ? "Date" : "التاريخ",
       key: "invoice_date",
       format: (_: any, inv: DispatchInvoice) => (
-        <div>{new Date(inv.invoice_date).toLocaleDateString('ar-EG')}</div>
+        <div>{new Date(inv.invoice_date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}</div>
       )
     },
     {
-      header: "العميل",
+      header: appLang === 'en' ? "Customer" : "العميل",
       key: "customer.name",
       format: (_: any, inv: DispatchInvoice) => (
         <div>{inv.customer?.name || "-"}</div>
       )
     },
     {
-      header: "شركة الشحن",
+      header: appLang === 'en' ? "Shipping Provider" : "شركة الشحن",
       key: "shipping_provider.provider_name",
       format: (_: any, inv: DispatchInvoice) => (
         <div>{inv.shipping_provider?.provider_name || "-"}</div>
       )
     },
     {
-      header: "عدد الأصناف",
+      header: appLang === 'en' ? "Items" : "عدد الأصناف",
       key: "items_count",
       format: (_: any, inv: DispatchInvoice) => (
         <div className="flex items-center text-gray-500">
-          <Box className="w-4 h-4 mr-2" />
-          {inv.items_count} أصناف
+          <Box className={`w-4 h-4 ${appLang === 'en' ? 'mr-2' : 'ml-2'}`} />
+          {inv.items_count} {appLang === 'en' ? "items" : "أصناف"}
         </div>
       )
     },
     {
-      header: "الإجراءات",
-      key: "id",
+      header: appLang === 'en' ? "Action" : "إجراء",
+      key: "action",
       format: (_: any, inv: DispatchInvoice) => (
-        <div className="flex gap-2 justify-end">
+        <div className="flex gap-2">
           <Button 
             size="sm" 
             variant="outline" 
@@ -223,7 +244,7 @@ export default function DispatchApprovalsPage() {
             onClick={() => handleActionClick(inv, "approve")}
             disabled={actionLoading === inv.id}
           >
-            <Check className="w-4 h-4 ml-1" /> اعتماد
+            <Check className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Approve" : "اعتماد"}
           </Button>
           <Button 
             size="sm" 
@@ -232,7 +253,7 @@ export default function DispatchApprovalsPage() {
             onClick={() => handleActionClick(inv, "reject")}
             disabled={actionLoading === inv.id}
           >
-            <X className="w-4 h-4 ml-1" /> رفض
+            <X className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Reject" : "رفض"}
           </Button>
         </div>
       )
@@ -243,48 +264,63 @@ export default function DispatchApprovalsPage() {
     !searchQuery || inv.invoice_number.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  return (
-    <div className="p-4 md:p-8 pt-6 space-y-6 max-w-[1400px] mx-auto pb-24">
-      <ERPPageHeader 
-        title="اعتمادات إخراج المخزون" 
-        description="إدارة ومراجعة طلبات إخراج البضاعة للفواتير المُرحلة" 
-      />
+  if (!hydrated) return null
 
-      <Card>
-        <CardHeader>
-          <CardTitle>طلبات قيد الانتظار</CardTitle>
-          <CardDescription>
-            الفواتير التي تم ترحيلها محاسبياً وتنتظر اعتماد المخزن للتسليم
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+  return (
+    <div className={`flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+        <CompanyHeader />
+
+        <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6 mb-6">
+          <ERPPageHeader 
+            title={appLang === 'en' ? 'Dispatch Approvals' : 'اعتمادات إخراج المخزون'}
+            description={appLang === 'en' ? 'Review & manage unfulfilled posted sales orders' : 'إدارة ومراجعة طلبات إخراج البضاعة للفواتير المُرحلة'}
+            lang={appLang}
+          />
+        </div>
+
+        <Card className="dark:bg-slate-900 dark:border-slate-800">
+          <CardHeader>
+            <CardTitle>{appLang === 'en' ? 'Pending Dispatches' : 'طلبات قيد الانتظار'}</CardTitle>
+            <CardDescription>
+              {appLang === 'en' 
+                ? 'Posted invoices waiting for warehouse dispatch' 
+                : 'الفواتير التي تم ترحيلها محاسبياً وتنتظر اعتماد المخزن للتسليم'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
           <FilterContainer
-            title="البحث والفلاتر"
+            title={appLang === 'en' ? "Search & Filters" : "البحث والفلاتر"}
             activeCount={searchQuery ? 1 : 0}
             onClear={() => setSearchQuery("")}
-            defaultOpen={true}
           >
-            <div className="relative w-full md:w-72">
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                <Search className="h-4 w-4 text-gray-400" />
-              </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
-                type="text"
-                className="pl-3 pr-10"
-                placeholder="البحث برقم الفاتورة..."
+                placeholder={appLang === 'en' ? "Search by invoice #..." : "البحث برقم الفاتورة..."}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                className={appLang === 'ar' ? 'pr-10' : 'pl-10'}
               />
             </div>
           </FilterContainer>
 
           {isLoading ? (
-            <LoadingState message="جاري تحميل طلبات الموافقة..." />
+            <LoadingState 
+              message={appLang === 'en' ? "Loading pending dispatches..." : "جاري تحميل الطلبات..."}
+            />
           ) : filteredInvoices.length === 0 ? (
-            <EmptyState 
-              title="لا توجد طلبات معلقة"
-              description="لا يوجد فواتير معلقة لاعتماد المخزن في الوقت الحالي."
-              icon={Check}
+            <EmptyState
+              icon={Package}
+              title={searchQuery ? (appLang === 'en' ? "No Invoices Found" : "لا توجد نتائج بحث") : (appLang === 'en' ? "No Pending Dispatches" : "لا توجد طلبات معلقة")}
+              description={searchQuery 
+                ? (appLang === 'en' ? "No invoices matched your search." : "لم يتم العثور على فواتير تطابق بحثك.")
+                : (appLang === 'en' ? "All posted invoices have been dispatched!" : "جميع الفواتير المرحلة قد تم اعتماد تسليمها بنجاح!")
+              }
+              action={searchQuery ? {
+                label: appLang === 'en' ? "Clear Search" : "مسح البحث",
+                onClick: () => setSearchQuery("")
+              } : undefined}
             />
           ) : (
             <DataTable 
@@ -354,6 +390,7 @@ export default function DispatchApprovalsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </main>
     </div>
   )
 }
