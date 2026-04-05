@@ -65,18 +65,21 @@ export async function POST(
         // 5. Initialize Service
         const accountingService = new AccountingTransactionService(supabase)
 
+        // ✅ تحديد إذا كانت هذه إعادة إرسال بعد رفض مخزني
+        const isRepost = invoice.warehouse_status === 'rejected'
+
         // ✅ الدافع: إذا كانت warehouse_status = 'rejected' (مرفوضة سابقاً) وتم إعادة الإرسال → نعيدها إلى pending
-        if (invoice.warehouse_status === 'rejected') {
+        if (isRepost) {
             const { error: resetErr } = await supabase
                 .from('invoices')
-                .update({ warehouse_status: 'pending', posted_by_user_id: user.id })
+                .update({ warehouse_status: 'pending', posted_by_user_id: user.id, status: 'sent' })
                 .eq('id', invoiceId)
                 .eq('company_id', companyId)
 
             if (resetErr) {
                 console.warn('⚠️ [INVOICE_POST] Failed to reset warehouse_status to pending:', resetErr.message)
             } else {
-                console.log('✅ [INVOICE_POST] warehouse_status reset to pending (was rejected) for invoice:', invoice.invoice_number)
+                console.log('✅ [INVOICE_POST] Re-post after rejection: warehouse_status=pending, status=sent for invoice:', invoice.invoice_number)
             }
         } else {
             // حفظ من قام بالترحيل لأول مرة
@@ -91,14 +94,18 @@ export async function POST(
             }
         }
 
-        // 6. Execute Atomic Transaction
-        const result = await accountingService.postInvoiceAtomic(invoiceId, companyId, user.id)
+        // 6. Execute Atomic Transaction (فقط في حالة الترحيل الأول — ليس عند إعادة الإرسال بعد الرفض)
+        if (!isRepost) {
+            const result = await accountingService.postInvoiceAtomic(invoiceId, companyId, user.id)
 
-        if (!result.success) {
-            return NextResponse.json({
-                success: false,
-                error: result.error
-            }, { status: 400 })
+            if (!result.success) {
+                return NextResponse.json({
+                    success: false,
+                    error: result.error
+                }, { status: 400 })
+            }
+        } else {
+            console.log('✅ [INVOICE_POST] Skipping postInvoiceAtomic for re-post (journal entries already exist)')
         }
 
         // ✅ المرحلة 1: إشعار مسؤول المخزن عند اعتماد الفاتورة (Draft → Sent)
@@ -170,8 +177,7 @@ export async function POST(
 
 
         return NextResponse.json({
-            success: true,
-            data: result
+            success: true
         })
 
     } catch (error: any) {

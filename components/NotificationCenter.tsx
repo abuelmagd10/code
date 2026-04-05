@@ -364,10 +364,18 @@ export function NotificationCenter({
       if (!['owner', 'admin', 'general_manager'].includes(userRole)) return false
     }
 
-    // 3. التحقق من الدور المخصص له (إلغاء التجاوز الشامل للأدوار العليا لمنع تكرار الإشعارات)
+    // 3. التحقق من الدور المخصص له
     if (notification.assigned_to_role && notification.assigned_to_role !== userRole) {
-      // المالك فقط يمكنه رؤية إشعارات الأدوار الإدارية كاستثناء، وغيرها يجب أن يتطابق الدور
-      if (!(notification.assigned_to_role === 'admin' && userRole === 'owner')) {
+      // الأدوار العليا (owner/admin/general_manager) يمكنها رؤية إشعارات بعضها البعض
+      const upperRoles = ['owner', 'admin', 'general_manager']
+      const isUpperRole = upperRoles.includes(userRole)
+      const targetIsUpperRole = upperRoles.includes(notification.assigned_to_role)
+
+      if (isUpperRole && targetIsUpperRole) {
+        // الأدوار العليا ترى إشعارات الأدوار العليا الأخرى ✅
+      } else if (notification.assigned_to_role === 'admin' && userRole === 'owner') {
+        // المالك يرى إشعارات admin ✅ (كان موجوداً من قبل)
+      } else {
         return false
       }
     }
