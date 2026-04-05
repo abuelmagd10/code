@@ -88,30 +88,37 @@ export async function POST(req: NextRequest) {
       return serverError(`فشل في إنشاء طلب المرتجع: ${insertErr?.message}`)
     }
 
-    // إشعار للأدوار العليا
+    // إشعار للأدوار العليا (server-side RPC مباشر)
     try {
-      const { createNotification } = await import("@/lib/governance-layer")
       const msg = `طلب مرتجع ${return_type === "full" ? "كامل" : "جزئي"} للفاتورة ${invoice.invoice_number} — بانتظار الاعتماد`
+      const branchId = invoice.branch_id || member?.branch_id || null
 
       for (const role of ["owner", "admin", "general_manager", "manager"]) {
-        await createNotification({
-          companyId,
-          referenceType: "sales_return_request",
-          referenceId: newRequest.id,
-          title: "طلب مرتجع مبيعات جديد",
-          message: msg,
-          createdBy: user?.id || "",
-          branchId: invoice.branch_id || member?.branch_id || undefined,
-          assignedToRole: role,
-          priority: "high",
-          eventKey: `srr:${newRequest.id}:created:${role}`,
-          severity: "warning",
-          category: "sales"
+        const { error: notifErr } = await supabase.rpc("create_notification", {
+          p_company_id: companyId,
+          p_reference_type: "sales_return_request",
+          p_reference_id: newRequest.id,
+          p_title: "طلب مرتجع مبيعات جديد",
+          p_message: msg,
+          p_created_by: user?.id || "",
+          p_branch_id: branchId,
+          p_cost_center_id: null,
+          p_warehouse_id: null,
+          p_assigned_to_role: role,
+          p_assigned_to_user: null,
+          p_priority: "high",
+          p_event_key: `srr:${newRequest.id}:created:${role}`,
+          p_severity: "warning",
+          p_category: "sales"
         })
+        if (notifErr) {
+          console.error(`⚠️ [SRR] Failed to notify ${role}:`, notifErr.message)
+        }
       }
     } catch (notifErr: any) {
       console.error("⚠️ [SRR] Notification failed:", notifErr.message)
     }
+
 
     asyncAuditLog({
       companyId,

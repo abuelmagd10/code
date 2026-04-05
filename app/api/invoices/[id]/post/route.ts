@@ -77,26 +77,33 @@ export async function POST(
 
         // ✅ المرحلة 1: إشعار مسؤول المخزن عند اعتماد الفاتورة (Draft → Sent)
         try {
-            const { createNotification } = await import('@/lib/governance-layer')
-            await createNotification({
-                companyId,
-                referenceType: 'invoice',
-                referenceId: invoiceId,
-                title: 'فاتورة جاهزة للشحن',
-                message: `الفاتورة رقم (${invoice?.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
-                createdBy: user.id,
-                branchId: invoice?.branch_id || undefined,
-                assignedToRole: 'warehouse_manager',
-                priority: 'high',
-                eventKey: `invoice:${invoiceId}:sent:warehouse_manager`,
-                severity: 'warning',
-                category: 'inventory'
+            const { error: notifErr } = await supabase.rpc('create_notification', {
+                p_company_id: companyId,
+                p_reference_type: 'invoice',
+                p_reference_id: invoiceId,
+                p_title: 'فاتورة جاهزة للشحن',
+                p_message: `الفاتورة رقم (${invoice?.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
+                p_created_by: user.id,
+                p_branch_id: invoice?.branch_id || null,
+                p_cost_center_id: null,
+                p_warehouse_id: null,
+                p_assigned_to_role: 'warehouse_manager',
+                p_assigned_to_user: null,
+                p_priority: 'high',
+                p_event_key: `invoice:${invoiceId}:sent:warehouse_manager`,
+                p_severity: 'warning',
+                p_category: 'inventory'
             })
-            console.log('✅ [INVOICE_POST] Warehouse notification sent for invoice:', invoice?.invoice_number)
+            if (notifErr) {
+                console.warn('⚠️ [INVOICE_POST] Warehouse notification failed:', notifErr.message)
+            } else {
+                console.log('✅ [INVOICE_POST] Warehouse notification sent for invoice:', invoice?.invoice_number)
+            }
         } catch (notifErr: any) {
             // الإشعار غير حرج — لا نوقف العملية بسببه
             console.warn('⚠️ [INVOICE_POST] Warehouse notification failed:', notifErr.message)
         }
+
 
         return NextResponse.json({
             success: true,
