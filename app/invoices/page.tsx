@@ -1197,11 +1197,47 @@ export default function InvoicesPage() {
               </Link>
             )}
             {permEdit && (
-              <Link href={`/invoices/${row.id}/edit`}>
-                <Button variant="outline" size="sm">
-                  <Pencil className="w-4 h-4" />
-                </Button>
-              </Link>
+              (() => {
+                const isPaid = paidAmount > 0;
+                const isReturned = returnedAmount > 0;
+                const isWarehouseApproved = (row as any).warehouse_status === 'approved';
+                const isCancelled = row.status === 'cancelled' || row.status === 'voided';
+                const canEditInvoice = !isPaid && !isReturned && !isWarehouseApproved && !isCancelled;
+                
+                if (canEditInvoice) {
+                  return (
+                    <Link href={`/invoices/${row.id}/edit`}>
+                      <Button variant="outline" size="sm" title={appLang === 'en' ? 'Edit Invoice' : 'تعديل الفاتورة'}>
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                    </Link>
+                  );
+                } else {
+                  return (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="opacity-50 cursor-not-allowed" 
+                      onClick={() => {
+                        let reason = appLang === 'en' ? 'Cannot edit invoice.' : 'لا يمكن تعديل الفاتورة.';
+                        if (isWarehouseApproved) reason = appLang === 'en' ? 'Cannot edit invoice after warehouse approval. Use Returns instead.' : 'لا يمكن تعديل الفاتورة بعد اعتماد المخزن. استخدم المرتجعات بدلا من ذلك.';
+                        else if (isPaid) reason = appLang === 'en' ? 'Cannot edit paid invoice. Use Returns instead.' : 'لا يمكن تعديل فاتورة مدفوعة. استخدم المرتجعات بدلاً من ذلك.';
+                        else if (isReturned) reason = appLang === 'en' ? 'Cannot edit returned invoice.' : 'لا يمكن تعديل فاتورة مرتجعة.';
+                        else if (isCancelled) reason = appLang === 'en' ? 'Cannot edit cancelled invoice.' : 'لا يمكن تعديل فاتورة ملغاة.';
+                        
+                        toast({
+                          title: appLang === 'en' ? 'Action Not Allowed' : 'العملية غير مسموحة',
+                          description: reason,
+                          variant: 'destructive'
+                        });
+                      }}
+                      title={appLang === 'en' ? 'Cannot edit' : 'لا يمكن التعديل'}
+                    >
+                      <Pencil className="w-4 h-4 text-gray-400" />
+                    </Button>
+                  );
+                }
+              })()
             )}
             {/* 🔒 أزرار المرتجع: فقط للفواتير المنفذة (sent/partially_paid/paid) التي تم الموافقة على تخريجها من المخزن - ليس للمسودات أو الملغاة */}
             {row.status !== 'draft' && row.status !== 'invoiced' && row.status !== 'voided' && row.status !== 'fully_returned' && row.status !== 'cancelled' && (row as any).warehouse_status === 'approved' && (

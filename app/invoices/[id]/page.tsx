@@ -2456,27 +2456,60 @@ export default function InvoiceDetailPage() {
                 )}
 
                 {/* Edit Button */}
-                <Button
-                  asChild={permUpdate && invoice.status !== 'paid' && invoice.status !== 'partially_paid'}
-                  variant="outline"
-                  size="sm"
-                  disabled={!permUpdate || invoice.status === 'paid' || invoice.status === 'partially_paid'}
-                  title={
-                    !permUpdate
-                      ? (appLang === 'en' ? 'No permission to edit' : 'لا توجد صلاحية للتعديل')
-                      : (invoice.status === 'paid' || invoice.status === 'partially_paid')
-                        ? (appLang === 'en' ? 'Cannot edit paid invoice. Use Returns instead.' : 'لا يمكن تعديل الفاتورة المدفوعة. استخدم المرتجعات بدلاً من ذلك.')
-                        : undefined
+                {(() => {
+                  const isPaid = invoice.status === 'paid' || invoice.status === 'partially_paid' || (invoice.paid_amount || 0) > 0;
+                  const isReturned = invoice.status === 'returned' || invoice.status === 'partially_returned' || invoice.status === 'fully_returned' || (invoice.returned_amount || 0) > 0;
+                  const isWarehouseApproved = invoice.warehouse_status === 'approved';
+                  const isCancelled = invoice.status === 'cancelled' || invoice.status === 'voided';
+                  const canEditInvoice = permUpdate && !isPaid && !isReturned && !isWarehouseApproved && !isCancelled;
+
+                  if (canEditInvoice) {
+                    return (
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/invoices/${invoice.id}/edit`}>
+                          {appLang === 'en' ? 'Edit' : 'تعديل'}
+                        </Link>
+                      </Button>
+                    );
+                  } else {
+                    return (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="opacity-50 cursor-not-allowed"
+                        onClick={() => {
+                          let reason = appLang === 'en' ? 'Cannot edit invoice.' : 'لا يمكن تعديل الفاتورة.';
+                          if (!permUpdate) reason = appLang === 'en' ? 'No permission to edit.' : 'لا توجد صلاحية للتعديل.';
+                          else if (isWarehouseApproved) reason = appLang === 'en' ? 'Cannot edit invoice after warehouse approval. Use Returns instead.' : 'لا يمكن تعديل الفاتورة بعد اعتماد المخزن. استخدم المرتجعات بدلا من ذلك.';
+                          else if (isPaid) reason = appLang === 'en' ? 'Cannot edit paid invoice. Use Returns instead.' : 'لا يمكن تعديل الفاتورة المدفوعة. استخدم المرتجعات بدلاً من ذلك.';
+                          else if (isReturned) reason = appLang === 'en' ? 'Cannot edit returned invoice.' : 'لا يمكن تعديل فاتورة مرتجعة.';
+                          else if (isCancelled) reason = appLang === 'en' ? 'Cannot edit cancelled invoice.' : 'لا يمكن تعديل فاتورة ملغاة.';
+                          
+                          toast({
+                            title: appLang === 'en' ? 'Action Not Allowed' : 'العملية غير مسموحة',
+                            description: reason,
+                            variant: 'destructive'
+                          });
+                        }}
+                        title={
+                          !permUpdate
+                            ? (appLang === 'en' ? 'No permission to edit' : 'لا توجد صلاحية للتعديل')
+                            : isWarehouseApproved 
+                              ? (appLang === 'en' ? 'Warehouse approved' : 'تم اعتماد المخزن')
+                              : isPaid
+                                ? (appLang === 'en' ? 'Invoice is paid' : 'الفاتورة مدفوعة')
+                                : isReturned
+                                  ? (appLang === 'en' ? 'Invoice is returned' : 'الفاتورة مرتجعة')
+                                  : isCancelled
+                                    ? (appLang === 'en' ? 'Invoice is cancelled' : 'الفاتورة ملغاة')
+                                    : undefined
+                        }
+                      >
+                        {appLang === 'en' ? 'Edit' : 'تعديل'}
+                      </Button>
+                    );
                   }
-                >
-                  {permUpdate && invoice.status !== 'paid' && invoice.status !== 'partially_paid' ? (
-                    <Link href={`/invoices/${invoice.id}/edit`}>
-                      {appLang === 'en' ? 'Edit' : 'تعديل'}
-                    </Link>
-                  ) : (
-                    <span>{appLang === 'en' ? 'Edit' : 'تعديل'}</span>
-                  )}
-                </Button>
+                })()}
 
                 {/* Print Button */}
                 <Button onClick={handlePrint} variant="outline" size="sm">
