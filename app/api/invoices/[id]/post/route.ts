@@ -76,28 +76,64 @@ export async function POST(
         }
 
         // ✅ المرحلة 1: إشعار مسؤول المخزن عند اعتماد الفاتورة (Draft → Sent)
+        // نرسل للمستخدمين المعيّنين فعلياً في الفرع بأدوار المخزن (store_manager / warehouse_manager)
         try {
-            const { error: notifErr } = await supabase.rpc('create_notification', {
-                p_company_id: companyId,
-                p_reference_type: 'invoice',
-                p_reference_id: invoiceId,
-                p_title: 'فاتورة جاهزة للشحن',
-                p_message: `الفاتورة رقم (${invoice?.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
-                p_created_by: user.id,
-                p_branch_id: invoice?.branch_id || null,
-                p_cost_center_id: null,
-                p_warehouse_id: null,
-                p_assigned_to_role: 'warehouse_manager',
-                p_assigned_to_user: null,
-                p_priority: 'high',
-                p_event_key: `invoice:${invoiceId}:sent:warehouse_manager`,
-                p_severity: 'warning',
-                p_category: 'inventory'
-            })
-            if (notifErr) {
-                console.warn('⚠️ [INVOICE_POST] Warehouse notification failed:', notifErr.message)
+            const warehouseRoles = ['warehouse_manager', 'store_manager']
+            
+            // جلب جميع أعضاء الفرع ذو الأدوار المخزنية
+            const { data: warehouseManagers } = await supabase
+                .from('company_members')
+                .select('user_id, role')
+                .eq('company_id', companyId)
+                .in('role', warehouseRoles)
+                .eq('branch_id', invoice?.branch_id || '')
+
+            if (warehouseManagers && warehouseManagers.length > 0) {
+                // إرسال إشعار مخصص لكل مدير مخزن في الفرع
+                for (const manager of warehouseManagers) {
+                    const { error: notifErr } = await supabase.rpc('create_notification', {
+                        p_company_id: companyId,
+                        p_reference_type: 'invoice',
+                        p_reference_id: invoiceId,
+                        p_title: 'فاتورة جاهزة للشحن',
+                        p_message: `الفاتورة رقم (${invoice?.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
+                        p_created_by: user.id,
+                        p_branch_id: invoice?.branch_id || null,
+                        p_cost_center_id: null,
+                        p_warehouse_id: null,
+                        p_assigned_to_role: manager.role,
+                        p_assigned_to_user: manager.user_id,
+                        p_priority: 'high',
+                        p_event_key: `invoice:${invoiceId}:sent:${manager.user_id}`,
+                        p_severity: 'warning',
+                        p_category: 'inventory'
+                    })
+                    if (notifErr) {
+                        console.warn(`⚠️ [INVOICE_POST] Notification failed for user ${manager.user_id}:`, notifErr.message)
+                    } else {
+                        console.log(`✅ [INVOICE_POST] Notification sent to ${manager.role} (${manager.user_id}) for invoice:`, invoice?.invoice_number)
+                    }
+                }
             } else {
-                console.log('✅ [INVOICE_POST] Warehouse notification sent for invoice:', invoice?.invoice_number)
+                // لا يوجد مدير مخزن في الفرع — إرسال بالدور فقط كـ fallback
+                console.warn(`⚠️ [INVOICE_POST] No warehouse/store managers found in branch ${invoice?.branch_id}. Sending role-based fallback notification.`)
+                await supabase.rpc('create_notification', {
+                    p_company_id: companyId,
+                    p_reference_type: 'invoice',
+                    p_reference_id: invoiceId,
+                    p_title: 'فاتورة جاهزة للشحن',
+                    p_message: `الفاتورة رقم (${invoice?.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
+                    p_created_by: user.id,
+                    p_branch_id: invoice?.branch_id || null,
+                    p_cost_center_id: null,
+                    p_warehouse_id: null,
+                    p_assigned_to_role: 'store_manager',
+                    p_assigned_to_user: null,
+                    p_priority: 'high',
+                    p_event_key: `invoice:${invoiceId}:sent:store_manager`,
+                    p_severity: 'warning',
+                    p_category: 'inventory'
+                })
             }
         } catch (notifErr: any) {
             // الإشعار غير حرج — لا نوقف العملية بسببه
