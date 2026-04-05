@@ -67,10 +67,7 @@ export default function DispatchApprovalsPage() {
         .select(`
           id, invoice_number, invoice_date, total_amount, warehouse_status,
           customers (name),
-          shipping_providers (provider_name),
-          sales_orders (
-             warehouse_id
-          )
+          shipping_providers (provider_name)
         `)
         .eq('company_id', companyId)
         .eq('warehouse_status', 'pending')
