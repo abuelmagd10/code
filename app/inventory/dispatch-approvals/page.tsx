@@ -13,7 +13,7 @@ import {
   CardDescription,
 } from "@/components/ui/card"
 import { ERPPageHeader } from "@/components/erp-page-header"
-import { Package, Check, X, Box, Info } from "lucide-react"
+import { Package, Check, X, Box, Info, Search } from "lucide-react"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import {
   Dialog,
@@ -24,6 +24,9 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { FilterContainer } from "@/components/ui/filter-container"
+import { LoadingState } from "@/components/ui/loading-state"
+import { EmptyState } from "@/components/ui/empty-state"
 
 interface DispatchInvoice {
   id: string
@@ -50,6 +53,7 @@ export default function DispatchApprovalsPage() {
   const [modalMode, setModalMode] = useState<"approve" | "reject">("approve")
   const [selectedInvoice, setSelectedInvoice] = useState<DispatchInvoice | null>(null)
   const [notes, setNotes] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => {
     loadPendingInvoices()
@@ -235,6 +239,10 @@ export default function DispatchApprovalsPage() {
     }
   ]
 
+  const filteredInvoices = invoices.filter(inv => 
+    !searchQuery || inv.invoice_number.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
   return (
     <div className="p-4 md:p-8 pt-6 space-y-6 max-w-[1400px] mx-auto pb-24">
       <ERPPageHeader 
@@ -250,14 +258,34 @@ export default function DispatchApprovalsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <FilterContainer>
+            <div className="relative w-full md:w-72">
+              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                <Search className="h-4 w-4 text-gray-400" />
+              </div>
+              <Input
+                type="text"
+                className="pl-3 pr-10"
+                placeholder="البحث برقم الفاتورة..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+          </FilterContainer>
+
           {isLoading ? (
-            <div className="text-center py-8 text-gray-500">جاري التحميل...</div>
+            <LoadingState message="جاري تحميل طلبات الموافقة..." />
+          ) : filteredInvoices.length === 0 ? (
+            <EmptyState 
+              title="لا توجد طلبات معلقة"
+              description="لا يوجد فواتير معلقة لاعتماد المخزن في الوقت الحالي."
+              icon={<Check className="w-10 h-10 text-green-500" />}
+            />
           ) : (
             <DataTable 
               columns={columns}
-              data={invoices}
+              data={filteredInvoices}
               keyField="id"
-              emptyMessage="لا يوجد فواتير معلقة لاعتماد المخزن في الوقت الحالي."
             />
           )}
         </CardContent>
