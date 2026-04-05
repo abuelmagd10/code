@@ -289,7 +289,7 @@ export default function InvoiceDetailPage() {
 
         const { data: accounts } = await supabase
           .from("chart_of_accounts")
-          .select("id, account_code, account_name, account_type, sub_type")
+          .select("id, account_code, account_name, account_type, sub_type, branch_id")
           .eq("company_id", paymentCompanyId)
         const list = (accounts || []).filter((a: any) => {
           const st = String(a.sub_type || "").toLowerCase()
@@ -297,7 +297,11 @@ export default function InvoiceDetailPage() {
           const nmLower = nm.toLowerCase()
           const isCashOrBankSubtype = st === "cash" || st === "bank"
           const nameSuggestsCashOrBank = nmLower.includes("bank") || nmLower.includes("cash") || /بنك|بنكي|مصرف|خزينة|نقد/.test(nm)
-          return isCashOrBankSubtype || nameSuggestsCashOrBank
+          const isCashBank = isCashOrBankSubtype || nameSuggestsCashOrBank
+          
+          if (!isCashBank) return false
+          if (isPrivilegedUser) return true
+          return !a.branch_id || a.branch_id === userBranchId
         })
         setCashBankAccounts(list)
         // اختَر افتراضياً أول حساب بنكي إن وُجِد
@@ -320,7 +324,7 @@ export default function InvoiceDetailPage() {
         // (حسابات customer_credit مطلوبة داخل الحوار لإنشاء قيد محاسبي متوازن)
         const { data: accounts } = await supabase
           .from("chart_of_accounts")
-          .select("id, account_code, account_name, account_type, sub_type")
+          .select("id, account_code, account_name, account_type, sub_type, branch_id")
           .eq("company_id", invoice.company_id)
         const list = (accounts || []).filter((a: any) => {
           const st = String(a.sub_type || "").toLowerCase()
@@ -329,7 +333,11 @@ export default function InvoiceDetailPage() {
           const isCashOrBankSubtype = st === "cash" || st === "bank"
           const nameSuggestsCashOrBank = nmLower.includes("bank") || nmLower.includes("cash") || /بنك|بنكي|مصرف|خزينة|نقد/.test(nm)
           const isCustomerCreditAccount = st === "customer_credit" || st === "customer_advance"
-          return isCashOrBankSubtype || nameSuggestsCashOrBank || isCustomerCreditAccount
+          const isMatch = isCashOrBankSubtype || nameSuggestsCashOrBank || isCustomerCreditAccount
+          
+          if (!isMatch) return false
+          if (isPrivilegedUser) return true
+          return !a.branch_id || a.branch_id === userBranchId
         })
         setRefundAccounts(list)
         if (!refundAccountId && list.length > 0) {
