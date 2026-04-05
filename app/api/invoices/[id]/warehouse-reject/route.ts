@@ -88,7 +88,7 @@ export async function POST(
                     p_warehouse_id: null,
                     p_assigned_to_role: 'accountant',
                     p_assigned_to_user: null,
-                    p_priority: 'medium',
+                    p_priority: 'normal',
                     p_event_key: `invoice:${invoiceId}:warehouse_rejected_draft:accountant:${nowTs}`,
                     p_severity: 'warning',
                     p_category: 'inventory'
@@ -136,7 +136,7 @@ export async function POST(
                     p_warehouse_id: null,
                     p_assigned_to_role: 'owner',
                     p_assigned_to_user: null,
-                    p_priority: 'medium',
+                    p_priority: 'normal',
                     p_event_key: `invoice:${invoiceId}:warehouse_rejected_draft:owner:${nowTs}`,
                     p_severity: 'info',
                     p_category: 'inventory'
