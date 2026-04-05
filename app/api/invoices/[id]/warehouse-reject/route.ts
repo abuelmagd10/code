@@ -25,7 +25,7 @@ export async function POST(
         // 2. Fetch invoice
         const { data: invoice } = await supabase
             .from('invoices')
-            .select('invoice_number, branch_id', { count: 'exact' })
+            .select('invoice_number, branch_id, customer_id, paid_amount')
             .eq('id', invoiceId)
             .eq('company_id', companyId)
             .maybeSingle()
@@ -45,7 +45,7 @@ export async function POST(
             // No body provided, ignore
         }
 
-        // 4. Call RPC
+        // 4. Call upgraded RPC (now handles Customer Credit internally)
         const { data: rpcData, error: rpcError } = await supabase.rpc('reject_sales_delivery', {
             p_invoice_id: invoiceId,
             p_confirmed_by: user.id,
@@ -61,16 +61,23 @@ export async function POST(
             return NextResponse.json({ success: false, error: rpcData?.error || 'Unknown error' }, { status: 400 })
         }
 
-        // 5. Notify Accountant
+        const creditCreated: boolean = rpcData?.credit_created ?? false
+        const creditAmount: number = rpcData?.credit_amount ?? 0
+
+        // 5. Notify Accountant (always)
         try {
-            const { error: notifErr } = await supabase.rpc('create_notification', {
+            const creditNote = creditCreated
+                ? ` | تم تحويل ${creditAmount} إلى رصيد دائن للعميل.`
+                : ''
+
+            await supabase.rpc('create_notification', {
                 p_company_id: companyId,
                 p_reference_type: 'invoice',
                 p_reference_id: invoiceId,
-                p_title: 'رفضت مسؤل المخزن إخراج البضاعة',
-                p_message: `تم رفض إخراج البضاعة للفاتورة رقم (${invoice?.invoice_number}) من قِبل مسؤول المخزن. ملاحظات: ${notes || 'لا يوجد'}`,
+                p_title: 'تم رفض إخراج البضاعة من المخزن',
+                p_message: `تم رفض إخراج البضاعة للفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن.${creditNote} ملاحظات: ${notes || 'لا يوجد'}`,
                 p_created_by: user.id,
-                p_branch_id: invoice?.branch_id || null,
+                p_branch_id: invoice.branch_id || null,
                 p_cost_center_id: null,
                 p_warehouse_id: null,
                 p_assigned_to_role: 'accountant',
@@ -80,16 +87,40 @@ export async function POST(
                 p_severity: 'error',
                 p_category: 'inventory'
             })
-            if (notifErr) {
-                console.warn('⚠️ [WAREHOUSE_REJECT] Notification failed:', notifErr.message)
-            }
         } catch (notifErr: any) {
-            console.warn('⚠️ [WAREHOUSE_REJECT] Notification failed:', notifErr.message)
+            console.warn('⚠️ [WAREHOUSE_REJECT] Accountant notification failed:', notifErr.message)
+        }
+
+        // 6. Notify Management (new — only if payment was involved)
+        if (creditCreated) {
+            try {
+                await supabase.rpc('create_notification', {
+                    p_company_id: companyId,
+                    p_reference_type: 'invoice',
+                    p_reference_id: invoiceId,
+                    p_title: 'رفض تسليم فاتورة مدفوعة',
+                    p_message: `الفاتورة رقم (${invoice.invoice_number}) كانت مدفوعة وتم رفض تسليمها من المخزن. تم تحويل مبلغ ${creditAmount} إلى رصيد دائن للعميل تلقائياً.`,
+                    p_created_by: user.id,
+                    p_branch_id: invoice.branch_id || null,
+                    p_cost_center_id: null,
+                    p_warehouse_id: null,
+                    p_assigned_to_role: 'general_manager',
+                    p_assigned_to_user: null,
+                    p_priority: 'high',
+                    p_event_key: `invoice:${invoiceId}:warehouse_rejected_paid:management`,
+                    p_severity: 'warning',
+                    p_category: 'finance'
+                })
+            } catch (notifErr: any) {
+                console.warn('⚠️ [WAREHOUSE_REJECT] Management notification failed:', notifErr.message)
+            }
         }
 
         return NextResponse.json({
             success: true,
-            message: "تم رفض العملية بنجاح"
+            message: "تم رفض العملية بنجاح",
+            credit_created: creditCreated,
+            credit_amount: creditAmount
         })
 
     } catch (error: any) {
