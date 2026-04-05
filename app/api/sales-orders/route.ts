@@ -262,6 +262,34 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // 7b️⃣ إدراج بنود أمر البيع (sales_order_items)
+    if (_bodyItems && Array.isArray(_bodyItems) && _bodyItems.length > 0) {
+      const itemsToInsert = _bodyItems.map((item: any) => {
+        const rateFactor = 1 + (Number(item.tax_rate) || 0) / 100;
+        const discountFactor = 1 - (Number(item.discount_percent) || 0) / 100;
+        const base = Number(item.quantity) * Number(item.unit_price) * discountFactor;
+        const netLine = orderDataToInsert.tax_inclusive ? (base / rateFactor) : base;
+
+        return {
+          sales_order_id: newSalesOrder.id,
+          product_id: item.product_id,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_rate: item.tax_rate || 0,
+          discount_percent: item.discount_percent || 0,
+          line_total: netLine,
+          item_type: item.item_type || 'product',
+        };
+      });
+
+      const { error: itemsError } = await supabase.from("sales_order_items").insert(itemsToInsert);
+
+      if (itemsError) {
+        console.error("⚠️ [SALES_ORDER] Error inserting items:", itemsError);
+        // لا نتوقف عن التنفيذ لكن نُسجل الخطأ
+      }
+    }
+
     // 8️⃣ إرسال الإشعارات بعد إنشاء أمر البيع بنجاح
     try {
       const { createNotification } = await import('@/lib/governance-layer')
