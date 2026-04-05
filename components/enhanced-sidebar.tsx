@@ -393,6 +393,7 @@ export function EnhancedSidebar() {
                     { label: (appLanguage === 'en' ? 'Products & Services' : 'المنتجات والخدمات'), href: `/products${q}`, icon: Package },
                     { label: (appLanguage === 'en' ? 'Inventory' : 'المخزون'), href: `/inventory${q}`, icon: DollarSign },
                     { label: (appLanguage === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
+                    { label: (appLanguage === 'en' ? 'Dispatch Approvals' : 'اعتمادات المخزون'), href: `/inventory/dispatch-approvals${q}`, icon: Package },
                     { label: (appLanguage === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
                   ]
                 },
