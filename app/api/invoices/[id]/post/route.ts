@@ -31,7 +31,7 @@ export async function POST(
         // 3. جلب تاريخ الفاتورة للتحقق من Period Lock
         const { data: invoice } = await supabase
             .from('invoices')
-            .select('invoice_date, status, invoice_number, branch_id')
+            .select('invoice_date, status, invoice_number, branch_id, warehouse_status')
             .eq('id', invoiceId)
             .eq('company_id', companyId)
             .maybeSingle()
@@ -65,6 +65,21 @@ export async function POST(
         // 5. Initialize Service
         const accountingService = new AccountingTransactionService(supabase)
 
+        // ✅ الدافع: إذا كانت warehouse_status = 'rejected' (مرفوضة سابقاً) وتم إعادة الإرسال → نعيدها إلى pending
+        if (invoice.warehouse_status === 'rejected') {
+            const { error: resetErr } = await supabase
+                .from('invoices')
+                .update({ warehouse_status: 'pending' })
+                .eq('id', invoiceId)
+                .eq('company_id', companyId)
+
+            if (resetErr) {
+                console.warn('⚠️ [INVOICE_POST] Failed to reset warehouse_status to pending:', resetErr.message)
+            } else {
+                console.log('✅ [INVOICE_POST] warehouse_status reset to pending (was rejected) for invoice:', invoice.invoice_number)
+            }
+        }
+
         // 6. Execute Atomic Transaction
         const result = await accountingService.postInvoiceAtomic(invoiceId, companyId, user.id)
 
@@ -91,6 +106,8 @@ export async function POST(
             if (warehouseManagers && warehouseManagers.length > 0) {
                 // إرسال إشعار مخصص لكل مدير مخزن في الفرع
                 for (const manager of warehouseManagers) {
+                    // استخدام timestamp في event_key لتجنّب خطأ idempotency عند إعادة الإرسال بعد الرفض
+                    const nowTs = Date.now()
                     const { error: notifErr } = await supabase.rpc('create_notification', {
                         p_company_id: companyId,
                         p_reference_type: 'invoice',
@@ -104,7 +121,7 @@ export async function POST(
                         p_assigned_to_role: manager.role,
                         p_assigned_to_user: manager.user_id,
                         p_priority: 'high',
-                        p_event_key: `invoice:${invoiceId}:sent:${manager.user_id}`,
+                        p_event_key: `invoice:${invoiceId}:sent:${manager.user_id}:${nowTs}`,
                         p_severity: 'warning',
                         p_category: 'inventory'
                     })
@@ -130,7 +147,7 @@ export async function POST(
                     p_assigned_to_role: 'store_manager',
                     p_assigned_to_user: null,
                     p_priority: 'high',
-                    p_event_key: `invoice:${invoiceId}:sent:store_manager`,
+                    p_event_key: `invoice:${invoiceId}:sent:store_manager:${Date.now()}`,
                     p_severity: 'warning',
                     p_category: 'inventory'
                 })

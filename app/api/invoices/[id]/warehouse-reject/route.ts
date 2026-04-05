@@ -63,19 +63,79 @@ export async function POST(
 
         const creditCreated: boolean = rpcData?.credit_created ?? false
         const creditAmount: number = rpcData?.credit_amount ?? 0
+        const revertedToDraft: boolean = rpcData?.reverted_to_draft ?? false
 
-        // 5. Notify Accountant (always)
+        // ================================================================
+        // 5. SCENARIO A — Reverted to Draft (unpaid invoice)
+        // ================================================================
+        if (revertedToDraft) {
+            // Notify Accountant
+            try {
+                await supabase.rpc('create_notification', {
+                    p_company_id: companyId,
+                    p_reference_type: 'invoice',
+                    p_reference_id: invoiceId,
+                    p_title: 'تم إرجاع الفاتورة إلى مسودة',
+                    p_message: `تم إرجاع الفاتورة رقم (${invoice.invoice_number}) إلى حالة المسودة بسبب رفض المخزن إخراج البضاعة. لا توجد دفعات مسجلة — لا يوجد أي تأثير محاسبي. ملاحظات: ${notes || 'لا يوجد'}`,
+                    p_created_by: user.id,
+                    p_branch_id: invoice.branch_id || null,
+                    p_cost_center_id: null,
+                    p_warehouse_id: null,
+                    p_assigned_to_role: 'accountant',
+                    p_assigned_to_user: null,
+                    p_priority: 'medium',
+                    p_event_key: `invoice:${invoiceId}:warehouse_rejected_draft:accountant`,
+                    p_severity: 'warning',
+                    p_category: 'inventory'
+                })
+            } catch (notifErr: any) {
+                console.warn('⚠️ [WAREHOUSE_REJECT] Accountant draft-revert notification failed:', notifErr.message)
+            }
+
+            // Optional: Notify Management
+            try {
+                await supabase.rpc('create_notification', {
+                    p_company_id: companyId,
+                    p_reference_type: 'invoice',
+                    p_reference_id: invoiceId,
+                    p_title: 'رفض تسليم فاتورة — إرجاع إلى مسودة',
+                    p_message: `تم رفض تسليم الفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن. الفاتورة لم تكن مدفوعة وتم إرجاعها إلى مسودة تلقائياً. ملاحظات: ${notes || 'لا يوجد'}`,
+                    p_created_by: user.id,
+                    p_branch_id: invoice.branch_id || null,
+                    p_cost_center_id: null,
+                    p_warehouse_id: null,
+                    p_assigned_to_role: 'general_manager',
+                    p_assigned_to_user: null,
+                    p_priority: 'low',
+                    p_event_key: `invoice:${invoiceId}:warehouse_rejected_draft:management`,
+                    p_severity: 'info',
+                    p_category: 'inventory'
+                })
+            } catch (notifErr: any) {
+                console.warn('⚠️ [WAREHOUSE_REJECT] Management draft-revert notification failed:', notifErr.message)
+            }
+
+            return NextResponse.json({
+                success: true,
+                message: 'تم رفض التسليم وإرجاع الفاتورة إلى مسودة (لا توجد دفعات — لا تأثير محاسبي)',
+                reverted_to_draft: true,
+                credit_created: false,
+                credit_amount: 0
+            })
+        }
+
+        // ================================================================
+        // 6. SCENARIO B — Rejected with Customer Credit (paid invoice)
+        // ================================================================
+
+        // Notify Accountant
         try {
-            const creditNote = creditCreated
-                ? ` | تم تحويل ${creditAmount} إلى رصيد دائن للعميل.`
-                : ''
-
             await supabase.rpc('create_notification', {
                 p_company_id: companyId,
                 p_reference_type: 'invoice',
                 p_reference_id: invoiceId,
-                p_title: 'تم رفض إخراج البضاعة من المخزن',
-                p_message: `تم رفض إخراج البضاعة للفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن.${creditNote} ملاحظات: ${notes || 'لا يوجد'}`,
+                p_title: 'تم رفض إخراج البضاعة — رصيد دائن للعميل',
+                p_message: `تم رفض إخراج البضاعة للفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن. تم تحويل مبلغ ${creditAmount} إلى رصيد دائن للعميل تلقائياً. ملاحظات: ${notes || 'لا يوجد'}`,
                 p_created_by: user.id,
                 p_branch_id: invoice.branch_id || null,
                 p_cost_center_id: null,
@@ -91,7 +151,7 @@ export async function POST(
             console.warn('⚠️ [WAREHOUSE_REJECT] Accountant notification failed:', notifErr.message)
         }
 
-        // 6. Notify Management (new — only if payment was involved)
+        // 6. Notify Management (only if credit was created)
         if (creditCreated) {
             try {
                 await supabase.rpc('create_notification', {
@@ -118,7 +178,8 @@ export async function POST(
 
         return NextResponse.json({
             success: true,
-            message: "تم رفض العملية بنجاح",
+            message: 'تم رفض التسليم وتحويل الدفعة إلى رصيد دائن للعميل',
+            reverted_to_draft: false,
             credit_created: creditCreated,
             credit_amount: creditAmount
         })
