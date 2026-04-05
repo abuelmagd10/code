@@ -1091,6 +1091,8 @@ export default function UsersSettingsPage() {
         { value: 'third_party_inventory', label: 'مخزون الطرف الثالث' },
         // صفحة توفر المنتجات في الفروع
         { value: 'product_availability', label: 'توفر المنتجات في الفروع' },
+        // اعتماد إرسال فواتير المبيعات من المخزن (workflow جديد)
+        { value: 'dispatch_approvals', label: 'موافقات إرسال المبيعات' },
         // اعتماد استلام فواتير المشتريات من المخزن (workflow جديد)
         { value: 'inventory_goods_receipt', label: 'اعتماد استلام فواتير المشتريات' },
       ]
@@ -1169,13 +1171,13 @@ export default function UsersSettingsPage() {
     owner: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
     admin: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
     manager: [
-      'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sales_return_requests', 'sent_invoice_returns', 'customer_debit_notes', 'customer_credits', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses'
+      'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sales_return_requests', 'sent_invoice_returns', 'customer_debit_notes', 'customer_credits', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'dispatch_approvals', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses'
     ],
     accountant: [
-      'dashboard', 'reports', 'invoices', 'customers', 'sales_returns', 'sales_return_requests', 'customer_debit_notes', 'customer_credits', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts', 'banking', 'annual_closing', 'accounting_periods', 'shareholders', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'taxes', 'exchange_rates', 'accounting_maintenance', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt'
+      'dashboard', 'reports', 'invoices', 'customers', 'sales_returns', 'sales_return_requests', 'customer_debit_notes', 'customer_credits', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts', 'banking', 'annual_closing', 'accounting_periods', 'shareholders', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'taxes', 'exchange_rates', 'accounting_maintenance', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'dispatch_approvals', 'inventory_goods_receipt'
     ],
     store_manager: [
-      'dashboard', 'products', 'inventory', 'product_availability', 'inventory_transfers', 'third_party_inventory', 'write_offs', 'inventory_goods_receipt', 'purchase_orders', 'sales_orders', 'shipping'
+      'dashboard', 'products', 'inventory', 'product_availability', 'inventory_transfers', 'third_party_inventory', 'write_offs', 'dispatch_approvals', 'inventory_goods_receipt', 'purchase_orders', 'sales_orders', 'shipping'
     ],
     staff: [
       'dashboard', 'customers', 'estimates', 'sales_orders', 'invoices', 'inventory', 'product_availability', 'attendance'

@@ -164,6 +164,7 @@ export function Sidebar() {
     if (href.includes('/inventory-transfers')) return 'inventory_transfers'
     if (href.includes('/inventory/third-party')) return 'third_party_inventory'
     if (href.includes('/inventory/write-offs')) return 'write_offs'
+    if (href.includes('/inventory/dispatch-approvals')) return 'dispatch_approvals'
     if (href.includes('/inventory/goods-receipt')) return 'inventory_goods_receipt'
     if (href.includes('/inventory/product-availability')) return 'product_availability'
     if (href.includes('/inventory')) return 'inventory'
@@ -1075,6 +1076,7 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Inventory Transfers' : 'نقل المخزون'), href: `/inventory-transfers${q}`, icon: ArrowLeftRight },
                     { label: (lang === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
                     { label: (lang === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
+                    { label: (lang === 'en' ? 'Dispatch Approvals' : 'موافقات الإرسال'), href: `/inventory/dispatch-approvals${q}`, icon: CheckCircle },
                     { label: (lang === 'en' ? 'Purchase Goods Receipt' : 'اعتماد استلام المشتريات'), href: `/inventory/goods-receipt${q}`, icon: CheckCircle },
                   ]
                 },
