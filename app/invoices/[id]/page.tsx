@@ -98,6 +98,8 @@ interface Invoice {
   customer_tax_id_snapshot?: string | null
   customer_governorate_snapshot?: string | null
   customer_detailed_address_snapshot?: string | null
+  // Warehouse Approval Status
+  warehouse_status?: string
 }
 
 interface InvoiceItem {
@@ -3338,7 +3340,7 @@ export default function InvoiceDetailPage() {
 
                   const canPartialReturn = returnableItems.length > 1 || (returnableItems.length === 1 && returnableItems[0].max_qty > 1)
 
-                  return invoice.status !== "cancelled" && invoice.status !== "draft" && invoice.status !== "invoiced" && invoice.status !== "fully_returned" && permUpdate && canPartialReturn ? (
+                  return invoice.status !== "cancelled" && invoice.status !== "draft" && invoice.status !== "invoiced" && invoice.status !== "fully_returned" && permUpdate && canPartialReturn && invoice.warehouse_status === 'approved' ? (
                     <Button variant="outline" className="border-orange-500 text-orange-600 hover:bg-orange-50" onClick={openPartialReturnDialog}>
                       {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
                     </Button>

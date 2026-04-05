@@ -78,6 +78,8 @@ interface Invoice {
   display_paid?: number
   // Linked Sales Order
   sales_order_id?: string | null
+  // Warehouse status
+  warehouse_status?: string
 }
 
 type Payment = { id: string; invoice_id: string | null; amount: number }
@@ -1201,8 +1203,8 @@ export default function InvoicesPage() {
                 </Button>
               </Link>
             )}
-            {/* 🔒 أزرار المرتجع: فقط للفواتير المنفذة (sent/partially_paid/paid) - ليس للمسودات أو الملغاة */}
-            {row.status !== 'draft' && row.status !== 'invoiced' && row.status !== 'voided' && row.status !== 'fully_returned' && row.status !== 'cancelled' && (
+            {/* 🔒 أزرار المرتجع: فقط للفواتير المنفذة (sent/partially_paid/paid) التي تم الموافقة على تخريجها من المخزن - ليس للمسودات أو الملغاة */}
+            {row.status !== 'draft' && row.status !== 'invoiced' && row.status !== 'voided' && row.status !== 'fully_returned' && row.status !== 'cancelled' && (row as any).warehouse_status === 'approved' && (
               <>
                 <Button
                   variant="outline"
