@@ -79,6 +79,7 @@ interface Invoice {
   currency_code?: string
   exchange_rate?: number
   base_currency_total?: number
+  original_total?: number
   // Branch, Cost Center, Warehouse
   branch_id?: string | null
   cost_center_id?: string | null
@@ -2457,11 +2458,36 @@ export default function InvoiceDetailPage() {
 
                 {/* Edit Button */}
                 {(() => {
-                  const isPaid = invoice.status === 'paid' || invoice.status === 'partially_paid' || (invoice.paid_amount || 0) > 0;
-                  const isReturned = invoice.status === 'returned' || invoice.status === 'partially_returned' || invoice.status === 'fully_returned' || (invoice.returned_amount || 0) > 0;
+                  const paidAmount = Number(invoice.paid_amount || 0)
+                  const returnedAmount = Number(invoice.returned_amount || 0)
+                  const originalTotal = Number(invoice.original_total || invoice.total_amount || 0)
+                  const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
+
+                  let actualStatus: string
+                  if (invoice.status === 'draft' || invoice.status === 'invoiced') {
+                    actualStatus = 'draft'
+                  } else if (invoice.status === 'cancelled' || invoice.status === 'voided') {
+                    actualStatus = 'cancelled'
+                  } else if (isFullyReturned) {
+                    actualStatus = 'fully_returned'
+                  } else if (returnedAmount > 0 && returnedAmount < originalTotal && originalTotal > 0) {
+                    actualStatus = 'partially_returned'
+                  } else if (originalTotal > 0 && paidAmount >= originalTotal) {
+                    actualStatus = 'paid'
+                  } else if (originalTotal > 0 && paidAmount > 0 && paidAmount < originalTotal) {
+                    actualStatus = 'partially_paid'
+                  } else if (originalTotal > 0 && paidAmount === 0 && returnedAmount === 0) {
+                    actualStatus = 'sent'
+                  } else {
+                    actualStatus = invoice.status || 'draft'
+                  }
+
+                  const isPaid = paidAmount > 0;
+                  const isReturned = returnedAmount > 0;
                   const isWarehouseApproved = invoice.warehouse_status === 'approved';
-                  const isSent = invoice.status === 'sent' || invoice.status === 'invoiced';
-                  const isCancelled = invoice.status === 'cancelled' || invoice.status === 'voided';
+                  const isCancelled = actualStatus === 'cancelled';
+                  const isSent = actualStatus === 'sent';
+                  
                   const canEditInvoice = permUpdate && !isPaid && !isReturned && !isWarehouseApproved && !isCancelled && !isSent;
 
                   if (canEditInvoice) {
@@ -2472,47 +2498,8 @@ export default function InvoiceDetailPage() {
                         </Link>
                       </Button>
                     );
-                  } else {
-                    return (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="opacity-50 cursor-not-allowed"
-                        onClick={() => {
-                          let reason = appLang === 'en' ? 'Cannot edit invoice.' : 'لا يمكن تعديل الفاتورة.';
-                          if (!permUpdate) reason = appLang === 'en' ? 'No permission to edit.' : 'لا توجد صلاحية للتعديل.';
-                          else if (isWarehouseApproved) reason = appLang === 'en' ? 'Cannot edit invoice after warehouse approval. Use Returns instead.' : 'لا يمكن تعديل الفاتورة بعد اعتماد المخزن. استخدم المرتجعات بدلا من ذلك.';
-                          else if (isPaid) reason = appLang === 'en' ? 'Cannot edit paid invoice. Use Returns instead.' : 'لا يمكن تعديل الفاتورة المدفوعة. استخدم المرتجعات بدلاً من ذلك.';
-                          else if (isReturned) reason = appLang === 'en' ? 'Cannot edit returned invoice.' : 'لا يمكن تعديل فاتورة مرتجعة.';
-                          else if (isSent) reason = appLang === 'en' ? 'Cannot edit sent invoice. Modify order instead or void.' : 'لا يمكن تعديل فاتورة مرسلة.';
-                          else if (isCancelled) reason = appLang === 'en' ? 'Cannot edit cancelled invoice.' : 'لا يمكن تعديل فاتورة ملغاة.';
-                          
-                          toast({
-                            title: appLang === 'en' ? 'Action Not Allowed' : 'العملية غير مسموحة',
-                            description: reason,
-                            variant: 'destructive'
-                          });
-                        }}
-                        title={
-                          !permUpdate
-                            ? (appLang === 'en' ? 'No permission to edit' : 'لا توجد صلاحية للتعديل')
-                            : isWarehouseApproved 
-                              ? (appLang === 'en' ? 'Warehouse approved' : 'تم اعتماد المخزن')
-                              : isPaid
-                                ? (appLang === 'en' ? 'Invoice is paid' : 'الفاتورة مدفوعة')
-                                : isReturned
-                                  ? (appLang === 'en' ? 'Invoice is returned' : 'الفاتورة مرتجعة')
-                                  : isSent
-                                    ? (appLang === 'en' ? 'Invoice is sent' : 'الفاتورة مرسلة')
-                                    : isCancelled
-                                      ? (appLang === 'en' ? 'Invoice is cancelled' : 'الفاتورة ملغاة')
-                                      : undefined
-                        }
-                      >
-                        {appLang === 'en' ? 'Edit' : 'تعديل'}
-                      </Button>
-                    );
                   }
+                  return null;
                 })()}
 
                 {/* Print Button */}
