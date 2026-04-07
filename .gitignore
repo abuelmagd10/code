@@ -47,3 +47,9 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Build caches and generated outputs
+tsconfig.tsbuildinfo
+artifacts/
+reports/
+temp/
