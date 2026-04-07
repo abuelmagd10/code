@@ -64,28 +64,81 @@ COMMENT ON COLUMN public.invoices.rejected_at IS
 -- -----------------------------------------------------------------------------
 -- 2. Backfill from existing warehouse approval data
 -- -----------------------------------------------------------------------------
-UPDATE public.invoices
-SET approval_status = CASE
-  WHEN warehouse_status IN ('approved', 'rejected', 'pending') THEN warehouse_status
-  ELSE 'pending'
-END
-WHERE approval_status IS NULL;
+DO $$
+DECLARE
+  v_invoice RECORD;
+  v_updated_count INTEGER := 0;
+  v_skipped_count INTEGER := 0;
+BEGIN
+  FOR v_invoice IN
+    SELECT
+      i.id,
+      i.company_id,
+      i.branch_id,
+      i.warehouse_id,
+      i.cost_center_id,
+      CASE
+        WHEN i.warehouse_status IN ('approved', 'rejected', 'pending') THEN i.warehouse_status
+        ELSE 'pending'
+      END AS next_approval_status,
+      i.warehouse_rejection_reason AS next_approval_reason,
+      i.warehouse_rejected_at AS next_rejected_at,
+      CASE
+        WHEN COALESCE(i.warehouse_status, 'pending') = 'rejected' THEN i.warehouse_rejected_at
+        ELSE NULL
+      END AS next_approval_date
+    FROM public.invoices i
+    WHERE i.approval_status IS NULL
+       OR (i.approval_reason IS NULL AND i.warehouse_rejection_reason IS NOT NULL)
+       OR (i.rejected_at IS NULL AND i.warehouse_rejected_at IS NOT NULL)
+       OR (
+         i.approval_date IS NULL
+         AND i.warehouse_rejected_at IS NOT NULL
+         AND COALESCE(i.warehouse_status, 'pending') = 'rejected'
+       )
+  LOOP
+    IF v_invoice.branch_id IS NULL
+       OR NOT EXISTS (
+         SELECT 1
+         FROM public.branches b
+         WHERE b.id = v_invoice.branch_id
+           AND b.company_id = v_invoice.company_id
+       )
+       OR v_invoice.warehouse_id IS NULL
+       OR NOT EXISTS (
+         SELECT 1
+         FROM public.warehouses w
+         WHERE w.id = v_invoice.warehouse_id
+           AND w.company_id = v_invoice.company_id
+       )
+       OR v_invoice.cost_center_id IS NULL
+       OR NOT EXISTS (
+         SELECT 1
+         FROM public.cost_centers cc
+         WHERE cc.id = v_invoice.cost_center_id
+           AND cc.company_id = v_invoice.company_id
+       )
+    THEN
+      v_skipped_count := v_skipped_count + 1;
+      CONTINUE;
+    END IF;
 
-UPDATE public.invoices
-SET approval_reason = warehouse_rejection_reason
-WHERE approval_reason IS NULL
-  AND warehouse_rejection_reason IS NOT NULL;
+    UPDATE public.invoices
+    SET
+      approval_status = COALESCE(approval_status, v_invoice.next_approval_status),
+      approval_reason = COALESCE(approval_reason, v_invoice.next_approval_reason),
+      rejected_at = COALESCE(rejected_at, v_invoice.next_rejected_at),
+      approval_date = COALESCE(approval_date, v_invoice.next_approval_date)
+    WHERE id = v_invoice.id;
 
-UPDATE public.invoices
-SET rejected_at = warehouse_rejected_at
-WHERE rejected_at IS NULL
-  AND warehouse_rejected_at IS NOT NULL;
+    v_updated_count := v_updated_count + 1;
+  END LOOP;
 
-UPDATE public.invoices
-SET approval_date = warehouse_rejected_at
-WHERE approval_date IS NULL
-  AND warehouse_rejected_at IS NOT NULL
-  AND COALESCE(approval_status, 'pending') = 'rejected';
+  RAISE NOTICE 'Invoice approval metadata backfill updated % invoices and skipped % governance-invalid invoices.',
+    v_updated_count,
+    v_skipped_count;
+END;
+$$;
 
 -- -----------------------------------------------------------------------------
 -- 3. Legacy approval RPC: keep existing behavior + fill new metadata
