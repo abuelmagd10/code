@@ -491,7 +491,7 @@ export default function InventoryPage() {
 
         if (type === 'purchase') {
           purchasesAgg[pid] = (purchasesAgg[pid] || 0) + Math.abs(q)
-        } else if (type === 'sale') {
+        } else if (type === 'sale' || type === 'sale_dispatch') {
           soldAgg[pid] = (soldAgg[pid] || 0) + Math.abs(q)
         } else if (type === 'write_off' || type === 'adjustment') {
           // ✅ حساب الإهلاك: فقط write_off (استبعاد write_off_reversal)

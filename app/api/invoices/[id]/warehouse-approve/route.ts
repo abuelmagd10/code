@@ -29,7 +29,7 @@ export async function POST(
         // 2. Fetch invoice to get basic info for the notification
         const { data: invoice } = await supabase
             .from('invoices')
-            .select('invoice_number, branch_id, warehouse_status, approval_status')
+            .select('invoice_number, branch_id, warehouse_status, approval_status, created_by_user_id, posted_by_user_id')
             .eq('id', invoiceId)
             .eq('company_id', companyId)
             .maybeSingle()
@@ -37,6 +37,8 @@ export async function POST(
         if (!invoice) {
             return NextResponse.json({ success: false, error: "الفاتورة غير موجودة" }, { status: 404 })
         }
+
+        const invoiceSenderId = invoice.posted_by_user_id || invoice.created_by_user_id || null
 
         // 3. Optional User Notes
         let notes: string | null = null;
@@ -119,6 +121,8 @@ export async function POST(
             console.warn('⚠️ [WAREHOUSE_APPROVE] Audit log failed:', auditErr.message)
         }
 
+        const nowTs = Date.now()
+
         // 5. Notify Accountant
         try {
             const { error: notifErr } = await supabase.rpc('create_notification', {
@@ -134,7 +138,7 @@ export async function POST(
                 p_assigned_to_role: 'accountant',
                 p_assigned_to_user: null,
                 p_priority: 'normal',
-                p_event_key: `invoice:${invoiceId}:warehouse_approved:accountant`,
+                p_event_key: `invoice:${invoiceId}:warehouse_approved:accountant:${nowTs}`,
                 p_severity: 'success',
                 p_category: 'inventory'
             })
@@ -143,6 +147,62 @@ export async function POST(
             }
         } catch (notifErr: any) {
             console.warn('⚠️ [WAREHOUSE_APPROVE] Notification failed:', notifErr.message)
+        }
+
+        // 6. Notify Invoice Sender (posted_by first, created_by fallback)
+        if (invoiceSenderId) {
+            try {
+                const { error: notifErr } = await supabase.rpc('create_notification', {
+                    p_company_id: companyId,
+                    p_reference_type: 'invoice',
+                    p_reference_id: invoiceId,
+                    p_title: 'تم اعتماد إخراج بضاعة فاتورتك',
+                    p_message: `تم اعتماد إخراج البضاعة للفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن، وأصبحت جاهزة للمتابعة والتحصيل.`,
+                    p_created_by: user.id,
+                    p_branch_id: invoice?.branch_id || null,
+                    p_cost_center_id: null,
+                    p_warehouse_id: null,
+                    p_assigned_to_role: null,
+                    p_assigned_to_user: invoiceSenderId,
+                    p_priority: 'normal',
+                    p_event_key: `invoice:${invoiceId}:warehouse_approved:sender:${nowTs}`,
+                    p_severity: 'success',
+                    p_category: 'inventory'
+                })
+                if (notifErr) {
+                    console.warn('⚠️ [WAREHOUSE_APPROVE] Sender notification failed:', notifErr.message)
+                }
+            } catch (notifErr: any) {
+                console.warn('⚠️ [WAREHOUSE_APPROVE] Sender notification failed:', notifErr.message)
+            }
+        }
+
+        // 7. Notify Upper Roles
+        for (const role of ['owner', 'admin', 'general_manager']) {
+            try {
+                const { error: notifErr } = await supabase.rpc('create_notification', {
+                    p_company_id: companyId,
+                    p_reference_type: 'invoice',
+                    p_reference_id: invoiceId,
+                    p_title: 'تم اعتماد إخراج فاتورة بيع',
+                    p_message: `تم اعتماد إخراج البضاعة للفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن لفرع الفاتورة.`,
+                    p_created_by: user.id,
+                    p_branch_id: invoice?.branch_id || null,
+                    p_cost_center_id: null,
+                    p_warehouse_id: null,
+                    p_assigned_to_role: role,
+                    p_assigned_to_user: null,
+                    p_priority: 'normal',
+                    p_event_key: `invoice:${invoiceId}:warehouse_approved:${role}:${nowTs}`,
+                    p_severity: 'info',
+                    p_category: 'inventory'
+                })
+                if (notifErr) {
+                    console.warn(`⚠️ [WAREHOUSE_APPROVE] ${role} notification failed:`, notifErr.message)
+                }
+            } catch (notifErr: any) {
+                console.warn(`⚠️ [WAREHOUSE_APPROVE] ${role} notification failed:`, notifErr.message)
+            }
         }
 
         return NextResponse.json({
