@@ -144,6 +144,7 @@ export default function InvoiceDetailPage() {
   const [returnAccountId, setReturnAccountId] = useState<string>('')
   const [returnNotes, setReturnNotes] = useState<string>('')
   const [returnProcessing, setReturnProcessing] = useState(false)
+  const [returnDialogMode, setReturnDialogMode] = useState<'partial' | 'full'>('partial')
   const [changingStatus, setChangingStatus] = useState(false)
   const [isPending, startTransition] = useTransition()
 
@@ -229,7 +230,16 @@ export default function InvoiceDetailPage() {
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
-  const invoiceApprovalStatus = invoice?.approval_status || invoice?.warehouse_status || 'pending'
+  const invoiceApprovalStatus = useMemo(() => {
+    const explicitStatus = String(invoice?.approval_status || '').toLowerCase()
+    const warehouseStatus = String(invoice?.warehouse_status || '').toLowerCase()
+
+    if (explicitStatus === 'approved' || warehouseStatus === 'approved') return 'approved'
+    if (explicitStatus === 'rejected' || warehouseStatus === 'rejected') return 'rejected'
+    if (explicitStatus === 'pending' || warehouseStatus === 'pending') return 'pending'
+
+    return explicitStatus || warehouseStatus || 'pending'
+  }, [invoice?.approval_status, invoice?.warehouse_status])
   const canSeeApprovalDetails = useMemo(() => {
     const role = String(currentUserRole || '').toLowerCase()
     const allowedActions = accessProfile?.allowed_actions || []
@@ -1239,19 +1249,20 @@ export default function InvoiceDetailPage() {
   // ❌ تم إزالة issueFullCreditNote - استخدم المرتجع الجزئي/الكامل من صفحة الفواتير بدلاً منه
   // السبب: المرتجع الجزئي/الكامل يدعم FIFO, COGS, التالف، وينشئ سجلات sales_returns
 
-  // Open partial return dialog
-  const openPartialReturnDialog = () => {
+  // Open sales return dialog (partial/full)
+  const openReturnDialog = (mode: 'partial' | 'full' = 'partial') => {
     if (!invoice || !items.length) return
     const returnableItems = items.map(it => ({
       item_id: it.id,
       product_id: it.product_id || null,
       product_name: it.products?.name || '—',
       max_qty: it.quantity - (it.returned_quantity || 0),
-      return_qty: 0,
+      return_qty: mode === 'full' ? Math.max(0, it.quantity - (it.returned_quantity || 0)) : 0,
       unit_price: it.unit_price,
       tax_rate: it.tax_rate || 0,
       discount_percent: it.discount_percent || 0
     })).filter(it => it.max_qty > 0)
+    setReturnDialogMode(mode)
     setReturnItems(returnableItems)
     setReturnMethod('credit_note')
     setReturnAccountId('')
@@ -1558,7 +1569,11 @@ export default function InvoiceDetailPage() {
           refund_amount: 0,
           refund_method: returnMethod || 'credit_note',
           status: 'completed',
-          reason: returnNotes || (appLang === 'en' ? 'Partial return' : 'مرتجع جزئي'),
+          reason: returnNotes || (
+            returnDialogMode === 'full'
+              ? (appLang === 'en' ? 'Full return' : 'مرتجع كامل')
+              : (appLang === 'en' ? 'Partial return' : 'مرتجع جزئي')
+          ),
           notes: appLang === 'en' ? `Return for invoice ${invoice.invoice_number}` : `مرتجع للفاتورة ${invoice.invoice_number}`,
         })
         .select()
@@ -3371,17 +3386,33 @@ export default function InvoiceDetailPage() {
                 ) : null}
                 {/* 🔒 زر المرتجع: فقط للفواتير المنفذة (sent/partially_paid/paid) - ليس للمسودات أو الملغاة */}
                 {(() => {
-                  const returnableItems = items.map(it => ({
-                    ...it,
-                    max_qty: Math.max(0, it.quantity - (it.returned_quantity || 0))
-                  })).filter(it => it.max_qty > 0)
+                  const hasReturnableItems = items.some((it) => Math.max(0, it.quantity - (it.returned_quantity || 0)) > 0)
+                  const canShowReturnButtons =
+                    invoice.status !== "cancelled" &&
+                    invoice.status !== "draft" &&
+                    invoice.status !== "invoiced" &&
+                    invoice.status !== "voided" &&
+                    invoice.status !== "fully_returned" &&
+                    hasReturnableItems &&
+                    invoiceApprovalStatus === 'approved'
 
-                  const canPartialReturn = returnableItems.length > 1 || (returnableItems.length === 1 && returnableItems[0].max_qty > 1)
-
-                  return invoice.status !== "cancelled" && invoice.status !== "draft" && invoice.status !== "invoiced" && invoice.status !== "fully_returned" && permUpdate && canPartialReturn && invoiceApprovalStatus === 'approved' ? (
-                    <Button variant="outline" className="border-orange-500 text-orange-600 hover:bg-orange-50" onClick={openPartialReturnDialog}>
-                      {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
-                    </Button>
+                  return canShowReturnButtons ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        className="border-orange-500 text-orange-600 hover:bg-orange-50"
+                        onClick={() => openReturnDialog('partial')}
+                      >
+                        {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="border-red-500 text-red-600 hover:bg-red-50"
+                        onClick={() => openReturnDialog('full')}
+                      >
+                        {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
+                      </Button>
+                    </>
                   ) : null
                 })()}
                 {/* 📌 تم إلغاء زر "إنشاء شحنة" - الوظيفة مدمجة في "تحديد كمرسلة" */}
@@ -3478,7 +3509,11 @@ export default function InvoiceDetailPage() {
           <Dialog open={showPartialReturn} onOpenChange={setShowPartialReturn}>
             <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>{appLang === 'en' ? 'Partial Sales Return' : 'مرتجع مبيعات جزئي'}</DialogTitle>
+                <DialogTitle>
+                  {returnDialogMode === 'full'
+                    ? (appLang === 'en' ? 'Full Sales Return' : 'مرتجع مبيعات كامل')
+                    : (appLang === 'en' ? 'Partial Sales Return' : 'مرتجع مبيعات جزئي')}
+                </DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
                 {/* ملخص مالي للفاتورة */}
