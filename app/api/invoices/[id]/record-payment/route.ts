@@ -23,6 +23,45 @@ import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { emitEvent } from "@/lib/event-bus"
 
+function buildKnownRpcErrorResponse(message: string) {
+  const normalized = message.toLowerCase()
+
+  if (message.includes("DUPLICATE_PAYMENT")) {
+    return NextResponse.json({ success: false, error: "توجد دفعة مشابهة مسجلة بالفعل لهذه الفاتورة" }, { status: 409 })
+  }
+
+  if (message.includes("INVOICE_NOT_FOUND")) {
+    return NextResponse.json({ success: false, error: "الفاتورة غير موجودة" }, { status: 404 })
+  }
+
+  if (message.includes("NO_BRANCH")) {
+    return NextResponse.json({ success: false, error: "لا يوجد فرع نشط للشركة. يرجى إنشاء فرع أولاً." }, { status: 400 })
+  }
+
+  if (
+    normalized.includes("warehouse_id")
+    && normalized.includes("payments")
+    && normalized.includes("column")
+  ) {
+    return serverError("قاعدة البيانات تحتاج تحديثًا قبل تسجيل الدفعات: عمود warehouse_id غير موجود في جدول payments")
+  }
+
+  return null
+}
+
+function isMissingPaymentV2Rpc(message: string) {
+  const normalized = message.toLowerCase()
+  return (
+    normalized.includes("process_invoice_payment_atomic_v2")
+    && (
+      normalized.includes("schema cache")
+      || normalized.includes("does not exist")
+      || normalized.includes("could not find the function")
+      || normalized.includes("pgrst")
+    )
+  )
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -99,7 +138,7 @@ export async function POST(
     // ✅ Fetch invoice
     const { data: invoice, error: invErr } = await supabase
       .from("invoices")
-      .select("id, customer_id, invoice_date, status, company_id, branch_id, cost_center_id, warehouse_id")
+      .select("id, customer_id, invoice_date, status, company_id, branch_id, cost_center_id, warehouse_id, warehouse_status, approval_status")
       .eq("id", invoiceId)
       .eq("company_id", resolvedCompanyId)
       .maybeSingle()
@@ -136,58 +175,98 @@ export async function POST(
       warehouseId: warehouseId || invoice.warehouse_id || null,
     })
 
-    const rpcName = enterpriseFinanceFlags.paymentV2
-      ? "process_invoice_payment_atomic_v2"
-      : "process_invoice_payment_atomic"
+    const buildRpcParams = (useV2: boolean) => (
+      useV2
+        ? {
+            p_invoice_id: invoiceId,
+            p_company_id: resolvedCompanyId,
+            p_customer_id: invoice.customer_id,
+            p_amount: Number(amount),
+            p_payment_date: paymentDate,
+            p_payment_method: paymentMethod,
+            p_reference_number: referenceNumber || null,
+            p_notes: notes || null,
+            p_account_id: accountId || null,
+            p_branch_id: branchId || invoice.branch_id || null,
+            p_cost_center_id: costCenterId || invoice.cost_center_id || null,
+            p_warehouse_id: warehouseId || invoice.warehouse_id || null,
+            p_user_id: user?.id || null,
+            p_idempotency_key: idempotencyKey,
+            p_request_hash: requestHash,
+          }
+        : {
+            p_invoice_id: invoiceId,
+            p_company_id: resolvedCompanyId,
+            p_customer_id: invoice.customer_id,
+            p_amount: Number(amount),
+            p_payment_date: paymentDate,
+            p_payment_method: paymentMethod,
+            p_reference_number: referenceNumber || null,
+            p_notes: notes || null,
+            p_account_id: accountId || null,
+            p_branch_id: branchId || invoice.branch_id || null,
+            p_cost_center_id: costCenterId || invoice.cost_center_id || null,
+            p_warehouse_id: warehouseId || invoice.warehouse_id || null,
+            p_user_id: user?.id || null,
+          }
+    )
 
-    const rpcParams = enterpriseFinanceFlags.paymentV2
-      ? {
-          p_invoice_id: invoiceId,
-          p_company_id: resolvedCompanyId,
-          p_customer_id: invoice.customer_id,
-          p_amount: Number(amount),
-          p_payment_date: paymentDate,
-          p_payment_method: paymentMethod,
-          p_reference_number: referenceNumber || null,
-          p_notes: notes || null,
-          p_account_id: accountId || null,
-          p_branch_id: branchId || invoice.branch_id || null,
-          p_cost_center_id: costCenterId || invoice.cost_center_id || null,
-          p_warehouse_id: warehouseId || invoice.warehouse_id || null,
-          p_user_id: user?.id || null,
-          p_idempotency_key: idempotencyKey,
-          p_request_hash: requestHash,
-        }
-      : {
-          p_invoice_id: invoiceId,
-          p_company_id: resolvedCompanyId,
-          p_customer_id: invoice.customer_id,
-          p_amount: Number(amount),
-          p_payment_date: paymentDate,
-          p_payment_method: paymentMethod,
-          p_reference_number: referenceNumber || null,
-          p_notes: notes || null,
-          p_account_id: accountId || null,
-          p_branch_id: branchId || invoice.branch_id || null,
-          p_cost_center_id: costCenterId || invoice.cost_center_id || null,
-          p_warehouse_id: warehouseId || invoice.warehouse_id || null,
-          p_user_id: user?.id || null,
-        }
+    const executePaymentRpc = async (useV2: boolean) => {
+      const rpcName = useV2
+        ? "process_invoice_payment_atomic_v2"
+        : "process_invoice_payment_atomic"
 
-    const { data: rpcResult, error: rpcError } = await supabase.rpc(rpcName, rpcParams)
+      const { data, error } = await supabase.rpc(rpcName, buildRpcParams(useV2))
+      return { data, error, rpcName }
+    }
+
+    // Invoices that already passed warehouse delivery should stay on the accrual-safe V2 path.
+    const preferV2 = enterpriseFinanceFlags.paymentV2
+      || invoice.warehouse_status === "approved"
+      || invoice.approval_status === "approved"
+
+    let { data: rpcResult, error: rpcError, rpcName } = await executePaymentRpc(preferV2)
 
     if (rpcError) {
-      const msg = rpcError.message || ""
-      if (msg.includes("DUPLICATE_PAYMENT")) {
-        return NextResponse.json({ success: false, error: "توجد دفعة مشابهة مسجلة بالفعل لهذه الفاتورة" }, { status: 409 })
+      const primaryMessage = rpcError.message || ""
+      const knownPrimaryError = buildKnownRpcErrorResponse(primaryMessage)
+      if (knownPrimaryError) return knownPrimaryError
+
+      const shouldFallback = preferV2
+        ? isMissingPaymentV2Rpc(primaryMessage)
+        : true
+
+      if (shouldFallback) {
+        const fallbackUseV2 = !preferV2
+        const fallbackResult = await executePaymentRpc(fallbackUseV2)
+
+        if (!fallbackResult.error) {
+          console.warn(`[RECORD_PAYMENT] Primary RPC ${rpcName} failed; fallback ${fallbackResult.rpcName} succeeded:`, primaryMessage)
+          rpcResult = fallbackResult.data
+          rpcError = null
+          rpcName = fallbackResult.rpcName
+        } else {
+          const fallbackMessage = fallbackResult.error.message || ""
+          const knownFallbackError = buildKnownRpcErrorResponse(fallbackMessage)
+          if (knownFallbackError) return knownFallbackError
+
+          console.error(`[RECORD_PAYMENT] Both payment RPCs failed. Primary=${rpcName}, Fallback=${fallbackResult.rpcName}`, {
+            primaryMessage,
+            fallbackMessage,
+            invoiceId,
+            companyId: resolvedCompanyId,
+          })
+
+          return serverError(`فشل تسجيل الدفعة: ${fallbackMessage || primaryMessage}`)
+        }
+      } else {
+        console.error(`[RECORD_PAYMENT] Payment RPC ${rpcName} failed without fallback`, {
+          message: primaryMessage,
+          invoiceId,
+          companyId: resolvedCompanyId,
+        })
+        return serverError(`فشل تسجيل الدفعة: ${primaryMessage}`)
       }
-      if (msg.includes("INVOICE_NOT_FOUND")) {
-        return NextResponse.json({ success: false, error: "الفاتورة غير موجودة" }, { status: 404 })
-      }
-      if (msg.includes("NO_BRANCH")) {
-        return NextResponse.json({ success: false, error: "لا يوجد فرع نشط للشركة. يرجى إنشاء فرع أولاً." }, { status: 400 })
-      }
-      return serverError(`فشل تسجيل الدفعة: ${msg}`)
     }
 
     const result = rpcResult as any
