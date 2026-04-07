@@ -206,7 +206,7 @@ export default function InvoiceDetailPage() {
   const [allBranches, setAllBranches] = useState<{ id: string; name: string; defaultCostCenterId?: string | null }[]>([])
   const [allCostCenters, setAllCostCenters] = useState<{ id: string; name: string; code?: string }[]>([])
   const [approvalActorNames, setApprovalActorNames] = useState<Record<string, string>>({})
-  const { profile: accessProfile } = useAccess()
+  const { profile: accessProfile, canAccessBranch } = useAccess()
   const currentUserRole = accessProfile?.role || ''
   const userBranchId = accessProfile?.branch_id || null
   const userCostCenterId = accessProfile?.cost_center_id || null
@@ -233,10 +233,12 @@ export default function InvoiceDetailPage() {
   const canSeeApprovalDetails = useMemo(() => {
     const role = String(currentUserRole || '').toLowerCase()
     const allowedActions = accessProfile?.allowed_actions || []
+    const invoiceBranchId = invoice?.branch_id || null
     return APPROVAL_VIEW_ROLES.has(role) ||
       allowedActions.includes('*') ||
-      allowedActions.includes('invoices:approve')
-  }, [accessProfile?.allowed_actions, currentUserRole])
+      allowedActions.includes('invoices:approve') ||
+      (!!invoiceBranchId && canAccessBranch(invoiceBranchId))
+  }, [accessProfile?.allowed_actions, canAccessBranch, currentUserRole, invoice?.branch_id])
   const approvalDecisionActorId = useMemo(() => {
     if (!invoice) return null
     if (invoiceApprovalStatus === 'approved') return invoice.approved_by || null
