@@ -80,6 +80,7 @@ interface Invoice {
   sales_order_id?: string | null
   // Warehouse status
   warehouse_status?: string
+  approval_status?: string | null
 }
 
 type Payment = { id: string; invoice_id: string | null; amount: number }
@@ -1140,11 +1141,35 @@ export default function InvoicesPage() {
 
         // تحديد ما إذا كان هناك مرتجع جزئي
         const hasPartialReturn = returnedAmount > 0 && returnedAmount < originalTotal
+        const deliveryApprovalStatus = String((row as any).approval_status || (row as any).warehouse_status || '').toLowerCase()
+        const shouldShowDeliveryApproval =
+          deliveryApprovalStatus === 'approved' ||
+          deliveryApprovalStatus === 'rejected' ||
+          (
+            deliveryApprovalStatus === 'pending' &&
+            !['draft', 'invoiced', 'cancelled'].includes(String(row.status || '').toLowerCase())
+          )
 
         return (
           <div className="flex flex-col items-center gap-1">
             {/* حالة الدفع الأساسية */}
             <StatusBadge status={paymentStatus} lang={appLang} />
+
+            {/* حالة اعتماد التسليم من مسؤول المخزن */}
+            {shouldShowDeliveryApproval && (
+              <span className={`text-xs px-2 py-0.5 rounded-full ${deliveryApprovalStatus === 'approved'
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300'
+                  : deliveryApprovalStatus === 'rejected'
+                    ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
+                    : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300'
+                }`}>
+                {deliveryApprovalStatus === 'approved'
+                  ? (appLang === 'en' ? 'Delivery Approved' : 'تم اعتماد التسليم')
+                  : deliveryApprovalStatus === 'rejected'
+                    ? (appLang === 'en' ? 'Delivery Rejected' : 'تم رفض اعتماد التسليم')
+                    : (appLang === 'en' ? 'Awaiting Delivery Approval' : 'بانتظار اعتماد التسليم')}
+              </span>
+            )}
 
             {/* حالة المرتجع الجزئي (إن وجد) */}
             {hasPartialReturn && (
