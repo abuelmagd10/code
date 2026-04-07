@@ -731,6 +731,43 @@ export default function InvoicesPage() {
     })
   }
 
+  const getEffectiveDeliveryApprovalStatus = (invoice: Pick<Invoice, 'approval_status' | 'warehouse_status'>) => {
+    const explicitStatus = String(invoice.approval_status || '').toLowerCase()
+    const warehouseStatus = String(invoice.warehouse_status || '').toLowerCase()
+
+    if (explicitStatus === 'approved' || warehouseStatus === 'approved') return 'approved'
+    if (explicitStatus === 'rejected' || warehouseStatus === 'rejected') return 'rejected'
+    if (explicitStatus === 'pending' || warehouseStatus === 'pending') return 'pending'
+
+    return explicitStatus || warehouseStatus || 'pending'
+  }
+
+  const partialReturnEligibilityByInvoiceId = useMemo(() => {
+    const itemsByInvoice = new Map<string, InvoiceItemWithProduct[]>()
+
+    for (const item of invoiceItems) {
+      const invoiceId = String(item.invoice_id || '')
+      if (!invoiceId) continue
+      const bucket = itemsByInvoice.get(invoiceId) || []
+      bucket.push(item)
+      itemsByInvoice.set(invoiceId, bucket)
+    }
+
+    const result: Record<string, boolean> = {}
+    itemsByInvoice.forEach((items, invoiceId) => {
+      if (items.length !== 1) {
+        result[invoiceId] = false
+        return
+      }
+
+      const onlyItem = items[0]
+      const availableQty = Math.max(0, Number(onlyItem.quantity || 0) - Number(onlyItem.returned_quantity || 0))
+      result[invoiceId] = availableQty > 1
+    })
+
+    return result
+  }, [invoiceItems])
+
   // دالة للحصول على حالة رصيد العميل الدائن للفاتورة
   // تعيد: { amount: المبلغ الأصلي, disbursed: المصروف, status: الحالة }
   const getCreditStatus = (invoiceId: string): { amount: number; disbursed: number; status: 'active' | 'partial' | 'disbursed' | 'none' } => {
@@ -1243,20 +1280,33 @@ export default function InvoicesPage() {
                 return null;
               })()
             )}
-            {/* 🔒 أزرار المرتجع: فقط للفواتير المنفذة (sent/partially_paid/paid) التي تم الموافقة على تخريجها من المخزن - ليس للمسودات أو الملغاة */}
-            {row.status !== 'draft' && row.status !== 'invoiced' && row.status !== 'voided' && row.status !== 'fully_returned' && row.status !== 'cancelled' && (row as any).warehouse_status === 'approved' && (
+            {/* 🔒 أزرار المرتجع: الكامل لأي فاتورة معتمدة مخزنياً، والجزئي فقط لفاتورة بند واحد بكمية متاحة > 1 */}
+            {(() => {
+              const effectiveApprovalStatus = getEffectiveDeliveryApprovalStatus(row)
+              const canShowReturnButtons =
+                row.status !== 'draft' &&
+                row.status !== 'invoiced' &&
+                row.status !== 'voided' &&
+                row.status !== 'fully_returned' &&
+                row.status !== 'cancelled' &&
+                effectiveApprovalStatus === 'approved'
+              const canShowPartialReturn = canShowReturnButtons && !!partialReturnEligibilityByInvoiceId[row.id]
+
+              return canShowReturnButtons ? (
               <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="whitespace-nowrap"
-                  onClick={() => {
-                    console.log("🔘 Partial Return button clicked for:", row.invoice_number, "Status:", row.status)
-                    openSalesReturn(row, "partial")
-                  }}
-                >
-                  {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
-                </Button>
+                {canShowPartialReturn && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="whitespace-nowrap"
+                    onClick={() => {
+                      console.log("🔘 Partial Return button clicked for:", row.invoice_number, "Status:", row.status)
+                      openSalesReturn(row, "partial")
+                    }}
+                  >
+                    {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -1269,7 +1319,8 @@ export default function InvoicesPage() {
                   {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
                 </Button>
               </>
-            )}
+              ) : null
+            })()}
             {/* ✅ إظهار زر الحذف فقط للفواتير المسودة (بناءً على الحالة المحسوبة) */}
             {/* 🔐 قاعدة الحوكمة: فقط مدير الفرع، المالك، والمدير العام */}
             {permDelete && actualStatus === 'draft' && (() => {

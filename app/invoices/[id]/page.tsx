@@ -264,6 +264,29 @@ export default function InvoiceDetailPage() {
       ? (invoice?.rejected_at || invoice?.approval_date || invoice?.warehouse_rejected_at || null)
       : null
   const approvalReasonText = invoice?.approval_reason || invoice?.warehouse_rejection_reason || null
+  const returnableInvoiceItems = useMemo(() => (
+    items
+      .map((it) => ({
+        ...it,
+        max_qty: Math.max(0, it.quantity - (it.returned_quantity || 0)),
+      }))
+      .filter((it) => it.max_qty > 0)
+  ), [items])
+  const canShowReturnButtons = useMemo(() => (
+    !!invoice &&
+    invoice.status !== "cancelled" &&
+    invoice.status !== "draft" &&
+    invoice.status !== "invoiced" &&
+    invoice.status !== "voided" &&
+    invoice.status !== "fully_returned" &&
+    returnableInvoiceItems.length > 0 &&
+    invoiceApprovalStatus === 'approved'
+  ), [invoice, invoiceApprovalStatus, returnableInvoiceItems])
+  const canShowPartialReturnButton = useMemo(() => (
+    canShowReturnButtons &&
+    returnableInvoiceItems.length === 1 &&
+    returnableInvoiceItems[0].max_qty > 1
+  ), [canShowReturnButtons, returnableInvoiceItems])
 
   // Listen for language and currency changes
   useEffect(() => {
@@ -3384,37 +3407,6 @@ export default function InvoiceDetailPage() {
                     {appLang === 'en' ? 'Record Payment' : 'تسجيل دفعة'}
                   </Button>
                 ) : null}
-                {/* 🔒 زر المرتجع: فقط للفواتير المنفذة (sent/partially_paid/paid) - ليس للمسودات أو الملغاة */}
-                {(() => {
-                  const hasReturnableItems = items.some((it) => Math.max(0, it.quantity - (it.returned_quantity || 0)) > 0)
-                  const canShowReturnButtons =
-                    invoice.status !== "cancelled" &&
-                    invoice.status !== "draft" &&
-                    invoice.status !== "invoiced" &&
-                    invoice.status !== "voided" &&
-                    invoice.status !== "fully_returned" &&
-                    hasReturnableItems &&
-                    invoiceApprovalStatus === 'approved'
-
-                  return canShowReturnButtons ? (
-                    <>
-                      <Button
-                        variant="outline"
-                        className="border-orange-500 text-orange-600 hover:bg-orange-50"
-                        onClick={() => openReturnDialog('partial')}
-                      >
-                        {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="border-red-500 text-red-600 hover:bg-red-50"
-                        onClick={() => openReturnDialog('full')}
-                      >
-                        {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
-                      </Button>
-                    </>
-                  ) : null
-                })()}
                 {/* 📌 تم إلغاء زر "إنشاء شحنة" - الوظيفة مدمجة في "تحديد كمرسلة" */}
                 {/* View Shipment Button - if shipment/third party goods exists */}
                 {existingShipment ? (
@@ -3428,6 +3420,27 @@ export default function InvoiceDetailPage() {
                 {/* ❌ تم إزالة زر "تحديد كمدفوعة" - الحالة تتحدث تلقائياً عند الدفع أو المرتجع */}
               </>
             )}
+            {/* 🔒 زر المرتجع: الكامل لأي فاتورة معتمدة مخزنياً، والجزئي فقط لفاتورة بند واحد بكمية متاحة > 1 */}
+            {canShowReturnButtons ? (
+              <>
+                {canShowPartialReturnButton && (
+                  <Button
+                    variant="outline"
+                    className="border-orange-500 text-orange-600 hover:bg-orange-50"
+                    onClick={() => openReturnDialog('partial')}
+                  >
+                    {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  className="border-red-500 text-red-600 hover:bg-red-50"
+                  onClick={() => openReturnDialog('full')}
+                >
+                  {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
+                </Button>
+              </>
+            ) : null}
             {/* 💰 زر صرف رصيد العميل الدائن - يظهر لـ: owner/admin/general_manager (اختيار الفرع) و accountant (فرعه فقط) */}
             {customerCreditAmount > 0 && canSeeCreditRefundButton && invoice.customer_id && invoice.status !== "cancelled" && invoice.status !== "draft" ? (
               <Button
