@@ -3,7 +3,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 import { AccountingTransactionService } from "@/lib/accounting-transaction-service"
-import { checkPeriodLock } from "@/lib/accounting-period-lock"
+import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { ERPError } from "@/lib/core/errors/erp-errors"
+import { resolveFinancialIdempotencyKey, buildFinancialRequestHash } from "@/lib/financial-operation-utils"
+import { emitEvent } from "@/lib/event-bus"
+import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
 
 export async function POST(
     request: NextRequest,
@@ -26,7 +30,10 @@ export async function POST(
         }
 
         // 2. Idempotency Key (Phase 2: Double Submission Protection)
-        const idempotencyKey = request.headers.get('Idempotency-Key')
+        const idempotencyKey = resolveFinancialIdempotencyKey(
+            request.headers.get('Idempotency-Key'),
+            ['invoice-post', companyId, invoiceId]
+        )
 
         // 3. جلب تاريخ الفاتورة للتحقق من Period Lock
         const { data: invoice } = await supabase
@@ -48,22 +55,32 @@ export async function POST(
             })
         }
 
-        // 4. Period Lock Check (Phase 2: يمنع الترحيل في فترة مقفلة)
+        // 4. Period Lock Check (Enterprise hard guard via DB RPC)
         if (invoice.invoice_date) {
-            const lockResult = await checkPeriodLock(supabase, {
-                companyId,
-                date: invoice.invoice_date
-            })
-            if (lockResult.isLocked) {
+            try {
+                await requireOpenFinancialPeriod(companyId, invoice.invoice_date)
+            } catch (lockErr: any) {
+                if (lockErr instanceof ERPError && lockErr.code === 'ERR_PERIOD_CLOSED') {
+                    return NextResponse.json({
+                        success: false,
+                        error: lockErr.message
+                    }, { status: 400 })
+                }
                 return NextResponse.json({
                     success: false,
-                    error: lockResult.error || `الفترة المحاسبية "${lockResult.periodName}" مقفلة`
+                    error: lockErr?.message || 'فشل التحقق من الفترة المحاسبية'
                 }, { status: 400 })
             }
         }
 
         // 5. Initialize Service
         const accountingService = new AccountingTransactionService(supabase)
+        const requestHash = buildFinancialRequestHash({
+            invoiceId,
+            companyId,
+            actorId: user.id,
+            invoiceDate: invoice.invoice_date,
+        })
 
         // ✅ تحديد إذا كانت هذه إعادة إرسال بعد رفض مخزني
         const isRepost = invoice.warehouse_status === 'rejected'
@@ -95,17 +112,39 @@ export async function POST(
         }
 
         // 6. Execute Atomic Transaction (فقط في حالة الترحيل الأول — ليس عند إعادة الإرسال بعد الرفض)
+        let postingResult: Awaited<ReturnType<AccountingTransactionService["postInvoiceAtomic"]>> | null = null
         if (!isRepost) {
-            const result = await accountingService.postInvoiceAtomic(invoiceId, companyId, user.id)
+            postingResult = await accountingService.postInvoiceAtomic(invoiceId, companyId, user.id, {
+                idempotencyKey,
+                requestHash,
+            })
 
-            if (!result.success) {
+            if (!postingResult.success) {
                 return NextResponse.json({
                     success: false,
-                    error: result.error
+                    error: postingResult.error
                 }, { status: 400 })
             }
         } else {
             console.log('✅ [INVOICE_POST] Skipping postInvoiceAtomic for re-post (journal entries already exist)')
+        }
+
+        if (enterpriseFinanceFlags.observabilityEvents && postingResult?.success) {
+            await emitEvent(supabase, {
+                companyId,
+                eventName: 'invoice.posted',
+                entityType: 'invoice',
+                entityId: invoiceId,
+                actorId: user.id,
+                idempotencyKey: `invoice.posted:${postingResult.transactionId || idempotencyKey}`,
+                payload: {
+                    transactionId: postingResult.transactionId,
+                    sourceEntity: postingResult.sourceEntity,
+                    sourceId: postingResult.sourceId,
+                    eventType: postingResult.eventType,
+                    requestHash,
+                }
+            })
         }
 
         // ✅ المرحلة 1: إشعار مسؤول المخزن عند اعتماد الفاتورة (Draft → Sent)
@@ -177,7 +216,9 @@ export async function POST(
 
 
         return NextResponse.json({
-            success: true
+            success: true,
+            transactionId: postingResult?.transactionId || null,
+            eventType: postingResult?.eventType || 'invoice_posting'
         })
 
     } catch (error: any) {

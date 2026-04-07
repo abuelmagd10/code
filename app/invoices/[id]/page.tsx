@@ -1,25 +1,10 @@
 // =====================================================
-// 📌 SALES INVOICE ACCOUNTING PATTERN – MANDATORY SPECIFICATION
+// 📌 SALES INVOICE COMMAND UI – PHASE 1
 // =====================================================
-// 📌 النمط المحاسبي الصارم: Cash Basis (أساس النقدية)
-// 📌 المرجع الأعلى: docs/ACCOUNTING_PATTERN.md
-//
-// 1️⃣ Draft:    ❌ لا مخزون ❌ لا قيود
-// 2️⃣ Sent:     ✅ خصم مخزون (sale) فقط
-//              ❌ لا قيود محاسبية (القيود تُنشأ عند الدفع فقط)
-// 3️⃣ Paid:     ✅ قيد AR/Revenue (عند أول دفعة) + قيد السداد (Cash/AR)
-//              ❌ لا حركات مخزون جديدة
-// 4️⃣ مرتجع Sent:    ✅ استرجاع مخزون (sale_return)
-//                   ✅ تحديث بيانات الفاتورة (الكميات، الصافي، الإجمالي)
-//                   ❌ لا قيود محاسبية (لأنه لا يوجد قيود أصلاً)
-//                   ❌ لا Customer Credit
-// 5️⃣ مرتجع Paid:    ✅ استرجاع مخزون (sale_return)
-//                   ✅ قيد sales_return (عكس AR/Revenue)
-//                   ✅ Customer Credit إذا المدفوع > الصافي
-// 6️⃣ عكس من Sent للمسودة: ✅ عكس مخزون (sale_reversal)
-//                        ❌ لا قيود لحذفها (لأنه لا يوجد قيود عند Sent)
-//
-// 📌 أي كود يخالف هذا النمط يُعد خطأ جسيم ويجب تعديله فورًا
+// الواجهة هنا ترسل أوامر فقط.
+// جميع الآثار المالية تُنفذ في الـBackend عبر API + RPC ذرية.
+// دورة البيع نفسها تبقى:
+// Sales Order → Draft Invoice → Post → Warehouse Approval → Payment → Return
 
 "use client"
 
@@ -41,11 +26,8 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import {
-  transferToThirdParty,
-  clearThirdPartyInventory,
   validateShippingProvider
 } from "@/lib/third-party-inventory"
-import { consumeFIFOLotsWithCOGS } from "@/lib/fifo-engine"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { checkDuplicateJournalEntry } from "@/lib/journal-entry-governance"
 import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
@@ -788,6 +770,67 @@ export default function InvoiceDetailPage() {
           }
         }
 
+        if (newStatus === "sent" && invoice) {
+          console.log("📌 Sending invoice through backend posting flow...")
+          await deductInventoryOnly()
+
+          if (!invoice.customer_name_snapshot && invoice.customer_id) {
+            const { data: customerData } = await supabase
+              .from("customers")
+              .select("name, email, phone, address, city, country, tax_id, governorate, detailed_address")
+              .eq("id", invoice.customer_id)
+              .single()
+
+            if (customerData) {
+              await supabase
+                .from("invoices")
+                .update({
+                  customer_name_snapshot: customerData.name || null,
+                  customer_email_snapshot: customerData.email || null,
+                  customer_phone_snapshot: customerData.phone || null,
+                  customer_address_snapshot: customerData.address || null,
+                  customer_city_snapshot: customerData.city || null,
+                  customer_country_snapshot: customerData.country || null,
+                  customer_tax_id_snapshot: customerData.tax_id || null,
+                  customer_governorate_snapshot: customerData.governorate || null,
+                  customer_detailed_address_snapshot: customerData.detailed_address || null,
+                })
+                .eq("id", invoiceId)
+            }
+          }
+
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user?.id && invoice.company_id) {
+            await supabase.from("audit_logs").insert({
+              company_id: invoice.company_id,
+              user_id: user.id,
+              action: "UPDATE",
+              target_table: "invoices",
+              record_id: invoiceId,
+              record_identifier: invoice.invoice_number,
+              old_data: { status: invoice.status },
+              new_data: {
+                status: "sent",
+                shipping_provider_id: invoice.shipping_provider_id,
+                total_amount: invoice.total_amount
+              }
+            })
+          }
+
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('invoice_status_changed', {
+              detail: { invoiceId, newStatus: 'sent' }
+            }))
+          }
+
+          startTransition(() => {
+            loadInvoice()
+            setChangingStatus(false)
+          })
+          toastActionSuccess(toast, "التحديث", "الفاتورة")
+          return
+        }
+
         console.log("💾 Updating invoice status in database...")
         const { error } = await supabase.from("invoices").update({ status: newStatus }).eq("id", invoiceId)
 
@@ -818,136 +861,8 @@ export default function InvoiceDetailPage() {
           const { data: { user } } = await supabase.auth.getUser()
           const auditUserId = user?.id || null
 
-          if (newStatus === "sent") {
-            console.log("📌 Calling deductInventoryOnly()...")
-            // 1️⃣ خصم المخزون + نقل إلى بضاعة لدى الغير
-            await deductInventoryOnly()
-            // ❌ لا قيد محاسبي عند Sent - القيد يُنشأ عند الدفع فقط
-            console.log(`✅ INV Sent: تم خصم المخزون ونقله إلى بضاعة لدى الغير`)
-
-            // 📸 حفظ Snapshot بيانات العميل عند الإرسال (إذا لم يكن موجوداً)
-            if (!invoice.customer_name_snapshot && invoice.customer_id) {
-              const { data: customerData } = await supabase
-                .from("customers")
-                .select("name, email, phone, address, city, country, tax_id, governorate, detailed_address")
-                .eq("id", invoice.customer_id)
-                .single()
-
-              if (customerData) {
-                await supabase
-                  .from("invoices")
-                  .update({
-                    customer_name_snapshot: customerData.name || null,
-                    customer_email_snapshot: customerData.email || null,
-                    customer_phone_snapshot: customerData.phone || null,
-                    customer_address_snapshot: customerData.address || null,
-                    customer_city_snapshot: customerData.city || null,
-                    customer_country_snapshot: customerData.country || null,
-                    customer_tax_id_snapshot: customerData.tax_id || null,
-                    customer_governorate_snapshot: customerData.governorate || null,
-                    customer_detailed_address_snapshot: customerData.detailed_address || null,
-                  })
-                  .eq("id", invoiceId)
-                console.log("📸 Customer snapshot saved on invoice sent")
-              }
-            }
-
-            // 📝 Audit Log: تسجيل عملية الإرسال
-            if (auditUserId && invoice.company_id) {
-              const { error: auditErr } = await supabase.from("audit_logs").insert({
-                company_id: invoice.company_id,
-                user_id: auditUserId,
-                action: "UPDATE",
-                target_table: "invoices",
-                record_id: invoiceId,
-                record_identifier: invoice.invoice_number,
-                old_data: { status: invoice.status },
-                new_data: {
-                  status: "sent",
-                  shipping_provider_id: invoice.shipping_provider_id,
-                  total_amount: invoice.total_amount
-                }
-              })
-              if (auditErr) console.warn("Audit log failed:", auditErr)
-            }
-
-            // 🔔 إشعار مسؤولي المخزن في الفرع عند تحويل الفاتورة إلى مرسلة
-            if (invoice.company_id && invoice.branch_id) {
-              try {
-                const warehouseRoles = ['warehouse_manager', 'store_manager']
-                const { data: warehouseManagers } = await supabase
-                  .from('company_members')
-                  .select('user_id, role')
-                  .eq('company_id', invoice.company_id)
-                  .in('role', warehouseRoles)
-                  .eq('branch_id', invoice.branch_id)
-
-                if (warehouseManagers && warehouseManagers.length > 0) {
-                  for (const manager of warehouseManagers) {
-                    await supabase.rpc('create_notification', {
-                      p_company_id: invoice.company_id,
-                      p_reference_type: 'invoice',
-                      p_reference_id: invoiceId,
-                      p_title: 'فاتورة جاهزة للشحن',
-                      p_message: `الفاتورة رقم (${invoice.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
-                      p_created_by: auditUserId || invoice.company_id,
-                      p_branch_id: invoice.branch_id,
-                      p_cost_center_id: null,
-                      p_warehouse_id: null,
-                      p_assigned_to_role: manager.role,
-                      p_assigned_to_user: manager.user_id,
-                      p_priority: 'high',
-                      p_event_key: `invoice:${invoiceId}:sent:${manager.user_id}`,
-                      p_severity: 'warning',
-                      p_category: 'inventory'
-                    })
-                    console.log(`✅ [SENT] Notification sent to ${manager.role} (${manager.user_id})`)
-                  }
-                } else {
-                  // Fallback: إرسال بالدور فقط إن لم يوجد مستخدم محدد
-                  console.warn(`⚠️ [SENT] No store/warehouse manager found in branch ${invoice.branch_id}. Sending role fallback.`)
-                  await supabase.rpc('create_notification', {
-                    p_company_id: invoice.company_id,
-                    p_reference_type: 'invoice',
-                    p_reference_id: invoiceId,
-                    p_title: 'فاتورة جاهزة للشحن',
-                    p_message: `الفاتورة رقم (${invoice.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
-                    p_created_by: auditUserId || invoice.company_id,
-                    p_branch_id: invoice.branch_id,
-                    p_cost_center_id: null,
-                    p_warehouse_id: null,
-                    p_assigned_to_role: 'store_manager',
-                    p_assigned_to_user: null,
-                    p_priority: 'high',
-                    p_event_key: `invoice:${invoiceId}:sent:store_manager`,
-                    p_severity: 'warning',
-                    p_category: 'inventory'
-                  })
-                }
-              } catch (notifErr: any) {
-                console.warn('⚠️ [SENT] Warehouse notification failed:', notifErr?.message)
-              }
-            }
-
-          } else if (newStatus === "paid" || newStatus === "partially_paid") {
-            // ✅ إذا كانت الفاتورة في حالة "paid" مباشرة (بدون المرور بـ "sent")
-            // يجب خصم المخزون وإنشاء COGS إذا لم يتم ذلك من قبل
-            const { data: existingCOGS } = await supabase
-              .from("cogs_transactions")
-              .select("id")
-              .eq("source_id", invoiceId)
-              .eq("source_type", "invoice")
-              .limit(1)
-
-            if (!existingCOGS || existingCOGS.length === 0) {
-              console.log("📌 Invoice paid directly - calling deductInventoryOnly()...")
-              // إنشاء COGS إذا لم يكن موجوداً
-              await deductInventoryOnly()
-              console.log(`✅ INV Paid (direct): تم خصم المخزون وإنشاء COGS`)
-            } else {
-              console.log(`✅ INV Paid: COGS already exists, skipping inventory deduction`)
-            }
-
+          if (newStatus === "paid" || newStatus === "partially_paid") {
+            console.log("ℹ️ Payment status must be driven by the backend payment API. Skipping client-side accounting logic.")
           } else if (newStatus === "draft" || newStatus === "cancelled") {
             await reverseInventoryForInvoice()
             // عكس القيود المحاسبية إن وجدت (للفواتير المدفوعة سابقاً)
@@ -1945,10 +1860,8 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  // ===== 📌 recordInvoicePayment: Atomic API-Driven Payment =====
-  // الدفع يتم عبر API محمية تستدعي process_invoice_payment_atomic RPC في قاعدة البيانات.
-  // كل العمليات (payment INSERT + AR/Revenue journal + invoice UPDATE) في معاملة DB واحدة.
-  // COGS يُعالج بعد نجاح العملية الأساسية (حساب FIFO معقد، لا يمكن دمجه في RPC).
+  // ===== 📌 recordInvoicePayment: Backend-only Atomic Payment =====
+  // الواجهة ترسل الطلب فقط. جميع القيود والتحديثات المالية تنفذ في الخادم.
   const recordInvoicePayment = async (amount: number, dateStr: string, method: string, reference: string) => {
     try {
       if (!invoice) return
@@ -1970,7 +1883,6 @@ export default function InvoiceDetailPage() {
         return
       }
 
-      // ✅ STEP 1: Atomic core — payment + AR/Revenue journal + invoice update (single DB transaction)
       const atomicRes = await fetch(`/api/invoices/${invoice.id}/record-payment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1994,89 +1906,26 @@ export default function InvoiceDetailPage() {
         throw new Error(errMsg)
       }
 
-      const newStatus: string = atomicResult.newStatus
-
-      // ✅ STEP 2: COGS (post-atomic — complex FIFO, best-effort)
-      // لا تؤثر على الدفعة إذا فشلت (الدفعة والقيود الأساسية تمت بنجاح)
-      try {
-        const mapping = await findAccountIds()
-        if (mapping) {
-          const paidRatio = Number(amount) / Number(invoice.total_amount || 1)
-          const clearResult = await clearThirdPartyInventory({
-            supabase,
-            companyId: mapping.companyId,
-            invoiceId: invoice.id,
-            paidRatio,
-            branchId: invoice.branch_id || null,
-            costCenterId: invoice.cost_center_id || null
+      if (atomicResult.newStatus === "paid") {
+        try {
+          const bonusRes = await fetch("/api/bonuses", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ invoiceId: invoice.id, companyId: invoice.company_id || null })
           })
-
-          if (clearResult.success && clearResult.totalCOGS > 0) {
-            const cogsCheck = await checkDuplicateJournalEntry(supabase, mapping.companyId, "invoice_cogs", invoice.id)
-            if (!cogsCheck.exists) {
-              const { data: cogsEntry, error: cogsEntryError } = await supabase
-                .from("journal_entries")
-                .insert({
-                  company_id: mapping.companyId,
-                  reference_type: "invoice_cogs",
-                  reference_id: invoice.id,
-                  entry_date: dateStr,
-                  description: `تكلفة البضاعة المباعة - ${invoice.invoice_number}`,
-                  status: "draft",
-                  branch_id: invoice.branch_id || null,
-                  cost_center_id: invoice.cost_center_id || null,
-                })
-                .select().single()
-
-              if (!cogsEntryError && cogsEntry && mapping.cogs && mapping.inventory) {
-                await supabase.from("journal_entry_lines").insert([
-                  { journal_entry_id: cogsEntry.id, account_id: mapping.cogs, debit_amount: clearResult.totalCOGS, credit_amount: 0, description: "تكلفة البضاعة المباعة", branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
-                  { journal_entry_id: cogsEntry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: clearResult.totalCOGS, description: "خصم من المخزون", branch_id: invoice.branch_id || null, cost_center_id: invoice.cost_center_id || null },
-                ])
-                await supabase.from("journal_entries").update({ status: "posted" }).eq("id", cogsEntry.id)
-              }
-            }
+          const bonusData = await bonusRes.json()
+          if (bonusRes.ok && bonusData.bonus) {
+            console.log("✅ تم حساب البونص:", bonusData.bonus.bonus_amount)
           }
-
-          const { data: existingCOGS } = await supabase
-            .from("cogs_transactions").select("id")
-            .eq("source_id", invoice.id).eq("source_type", "invoice").limit(1)
-
-          if (!existingCOGS || existingCOGS.length === 0) {
-            const { data: thirdPartyItems } = await supabase
-              .from("third_party_inventory").select("id")
-              .eq("invoice_id", invoice.id).eq("company_id", mapping.companyId).limit(1)
-
-            if (!thirdPartyItems || thirdPartyItems.length === 0) {
-              await deductInventoryOnly()
-            }
-          }
-
-          // Bonus (fully paid)
-          if (newStatus === "paid") {
-            try {
-              const bonusRes = await fetch("/api/bonuses", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ invoiceId: invoice.id, companyId: mapping.companyId })
-              })
-              const bonusData = await bonusRes.json()
-              if (bonusRes.ok && bonusData.bonus) {
-                console.log("✅ تم حساب البونص:", bonusData.bonus.bonus_amount)
-              }
-            } catch (bonusErr) {
-              console.warn("تحذير: تعذر حساب البونص (غير حرج):", bonusErr)
-            }
-          }
+        } catch (bonusErr) {
+          console.warn("تحذير: تعذر حساب البونص (غير حرج):", bonusErr)
         }
-      } catch (cogsErr: any) {
-        console.warn("⚠️ COGS post-processing failed (non-blocking — payment succeeded):", cogsErr?.message)
       }
 
       await loadInvoice()
       setShowPayment(false)
       setPaymentAccountId("")
-      toast({ title: "تم تسجيل الدفعة بنجاح", description: "تم إضافة قيد الدفع (Cash/AR) ذرياً" })
+      toast({ title: "تم تسجيل الدفعة بنجاح", description: "تم تنفيذ التحصيل ذرياً من خلال الخادم" })
     } catch (err: any) {
       console.error("خطأ أثناء تسجيل الدفعة:", err)
       const errMsg = err?.message || err?.error_description || "تعذر تسجيل الدفعة"

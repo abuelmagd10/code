@@ -1,0 +1,39 @@
+{
+  "scenarios": [
+    {
+      "name": "Invoice to Payment",
+      "type": "invoice_payment",
+      "v1InvoiceId": "00000000-0000-0000-0000-000000000001",
+      "v2InvoiceId": "00000000-0000-0000-0000-000000000002",
+      "notes": "Posted invoice followed by full payment. No warehouse approval in this scenario."
+    },
+    {
+      "name": "Invoice to Warehouse to Payment",
+      "type": "invoice_warehouse_payment",
+      "v1InvoiceId": "00000000-0000-0000-0000-000000000003",
+      "v2InvoiceId": "00000000-0000-0000-0000-000000000004",
+      "expectedEvents": ["invoice_posting", "warehouse_approval", "invoice_payment"],
+      "notes": "Shipped invoice that requires warehouse approval before payment."
+    },
+    {
+      "name": "Partial Payment",
+      "type": "partial_payment",
+      "v1InvoiceId": "00000000-0000-0000-0000-000000000005",
+      "v2InvoiceId": "00000000-0000-0000-0000-000000000006"
+    },
+    {
+      "name": "Sales Return Full",
+      "type": "sales_return_full",
+      "v1InvoiceId": "00000000-0000-0000-0000-000000000007",
+      "v2InvoiceId": "00000000-0000-0000-0000-000000000008",
+      "expectedEvents": ["invoice_posting", "invoice_payment", "return"]
+    },
+    {
+      "name": "Sales Return Partial",
+      "type": "sales_return_partial",
+      "v1InvoiceId": "00000000-0000-0000-0000-000000000009",
+      "v2InvoiceId": "00000000-0000-0000-0000-000000000010",
+      "expectedEvents": ["invoice_posting", "warehouse_approval", "invoice_payment", "return"]
+    }
+  ]
+}

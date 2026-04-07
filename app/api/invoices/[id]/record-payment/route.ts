@@ -19,6 +19,9 @@ import { secureApiRequest, serverError, badRequestError } from "@/lib/api-securi
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { asyncAuditLog } from "@/lib/core"
 import { ERPError } from "@/lib/core/errors/erp-errors"
+import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
+import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
+import { emitEvent } from "@/lib/event-bus"
 
 export async function POST(
   req: NextRequest,
@@ -60,6 +63,18 @@ export async function POST(
       warehouseId,
       companyId: bodyCompanyId,
     } = body
+
+    const idempotencyKey = resolveFinancialIdempotencyKey(
+      req.headers.get("Idempotency-Key"),
+      [
+        "invoice-payment",
+        invoiceId,
+        paymentDate,
+        Number(amount || 0).toFixed(2),
+        paymentMethod,
+        referenceNumber || "none",
+      ]
+    )
 
     if (!amount || Number(amount) <= 0) return badRequestError("مبلغ الدفعة يجب أن يكون أكبر من صفر")
     if (!paymentDate) return badRequestError("تاريخ الدفعة مطلوب")
@@ -107,24 +122,59 @@ export async function POST(
     }
 
     // ✅ Call atomic RPC — all or nothing
-    const { data: rpcResult, error: rpcError } = await supabase.rpc(
-      "process_invoice_payment_atomic",
-      {
-        p_invoice_id: invoiceId,
-        p_company_id: resolvedCompanyId,
-        p_customer_id: invoice.customer_id,
-        p_amount: Number(amount),
-        p_payment_date: paymentDate,
-        p_payment_method: paymentMethod,
-        p_reference_number: referenceNumber || null,
-        p_notes: notes || null,
-        p_account_id: accountId || null,
-        p_branch_id: branchId || invoice.branch_id || null,
-        p_cost_center_id: costCenterId || invoice.cost_center_id || null,
-        p_warehouse_id: warehouseId || invoice.warehouse_id || null,
-        p_user_id: user?.id || null,
-      }
-    )
+    const requestHash = buildFinancialRequestHash({
+      invoiceId,
+      companyId: resolvedCompanyId,
+      customerId: invoice.customer_id,
+      amount: Number(amount),
+      paymentDate,
+      paymentMethod,
+      referenceNumber: referenceNumber || null,
+      accountId: accountId || null,
+      branchId: branchId || invoice.branch_id || null,
+      costCenterId: costCenterId || invoice.cost_center_id || null,
+      warehouseId: warehouseId || invoice.warehouse_id || null,
+    })
+
+    const rpcName = enterpriseFinanceFlags.paymentV2
+      ? "process_invoice_payment_atomic_v2"
+      : "process_invoice_payment_atomic"
+
+    const rpcParams = enterpriseFinanceFlags.paymentV2
+      ? {
+          p_invoice_id: invoiceId,
+          p_company_id: resolvedCompanyId,
+          p_customer_id: invoice.customer_id,
+          p_amount: Number(amount),
+          p_payment_date: paymentDate,
+          p_payment_method: paymentMethod,
+          p_reference_number: referenceNumber || null,
+          p_notes: notes || null,
+          p_account_id: accountId || null,
+          p_branch_id: branchId || invoice.branch_id || null,
+          p_cost_center_id: costCenterId || invoice.cost_center_id || null,
+          p_warehouse_id: warehouseId || invoice.warehouse_id || null,
+          p_user_id: user?.id || null,
+          p_idempotency_key: idempotencyKey,
+          p_request_hash: requestHash,
+        }
+      : {
+          p_invoice_id: invoiceId,
+          p_company_id: resolvedCompanyId,
+          p_customer_id: invoice.customer_id,
+          p_amount: Number(amount),
+          p_payment_date: paymentDate,
+          p_payment_method: paymentMethod,
+          p_reference_number: referenceNumber || null,
+          p_notes: notes || null,
+          p_account_id: accountId || null,
+          p_branch_id: branchId || invoice.branch_id || null,
+          p_cost_center_id: costCenterId || invoice.cost_center_id || null,
+          p_warehouse_id: warehouseId || invoice.warehouse_id || null,
+          p_user_id: user?.id || null,
+        }
+
+    const { data: rpcResult, error: rpcError } = await supabase.rpc(rpcName, rpcParams)
 
     if (rpcError) {
       const msg = rpcError.message || ""
@@ -143,6 +193,25 @@ export async function POST(
     const result = rpcResult as any
     if (!result?.success) {
       return NextResponse.json({ success: false, error: result?.error || "فشل غير معروف في معالجة الدفعة" }, { status: 400 })
+    }
+
+    if (enterpriseFinanceFlags.observabilityEvents) {
+      await emitEvent(authSupabase, {
+        companyId: resolvedCompanyId,
+        eventName: "payment.recorded",
+        entityType: "invoice",
+        entityId: invoiceId,
+        actorId: user?.id || undefined,
+        idempotencyKey: `payment.recorded:${result.transaction_id || idempotencyKey}`,
+        payload: {
+          transactionId: result.transaction_id || null,
+          paymentId: result.payment_id,
+          sourceEntity: result.source_entity || "invoice",
+          sourceId: result.source_id || invoiceId,
+          eventType: result.event_type || "invoice_payment",
+          requestHash,
+        }
+      })
     }
 
     // ✅ Non-Blocking Async Audit (Core Infrastructure)
@@ -172,6 +241,8 @@ export async function POST(
       netInvoiceAmount: result.net_invoice_amount,
       remaining: result.remaining,
       invoiceJournalCreated: result.invoice_journal_created,
+      transactionId: result.transaction_id || null,
+      eventType: result.event_type || "invoice_payment",
     })
 
   } catch (e: any) {

@@ -2,6 +2,7 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { prepareInvoiceRevenueJournal, prepareCOGSJournalOnDelivery } from './accrual-accounting-engine'
 import { prepareFIFOConsumptionData } from './fifo-engine'
+import { enterpriseFinanceFlags } from './enterprise-finance-flags'
 
 export interface AtomicTransactionResult {
     success: boolean
@@ -9,6 +10,14 @@ export interface AtomicTransactionResult {
     inventoryTransactionIds?: string[]
     cogsTransactionIds?: string[]
     payment_ids?: string[]
+    returnIds?: string[]
+    creditIds?: string[]
+    thirdPartyInventoryIds?: string[]
+    customerCreditLedgerIds?: string[]
+    transactionId?: string
+    sourceEntity?: string
+    sourceId?: string
+    eventType?: string
     error?: string
 }
 
@@ -32,7 +41,8 @@ export class AccountingTransactionService {
     async postInvoiceAtomic(
         invoiceId: string,
         companyId: string,
-        currentUserId?: string
+        currentUserId?: string,
+        options?: { idempotencyKey?: string; requestHash?: string }
     ): Promise<AtomicTransactionResult> {
         try {
             console.log(`Starting atomic posting for invoice: ${invoiceId}`)
@@ -64,7 +74,9 @@ export class AccountingTransactionService {
 
             let revenueJournal = null
             if (!existingRevenue) {
-                revenueJournal = await prepareInvoiceRevenueJournal(this.supabase, invoiceId, companyId)
+                revenueJournal = await prepareInvoiceRevenueJournal(this.supabase, invoiceId, companyId, {
+                    allowDraft: true,
+                })
                 if (!revenueJournal && invoiceData.status === 'draft') {
                     // قد يكون طبيعياً للفواتير المسودة
                     console.warn('Revenue journal not prepared (possibly draft)')
@@ -152,7 +164,8 @@ export class AccountingTransactionService {
                     this.supabase,
                     invoiceId,
                     companyId,
-                    totalTransactionCOGS
+                    totalTransactionCOGS,
+                    { allowDraft: true }
                 )
             }
 
@@ -168,25 +181,55 @@ export class AccountingTransactionService {
             }
 
             // 5. التنفيذ الذري (Atomic Commit via RPC)
-            const { data: rpcResult, error: rpcError } = await this.supabase.rpc('post_accounting_event', {
-                p_event_type: 'invoice_posting',
-                p_company_id: companyId,
-                p_inventory_transactions: allInventoryTx,
-                p_cogs_transactions: allCogsTx,
-                p_fifo_consumptions: allFifoConsumptions,
-                p_journal_entries: journalEntries,
-                p_update_source: { id: invoiceId, status: 'sent' } // هنا نثبت الحالة sent كحد أدنى، أو يمكننا تمرير الحالة المطلوبة كبارامتر
-            })
+            const rpcName = enterpriseFinanceFlags.invoicePostV2
+                ? 'post_invoice_atomic_v2'
+                : 'post_accounting_event'
+
+            const rpcParams = enterpriseFinanceFlags.invoicePostV2
+                ? {
+                    p_company_id: companyId,
+                    p_invoice_id: invoiceId,
+                    p_inventory_transactions: allInventoryTx,
+                    p_cogs_transactions: allCogsTx,
+                    p_fifo_consumptions: allFifoConsumptions,
+                    p_journal_entries: journalEntries,
+                    p_update_source: { id: invoiceId, status: 'sent' },
+                    p_effective_date: invoiceData.invoice_date,
+                    p_actor_id: currentUserId || null,
+                    p_idempotency_key: options?.idempotencyKey || null,
+                    p_request_hash: options?.requestHash || null,
+                    p_trace_metadata: {
+                        requiresWarehouseApproval,
+                        inventoryAlreadyDeducted,
+                    },
+                }
+                : {
+                    p_event_type: 'invoice_posting',
+                    p_company_id: companyId,
+                    p_inventory_transactions: allInventoryTx,
+                    p_cogs_transactions: allCogsTx,
+                    p_fifo_consumptions: allFifoConsumptions,
+                    p_journal_entries: journalEntries,
+                    p_update_source: { id: invoiceId, status: 'sent' }
+                }
+
+            const { data: rpcResult, error: rpcError } = await this.supabase.rpc(rpcName, rpcParams)
 
             if (rpcError) {
                 throw new Error(`RPC Execution Failed: ${rpcError.message}`)
             }
 
+            const result = (rpcResult || {}) as any
+
             return {
                 success: true,
-                journalEntryIds: rpcResult.journal_entry_ids,
-                inventoryTransactionIds: rpcResult.inventory_transaction_ids,
-                cogsTransactionIds: rpcResult.cogs_transaction_ids
+                journalEntryIds: result.journal_entry_ids,
+                inventoryTransactionIds: result.inventory_transaction_ids,
+                cogsTransactionIds: result.cogs_transaction_ids,
+                transactionId: result.transaction_id,
+                sourceEntity: result.source_entity,
+                sourceId: result.source_id,
+                eventType: result.event_type,
             }
 
         } catch (error: any) {
@@ -218,7 +261,8 @@ export class AccountingTransactionService {
             notes: string
             account_id?: string // حساب النقد/البنك المختار
         },
-        currentUserId?: string
+        currentUserId?: string,
+        options?: { idempotencyKey?: string; requestHash?: string }
     ): Promise<AtomicTransactionResult> {
         try {
             console.log(`Starting atomic payment posting for invoice: ${paymentData.invoice_id}`)
@@ -242,23 +286,51 @@ export class AccountingTransactionService {
                 throw new Error('Failed to prepare payment journal')
             }
 
+            const rpcName = enterpriseFinanceFlags.paymentV2
+                ? 'post_accounting_event_v2'
+                : 'post_accounting_event'
+
+            const rpcParams = enterpriseFinanceFlags.paymentV2
+                ? {
+                    p_event_type: 'payment_posting',
+                    p_company_id: paymentData.company_id,
+                    p_payments: [paymentWithId],
+                    p_journal_entries: [journalEntry],
+                    p_source_entity: 'payment',
+                    p_source_id: paymentId,
+                    p_effective_date: paymentData.payment_date,
+                    p_actor_id: currentUserId || null,
+                    p_idempotency_key: options?.idempotencyKey || null,
+                    p_request_hash: options?.requestHash || null,
+                    p_trace_metadata: {
+                        invoice_id: paymentData.invoice_id,
+                        payment_method: paymentData.payment_method,
+                    },
+                }
+                : {
+                    p_event_type: 'payment_posting',
+                    p_company_id: paymentData.company_id,
+                    p_payments: [paymentWithId],
+                    p_journal_entries: [journalEntry]
+                }
+
             // 3. التنفيذ الذري
-            const { data: rpcResult, error: rpcError } = await this.supabase.rpc('post_accounting_event', {
-                p_event_type: 'payment_posting',
-                p_company_id: paymentData.company_id,
-                p_payments: [paymentWithId],
-                p_journal_entries: [journalEntry]
-            })
+            const { data: rpcResult, error: rpcError } = await this.supabase.rpc(rpcName, rpcParams)
 
             if (rpcError) {
                 throw new Error(`RPC Execution Failed (Payment): ${rpcError.message}`)
             }
 
+            const result = (rpcResult || {}) as any
+
             return {
                 success: true,
-                // @ts-ignore
-                payment_ids: rpcResult.payment_ids,
-                journalEntryIds: rpcResult.journal_entry_ids
+                payment_ids: result.payment_ids,
+                journalEntryIds: result.journal_entry_ids,
+                transactionId: result.transaction_id,
+                sourceEntity: result.source_entity,
+                sourceId: result.source_id,
+                eventType: result.event_type,
             }
 
         } catch (error: any) {
@@ -266,6 +338,308 @@ export class AccountingTransactionService {
             return {
                 success: false,
                 error: error.message
+            }
+        }
+    }
+
+    /**
+     * اعتماد إخراج البضاعة ذرياً (Warehouse Approval)
+     * المصدر المالي الحقيقي لخصم المخزون + FIFO + COGS + third_party_inventory
+     */
+    async approveSalesDeliveryAtomic(
+        params: {
+            invoiceId: string
+            companyId: string
+            confirmedBy: string
+            notes?: string | null
+        },
+        options?: { idempotencyKey?: string; requestHash?: string }
+    ): Promise<AtomicTransactionResult> {
+        try {
+            console.log(`Starting atomic warehouse approval for invoice: ${params.invoiceId}`)
+
+            if (!enterpriseFinanceFlags.warehouseApprovalV2) {
+                const { data, error } = await this.supabase.rpc('approve_sales_delivery', {
+                    p_invoice_id: params.invoiceId,
+                    p_confirmed_by: params.confirmedBy,
+                    p_notes: params.notes || null,
+                })
+
+                if (error) {
+                    throw new Error(error.message)
+                }
+
+                if (!data?.success) {
+                    throw new Error(data?.error || 'Warehouse approval failed')
+                }
+
+                return {
+                    success: true,
+                    sourceEntity: 'invoice',
+                    sourceId: params.invoiceId,
+                    eventType: 'warehouse_approval',
+                }
+            }
+
+            const { data: invoice, error: invoiceError } = await this.supabase
+                .from('invoices')
+                .select(`
+                    id,
+                    invoice_number,
+                    invoice_date,
+                    status,
+                    warehouse_status,
+                    company_id,
+                    customer_id,
+                    sales_order_id,
+                    branch_id,
+                    cost_center_id,
+                    warehouse_id,
+                    shipping_provider_id,
+                    sales_orders!left (
+                        id,
+                        branch_id,
+                        cost_center_id,
+                        warehouse_id,
+                        shipping_provider_id
+                    )
+                `)
+                .eq('id', params.invoiceId)
+                .eq('company_id', params.companyId)
+                .maybeSingle()
+
+            if (invoiceError || !invoice) {
+                throw new Error(invoiceError?.message || 'Invoice not found')
+            }
+
+            if (invoice.warehouse_status !== 'pending') {
+                throw new Error('Delivery already processed')
+            }
+
+            if (invoice.status !== 'sent' && invoice.status !== 'paid' && invoice.status !== 'partially_paid') {
+                throw new Error('Invoice must be posted before warehouse dispatch')
+            }
+
+            const salesOrder = (invoice as any).sales_orders || {}
+            const branchId = invoice.branch_id || salesOrder.branch_id
+            const costCenterId = invoice.cost_center_id || salesOrder.cost_center_id
+            const warehouseId = invoice.warehouse_id || salesOrder.warehouse_id
+            const shippingProviderId = invoice.shipping_provider_id || salesOrder.shipping_provider_id
+
+            if (!warehouseId || !branchId || !costCenterId) {
+                throw new Error('Inventory governance context is missing for warehouse approval')
+            }
+
+            if (!shippingProviderId) {
+                throw new Error('Shipping provider is required for warehouse approval')
+            }
+
+            const { data: invoiceItems, error: itemsError } = await this.supabase
+                .from('invoice_items')
+                .select(`
+                    product_id,
+                    quantity,
+                    unit_price,
+                    line_total,
+                    products!inner (
+                        id,
+                        name,
+                        cost_price,
+                        item_type
+                    )
+                `)
+                .eq('invoice_id', params.invoiceId)
+
+            if (itemsError) {
+                throw new Error(`Error fetching invoice items: ${itemsError.message}`)
+            }
+
+            const productItems = (invoiceItems || [])
+                .map((item: any) => ({
+                    ...item,
+                    product: Array.isArray(item.products) ? item.products[0] : item.products,
+                }))
+                .filter((item: any) =>
+                    item.product_id &&
+                    Number(item.quantity || 0) > 0 &&
+                    item.product?.item_type !== 'service'
+                )
+
+            const inventoryTransactions: any[] = []
+            const cogsTransactions: any[] = []
+            const fifoConsumptions: any[] = []
+            const thirdPartyInventoryRecords: any[] = []
+            const auditFlags = new Set<string>()
+            let totalCOGS = 0
+
+            for (const item of productItems) {
+                const quantity = Number(item.quantity || 0)
+                const productId = String(item.product_id)
+                let itemInventoryTransactions: any[] = []
+                let itemCogsTransactions: any[] = []
+                let itemFifoConsumptions: any[] = []
+                let itemTotalCost = 0
+                let unitCost = 0
+
+                const fifoResult = await prepareFIFOConsumptionData(this.supabase, {
+                    companyId: params.companyId,
+                    branchId,
+                    costCenterId,
+                    warehouseId,
+                    productId,
+                    quantity,
+                    sourceType: 'invoice',
+                    sourceId: params.invoiceId,
+                    transactionDate: invoice.invoice_date,
+                    createdByUserId: params.confirmedBy,
+                })
+
+                if (fifoResult.success) {
+                    itemInventoryTransactions = fifoResult.inventoryTransactions || []
+                    itemCogsTransactions = fifoResult.cogsTransactions || []
+                    itemFifoConsumptions = fifoResult.fifoConsumptions || []
+                    itemTotalCost = Number(fifoResult.totalCOGS || 0)
+                    unitCost = quantity > 0 ? Number((itemTotalCost / quantity).toFixed(4)) : 0
+                } else {
+                    const fallbackUnitCost = Number(item.product?.cost_price || 0)
+                    if (!enterpriseFinanceFlags.allowCostFallback || fallbackUnitCost <= 0) {
+                        throw new Error(fifoResult.error || `FIFO cost is required for product ${productId}`)
+                    }
+
+                    auditFlags.add('COST_FALLBACK_USED')
+                    unitCost = fallbackUnitCost
+                    itemTotalCost = Number((unitCost * quantity).toFixed(4))
+
+                    itemInventoryTransactions = [{
+                        company_id: params.companyId,
+                        branch_id: branchId,
+                        warehouse_id: warehouseId,
+                        cost_center_id: costCenterId,
+                        product_id: productId,
+                        transaction_type: 'sale',
+                        quantity_change: -quantity,
+                        reference_type: 'invoice',
+                        reference_id: params.invoiceId,
+                        notes: `Warehouse approval fallback cost for invoice ${invoice.invoice_number || params.invoiceId}`,
+                        transaction_date: invoice.invoice_date,
+                    }]
+
+                    itemCogsTransactions = [{
+                        company_id: params.companyId,
+                        branch_id: branchId,
+                        cost_center_id: costCenterId,
+                        warehouse_id: warehouseId,
+                        product_id: productId,
+                        source_type: 'invoice',
+                        source_id: params.invoiceId,
+                        quantity,
+                        unit_cost: unitCost,
+                        total_cost: itemTotalCost,
+                        transaction_date: invoice.invoice_date,
+                        notes: 'COST_FALLBACK_USED',
+                    }]
+                }
+
+                if (itemInventoryTransactions[0]) {
+                    itemInventoryTransactions[0] = {
+                        ...itemInventoryTransactions[0],
+                        unit_cost: unitCost,
+                        total_cost: itemTotalCost,
+                        from_location_type: 'warehouse',
+                        from_location_id: warehouseId,
+                        to_location_type: 'third_party',
+                        to_location_id: shippingProviderId,
+                        shipping_provider_id: shippingProviderId,
+                    }
+                }
+
+                inventoryTransactions.push(...itemInventoryTransactions)
+                cogsTransactions.push(...itemCogsTransactions)
+                fifoConsumptions.push(...itemFifoConsumptions)
+                totalCOGS += itemTotalCost
+
+                thirdPartyInventoryRecords.push({
+                    company_id: params.companyId,
+                    shipping_provider_id: shippingProviderId,
+                    product_id: productId,
+                    invoice_id: params.invoiceId,
+                    quantity,
+                    unit_cost: unitCost,
+                    total_cost: itemTotalCost,
+                    status: 'open',
+                    branch_id: branchId,
+                    cost_center_id: costCenterId,
+                    warehouse_id: warehouseId,
+                    customer_id: invoice.customer_id,
+                    sales_order_id: invoice.sales_order_id,
+                    notes: params.notes || 'Warehouse approval transfer',
+                })
+            }
+
+            const { data: existingCOGSJournal } = await this.supabase
+                .from('journal_entries')
+                .select('id')
+                .eq('reference_id', params.invoiceId)
+                .eq('reference_type', 'invoice_cogs')
+                .maybeSingle()
+
+            const journalEntries: any[] = []
+            if (!existingCOGSJournal && totalCOGS > 0) {
+                const cogsJournal = await prepareCOGSJournalOnDelivery(
+                    this.supabase,
+                    params.invoiceId,
+                    params.companyId,
+                    totalCOGS
+                )
+
+                if (cogsJournal) {
+                    journalEntries.push(cogsJournal)
+                }
+            }
+
+            const { data: rpcResult, error: rpcError } = await this.supabase.rpc('approve_sales_delivery_v2', {
+                p_company_id: params.companyId,
+                p_invoice_id: params.invoiceId,
+                p_confirmed_by: params.confirmedBy,
+                p_inventory_transactions: inventoryTransactions,
+                p_cogs_transactions: cogsTransactions,
+                p_fifo_consumptions: fifoConsumptions,
+                p_journal_entries: journalEntries,
+                p_third_party_inventory_records: thirdPartyInventoryRecords,
+                p_effective_date: invoice.invoice_date,
+                p_notes: params.notes || null,
+                p_idempotency_key: options?.idempotencyKey || null,
+                p_request_hash: options?.requestHash || null,
+                p_trace_metadata: {
+                    invoice_number: invoice.invoice_number,
+                    shipping_provider_id: shippingProviderId,
+                    item_count: productItems.length,
+                },
+                p_audit_flags: Array.from(auditFlags),
+            })
+
+            if (rpcError) {
+                throw new Error(`RPC Execution Failed (Warehouse Approval): ${rpcError.message}`)
+            }
+
+            const result = (rpcResult || {}) as any
+
+            return {
+                success: true,
+                journalEntryIds: result.journal_entry_ids,
+                inventoryTransactionIds: result.inventory_transaction_ids,
+                cogsTransactionIds: result.cogs_transaction_ids,
+                thirdPartyInventoryIds: result.third_party_inventory_ids,
+                transactionId: result.transaction_id,
+                sourceEntity: result.source_entity,
+                sourceId: result.source_id,
+                eventType: result.event_type,
+            }
+        } catch (error: any) {
+            console.error('Atomic Warehouse Approval Error:', error)
+            return {
+                success: false,
+                error: error.message,
             }
         }
     }
@@ -289,6 +663,12 @@ export class AccountingTransactionService {
             companyId: string
             userId: string
             lang: 'ar' | 'en'
+        },
+        options?: {
+            idempotencyKey?: string
+            requestHash?: string
+            salesReturnRequestId?: string
+            traceMetadata?: Record<string, any>
         }
     ): Promise<AtomicTransactionResult> {
         try {
@@ -309,32 +689,68 @@ export class AccountingTransactionService {
                 journalEntries.push(preparation.journalEntry)
             }
 
+            const rpcName = enterpriseFinanceFlags.returnsV2
+                ? 'process_sales_return_atomic_v2'
+                : 'post_accounting_event'
+
+            const rpcParams = enterpriseFinanceFlags.returnsV2
+                ? {
+                    p_company_id: params.companyId,
+                    p_invoice_id: params.invoiceId,
+                    p_sales_return_request_id: options?.salesReturnRequestId || null,
+                    p_sales_returns: preparation.salesReturn ? [preparation.salesReturn] : [],
+                    p_sales_return_items: preparation.salesReturnItems || [],
+                    p_inventory_transactions: preparation.inventoryTransactions || [],
+                    p_cogs_transactions: preparation.cogsTransactions || [],
+                    p_fifo_consumptions: preparation.fifoConsumptions || [],
+                    p_journal_entries: journalEntries,
+                    p_customer_credits: preparation.customerCredits || [],
+                    p_customer_credit_ledger_entries: preparation.customerCreditLedgerEntries || [],
+                    p_update_source: preparation.updateSource,
+                    p_effective_date: preparation.salesReturn?.return_date || new Date().toISOString().slice(0, 10),
+                    p_actor_id: params.userId,
+                    p_idempotency_key: options?.idempotencyKey || null,
+                    p_request_hash: options?.requestHash || null,
+                    p_trace_metadata: {
+                        invoice_number: params.invoiceNumber,
+                        return_mode: params.returnMode,
+                        items_count: params.returnItems.length,
+                        ...(options?.traceMetadata || {}),
+                    },
+                }
+                : {
+                    p_event_type: 'return',
+                    p_company_id: params.companyId,
+                    p_sales_returns: preparation.salesReturn ? [preparation.salesReturn] : [],
+                    p_sales_return_items: preparation.salesReturnItems || [],
+                    p_inventory_transactions: preparation.inventoryTransactions || [],
+                    p_cogs_transactions: preparation.cogsTransactions || [],
+                    p_fifo_consumptions: preparation.fifoConsumptions || [],
+                    p_journal_entries: journalEntries,
+                    p_customer_credits: preparation.customerCredits || [],
+                    p_update_source: preparation.updateSource
+                }
+
             // 3. استدعاء RPC
-            const { data: rpcResult, error: rpcError } = await this.supabase.rpc('post_accounting_event', {
-                p_event_type: 'return',
-                p_company_id: params.companyId,
-                p_sales_returns: preparation.salesReturn ? [preparation.salesReturn] : [],
-                p_sales_return_items: preparation.salesReturnItems || [],
-                p_inventory_transactions: preparation.inventoryTransactions || [],
-                p_cogs_transactions: preparation.cogsTransactions || [],
-                p_fifo_consumptions: preparation.fifoConsumptions || [],
-                p_journal_entries: journalEntries,
-                p_customer_credits: preparation.customerCredits || [],
-                p_update_source: preparation.updateSource
-            })
+            const { data: rpcResult, error: rpcError } = await this.supabase.rpc(rpcName, rpcParams)
 
             if (rpcError) {
                 console.error('Atomic Sales Return RPC Error:', rpcError)
                 throw new Error(rpcError.message)
             }
 
+            const result = (rpcResult || {}) as any
+
             return {
                 success: true,
-                // @ts-ignore
-                returnIds: rpcResult.return_ids,
-                // @ts-ignore
-                creditIds: rpcResult.credit_ids,
-                journalEntryIds: rpcResult.journal_entry_ids
+                returnIds: result.return_ids,
+                creditIds: result.credit_ids,
+                customerCreditLedgerIds: result.customer_credit_ledger_ids,
+                journalEntryIds: result.journal_entry_ids,
+                transactionId: result.transaction_id,
+                sourceEntity: result.source_entity,
+                sourceId: result.source_id,
+                eventType: result.event_type,
             }
 
         } catch (error: any) {

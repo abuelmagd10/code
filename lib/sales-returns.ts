@@ -271,6 +271,7 @@ export async function prepareSalesReturnData(
   fifoConsumptions?: any[]
   journalEntry?: any
   customerCredits?: any[]
+  customerCreditLedgerEntries?: any[]
   updateSource?: any
   error?: string
 }> {
@@ -402,6 +403,7 @@ export async function prepareSalesReturnData(
     // 7️⃣ تحضير القيود المحاسبية
     let journalEntry = null
     let customerCredits: any[] = []
+    let customerCreditLedgerEntries: any[] = []
 
     if (requiresJournalEntries(invoiceCheck.status)) {
       const preparedAccounting = await prepareReturnJournal(supabase, {
@@ -415,6 +417,18 @@ export async function prepareSalesReturnData(
         preparedAccounting.journalEntry.reference_id = salesReturnId
         journalEntry = preparedAccounting.journalEntry
         customerCredits = preparedAccounting.customerCredits || []
+        if (creditAmount > 0 && invoiceCheck.customer_id && journalEntry?.id) {
+          customerCreditLedgerEntries = [{
+            company_id: companyId,
+            customer_id: invoiceCheck.customer_id,
+            source_type: 'sales_return',
+            source_id: salesReturnId,
+            journal_entry_id: journalEntry.id,
+            amount: creditAmount,
+            description: `رصيد دائن من مرتجع الفاتورة ${invoiceNumber}`,
+            created_by: userId
+          }]
+        }
       }
     }
 
@@ -455,6 +469,7 @@ export async function prepareSalesReturnData(
       fifoConsumptions,
       journalEntry,
       customerCredits,
+      customerCreditLedgerEntries,
       updateSource
     }
 
@@ -652,13 +667,7 @@ async function prepareReturnJournal(supabase: SupabaseClient, params: any): Prom
       id: journalEntryId,
       company_id: companyId,
       reference_type: 'sales_return',
-      reference_id: invoiceId, // Maybe link to sales_return_id if available? But invoiceId is standard linkage for now
-      // Actually we should link Journal Entry to the *Return Document* usually.
-      // But keeping existing pattern `processReturnAccounting` linked to invoiceId in `reference_id`?
-      // `processReturnAccounting` uses `reference_id: invoiceId`.
-      // Let's stick to invoiceId or better salesReturnId if passed.
-      // Params has salesReturnId? Yes, I added it in prepareSalesReturnData.
-      // Let's use it if available in params, else invoiceId.
+      reference_id: params.salesReturnId || invoiceId,
       entry_date: new Date().toISOString().slice(0, 10),
       description: creditAmount > 0
         ? `مرتجع مبيعات للفاتورة ${invoiceNumber} (تسوية: ${settlementAmount.toFixed(2)}، رصيد دائن: ${creditAmount.toFixed(2)})`

@@ -3,6 +3,10 @@ import { createClient as createServerClient } from "@/lib/supabase/server"
 import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { asyncAuditLog } from "@/lib/core"
+import { AccountingTransactionService } from "@/lib/accounting-transaction-service"
+import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
+import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
+import { emitEvent } from "@/lib/event-bus"
 
 /**
  * PATCH /api/sales-return-requests/[id]/approve
@@ -51,6 +55,82 @@ export async function PATCH(
     }
     if (member.role === "manager" && member.branch_id && request.branch_id !== member.branch_id) {
       return NextResponse.json({ error: "غير مصرح لك باعتماد طلبات فروع أخرى" }, { status: 403 })
+    }
+
+    if (enterpriseFinanceFlags.returnsV2) {
+      const idempotencyKey = resolveFinancialIdempotencyKey(
+        req.headers.get("Idempotency-Key"),
+        ["sales-return-approve", companyId, id]
+      )
+      const requestHash = buildFinancialRequestHash({
+        requestId: id,
+        companyId,
+        invoiceId: request.invoice_id,
+        returnType: request.return_type,
+        totalReturnAmount: request.total_return_amount,
+        itemCount: Array.isArray(request.items) ? request.items.length : 0,
+      })
+
+      const accountingService = new AccountingTransactionService(supabase as any)
+      const atomicResult = await accountingService.postSalesReturnAtomic({
+        invoiceId: request.invoice_id,
+        invoiceNumber: request.invoices?.invoice_number || request.invoice_id,
+        returnItems: (request.items as any[]) || [],
+        returnMode: request.return_type,
+        companyId,
+        userId: user?.id || "",
+        lang: "ar",
+      }, {
+        idempotencyKey,
+        requestHash,
+        salesReturnRequestId: id,
+        traceMetadata: {
+          sales_return_request_id: id,
+          total_return_amount: Number(request.total_return_amount || 0),
+        },
+      })
+
+      if (!atomicResult.success) {
+        return NextResponse.json({ error: atomicResult.error || "فشل اعتماد المرتجع" }, { status: 400 })
+      }
+
+      if (enterpriseFinanceFlags.observabilityEvents) {
+        await emitEvent(authSupabase as any, {
+          companyId,
+          eventName: "sales_return.approved",
+          entityType: "invoice",
+          entityId: request.invoice_id,
+          actorId: user?.id || undefined,
+          idempotencyKey: `sales_return.approved:${atomicResult.transactionId || idempotencyKey}`,
+          payload: {
+            transactionId: atomicResult.transactionId,
+            sourceEntity: atomicResult.sourceEntity,
+            sourceId: atomicResult.sourceId,
+            eventType: atomicResult.eventType,
+            requestHash,
+            salesReturnRequestId: id,
+          }
+        })
+      }
+
+      asyncAuditLog({
+        companyId, userId: user?.id || "", userEmail: user?.email,
+        action: "UPDATE", table: "sales_return_requests",
+        recordId: id, recordIdentifier: request.invoice_id,
+        newData: {
+          status: "approved",
+          return_type: request.return_type,
+          transaction_id: atomicResult.transactionId || null,
+        },
+        reason: "Sales return request approved (atomic v2)"
+      })
+
+      return NextResponse.json({
+        success: true,
+        message: "تم اعتماد المرتجع بنجاح",
+        transactionId: atomicResult.transactionId || null,
+        eventType: atomicResult.eventType || "return",
+      })
     }
 
     // 1. تحديث third_party_inventory

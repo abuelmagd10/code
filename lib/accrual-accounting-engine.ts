@@ -109,7 +109,8 @@ export async function getAccrualAccountMapping(
 export async function prepareInvoiceRevenueJournal(
   supabase: any,
   invoiceId: string,
-  companyId: string
+  companyId: string,
+  options?: { allowDraft?: boolean }
 ): Promise<AccrualJournalEntry | null> {
   // الحصول على بيانات الفاتورة
   const { data: invoice, error: invoiceError } = await supabase
@@ -128,7 +129,7 @@ export async function prepareInvoiceRevenueJournal(
   }
 
   // فقط للفواتير المرسلة (ليس المسودات)
-  if (invoice.status === 'draft') {
+  if (invoice.status === 'draft' && !options?.allowDraft) {
     return null
   }
 
@@ -248,7 +249,8 @@ export async function prepareCOGSJournalOnDelivery(
   supabase: any,
   invoiceId: string,
   companyId: string,
-  preCalculatedTotalCOGS?: number // اختياري: إذا كان محسوباً مسبقاً في نفس العملية
+  preCalculatedTotalCOGS?: number, // اختياري: إذا كان محسوباً مسبقاً في نفس العملية
+  options?: { allowDraft?: boolean }
 ): Promise<AccrualJournalEntry | null> {
   // الحصول على بيانات الفاتورة
   const { data: invoice, error: invoiceError } = await supabase
@@ -266,7 +268,7 @@ export async function prepareCOGSJournalOnDelivery(
   }
 
   // فقط للفواتير المرسلة
-  if (invoice.status === 'draft') {
+  if (invoice.status === 'draft' && !options?.allowDraft) {
     return null
   }
 

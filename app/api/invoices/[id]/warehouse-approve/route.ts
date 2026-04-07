@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
+import { AccountingTransactionService } from "@/lib/accounting-transaction-service"
+import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
+import { emitEvent } from "@/lib/event-bus"
+import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
 
 export async function POST(
     request: NextRequest,
@@ -45,20 +49,50 @@ export async function POST(
             // No body provided, ignore
         }
 
-        // 4. Call RPC
-        const { data: rpcData, error: rpcError } = await supabase.rpc('approve_sales_delivery', {
-            p_invoice_id: invoiceId,
-            p_confirmed_by: user.id,
-            p_notes: notes
+        const idempotencyKey = resolveFinancialIdempotencyKey(
+            request.headers.get('Idempotency-Key'),
+            ['warehouse-approval', companyId, invoiceId]
+        )
+        const requestHash = buildFinancialRequestHash({
+            invoiceId,
+            companyId,
+            actorId: user.id,
+            notes: notes || null,
         })
 
-        if (rpcError) {
-            console.error("[WAREHOUSE_APPROVE] RPC Error:", rpcError);
-            return NextResponse.json({ success: false, error: rpcError.message }, { status: 400 })
+        // 4. Call atomic service / RPC
+        const accountingService = new AccountingTransactionService(supabase as any)
+        const approvalResult = await accountingService.approveSalesDeliveryAtomic({
+            invoiceId,
+            companyId,
+            confirmedBy: user.id,
+            notes,
+        }, {
+            idempotencyKey,
+            requestHash,
+        })
+
+        if (!approvalResult.success) {
+            console.error("[WAREHOUSE_APPROVE] Atomic Error:", approvalResult.error)
+            return NextResponse.json({ success: false, error: approvalResult.error || 'Unknown error' }, { status: 400 })
         }
 
-        if (!rpcData?.success) {
-            return NextResponse.json({ success: false, error: rpcData?.error || 'Unknown error' }, { status: 400 })
+        if (enterpriseFinanceFlags.observabilityEvents) {
+            await emitEvent(supabase as any, {
+                companyId,
+                eventName: 'delivery.approved',
+                entityType: 'invoice',
+                entityId: invoiceId,
+                actorId: user.id,
+                idempotencyKey: `delivery.approved:${approvalResult.transactionId || idempotencyKey}`,
+                payload: {
+                    transactionId: approvalResult.transactionId,
+                    sourceEntity: approvalResult.sourceEntity,
+                    sourceId: approvalResult.sourceId,
+                    eventType: approvalResult.eventType,
+                    requestHash,
+                }
+            })
         }
 
         // 5. Notify Accountant
@@ -89,7 +123,9 @@ export async function POST(
 
         return NextResponse.json({
             success: true,
-            message: "تم اعتماد إخراج البضاعة بنجاح"
+            message: "تم اعتماد إخراج البضاعة بنجاح",
+            transactionId: approvalResult.transactionId || null,
+            eventType: approvalResult.eventType || 'warehouse_approval'
         })
 
     } catch (error: any) {

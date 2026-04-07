@@ -16,49 +16,28 @@ export async function requireOpenFinancialPeriod(
     const supabase = await createClient();
     const targetDate = typeof date === 'string' ? date : date.toISOString().split('T')[0];
 
-    const { data: period, error } = await supabase
-        .from('accounting_periods')
-        .select('id, name, status')
-        .eq('company_id', companyId)
-        .lte('start_date', targetDate)
-        .gte('end_date', targetDate)
-        .order('start_date', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    const { error } = await supabase.rpc('require_open_financial_period_db', {
+        p_company_id: companyId,
+        p_effective_date: targetDate,
+    });
 
     if (error) {
-        // خطأ في الاستعلام نفسه — نرمي ERR_SYSTEM
+        const message = error.message || 'فشل التحقق من الفترة المحاسبية';
+        if (
+            message.includes('NO_ACTIVE_FINANCIAL_PERIOD') ||
+            message.includes('FINANCIAL_PERIOD_LOCKED')
+        ) {
+            throw new ERPError(
+                'ERR_PERIOD_CLOSED',
+                message,
+                403
+            );
+        }
+
         throw new ERPError(
             'ERR_SYSTEM',
-            'فشل التحقق من حالة الفترة المحاسبية: ' + error.message,
+            'فشل التحقق من حالة الفترة المحاسبية: ' + message,
             500
         );
     }
-
-    if (!period) {
-        // لا توجد فترة محاسبية تُغطي هذا التاريخ
-        // بالنسبة للأنظمة التي لم تُعلِّم فتراتها بعد، نسمح بالمرور (Permissive Default)
-        // يمكن تغييره لـ throw لجعل الفترات إلزامية
-        return;
-    }
-
-    if (period.status === 'closed') {
-        throw new ERPError(
-            'ERR_PERIOD_CLOSED',
-            `الفترة المحاسبية "${period.name}" مغلقة. لا يمكن إضافة أو تعديل أي حركة في هذه الفترة.`,
-            403,
-            { period_id: period.id, status: 'closed' }
-        );
-    }
-
-    if (period.status === 'audit_lock') {
-        throw new ERPError(
-            'ERR_PERIOD_CLOSED',
-            `الفترة المحاسبية "${period.name}" مقفلة بقفل التدقيق (Audit Lock) ولا يمكن إجراء أي تعديلات.`,
-            403,
-            { period_id: period.id, status: 'audit_lock' }
-        );
-    }
-
-    // status === 'open' → الفترة مفتوحة ✅
 }

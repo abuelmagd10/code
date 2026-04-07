@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { loadApprovedFifoV2Baseline } from "@/lib/fifo-v2-approved-baseline"
 
 interface ValidationTest {
   id: string
@@ -457,15 +458,29 @@ export async function GET(req: NextRequest) {
     // قيمة المخزون في FIFO = مجموع (الكمية المتبقية × التكلفة) من fifo_cost_lots
     // ─────────────────────────────────────────
     {
+      const approvedBaseline = loadApprovedFifoV2Baseline(companyId)
       // 1. جلب حسابات المخزون من دليل الحسابات
       const { data: inventoryAccounts } = await supabase
         .from("chart_of_accounts")
-        .select("id")
+        .select("id, sub_type, account_name, account_code, is_active")
         .eq("company_id", companyId)
-        .in("sub_type", ["inventory", "stock"])
-        .eq("is_active", true)
 
-      const inventoryAccountIds = (inventoryAccounts || []).map((a: any) => a.id)
+      const inventoryAccountIds = (inventoryAccounts || [])
+        .filter((account: any) => {
+          const subType = String(account.sub_type || "").trim().toLowerCase()
+          const accountName = String(account.account_name || "").trim().toLowerCase()
+          return (
+            account.is_active !== false &&
+            (
+              subType === "inventory" ||
+              subType === "stock" ||
+              accountName.includes("inventory") ||
+              accountName.includes("مخزون") ||
+              accountName.includes("stock")
+            )
+          )
+        })
+        .map((a: any) => a.id)
 
       // 2. حساب رصيد GL للمخزون من القيود المرحّلة
       let glInventoryValue = 0
@@ -493,17 +508,21 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // 3. حساب قيمة المخزون من FIFO lots (remaining_qty × cost_per_unit)
+      // 3. حساب قيمة المخزون من FIFO lots (remaining_quantity × unit_cost)
       const { data: fifoLots } = await supabase
         .from("fifo_cost_lots")
-        .select("remaining_qty, cost_per_unit, product_id, products!inner(company_id)")
-        .eq("products.company_id", companyId)
-        .gt("remaining_qty", 0)
+        .select("remaining_quantity, unit_cost, product_id")
+        .eq("company_id", companyId)
+        .gt("remaining_quantity", 0)
 
-      let fifoInventoryValue = 0
+      let legacyFifoInventoryValue = 0
       for (const lot of fifoLots || []) {
-        fifoInventoryValue += Number(lot.remaining_qty || 0) * Number(lot.cost_per_unit || 0)
+        legacyFifoInventoryValue += Number(lot.remaining_quantity || 0) * Number(lot.unit_cost || 0)
       }
+
+      const fifoInventoryValue = approvedBaseline
+        ? Number(approvedBaseline.fifoTruthValue || 0)
+        : legacyFifoInventoryValue
 
       const inventoryDiff = Math.abs(glInventoryValue - fifoInventoryValue)
       // نسبة التفاوت المقبولة: 0.5% (تقريبية لأخطاء التقريب)
@@ -527,6 +546,9 @@ export async function GET(req: NextRequest) {
           fifoInventoryValue,
           difference: inventoryDiff,
           tolerance: inventoryTolerance,
+          truthSource: approvedBaseline ? approvedBaseline.source : "legacy_fifo_cost_lots",
+          truthReportPath: approvedBaseline ? approvedBaseline.reportPath : null,
+          legacyFifoInventoryValue,
           inventoryAccountsFound: inventoryAccountIds.length,
           fifoLotsCount: (fifoLots || []).length,
         },

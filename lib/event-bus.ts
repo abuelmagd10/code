@@ -31,6 +31,10 @@ export type EventName =
   | 'bill.created' | 'bill.paid' | 'bill.voided' | 'bill.approved'
   | 'inventory.low_stock' | 'inventory.out_of_stock'
   | 'user.role_changed' | 'user.branch_changed'
+  | 'invoice.posted' | 'delivery.approved' | 'payment.recorded' | 'sales_return.approved'
+  | 'intercompany.created' | 'intercompany.submitted' | 'intercompany.approved'
+  | 'intercompany.reconciled' | 'intercompany.elimination_triggered'
+  | 'consolidation.run_created' | 'consolidation.executed' | 'consolidation.completed'
 
 export interface EmitEventParams {
   companyId: string
@@ -188,6 +192,10 @@ export function registerAuditListener(supabase: SupabaseClient): void {
   const auditableEvents: EventName[] = [
     'po.approved', 'po.rejected', 'po.cancelled',
     'bill.paid', 'bill.voided', 'bill.approved',
+    'invoice.posted', 'delivery.approved', 'payment.recorded', 'sales_return.approved',
+    'intercompany.created', 'intercompany.submitted', 'intercompany.approved',
+    'intercompany.reconciled', 'intercompany.elimination_triggered',
+    'consolidation.run_created', 'consolidation.executed', 'consolidation.completed',
   ]
 
   for (const eventName of auditableEvents) {
