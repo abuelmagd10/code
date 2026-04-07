@@ -1,0 +1,138 @@
+{
+  "company_a_id": "00000000-0000-0000-0000-0000000000a1",
+  "company_b_id": "00000000-0000-0000-0000-0000000000b1",
+  "actor_user_id": "00000000-0000-0000-0000-0000000000u1",
+  "scenarios": [
+    {
+      "id": "ic-dev-001",
+      "name": "Company A Invoice -> Company B Bill",
+      "flags": {
+        "ERP_PHASE2A_INTERCOMPANY_ENABLED": true,
+        "ERP_PHASE2A_INTERCOMPANY_DEV_AUTO_MIRROR": true,
+        "ERP_PHASE2A_INTERCOMPANY_EVENTS": true,
+        "ERP_PHASE2A_CONSOLIDATION_ENABLED": false
+      },
+      "create_payload": {
+        "sellerCompanyId": "00000000-0000-0000-0000-0000000000a1",
+        "buyerCompanyId": "00000000-0000-0000-0000-0000000000b1",
+        "sourceFlowType": "inventory_sale",
+        "transactionDate": "2026-04-06",
+        "transactionCurrency": "USD",
+        "transactionAmount": 1250.00,
+        "pricingPolicy": "cost_plus",
+        "pricingReference": {
+          "markup_percent": 12.5
+        },
+        "sellerExchangeRate": 50.25000000,
+        "sellerRateSource": "manual_controller_rate",
+        "sellerRateTimestamp": "2026-04-06T09:00:00Z",
+        "buyerExchangeRate": 50.25000000,
+        "buyerRateSource": "manual_controller_rate",
+        "buyerRateTimestamp": "2026-04-06T09:00:00Z"
+      },
+      "steps": [
+        "create",
+        "submit",
+        "approve"
+      ],
+      "expected": {
+        "transaction_status": "mirrored",
+        "orchestration_status": "dev_auto_mirrored",
+        "document_stages": [
+          "sales_order",
+          "invoice",
+          "purchase_order",
+          "bill"
+        ],
+        "event_names": [
+          "intercompany.created",
+          "intercompany.submitted",
+          "intercompany.approved"
+        ]
+      }
+    },
+    {
+      "id": "ic-dev-002",
+      "name": "Mismatch Amount Reconciliation",
+      "flags": {
+        "ERP_PHASE2A_INTERCOMPANY_ENABLED": true,
+        "ERP_PHASE2A_INTERCOMPANY_DEV_AUTO_MIRROR": true,
+        "ERP_PHASE2A_INTERCOMPANY_EVENTS": true,
+        "ERP_PHASE2A_CONSOLIDATION_ENABLED": false
+      },
+      "manual_adjustment": {
+        "buyer_bill_amount_override": 1180.00
+      },
+      "steps": [
+        "create",
+        "submit",
+        "approve",
+        "reconcile"
+      ],
+      "expected": {
+        "reconciliation_status": "mismatched",
+        "alert_generated": true
+      }
+    },
+    {
+      "id": "ic-dev-003",
+      "name": "FX Locked Rate Validation",
+      "flags": {
+        "ERP_PHASE2A_INTERCOMPANY_ENABLED": true,
+        "ERP_PHASE2A_INTERCOMPANY_DEV_AUTO_MIRROR": true,
+        "ERP_PHASE2A_INTERCOMPANY_EVENTS": true,
+        "ERP_PHASE2A_CONSOLIDATION_ENABLED": false
+      },
+      "create_payload": {
+        "sellerCompanyId": "00000000-0000-0000-0000-0000000000a1",
+        "buyerCompanyId": "00000000-0000-0000-0000-0000000000b1",
+        "sourceFlowType": "service_charge",
+        "transactionDate": "2026-04-06",
+        "transactionCurrency": "EUR",
+        "transactionAmount": 800.00,
+        "pricingPolicy": "market_based",
+        "sellerExchangeRate": 55.10000000,
+        "sellerRateSource": "fx_fixing_table",
+        "sellerRateTimestamp": "2026-04-06T08:30:00Z",
+        "buyerExchangeRate": 55.10000000,
+        "buyerRateSource": "fx_fixing_table",
+        "buyerRateTimestamp": "2026-04-06T08:30:00Z"
+      },
+      "steps": [
+        "create",
+        "submit",
+        "approve"
+      ],
+      "expected": {
+        "rate_lock_complete": true,
+        "document_rate_lock_complete": true
+      }
+    },
+    {
+      "id": "ic-dev-004",
+      "name": "Dry-Run Consolidation Elimination",
+      "flags": {
+        "ERP_PHASE2A_INTERCOMPANY_ENABLED": true,
+        "ERP_PHASE2A_INTERCOMPANY_DEV_AUTO_MIRROR": true,
+        "ERP_PHASE2A_INTERCOMPANY_EVENTS": true,
+        "ERP_PHASE2A_CONSOLIDATION_ENABLED": true
+      },
+      "consolidation_payload": {
+        "hostCompanyId": "00000000-0000-0000-0000-0000000000a1",
+        "consolidationGroupId": "00000000-0000-0000-0000-0000000000g1",
+        "periodStart": "2026-04-01",
+        "periodEnd": "2026-04-30",
+        "runType": "dry_run",
+        "asOfTimestamp": "2026-04-06T10:00:00Z"
+      },
+      "steps": [
+        "create_consolidation_run",
+        "trigger_elimination"
+      ],
+      "expected": {
+        "run_status": "completed",
+        "elimination_entries_created": true
+      }
+    }
+  ]
+}

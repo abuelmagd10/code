@@ -1,0 +1,30 @@
+{
+  "trace_requirements": [
+    "financial_operation_traces.company_id",
+    "financial_operation_traces.source_entity",
+    "financial_operation_traces.source_id",
+    "financial_operation_traces.event_type",
+    "financial_operation_traces.idempotency_key",
+    "financial_operation_traces.request_hash"
+  ],
+  "trace_links": [
+    "intercompany_transaction",
+    "intercompany_document",
+    "intercompany_reconciliation_result",
+    "consolidation_run",
+    "elimination_entry"
+  ],
+  "events": [
+    "intercompany.created",
+    "intercompany.submitted",
+    "intercompany.approved",
+    "intercompany.reconciled",
+    "intercompany.elimination_triggered",
+    "consolidation.run_created"
+  ],
+  "audit_expectations": [
+    "No intercompany mutation succeeds without a trace row",
+    "No elimination entry exists outside a dry_run consolidation run",
+    "Document-level FX lock fields remain complete when exchange rates are used"
+  ]
+}

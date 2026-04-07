@@ -1,0 +1,58 @@
+{
+  "company_a_id": "00000000-0000-0000-0000-0000000000a1",
+  "company_b_id": "00000000-0000-0000-0000-0000000000b1",
+  "scenarios": [
+    {
+      "id": "ic-fail-001",
+      "name": "Closed Period on Buyer Company",
+      "precondition": {
+        "locked_company_id": "00000000-0000-0000-0000-0000000000b1",
+        "date": "2026-04-06"
+      },
+      "action": "approve",
+      "expected": {
+        "http_status": 500,
+        "error_contains": "Accounting period",
+        "documents_created": 0,
+        "transaction_status_unchanged": true
+      }
+    },
+    {
+      "id": "ic-fail-002",
+      "name": "Mirror Failure Requires Saga Compensation",
+      "precondition": {
+        "simulate_buyer_document_failure": true
+      },
+      "action": "approve",
+      "expected": {
+        "transaction_status": "mirror_failed",
+        "orchestration_status": "failed",
+        "silent_delete": false,
+        "manual_followup_required": true
+      }
+    },
+    {
+      "id": "ic-fail-003",
+      "name": "Non-Dry-Run Elimination Rejected",
+      "precondition": {
+        "run_type": "period_close"
+      },
+      "action": "trigger_elimination",
+      "expected": {
+        "db_error_contains": "ELIMINATION_DRY_RUN_REQUIRED",
+        "elimination_entries_created": 0
+      }
+    },
+    {
+      "id": "ic-fail-004",
+      "name": "Missing Buyer Access Rejected",
+      "precondition": {
+        "actor_has_seller_access_only": true
+      },
+      "action": "create_or_submit_or_approve",
+      "expected": {
+        "error_contains": "management access to both seller and buyer companies"
+      }
+    }
+  ]
+}
