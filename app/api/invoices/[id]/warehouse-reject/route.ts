@@ -25,7 +25,7 @@ export async function POST(
         // 2. Fetch invoice
         const { data: invoice } = await supabase
             .from('invoices')
-            .select('invoice_number, branch_id, customer_id, paid_amount, created_by_user_id, posted_by_user_id')
+            .select('invoice_number, branch_id, customer_id, paid_amount, created_by_user_id, posted_by_user_id, status, warehouse_status, approval_status')
             .eq('id', invoiceId)
             .eq('company_id', companyId)
             .maybeSingle()
@@ -67,6 +67,36 @@ export async function POST(
         const creditCreated: boolean = rpcData?.credit_created ?? false
         const creditAmount: number = rpcData?.credit_amount ?? 0
         const revertedToDraft: boolean = rpcData?.reverted_to_draft ?? false
+
+        try {
+            await supabase.from('audit_logs').insert({
+                company_id: companyId,
+                user_id: user.id,
+                action: 'UPDATE',
+                target_table: 'invoices',
+                record_id: invoiceId,
+                record_identifier: invoice.invoice_number,
+                old_data: {
+                    status: invoice.status,
+                    warehouse_status: invoice.warehouse_status || 'pending',
+                    approval_status: invoice.approval_status || invoice.warehouse_status || 'pending',
+                },
+                new_data: {
+                    status: revertedToDraft ? 'draft' : invoice.status,
+                    warehouse_status: 'rejected',
+                    approval_status: 'rejected',
+                    approval_reason: notes || null,
+                    rejected_by: user.id,
+                    rejected_at: new Date().toISOString(),
+                    approval_date: new Date().toISOString(),
+                    reverted_to_draft: revertedToDraft,
+                    credit_created: creditCreated,
+                    credit_amount: creditAmount,
+                }
+            })
+        } catch (auditErr: any) {
+            console.warn('⚠️ [WAREHOUSE_REJECT] Audit log failed:', auditErr.message)
+        }
 
         // ================================================================
         // 5. SCENARIO A — Reverted to Draft (unpaid invoice)

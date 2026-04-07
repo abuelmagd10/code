@@ -29,7 +29,7 @@ export async function POST(
         // 2. Fetch invoice to get basic info for the notification
         const { data: invoice } = await supabase
             .from('invoices')
-            .select('invoice_number, branch_id', { count: 'exact' })
+            .select('invoice_number, branch_id, warehouse_status, approval_status')
             .eq('id', invoiceId)
             .eq('company_id', companyId)
             .maybeSingle()
@@ -93,6 +93,30 @@ export async function POST(
                     requestHash,
                 }
             })
+        }
+
+        try {
+            await supabase.from('audit_logs').insert({
+                company_id: companyId,
+                user_id: user.id,
+                action: 'UPDATE',
+                target_table: 'invoices',
+                record_id: invoiceId,
+                record_identifier: invoice.invoice_number,
+                old_data: {
+                    warehouse_status: invoice.warehouse_status || 'pending',
+                    approval_status: invoice.approval_status || invoice.warehouse_status || 'pending',
+                },
+                new_data: {
+                    warehouse_status: 'approved',
+                    approval_status: 'approved',
+                    approval_reason: notes || null,
+                    approved_by: user.id,
+                    approval_date: new Date().toISOString(),
+                }
+            })
+        } catch (auditErr: any) {
+            console.warn('⚠️ [WAREHOUSE_APPROVE] Audit log failed:', auditErr.message)
         }
 
         // 5. Notify Accountant

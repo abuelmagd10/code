@@ -38,7 +38,7 @@ export async function POST(
         // 3. جلب تاريخ الفاتورة للتحقق من Period Lock
         const { data: invoice } = await supabase
             .from('invoices')
-            .select('invoice_date, status, invoice_number, branch_id, warehouse_status')
+            .select('invoice_date, status, invoice_number, branch_id, warehouse_status, approval_status, approval_reason, approved_by, approval_date, rejected_by, rejected_at, warehouse_rejection_reason, warehouse_rejected_at')
             .eq('id', invoiceId)
             .eq('company_id', companyId)
             .maybeSingle()
@@ -89,7 +89,19 @@ export async function POST(
         if (isRepost) {
             const { error: resetErr } = await supabase
                 .from('invoices')
-                .update({ warehouse_status: 'pending', posted_by_user_id: user.id, status: 'sent' })
+                .update({
+                    warehouse_status: 'pending',
+                    approval_status: 'pending',
+                    approval_reason: null,
+                    approved_by: null,
+                    approval_date: null,
+                    rejected_by: null,
+                    rejected_at: null,
+                    warehouse_rejection_reason: null,
+                    warehouse_rejected_at: null,
+                    posted_by_user_id: user.id,
+                    status: 'sent'
+                })
                 .eq('id', invoiceId)
                 .eq('company_id', companyId)
 

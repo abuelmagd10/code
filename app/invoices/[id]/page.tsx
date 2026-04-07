@@ -83,6 +83,14 @@ interface Invoice {
   customer_detailed_address_snapshot?: string | null
   // Warehouse Approval Status
   warehouse_status?: string
+  approval_status?: string | null
+  approval_reason?: string | null
+  approved_by?: string | null
+  approval_date?: string | null
+  rejected_by?: string | null
+  rejected_at?: string | null
+  warehouse_rejection_reason?: string | null
+  warehouse_rejected_at?: string | null
 }
 
 interface InvoiceItem {
@@ -96,6 +104,20 @@ interface InvoiceItem {
   line_total: number
   products?: { name: string; sku: string; cost_price?: number }
 }
+
+const APPROVAL_VIEW_ROLES = new Set([
+  'owner',
+  'admin',
+  'general_manager',
+  'generalmanager',
+  'gm',
+  'manager',
+  'sales_manager',
+  'warehouse_manager',
+  'store_manager',
+  'super_admin',
+  'superadmin',
+])
 
 export default function InvoiceDetailPage() {
   const supabase = useSupabase()
@@ -183,6 +205,7 @@ export default function InvoiceDetailPage() {
   const [refundCurrencies, setRefundCurrencies] = useState<Currency[]>([])
   const [allBranches, setAllBranches] = useState<{ id: string; name: string; defaultCostCenterId?: string | null }[]>([])
   const [allCostCenters, setAllCostCenters] = useState<{ id: string; name: string; code?: string }[]>([])
+  const [approvalActorNames, setApprovalActorNames] = useState<Record<string, string>>({})
   const { profile: accessProfile } = useAccess()
   const currentUserRole = accessProfile?.role || ''
   const userBranchId = accessProfile?.branch_id || null
@@ -206,6 +229,29 @@ export default function InvoiceDetailPage() {
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
+  const invoiceApprovalStatus = invoice?.approval_status || invoice?.warehouse_status || 'pending'
+  const canSeeApprovalDetails = useMemo(() => {
+    const role = String(currentUserRole || '').toLowerCase()
+    const allowedActions = accessProfile?.allowed_actions || []
+    return APPROVAL_VIEW_ROLES.has(role) ||
+      allowedActions.includes('*') ||
+      allowedActions.includes('invoices:approve')
+  }, [accessProfile?.allowed_actions, currentUserRole])
+  const approvalDecisionActorId = useMemo(() => {
+    if (!invoice) return null
+    if (invoiceApprovalStatus === 'approved') return invoice.approved_by || null
+    if (invoiceApprovalStatus === 'rejected') return invoice.rejected_by || null
+    return null
+  }, [invoice, invoiceApprovalStatus])
+  const approvalDecisionActorName = approvalDecisionActorId
+    ? approvalActorNames[approvalDecisionActorId] || approvalDecisionActorId.slice(0, 8)
+    : '-'
+  const approvalDecisionDate = invoiceApprovalStatus === 'approved'
+    ? (invoice?.approval_date || null)
+    : invoiceApprovalStatus === 'rejected'
+      ? (invoice?.rejected_at || invoice?.approval_date || invoice?.warehouse_rejected_at || null)
+      : null
+  const approvalReasonText = invoice?.approval_reason || invoice?.warehouse_rejection_reason || null
 
   // Listen for language and currency changes
   useEffect(() => {
@@ -228,6 +274,42 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     loadInvoice()
   }, [])
+
+  useEffect(() => {
+    ; (async () => {
+      try {
+        const actorIds = Array.from(
+          new Set([invoice?.approved_by, invoice?.rejected_by].filter(Boolean))
+        ) as string[]
+
+        if (actorIds.length === 0) {
+          setApprovalActorNames({})
+          return
+        }
+
+        const { data: profiles } = await supabase
+          .from("user_profiles")
+          .select("user_id, display_name, username")
+          .in("user_id", actorIds)
+
+        const nextMap: Record<string, string> = {}
+        ; (profiles || []).forEach((profile: { user_id: string; display_name?: string | null; username?: string | null }) => {
+          nextMap[profile.user_id] = profile.display_name || profile.username || profile.user_id.slice(0, 8)
+        })
+
+        actorIds.forEach((userId) => {
+          if (!nextMap[userId]) {
+            nextMap[userId] = userId.slice(0, 8)
+          }
+        })
+
+        setApprovalActorNames(nextMap)
+      } catch (error) {
+        console.warn("Failed to load approval actor profiles:", error)
+        setApprovalActorNames({})
+      }
+    })()
+  }, [invoice?.approved_by, invoice?.rejected_by, supabase])
 
   useEffect(() => {
     (async () => {
@@ -811,6 +893,13 @@ export default function InvoiceDetailPage() {
               old_data: { status: invoice.status },
               new_data: {
                 status: "sent",
+                warehouse_status: "pending",
+                approval_status: "pending",
+                approval_reason: null,
+                approved_by: null,
+                approval_date: null,
+                rejected_by: null,
+                rejected_at: null,
                 shipping_provider_id: invoice.shipping_provider_id,
                 total_amount: invoice.total_amount
               }
@@ -2333,7 +2422,7 @@ export default function InvoiceDetailPage() {
 
                   const isPaid = paidAmount > 0;
                   const isReturned = returnedAmount > 0;
-                  const isWarehouseApproved = invoice.warehouse_status === 'approved';
+                  const isWarehouseApproved = (invoice.approval_status || invoice.warehouse_status) === 'approved';
                   const isCancelled = actualStatus === 'cancelled';
                   const isSent = actualStatus === 'sent';
                   
@@ -2523,6 +2612,80 @@ export default function InvoiceDetailPage() {
                   </table>
                 </div>
               </div>
+
+              {canSeeApprovalDetails && (
+                <Card className="border-slate-200 dark:border-slate-700">
+                  <CardContent className="pt-6 space-y-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                          {appLang === 'en' ? 'Approval Status' : 'حالة الاعتماد'}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {appLang === 'en'
+                            ? 'Dispatch approval details for this sales invoice'
+                            : 'تفاصيل اعتماد أو رفض إخراج الفاتورة'}
+                        </p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${invoiceApprovalStatus === 'approved'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
+                        : invoiceApprovalStatus === 'rejected'
+                          ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                          : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                        }`}>
+                        {invoiceApprovalStatus === 'approved'
+                          ? (appLang === 'en' ? 'Approved' : 'معتمدة')
+                          : invoiceApprovalStatus === 'rejected'
+                            ? (appLang === 'en' ? 'Rejected' : 'مرفوضة')
+                            : (appLang === 'en' ? 'Pending' : 'بانتظار الاعتماد')}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 dark:bg-slate-800 px-4 py-3">
+                        <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Decision By' : 'تم بواسطة'}</span>
+                        <span className="font-medium text-gray-900 dark:text-white">{approvalDecisionActorName}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 dark:bg-slate-800 px-4 py-3">
+                        <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Decision Date' : 'تاريخ القرار'}</span>
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {approvalDecisionDate
+                            ? new Date(approvalDecisionDate).toLocaleString(appLang === 'en' ? 'en-GB' : 'ar-EG')
+                            : '-'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className={`rounded-lg border px-4 py-3 ${invoiceApprovalStatus === 'rejected'
+                      ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-900/20'
+                      : invoiceApprovalStatus === 'approved'
+                        ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-900/20'
+                        : 'border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-900/20'
+                      }`}>
+                      <div className={`text-xs font-medium mb-1 ${invoiceApprovalStatus === 'rejected'
+                        ? 'text-red-800 dark:text-red-200'
+                        : invoiceApprovalStatus === 'approved'
+                          ? 'text-emerald-800 dark:text-emerald-200'
+                          : 'text-yellow-800 dark:text-yellow-200'
+                        }`}>
+                        {invoiceApprovalStatus === 'rejected'
+                          ? (appLang === 'en' ? 'Rejection Reason' : 'سبب الرفض')
+                          : invoiceApprovalStatus === 'approved'
+                            ? (appLang === 'en' ? 'Approval Notes' : 'ملاحظات الاعتماد')
+                            : (appLang === 'en' ? 'Status Note' : 'ملاحظة الحالة')}
+                      </div>
+                      <div className={`text-sm ${invoiceApprovalStatus === 'rejected'
+                        ? 'text-red-700 dark:text-red-300'
+                        : invoiceApprovalStatus === 'approved'
+                          ? 'text-emerald-700 dark:text-emerald-300'
+                          : 'text-yellow-700 dark:text-yellow-300'
+                        }`}>
+                        {approvalReasonText || (appLang === 'en' ? 'No notes' : 'لا توجد ملاحظات')}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* جدول المنتجات - Items Table */}
               <div className="overflow-x-auto print:overflow-visible">
@@ -3213,7 +3376,7 @@ export default function InvoiceDetailPage() {
 
                   const canPartialReturn = returnableItems.length > 1 || (returnableItems.length === 1 && returnableItems[0].max_qty > 1)
 
-                  return invoice.status !== "cancelled" && invoice.status !== "draft" && invoice.status !== "invoiced" && invoice.status !== "fully_returned" && permUpdate && canPartialReturn && invoice.warehouse_status === 'approved' ? (
+                  return invoice.status !== "cancelled" && invoice.status !== "draft" && invoice.status !== "invoiced" && invoice.status !== "fully_returned" && permUpdate && canPartialReturn && invoiceApprovalStatus === 'approved' ? (
                     <Button variant="outline" className="border-orange-500 text-orange-600 hover:bg-orange-50" onClick={openPartialReturnDialog}>
                       {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
                     </Button>
