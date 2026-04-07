@@ -31,6 +31,40 @@ export interface AtomicTransactionResult {
 export class AccountingTransactionService {
     constructor(private supabase: SupabaseClient) { }
 
+    private isAmbiguousPostAccountingEventError(message?: string | null): boolean {
+        if (!message) return false
+        return (
+            message.includes('Could not choose the best candidate function between') &&
+            message.includes('post_accounting_event')
+        )
+    }
+
+    private async executeRpcWithV2Fallback(
+        primaryRpcName: string,
+        primaryRpcParams: Record<string, any>,
+        fallback?: {
+            rpcName: string
+            rpcParams: Record<string, any>
+            reasonLabel: string
+        }
+    ) {
+        const primaryResult = await this.supabase.rpc(primaryRpcName as any, primaryRpcParams)
+
+        if (!primaryResult.error || !fallback) {
+            return primaryResult
+        }
+
+        if (!this.isAmbiguousPostAccountingEventError(primaryResult.error.message)) {
+            return primaryResult
+        }
+
+        console.warn(
+            `[AccountingTransactionService] Ambiguous legacy RPC during ${fallback.reasonLabel}. Retrying with ${fallback.rpcName}.`
+        )
+
+        return await this.supabase.rpc(fallback.rpcName as any, fallback.rpcParams)
+    }
+
     /**
      * ترحيل فاتورة المبيعات (Atomic Posting)
      * 1. تحضير قيد الإيراد
@@ -181,39 +215,45 @@ export class AccountingTransactionService {
             }
 
             // 5. التنفيذ الذري (Atomic Commit via RPC)
-            const rpcName = enterpriseFinanceFlags.invoicePostV2
-                ? 'post_invoice_atomic_v2'
-                : 'post_accounting_event'
+            const v2RpcParams = {
+                p_company_id: companyId,
+                p_invoice_id: invoiceId,
+                p_inventory_transactions: allInventoryTx,
+                p_cogs_transactions: allCogsTx,
+                p_fifo_consumptions: allFifoConsumptions,
+                p_journal_entries: journalEntries,
+                p_update_source: { id: invoiceId, status: 'sent' },
+                p_effective_date: invoiceData.invoice_date,
+                p_actor_id: currentUserId || null,
+                p_idempotency_key: options?.idempotencyKey || null,
+                p_request_hash: options?.requestHash || null,
+                p_trace_metadata: {
+                    requiresWarehouseApproval,
+                    inventoryAlreadyDeducted,
+                },
+            }
 
-            const rpcParams = enterpriseFinanceFlags.invoicePostV2
-                ? {
-                    p_company_id: companyId,
-                    p_invoice_id: invoiceId,
-                    p_inventory_transactions: allInventoryTx,
-                    p_cogs_transactions: allCogsTx,
-                    p_fifo_consumptions: allFifoConsumptions,
-                    p_journal_entries: journalEntries,
-                    p_update_source: { id: invoiceId, status: 'sent' },
-                    p_effective_date: invoiceData.invoice_date,
-                    p_actor_id: currentUserId || null,
-                    p_idempotency_key: options?.idempotencyKey || null,
-                    p_request_hash: options?.requestHash || null,
-                    p_trace_metadata: {
-                        requiresWarehouseApproval,
-                        inventoryAlreadyDeducted,
-                    },
-                }
-                : {
-                    p_event_type: 'invoice_posting',
-                    p_company_id: companyId,
-                    p_inventory_transactions: allInventoryTx,
-                    p_cogs_transactions: allCogsTx,
-                    p_fifo_consumptions: allFifoConsumptions,
-                    p_journal_entries: journalEntries,
-                    p_update_source: { id: invoiceId, status: 'sent' }
-                }
+            const legacyRpcParams = {
+                p_event_type: 'invoice_posting',
+                p_company_id: companyId,
+                p_inventory_transactions: allInventoryTx,
+                p_cogs_transactions: allCogsTx,
+                p_fifo_consumptions: allFifoConsumptions,
+                p_journal_entries: journalEntries,
+                p_update_source: { id: invoiceId, status: 'sent' }
+            }
 
-            const { data: rpcResult, error: rpcError } = await this.supabase.rpc(rpcName, rpcParams)
+            const { data: rpcResult, error: rpcError } = await this.executeRpcWithV2Fallback(
+                enterpriseFinanceFlags.invoicePostV2 ? 'post_invoice_atomic_v2' : 'post_accounting_event',
+                enterpriseFinanceFlags.invoicePostV2 ? v2RpcParams : legacyRpcParams,
+                enterpriseFinanceFlags.invoicePostV2
+                    ? undefined
+                    : {
+                        rpcName: 'post_invoice_atomic_v2',
+                        rpcParams: v2RpcParams,
+                        reasonLabel: 'invoice posting',
+                    }
+            )
 
             if (rpcError) {
                 throw new Error(`RPC Execution Failed: ${rpcError.message}`)
@@ -286,36 +326,42 @@ export class AccountingTransactionService {
                 throw new Error('Failed to prepare payment journal')
             }
 
-            const rpcName = enterpriseFinanceFlags.paymentV2
-                ? 'post_accounting_event_v2'
-                : 'post_accounting_event'
+            const v2RpcParams = {
+                p_event_type: 'payment_posting',
+                p_company_id: paymentData.company_id,
+                p_payments: [paymentWithId],
+                p_journal_entries: [journalEntry],
+                p_source_entity: 'payment',
+                p_source_id: paymentId,
+                p_effective_date: paymentData.payment_date,
+                p_actor_id: currentUserId || null,
+                p_idempotency_key: options?.idempotencyKey || null,
+                p_request_hash: options?.requestHash || null,
+                p_trace_metadata: {
+                    invoice_id: paymentData.invoice_id,
+                    payment_method: paymentData.payment_method,
+                },
+            }
 
-            const rpcParams = enterpriseFinanceFlags.paymentV2
-                ? {
-                    p_event_type: 'payment_posting',
-                    p_company_id: paymentData.company_id,
-                    p_payments: [paymentWithId],
-                    p_journal_entries: [journalEntry],
-                    p_source_entity: 'payment',
-                    p_source_id: paymentId,
-                    p_effective_date: paymentData.payment_date,
-                    p_actor_id: currentUserId || null,
-                    p_idempotency_key: options?.idempotencyKey || null,
-                    p_request_hash: options?.requestHash || null,
-                    p_trace_metadata: {
-                        invoice_id: paymentData.invoice_id,
-                        payment_method: paymentData.payment_method,
-                    },
-                }
-                : {
-                    p_event_type: 'payment_posting',
-                    p_company_id: paymentData.company_id,
-                    p_payments: [paymentWithId],
-                    p_journal_entries: [journalEntry]
-                }
+            const legacyRpcParams = {
+                p_event_type: 'payment_posting',
+                p_company_id: paymentData.company_id,
+                p_payments: [paymentWithId],
+                p_journal_entries: [journalEntry]
+            }
 
             // 3. التنفيذ الذري
-            const { data: rpcResult, error: rpcError } = await this.supabase.rpc(rpcName, rpcParams)
+            const { data: rpcResult, error: rpcError } = await this.executeRpcWithV2Fallback(
+                enterpriseFinanceFlags.paymentV2 ? 'post_accounting_event_v2' : 'post_accounting_event',
+                enterpriseFinanceFlags.paymentV2 ? v2RpcParams : legacyRpcParams,
+                enterpriseFinanceFlags.paymentV2
+                    ? undefined
+                    : {
+                        rpcName: 'post_accounting_event_v2',
+                        rpcParams: v2RpcParams,
+                        reasonLabel: 'invoice payment posting',
+                    }
+            )
 
             if (rpcError) {
                 throw new Error(`RPC Execution Failed (Payment): ${rpcError.message}`)
@@ -689,50 +735,56 @@ export class AccountingTransactionService {
                 journalEntries.push(preparation.journalEntry)
             }
 
-            const rpcName = enterpriseFinanceFlags.returnsV2
-                ? 'process_sales_return_atomic_v2'
-                : 'post_accounting_event'
+            const v2RpcParams = {
+                p_company_id: params.companyId,
+                p_invoice_id: params.invoiceId,
+                p_sales_return_request_id: options?.salesReturnRequestId || null,
+                p_sales_returns: preparation.salesReturn ? [preparation.salesReturn] : [],
+                p_sales_return_items: preparation.salesReturnItems || [],
+                p_inventory_transactions: preparation.inventoryTransactions || [],
+                p_cogs_transactions: preparation.cogsTransactions || [],
+                p_fifo_consumptions: preparation.fifoConsumptions || [],
+                p_journal_entries: journalEntries,
+                p_customer_credits: preparation.customerCredits || [],
+                p_customer_credit_ledger_entries: preparation.customerCreditLedgerEntries || [],
+                p_update_source: preparation.updateSource,
+                p_effective_date: preparation.salesReturn?.return_date || new Date().toISOString().slice(0, 10),
+                p_actor_id: params.userId,
+                p_idempotency_key: options?.idempotencyKey || null,
+                p_request_hash: options?.requestHash || null,
+                p_trace_metadata: {
+                    invoice_number: params.invoiceNumber,
+                    return_mode: params.returnMode,
+                    items_count: params.returnItems.length,
+                    ...(options?.traceMetadata || {}),
+                },
+            }
 
-            const rpcParams = enterpriseFinanceFlags.returnsV2
-                ? {
-                    p_company_id: params.companyId,
-                    p_invoice_id: params.invoiceId,
-                    p_sales_return_request_id: options?.salesReturnRequestId || null,
-                    p_sales_returns: preparation.salesReturn ? [preparation.salesReturn] : [],
-                    p_sales_return_items: preparation.salesReturnItems || [],
-                    p_inventory_transactions: preparation.inventoryTransactions || [],
-                    p_cogs_transactions: preparation.cogsTransactions || [],
-                    p_fifo_consumptions: preparation.fifoConsumptions || [],
-                    p_journal_entries: journalEntries,
-                    p_customer_credits: preparation.customerCredits || [],
-                    p_customer_credit_ledger_entries: preparation.customerCreditLedgerEntries || [],
-                    p_update_source: preparation.updateSource,
-                    p_effective_date: preparation.salesReturn?.return_date || new Date().toISOString().slice(0, 10),
-                    p_actor_id: params.userId,
-                    p_idempotency_key: options?.idempotencyKey || null,
-                    p_request_hash: options?.requestHash || null,
-                    p_trace_metadata: {
-                        invoice_number: params.invoiceNumber,
-                        return_mode: params.returnMode,
-                        items_count: params.returnItems.length,
-                        ...(options?.traceMetadata || {}),
-                    },
-                }
-                : {
-                    p_event_type: 'return',
-                    p_company_id: params.companyId,
-                    p_sales_returns: preparation.salesReturn ? [preparation.salesReturn] : [],
-                    p_sales_return_items: preparation.salesReturnItems || [],
-                    p_inventory_transactions: preparation.inventoryTransactions || [],
-                    p_cogs_transactions: preparation.cogsTransactions || [],
-                    p_fifo_consumptions: preparation.fifoConsumptions || [],
-                    p_journal_entries: journalEntries,
-                    p_customer_credits: preparation.customerCredits || [],
-                    p_update_source: preparation.updateSource
-                }
+            const legacyRpcParams = {
+                p_event_type: 'return',
+                p_company_id: params.companyId,
+                p_sales_returns: preparation.salesReturn ? [preparation.salesReturn] : [],
+                p_sales_return_items: preparation.salesReturnItems || [],
+                p_inventory_transactions: preparation.inventoryTransactions || [],
+                p_cogs_transactions: preparation.cogsTransactions || [],
+                p_fifo_consumptions: preparation.fifoConsumptions || [],
+                p_journal_entries: journalEntries,
+                p_customer_credits: preparation.customerCredits || [],
+                p_update_source: preparation.updateSource
+            }
 
             // 3. استدعاء RPC
-            const { data: rpcResult, error: rpcError } = await this.supabase.rpc(rpcName, rpcParams)
+            const { data: rpcResult, error: rpcError } = await this.executeRpcWithV2Fallback(
+                enterpriseFinanceFlags.returnsV2 ? 'process_sales_return_atomic_v2' : 'post_accounting_event',
+                enterpriseFinanceFlags.returnsV2 ? v2RpcParams : legacyRpcParams,
+                enterpriseFinanceFlags.returnsV2
+                    ? undefined
+                    : {
+                        rpcName: 'process_sales_return_atomic_v2',
+                        rpcParams: v2RpcParams,
+                        reasonLabel: 'sales return posting',
+                    }
+            )
 
             if (rpcError) {
                 console.error('Atomic Sales Return RPC Error:', rpcError)
