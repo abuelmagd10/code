@@ -166,6 +166,8 @@ export function GuidePanel({
   const [isSending, setIsSending] = useState(false)
   const [copilotError, setCopilotError] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
+  const assistantScrollAreaClass =
+    "pr-3 [&_[data-slot=scroll-area-scrollbar]]:w-3.5 [&_[data-slot=scroll-area-scrollbar]]:rounded-full [&_[data-slot=scroll-area-scrollbar]]:bg-slate-100/90 dark:[&_[data-slot=scroll-area-scrollbar]]:bg-slate-800/80 [&_[data-slot=scroll-area-thumb]]:bg-blue-500/70 hover:[&_[data-slot=scroll-area-thumb]]:bg-blue-600/80 dark:[&_[data-slot=scroll-area-thumb]]:bg-blue-400/70 dark:hover:[&_[data-slot=scroll-area-thumb]]:bg-blue-300/80"
 
   const suggestedPrompts = useMemo(
     () => buildSuggestedPrompts(lang, guide?.title),
@@ -304,7 +306,11 @@ export function GuidePanel({
               </TabsList>
 
               <TabsContent value="guide" className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden">
-                <ScrollArea type="always" scrollHideDelay={0} className="flex-1 pr-2">
+                <ScrollArea
+                  type="always"
+                  scrollHideDelay={0}
+                  className={`flex-1 ${assistantScrollAreaClass}`}
+                >
                   <div className="space-y-6 pb-4">
                     {isLoading ? (
                       <LoadingSkeleton />
@@ -402,7 +408,11 @@ export function GuidePanel({
                   </p>
                 </div>
 
-                <ScrollArea type="always" scrollHideDelay={0} className="mt-4 flex-1 pr-2">
+                <ScrollArea
+                  type="always"
+                  scrollHideDelay={0}
+                  className={`mt-4 flex-1 ${assistantScrollAreaClass}`}
+                >
                   <div className="space-y-4 pb-4">
                     {messages.length === 0 ? (
                       <div className="space-y-4 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
