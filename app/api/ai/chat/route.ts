@@ -4,6 +4,7 @@ import { secureApiRequest } from "@/lib/api-security-enhanced"
 import { createClient } from "@/lib/supabase/server"
 import { buildAICopilotContext } from "@/lib/ai/context-builder"
 import {
+  buildCopilotInteractivePayload,
   generateCopilotReply,
   type CopilotChatMessage,
 } from "@/lib/ai/copilot-service"
@@ -24,6 +25,89 @@ const chatBodySchema = z.object({
     .optional()
     .default([]),
 })
+
+const reviewRoles = ["owner", "admin", "general_manager", "manager"]
+
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const security = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      supabase,
+    })
+
+    if (security.error) return security.error
+    if (!security.user || !security.companyId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const pageKey = searchParams.get("pageKey")
+    const language = searchParams.get("language") === "en" ? "en" : "ar"
+
+    const context = await buildAICopilotContext({
+      supabase,
+      companyId: security.companyId,
+      userId: security.user.id,
+      role: security.member?.role || null,
+      branchId: security.branchId || null,
+      costCenterId: security.costCenterId || null,
+      warehouseId: security.warehouseId || null,
+      pageKey: pageKey || null,
+      language,
+    })
+
+    if (!context.settings.ai_assistant_enabled || context.settings.ai_mode === "disabled") {
+      return NextResponse.json(
+        { error: language === "ar" ? "المساعد الذكي معطل لهذه الشركة" : "AI assistant is disabled for this company" },
+        { status: 403 }
+      )
+    }
+
+    const conversation = await findLatestConversation({
+      supabase,
+      companyId: security.companyId,
+      userId: security.user.id,
+      pageKey: pageKey || null,
+    })
+
+    const messages =
+      conversation?.id
+        ? await loadConversationMessages({
+            supabase,
+            conversationId: conversation.id,
+          })
+        : []
+
+    return NextResponse.json({
+      success: true,
+      conversationId: conversation?.id || null,
+      messages,
+      bootstrap: buildCopilotInteractivePayload({
+        context,
+        messages: messages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+      }),
+      meta: {
+        pageKey: pageKey || null,
+        governanceReviewAllowed: reviewRoles.includes(
+          String(security.member?.role || "").toLowerCase()
+        ),
+      },
+    })
+  } catch (error: any) {
+    console.error("[AI_CHAT][GET] Error:", error)
+    return NextResponse.json(
+      {
+        error: error?.message || "Failed to load AI copilot conversation",
+      },
+      { status: 500 }
+    )
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -98,6 +182,7 @@ export async function POST(request: NextRequest) {
         content: message,
         message_kind: "chat",
         context_snapshot: userContextSnapshot,
+        response_meta: {},
       })
       .select("id")
       .single()
@@ -128,6 +213,7 @@ export async function POST(request: NextRequest) {
         message_kind: assistantKind,
         context_snapshot: userContextSnapshot,
         tool_calls: [aiResult.toolAudit.toolName],
+        response_meta: aiResult.interactivePayload,
       })
       .select("id")
       .single()
@@ -147,6 +233,7 @@ export async function POST(request: NextRequest) {
       tool_name: aiResult.toolAudit.toolName,
       entity_type: pageKey ? "page" : null,
       input_payload: aiResult.toolAudit.input,
+      output_payload: aiResult.interactivePayload,
       output_hash: aiResult.toolAudit.outputHash,
     })
 
@@ -175,6 +262,7 @@ export async function POST(request: NextRequest) {
         fallbackUsed: aiResult.fallbackUsed,
         fallbackReason: aiResult.fallbackReason || null,
         pageKey: pageKey || null,
+        interactivePayload: aiResult.interactivePayload,
       },
     })
   } catch (error: any) {
@@ -243,4 +331,58 @@ async function resolveConversationId(params: {
   }
 
   return data.id
+}
+
+async function findLatestConversation(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  companyId: string
+  userId: string
+  pageKey?: string | null
+}) {
+  const { supabase, companyId, userId, pageKey } = params
+
+  let query = supabase
+    .from("ai_conversations")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("user_id", userId)
+    .order("last_message_at", { ascending: false })
+    .limit(1)
+
+  if (pageKey) {
+    query = query.eq("page_key", pageKey)
+  }
+
+  const { data } = await query.maybeSingle()
+  return data || null
+}
+
+async function loadConversationMessages(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  conversationId: string
+}) {
+  const { supabase, conversationId } = params
+
+  const { data, error } = await supabase
+    .from("ai_messages")
+    .select(
+      "id, role, content, created_at, response_meta, context_snapshot, message_kind"
+    )
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true })
+    .limit(40)
+
+  if (error || !Array.isArray(data)) {
+    return []
+  }
+
+  return data.map((row: any) => ({
+    id: row.id,
+    role: row.role,
+    content: row.content,
+    createdAt: row.created_at,
+    responseMeta: row.response_meta || null,
+    contextSnapshot: row.context_snapshot || {},
+    messageKind: row.message_kind || "chat",
+  }))
 }

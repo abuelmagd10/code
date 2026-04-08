@@ -16,18 +16,22 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import {
+  AlertTriangle,
   BookOpen,
   Bot,
   CheckCircle2,
   Lightbulb,
+  ListChecks,
   Loader2,
   MessageSquare,
   Send,
   ShieldCheck,
   Sparkles,
+  Target,
   TrendingUp,
   X,
 } from "lucide-react"
+import type { AICopilotInteractivePayload } from "@/lib/ai/contracts"
 import type { AccountingPattern, PageGuide } from "@/lib/page-guides"
 
 interface GuidePanelProps {
@@ -43,11 +47,13 @@ interface GuidePanelProps {
 }
 
 interface ChatMessage {
+  id?: string
   role: "user" | "assistant"
   content: string
   fallbackUsed?: boolean
   fallbackReason?: string | null
   model?: string | null
+  responseMeta?: AICopilotInteractivePayload | null
 }
 
 const L = {
@@ -96,6 +102,15 @@ const L = {
     fallback: "رد بديل آمن",
     fallbackReasonTitle: "سبب وضع الرد البديل",
     pageContext: "سياق الصفحة",
+    copilotLiveTitle: "المشهد الحي",
+    copilotMetrics: "مؤشرات الصفحة",
+    copilotInsights: "تنبيهات ذكية",
+    copilotActions: "إجراءات مقترحة",
+    copilotPredictions: "الخطوة التالية المتوقعة",
+    copilotPrompts: "اقتراحات سريعة",
+    copilotHistoryLoading: "جاري تحميل الجلسة السابقة...",
+    copilotNoSession: "لا توجد جلسة سابقة لهذه الصفحة بعد.",
+    copilotSendPrompt: "إرسال هذا السؤال",
   },
   en: {
     loading: "Loading guide...",
@@ -142,6 +157,15 @@ const L = {
     fallback: "Safe fallback",
     fallbackReasonTitle: "Fallback reason",
     pageContext: "Page context",
+    copilotLiveTitle: "Live scene",
+    copilotMetrics: "Page metrics",
+    copilotInsights: "Smart alerts",
+    copilotActions: "Suggested actions",
+    copilotPredictions: "Predicted next step",
+    copilotPrompts: "Quick prompts",
+    copilotHistoryLoading: "Loading the previous session...",
+    copilotNoSession: "No previous conversation exists for this page yet.",
+    copilotSendPrompt: "Send this question",
   },
 }
 
@@ -164,6 +188,10 @@ export function GuidePanel({
   const [input, setInput] = useState("")
   const [isSending, setIsSending] = useState(false)
   const [copilotError, setCopilotError] = useState<string | null>(null)
+  const [copilotBootstrap, setCopilotBootstrap] =
+    useState<AICopilotInteractivePayload | null>(null)
+  const [isHydratingCopilot, setIsHydratingCopilot] = useState(false)
+  const [hasHydratedCopilot, setHasHydratedCopilot] = useState(false)
   const endRef = useRef<HTMLDivElement | null>(null)
   const assistantScrollAreaClass =
     "flex-1 overflow-y-scroll pr-3 [scrollbar-gutter:stable] notification-scrollbar"
@@ -180,15 +208,98 @@ export function GuidePanel({
     setInput("")
     setCopilotError(null)
     setIsSending(false)
-  }, [pageKey])
+    setCopilotBootstrap(null)
+    setHasHydratedCopilot(false)
+    setIsHydratingCopilot(false)
+  }, [pageKey, lang])
 
   useEffect(() => {
     if (activeTab !== "copilot") return
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
   }, [activeTab, isSending, messages])
 
-  const handleSend = async () => {
-    const question = input.trim()
+  useEffect(() => {
+    if (!isOpen || activeTab !== "copilot" || !pageKey || hasHydratedCopilot) return
+
+    let cancelled = false
+
+    const loadConversation = async () => {
+      setIsHydratingCopilot(true)
+      setCopilotError(null)
+
+      try {
+        const response = await fetch(
+          `/api/ai/chat?pageKey=${encodeURIComponent(pageKey)}&language=${lang}`
+        )
+        const result = await response.json()
+
+        if (!response.ok) {
+          throw new Error(
+            typeof result?.error === "string" && result.error.trim()
+              ? result.error
+              : t.copilotError
+          )
+        }
+
+        if (cancelled) return
+
+        setConversationId(
+          typeof result?.conversationId === "string" ? result.conversationId : null
+        )
+        setMessages(
+          Array.isArray(result?.messages)
+            ? result.messages
+                .filter((message: any) => message?.role === "user" || message?.role === "assistant")
+                .map((message: any) => ({
+                  id: typeof message?.id === "string" ? message.id : undefined,
+                  role: message.role,
+                  content: typeof message?.content === "string" ? message.content : "",
+                  fallbackUsed: message?.messageKind === "fallback",
+                  responseMeta:
+                    message?.responseMeta && typeof message.responseMeta === "object"
+                      ? message.responseMeta
+                      : null,
+                }))
+            : []
+        )
+        setCopilotBootstrap(
+          result?.bootstrap && typeof result.bootstrap === "object"
+            ? result.bootstrap
+            : null
+        )
+        setHasHydratedCopilot(true)
+      } catch (error: any) {
+        if (!cancelled) {
+          setCopilotError(
+            typeof error?.message === "string" && error.message.trim()
+              ? error.message
+              : t.copilotError
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setIsHydratingCopilot(false)
+        }
+      }
+    }
+
+    void loadConversation()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab, hasHydratedCopilot, isOpen, lang, pageKey, t.copilotError])
+
+  const activeCopilotPayload = useMemo(() => {
+    const lastAssistant = [...messages]
+      .reverse()
+      .find((message) => message.role === "assistant" && message.responseMeta)
+
+    return lastAssistant?.responseMeta ?? copilotBootstrap
+  }, [copilotBootstrap, messages])
+
+  const handleSend = async (forcedQuestion?: string) => {
+    const question = (forcedQuestion ?? input).trim()
     if (!question || !pageKey || isSending) return
 
     setIsSending(true)
@@ -240,9 +351,21 @@ export function GuidePanel({
               : null,
           model:
             typeof result?.meta?.model === "string" ? result.meta.model : null,
+          responseMeta:
+            result?.meta?.interactivePayload &&
+            typeof result.meta.interactivePayload === "object"
+              ? result.meta.interactivePayload
+              : null,
         },
       ])
       setInput("")
+      setCopilotBootstrap((current) =>
+        result?.meta?.interactivePayload &&
+        typeof result.meta.interactivePayload === "object"
+          ? result.meta.interactivePayload
+          : current
+      )
+      setHasHydratedCopilot(true)
     } catch (error: any) {
       setCopilotError(
         typeof error?.message === "string" && error.message.trim()
@@ -405,6 +528,17 @@ export function GuidePanel({
 
                 <div className={`mt-4 ${assistantScrollAreaClass}`}>
                   <div className="space-y-4 pb-4">
+                    {isHydratingCopilot && <CopilotBootstrapSkeleton labels={t} />}
+
+                    {activeCopilotPayload && (
+                      <CopilotInteractivePanel
+                        labels={t}
+                        lang={lang}
+                        payload={activeCopilotPayload}
+                        onPromptSelect={(prompt) => void handleSend(prompt)}
+                      />
+                    )}
+
                     {messages.length === 0 ? (
                       <div className="space-y-4 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
                         <div className="flex items-start gap-3">
@@ -431,10 +565,7 @@ export function GuidePanel({
                             <button
                               key={prompt}
                               type="button"
-                              onClick={() => {
-                                setActiveTab("copilot")
-                                setInput(prompt)
-                              }}
+                              onClick={() => void handleSend(prompt)}
                               className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-start text-sm text-gray-700 transition hover:border-blue-200 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-gray-200 dark:hover:border-blue-800 dark:hover:bg-blue-950/30"
                             >
                               {prompt}
@@ -527,6 +658,200 @@ export function GuidePanel({
         </div>
       </SheetContent>
     </Sheet>
+  )
+}
+
+function CopilotInteractivePanel({
+  labels,
+  lang,
+  payload,
+  onPromptSelect,
+}: {
+  labels: Labels
+  lang: "ar" | "en"
+  payload: AICopilotInteractivePayload
+  onPromptSelect: (prompt: string) => void
+}) {
+  return (
+    <div className="space-y-4 rounded-2xl border border-blue-100 bg-white/90 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-950/70">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300">
+          <Sparkles className="h-4 w-4" />
+          {labels.copilotLiveTitle}
+        </div>
+        <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-300">
+          {payload.summary}
+        </p>
+      </div>
+
+      {payload.metrics.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <TrendingUp className="h-3.5 w-3.5" />
+            {labels.copilotMetrics}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {payload.metrics.slice(0, 6).map((metric) => (
+              <div
+                key={`${metric.label}-${metric.value}`}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
+              >
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {metric.label}
+                </p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  {metric.value}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {payload.insights.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {labels.copilotInsights}
+          </div>
+          <div className="space-y-2">
+            {payload.insights.slice(0, 3).map((insight, index) => (
+              <InsightCard key={`${insight.title}-${index}`} insight={insight} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {payload.nextActions.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <ListChecks className="h-3.5 w-3.5" />
+            {labels.copilotActions}
+          </div>
+          <div className="space-y-2">
+            {payload.nextActions.slice(0, 2).map((action) => (
+              <button
+                key={action.title}
+                type="button"
+                onClick={() => onPromptSelect(action.prompt)}
+                className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-start transition hover:border-emerald-300 hover:bg-emerald-100/70 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">
+                    {action.title}
+                  </p>
+                  <Badge variant="outline" className="text-[10px]">
+                    {typeof action.confidenceScore === "number"
+                      ? `${Math.round(action.confidenceScore)}%`
+                      : action.severity}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-emerald-900/80 dark:text-emerald-100/80">
+                  {action.summary}
+                </p>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {payload.predictedActions.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <Target className="h-3.5 w-3.5" />
+            {labels.copilotPredictions}
+          </div>
+          <div className="space-y-2">
+            {payload.predictedActions.slice(0, 2).map((prediction) => (
+              <button
+                key={prediction.title}
+                type="button"
+                onClick={() => prediction.prompt && onPromptSelect(prediction.prompt)}
+                className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-start transition hover:border-amber-300 hover:bg-amber-100/70 dark:border-amber-900/40 dark:bg-amber-950/20 dark:hover:bg-amber-950/40"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                    {prediction.title}
+                  </p>
+                  {typeof prediction.confidenceScore === "number" && (
+                    <Badge variant="outline" className="text-[10px]">
+                      {Math.round(prediction.confidenceScore)}%
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-amber-900/80 dark:text-amber-100/80">
+                  {prediction.summary}
+                </p>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {payload.quickPrompts.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <MessageSquare className="h-3.5 w-3.5" />
+            {labels.copilotPrompts}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {payload.quickPrompts.slice(0, 5).map((prompt) => (
+              <button
+                key={`${prompt.category}-${prompt.label}`}
+                type="button"
+                onClick={() => onPromptSelect(prompt.prompt)}
+                className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200"
+                title={labels.copilotSendPrompt}
+              >
+                {prompt.label}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+        <span className="font-semibold text-slate-700 dark:text-slate-200">
+          {lang === "ar" ? "الحوكمة:" : "Governance:"}
+        </span>{" "}
+        {payload.governanceSummary.split("\n")[0]}
+      </div>
+    </div>
+  )
+}
+
+function InsightCard({ insight }: { insight: AICopilotInteractivePayload["insights"][number] }) {
+  const styles =
+    insight.severity === "critical"
+      ? "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-200"
+      : insight.severity === "warning"
+        ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200"
+        : "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/40 dark:bg-sky-950/20 dark:text-sky-200"
+
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${styles}`}>
+      <p className="text-sm font-semibold">{insight.title}</p>
+      <p className="mt-1 text-xs leading-relaxed">{insight.summary}</p>
+    </div>
+  )
+}
+
+function CopilotBootstrapSkeleton({ labels }: { labels: Labels }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+      <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        {labels.copilotHistoryLoading}
+      </div>
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-16 w-full rounded-xl" />
+        <div className="grid grid-cols-2 gap-2">
+          <Skeleton className="h-14 w-full rounded-xl" />
+          <Skeleton className="h-14 w-full rounded-xl" />
+        </div>
+      </div>
+    </div>
   )
 }
 

@@ -39,6 +39,16 @@ export const AI_SEVERITIES = ["info", "warning", "critical"] as const
 
 export type AISeverity = (typeof AI_SEVERITIES)[number]
 
+export const AI_PROMPT_CATEGORIES = [
+  "workflow",
+  "governance",
+  "analytics",
+  "prediction",
+  "compliance",
+] as const
+
+export type AIPromptCategory = (typeof AI_PROMPT_CATEGORIES)[number]
+
 export const AI_DECISIONS = ["approve", "reject", "escalate", "review"] as const
 
 export type AIDecision = (typeof AI_DECISIONS)[number]
@@ -63,6 +73,44 @@ export interface AIInsight {
   entityId?: string | null
   recommendedAction?: string | null
   evidence?: Record<string, unknown> | null
+}
+
+export interface AIStatChip {
+  label: string
+  value: string
+  severity?: AISeverity | null
+}
+
+export interface AIQuickPrompt {
+  label: string
+  prompt: string
+  category: AIPromptCategory
+}
+
+export interface AINextAction {
+  title: string
+  summary: string
+  prompt: string
+  severity: AISeverity
+  confidenceScore?: number | null
+}
+
+export interface AIPredictedAction {
+  title: string
+  summary: string
+  prompt?: string | null
+  confidenceScore?: number | null
+}
+
+export interface AICopilotInteractivePayload {
+  domain: AIDomain
+  summary: string
+  governanceSummary: string
+  metrics: AIStatChip[]
+  insights: AIInsight[]
+  nextActions: AINextAction[]
+  predictedActions: AIPredictedAction[]
+  quickPrompts: AIQuickPrompt[]
 }
 
 export interface AIRecommendation {
