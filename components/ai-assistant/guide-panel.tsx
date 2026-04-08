@@ -94,7 +94,7 @@ const L = {
       "تعذر إرسال الرسالة حالياً. حاول مرة أخرى بعد لحظة.",
     you: "أنت",
     assistant: "المساعد",
-        fallback: "رد بديل آمن",
+    fallback: "رد بديل آمن",
     fallbackReasonTitle: "سبب وضع الرد البديل",
     pageContext: "سياق الصفحة",
   },
@@ -304,7 +304,7 @@ export function GuidePanel({
               </TabsList>
 
               <TabsContent value="guide" className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden">
-                <ScrollArea className="flex-1 pr-2">
+                <ScrollArea type="always" scrollHideDelay={0} className="flex-1 pr-2">
                   <div className="space-y-6 pb-4">
                     {isLoading ? (
                       <LoadingSkeleton />
@@ -402,7 +402,7 @@ export function GuidePanel({
                   </p>
                 </div>
 
-                <ScrollArea className="mt-4 flex-1 pr-2">
+                <ScrollArea type="always" scrollHideDelay={0} className="mt-4 flex-1 pr-2">
                   <div className="space-y-4 pb-4">
                     {messages.length === 0 ? (
                       <div className="space-y-4 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
