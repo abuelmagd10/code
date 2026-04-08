@@ -4,15 +4,18 @@ import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { asyncAuditLog } from "@/lib/core"
 import {
-  SALES_RETURN_LEVEL1_APPROVER_ROLES,
   SALES_RETURN_REQUEST_STATUSES,
-  isSalesReturnPendingLevel1,
+  SALES_RETURN_WAREHOUSE_ROLES,
+  isSalesReturnPendingWarehouse,
 } from "@/lib/sales-return-requests"
-import { notifySalesReturnRequesterRejected } from "@/lib/sales-return-request-notifications"
+import {
+  notifySalesReturnManagementRejectedByWarehouse,
+  notifySalesReturnRequesterRejected,
+} from "@/lib/sales-return-request-notifications"
 
 /**
- * PATCH /api/sales-return-requests/[id]/reject
- * رفض الإدارة/المالية لطلب المرتجع مع سبب إلزامي
+ * PATCH /api/sales-return-requests/[id]/warehouse-reject
+ * رفض مسؤول المخزن لاستلام المرتجع مع سبب إلزامي
  */
 export async function PATCH(
   req: NextRequest,
@@ -30,8 +33,8 @@ export async function PATCH(
     if (authErr) return authErr
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
 
-    if (!member || !SALES_RETURN_LEVEL1_APPROVER_ROLES.includes(member.role as any)) {
-      return NextResponse.json({ error: "غير مصرح لك بالرفض الإداري" }, { status: 403 })
+    if (!member || !SALES_RETURN_WAREHOUSE_ROLES.includes(member.role as any)) {
+      return NextResponse.json({ error: "غير مصرح لك برفض اعتماد المخزن" }, { status: 403 })
     }
 
     const body = await req.json()
@@ -49,13 +52,12 @@ export async function PATCH(
     const { data: request, error: reqErr } = await supabase
       .from("sales_return_requests")
       .select(`
-        id,
-        status,
-        invoice_id,
-        company_id,
-        branch_id,
-        requested_by,
-        invoices:invoice_id (invoice_number, branch_id)
+        *,
+        invoices:invoice_id (
+          invoice_number,
+          branch_id,
+          warehouse_id
+        )
       `)
       .eq("id", id)
       .eq("company_id", companyId)
@@ -65,28 +67,29 @@ export async function PATCH(
       return NextResponse.json({ error: "الطلب غير موجود" }, { status: 404 })
     }
 
-    if (!isSalesReturnPendingLevel1(request.status)) {
-      return NextResponse.json({ error: "الطلب ليس بمرحلة اعتماد الإدارة" }, { status: 409 })
+    if (!isSalesReturnPendingWarehouse(request.status)) {
+      return NextResponse.json({ error: "الطلب ليس بمرحلة اعتماد المخزن" }, { status: 409 })
     }
 
     const requestInvoice = Array.isArray(request.invoices) ? request.invoices[0] : request.invoices
+    const requestWarehouseId = request.warehouse_id || requestInvoice?.warehouse_id || null
     const requestBranchId = request.branch_id || requestInvoice?.branch_id || null
-    if ((member.role === "manager" || member.role === "accountant") && member.branch_id && requestBranchId && member.branch_id !== requestBranchId) {
-      return NextResponse.json({ error: "غير مصرح لك برفض طلبات فروع أخرى" }, { status: 403 })
+
+    if (requestWarehouseId && member.warehouse_id && member.warehouse_id !== requestWarehouseId) {
+      return NextResponse.json({ error: "غير مصرح لك برفض طلبات مخزن آخر" }, { status: 403 })
+    }
+    if (!member.warehouse_id && member.branch_id && requestBranchId && member.branch_id !== requestBranchId) {
+      return NextResponse.json({ error: "غير مصرح لك برفض طلبات فرع آخر" }, { status: 403 })
     }
 
     const reviewedAt = new Date().toISOString()
-
     const { error: updateErr } = await supabase
       .from("sales_return_requests")
       .update({
-        status: SALES_RETURN_REQUEST_STATUSES.rejectedLevel1,
-        rejection_reason: rejectionReason,
-        reviewed_by: user?.id,
-        reviewed_at: reviewedAt,
-        level_1_reviewed_by: user?.id,
-        level_1_reviewed_at: reviewedAt,
-        level_1_rejection_reason: rejectionReason,
+        status: SALES_RETURN_REQUEST_STATUSES.rejectedWarehouse,
+        warehouse_reviewed_by: user?.id,
+        warehouse_reviewed_at: reviewedAt,
+        warehouse_rejection_reason: rejectionReason,
       })
       .eq("id", id)
       .eq("company_id", companyId)
@@ -95,8 +98,8 @@ export async function PATCH(
       return serverError(`فشل في تحديث الطلب: ${updateErr.message}`)
     }
 
-    if (request.requested_by) {
-      try {
+    try {
+      if (request.requested_by) {
         await notifySalesReturnRequesterRejected(supabase as any, {
           companyId,
           requestId: id,
@@ -104,12 +107,22 @@ export async function PATCH(
           requesterUserId: request.requested_by,
           createdBy: user?.id || "",
           branchId: requestBranchId,
+          warehouseId: requestWarehouseId,
           reason: rejectionReason,
-          stage: "level_1",
+          stage: "warehouse",
         })
-      } catch (notifErr: any) {
-        console.error("⚠️ [SRR] Requester rejection notification failed:", notifErr.message)
       }
+      await notifySalesReturnManagementRejectedByWarehouse(supabase as any, {
+        companyId,
+        requestId: id,
+        invoiceNumber: requestInvoice?.invoice_number || request.invoice_id,
+        createdBy: user?.id || "",
+        branchId: requestBranchId,
+        warehouseId: requestWarehouseId,
+        reason: rejectionReason,
+      })
+    } catch (notifErr: any) {
+      console.error("⚠️ [SRR] Warehouse rejection notifications failed:", notifErr.message)
     }
 
     asyncAuditLog({
@@ -122,15 +135,16 @@ export async function PATCH(
       recordIdentifier: requestInvoice?.invoice_number || request.invoice_id,
       oldData: { status: request.status },
       newData: {
-        status: SALES_RETURN_REQUEST_STATUSES.rejectedLevel1,
-        level_1_rejection_reason: rejectionReason,
+        status: SALES_RETURN_REQUEST_STATUSES.rejectedWarehouse,
+        warehouse_rejection_reason: rejectionReason,
+        warehouse_reviewed_by: user?.id,
       },
-      reason: "Sales return request rejected at level 1"
+      reason: "Sales return request rejected by warehouse"
     })
 
-    return NextResponse.json({ success: true, message: "تم رفض الطلب إدارياً" })
+    return NextResponse.json({ success: true, message: "تم رفض الطلب من المخزن" })
 
   } catch (error: any) {
-    return serverError(`خطأ في رفض الطلب: ${error.message}`)
+    return serverError(`خطأ في رفض الطلب من المخزن: ${error.message}`)
   }
 }

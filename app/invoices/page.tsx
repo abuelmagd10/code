@@ -40,7 +40,10 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
-import { processSalesReturn } from "@/lib/sales-returns"
+import {
+  SALES_RETURN_ACTIVE_REQUEST_STATUSES,
+  getSalesReturnRequestStatusLabel,
+} from "@/lib/sales-return-requests"
 
 // نوع بيانات الموظف للفلترة
 interface Employee {
@@ -117,6 +120,7 @@ type ProductSummary = { name: string; quantity: number; returned?: number }
 
 // نوع للمنتجات
 type Product = { id: string; name: string }
+type ActiveSalesReturnRequest = { id: string; status: string }
 
 export default function InvoicesPage() {
   const supabase = useSupabase()
@@ -315,6 +319,7 @@ export default function InvoicesPage() {
     status: string;
     customer_name: string;
   } | null>(null)
+  const [activeSalesReturnRequestsByInvoiceId, setActiveSalesReturnRequestsByInvoiceId] = useState<Record<string, ActiveSalesReturnRequest>>({})
   useEffect(() => {
     (async () => {
       setPermView(await canAction(supabase, "invoices", "read"))
@@ -591,6 +596,30 @@ export default function InvoicesPage() {
       // تحميل المدفوعات من جدول payments لحساب المبالغ المدفوعة الفعلية
       const invoiceIds = Array.from(new Set((result.data || []).map((inv: any) => inv.id)))
       if (invoiceIds.length) {
+        try {
+          const { data: activeRequests } = await supabase
+            .from("sales_return_requests")
+            .select("id, invoice_id, status, created_at")
+            .eq("company_id", companyId)
+            .in("invoice_id", invoiceIds)
+            .in("status", SALES_RETURN_ACTIVE_REQUEST_STATUSES as unknown as string[])
+            .order("created_at", { ascending: false })
+
+          const nextRequestMap: Record<string, ActiveSalesReturnRequest> = {}
+          ; (activeRequests || []).forEach((request: any) => {
+            const invoiceId = String(request.invoice_id || "")
+            if (!invoiceId || nextRequestMap[invoiceId]) return
+            nextRequestMap[invoiceId] = {
+              id: String(request.id),
+              status: String(request.status || ""),
+            }
+          })
+          setActiveSalesReturnRequestsByInvoiceId(nextRequestMap)
+        } catch (requestError) {
+          console.warn("Failed to load active sales return requests:", requestError)
+          setActiveSalesReturnRequestsByInvoiceId({})
+        }
+
         const { data: payData } = await supabase
           .from("payments")
           .select("id, invoice_id, amount")
@@ -634,6 +663,7 @@ export default function InvoicesPage() {
         setPayments([])
         setInvoiceItems([])
         setReturnedQuantities([])
+        setActiveSalesReturnRequestsByInvoiceId({})
       }
 
       // تحميل أوامر البيع المرتبطة بالفواتير لمعرفة الموظف المنشئ
@@ -1179,6 +1209,7 @@ export default function InvoicesPage() {
         // تحديد ما إذا كان هناك مرتجع جزئي
         const hasPartialReturn = returnedAmount > 0 && returnedAmount < originalTotal
         const deliveryApprovalStatus = String((row as any).approval_status || (row as any).warehouse_status || '').toLowerCase()
+        const activeReturnRequest = activeSalesReturnRequestsByInvoiceId[row.id]
         const shouldShowDeliveryApproval =
           deliveryApprovalStatus === 'approved' ||
           deliveryApprovalStatus === 'rejected' ||
@@ -1212,6 +1243,12 @@ export default function InvoicesPage() {
             {hasPartialReturn && (
               <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
                 {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
+              </span>
+            )}
+
+            {activeReturnRequest && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300">
+                {getSalesReturnRequestStatusLabel(activeReturnRequest.status, appLang)}
               </span>
             )}
           </div>
@@ -1282,6 +1319,7 @@ export default function InvoicesPage() {
             )}
             {/* 🔒 أزرار المرتجع: الكامل لأي فاتورة معتمدة مخزنياً، والجزئي فقط لفاتورة بند واحد بكمية متاحة > 1 */}
             {(() => {
+              const activeReturnRequest = activeSalesReturnRequestsByInvoiceId[row.id]
               const effectiveApprovalStatus = getEffectiveDeliveryApprovalStatus(row)
               const canShowReturnButtons =
                 row.status !== 'draft' &&
@@ -1289,7 +1327,8 @@ export default function InvoicesPage() {
                 row.status !== 'voided' &&
                 row.status !== 'fully_returned' &&
                 row.status !== 'cancelled' &&
-                effectiveApprovalStatus === 'approved'
+                effectiveApprovalStatus === 'approved' &&
+                !activeReturnRequest
               const canShowPartialReturn = canShowReturnButtons && !!partialReturnEligibilityByInvoiceId[row.id]
 
               return canShowReturnButtons ? (
@@ -1351,7 +1390,7 @@ export default function InvoicesPage() {
         )
       }
     }
-  ], [appLang, currencySymbol, currencySymbols, appCurrency, shippingProviders, permView, permEdit, permDelete, currentUserRole, userContext]);
+  ], [appLang, currencySymbol, currencySymbols, appCurrency, shippingProviders, permView, permEdit, permDelete, currentUserRole, userContext, activeSalesReturnRequestsByInvoiceId, partialReturnEligibilityByInvoiceId]);
 
   // إحصائيات الفواتير - تعمل مع الفلترة - استخدام getDisplayAmount للتعامل مع تحويل العملات
   const stats = useMemo(() => {
@@ -1628,6 +1667,19 @@ export default function InvoicesPage() {
   const openSalesReturn = async (inv: Invoice, mode: "partial" | "full") => {
     try {
       console.log("🔍 openSalesReturn called:", { invoice: inv.invoice_number, mode, status: inv.status })
+
+      const activeRequest = activeSalesReturnRequestsByInvoiceId[inv.id]
+      if (activeRequest) {
+        toast({
+          title: appLang === 'en' ? 'Return Request Already Exists' : 'يوجد طلب مرتجع نشط',
+          description: appLang === 'en'
+            ? `This invoice already has an active return request: ${getSalesReturnRequestStatusLabel(activeRequest.status, 'en')}`
+            : `هذه الفاتورة لديها بالفعل طلب مرتجع نشط: ${getSalesReturnRequestStatusLabel(activeRequest.status, 'ar')}`,
+          variant: 'destructive'
+        })
+        return
+      }
+
       setReturnMode(mode)
       setReturnInvoiceId(inv.id)
       setReturnInvoiceNumber(inv.invoice_number)
@@ -1757,20 +1809,27 @@ export default function InvoicesPage() {
   const submitSalesReturn = async () => {
     try {
       if (!returnInvoiceId) return
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
 
-      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
-      const { getActiveCompanyId } = await import("@/lib/company")
       const returnCompanyId = await getActiveCompanyId(supabase)
       if (!returnCompanyId) return
 
-      // ===== التحقق من حالة الفاتورة قبل المرتجع (باستخدام الدالة الموحدة) =====
-      const { canReturnInvoice, getInvoiceOperationError, requiresJournalEntries } = await import("@/lib/validation")
+      const activeRequest = activeSalesReturnRequestsByInvoiceId[returnInvoiceId]
+      if (activeRequest) {
+        toast({
+          title: appLang === 'en' ? 'Return Request Already Exists' : 'يوجد طلب مرتجع نشط',
+          description: appLang === 'en'
+            ? `This invoice already has an active return request: ${getSalesReturnRequestStatusLabel(activeRequest.status, 'en')}`
+            : `هذه الفاتورة لديها بالفعل طلب مرتجع نشط: ${getSalesReturnRequestStatusLabel(activeRequest.status, 'ar')}`,
+          variant: 'destructive'
+        })
+        return
+      }
+
+      const { canReturnInvoice, getInvoiceOperationError } = await import("@/lib/validation")
 
       const { data: invoiceCheck } = await supabase
         .from("invoices")
-        .select("status, paid_amount, total_amount")
+        .select("status")
         .eq("id", returnInvoiceId)
         .single()
 
@@ -1783,66 +1842,75 @@ export default function InvoicesPage() {
         return
       }
 
-      // ===== تحقق مهم: التأكد من وجود قيود محاسبية أصلية للفواتير المدفوعة فقط =====
-      // الفواتير المرسلة (sent) لا تحتوي على قيود مالية - فقط حركات مخزون
-      if (requiresJournalEntries(invoiceCheck?.status)) {
-        // ✅ FIX: استخدام limit(1).maybeSingle() بدلاً من single()
-        // لأنه قد يكون هناك أكثر من قيد محاسبي للفاتورة الواحدة
-        const { data: existingInvoiceEntry } = await supabase
-          .from("journal_entries")
-          .select("id")
-          .eq("reference_id", returnInvoiceId)
-          .eq("reference_type", "invoice")
-          .limit(1)
-          .maybeSingle()
-
-        if (!existingInvoiceEntry) {
-          toast({
-            title: appLang === 'en' ? 'Cannot Return' : 'لا يمكن المرتجع',
-            description: appLang === 'en' ? 'Cannot return paid invoice without journal entries.' : 'لا يمكن عمل مرتجع لفاتورة مدفوعة بدون قيود محاسبية.',
-            variant: 'destructive'
-          })
-          return
-        }
-      }
-
-      // استخدام مكتبة sales-returns للمعالجة
-      const result = await processSalesReturn(supabase, {
-        invoiceId: returnInvoiceId,
-        invoiceNumber: returnInvoiceNumber,
-        returnItems: returnItems.map(item => ({
+      const requestItems = returnItems
+        .filter(item => (item.qtyToReturn + (item.qtyCreditOnly || 0)) > 0)
+        .map(item => ({
           ...item,
-          name: item.name || ''
-        })),
-        returnMode,
-        companyId: returnCompanyId,
-        userId: user?.id || '',
-        lang: appLang as 'ar' | 'en'
-      })
+          name: item.name || '',
+        }))
 
-      if (!result.success) {
+      if (requestItems.length === 0) {
         toast({
-          title: appLang === 'en' ? 'Return Failed' : 'فشل المرتجع',
-          description: result.error || 'Unknown error',
+          title: appLang === 'en' ? 'No Return Items' : 'لا توجد بنود مرتجع',
+          description: appLang === 'en' ? 'Select at least one quantity to submit the return request.' : 'اختر كمية واحدة على الأقل لإرسال طلب المرتجع.',
           variant: 'destructive'
         })
         return
       }
 
+      const response = await fetch('/api/sales-return-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id: returnCompanyId,
+          invoice_id: returnInvoiceId,
+          return_type: returnMode,
+          items: requestItems,
+          total_return_amount: returnItems.reduce((sum, item) =>
+            sum + (item.unit_price * (item.qtyToReturn + (item.qtyCreditOnly || 0)) * (1 - (item.discount_percent || 0) / 100) * (1 + (item.tax_rate || 0) / 100)), 0
+          ),
+          notes: returnMode === 'full'
+            ? (appLang === 'en' ? 'Full sales return request' : 'طلب مرتجع مبيعات كامل')
+            : (appLang === 'en' ? 'Partial sales return request' : 'طلب مرتجع مبيعات جزئي')
+        })
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        toast({
+          title: appLang === 'en' ? 'Return Request Failed' : 'فشل إرسال طلب المرتجع',
+          description: result.error || (appLang === 'en' ? 'Unknown error' : 'حدث خطأ غير معروف'),
+          variant: 'destructive'
+        })
+        return
+      }
+
+      setActiveSalesReturnRequestsByInvoiceId(prev => ({
+        ...prev,
+        [returnInvoiceId]: {
+          id: String(result.data?.id || ''),
+          status: String(result.data?.status || 'pending_approval_level_1'),
+        }
+      }))
+
       toast({
-        title: appLang === 'en' ? 'Return Processed' : 'تم معالجة المرتجع',
+        title: appLang === 'en' ? 'Return Request Submitted' : 'تم إرسال طلب المرتجع',
         description: appLang === 'en'
-          ? `Return processed successfully. Customer credit: ${result.customerCreditAmount || 0}`
-          : `تم معالجة المرتجع بنجاح. رصيد العميل: ${result.customerCreditAmount || 0}`,
+          ? 'The return request was submitted for approval. No inventory or accounting impact will be posted until approvals are completed.'
+          : 'تم إرسال طلب المرتجع للاعتماد. لن يتم تنفيذ أي أثر مخزني أو محاسبي حتى اكتمال جميع الاعتمادات.',
         variant: 'default'
       })
 
       setReturnOpen(false)
+      setReturnItems([])
+      setReturnInvoiceId(null)
+      setReturnInvoiceNumber("")
+      setReturnInvoiceData(null)
       loadInvoices()
     } catch (err: any) {
       console.error("❌ Error in sales return:", err)
       toast({
-        title: appLang === 'en' ? 'Return Failed' : 'فشل المرتجع',
+        title: appLang === 'en' ? 'Return Request Failed' : 'فشل إرسال طلب المرتجع',
         description: `${appLang === 'en' ? 'Error:' : 'خطأ:'} ${err?.message || 'Unknown error'}`,
         variant: 'destructive'
       })
@@ -2896,8 +2964,8 @@ export default function InvoicesPage() {
                     </DialogTitle>
                     <DialogDescription>
                       {appLang === 'en'
-                        ? 'Process a return for this invoice. This will reverse revenue, tax, and receivables, and return inventory to stock.'
-                        : 'معالجة مرتجع لهذه الفاتورة. سيتم عكس الإيراد والضريبة والذمم، وإرجاع المخزون للمستودع.'}
+                        ? 'Submit a return request for this invoice. Inventory and accounting effects will be posted only after management approval followed by warehouse approval.'
+                        : 'إرسال طلب مرتجع لهذه الفاتورة. لن يتم تنفيذ أي أثر مخزني أو محاسبي إلا بعد اعتماد الإدارة ثم اعتماد المخزن.'}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
@@ -3016,8 +3084,8 @@ export default function InvoicesPage() {
 
                     <p className="text-sm text-orange-600">
                       {appLang === 'en'
-                        ? 'This will reverse the revenue, tax, and receivables for the returned items, and return the inventory to stock.'
-                        : 'سيتم عكس الإيراد والضريبة والذمم للأصناف المرتجعة، وإرجاع المخزون للمستودع.'}
+                        ? 'This dialog now creates an approval request only. Final inventory, receivables, and accounting updates are deferred until the workflow is fully approved.'
+                        : 'هذه النافذة تنشئ طلب اعتماد فقط. تحديث المخزون والذمم والقيود المحاسبية مؤجل حتى اكتمال دورة الاعتماد بالكامل.'}
                     </p>
                   </div>
                   <DialogFooter>
@@ -3029,7 +3097,7 @@ export default function InvoicesPage() {
                       onClick={submitSalesReturn}
                       disabled={returnItems.filter(it => (it.qtyToReturn + (it.qtyCreditOnly || 0)) > 0).length === 0}
                     >
-                      {appLang === 'en' ? 'Process Return' : 'معالجة المرتجع'}
+                      {appLang === 'en' ? 'Submit Return Request' : 'إرسال طلب المرتجع'}
                     </Button>
                   </DialogFooter>
                 </DialogContent>

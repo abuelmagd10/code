@@ -33,6 +33,10 @@ import { checkDuplicateJournalEntry } from "@/lib/journal-entry-governance"
 import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
 import { getActiveCurrencies, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
 import { useAccess } from "@/lib/access-context"
+import {
+  SALES_RETURN_ACTIVE_REQUEST_STATUSES,
+  getSalesReturnRequestStatusLabel,
+} from "@/lib/sales-return-requests"
 
 interface Invoice {
   id: string
@@ -105,6 +109,11 @@ interface InvoiceItem {
   products?: { name: string; sku: string; cost_price?: number }
 }
 
+type ActiveSalesReturnRequest = {
+  id: string
+  status: string
+}
+
 const APPROVAL_VIEW_ROLES = new Set([
   'owner',
   'admin',
@@ -141,10 +150,10 @@ export default function InvoiceDetailPage() {
   const [showPartialReturn, setShowPartialReturn] = useState(false)
   const [returnItems, setReturnItems] = useState<{ item_id: string; product_id: string | null; product_name: string; max_qty: number; return_qty: number; unit_price: number; tax_rate: number; discount_percent: number }[]>([])
   const [returnMethod, setReturnMethod] = useState<'cash' | 'credit_note' | 'bank_transfer'>('credit_note')
-  const [returnAccountId, setReturnAccountId] = useState<string>('')
   const [returnNotes, setReturnNotes] = useState<string>('')
   const [returnProcessing, setReturnProcessing] = useState(false)
   const [returnDialogMode, setReturnDialogMode] = useState<'partial' | 'full'>('partial')
+  const [activeSalesReturnRequest, setActiveSalesReturnRequest] = useState<ActiveSalesReturnRequest | null>(null)
   const [changingStatus, setChangingStatus] = useState(false)
   const [isPending, startTransition] = useTransition()
 
@@ -280,13 +289,17 @@ export default function InvoiceDetailPage() {
     invoice.status !== "voided" &&
     invoice.status !== "fully_returned" &&
     returnableInvoiceItems.length > 0 &&
-    invoiceApprovalStatus === 'approved'
-  ), [invoice, invoiceApprovalStatus, returnableInvoiceItems])
+    invoiceApprovalStatus === 'approved' &&
+    !activeSalesReturnRequest
+  ), [activeSalesReturnRequest, invoice, invoiceApprovalStatus, returnableInvoiceItems])
   const canShowPartialReturnButton = useMemo(() => (
     canShowReturnButtons &&
     returnableInvoiceItems.length === 1 &&
     returnableInvoiceItems[0].max_qty > 1
   ), [canShowReturnButtons, returnableInvoiceItems])
+  const activeSalesReturnRequestLabel = activeSalesReturnRequest
+    ? getSalesReturnRequestStatusLabel(activeSalesReturnRequest.status, appLang)
+    : null
 
   // Listen for language and currency changes
   useEffect(() => {
@@ -566,6 +579,25 @@ export default function InvoiceDetailPage() {
         })))
 
         setItems(itemsData || [])
+
+        try {
+          const { data: requestData } = await supabase
+            .from("sales_return_requests")
+            .select("id, status, created_at")
+            .eq("company_id", invoiceData.company_id)
+            .eq("invoice_id", invoiceId)
+            .in("status", SALES_RETURN_ACTIVE_REQUEST_STATUSES as unknown as string[])
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          setActiveSalesReturnRequest(requestData
+            ? { id: String(requestData.id), status: String(requestData.status || "") }
+            : null)
+        } catch (requestError) {
+          console.warn("Failed to load active sales return request:", requestError)
+          setActiveSalesReturnRequest(null)
+        }
 
         // Load payments for this invoice
         const { data: paymentsData } = await supabase
@@ -1275,6 +1307,17 @@ export default function InvoiceDetailPage() {
   // Open sales return dialog (partial/full)
   const openReturnDialog = (mode: 'partial' | 'full' = 'partial') => {
     if (!invoice || !items.length) return
+    if (activeSalesReturnRequest) {
+      toastActionError(
+        toast,
+        appLang === 'en' ? 'Return Request' : 'طلب المرتجع',
+        appLang === 'en' ? 'Invoice' : 'الفاتورة',
+        appLang === 'en'
+          ? `There is already an active return request for this invoice: ${getSalesReturnRequestStatusLabel(activeSalesReturnRequest.status, 'en')}`
+          : `يوجد بالفعل طلب مرتجع نشط لهذه الفاتورة: ${getSalesReturnRequestStatusLabel(activeSalesReturnRequest.status, 'ar')}`
+      )
+      return
+    }
     const returnableItems = items.map(it => ({
       item_id: it.id,
       product_id: it.product_id || null,
@@ -1288,7 +1331,6 @@ export default function InvoiceDetailPage() {
     setReturnDialogMode(mode)
     setReturnItems(returnableItems)
     setReturnMethod('credit_note')
-    setReturnAccountId('')
     setReturnNotes('')
     setShowPartialReturn(true)
   }
@@ -1462,6 +1504,102 @@ export default function InvoiceDetailPage() {
     if (!invoice || returnTotal <= 0) return
     try {
       setReturnProcessing(true)
+
+      if (activeSalesReturnRequest) {
+        toastActionError(
+          toast,
+          appLang === 'en' ? 'Return Request' : 'طلب المرتجع',
+          appLang === 'en' ? 'Invoice' : 'الفاتورة',
+          appLang === 'en'
+            ? `There is already an active return request for this invoice: ${getSalesReturnRequestStatusLabel(activeSalesReturnRequest.status, 'en')}`
+            : `يوجد بالفعل طلب مرتجع نشط لهذه الفاتورة: ${getSalesReturnRequestStatusLabel(activeSalesReturnRequest.status, 'ar')}`
+        )
+        return
+      }
+
+      const validation = await import("@/lib/validation")
+      if (!validation.canReturnInvoice(invoice.status)) {
+        const error = validation.getInvoiceOperationError(invoice.status, 'return', appLang as 'en' | 'ar')
+        if (error) {
+          toastActionError(toast, appLang === 'en' ? 'Return Request' : 'طلب المرتجع', appLang === 'en' ? 'Invoice' : 'الفاتورة', error.description)
+        }
+        return
+      }
+
+      const requestItems = returnItems
+        .filter((item) => item.return_qty > 0)
+        .map((item) => {
+          const originalItem = items.find((invoiceItem) => invoiceItem.id === item.item_id)
+          return {
+            id: item.item_id,
+            product_id: item.product_id,
+            name: item.product_name,
+            quantity: Number(originalItem?.quantity || item.max_qty),
+            maxQty: item.max_qty,
+            qtyToReturn: item.return_qty,
+            qtyCreditOnly: 0,
+            cost_price: Number(originalItem?.products?.cost_price || 0),
+            unit_price: item.unit_price,
+            tax_rate: item.tax_rate || 0,
+            discount_percent: item.discount_percent || 0,
+            line_total: Number(originalItem?.line_total || (item.max_qty * item.unit_price)),
+          }
+        })
+
+      if (requestItems.length === 0) {
+        toastActionError(
+          toast,
+          appLang === 'en' ? 'Return Request' : 'طلب المرتجع',
+          appLang === 'en' ? 'Invoice' : 'الفاتورة',
+          appLang === 'en'
+            ? 'Select at least one quantity before submitting the return request.'
+            : 'اختر كمية واحدة على الأقل قبل إرسال طلب المرتجع.'
+        )
+        return
+      }
+
+      const response = await fetch("/api/sales-return-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoice_id: invoice.id,
+          return_type: returnDialogMode,
+          items: requestItems,
+          total_return_amount: returnTotal,
+          notes: returnNotes || (
+            returnDialogMode === 'full'
+              ? (appLang === 'en' ? 'Full sales return request' : 'طلب مرتجع مبيعات كامل')
+              : (appLang === 'en' ? 'Partial sales return request' : 'طلب مرتجع مبيعات جزئي')
+          ),
+        }),
+      })
+
+      const requestResult = await response.json()
+      if (!response.ok || !requestResult.success) {
+        throw new Error(requestResult.error || (appLang === 'en' ? 'Failed to submit return request' : 'فشل إرسال طلب المرتجع'))
+      }
+
+      setActiveSalesReturnRequest({
+        id: String(requestResult.data?.id || ''),
+        status: String(requestResult.data?.status || 'pending_approval_level_1'),
+      })
+
+      toastActionSuccess(
+        toast,
+        appLang === 'en' ? 'Return Request' : 'طلب المرتجع',
+        appLang === 'en'
+          ? 'Return request submitted successfully and is now awaiting approvals'
+          : 'تم إرسال طلب المرتجع بنجاح وهو الآن بانتظار الاعتمادات'
+      )
+      setShowPartialReturn(false)
+      setReturnItems([])
+      setReturnNotes('')
+      await loadInvoice()
+      return
+
+      /* Legacy direct-execution path kept temporarily for reference only.
+         It is intentionally disabled after introducing the multi-level
+         approval workflow for sales returns.
 
       // ===== التحقق الموحد من حالة الفاتورة (باستخدام الدالة الموحدة) =====
       const { canReturnInvoice, getInvoiceOperationError, requiresJournalEntries } = await import("@/lib/validation")
@@ -1981,6 +2119,7 @@ export default function InvoiceDetailPage() {
       toastActionSuccess(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Sales return processed successfully' : 'تم معالجة المرتجع بنجاح')
       setShowPartialReturn(false)
       await loadInvoice()
+      */
     } catch (err: any) {
       console.error("Error processing sales return:", err)
       toastActionError(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Invoice' : 'الفاتورة', err?.message || '')
@@ -3420,6 +3559,11 @@ export default function InvoiceDetailPage() {
                 {/* ❌ تم إزالة زر "تحديد كمدفوعة" - الحالة تتحدث تلقائياً عند الدفع أو المرتجع */}
               </>
             )}
+            {activeSalesReturnRequestLabel ? (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                {activeSalesReturnRequestLabel}
+              </span>
+            ) : null}
             {/* 🔒 زر المرتجع: الكامل لأي فاتورة معتمدة مخزنياً، والجزئي فقط لفاتورة بند واحد بكمية متاحة > 1 */}
             {canShowReturnButtons ? (
               <>
@@ -3524,8 +3668,8 @@ export default function InvoiceDetailPage() {
               <DialogHeader>
                 <DialogTitle>
                   {returnDialogMode === 'full'
-                    ? (appLang === 'en' ? 'Full Sales Return' : 'مرتجع مبيعات كامل')
-                    : (appLang === 'en' ? 'Partial Sales Return' : 'مرتجع مبيعات جزئي')}
+                    ? (appLang === 'en' ? 'Full Sales Return Request' : 'طلب مرتجع مبيعات كامل')
+                    : (appLang === 'en' ? 'Partial Sales Return Request' : 'طلب مرتجع مبيعات جزئي')}
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
@@ -3733,7 +3877,7 @@ export default function InvoiceDetailPage() {
 
                 {/* Refund Method */}
                 <div className="space-y-2">
-                  <Label>{appLang === 'en' ? 'Refund Method' : 'طريقة الاسترداد'}</Label>
+                  <Label>{appLang === 'en' ? 'Settlement Preference After Approval' : 'تفضيل التسوية بعد الاعتماد'}</Label>
                   <select
                     className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
                     value={returnMethod}
@@ -3743,6 +3887,11 @@ export default function InvoiceDetailPage() {
                     <option value="cash">{appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}</option>
                     <option value="bank_transfer">{appLang === 'en' ? 'Bank Transfer' : 'تحويل بنكي'}</option>
                   </select>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {appLang === 'en'
+                      ? 'Informational only at this stage. The request still requires management and warehouse approvals before any execution.'
+                      : 'هذا الاختيار إرشادي فقط في هذه المرحلة. الطلب ما زال يحتاج إلى اعتماد الإدارة ثم المخزن قبل أي تنفيذ فعلي.'}
+                  </p>
                 </div>
 
                 {/* Notes */}
@@ -3755,7 +3904,7 @@ export default function InvoiceDetailPage() {
                   />
                 </div>
 
-                <p className="text-sm text-orange-600">{appLang === 'en' ? 'This will reverse the revenue, tax, and receivables for the returned items, and return the inventory to stock.' : 'سيتم عكس الإيراد والضريبة والذمم للأصناف المرتجعة، وإرجاع المخزون للمستودع.'}</p>
+                <p className="text-sm text-orange-600">{appLang === 'en' ? 'This dialog now submits an approval request only. Inventory, receivables, and accounting entries will be posted after management approval and warehouse confirmation.' : 'هذه النافذة ترسل طلب اعتماد فقط. المخزون والذمم والقيود المحاسبية لن تُنفذ إلا بعد اعتماد الإدارة ثم تأكيد المخزن.'}</p>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowPartialReturn(false)}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
@@ -3764,7 +3913,7 @@ export default function InvoiceDetailPage() {
                   onClick={processPartialReturn}
                   disabled={returnProcessing || returnTotal <= 0}
                 >
-                  {returnProcessing ? (appLang === 'en' ? 'Processing...' : 'جاري المعالجة...') : (appLang === 'en' ? 'Process Return' : 'معالجة المرتجع')}
+                  {returnProcessing ? (appLang === 'en' ? 'Submitting...' : 'جاري الإرسال...') : (appLang === 'en' ? 'Submit Return Request' : 'إرسال طلب المرتجع')}
                 </Button>
               </DialogFooter>
             </DialogContent>
