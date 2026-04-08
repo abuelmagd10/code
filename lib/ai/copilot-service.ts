@@ -12,10 +12,20 @@ export interface CopilotChatResult {
   answer: string
   usedModel: string
   fallbackUsed: boolean
+  fallbackReason?: string | null
   toolAudit: AIToolCallAudit
 }
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+const OPENAI_DEFAULT_COPILOT_MODEL = "gpt-5.4-mini"
+const OPENAI_DEFAULT_FALLBACK_MODEL = "gpt-4.1-mini"
+
+interface ModelAttemptError {
+  model: string
+  status: number
+  code: string | null
+  message: string
+}
 
 export async function generateCopilotReply(params: {
   context: AICopilotContext
@@ -24,72 +34,208 @@ export async function generateCopilotReply(params: {
 }): Promise<CopilotChatResult> {
   const { context, messages, userMessage } = params
 
-  if (!process.env.OPENAI_API_KEY) {
-    return buildFallbackResult(context, userMessage)
-  }
-
-  const model = process.env.OPENAI_AI_COPILOT_MODEL || "gpt-5.4-mini"
-  const instructions = buildInstructions(context)
-  const input = [
-    {
-      role: "system",
-      content: [{ type: "input_text", text: instructions }],
-    },
-    ...messages.map((message) => ({
-      role: message.role,
-      content: [{ type: "input_text", text: message.content }],
-    })),
-  ]
-
-  const body = {
-    model,
-    input,
-    max_output_tokens: 900,
-  }
-
-  const response = await fetch(OPENAI_RESPONSES_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  if (!apiKey) {
     return buildFallbackResult(
       context,
       userMessage,
       context.language === "ar"
-        ? `تعذر الوصول إلى نموذج الذكاء الاصطناعي حالياً. تم استخدام رد بديل آمن.`
-        : "The AI model is currently unavailable. A safe fallback response was used.",
+        ? "تعذر استخدام نموذج الذكاء الاصطناعي لأن مفتاح OPENAI_API_KEY غير مضبوط على الخادم. تم استخدام رد بديل آمن."
+        : "The AI model could not be used because OPENAI_API_KEY is not configured on the server. A safe fallback response was used.",
       {
-        toolName: "openai.responses.create",
+        toolName: "openai.config.missing_key",
         input: {
-          model,
-          error: errorText,
+          envVar: "OPENAI_API_KEY",
         },
-      }
+      },
+      "missing_openai_api_key"
     )
   }
 
-  const data = await response.json()
-  const answer = extractResponseText(data)
+  const preferredModel =
+    process.env.OPENAI_AI_COPILOT_MODEL?.trim() || OPENAI_DEFAULT_COPILOT_MODEL
+  const fallbackModel =
+    process.env.OPENAI_AI_COPILOT_FALLBACK_MODEL?.trim() ||
+    OPENAI_DEFAULT_FALLBACK_MODEL
+  const modelsToTry = Array.from(new Set([preferredModel, fallbackModel]))
 
-  return {
-    answer,
-    usedModel: model,
-    fallbackUsed: false,
-    toolAudit: {
+  const instructions = buildInstructions(context)
+  const input: OpenAIRequestInput = [
+    {
+      role: "system",
+      content: [{ type: "input_text" as const, text: instructions }],
+    },
+    ...messages.map((message) => ({
+      role: message.role,
+      content: [{ type: "input_text" as const, text: message.content }],
+    })),
+  ]
+
+  const attemptErrors: ModelAttemptError[] = []
+  for (const model of modelsToTry) {
+    const modelResult = await requestOpenAIResponses({
+      apiKey,
+      model,
+      input,
+    })
+
+    if (modelResult.success) {
+      const answer = extractResponseText(modelResult.data)
+      return {
+        answer,
+        usedModel: model,
+        fallbackUsed: false,
+        fallbackReason: null,
+        toolAudit: {
+          toolName: "openai.responses.create",
+          input: {
+            model,
+            messageCount: messages.length,
+          },
+          outputHash: createHash("sha256").update(answer).digest("hex"),
+        },
+      }
+    }
+
+    attemptErrors.push(modelResult.error)
+    if (!shouldRetryWithAnotherModel(modelResult.error)) {
+      break
+    }
+  }
+
+  const latestError = attemptErrors[attemptErrors.length - 1]
+  return buildFallbackResult(
+    context,
+    userMessage,
+    buildUnavailableNotice(context.language, latestError),
+    {
       toolName: "openai.responses.create",
       input: {
-        model,
-        messageCount: messages.length,
+        attemptedModels: modelsToTry,
+        latestError,
       },
-      outputHash: createHash("sha256").update(answer).digest("hex"),
     },
+    latestError?.code || `openai_http_${latestError?.status || "unknown"}`
+  )
+}
+
+type OpenAIRequestInput = Array<{
+  role: "system" | "user" | "assistant"
+  content: Array<{ type: "input_text"; text: string }>
+}>
+
+async function requestOpenAIResponses(params: {
+  apiKey: string
+  model: string
+  input: OpenAIRequestInput
+}): Promise<
+  | { success: true; data: any }
+  | { success: false; error: ModelAttemptError }
+> {
+  const { apiKey, model, input } = params
+
+  try {
+    const response = await fetch(OPENAI_RESPONSES_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        input,
+        max_output_tokens: 900,
+      }),
+    })
+
+    if (response.ok) {
+      return {
+        success: true,
+        data: await response.json(),
+      }
+    }
+
+    const rawBody = await response.text()
+    let parsedBody: any = null
+    try {
+      parsedBody = JSON.parse(rawBody)
+    } catch {}
+
+    const parsedCode = parsedBody?.error?.code
+    const parsedMessage =
+      parsedBody?.error?.message || parsedBody?.message || rawBody
+
+    return {
+      success: false,
+      error: {
+        model,
+        status: response.status,
+        code: typeof parsedCode === "string" ? parsedCode : null,
+        message:
+          typeof parsedMessage === "string" && parsedMessage.trim()
+            ? parsedMessage.trim().slice(0, 1200)
+            : `OpenAI request failed with status ${response.status}`,
+      },
+    }
+  } catch (error: any) {
+    return {
+      success: false,
+      error: {
+        model,
+        status: 0,
+        code: "network_error",
+        message:
+          typeof error?.message === "string" && error.message.trim()
+            ? error.message
+            : "Network error while calling OpenAI",
+      },
+    }
   }
+}
+
+function shouldRetryWithAnotherModel(error: ModelAttemptError): boolean {
+  if (error.status === 404) return true
+  if (error.status === 400 && error.code === "model_not_found") return true
+  return false
+}
+
+function buildUnavailableNotice(
+  language: "ar" | "en",
+  error?: ModelAttemptError
+): string {
+  if (!error) {
+    return language === "ar"
+      ? "تعذر الوصول إلى نموذج الذكاء الاصطناعي حالياً. تم استخدام رد بديل آمن."
+      : "The AI model is currently unavailable. A safe fallback response was used."
+  }
+
+  if (error.status === 401 || error.status === 403) {
+    return language === "ar"
+      ? "تعذر استخدام نموذج الذكاء الاصطناعي لأن مفتاح OpenAI غير صالح أو غير مخوّل. تم استخدام رد بديل آمن."
+      : "The AI model could not be used because the OpenAI key is invalid or unauthorized. A safe fallback response was used."
+  }
+
+  if (error.status === 429) {
+    return language === "ar"
+      ? "تعذر استخدام نموذج الذكاء الاصطناعي بسبب تجاوز حد الاستخدام أو المعدل. تم استخدام رد بديل آمن."
+      : "The AI model could not be used due to usage or rate limits. A safe fallback response was used."
+  }
+
+  if (error.code === "model_not_found" || error.status === 404) {
+    return language === "ar"
+      ? `تعذر استخدام الموديل ${error.model} لأنه غير متاح للحساب الحالي. تم استخدام رد بديل آمن.`
+      : `The model ${error.model} is not available for the current account. A safe fallback response was used.`
+  }
+
+  if (error.code === "network_error" || error.status === 0) {
+    return language === "ar"
+      ? "تعذر الوصول إلى OpenAI بسبب مشكلة اتصال من الخادم. تم استخدام رد بديل آمن."
+      : "The server could not reach OpenAI due to a network error. A safe fallback response was used."
+  }
+
+  return language === "ar"
+    ? "تعذر الوصول إلى نموذج الذكاء الاصطناعي حالياً. تم استخدام رد بديل آمن."
+    : "The AI model is currently unavailable. A safe fallback response was used."
 }
 
 function buildInstructions(context: AICopilotContext): string {
@@ -128,7 +274,8 @@ function buildFallbackResult(
   context: AICopilotContext,
   userMessage: string,
   unavailableNotice?: string,
-  toolAuditOverride?: Partial<AIToolCallAudit>
+  toolAuditOverride?: Partial<AIToolCallAudit>,
+  fallbackReason?: string | null
 ): CopilotChatResult {
   const isArabic = context.language === "ar"
   const guide = context.guide
@@ -171,6 +318,7 @@ function buildFallbackResult(
     answer,
     usedModel: "fallback",
     fallbackUsed: true,
+    fallbackReason: fallbackReason || null,
     toolAudit: {
       toolName: toolAuditOverride?.toolName || "ai.fallback",
       input: toolAuditOverride?.input || {

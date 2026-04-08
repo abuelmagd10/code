@@ -47,6 +47,7 @@ interface ChatMessage {
   role: "user" | "assistant"
   content: string
   fallbackUsed?: boolean
+  fallbackReason?: string | null
   model?: string | null
 }
 
@@ -93,7 +94,8 @@ const L = {
       "تعذر إرسال الرسالة حالياً. حاول مرة أخرى بعد لحظة.",
     you: "أنت",
     assistant: "المساعد",
-    fallback: "رد بديل آمن",
+        fallback: "رد بديل آمن",
+    fallbackReasonTitle: "سبب وضع الرد البديل",
     pageContext: "سياق الصفحة",
   },
   en: {
@@ -139,6 +141,7 @@ const L = {
     you: "You",
     assistant: "Copilot",
     fallback: "Safe fallback",
+    fallbackReasonTitle: "Fallback reason",
     pageContext: "Page context",
   },
 }
@@ -230,6 +233,10 @@ export function GuidePanel({
           role: "assistant",
           content: answer,
           fallbackUsed: Boolean(result?.meta?.fallbackUsed),
+          fallbackReason:
+            typeof result?.meta?.fallbackReason === "string"
+              ? result.meta.fallbackReason
+              : null,
           model:
             typeof result?.meta?.model === "string" ? result.meta.model : null,
         },
@@ -611,6 +618,11 @@ function ChatBubble({
           <p className="whitespace-pre-wrap text-sm leading-relaxed">
             {message.content}
           </p>
+          {!isUser && message.fallbackUsed && message.fallbackReason && (
+            <p className="mt-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
+              {labels.fallbackReasonTitle}: {message.fallbackReason}
+            </p>
+          )}
         </div>
       </div>
     </div>

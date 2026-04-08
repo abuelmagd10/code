@@ -173,6 +173,7 @@ export async function POST(request: NextRequest) {
       meta: {
         model: aiResult.usedModel,
         fallbackUsed: aiResult.fallbackUsed,
+        fallbackReason: aiResult.fallbackReason || null,
         pageKey: pageKey || null,
       },
     })
