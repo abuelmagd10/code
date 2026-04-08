@@ -5,7 +5,6 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Sheet,
@@ -167,7 +166,7 @@ export function GuidePanel({
   const [copilotError, setCopilotError] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
   const assistantScrollAreaClass =
-    "pr-3 [&_[data-slot=scroll-area-scrollbar]]:w-3.5 [&_[data-slot=scroll-area-scrollbar]]:rounded-full [&_[data-slot=scroll-area-scrollbar]]:bg-slate-100/90 dark:[&_[data-slot=scroll-area-scrollbar]]:bg-slate-800/80 [&_[data-slot=scroll-area-thumb]]:bg-blue-500/70 hover:[&_[data-slot=scroll-area-thumb]]:bg-blue-600/80 dark:[&_[data-slot=scroll-area-thumb]]:bg-blue-400/70 dark:hover:[&_[data-slot=scroll-area-thumb]]:bg-blue-300/80"
+    "flex-1 overflow-y-scroll pr-3 [scrollbar-gutter:stable] notification-scrollbar"
 
   const suggestedPrompts = useMemo(
     () => buildSuggestedPrompts(lang, guide?.title),
@@ -306,11 +305,7 @@ export function GuidePanel({
               </TabsList>
 
               <TabsContent value="guide" className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden">
-                <ScrollArea
-                  type="always"
-                  scrollHideDelay={0}
-                  className={`flex-1 ${assistantScrollAreaClass}`}
-                >
+                <div className={assistantScrollAreaClass}>
                   <div className="space-y-6 pb-4">
                     {isLoading ? (
                       <LoadingSkeleton />
@@ -372,7 +367,7 @@ export function GuidePanel({
                       </>
                     )}
                   </div>
-                </ScrollArea>
+                </div>
 
                 <div className="space-y-3 border-t border-gray-100 pt-4 dark:border-slate-800">
                   {showDontShowAgain && guide && (
@@ -408,11 +403,7 @@ export function GuidePanel({
                   </p>
                 </div>
 
-                <ScrollArea
-                  type="always"
-                  scrollHideDelay={0}
-                  className={`mt-4 flex-1 ${assistantScrollAreaClass}`}
-                >
+                <div className={`mt-4 ${assistantScrollAreaClass}`}>
                   <div className="space-y-4 pb-4">
                     {messages.length === 0 ? (
                       <div className="space-y-4 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
@@ -482,7 +473,7 @@ export function GuidePanel({
 
                     <div ref={endRef} />
                   </div>
-                </ScrollArea>
+                </div>
 
                 <div className="space-y-3 border-t border-gray-100 pt-4 dark:border-slate-800">
                   {copilotError && (
