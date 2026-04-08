@@ -8,6 +8,7 @@ import {
   generateCopilotReply,
   type CopilotChatMessage,
 } from "@/lib/ai/copilot-service"
+import type { AICopilotInteractivePayload } from "@/lib/ai/contracts"
 
 const chatBodySchema = z.object({
   conversationId: z.string().uuid().optional(),
@@ -381,8 +382,28 @@ async function loadConversationMessages(params: {
     role: row.role,
     content: row.content,
     createdAt: row.created_at,
-    responseMeta: row.response_meta || null,
+    responseMeta: asInteractivePayload(row.response_meta),
     contextSnapshot: row.context_snapshot || {},
     messageKind: row.message_kind || "chat",
   }))
+}
+
+function asInteractivePayload(value: unknown): AICopilotInteractivePayload | null {
+  if (!value || typeof value !== "object") return null
+
+  const candidate = value as Partial<AICopilotInteractivePayload>
+  if (
+    typeof candidate.domain !== "string" ||
+    typeof candidate.summary !== "string" ||
+    typeof candidate.governanceSummary !== "string" ||
+    !Array.isArray(candidate.metrics) ||
+    !Array.isArray(candidate.insights) ||
+    !Array.isArray(candidate.nextActions) ||
+    !Array.isArray(candidate.predictedActions) ||
+    !Array.isArray(candidate.quickPrompts)
+  ) {
+    return null
+  }
+
+  return candidate as AICopilotInteractivePayload
 }

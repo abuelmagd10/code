@@ -255,18 +255,11 @@ export function GuidePanel({
                   role: message.role,
                   content: typeof message?.content === "string" ? message.content : "",
                   fallbackUsed: message?.messageKind === "fallback",
-                  responseMeta:
-                    message?.responseMeta && typeof message.responseMeta === "object"
-                      ? message.responseMeta
-                      : null,
+                  responseMeta: asInteractivePayload(message?.responseMeta),
                 }))
             : []
         )
-        setCopilotBootstrap(
-          result?.bootstrap && typeof result.bootstrap === "object"
-            ? result.bootstrap
-            : null
-        )
+        setCopilotBootstrap(asInteractivePayload(result?.bootstrap))
         setHasHydratedCopilot(true)
       } catch (error: any) {
         if (!cancelled) {
@@ -351,19 +344,12 @@ export function GuidePanel({
               : null,
           model:
             typeof result?.meta?.model === "string" ? result.meta.model : null,
-          responseMeta:
-            result?.meta?.interactivePayload &&
-            typeof result.meta.interactivePayload === "object"
-              ? result.meta.interactivePayload
-              : null,
+          responseMeta: asInteractivePayload(result?.meta?.interactivePayload),
         },
       ])
       setInput("")
       setCopilotBootstrap((current) =>
-        result?.meta?.interactivePayload &&
-        typeof result.meta.interactivePayload === "object"
-          ? result.meta.interactivePayload
-          : current
+        asInteractivePayload(result?.meta?.interactivePayload) ?? current
       )
       setHasHydratedCopilot(true)
     } catch (error: any) {
@@ -672,6 +658,17 @@ function CopilotInteractivePanel({
   payload: AICopilotInteractivePayload
   onPromptSelect: (prompt: string) => void
 }) {
+  const summary = typeof payload.summary === "string" ? payload.summary : ""
+  const governanceSummary =
+    typeof payload.governanceSummary === "string" ? payload.governanceSummary : ""
+  const metrics = Array.isArray(payload.metrics) ? payload.metrics : []
+  const insights = Array.isArray(payload.insights) ? payload.insights : []
+  const nextActions = Array.isArray(payload.nextActions) ? payload.nextActions : []
+  const predictedActions = Array.isArray(payload.predictedActions)
+    ? payload.predictedActions
+    : []
+  const quickPrompts = Array.isArray(payload.quickPrompts) ? payload.quickPrompts : []
+
   return (
     <div className="space-y-4 rounded-2xl border border-blue-100 bg-white/90 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-950/70">
       <div className="space-y-1">
@@ -680,18 +677,18 @@ function CopilotInteractivePanel({
           {labels.copilotLiveTitle}
         </div>
         <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-300">
-          {payload.summary}
+          {summary}
         </p>
       </div>
 
-      {payload.metrics.length > 0 && (
+      {metrics.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <TrendingUp className="h-3.5 w-3.5" />
             {labels.copilotMetrics}
           </div>
           <div className="grid grid-cols-2 gap-2">
-            {payload.metrics.slice(0, 6).map((metric) => (
+            {metrics.slice(0, 6).map((metric) => (
               <div
                 key={`${metric.label}-${metric.value}`}
                 className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
@@ -708,28 +705,28 @@ function CopilotInteractivePanel({
         </section>
       )}
 
-      {payload.insights.length > 0 && (
+      {insights.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <AlertTriangle className="h-3.5 w-3.5" />
             {labels.copilotInsights}
           </div>
           <div className="space-y-2">
-            {payload.insights.slice(0, 3).map((insight, index) => (
+            {insights.slice(0, 3).map((insight, index) => (
               <InsightCard key={`${insight.title}-${index}`} insight={insight} />
             ))}
           </div>
         </section>
       )}
 
-      {payload.nextActions.length > 0 && (
+      {nextActions.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <ListChecks className="h-3.5 w-3.5" />
             {labels.copilotActions}
           </div>
           <div className="space-y-2">
-            {payload.nextActions.slice(0, 2).map((action) => (
+            {nextActions.slice(0, 2).map((action) => (
               <button
                 key={action.title}
                 type="button"
@@ -755,14 +752,14 @@ function CopilotInteractivePanel({
         </section>
       )}
 
-      {payload.predictedActions.length > 0 && (
+      {predictedActions.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <Target className="h-3.5 w-3.5" />
             {labels.copilotPredictions}
           </div>
           <div className="space-y-2">
-            {payload.predictedActions.slice(0, 2).map((prediction) => (
+            {predictedActions.slice(0, 2).map((prediction) => (
               <button
                 key={prediction.title}
                 type="button"
@@ -788,14 +785,14 @@ function CopilotInteractivePanel({
         </section>
       )}
 
-      {payload.quickPrompts.length > 0 && (
+      {quickPrompts.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <MessageSquare className="h-3.5 w-3.5" />
             {labels.copilotPrompts}
           </div>
           <div className="flex flex-wrap gap-2">
-            {payload.quickPrompts.slice(0, 5).map((prompt) => (
+            {quickPrompts.slice(0, 5).map((prompt) => (
               <button
                 key={`${prompt.category}-${prompt.label}`}
                 type="button"
@@ -814,7 +811,7 @@ function CopilotInteractivePanel({
         <span className="font-semibold text-slate-700 dark:text-slate-200">
           {lang === "ar" ? "الحوكمة:" : "Governance:"}
         </span>{" "}
-        {payload.governanceSummary.split("\n")[0]}
+        {governanceSummary.split("\n")[0]}
       </div>
     </div>
   )
@@ -879,6 +876,26 @@ function buildSuggestedPrompts(
 }
 
 type Labels = typeof L["ar"]
+
+function asInteractivePayload(value: unknown): AICopilotInteractivePayload | null {
+  if (!value || typeof value !== "object") return null
+
+  const candidate = value as Partial<AICopilotInteractivePayload>
+  if (
+    typeof candidate.domain !== "string" ||
+    typeof candidate.summary !== "string" ||
+    typeof candidate.governanceSummary !== "string" ||
+    !Array.isArray(candidate.metrics) ||
+    !Array.isArray(candidate.insights) ||
+    !Array.isArray(candidate.nextActions) ||
+    !Array.isArray(candidate.predictedActions) ||
+    !Array.isArray(candidate.quickPrompts)
+  ) {
+    return null
+  }
+
+  return candidate as AICopilotInteractivePayload
+}
 
 function ChatBubble({
   message,
