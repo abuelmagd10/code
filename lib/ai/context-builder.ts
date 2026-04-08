@@ -1,14 +1,41 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { AIContextScope } from "@/lib/ai/contracts"
+import type { AIContextScope, AIDomain } from "@/lib/ai/contracts"
 import type { AISettings, PageGuide } from "@/lib/page-guides"
 import { fetchAISettings, fetchPageGuide } from "@/lib/page-guides"
+
+export interface AIPermissionSnapshot {
+  resource: string | null
+  canAccess: boolean
+  canRead: boolean
+  canWrite: boolean
+  canUpdate: boolean
+  canDelete: boolean
+  allAccess: boolean
+}
+
+export interface AILiveMetric {
+  label: string
+  value: string
+}
+
+export interface AILiveContext {
+  domain: AIDomain
+  summary: string
+  metrics: AILiveMetric[]
+  alerts: string[]
+  suggestions: string[]
+}
 
 export interface AICopilotContext {
   scope: AIContextScope
   language: "ar" | "en"
   settings: AISettings
   guide: PageGuide | null
+  domain: AIDomain
+  pageResource: string | null
   governanceSummary: string
+  permissionSnapshot: AIPermissionSnapshot
+  liveContext: AILiveContext
 }
 
 export interface BuildAICopilotContextParams {
@@ -38,11 +65,6 @@ export async function buildAICopilotContext(
     language,
   } = params
 
-  const [settings, guide] = await Promise.all([
-    fetchAISettings(supabase, companyId),
-    pageKey ? fetchPageGuide(supabase, pageKey, language) : Promise.resolve(null),
-  ])
-
   const scope: AIContextScope = {
     companyId,
     userId,
@@ -53,12 +75,26 @@ export async function buildAICopilotContext(
     pageKey: pageKey || null,
   }
 
+  const domain = inferDomainFromPageKey(pageKey)
+  const pageResource = mapPageKeyToResource(pageKey)
+
+  const [settings, guide, permissionSnapshot, liveContext] = await Promise.all([
+    fetchAISettings(supabase, companyId),
+    pageKey ? fetchPageGuide(supabase, pageKey, language) : Promise.resolve(null),
+    loadPermissionSnapshot(supabase, companyId, role || null, pageResource),
+    loadLiveContext(supabase, scope, domain, language),
+  ])
+
   return {
     scope,
     language,
     settings,
     guide,
-    governanceSummary: buildGovernanceSummary(scope, language),
+    domain,
+    pageResource,
+    governanceSummary: buildGovernanceSummary(scope, permissionSnapshot, language),
+    permissionSnapshot,
+    liveContext,
   }
 }
 
@@ -72,26 +108,35 @@ export function buildGuideContextBlock(
       : "No page-specific guide is available for this page yet."
   }
 
-  const steps = guide.steps.length > 0
-    ? guide.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")
-    : language === "ar"
-      ? "لا توجد خطوات محددة."
-      : "No specific steps available."
+  const steps =
+    guide.steps.length > 0
+      ? guide.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")
+      : language === "ar"
+        ? "لا توجد خطوات محددة."
+        : "No specific steps available."
 
-  const tips = guide.tips.length > 0
-    ? guide.tips.map((tip) => `- ${tip}`).join("\n")
-    : language === "ar"
-      ? "- لا توجد نصائح إضافية."
-      : "- No additional tips."
+  const tips =
+    guide.tips.length > 0
+      ? guide.tips.map((tip) => `- ${tip}`).join("\n")
+      : language === "ar"
+        ? "- لا توجد نصائح إضافية."
+        : "- No additional tips."
 
   const accountingPattern = guide.accounting_pattern
     ? [
         `${language === "ar" ? "الحدث المالي" : "Financial event"}: ${guide.accounting_pattern.event}`,
         `${language === "ar" ? "القيود" : "Entries"}:`,
-        ...guide.accounting_pattern.entries.map(
-          (entry) =>
-            `- ${entry.side === "debit" ? (language === "ar" ? "مدين" : "Dr") : (language === "ar" ? "دائن" : "Cr")}: ${entry.account}`
-        ),
+        ...guide.accounting_pattern.entries.map((entry) => {
+          const side =
+            entry.side === "debit"
+              ? language === "ar"
+                ? "مدين"
+                : "Dr"
+              : language === "ar"
+                ? "دائن"
+                : "Cr"
+          return `- ${side}: ${entry.account}`
+        }),
       ].join("\n")
     : language === "ar"
       ? "لا يوجد نمط محاسبي محدد لهذه الصفحة."
@@ -106,8 +151,647 @@ export function buildGuideContextBlock(
   ].join("\n\n")
 }
 
+function inferDomainFromPageKey(pageKey?: string | null): AIDomain {
+  const key = String(pageKey || "").toLowerCase()
+
+  if (!key || key === "dashboard" || key === "reports") return "dashboard"
+  if (["invoices", "sales_orders", "estimates", "customer_debit_notes"].includes(key)) {
+    return "sales"
+  }
+  if (
+    [
+      "sales_returns",
+      "sales_return_requests",
+      "sent_invoice_returns",
+      "customer_credits",
+    ].includes(key)
+  ) {
+    return "returns"
+  }
+  if (["customers"].includes(key)) return "receivables"
+  if (
+    [
+      "inventory",
+      "products",
+      "warehouses",
+      "inventory_transfers",
+      "product_availability",
+      "inventory_goods_receipt",
+      "third_party_inventory",
+      "write_offs",
+    ].includes(key)
+  ) {
+    return "inventory"
+  }
+  if (
+    [
+      "journal",
+      "journal_entries",
+      "chart_of_accounts",
+      "banking",
+      "payments",
+      "expenses",
+      "drawings",
+      "annual_closing",
+      "accounting_periods",
+      "bills",
+      "purchase_orders",
+      "purchase_returns",
+      "vendor_credits",
+      "suppliers",
+    ].includes(key)
+  ) {
+    return "accounting"
+  }
+  if (["settings", "branches", "cost_centers"].includes(key)) return "governance"
+
+  return "support"
+}
+
+function mapPageKeyToResource(pageKey?: string | null): string | null {
+  const key = String(pageKey || "").toLowerCase()
+  if (!key) return null
+
+  const map: Record<string, string> = {
+    dashboard: "dashboard",
+    reports: "reports",
+    invoices: "invoices",
+    sales_orders: "sales_orders",
+    estimates: "estimates",
+    sales_returns: "sales_returns",
+    sales_return_requests: "sales_return_requests",
+    sent_invoice_returns: "sent_invoice_returns",
+    customer_debit_notes: "customer_debit_notes",
+    customer_credits: "customer_credits",
+    customers: "customers",
+    inventory: "inventory",
+    products: "products",
+    warehouses: "warehouses",
+    inventory_transfers: "inventory_transfers",
+    product_availability: "product_availability",
+    inventory_goods_receipt: "inventory_goods_receipt",
+    third_party_inventory: "third_party_inventory",
+    write_offs: "write_offs",
+    journal: "journal_entries",
+    journal_entries: "journal_entries",
+    chart_of_accounts: "chart_of_accounts",
+    banking: "banking",
+    payments: "payments",
+    expenses: "expenses",
+    drawings: "drawings",
+    annual_closing: "annual_closing",
+    accounting_periods: "accounting_periods",
+    bills: "bills",
+    purchase_orders: "purchase_orders",
+    purchase_returns: "purchase_returns",
+    vendor_credits: "vendor_credits",
+    suppliers: "suppliers",
+    settings: "settings",
+    branches: "branches",
+    cost_centers: "cost_centers",
+  }
+
+  return map[key] || key
+}
+
+async function loadPermissionSnapshot(
+  supabase: SupabaseClient,
+  companyId: string,
+  role: string | null,
+  resource: string | null
+): Promise<AIPermissionSnapshot> {
+  const normalizedRole = String(role || "").trim().toLowerCase()
+  const isFullAccess = ["owner", "admin", "general_manager"].includes(normalizedRole)
+
+  if (!resource) {
+    return {
+      resource: null,
+      canAccess: isFullAccess,
+      canRead: isFullAccess,
+      canWrite: isFullAccess,
+      canUpdate: isFullAccess,
+      canDelete: isFullAccess,
+      allAccess: isFullAccess,
+    }
+  }
+
+  if (isFullAccess) {
+    return {
+      resource,
+      canAccess: true,
+      canRead: true,
+      canWrite: true,
+      canUpdate: true,
+      canDelete: true,
+      allAccess: true,
+    }
+  }
+
+  try {
+    const { data } = await supabase
+      .from("company_role_permissions")
+      .select("can_access, can_read, can_write, can_update, can_delete, all_access")
+      .eq("company_id", companyId)
+      .eq("role", normalizedRole)
+      .eq("resource", resource)
+      .maybeSingle()
+
+    return {
+      resource,
+      canAccess: Boolean(data?.can_access ?? false),
+      canRead: Boolean(data?.can_read ?? false),
+      canWrite: Boolean(data?.can_write ?? false),
+      canUpdate: Boolean(data?.can_update ?? false),
+      canDelete: Boolean(data?.can_delete ?? false),
+      allAccess: Boolean(data?.all_access ?? false),
+    }
+  } catch {
+    return {
+      resource,
+      canAccess: false,
+      canRead: false,
+      canWrite: false,
+      canUpdate: false,
+      canDelete: false,
+      allAccess: false,
+    }
+  }
+}
+
+async function loadLiveContext(
+  supabase: SupabaseClient,
+  scope: AIContextScope,
+  domain: AIDomain,
+  language: "ar" | "en"
+): Promise<AILiveContext> {
+  try {
+    switch (domain) {
+      case "sales":
+        return await loadSalesContext(supabase, scope, language)
+      case "inventory":
+        return await loadInventoryContext(supabase, scope, language)
+      case "accounting":
+        return await loadAccountingContext(supabase, scope, language)
+      case "returns":
+        return await loadReturnsContext(supabase, scope, language)
+      case "receivables":
+        return await loadReceivablesContext(supabase, scope, language)
+      case "dashboard":
+        return await loadDashboardContext(supabase, scope, language)
+      case "governance":
+        return await loadGovernanceContext(supabase, scope, language)
+      default:
+        return await loadSupportContext(supabase, scope, language)
+    }
+  } catch {
+    return {
+      domain,
+      summary:
+        language === "ar"
+          ? "السياق الحي المحلي محدود حالياً، لكن دليل الصفحة ما زال متاحاً للإرشاد."
+          : "Live local context is limited right now, but the page guide is still available for guidance.",
+      metrics: [],
+      alerts: [],
+      suggestions: [],
+    }
+  }
+}
+
+async function loadDashboardContext(
+  supabase: SupabaseClient,
+  scope: AIContextScope,
+  language: "ar" | "en"
+): Promise<AILiveContext> {
+  const [invoiceCount, sentInvoices, pendingDispatch, lowStockProducts, pendingReturns] =
+    await Promise.all([
+      countCompanyRows(supabase, "invoices", scope, { branchColumn: "branch_id" }),
+      countCompanyRows(supabase, "invoices", scope, {
+        branchColumn: "branch_id",
+        mutate: (query) => query.in("status", ["sent", "paid", "partially_paid"]),
+      }),
+      countCompanyRows(supabase, "invoices", scope, {
+        branchColumn: "branch_id",
+        warehouseColumn: "warehouse_id",
+        mutate: (query) =>
+          query.or("approval_status.eq.pending,warehouse_status.eq.pending"),
+      }),
+      countCompanyRows(supabase, "products", scope, {
+        mutate: (query) => query.neq("item_type", "service").lte("quantity_on_hand", 5),
+      }),
+      countCompanyRows(supabase, "sales_return_requests", scope, {
+        warehouseColumn: "warehouse_id",
+        mutate: (query) =>
+          query.in("status", ["pending_approval_level_1", "pending_warehouse_approval"]),
+      }),
+    ])
+
+  const alerts: string[] = []
+  if (pendingDispatch > 0) {
+    alerts.push(
+      language === "ar"
+        ? `يوجد ${pendingDispatch} عملية تسليم أو اعتماد فاتورة ما زالت معلقة.`
+        : `${pendingDispatch} invoice dispatch or approval items are still pending.`
+    )
+  }
+  if (lowStockProducts > 0) {
+    alerts.push(
+      language === "ar"
+        ? `يوجد ${lowStockProducts} منتجاً منخفض المخزون يحتاج مراجعة.`
+        : `${lowStockProducts} products are low on stock and need review.`
+    )
+  }
+
+  return {
+    domain: "dashboard",
+    summary:
+      language === "ar"
+        ? "هذه لقطة محلية سريعة لحالة التشغيل الحالية عبر المبيعات والمخزون والمرتجعات."
+        : "This is a quick local operating snapshot across sales, inventory, and returns.",
+    metrics: [
+      metric(language, "إجمالي الفواتير", "Total invoices", invoiceCount),
+      metric(language, "فواتير منشورة", "Posted invoices", sentInvoices),
+      metric(language, "اعتمادات تسليم معلقة", "Pending dispatch approvals", pendingDispatch),
+      metric(language, "منتجات منخفضة المخزون", "Low-stock products", lowStockProducts),
+      metric(language, "طلبات مرتجع نشطة", "Active return requests", pendingReturns),
+    ],
+    alerts,
+    suggestions: [
+      language === "ar"
+        ? "ابدأ بمراجعة الاعتمادات المعلقة ثم المنتجات منخفضة المخزون."
+        : "Start with pending approvals, then review low-stock products.",
+      language === "ar"
+        ? "استخدم صفحة المجال نفسه أو صفحة التقارير للحصول على تفاصيل أعمق."
+        : "Use the module page itself or the reports page for deeper detail.",
+    ],
+  }
+}
+
+async function loadSalesContext(
+  supabase: SupabaseClient,
+  scope: AIContextScope,
+  language: "ar" | "en"
+): Promise<AILiveContext> {
+  const [draftCount, sentCount, paidCount, partialCount, pendingDispatch, approvedDispatch] =
+    await Promise.all([
+      countCompanyRows(supabase, "invoices", scope, {
+        branchColumn: "branch_id",
+        mutate: (query) => query.eq("status", "draft"),
+      }),
+      countCompanyRows(supabase, "invoices", scope, {
+        branchColumn: "branch_id",
+        mutate: (query) => query.eq("status", "sent"),
+      }),
+      countCompanyRows(supabase, "invoices", scope, {
+        branchColumn: "branch_id",
+        mutate: (query) => query.eq("status", "paid"),
+      }),
+      countCompanyRows(supabase, "invoices", scope, {
+        branchColumn: "branch_id",
+        mutate: (query) => query.eq("status", "partially_paid"),
+      }),
+      countCompanyRows(supabase, "invoices", scope, {
+        branchColumn: "branch_id",
+        warehouseColumn: "warehouse_id",
+        mutate: (query) =>
+          query.neq("status", "draft").or("approval_status.eq.pending,warehouse_status.eq.pending"),
+      }),
+      countCompanyRows(supabase, "invoices", scope, {
+        branchColumn: "branch_id",
+        warehouseColumn: "warehouse_id",
+        mutate: (query) =>
+          query.or("approval_status.eq.approved,warehouse_status.eq.approved"),
+      }),
+    ])
+
+  const receivablesAmount = await sumOpenReceivables(supabase, scope)
+  const alerts: string[] = []
+  if (pendingDispatch > 0) {
+    alerts.push(
+      language === "ar"
+        ? "اعتماد التسليم ما زال معلقًا لبعض الفواتير ويؤثر على اكتمال دورة البيع."
+        : "Delivery approval is still pending for some invoices and affects sales-cycle completion."
+    )
+  }
+  if (receivablesAmount > 0) {
+    alerts.push(
+      language === "ar"
+        ? `هناك ذمم مدينة مفتوحة بقيمة ${formatAmount(receivablesAmount, language)} تحتاج متابعة.`
+        : `There are open receivables worth ${formatAmount(receivablesAmount, language)} that need follow-up.`
+    )
+  }
+
+  return {
+    domain: "sales",
+    summary:
+      language === "ar"
+        ? "الموديول المحلي يرى دورة المبيعات كسلسلة: أمر بيع -> فاتورة -> اعتماد تسليم -> تحصيل -> مرتجع عند الحاجة."
+        : "The local module sees sales as a chain: sales order -> invoice -> delivery approval -> collection -> return when needed.",
+    metrics: [
+      metric(language, "فواتير مسودة", "Draft invoices", draftCount),
+      metric(language, "فواتير مرسلة", "Sent invoices", sentCount),
+      metric(language, "فواتير مدفوعة", "Paid invoices", paidCount),
+      metric(language, "مدفوعة جزئياً", "Partially paid invoices", partialCount),
+      metric(language, "بانتظار اعتماد التسليم", "Pending delivery approval", pendingDispatch),
+      metric(language, "تم اعتماد التسليم", "Approved delivery", approvedDispatch),
+      metric(language, "ذمم مدينة مفتوحة", "Open receivables", formatAmount(receivablesAmount, language)),
+    ],
+    alerts,
+    suggestions: [
+      language === "ar"
+        ? "إذا كان سؤالك عن التنفيذ، ابدأ من حالة الفاتورة ثم اعتماد المخزن ثم التحصيل."
+        : "For execution questions, start with invoice status, then warehouse approval, then collection.",
+      language === "ar"
+        ? "إذا كان سؤالك عن الذمم، راقب الفرق بين الإجمالي والمدفوع والمرتجع."
+        : "For receivables questions, compare total, paid, and returned values.",
+    ],
+  }
+}
+
+async function loadInventoryContext(
+  supabase: SupabaseClient,
+  scope: AIContextScope,
+  language: "ar" | "en"
+): Promise<AILiveContext> {
+  const [stockProducts, serviceProducts, lowStock, outOfStock, pendingDispatch] =
+    await Promise.all([
+      countCompanyRows(supabase, "products", scope, {
+        mutate: (query) => query.neq("item_type", "service"),
+      }),
+      countCompanyRows(supabase, "products", scope, {
+        mutate: (query) => query.eq("item_type", "service"),
+      }),
+      countCompanyRows(supabase, "products", scope, {
+        mutate: (query) => query.neq("item_type", "service").gt("quantity_on_hand", 0).lte("quantity_on_hand", 5),
+      }),
+      countCompanyRows(supabase, "products", scope, {
+        mutate: (query) => query.neq("item_type", "service").lte("quantity_on_hand", 0),
+      }),
+      countCompanyRows(supabase, "invoices", scope, {
+        branchColumn: "branch_id",
+        warehouseColumn: "warehouse_id",
+        mutate: (query) =>
+          query.neq("status", "draft").or("approval_status.eq.pending,warehouse_status.eq.pending"),
+      }),
+    ])
+
+  const alerts: string[] = []
+  if (outOfStock > 0) {
+    alerts.push(
+      language === "ar"
+        ? `يوجد ${outOfStock} منتجاً نافد المخزون ويحتاج مراجعة قبل أي تسليم جديد.`
+        : `${outOfStock} products are out of stock and should be reviewed before new dispatches.`
+    )
+  }
+  if (pendingDispatch > 0) {
+    alerts.push(
+      language === "ar"
+        ? "هناك فواتير بانتظار اعتماد تسليم، وبالتالي توقيت إخراج المخزون ما زال معلقًا."
+        : "Some invoices are still waiting for delivery approval, so stock release timing remains pending."
+    )
+  }
+
+  return {
+    domain: "inventory",
+    summary:
+      language === "ar"
+        ? "المحرك المحلي يربط المخزون بالمبيعات والمرتجعات واعتمادات المخزن دون تنفيذ أي حركة فعلية."
+        : "The local engine ties inventory to sales, returns, and warehouse approvals without executing any real stock movement.",
+    metrics: [
+      metric(language, "منتجات مخزنية", "Stocked products", stockProducts),
+      metric(language, "خدمات", "Services", serviceProducts),
+      metric(language, "مخزون منخفض", "Low stock", lowStock),
+      metric(language, "نفاد مخزون", "Out of stock", outOfStock),
+      metric(language, "حركات تسليم معلقة", "Pending dispatch actions", pendingDispatch),
+    ],
+    alerts,
+    suggestions: [
+      language === "ar"
+        ? "إذا كان السؤال عن منتج محدد، اذكر الاسم أو SKU لتحصل على إرشاد أدق."
+        : "If the question is about a specific product, mention the name or SKU for more precise guidance.",
+      language === "ar"
+        ? "راجع أولاً المنتجات منخفضة المخزون ثم اعتمادات التسليم أو المرتجع المرتبطة بها."
+        : "Review low-stock products first, then the delivery or return approvals that affect them.",
+    ],
+  }
+}
+
+async function loadAccountingContext(
+  supabase: SupabaseClient,
+  scope: AIContextScope,
+  language: "ar" | "en"
+): Promise<AILiveContext> {
+  const [postedEntries, draftEntries, accountsCount, openReceivables] = await Promise.all([
+    countCompanyRows(supabase, "journal_entries", scope, {
+      branchColumn: "branch_id",
+      mutate: (query) => query.eq("status", "posted").neq("is_deleted", true).is("deleted_at", null),
+    }),
+    countCompanyRows(supabase, "journal_entries", scope, {
+      branchColumn: "branch_id",
+      mutate: (query) => query.eq("status", "draft").neq("is_deleted", true).is("deleted_at", null),
+    }),
+    countCompanyRows(supabase, "chart_of_accounts", scope),
+    sumOpenReceivables(supabase, scope),
+  ])
+
+  const alerts =
+    draftEntries > 0
+      ? [
+          language === "ar"
+            ? `يوجد ${draftEntries} قيداً مسودة تحتاج مراجعة قبل الاعتماد النهائي أو الإقفال.`
+            : `${draftEntries} draft journal entries still need review before final posting or closing.`,
+        ]
+      : []
+
+  return {
+    domain: "accounting",
+    summary:
+      language === "ar"
+        ? "الموديول المحلي يشرح الأثر المحاسبي والقيود المرتبطة بالعمليات دون إنشاء قيود جديدة."
+        : "The local module explains accounting impact and journal behavior without creating new entries.",
+    metrics: [
+      metric(language, "قيود مرحّلة", "Posted journal entries", postedEntries),
+      metric(language, "قيود مسودة", "Draft journal entries", draftEntries),
+      metric(language, "دليل الحسابات", "Chart of accounts", accountsCount),
+      metric(language, "ذمم مدينة مفتوحة", "Open receivables", formatAmount(openReceivables, language)),
+    ],
+    alerts,
+    suggestions: [
+      language === "ar"
+        ? "إذا كنت تسأل عن قيد عملية، اذكر نوع العملية: فاتورة، دفعة، مرتجع، أو قيد بنكي."
+        : "If you are asking about an entry, mention the transaction type: invoice, payment, return, or banking entry.",
+      language === "ar"
+        ? "للذمم، راقب دائماً الإجمالي والمدفوع والمرتجع قبل تفسير الرصيد."
+        : "For receivables, always compare total, paid, and returned values before interpreting the balance.",
+    ],
+  }
+}
+
+async function loadReturnsContext(
+  supabase: SupabaseClient,
+  scope: AIContextScope,
+  language: "ar" | "en"
+): Promise<AILiveContext> {
+  const [pendingLevel1, pendingWarehouse, approvedCompleted, rejected, completedReturns] =
+    await Promise.all([
+      countCompanyRows(supabase, "sales_return_requests", scope, {
+        warehouseColumn: "warehouse_id",
+        mutate: (query) => query.eq("status", "pending_approval_level_1"),
+      }),
+      countCompanyRows(supabase, "sales_return_requests", scope, {
+        warehouseColumn: "warehouse_id",
+        mutate: (query) => query.eq("status", "pending_warehouse_approval"),
+      }),
+      countCompanyRows(supabase, "sales_return_requests", scope, {
+        warehouseColumn: "warehouse_id",
+        mutate: (query) => query.eq("status", "approved_completed"),
+      }),
+      countCompanyRows(supabase, "sales_return_requests", scope, {
+        warehouseColumn: "warehouse_id",
+        mutate: (query) => query.in("status", ["rejected_level_1", "rejected_warehouse"]),
+      }),
+      countCompanyRows(supabase, "sales_returns", scope, {
+        branchColumn: "branch_id",
+      }),
+    ])
+
+  const alerts =
+    pendingLevel1 > 0 || pendingWarehouse > 0
+      ? [
+          language === "ar"
+            ? "يوجد طلبات مرتجع ما زالت داخل سلسلة الاعتماد متعددة المستويات."
+            : "Some return requests are still moving through the multi-level approval chain.",
+        ]
+      : []
+
+  return {
+    domain: "returns",
+    summary:
+      language === "ar"
+        ? "المرتجعات تمر هنا بطلب اعتماد إداري ثم اعتماد مخزن قبل أي أثر مخزني أو محاسبي."
+        : "Returns move here through management approval and then warehouse approval before any inventory or accounting effect.",
+    metrics: [
+      metric(language, "بانتظار الإدارة", "Pending management approval", pendingLevel1),
+      metric(language, "بانتظار المخزن", "Pending warehouse approval", pendingWarehouse),
+      metric(language, "طلبات مكتملة", "Completed requests", approvedCompleted),
+      metric(language, "طلبات مرفوضة", "Rejected requests", rejected),
+      metric(language, "مرتجعات منفذة", "Executed sales returns", completedReturns),
+    ],
+    alerts,
+    suggestions: [
+      language === "ar"
+        ? "إذا كان السؤال عن سبب عدم التنفيذ، راجع المرحلة الحالية: إدارة أم مخزن."
+        : "If you are asking why execution did not happen, first check whether it is waiting on management or warehouse.",
+      language === "ar"
+        ? "اذكر ما إذا كان المرتجع جزئياً أو كاملاً وسأشرح المسار المناسب."
+        : "Mention whether the return is partial or full and I will explain the right workflow.",
+    ],
+  }
+}
+
+async function loadReceivablesContext(
+  supabase: SupabaseClient,
+  scope: AIContextScope,
+  language: "ar" | "en"
+): Promise<AILiveContext> {
+  const [customersCount, postedInvoices, openReceivables] = await Promise.all([
+    countCompanyRows(supabase, "customers", scope),
+    countCompanyRows(supabase, "invoices", scope, {
+      branchColumn: "branch_id",
+      mutate: (query) => query.in("status", ["sent", "paid", "partially_paid"]),
+    }),
+    sumOpenReceivables(supabase, scope),
+  ])
+
+  const alerts =
+    openReceivables > 0
+      ? [
+          language === "ar"
+            ? "الرصيد المفتوح يتأثر بالدفعات والمرتجعات واعتماداتها، وليس بالمبيعات فقط."
+            : "The open balance is shaped by payments, returns, and their approvals, not by sales alone.",
+        ]
+      : []
+
+  return {
+    domain: "receivables",
+    summary:
+      language === "ar"
+        ? "محليًا، يتم تفسير الذمم من الفواتير المنشورة والمدفوعات والمرتجعات المطبقة عليها."
+        : "Locally, receivables are interpreted from posted invoices, payments, and applied returns.",
+    metrics: [
+      metric(language, "عملاء", "Customers", customersCount),
+      metric(language, "فواتير منشورة", "Posted invoices", postedInvoices),
+      metric(language, "ذمم مفتوحة", "Open receivables", formatAmount(openReceivables, language)),
+    ],
+    alerts,
+    suggestions: [
+      language === "ar"
+        ? "إذا أردت تقرير عميل، اذكر اسم العميل وسأوجهك لأفضل صفحة وطريقة مراجعة."
+        : "If you need a customer report, mention the customer and I will guide you to the best page and review path.",
+    ],
+  }
+}
+
+async function loadGovernanceContext(
+  supabase: SupabaseClient,
+  scope: AIContextScope,
+  language: "ar" | "en"
+): Promise<AILiveContext> {
+  const [membersCount, permissionsForRole] = await Promise.all([
+    countCompanyRows(supabase, "company_members", scope),
+    countCompanyRows(supabase, "company_role_permissions", scope, {
+      mutate: (query) => query.eq("role", String(scope.role || "").toLowerCase()),
+    }),
+  ])
+
+  return {
+    domain: "governance",
+    summary:
+      language === "ar"
+        ? "الطبقة المحلية تحافظ على نفس الحوكمة الحالية: صلاحيات الدور، نطاق الفرع/المخزن، وسجل مراجعة لكل محادثة."
+        : "The local layer preserves the same governance: role permissions, branch/warehouse scope, and an audit trail for every conversation.",
+    metrics: [
+      metric(language, "أعضاء الشركة", "Company members", membersCount),
+      metric(language, "صلاحيات الدور الحالية", "Permission records for current role", permissionsForRole),
+      metric(language, "الدور الحالي", "Current role", scope.role || (language === "ar" ? "غير محدد" : "Not set")),
+    ],
+    alerts: [],
+    suggestions: [
+      language === "ar"
+        ? "لأي سؤال عن من يعتمد ماذا، اذكر العملية وسأشرح التسلسل دون تجاوز الحوكمة."
+        : "For any question about who approves what, mention the workflow and I will explain the sequence without bypassing governance.",
+    ],
+  }
+}
+
+async function loadSupportContext(
+  supabase: SupabaseClient,
+  scope: AIContextScope,
+  language: "ar" | "en"
+): Promise<AILiveContext> {
+  const membersCount = await countCompanyRows(supabase, "company_members", scope)
+
+  return {
+    domain: "support",
+    summary:
+      language === "ar"
+        ? "هذا مساعد داخلي مجاني يعتمد على دليل الصفحة والسياق الحي للنظام بدلاً من أي مزود خارجي."
+        : "This is a free internal assistant built on page guides and live ERP context instead of any external provider.",
+    metrics: [
+      metric(language, "أعضاء الشركة", "Company members", membersCount),
+      metric(language, "الدور الحالي", "Current role", scope.role || (language === "ar" ? "غير محدد" : "Not set")),
+    ],
+    alerts: [],
+    suggestions: [
+      language === "ar"
+        ? "اسأل بسياق الصفحة الحالية أو اسم العملية لتحصل على إجابة أدق."
+        : "Ask with the current page or workflow name for a more precise answer.",
+    ],
+  }
+}
+
 function buildGovernanceSummary(
   scope: AIContextScope,
+  permissionSnapshot: AIPermissionSnapshot,
   language: "ar" | "en"
 ): string {
   if (language === "ar") {
@@ -117,7 +801,12 @@ function buildGovernanceSummary(
       `الفرع: ${scope.branchId || "غير محدد"}`,
       `مركز التكلفة: ${scope.costCenterId || "غير محدد"}`,
       `المخزن: ${scope.warehouseId || "غير محدد"}`,
-      "يجب احترام الحوكمة الحالية والصلاحيات الفعلية للمستخدم.",
+      `المورد/الصفحة: ${permissionSnapshot.resource || "غير محدد"}`,
+      `القراءة: ${permissionSnapshot.canRead ? "مسموح" : "غير مسموح"}`,
+      `الكتابة: ${permissionSnapshot.canWrite ? "مسموح" : "غير مسموح"}`,
+      `التحديث: ${permissionSnapshot.canUpdate ? "مسموح" : "غير مسموح"}`,
+      `الحذف: ${permissionSnapshot.canDelete ? "مسموح" : "غير مسموح"}`,
+      "يجب احترام الحوكمة الحالية والصلاحيات الفعلية للمستخدم في كل إجابة.",
     ].join("\n")
   }
 
@@ -127,6 +816,120 @@ function buildGovernanceSummary(
     `Branch: ${scope.branchId || "not set"}`,
     `Cost center: ${scope.costCenterId || "not set"}`,
     `Warehouse: ${scope.warehouseId || "not set"}`,
-    "Current governance and user permissions must be respected at all times.",
+    `Resource: ${permissionSnapshot.resource || "unknown"}`,
+    `Read: ${permissionSnapshot.canRead ? "allowed" : "not allowed"}`,
+    `Write: ${permissionSnapshot.canWrite ? "allowed" : "not allowed"}`,
+    `Update: ${permissionSnapshot.canUpdate ? "allowed" : "not allowed"}`,
+    `Delete: ${permissionSnapshot.canDelete ? "allowed" : "not allowed"}`,
+    "All answers must respect current governance and real user permissions.",
   ].join("\n")
+}
+
+function metric(
+  language: "ar" | "en",
+  labelAr: string,
+  labelEn: string,
+  value: string | number
+): AILiveMetric {
+  return {
+    label: language === "ar" ? labelAr : labelEn,
+    value: String(value),
+  }
+}
+
+function formatAmount(value: number, language: "ar" | "en") {
+  return new Intl.NumberFormat(language === "ar" ? "ar-EG" : "en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+async function sumOpenReceivables(
+  supabase: SupabaseClient,
+  scope: AIContextScope
+): Promise<number> {
+  try {
+    let query: any = supabase
+      .from("invoices")
+      .select("total_amount, paid_amount, returned_amount, branch_id, warehouse_id")
+      .eq("company_id", scope.companyId)
+      .in("status", ["sent", "paid", "partially_paid"])
+
+    query = applyScopedFilters(query, scope, {
+      branchColumn: "branch_id",
+      warehouseColumn: "warehouse_id",
+    })
+
+    const { data, error } = await query
+    if (error || !Array.isArray(data)) return 0
+
+    return data.reduce((sum: number, row: any) => {
+      const total = Number(row.total_amount || 0)
+      const paid = Number(row.paid_amount || 0)
+      const returned = Number(row.returned_amount || 0)
+      return sum + Math.max(0, total - paid - returned)
+    }, 0)
+  } catch {
+    return 0
+  }
+}
+
+async function countCompanyRows(
+  supabase: SupabaseClient,
+  table: string,
+  scope: AIContextScope,
+  options?: {
+    branchColumn?: string
+    warehouseColumn?: string
+    mutate?: (query: any) => any
+  }
+): Promise<number> {
+  try {
+    let query: any = supabase
+      .from(table)
+      .select("*", { count: "exact", head: true })
+      .eq("company_id", scope.companyId)
+
+    query = applyScopedFilters(query, scope, {
+      branchColumn: options?.branchColumn,
+      warehouseColumn: options?.warehouseColumn,
+    })
+
+    if (options?.mutate) {
+      query = options.mutate(query)
+    }
+
+    const { count, error } = await query
+    if (error) return 0
+    return Number(count || 0)
+  } catch {
+    return 0
+  }
+}
+
+function applyScopedFilters(
+  query: any,
+  scope: AIContextScope,
+  options?: {
+    branchColumn?: string
+    warehouseColumn?: string
+  }
+) {
+  if (hasFullScope(scope.role)) return query
+
+  if (options?.branchColumn && scope.branchId) {
+    query = query.eq(options.branchColumn, scope.branchId)
+  }
+
+  if (options?.warehouseColumn && scope.warehouseId) {
+    query = query.eq(options.warehouseColumn, scope.warehouseId)
+  }
+
+  return query
+}
+
+function hasFullScope(role?: string | null) {
+  return ["owner", "admin", "general_manager"].includes(
+    String(role || "").trim().toLowerCase()
+  )
 }

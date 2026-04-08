@@ -75,10 +75,10 @@ const L = {
     pl: "الأرباح والخسائر",
     noEntries: "لا قيود محاسبية لهذه العملية",
     copilotDescription:
-      "مساعد إرشادي للقراءة فقط يشرح لك الخطوات والصلاحيات والاعتمادات داخل النظام الحالي.",
-    copilotSafeTitle: "وضع آمن للقراءة فقط",
+      "مساعد ERP محلي مجاني للقراءة فقط يشرح لك الخطوات والصلاحيات والاعتمادات داخل النظام الحالي.",
+    copilotSafeTitle: "محرك محلي آمن",
     copilotSafeBody:
-      "لن ينفذ هذا المساعد أي عملية مالية أو مخزنية أو اعتماد. دوره هنا هو الشرح والتوجيه فقط.",
+      "يعمل هذا المساعد بالكامل داخل المشروع دون أي مزود خارجي. لن ينفذ أي عملية مالية أو مخزنية أو اعتماد، ودوره هنا هو الشرح والتوجيه فقط.",
     copilotEmptyTitle: "ابدأ بسؤال متعلق بهذه الصفحة",
     copilotEmptyBody:
       "يمكنك سؤاله عن خطوات العمل، الاعتمادات المطلوبة، أو معنى الحالة الحالية داخل النظام.",
@@ -121,10 +121,10 @@ const L = {
     pl: "Profit & Loss",
     noEntries: "No accounting entries for this operation",
     copilotDescription:
-      "A read-only ERP copilot that explains workflow steps, permissions, and approval paths in the current system.",
-    copilotSafeTitle: "Safe read-only mode",
+      "A free local read-only ERP copilot that explains workflow steps, permissions, and approval paths in the current system.",
+    copilotSafeTitle: "Safe local engine",
     copilotSafeBody:
-      "This copilot will not execute financial or inventory actions and will not approve anything. It only explains the correct process.",
+      "This copilot runs fully inside the project without any external provider. It will not execute financial or inventory actions and will not approve anything. It only explains the correct process.",
     copilotEmptyTitle: "Start with a page-specific question",
     copilotEmptyBody:
       "Ask about workflow steps, required approvals, or what the current status means inside this ERP.",
