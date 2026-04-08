@@ -32,6 +32,8 @@ interface IntentAnalysis {
   askAction: boolean
   askPrediction: boolean
   askValidation: boolean
+  askCapabilities: boolean
+  askGreeting: boolean
 }
 
 const LOCAL_COPILOT_MODEL = "local-erp-copilot-v2"
@@ -51,14 +53,15 @@ export async function generateCopilotReply(params: {
   })
 
   const sections = [
-    buildLead(context, userMessage),
+    buildLead(context, intents),
+    buildCapabilitiesSection(context, intents),
     buildLiveSummarySection(context, intents, interactivePayload),
     buildWorkflowSection(context, intents),
     buildGovernanceSection(context, intents, interactivePayload),
     buildAccountingSection(context, intents),
     buildPredictionSection(context, intents, interactivePayload),
     buildActionGuardSection(context, intents),
-    buildNextStepsSection(context, interactivePayload),
+    buildNextStepsSection(context, intents, interactivePayload),
   ].filter(Boolean)
 
   if (
@@ -122,18 +125,18 @@ export function buildCopilotInteractivePayload(params: {
 }
 
 function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {
-  const text = message.toLowerCase()
+  const text = normalizeIntentText(message)
   const workflowWords =
     language === "ar"
-      ? ["اشرح", "خطوات", "كيف", "طريقة", "مسار", "اعمل", "تنفيذ", "استخدام"]
+      ? ["اشرح", "خطوات", "كيف", "طريقه", "مسار", "اعمل", "تنفيذ", "استخدام", "شرح", "العمل"]
       : ["explain", "steps", "how", "workflow", "process", "use", "operate"]
   const reportWords =
     language === "ar"
-      ? ["تقرير", "ملخص", "أرقام", "احص", "مؤشر", "حالة", "وضع", "إحصاء", "لوحة"]
+      ? ["تقرير", "ملخص", "ارقام", "احص", "مؤشر", "حاله", "وضع", "احصاء", "لوحه"]
       : ["report", "summary", "numbers", "metrics", "status", "overview", "dashboard"]
   const governanceWords =
     language === "ar"
-      ? ["صلاح", "دور", "اعتماد", "موافقة", "رفض", "من يقدر", "من يمكن", "حوكمة"]
+      ? ["صلاح", "دور", "اعتماد", "موافقه", "رفض", "من يقدر", "من يمكن", "حوكمه", "قيود", "مسموح"]
       : ["permission", "role", "approval", "approve", "reject", "governance", "who can"]
   const accountingWords =
     language === "ar"
@@ -141,45 +144,163 @@ function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {
       : ["accounting", "journal", "entry", "ledger", "receivable", "payable", "account"]
   const actionWords =
     language === "ar"
-      ? ["نفذ", "أنشئ", "اعتمد", "ارفض", "احذف", "عدّل", "رحّل", "احفظ"]
+      ? ["نفذ", "انشئ", "اعتمد", "ارفض", "احذف", "عدل", "رحل", "احفظ"]
       : ["execute", "create", "approve", "reject", "delete", "update", "post", "save"]
   const predictionWords =
     language === "ar"
-      ? ["الخطوة التالية", "متوقع", "توقع", "بعد ذلك", "ما التالي", "تنبيه"]
+      ? ["الخطوه التاليه", "متوقع", "توقع", "بعد ذلك", "ما التالي", "تنبيه"]
       : ["next step", "predict", "prediction", "after that", "what next", "warning"]
   const validationWords =
     language === "ar"
-      ? ["خطأ", "ناقصة", "ناقص", "اكتمال", "تحقق", "مشكلة", "مراجعة", "تحذير"]
+      ? ["خطا", "ناقصه", "ناقص", "اكتمال", "تحقق", "مشكله", "مراجعه", "تحذير"]
       : ["error", "missing", "incomplete", "validate", "issue", "review", "warning"]
+  const capabilityWords =
+    language === "ar"
+      ? ["امكاني", "اكني", "قدرات", "تستطيع", "تقدر", "ماذا تفعل", "كيف تساعد", "ساعدني", "مساعدتك", "فهم العمل", "شرح التطبيق"]
+      : ["capabilities", "what can you do", "how can you help", "help me", "assist", "support"]
+  const greetingWords =
+    language === "ar"
+      ? ["السلام", "مرحبا", "اهلا", "اهلن", "صباح الخير", "مساء الخير", "مساء النور", "هاي", "السلام عليكم"]
+      : ["hello", "hi", "good morning", "good evening", "hey"]
+
+  const askGreeting = includesAny(text, greetingWords)
+  const askCapabilities = includesAny(text, capabilityWords)
+  const askWorkflow = includesAny(text, workflowWords)
+  const askReport = includesAny(text, reportWords)
+  const askGovernance = includesAny(text, governanceWords)
+  const askAccounting = includesAny(text, accountingWords)
+  const askAction = includesAny(text, actionWords)
+  const askPrediction = includesAny(text, predictionWords)
+  const askValidation = includesAny(text, validationWords)
 
   return {
-    askWorkflow: includesAny(text, workflowWords) || !includesAny(text, reportWords),
-    askReport: includesAny(text, reportWords),
-    askGovernance: includesAny(text, governanceWords),
-    askAccounting: includesAny(text, accountingWords),
-    askAction: includesAny(text, actionWords),
-    askPrediction: includesAny(text, predictionWords),
-    askValidation: includesAny(text, validationWords),
+    askWorkflow,
+    askReport,
+    askGovernance,
+    askAccounting,
+    askAction,
+    askPrediction,
+    askValidation,
+    askCapabilities,
+    askGreeting,
   }
 }
 
-function buildLead(context: AICopilotContext, userMessage: string) {
+function buildLead(context: AICopilotContext, intents: IntentAnalysis) {
   const title = context.guide?.title
+  const pageLabel =
+    context.language === "ar"
+      ? title
+        ? `صفحة ${title}`
+        : "هذه الصفحة"
+      : title
+        ? `the ${title} page`
+        : "this page"
+
   if (context.language === "ar") {
+    if (intents.askGreeting && isPureGreetingIntent(intents)) {
+      return [
+        "مساء النور. أنا المساعد المحلي التفاعلي داخل التطبيق.",
+        title ? `أنا موجود الآن داخل ${pageLabel}.` : "أستطيع إرشادك داخل الصفحة الحالية حسب السياق المتاح.",
+      ].join("\n")
+    }
+
+    if (intents.askCapabilities) {
+      return `أستطيع مساعدتك في فهم العمل داخل ${pageLabel} اعتمادًا على دليل الصفحة، صلاحياتك الحالية، وبيانات النظام الحية.`
+    }
+
+    if (intents.askGovernance && !intents.askWorkflow) {
+      return `سأوضح لك ما الذي يمكنك فعله داخل ${pageLabel} وفق صلاحياتك الحالية ودون تجاوز الحوكمة.`
+    }
+
+    if (intents.askReport) {
+      return `هذا ملخص حي للمؤشرات المرتبطة بـ ${pageLabel} مع أهم ما يحتاج متابعة.`
+    }
+
+    if (intents.askWorkflow) {
+      return `في ${pageLabel}، هذه هي الخطوات العملية الأهم حسب دليل الصفحة الحالي والسياق المرتبط بها.`
+    }
+
     return [
-      title ? `أعمل الآن عبر المساعد المحلي التفاعلي داخل صفحة ${title}.` : "أعمل الآن عبر المساعد المحلي التفاعلي داخل النظام.",
+      title ? `أعمل الآن عبر المساعد المحلي التفاعلي داخل ${pageLabel}.` : "أعمل الآن عبر المساعد المحلي التفاعلي داخل النظام.",
       context.liveContext.summary,
-      `سؤالك الحالي: ${userMessage}`,
     ].join("\n")
+  }
+
+  if (intents.askGreeting && isPureGreetingIntent(intents)) {
+    return [
+      "Hello. I am the interactive local copilot inside the ERP.",
+      title ? `I am currently focused on ${pageLabel}.` : "I can guide you inside the current page using local context.",
+    ].join("\n")
+  }
+
+  if (intents.askCapabilities) {
+    return `I can help you understand the work on ${pageLabel} using the page guide, your current permissions, and live ERP data.`
+  }
+
+  if (intents.askGovernance && !intents.askWorkflow) {
+    return `I will explain what you can do on ${pageLabel} based on your current permissions without bypassing governance.`
+  }
+
+  if (intents.askReport) {
+    return `This is a live summary of the indicators related to ${pageLabel}, with the key items that need follow-up.`
+  }
+
+  if (intents.askWorkflow) {
+    return `On ${pageLabel}, these are the most relevant operating steps based on the current guide and live context.`
   }
 
   return [
     title
-      ? `I am answering through the interactive local copilot inside the ${title} page.`
+      ? `I am answering through the interactive local copilot inside ${pageLabel}.`
       : "I am answering through the interactive local copilot inside the ERP.",
     context.liveContext.summary,
-    `Current question: ${userMessage}`,
   ].join("\n")
+}
+
+function buildCapabilitiesSection(
+  context: AICopilotContext,
+  intents: IntentAnalysis
+) {
+  if (!intents.askCapabilities && !(intents.askGreeting && isPureGreetingIntent(intents))) {
+    return ""
+  }
+
+  if (context.language === "ar") {
+    const lines = [
+      "يمكنني مساعدتك هنا في:",
+      "- شرح خطوات العمل داخل الصفحة الحالية خطوة بخطوة.",
+      "- توضيح ما الذي يسمح به دورك وصلاحياتك الحالية.",
+      "- شرح الاعتمادات والقيود والحوكمة المرتبطة بالعملية.",
+      "- تلخيص المؤشرات الحية والتنبيهات والبيانات التي تحتاج مراجعة.",
+      "- اقتراح الخطوة التالية المتوقعة داخل نفس الدورة التشغيلية.",
+    ]
+
+    const domainLine = buildDomainCapabilityLine(context)
+    if (domainLine) {
+      lines.push(`- ${domainLine}`)
+    }
+
+    lines.push("ما لا أفعله: لا أنشئ أو أعتمد أو أحذف أو أرحّل أي عملية فعلية من داخل هذا المساعد.")
+    return lines.join("\n")
+  }
+
+  const lines = [
+    "I can help here by:",
+    "- Explaining the workflow on the current page step by step.",
+    "- Clarifying what your current role and permissions allow.",
+    "- Explaining approvals, controls, and governance constraints.",
+    "- Summarizing live indicators, warnings, and incomplete data points.",
+    "- Suggesting the most likely next step in the current operating cycle.",
+  ]
+
+  const domainLine = buildDomainCapabilityLine(context)
+  if (domainLine) {
+    lines.push(`- ${domainLine}`)
+  }
+
+  lines.push("What I do not do: I do not create, approve, delete, or post any real transaction from inside this copilot.")
+  return lines.join("\n")
 }
 
 function buildLiveSummarySection(
@@ -244,8 +365,22 @@ function buildGovernanceSection(
   const permission = context.permissionSnapshot
   const capabilityLine =
     context.language === "ar"
-      ? `صلاحياتك الحالية على ${permission.resource || "هذه الصفحة"}: قراءة ${boolAr(permission.canRead)}, كتابة ${boolAr(permission.canWrite)}, تحديث ${boolAr(permission.canUpdate)}, حذف ${boolAr(permission.canDelete)}.`
-      : `Your current permissions on ${permission.resource || "this page"}: read ${boolEn(permission.canRead)}, write ${boolEn(permission.canWrite)}, update ${boolEn(permission.canUpdate)}, delete ${boolEn(permission.canDelete)}.`
+      ? [
+          `صلاحياتك الحالية على ${permission.resource || "هذه الصفحة"}:`,
+          `- الدور: ${context.scope.role || "غير محدد"}`,
+          `- القراءة: ${boolAr(permission.canRead)}`,
+          `- الكتابة: ${boolAr(permission.canWrite)}`,
+          `- التحديث: ${boolAr(permission.canUpdate)}`,
+          `- الحذف: ${boolAr(permission.canDelete)}`,
+        ].join("\n")
+      : [
+          `Your current permissions on ${permission.resource || "this page"}:`,
+          `- Role: ${context.scope.role || "unknown"}`,
+          `- Read: ${boolEn(permission.canRead)}`,
+          `- Write: ${boolEn(permission.canWrite)}`,
+          `- Update: ${boolEn(permission.canUpdate)}`,
+          `- Delete: ${boolEn(permission.canDelete)}`,
+        ].join("\n")
 
   const domainRule = buildDomainRule(context)
   const blockers =
@@ -343,12 +478,15 @@ function buildActionGuardSection(context: AICopilotContext, intents: IntentAnaly
 
 function buildNextStepsSection(
   context: AICopilotContext,
+  intents: IntentAnalysis,
   payload: AICopilotInteractivePayload
 ) {
   if (payload.nextActions.length === 0 && payload.quickPrompts.length === 0) return ""
 
+  const orientationMode = intents.askGreeting || intents.askCapabilities
+
   const nextActionsBlock =
-    payload.nextActions.length > 0
+    !orientationMode && payload.nextActions.length > 0
       ? [
           context.language === "ar" ? "أفضل خطوة تفاعلية الآن:" : "Best interactive next step:",
           ...payload.nextActions.slice(0, 2).map((item) => `- ${item.title}: ${item.summary}`),
@@ -358,7 +496,13 @@ function buildNextStepsSection(
   const promptBlock =
     payload.quickPrompts.length > 0
       ? [
-          context.language === "ar" ? "يمكنك أيضًا سؤالي مباشرة عن:" : "You can also ask me directly about:",
+          context.language === "ar"
+            ? orientationMode
+              ? "يمكننا البدء مباشرة بأي من هذه الأسئلة:"
+              : "يمكنك أيضًا سؤالي مباشرة عن:"
+            : orientationMode
+              ? "We can start right away with any of these questions:"
+              : "You can also ask me directly about:",
           ...payload.quickPrompts.slice(0, 3).map((item) => `- ${item.label}`),
         ].join("\n")
       : ""
@@ -915,6 +1059,67 @@ function dedupeByLabel<T extends { label: string }>(items: T[]) {
 
 function includesAny(text: string, words: string[]) {
   return words.some((word) => text.includes(word))
+}
+
+function normalizeIntentText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/[ؤئ]/g, "ء")
+    .replace(/ـ/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function isPureGreetingIntent(intents: IntentAnalysis) {
+  return (
+    intents.askGreeting &&
+    !intents.askCapabilities &&
+    !intents.askWorkflow &&
+    !intents.askReport &&
+    !intents.askGovernance &&
+    !intents.askAccounting &&
+    !intents.askAction &&
+    !intents.askPrediction &&
+    !intents.askValidation
+  )
+}
+
+function buildDomainCapabilityLine(context: AICopilotContext) {
+  if (context.language === "ar") {
+    switch (context.domain) {
+      case "sales":
+        return "داخل دورة المبيعات أشرح لك الفرق بين طلب البيع، الفاتورة، اعتماد التسليم، التحصيل، والمرتجع."
+      case "returns":
+        return "داخل المرتجعات أشرح لك مرحلة الاعتماد الحالية ولماذا تم أو لم يتم التنفيذ."
+      case "inventory":
+        return "داخل المخزون أساعدك على فهم أثر الحركات المعلقة، النواقص، والارتباط بالفواتير والمرتجعات."
+      case "accounting":
+        return "داخل المحاسبة أوضح الأثر المحاسبي، القيود، والذمم المرتبطة بالعملية."
+      case "governance":
+        return "داخل الحوكمة أوضح من يستطيع ماذا، وما هي حدود الدور والفرع والمخزن."
+      default:
+        return "أربط لك سؤال الصفحة الحالية بالصلاحيات والبيانات الحية الموجودة داخل النظام."
+    }
+  }
+
+  switch (context.domain) {
+    case "sales":
+      return "Inside the sales cycle, I can explain the difference between sales orders, invoices, delivery approval, collection, and returns."
+    case "returns":
+      return "Inside returns, I can explain the current approval stage and why execution did or did not happen."
+    case "inventory":
+      return "Inside inventory, I can help you understand pending movements, shortages, and links to invoices and returns."
+    case "accounting":
+      return "Inside accounting, I can explain accounting impact, journal behavior, and receivable implications."
+    case "governance":
+      return "Inside governance, I can clarify who can do what and how role, branch, and warehouse scope apply."
+    default:
+      return "I connect the current page question to real permissions and live ERP data."
+  }
 }
 
 function boolAr(value: boolean) {
