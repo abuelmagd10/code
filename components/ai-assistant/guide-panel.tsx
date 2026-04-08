@@ -1,19 +1,35 @@
 "use client"
 
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetDescription,
 } from "@/components/ui/sheet"
-import { BookOpen, CheckCircle2, Lightbulb, TrendingUp, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  BookOpen,
+  Bot,
+  CheckCircle2,
+  Lightbulb,
+  Loader2,
+  MessageSquare,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  X,
+} from "lucide-react"
 import type { AccountingPattern, PageGuide } from "@/lib/page-guides"
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface GuidePanelProps {
   isOpen: boolean
@@ -21,22 +37,31 @@ interface GuidePanelProps {
   guide: PageGuide | null
   isLoading: boolean
   lang: "ar" | "en"
+  pageKey: string | null
   showDontShowAgain: boolean
   isAlreadySeen: boolean
   onMarkSeen: () => void
 }
 
-// ─── Label maps ───────────────────────────────────────────────────────────────
+interface ChatMessage {
+  role: "user" | "assistant"
+  content: string
+  fallbackUsed?: boolean
+  model?: string | null
+}
 
 const L = {
   ar: {
     loading: "جاري تحميل الدليل...",
     noGuide: "لا يوجد دليل لهذه الصفحة حالياً.",
+    guideTab: "الدليل",
+    copilotTab: "المساعد",
     howToUse: "كيفية الاستخدام",
     tips: "نصائح مهمة",
     dontShow: "لا تُظهر مرة أخرى لهذه الصفحة",
     close: "إغلاق",
-    aiGuide: "دليل المساعد الذكي",
+    aiGuide: "دليل الصفحة",
+    aiCopilot: "مساعد ERP",
     accountingPattern: "النمط المحاسبي لهذه الصفحة",
     financialEvent: "الحدث المالي",
     journalEntry: "القيد المحاسبي",
@@ -48,15 +73,40 @@ const L = {
     equity: "حقوق الملكية",
     pl: "الأرباح والخسائر",
     noEntries: "لا قيود محاسبية لهذه العملية",
+    copilotDescription:
+      "مساعد إرشادي للقراءة فقط يشرح لك الخطوات والصلاحيات والاعتمادات داخل النظام الحالي.",
+    copilotSafeTitle: "وضع آمن للقراءة فقط",
+    copilotSafeBody:
+      "لن ينفذ هذا المساعد أي عملية مالية أو مخزنية أو اعتماد. دوره هنا هو الشرح والتوجيه فقط.",
+    copilotEmptyTitle: "ابدأ بسؤال متعلق بهذه الصفحة",
+    copilotEmptyBody:
+      "يمكنك سؤاله عن خطوات العمل، الاعتمادات المطلوبة، أو معنى الحالة الحالية داخل النظام.",
+    copilotPromptExplain: "اشرح لي خطوات العمل في هذه الصفحة",
+    copilotPromptPermissions: "ما الذي يمكنني فعله هنا حسب صلاحيتي الحالية؟",
+    copilotPromptApprovals: "ما الاعتمادات أو القيود المرتبطة بهذه العملية؟",
+    copilotInputPlaceholder: "اكتب سؤالك هنا...",
+    copilotSend: "إرسال",
+    copilotThinking: "جاري التفكير...",
+    copilotHint:
+      "سيستخدم دليل الصفحة الحالي وسياق صلاحياتك للإجابة دون تنفيذ أي تعديل فعلي.",
+    copilotError:
+      "تعذر إرسال الرسالة حالياً. حاول مرة أخرى بعد لحظة.",
+    you: "أنت",
+    assistant: "المساعد",
+    fallback: "رد بديل آمن",
+    pageContext: "سياق الصفحة",
   },
   en: {
     loading: "Loading guide...",
     noGuide: "No guide available for this page yet.",
+    guideTab: "Guide",
+    copilotTab: "Copilot",
     howToUse: "How to Use",
     tips: "Important Tips",
     dontShow: "Don't show again for this page",
     close: "Close",
-    aiGuide: "AI Assistant Guide",
+    aiGuide: "Page Guide",
+    aiCopilot: "ERP Copilot",
     accountingPattern: "Accounting Pattern for This Page",
     financialEvent: "Financial Event",
     journalEntry: "Journal Entry",
@@ -68,10 +118,30 @@ const L = {
     equity: "Equity",
     pl: "Profit & Loss",
     noEntries: "No accounting entries for this operation",
+    copilotDescription:
+      "A read-only ERP copilot that explains workflow steps, permissions, and approval paths in the current system.",
+    copilotSafeTitle: "Safe read-only mode",
+    copilotSafeBody:
+      "This copilot will not execute financial or inventory actions and will not approve anything. It only explains the correct process.",
+    copilotEmptyTitle: "Start with a page-specific question",
+    copilotEmptyBody:
+      "Ask about workflow steps, required approvals, or what the current status means inside this ERP.",
+    copilotPromptExplain: "Explain the workflow on this page",
+    copilotPromptPermissions: "What can I do here with my current permissions?",
+    copilotPromptApprovals: "What approvals or constraints apply to this process?",
+    copilotInputPlaceholder: "Type your question here...",
+    copilotSend: "Send",
+    copilotThinking: "Thinking...",
+    copilotHint:
+      "The answer is grounded in the current page guide and your governance context, without changing any data.",
+    copilotError:
+      "The message could not be sent right now. Please try again in a moment.",
+    you: "You",
+    assistant: "Copilot",
+    fallback: "Safe fallback",
+    pageContext: "Page context",
   },
 }
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export function GuidePanel({
   isOpen,
@@ -79,144 +149,473 @@ export function GuidePanel({
   guide,
   isLoading,
   lang,
+  pageKey,
   showDontShowAgain,
   isAlreadySeen,
   onMarkSeen,
 }: GuidePanelProps) {
   const t = L[lang]
   const dir = lang === "ar" ? "rtl" : "ltr"
+  const [activeTab, setActiveTab] = useState<"guide" | "copilot">("guide")
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState("")
+  const [isSending, setIsSending] = useState(false)
+  const [copilotError, setCopilotError] = useState<string | null>(null)
+  const endRef = useRef<HTMLDivElement | null>(null)
+
+  const suggestedPrompts = useMemo(
+    () => buildSuggestedPrompts(lang, guide?.title),
+    [guide?.title, lang]
+  )
+
+  useEffect(() => {
+    setActiveTab("guide")
+    setConversationId(null)
+    setMessages([])
+    setInput("")
+    setCopilotError(null)
+    setIsSending(false)
+  }, [pageKey])
+
+  useEffect(() => {
+    if (activeTab !== "copilot") return
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+  }, [activeTab, isSending, messages])
+
+  const handleSend = async () => {
+    const question = input.trim()
+    if (!question || !pageKey || isSending) return
+
+    setIsSending(true)
+    setCopilotError(null)
+
+    try {
+      const response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: conversationId || undefined,
+          pageKey,
+          language: lang,
+          message: question,
+          messages: messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(
+          typeof result?.error === "string" && result.error.trim()
+            ? result.error
+            : t.copilotError
+        )
+      }
+
+      const answer =
+        typeof result?.message?.content === "string"
+          ? result.message.content
+          : ""
+
+      setConversationId(
+        typeof result?.conversationId === "string" ? result.conversationId : null
+      )
+      setMessages((current) => [
+        ...current,
+        { role: "user", content: question },
+        {
+          role: "assistant",
+          content: answer,
+          fallbackUsed: Boolean(result?.meta?.fallbackUsed),
+          model:
+            typeof result?.meta?.model === "string" ? result.meta.model : null,
+        },
+      ])
+      setInput("")
+    } catch (error: any) {
+      setCopilotError(
+        typeof error?.message === "string" && error.message.trim()
+          ? error.message
+          : t.copilotError
+      )
+    } finally {
+      setIsSending(false)
+    }
+  }
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side={lang === "ar" ? "left" : "right"}
-        className="w-full sm:max-w-md overflow-y-auto"
+        className="flex w-full flex-col overflow-hidden p-0 sm:max-w-lg"
         dir={dir}
       >
-        {/* Header */}
-        <SheetHeader className="pb-4 border-b border-gray-100 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex-shrink-0">
-              <BookOpen className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+        <div className="flex h-full flex-col">
+          <SheetHeader className="border-b border-gray-100 px-6 pb-4 pt-6 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
+                <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="mb-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">
+                  {activeTab === "guide" ? t.aiGuide : t.aiCopilot}
+                </p>
+                <SheetTitle className="text-base leading-tight">
+                  {isLoading ? (
+                    <Skeleton className="h-5 w-40" />
+                  ) : (
+                    guide?.title ?? t.noGuide
+                  )}
+                </SheetTitle>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-blue-600 dark:text-blue-400 font-medium mb-0.5">
-                {t.aiGuide}
-              </p>
-              <SheetTitle className="text-base leading-tight">
-                {isLoading ? (
-                  <Skeleton className="h-5 w-40" />
-                ) : (
-                  guide?.title ?? t.noGuide
-                )}
-              </SheetTitle>
-            </div>
-          </div>
-          {guide?.description && !isLoading && (
-            <SheetDescription className="text-sm text-gray-600 dark:text-gray-400 mt-2 leading-relaxed">
-              {guide.description}
+            <SheetDescription className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+              {activeTab === "guide"
+                ? guide?.description || t.noGuide
+                : t.copilotDescription}
             </SheetDescription>
-          )}
-        </SheetHeader>
+          </SheetHeader>
 
-        {/* Body */}
-        <div className="py-5 space-y-6">
-          {isLoading ? (
-            <LoadingSkeleton />
-          ) : !guide ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">
-              {t.noGuide}
-            </p>
-          ) : (
-            <>
-              {/* Steps */}
-              {guide.steps.length > 0 && (
-                <section>
-                  <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2 mb-3">
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    {t.howToUse}
-                  </h3>
-                  <ol className="space-y-2.5">
-                    {guide.steps.map((step, idx) => (
-                      <li key={idx} className="flex gap-3 text-sm">
-                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center mt-0.5">
-                          {idx + 1}
-                        </span>
-                        <span className="text-gray-700 dark:text-gray-300 leading-relaxed">
-                          {step}
-                        </span>
-                      </li>
-                    ))}
-                  </ol>
-                </section>
-              )}
+          <div className="flex min-h-0 flex-1 flex-col px-6 py-5">
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as "guide" | "copilot")}
+              className="flex min-h-0 flex-1 flex-col gap-4"
+            >
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="guide" className="gap-2">
+                  <BookOpen className="h-4 w-4" />
+                  {t.guideTab}
+                </TabsTrigger>
+                <TabsTrigger value="copilot" className="gap-2">
+                  <Bot className="h-4 w-4" />
+                  {t.copilotTab}
+                </TabsTrigger>
+              </TabsList>
 
-              {/* Tips */}
-              {guide.tips.length > 0 && (
-                <section>
-                  <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2 mb-3">
-                    <Lightbulb className="h-4 w-4 text-amber-500" />
-                    {t.tips}
-                  </h3>
-                  <ul className="space-y-2">
-                    {guide.tips.map((tip, idx) => (
-                      <li
-                        key={idx}
-                        className="flex gap-2.5 text-sm bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/40 rounded-lg px-3 py-2.5"
+              <TabsContent value="guide" className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden">
+                <ScrollArea className="flex-1 pr-2">
+                  <div className="space-y-6 pb-4">
+                    {isLoading ? (
+                      <LoadingSkeleton />
+                    ) : !guide ? (
+                      <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                        {t.noGuide}
+                      </p>
+                    ) : (
+                      <>
+                        {guide.steps.length > 0 && (
+                          <section>
+                            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                              <CheckCircle2 className="h-4 w-4 text-green-500" />
+                              {t.howToUse}
+                            </h3>
+                            <ol className="space-y-2.5">
+                              {guide.steps.map((step, index) => (
+                                <li key={index} className="flex gap-3 text-sm">
+                                  <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                                    {index + 1}
+                                  </span>
+                                  <span className="leading-relaxed text-gray-700 dark:text-gray-300">
+                                    {step}
+                                  </span>
+                                </li>
+                              ))}
+                            </ol>
+                          </section>
+                        )}
+
+                        {guide.tips.length > 0 && (
+                          <section>
+                            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                              <Lightbulb className="h-4 w-4 text-amber-500" />
+                              {t.tips}
+                            </h3>
+                            <ul className="space-y-2">
+                              {guide.tips.map((tip, index) => (
+                                <li
+                                  key={index}
+                                  className="flex gap-2.5 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm dark:border-amber-800/40 dark:bg-amber-900/20"
+                                >
+                                  <span className="mt-0.5 flex-shrink-0 text-amber-500">•</span>
+                                  <span className="leading-relaxed text-amber-800 dark:text-amber-200">
+                                    {tip}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </section>
+                        )}
+
+                        {guide.accounting_pattern && (
+                          <AccountingPatternSection
+                            pattern={guide.accounting_pattern}
+                            t={t}
+                          />
+                        )}
+                      </>
+                    )}
+                  </div>
+                </ScrollArea>
+
+                <div className="space-y-3 border-t border-gray-100 pt-4 dark:border-slate-800">
+                  {showDontShowAgain && guide && (
+                    <label className="flex cursor-pointer items-center gap-2.5">
+                      <Checkbox
+                        id="dont-show-again"
+                        checked={isAlreadySeen}
+                        onCheckedChange={(checked) => {
+                          if (checked) onMarkSeen()
+                        }}
+                      />
+                      <span className="select-none text-xs text-gray-500 dark:text-gray-400">
+                        {t.dontShow}
+                      </span>
+                    </label>
+                  )}
+
+                  <Button variant="outline" size="sm" className="w-full gap-2" onClick={onClose}>
+                    <X className="h-3.5 w-3.5" />
+                    {t.close}
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="copilot" className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 dark:border-blue-800/40 dark:bg-blue-900/20">
+                  <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300">
+                    <ShieldCheck className="h-4 w-4" />
+                    {t.copilotSafeTitle}
+                  </div>
+                  <p className="text-xs leading-relaxed text-blue-900 dark:text-blue-100">
+                    {t.copilotSafeBody}
+                  </p>
+                </div>
+
+                <ScrollArea className="mt-4 flex-1 pr-2">
+                  <div className="space-y-4 pb-4">
+                    {messages.length === 0 ? (
+                      <div className="space-y-4 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                        <div className="flex items-start gap-3">
+                          <div className="rounded-xl bg-white p-2 shadow-sm dark:bg-slate-800">
+                            <MessageSquare className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <div className="space-y-1">
+                            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                              {t.copilotEmptyTitle}
+                            </h3>
+                            <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+                              {t.copilotEmptyBody}
+                            </p>
+                            {guide?.title && (
+                              <Badge variant="outline" className="mt-1">
+                                {t.pageContext}: {guide.title}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          {suggestedPrompts.map((prompt) => (
+                            <button
+                              key={prompt}
+                              type="button"
+                              onClick={() => {
+                                setActiveTab("copilot")
+                                setInput(prompt)
+                              }}
+                              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-start text-sm text-gray-700 transition hover:border-blue-200 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-gray-200 dark:hover:border-blue-800 dark:hover:bg-blue-950/30"
+                            >
+                              {prompt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      messages.map((message, index) => (
+                        <ChatBubble
+                          key={`${message.role}-${index}`}
+                          lang={lang}
+                          labels={t}
+                          message={message}
+                        />
+                      ))
+                    )}
+
+                    {isSending && (
+                      <div className="flex justify-start">
+                        <div className="flex max-w-[88%] items-start gap-3">
+                          <Avatar className="mt-0.5 size-8 border border-blue-200 bg-blue-100 dark:border-blue-800 dark:bg-blue-900/40">
+                            <AvatarFallback className="bg-transparent text-blue-700 dark:text-blue-300">
+                              <Bot className="h-4 w-4" />
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              {t.copilotThinking}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div ref={endRef} />
+                  </div>
+                </ScrollArea>
+
+                <div className="space-y-3 border-t border-gray-100 pt-4 dark:border-slate-800">
+                  {copilotError && (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300">
+                      {copilotError}
+                    </div>
+                  )}
+
+                  <Textarea
+                    value={input}
+                    onChange={(event) => setInput(event.target.value)}
+                    placeholder={t.copilotInputPlaceholder}
+                    disabled={!pageKey || isSending}
+                    className="min-h-24 resize-none"
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault()
+                        void handleSend()
+                      }
+                    }}
+                  />
+
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                      {t.copilotHint}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={onClose}>
+                        <X className="h-3.5 w-3.5" />
+                        {t.close}
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => void handleSend()}
+                        disabled={!pageKey || isSending || !input.trim()}
                       >
-                        <span className="text-amber-500 flex-shrink-0 mt-0.5">•</span>
-                        <span className="text-amber-800 dark:text-amber-200 leading-relaxed">
-                          {tip}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-
-              {/* Accounting Pattern */}
-              {guide.accounting_pattern && (
-                <AccountingPatternSection pattern={guide.accounting_pattern} t={t} />
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="border-t border-gray-100 dark:border-slate-800 pt-4 space-y-3">
-          {/* Don't show again — only for auto mode */}
-          {showDontShowAgain && guide && (
-            <label className="flex items-center gap-2.5 cursor-pointer">
-              <Checkbox
-                id="dont-show-again"
-                checked={isAlreadySeen}
-                onCheckedChange={(checked) => {
-                  if (checked) onMarkSeen()
-                }}
-              />
-              <span className="text-xs text-gray-500 dark:text-gray-400 select-none">
-                {t.dontShow}
-              </span>
-            </label>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full gap-2"
-            onClick={onClose}
-          >
-            <X className="h-3.5 w-3.5" />
-            {t.close}
-          </Button>
+                        {isSending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Send className="h-3.5 w-3.5" />
+                        )}
+                        {isSending ? t.copilotThinking : t.copilotSend}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </div>
         </div>
       </SheetContent>
     </Sheet>
   )
 }
 
-// ─── Accounting Pattern Section ───────────────────────────────────────────────
+function buildSuggestedPrompts(
+  language: "ar" | "en",
+  guideTitle?: string
+): string[] {
+  if (language === "ar") {
+    return [
+      guideTitle
+        ? `اشرح لي خطوات العمل في صفحة ${guideTitle}`
+        : "اشرح لي خطوات العمل في هذه الصفحة",
+      "ما الذي يمكنني فعله هنا حسب صلاحيتي الحالية؟",
+      "ما الاعتمادات أو القيود المرتبطة بهذه العملية؟",
+    ]
+  }
+
+  return [
+    guideTitle
+      ? `Explain the workflow on the ${guideTitle} page`
+      : "Explain the workflow on this page",
+    "What can I do here with my current permissions?",
+    "What approvals or governance constraints apply here?",
+  ]
+}
 
 type Labels = typeof L["ar"]
+
+function ChatBubble({
+  message,
+  labels,
+  lang,
+}: {
+  message: ChatMessage
+  labels: Labels
+  lang: "ar" | "en"
+}) {
+  const isUser = message.role === "user"
+
+  return (
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`flex max-w-[88%] items-start gap-3 ${
+          isUser ? "flex-row-reverse" : ""
+        }`}
+      >
+        <Avatar
+          className={`mt-0.5 size-8 border ${
+            isUser
+              ? "border-blue-200 bg-blue-100 dark:border-blue-800 dark:bg-blue-900/40"
+              : "border-emerald-200 bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/30"
+          }`}
+        >
+          <AvatarFallback
+            className={`bg-transparent ${
+              isUser
+                ? "text-blue-700 dark:text-blue-300"
+                : "text-emerald-700 dark:text-emerald-300"
+            }`}
+          >
+            {isUser ? lang.toUpperCase().slice(0, 1) : <Bot className="h-4 w-4" />}
+          </AvatarFallback>
+        </Avatar>
+
+        <div
+          className={`rounded-2xl border px-4 py-3 shadow-sm ${
+            isUser
+              ? "border-blue-200 bg-blue-600 text-white dark:border-blue-700 dark:bg-blue-700"
+              : "border-gray-200 bg-white text-gray-900 dark:border-slate-700 dark:bg-slate-900 dark:text-gray-100"
+          }`}
+        >
+          <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[11px] font-medium">
+            <span className={isUser ? "text-blue-100" : "text-gray-500 dark:text-gray-400"}>
+              {isUser ? labels.you : labels.assistant}
+            </span>
+
+            {!isUser && message.fallbackUsed && (
+              <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                {labels.fallback}
+              </Badge>
+            )}
+
+            {!isUser && message.model && message.model !== "fallback" && (
+              <Badge variant="outline" className="text-[10px]">
+                {message.model}
+              </Badge>
+            )}
+          </div>
+
+          <p className="whitespace-pre-wrap text-sm leading-relaxed">
+            {message.content}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 interface AccountingPatternSectionProps {
   pattern: AccountingPattern
@@ -238,51 +637,49 @@ function AccountingPatternSection({ pattern, t }: AccountingPatternSectionProps)
       pattern.entries[0].account.toLowerCase().startsWith("no "))
 
   return (
-    <section className="border-t border-purple-100 dark:border-purple-900/40 pt-5">
-      <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2 mb-4">
+    <section className="border-t border-purple-100 pt-5 dark:border-purple-900/40">
+      <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
         <TrendingUp className="h-4 w-4 text-purple-500" />
         {t.accountingPattern}
       </h3>
 
-      {/* Financial Event callout */}
-      <div className="rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800/40 px-3.5 py-3 mb-4">
-        <p className="text-xs font-semibold text-purple-600 dark:text-purple-400 mb-1">
+      <div className="mb-4 rounded-lg border border-purple-100 bg-purple-50 px-3.5 py-3 dark:border-purple-800/40 dark:bg-purple-900/20">
+        <p className="mb-1 text-xs font-semibold text-purple-600 dark:text-purple-400">
           {t.financialEvent}
         </p>
-        <p className="text-sm text-purple-900 dark:text-purple-100 leading-relaxed">
+        <p className="text-sm leading-relaxed text-purple-900 dark:text-purple-100">
           {pattern.event}
         </p>
       </div>
 
-      {/* Journal Entry */}
-      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {t.journalEntry}
       </p>
       {isNoEntry ? (
-        <p className="text-sm text-gray-400 dark:text-gray-500 italic px-1 mb-4">
+        <p className="mb-4 px-1 text-sm italic text-gray-400 dark:text-gray-500">
           {t.noEntries}
         </p>
       ) : (
-        <div className="rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden mb-4">
-          {pattern.entries.map((entry, idx) => (
+        <div className="mb-4 overflow-hidden rounded-lg border border-gray-200 dark:border-slate-700">
+          {pattern.entries.map((entry, index) => (
             <div
-              key={idx}
+              key={index}
               className={`flex items-center gap-3 px-3 py-2 text-sm ${
-                idx % 2 === 0
+                index % 2 === 0
                   ? "bg-white dark:bg-slate-900"
                   : "bg-gray-50 dark:bg-slate-800/60"
               }`}
             >
               <span
-                className={`flex-shrink-0 w-10 text-center text-xs font-bold rounded px-1.5 py-0.5 ${
+                className={`w-10 flex-shrink-0 rounded px-1.5 py-0.5 text-center text-xs font-bold ${
                   entry.side === "debit"
-                    ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
-                    : "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300"
+                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                    : "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300"
                 }`}
               >
                 {entry.side === "debit" ? t.debit : t.credit}
               </span>
-              <span className="text-gray-700 dark:text-gray-300 leading-snug">
+              <span className="leading-snug text-gray-700 dark:text-gray-300">
                 {entry.account}
               </span>
             </div>
@@ -290,8 +687,7 @@ function AccountingPatternSection({ pattern, t }: AccountingPatternSectionProps)
         </div>
       )}
 
-      {/* Balance Sheet Impact */}
-      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {t.balanceImpact}
       </p>
       <dl className="space-y-1.5">
@@ -300,10 +696,10 @@ function AccountingPatternSection({ pattern, t }: AccountingPatternSectionProps)
           if (!value) return null
           return (
             <div key={key} className="flex gap-2 text-sm">
-              <dt className="flex-shrink-0 w-28 text-gray-500 dark:text-gray-400 font-medium">
+              <dt className="w-28 flex-shrink-0 font-medium text-gray-500 dark:text-gray-400">
                 {label}
               </dt>
-              <dd className="text-gray-700 dark:text-gray-300 leading-snug">{value}</dd>
+              <dd className="leading-snug text-gray-700 dark:text-gray-300">{value}</dd>
             </div>
           )
         })}
@@ -312,32 +708,30 @@ function AccountingPatternSection({ pattern, t }: AccountingPatternSectionProps)
   )
 }
 
-// ─── Loading skeleton ─────────────────────────────────────────────────────────
-
 function LoadingSkeleton() {
   return (
     <div className="space-y-5">
       <div className="space-y-2">
         <Skeleton className="h-4 w-28" />
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="flex gap-3">
-            <Skeleton className="h-6 w-6 rounded-full flex-shrink-0" />
+        {[1, 2, 3, 4].map((index) => (
+          <div key={index} className="flex gap-3">
+            <Skeleton className="h-6 w-6 rounded-full" />
             <Skeleton className="h-4 flex-1" />
           </div>
         ))}
       </div>
       <div className="space-y-2">
         <Skeleton className="h-4 w-24" />
-        {[1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-10 w-full rounded-lg" />
+        {[1, 2, 3].map((index) => (
+          <Skeleton key={index} className="h-10 w-full rounded-lg" />
         ))}
       </div>
-      <div className="space-y-2 pt-4 border-t border-purple-100 dark:border-purple-900/40">
+      <div className="space-y-2 border-t border-purple-100 pt-4 dark:border-purple-900/40">
         <Skeleton className="h-4 w-36" />
         <Skeleton className="h-16 w-full rounded-lg" />
-        <Skeleton className="h-4 w-28 mt-2" />
-        {[1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-8 w-full rounded" />
+        <Skeleton className="mt-2 h-4 w-28" />
+        {[1, 2, 3].map((index) => (
+          <Skeleton key={index} className="h-8 w-full rounded" />
         ))}
       </div>
     </div>

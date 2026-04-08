@@ -64,6 +64,7 @@ export default function FloatingAIAssistant() {
         guide={guide}
         isLoading={isLoadingGuide}
         lang={lang}
+        pageKey={pageKey}
         showDontShowAgain={settings.ai_mode === "auto"}
         isAlreadySeen={isAlreadySeen}
         onMarkSeen={markCurrentPageSeen}
