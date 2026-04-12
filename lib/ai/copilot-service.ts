@@ -9,6 +9,7 @@ import type {
   AIToolCallAudit,
 } from "@/lib/ai/contracts"
 import type { AICopilotContext } from "@/lib/ai/context-builder"
+import { generateAIProviderReply } from "@/lib/ai/provider-layer"
 
 export interface CopilotChatMessage {
   role: "user" | "assistant"
@@ -52,17 +53,11 @@ export async function generateCopilotReply(params: {
     userMessage,
   })
 
-  const sections = [
-    buildLead(context, intents),
-    buildCapabilitiesSection(context, intents),
-    buildLiveSummarySection(context, intents, interactivePayload),
-    buildWorkflowSection(context, intents),
-    buildGovernanceSection(context, intents, interactivePayload),
-    buildAccountingSection(context, intents),
-    buildPredictionSection(context, intents, interactivePayload),
-    buildActionGuardSection(context, intents),
-    buildNextStepsSection(context, intents, interactivePayload),
-  ].filter(Boolean)
+  const sections = buildLocalAnswerSections({
+    context,
+    intents,
+    interactivePayload,
+  })
 
   if (
     sections.length === 0 ||
@@ -71,15 +66,23 @@ export async function generateCopilotReply(params: {
     return buildFallbackResult(context, userMessage, "limited_local_context", interactivePayload)
   }
 
-  const answer = sections.join("\n\n")
+  const fallbackAnswer = sections.join("\n\n")
+  const providerReply = await generateAIProviderReply({
+    context,
+    messages,
+    userMessage,
+    interactivePayload,
+    fallbackAnswer,
+  })
+
   return {
-    answer,
-    usedModel: LOCAL_COPILOT_MODEL,
-    fallbackUsed: false,
-    fallbackReason: null,
+    answer: providerReply.answer,
+    usedModel: providerReply.usedModel,
+    fallbackUsed: providerReply.fallbackUsed,
+    fallbackReason: providerReply.fallbackReason || null,
     interactivePayload,
     toolAudit: {
-      toolName: "ai.local_copilot.generate",
+      toolName: providerReply.toolName,
       input: {
         pageKey: context.scope.pageKey,
         domain: context.domain,
@@ -88,8 +91,13 @@ export async function generateCopilotReply(params: {
         messageCount: messages.length,
         insightsCount: interactivePayload.insights.length,
         predictionsCount: interactivePayload.predictedActions.length,
+        provider: providerReply.auditMeta.provider,
+        providerModel: providerReply.usedModel,
+        fallbackUsed: providerReply.fallbackUsed,
+        fallbackReason: providerReply.fallbackReason || null,
+        ...providerReply.auditMeta,
       },
-      outputHash: createHash("sha256").update(answer).digest("hex"),
+      outputHash: createHash("sha256").update(providerReply.answer).digest("hex"),
     },
   }
 }
@@ -122,6 +130,26 @@ export function buildCopilotInteractivePayload(params: {
     predictedActions,
     quickPrompts,
   }
+}
+
+function buildLocalAnswerSections(params: {
+  context: AICopilotContext
+  intents: IntentAnalysis
+  interactivePayload: AICopilotInteractivePayload
+}) {
+  const { context, intents, interactivePayload } = params
+
+  return [
+    buildLead(context, intents),
+    buildCapabilitiesSection(context, intents),
+    buildLiveSummarySection(context, intents, interactivePayload),
+    buildWorkflowSection(context, intents),
+    buildGovernanceSection(context, intents, interactivePayload),
+    buildAccountingSection(context, intents),
+    buildPredictionSection(context, intents, interactivePayload),
+    buildActionGuardSection(context, intents),
+    buildNextStepsSection(context, intents, interactivePayload),
+  ].filter(Boolean)
 }
 
 function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {

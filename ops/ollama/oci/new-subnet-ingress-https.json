@@ -1,0 +1,62 @@
+[
+  {
+    "description": "SSH from current operator IP",
+    "isStateless": false,
+    "protocol": "6",
+    "source": "154.176.232.94/32",
+    "sourceType": "CIDR_BLOCK",
+    "tcpOptions": {
+      "destinationPortRange": {
+        "max": 22,
+        "min": 22
+      }
+    }
+  },
+  {
+    "description": "HTTP for ACME and redirect",
+    "isStateless": false,
+    "protocol": "6",
+    "source": "0.0.0.0/0",
+    "sourceType": "CIDR_BLOCK",
+    "tcpOptions": {
+      "destinationPortRange": {
+        "max": 80,
+        "min": 80
+      }
+    }
+  },
+  {
+    "description": "HTTPS for secure Ollama proxy",
+    "isStateless": false,
+    "protocol": "6",
+    "source": "0.0.0.0/0",
+    "sourceType": "CIDR_BLOCK",
+    "tcpOptions": {
+      "destinationPortRange": {
+        "max": 443,
+        "min": 443
+      }
+    }
+  },
+  {
+    "description": "ICMP Path MTU from internet",
+    "icmpOptions": {
+      "code": 4,
+      "type": 3
+    },
+    "isStateless": false,
+    "protocol": "1",
+    "source": "0.0.0.0/0",
+    "sourceType": "CIDR_BLOCK"
+  },
+  {
+    "description": "Internal ICMP for VCN diagnostics",
+    "icmpOptions": {
+      "type": 3
+    },
+    "isStateless": false,
+    "protocol": "1",
+    "source": "10.0.0.0/16",
+    "sourceType": "CIDR_BLOCK"
+  }
+]

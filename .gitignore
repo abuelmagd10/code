@@ -47,9 +47,23 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+tmp_oci_token.json
+tmp_oci_token_capture.py
+tmp_ipv6_proxy.py
 
 # Build caches and generated outputs
 tsconfig.tsbuildinfo
 artifacts/
 reports/
 temp/
+
+# Generated Ollama / OCI deployment artifacts
+ops/ollama/oci/*.rendered.conf
+ops/ollama/oci/generated-*.json
+ops/ollama/oci/new-ollama-server-summary.json
+ops/ollama/oci/console-ssh-config
+ops/ollama/oci/console-test.*.txt
+ops/ollama/oci/probe-content.json
+ops/ollama/oci/recovery-history-*.log
+ops/ollama/oci/ssh-ingress-rule.json
+ops/ollama/oci/target.json

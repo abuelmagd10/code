@@ -1288,11 +1288,11 @@ export default function SettingsPage() {
                   <CardTitle className="text-base">
                     {language === 'en' ? 'AI Assistant Settings' : 'إعدادات المساعد الذكي'}
                   </CardTitle>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      {language === 'en'
-                      ? 'Context-aware page guide and free local read-only ERP copilot shown as a floating assistant'
-                      : 'دليل صفحة ذكي ومساعد ERP محلي مجاني للقراءة فقط يظهران كمساعد عائم داخل النظام'}
-                    </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        {language === 'en'
+                      ? 'Context-aware page guide and read-only ERP copilot powered by local providers such as Ollama, shown as a floating assistant'
+                        : 'دليل صفحة ذكي ومساعد ERP للقراءة فقط يعمل عبر مزودات محلية مثل Ollama ويظهر كمساعد عائم داخل النظام'}
+                      </p>
                 </div>
             </div>
           </CardHeader>
@@ -1393,11 +1393,11 @@ export default function SettingsPage() {
             )}
 
             {/* Info note */}
-                <div className="text-xs text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2.5 border border-blue-100 dark:border-blue-800/40">
-                  {language === 'en'
-                  ? 'The AI assistant now runs as a free local copilot inside the ERP. It provides read-only page guidance and cannot execute financial operations, approvals, or data changes.'
-                  : 'يعمل المساعد الذكي الآن كمحرك محلي مجاني داخل الـ ERP. يقدم دليل صفحة وإجابات للقراءة فقط، ولا يمكنه تنفيذ عمليات مالية أو اعتماد طلبات أو تعديل أي بيانات.'}
-                </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2.5 border border-blue-100 dark:border-blue-800/40">
+                    {language === 'en'
+                  ? 'The AI assistant now runs through local providers such as Ollama with a safe fallback layer. It provides read-only page guidance and cannot execute financial operations, approvals, or data changes.'
+                    : 'يعمل المساعد الذكي الآن عبر مزودات محلية مثل Ollama مع طبقة fallback آمنة. يقدم دليل صفحة وإجابات للقراءة فقط، ولا يمكنه تنفيذ عمليات مالية أو اعتماد طلبات أو تعديل أي بيانات.'}
+                  </div>
 
             <Button
               onClick={handleSaveAISettings}
