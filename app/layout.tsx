@@ -1,6 +1,5 @@
 import type React from "react"
 import type { Metadata, Viewport } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import Script from "next/script"
 import "./globals.css"
@@ -16,9 +15,6 @@ import { AppShell } from "@/components/app-shell"
 import { SidebarLayoutProvider } from "@/components/SidebarLayoutProvider"
 // dynamic with ssr:false must live inside a Client Component — see client-loader.tsx
 import { AIAssistantClientLoader } from "@/components/ai-assistant/client-loader"
-
-const _geist = Geist({ subsets: ["latin"] })
-const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const viewport: Viewport = {
   width: "device-width",
