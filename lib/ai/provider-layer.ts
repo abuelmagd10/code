@@ -302,9 +302,27 @@ function maybeBuildFastPathProviderReply(
   const quickGuidanceIntent = includesAny(normalized, [
     "من انت",
     "من انتي",
+    "مين انت",
+    "مين انتي",
+    "مساء الخير",
+    "صباح الخير",
+    "السلام عليكم",
+    "مرحبا",
+    "اهلا",
+    "هاي",
+    "ماهي وظيفتك",
+    "ما هي وظيفتك",
+    "ما وظيفتك",
+    "وظيفتك",
+    "مهمتك",
+    "دورك هنا",
+    "تعمل ايه",
+    "بتعمل ايه",
     "ما هي امكانياتك",
+    "ماهي امكانياتك",
     "ما هى امكانياتك",
     "ما امكانياتك",
+    "ماهي اكنياتك",
     "ما هى اكنياتك",
     "ما الذي يمكنني فعله",
     "ما الصلاحيات",
@@ -324,6 +342,9 @@ function maybeBuildFastPathProviderReply(
     "محتويات الصفحة",
     "ما معنى",
     "what can you do",
+    "who are you",
+    "what is your job",
+    "what is your role",
     "how can you help",
     "what can i do here",
     "what approvals",
@@ -808,8 +829,13 @@ function shouldPreferCompactOllamaPrompt(
     "من انتي",
     "مساء الخير",
     "صباح الخير",
+    "السلام عليكم",
     "مرحبا",
     "اهلا",
+    "هاي",
+    "وظيفتك",
+    "مهمتك",
+    "دورك",
     "hello",
     "good morning",
     "good evening",
@@ -840,7 +866,7 @@ function normalizeForHeuristics(value: string) {
 }
 
 function includesAny(text: string, values: string[]) {
-  return values.some((value) => text.includes(value))
+  return values.some((value) => text.includes(normalizeForHeuristics(value)))
 }
 
 function limitText(value: string, maxLength: number) {
