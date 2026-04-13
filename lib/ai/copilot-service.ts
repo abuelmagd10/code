@@ -35,6 +35,8 @@ interface IntentAnalysis {
   askValidation: boolean
   askCapabilities: boolean
   askGreeting: boolean
+  askDefinition: boolean
+  askDashboardCardMeaning: boolean
 }
 
 const LOCAL_COPILOT_MODEL = "local-erp-copilot-v2"
@@ -56,6 +58,7 @@ export async function generateCopilotReply(params: {
   const sections = buildLocalAnswerSections({
     context,
     intents,
+    userMessage,
     interactivePayload,
   })
 
@@ -135,13 +138,15 @@ export function buildCopilotInteractivePayload(params: {
 function buildLocalAnswerSections(params: {
   context: AICopilotContext
   intents: IntentAnalysis
+  userMessage: string
   interactivePayload: AICopilotInteractivePayload
 }) {
-  const { context, intents, interactivePayload } = params
+  const { context, intents, userMessage, interactivePayload } = params
 
   return [
-    buildLead(context, intents),
+    buildLead(context, intents, userMessage),
     buildCapabilitiesSection(context, intents),
+    buildDashboardCardMeaningSection(context, intents, userMessage),
     buildLiveSummarySection(context, intents, interactivePayload),
     buildWorkflowSection(context, intents),
     buildGovernanceSection(context, intents, interactivePayload),
@@ -160,7 +165,7 @@ function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {
       : ["explain", "steps", "how", "workflow", "process", "use", "operate"]
   const reportWords =
     language === "ar"
-      ? ["تقرير", "ملخص", "ارقام", "احص", "مؤشر", "حاله", "وضع", "احصاء", "لوحه"]
+      ? ["تقرير", "ملخص", "ارقام", "احص", "مؤشر", "حاله", "وضع", "احصاء", "ملخص حي"]
       : ["report", "summary", "numbers", "metrics", "status", "overview", "dashboard"]
   const governanceWords =
     language === "ar"
@@ -190,6 +195,38 @@ function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {
     language === "ar"
       ? ["السلام", "مرحبا", "اهلا", "اهلن", "صباح الخير", "مساء الخير", "مساء النور", "هاي", "السلام عليكم"]
       : ["hello", "hi", "good morning", "good evening", "hey"]
+  const definitionWords =
+    language === "ar"
+      ? ["ما معنى", "مايعني", "يعني ايه", "يعني ماذا", "ما المقصود", "ما داخل", "ماذا داخل", "ماذا يحتوي", "ما محتوى", "يفهم منه", "يوجد كارت", "هذا الكارت"]
+      : ["what does", "what is meant", "what does this mean", "what is inside", "what does this card mean", "what does this widget mean", "what is included"]
+  const dashboardCardWords =
+    language === "ar"
+      ? [
+          "كارت",
+          "بطاقه",
+          "تكلفه مصروفات",
+          "تكلفه + مصروفات",
+          "صافي الربح",
+          "الايرادات",
+          "عدد الفواتير",
+          "ذمم مدينه",
+          "ذمم دائنه",
+          "ايرادات الشهر",
+          "مصروفات الشهر",
+        ]
+      : [
+          "card",
+          "widget",
+          "cogs expenses",
+          "cogs & expenses",
+          "net profit",
+          "revenue",
+          "invoices count",
+          "receivables",
+          "payables",
+          "revenue this month",
+          "expenses this month",
+        ]
 
   const askGreeting = includesAny(text, greetingWords)
   const askCapabilities = includesAny(text, capabilityWords)
@@ -200,6 +237,9 @@ function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {
   const askAction = includesAny(text, actionWords)
   const askPrediction = includesAny(text, predictionWords)
   const askValidation = includesAny(text, validationWords)
+  const askDefinition = includesAny(text, definitionWords)
+  const askDashboardCardMeaning =
+    askDefinition && includesAny(text, dashboardCardWords)
 
   return {
     askWorkflow,
@@ -211,10 +251,16 @@ function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {
     askValidation,
     askCapabilities,
     askGreeting,
+    askDefinition,
+    askDashboardCardMeaning,
   }
 }
 
-function buildLead(context: AICopilotContext, intents: IntentAnalysis) {
+function buildLead(
+  context: AICopilotContext,
+  intents: IntentAnalysis,
+  userMessage: string
+) {
   const title = context.guide?.title
   const pageLabel =
     context.language === "ar"
@@ -226,6 +272,13 @@ function buildLead(context: AICopilotContext, intents: IntentAnalysis) {
         : "this page"
 
   if (context.language === "ar") {
+    if (intents.askDashboardCardMeaning) {
+      const card = detectDashboardCard(userMessage)
+      if (card?.labelAr) {
+        return `بالنسبة لكارت "${card.labelAr}" في ${pageLabel}:`
+      }
+    }
+
     if (intents.askGreeting && isPureGreetingIntent(intents)) {
       return [
         "مساء النور. أنا المساعد المحلي التفاعلي داخل التطبيق.",
@@ -253,6 +306,13 @@ function buildLead(context: AICopilotContext, intents: IntentAnalysis) {
       title ? `أعمل الآن عبر المساعد المحلي التفاعلي داخل ${pageLabel}.` : "أعمل الآن عبر المساعد المحلي التفاعلي داخل النظام.",
       context.liveContext.summary,
     ].join("\n")
+  }
+
+  if (intents.askDashboardCardMeaning) {
+    const card = detectDashboardCard(userMessage)
+    if (card?.labelEn) {
+      return `About the "${card.labelEn}" card on ${pageLabel}:`
+    }
   }
 
   if (intents.askGreeting && isPureGreetingIntent(intents)) {
@@ -336,6 +396,7 @@ function buildLiveSummarySection(
   intents: IntentAnalysis,
   payload: AICopilotInteractivePayload
 ) {
+  if (intents.askDashboardCardMeaning) return ""
   if (!intents.askReport && !intents.askValidation && context.domain !== "dashboard") return ""
   if (payload.metrics.length === 0) return ""
 
@@ -354,6 +415,27 @@ function buildLiveSummarySection(
       : ""
 
   return [header, rows, alerts].filter(Boolean).join("\n")
+}
+
+function buildDashboardCardMeaningSection(
+  context: AICopilotContext,
+  intents: IntentAnalysis,
+  userMessage: string
+) {
+  if (!intents.askDashboardCardMeaning || context.domain !== "dashboard") {
+    return ""
+  }
+
+  const card = detectDashboardCard(userMessage)
+  if (!card) {
+    return context.language === "ar"
+      ? "إذا كنت تقصد كارتًا محددًا في لوحة التحكم، اذكر اسمه كما يظهر أمامك وسأشرح معناه ومصدره وطريقة قراءته."
+      : "If you mean a specific dashboard card, mention its displayed label and I will explain its meaning, source, and how to read it."
+  }
+
+  return context.language === "ar"
+    ? buildDashboardCardMeaningArabic(card)
+    : buildDashboardCardMeaningEnglish(card)
 }
 
 function buildWorkflowSection(context: AICopilotContext, intents: IntentAnalysis) {
@@ -1112,8 +1194,188 @@ function isPureGreetingIntent(intents: IntentAnalysis) {
     !intents.askAccounting &&
     !intents.askAction &&
     !intents.askPrediction &&
-    !intents.askValidation
+    !intents.askValidation &&
+    !intents.askDefinition &&
+    !intents.askDashboardCardMeaning
   )
+}
+
+type DashboardCardKey =
+  | "revenue"
+  | "cogs_expenses"
+  | "net_profit"
+  | "invoices_count"
+  | "receivables"
+  | "payables"
+  | "monthly_revenue"
+  | "monthly_expenses"
+
+interface DashboardCardDefinition {
+  key: DashboardCardKey
+  labelAr: string
+  labelEn: string
+}
+
+function detectDashboardCard(userMessage: string): DashboardCardDefinition | null {
+  const normalized = normalizeIntentText(userMessage)
+
+  const definitions: Array<{
+    card: DashboardCardDefinition
+    needles: string[]
+  }> = [
+    {
+      card: { key: "cogs_expenses", labelAr: "تكلفة + مصروفات", labelEn: "COGS & Expenses" },
+      needles: ["تكلفه + مصروفات", "تكلفه مصروفات", "cogs expenses", "cogs & expenses"],
+    },
+    {
+      card: { key: "net_profit", labelAr: "صافي الربح", labelEn: "Net Profit" },
+      needles: ["صافي الربح", "net profit"],
+    },
+    {
+      card: { key: "revenue", labelAr: "الإيرادات", labelEn: "Revenue" },
+      needles: ["الايرادات", "revenue"],
+    },
+    {
+      card: { key: "invoices_count", labelAr: "عدد الفواتير", labelEn: "Invoices Count" },
+      needles: ["عدد الفواتير", "invoices count"],
+    },
+    {
+      card: { key: "receivables", labelAr: "ذمم مدينة", labelEn: "Receivables" },
+      needles: ["ذمم مدينه", "receivables"],
+    },
+    {
+      card: { key: "payables", labelAr: "ذمم دائنة", labelEn: "Payables" },
+      needles: ["ذمم دائنه", "payables"],
+    },
+    {
+      card: { key: "monthly_revenue", labelAr: "إيرادات الشهر", labelEn: "Revenue This Month" },
+      needles: ["ايرادات الشهر", "revenue this month"],
+    },
+    {
+      card: { key: "monthly_expenses", labelAr: "مصروفات الشهر", labelEn: "Expenses This Month" },
+      needles: ["مصروفات الشهر", "expenses this month"],
+    },
+  ]
+
+  for (const definition of definitions) {
+    if (definition.needles.some((needle) => normalized.includes(needle))) {
+      return definition.card
+    }
+  }
+
+  return null
+}
+
+function buildDashboardCardMeaningArabic(card: DashboardCardDefinition) {
+  switch (card.key) {
+    case "cogs_expenses":
+      return [
+        'هذا الكارت يجمع بندين ماليين من دفتر الأستاذ العام (GL):',
+        '- تكلفة البضاعة المباعة (COGS): وهي تكلفة المنتجات التي تم بيعها فعليًا.',
+        '- المصروفات التشغيلية: مثل الإيجار والرواتب والتسويق والمرافق والمصروفات الإدارية ونحوها.',
+        'إذن قيمة الكارت = تكلفة البضاعة المباعة + المصروفات التشغيلية، وليست المشتريات فقط.',
+        'إذا ظهر داخل الكارت سطر صغير مثل `COGS: ...` فهو يوضح جزء تكلفة البضاعة داخل الإجمالي.',
+        'هذا الكارت يساعدك على قراءة ما يستهلك الربح قبل الوصول إلى صافي الربح.',
+      ].join("\n")
+    case "revenue":
+      return [
+        'كارت "الإيرادات" يعرض الإيراد المعترف به محاسبيًا من دفتر الأستاذ العام (GL).',
+        'هو لا يعتمد فقط على عدد الفواتير، بل على القيود المرحّلة التي سجلت الإيراد فعليًا.',
+        'عمليًا: هذا الرقم يمثل ما دخل ضمن إيرادات الشركة في الفترة الحالية.',
+      ].join("\n")
+    case "net_profit":
+      return [
+        'كارت "صافي الربح" يوضح الربح النهائي بعد خصم تكلفة البضاعة والمصروفات من الإيرادات.',
+        'بصيغة مبسطة: صافي الربح = الإيرادات - تكلفة البضاعة المباعة - المصروفات التشغيلية.',
+        'إذا كان موجبًا فهذا ربح، وإذا كان سالبًا فهذا يعني خسارة خلال الفترة المختارة.',
+      ].join("\n")
+    case "invoices_count":
+      return [
+        'كارت "عدد الفواتير" هو عدّاد تشغيلي، وليس رقمًا ماليًا.',
+        'يعرض عدد الفواتير المرتبطة بالفترة أو السياق الحالي، ليس قيمتها المالية.',
+        'تستخدمه لمعرفة حجم النشاط، بينما الإيرادات والربح تأتي من كروت GL الأخرى.',
+      ].join("\n")
+    case "receivables":
+      return [
+        'كارت "ذمم مدينة" يوضح المبالغ التي ما زالت مستحقة للشركة على العملاء.',
+        'يعني فواتير أو أرصدة لم يتم تحصيلها بالكامل بعد.',
+        'هذا الكارت مهم لمتابعة التحصيل والسيولة وليس فقط حجم المبيعات.',
+      ].join("\n")
+    case "payables":
+      return [
+        'كارت "ذمم دائنة" يوضح المبالغ المستحقة على الشركة للموردين أو الدائنين.',
+        'يمثل التزامات لم تُسدَّد بالكامل بعد.',
+        'يفيدك في متابعة الالتزامات القريبة وتأثيرها على النقدية.',
+      ].join("\n")
+    case "monthly_revenue":
+      return [
+        'كارت "إيرادات الشهر" يركز على الإيرادات المعترف بها خلال هذا الشهر فقط.',
+        'هو نسخة شهرية من كارت الإيرادات لتسهيل المتابعة الدورية.',
+        'يُستخدم للمقارنة السريعة بين أداء هذا الشهر والشهور السابقة.',
+      ].join("\n")
+    case "monthly_expenses":
+      return [
+        'كارت "مصروفات الشهر" يوضح تكلفة ومصروفات هذا الشهر في العرض الشهري.',
+        'غالبًا يُستخدم لمقارنة عبء المصروفات الحالي مقابل الإيرادات الشهرية.',
+        'اقرأه مع "إيرادات الشهر" و"صافي الربح" للحصول على صورة أوضح عن الأداء الشهري.',
+      ].join("\n")
+  }
+}
+
+function buildDashboardCardMeaningEnglish(card: DashboardCardDefinition) {
+  switch (card.key) {
+    case "cogs_expenses":
+      return [
+        'This card combines two GL-based amounts:',
+        '- Cost of goods sold (COGS): the actual cost of products that were sold.',
+        '- Operating expenses: such as rent, payroll, marketing, utilities, and administrative expenses.',
+        'So the card value = COGS + operating expenses. It is not just purchases.',
+        'If you see a small `COGS: ...` line inside the card, it is showing the COGS portion within the total.',
+        'This card helps you understand what is consuming profit before net profit is calculated.',
+      ].join("\n")
+    case "revenue":
+      return [
+        'The "Revenue" card shows revenue recognized in the general ledger.',
+        'It is not based only on invoice count, but on posted accounting entries that actually recognized revenue.',
+        'In practice, it represents what was booked as company revenue in the selected period.',
+      ].join("\n")
+    case "net_profit":
+      return [
+        'The "Net Profit" card shows the final profit after subtracting COGS and operating expenses from revenue.',
+        'In simple terms: net profit = revenue - COGS - operating expenses.',
+        'A positive value means profit, while a negative value means loss for the selected period.',
+      ].join("\n")
+    case "invoices_count":
+      return [
+        'The "Invoices Count" card is an operational counter, not a financial amount.',
+        'It shows how many invoices exist in the current period or scope, not their monetary value.',
+        'Use it to read activity volume, while revenue and profit come from the GL-based cards.',
+      ].join("\n")
+    case "receivables":
+      return [
+        'The "Receivables" card shows amounts still owed to the company by customers.',
+        'It means invoices or balances that have not been fully collected yet.',
+        'It is useful for tracking collections and liquidity, not just sales volume.',
+      ].join("\n")
+    case "payables":
+      return [
+        'The "Payables" card shows amounts the company still owes to suppliers or creditors.',
+        'It represents liabilities that have not been fully paid yet.',
+        'It helps track upcoming obligations and their impact on cash.',
+      ].join("\n")
+    case "monthly_revenue":
+      return [
+        'The "Revenue This Month" card focuses only on revenue recognized during the current month.',
+        'It is the monthly view of the revenue card for easier periodic follow-up.',
+        'Use it for quick comparison between this month and previous months.',
+      ].join("\n")
+    case "monthly_expenses":
+      return [
+        'The "Expenses This Month" card shows this month’s cost and expense burden in the monthly view.',
+        'It is typically used alongside monthly revenue to understand current-period performance.',
+        'Read it together with "Revenue This Month" and "Net Profit" for a clearer monthly picture.',
+      ].join("\n")
+  }
 }
 
 function buildDomainCapabilityLine(context: AICopilotContext) {
