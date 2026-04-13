@@ -300,7 +300,7 @@ function maybeBuildFastPathProviderReply(
   const normalized = normalizeForHeuristics(request.userMessage)
   const shortQuestion = normalized.length > 0 && normalized.length <= 180
   const answerReadyLocally = request.fallbackAnswer.trim().length > 0 && request.fallbackAnswer.length <= 4200
-  const quickGuidanceIntent = includesAny(normalized, [
+  const exactGuidanceIntent = includesAny(normalized, [
     "من انت",
     "من انتي",
     "مين انت",
@@ -358,6 +358,8 @@ function maybeBuildFastPathProviderReply(
     "what does this mean",
     ...getERPQuestionBankPhrases(),
   ])
+  const broadGuidanceIntent = isLikelyGuidedERPQuestion(request, normalized)
+  const quickGuidanceIntent = exactGuidanceIntent || broadGuidanceIntent
 
   if (!shortQuestion || !answerReadyLocally || !quickGuidanceIntent) {
     return null
@@ -373,11 +375,150 @@ function maybeBuildFastPathProviderReply(
     auditMeta: {
       provider: "fallback",
       fastPath: true,
-      fastPathReason: "guided_local_answer",
+      fastPathReason: broadGuidanceIntent && !exactGuidanceIntent
+        ? "broad_erp_guided_local_answer"
+        : "guided_local_answer",
       promptLength: request.fallbackAnswer.length,
       userMessageLength: request.userMessage.length,
     },
   }
+}
+
+function isLikelyGuidedERPQuestion(
+  request: AIProviderReplyRequest,
+  normalizedQuestion: string
+) {
+  if (!normalizedQuestion) return false
+
+  const hasQuestionShape = includesAny(normalizedQuestion, [
+    "ما",
+    "ماذا",
+    "كيف",
+    "هل",
+    "متى",
+    "لماذا",
+    "ليه",
+    "ازاي",
+    "ايه",
+    "اشرح",
+    "اعرض",
+    "اخبرني",
+    "اخبرنى",
+    "اقترح",
+    "ساعدني",
+    "what",
+    "how",
+    "when",
+    "why",
+    "does",
+    "do",
+    "can",
+    "explain",
+    "show",
+    "suggest",
+    "help",
+  ])
+
+  if (!hasQuestionShape) return false
+
+  const strongERPWords = [
+    "دوره",
+    "مسار",
+    "عمليه",
+    "اجراء",
+    "اعتماد",
+    "صلاح",
+    "حوكمه",
+    "قيد",
+    "محاسب",
+    "ذمم",
+    "مخزون",
+    "كميه",
+    "صرف",
+    "جرد",
+    "فاتوره",
+    "فواتير",
+    "امر بيع",
+    "امر شراء",
+    "طلب بيع",
+    "طلب شراء",
+    "مرتجع",
+    "استلام",
+    "تسليم",
+    "تحصيل",
+    "رصيد",
+    "مديونيه",
+    "عميل",
+    "مورد",
+    "اصل",
+    "اهلاك",
+    "راتب",
+    "موظف",
+    "استقطاع",
+    "تقرير",
+    "مؤشر",
+    "سياس",
+    "مخاطره",
+    "workflow",
+    "cycle",
+    "approval",
+    "permission",
+    "governance",
+    "accounting",
+    "journal",
+    "inventory",
+    "stock",
+    "invoice",
+    "sales",
+    "purchase",
+    "customer",
+    "supplier",
+    "vendor",
+    "payment",
+    "receivable",
+    "payable",
+    "asset",
+    "depreciation",
+    "payroll",
+    "report",
+  ]
+  const contextualERPWords = [
+    "مرحله",
+    "الحاليه",
+    "حالي",
+    "حاله",
+    "الخطوه",
+    "التاليه",
+    "بعد",
+    "فرق",
+    "سبب",
+    "رفض",
+    "مسموح",
+    "خطا",
+    "ناقص",
+    "مشكله",
+    "بيانات",
+    "صفحه",
+    "current",
+    "stage",
+    "status",
+    "next",
+    "step",
+    "difference",
+    "rejected",
+    "allowed",
+    "error",
+    "issue",
+    "data",
+    "page",
+  ]
+
+  if (includesAny(normalizedQuestion, strongERPWords)) return true
+
+  const contextualMatches = countPhraseMatches(normalizedQuestion, contextualERPWords)
+  const hasERPPageContext = Boolean(request.context.scope.pageKey || request.context.domain)
+
+  return hasERPPageContext && contextualMatches >= 2
 }
 
 async function generateWithOpenAI(
@@ -869,6 +1010,13 @@ function normalizeForHeuristics(value: string) {
 
 function includesAny(text: string, values: string[]) {
   return values.some((value) => text.includes(normalizeForHeuristics(value)))
+}
+
+function countPhraseMatches(text: string, values: string[]) {
+  return values.reduce(
+    (count, value) => count + (text.includes(normalizeForHeuristics(value)) ? 1 : 0),
+    0
+  )
 }
 
 function limitText(value: string, maxLength: number) {
