@@ -129,6 +129,9 @@ OLLAMA_MODEL=llama3
 OLLAMA_API_KEY=<store the real header token in Vercel secrets>
 OLLAMA_AUTH_HEADER=X-ERP-AI-Key
 AI_PROVIDER_TIMEOUT_MS=120000
+OLLAMA_KEEP_ALIVE=30m
+OLLAMA_MAX_TOKENS=220
+OLLAMA_CONTEXT_TOKENS=4096
 ```
 
 If you intentionally expose Ollama only through an internal IP and firewall restrictions, `OLLAMA_BASE_URL` can point to the internal address instead.

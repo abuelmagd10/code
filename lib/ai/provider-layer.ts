@@ -41,6 +41,10 @@ export interface AIProviderHealth {
 
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 const DEFAULT_OLLAMA_MODEL = "llama3"
+const DEFAULT_OLLAMA_TIMEOUT_MS = 120000
+const DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
+const DEFAULT_OLLAMA_MAX_TOKENS = 220
+const DEFAULT_OLLAMA_CONTEXT_TOKENS = 4096
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com"
 const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
 const LOCAL_FALLBACK_MODEL = "fallback:local-erp-copilot-v2"
@@ -88,13 +92,15 @@ export async function checkAIProviderHealth(): Promise<AIProviderHealth> {
   if (provider === "ollama") {
     const baseUrl = getOllamaBaseUrl()
     const model = getOllamaModel()
+    const tagsTimeoutMs = Math.min(getProviderTimeoutMs("ollama"), 15000)
+    const probeTimeoutMs = Math.min(getProviderTimeoutMs("ollama"), 25000)
 
     try {
       const response = await fetch(`${baseUrl}/api/tags`, {
         method: "GET",
         headers: buildOllamaHeaders(),
         cache: "no-store",
-        signal: AbortSignal.timeout(getProviderTimeoutMs()),
+        signal: AbortSignal.timeout(tagsTimeoutMs),
       })
 
       if (!response.ok) {
@@ -118,6 +124,36 @@ export async function checkAIProviderHealth(): Promise<AIProviderHealth> {
             .map((item: any) => item?.name)
             .filter((name: unknown) => typeof name === "string")
         : []
+      const probe = await requestOllamaCompletion({
+        baseUrl,
+        model,
+        prompt:
+          "Respond with exactly OK. Do not add punctuation or any extra words.",
+        timeoutMs: probeTimeoutMs,
+        promptVariant: "health",
+        keepAlive: getOllamaKeepAlive(),
+        maxTokens: 12,
+        contextTokens: 512,
+      })
+
+      if (!probe.ok) {
+        return {
+          provider,
+          configured: true,
+          healthy: false,
+          baseUrl,
+          model,
+          fallbackReason: probe.reason,
+          details: {
+            models,
+            modelPresent: models.includes(model),
+            probeVariant: probe.promptVariant,
+            probeStatus: "failed",
+            probeDurationMs: probe.durationMs,
+            probeMessage: probe.message || null,
+          },
+        }
+      }
 
       return {
         provider,
@@ -129,6 +165,10 @@ export async function checkAIProviderHealth(): Promise<AIProviderHealth> {
         details: {
           models,
           modelPresent: models.includes(model),
+          probeVariant: probe.promptVariant,
+          probeStatus: "ok",
+          probeDurationMs: probe.durationMs,
+          probeResponsePreview: limitText(probe.answer, 80),
         },
       }
     } catch (error: any) {
@@ -183,60 +223,67 @@ async function generateWithOllama(
 ): Promise<AIProviderReply> {
   const baseUrl = getOllamaBaseUrl()
   const model = getOllamaModel()
+  const keepAlive = getOllamaKeepAlive()
+  const maxTokens = getOllamaMaxTokens()
+  const contextTokens = getOllamaContextTokens()
+  const compactPrompt = buildCompactProviderPrompt(request)
+  const preferCompactFirst = shouldPreferCompactOllamaPrompt(request, prompt)
+  const promptAttempts = preferCompactFirst
+    ? [{ prompt: compactPrompt, variant: "compact" as const }]
+    : [
+        { prompt, variant: "full" as const },
+        { prompt: compactPrompt, variant: "compact" as const },
+      ]
 
-  try {
-    const response = await fetch(`${baseUrl}/api/generate`, {
-      method: "POST",
-      headers: buildOllamaHeaders(),
-      body: JSON.stringify({
-        model,
-        prompt,
-        stream: false,
-        options: {
-          temperature: 0.2,
-        },
-      }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(getProviderTimeoutMs()),
+  let lastFailureReason: string | null = null
+
+  for (const attempt of promptAttempts) {
+    const result = await requestOllamaCompletion({
+      baseUrl,
+      model,
+      prompt: attempt.prompt,
+      timeoutMs: getProviderTimeoutMs("ollama"),
+      promptVariant: attempt.variant,
+      keepAlive,
+      maxTokens: attempt.variant === "compact" ? Math.min(maxTokens, 160) : maxTokens,
+      contextTokens: attempt.variant === "compact" ? Math.min(contextTokens, 2048) : contextTokens,
     })
 
-    if (!response.ok) {
-      return buildFallbackProviderReply(
-        request,
-        `ollama_http_${response.status}`
-      )
-    }
-
-    const data: any = await response.json()
-    const answer =
-      typeof data?.response === "string" ? data.response.trim() : ""
-
-    if (!answer) {
-      return buildFallbackProviderReply(request, "ollama_empty_response")
-    }
-
-    return {
-      provider: "ollama",
-      answer,
-      usedModel: `ollama:${model}`,
-      fallbackUsed: false,
-      fallbackReason: null,
-      toolName: "ai.ollama.generate",
-      auditMeta: {
+    if (result.ok) {
+      return {
         provider: "ollama",
-        model,
-        baseUrl,
-        promptLength: prompt.length,
-      },
+        answer: result.answer,
+        usedModel: `ollama:${model}`,
+        fallbackUsed: false,
+        fallbackReason: null,
+        toolName: "ai.ollama.generate",
+        auditMeta: {
+          provider: "ollama",
+          model,
+          baseUrl,
+          promptLength: attempt.prompt.length,
+          promptVariant: result.promptVariant,
+          durationMs: result.durationMs,
+        },
+      }
     }
-  } catch (error: any) {
-    const reason =
-      typeof error?.name === "string" && error.name === "TimeoutError"
-        ? "ollama_timeout"
-        : "ollama_connection_failed"
 
-    return buildFallbackProviderReply(request, reason)
+    lastFailureReason = result.reason
+    const shouldRetryCompact =
+      attempt.variant === "full" &&
+      (result.reason === "ollama_timeout" ||
+        result.reason === "ollama_empty_response" ||
+        result.reason === "ollama_http_500" ||
+        result.reason === "ollama_http_502" ||
+        result.reason === "ollama_http_503" ||
+        result.reason === "ollama_http_504")
+
+    if (!shouldRetryCompact) {
+      break
+    }
   }
+
+  return buildFallbackProviderReply(request, lastFailureReason || "ollama_connection_failed")
 }
 
 async function generateWithOpenAI(
@@ -330,8 +377,11 @@ function buildFallbackProviderReply(
 function buildProviderPrompt(request: AIProviderReplyRequest) {
   const { context, messages, userMessage, interactivePayload, fallbackAnswer } = request
   const history = messages
-    .slice(-6)
-    .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content}`)
+    .slice(-4)
+    .map(
+      (message) =>
+        `${message.role === "user" ? "User" : "Assistant"}: ${limitText(message.content, 280)}`
+    )
     .join("\n")
 
   const metricsBlock =
@@ -374,7 +424,14 @@ function buildProviderPrompt(request: AIProviderReplyRequest) {
         ? "- لا توجد خطوة متوقعة واضحة حالياً."
         : "- No clear predicted next step is currently available."
 
-  const guideBlock = buildGuideContextBlock(context.guide, context.language)
+  const guideBlock = limitText(
+    buildGuideContextBlock(context.guide, context.language),
+    1600
+  )
+  const liveSummary = limitText(context.liveContext.summary, 700)
+  const governanceSummary = limitText(context.governanceSummary, 900)
+  const referenceAnswer = limitText(fallbackAnswer, 1800)
+  const normalizedUserMessage = limitText(userMessage, 900)
 
   if (context.language === "ar") {
     return [
@@ -386,16 +443,17 @@ function buildProviderPrompt(request: AIProviderReplyRequest) {
       "إذا كان السؤال عن الصلاحيات، ركز على ما يمكن للمستخدم فعله وفق الدور والصلاحيات الحالية.",
       "إذا كان السؤال عن الخطوات، استخدم دليل الصفحة أولاً ثم اربطه بالبيانات الحية والحوكمة.",
       "أجب بالعربية الواضحة والمنظمة، وتجنب تكرار نفس القالب إذا لم يكن مناسبًا.",
-      `السياق الحي:\n${context.liveContext.summary}`,
-      `الحوكمة الحالية:\n${context.governanceSummary}`,
+      "اجعل الإجابة مختصرة نسبيًا ومباشرة، ولا تتجاوز ما يحتاجه المستخدم.",
+      `السياق الحي:\n${liveSummary}`,
+      `الحوكمة الحالية:\n${governanceSummary}`,
       `مؤشرات الصفحة:\n${metricsBlock}`,
       `تنبيهات ذكية:\n${insightsBlock}`,
       `إجراءات مقترحة:\n${nextActionsBlock}`,
       `الخطوة التالية المتوقعة:\n${predictedBlock}`,
       `دليل الصفحة:\n${guideBlock}`,
       history ? `آخر المحادثة:\n${history}` : "لا توجد محادثة سابقة مهمة.",
-      `السؤال الحالي:\n${userMessage}`,
-      `إجابة مرجعية محلية منضبطة يمكنك تحسين صياغتها دون الخروج عن مضمونها:\n${fallbackAnswer}`,
+      `السؤال الحالي:\n${normalizedUserMessage}`,
+      `إجابة مرجعية محلية منضبطة يمكنك تحسين صياغتها دون الخروج عن مضمونها:\n${referenceAnswer}`,
       "أجب الآن بإجابة مفيدة، طبيعية، ومختصرة نسبيًا، مع الحفاظ على الدقة والحوكمة.",
     ].join("\n\n")
   }
@@ -409,17 +467,74 @@ function buildProviderPrompt(request: AIProviderReplyRequest) {
     "If the question is about permissions, focus on what the current role and permissions allow.",
     "If the question is about workflow, use the page guide first and then connect it to live ERP context and governance.",
     "Answer in clear professional English and avoid repeating the same template when it is not relevant.",
-    `Live context:\n${context.liveContext.summary}`,
-    `Current governance:\n${context.governanceSummary}`,
+    "Keep the answer relatively concise and directly useful.",
+    `Live context:\n${liveSummary}`,
+    `Current governance:\n${governanceSummary}`,
     `Page metrics:\n${metricsBlock}`,
     `Smart alerts:\n${insightsBlock}`,
     `Suggested actions:\n${nextActionsBlock}`,
     `Predicted next step:\n${predictedBlock}`,
     `Page guide:\n${guideBlock}`,
     history ? `Recent conversation:\n${history}` : "No important previous conversation.",
-    `Current question:\n${userMessage}`,
-    `Grounded local reference answer you may refine without changing its meaning:\n${fallbackAnswer}`,
+    `Current question:\n${normalizedUserMessage}`,
+    `Grounded local reference answer you may refine without changing its meaning:\n${referenceAnswer}`,
     "Respond now with a useful, natural, and relatively concise answer while preserving accuracy and governance.",
+  ].join("\n\n")
+}
+
+function buildCompactProviderPrompt(request: AIProviderReplyRequest) {
+  const { context, userMessage, interactivePayload, fallbackAnswer } = request
+  const guideTitle =
+    context.guide?.title ||
+    (context.language === "ar" ? "الصفحة الحالية" : "the current page")
+  const topMetrics =
+    interactivePayload.metrics.length > 0
+      ? interactivePayload.metrics
+          .slice(0, 3)
+          .map((metric) => `- ${metric.label}: ${metric.value}`)
+          .join("\n")
+      : context.language === "ar"
+        ? "- لا توجد مؤشرات إضافية."
+        : "- No additional metrics."
+  const topInsights =
+    interactivePayload.insights.length > 0
+      ? interactivePayload.insights
+          .slice(0, 2)
+          .map((insight) => `- ${insight.title}: ${insight.summary}`)
+          .join("\n")
+      : context.language === "ar"
+        ? "- لا توجد تنبيهات حية."
+        : "- No live alerts."
+  const referenceAnswer = limitText(fallbackAnswer, 1200)
+  const governanceSummary = limitText(context.governanceSummary, 420)
+  const normalizedUserMessage = limitText(userMessage, 600)
+
+  if (context.language === "ar") {
+    return [
+      "أنت مساعد ERP محلي داخل طبقة حوكمة صارمة.",
+      "الرد للقراءة فقط ولا تدعِ تنفيذ أي إجراء.",
+      "أجب بالعربية الطبيعية في فقرة أو فقرتين قصيرتين أو نقاط قليلة جدًا.",
+      `الصفحة الحالية: ${guideTitle}`,
+      `الحوكمة: ${governanceSummary}`,
+      `أهم المؤشرات:\n${topMetrics}`,
+      `أهم التنبيهات:\n${topInsights}`,
+      `السؤال:\n${normalizedUserMessage}`,
+      `إجابة مرجعية منضبطة:\n${referenceAnswer}`,
+      "أعد صياغة الإجابة بشكل أوضح وأقصر وأكثر طبيعية دون اختلاق أي بيانات جديدة.",
+    ].join("\n\n")
+  }
+
+  return [
+    "You are a local ERP copilot operating under strict governance.",
+    "Remain read-only and never claim execution of any real action.",
+    "Answer in one or two short paragraphs or a very small bullet list.",
+    `Current page: ${guideTitle}`,
+    `Governance: ${governanceSummary}`,
+    `Top metrics:\n${topMetrics}`,
+    `Top alerts:\n${topInsights}`,
+    `Question:\n${normalizedUserMessage}`,
+    `Grounded reference answer:\n${referenceAnswer}`,
+    "Rewrite the answer to be clearer, shorter, and more natural without inventing any new data.",
   ].join("\n\n")
 }
 
@@ -457,9 +572,33 @@ function getOllamaModel() {
   return String(process.env.OLLAMA_MODEL || DEFAULT_OLLAMA_MODEL).trim()
 }
 
-function getProviderTimeoutMs() {
-  const raw = Number.parseInt(String(process.env.AI_PROVIDER_TIMEOUT_MS || "30000"), 10)
-  return Number.isFinite(raw) && raw >= 1000 ? raw : 30000
+function getProviderTimeoutMs(provider?: AIProviderName) {
+  const fallbackMs = provider === "ollama" ? DEFAULT_OLLAMA_TIMEOUT_MS : 30000
+  const raw = Number.parseInt(
+    String(process.env.AI_PROVIDER_TIMEOUT_MS || fallbackMs),
+    10
+  )
+  return Number.isFinite(raw) && raw >= 1000 ? raw : fallbackMs
+}
+
+function getOllamaKeepAlive() {
+  return String(process.env.OLLAMA_KEEP_ALIVE || DEFAULT_OLLAMA_KEEP_ALIVE).trim()
+}
+
+function getOllamaMaxTokens() {
+  const raw = Number.parseInt(
+    String(process.env.OLLAMA_MAX_TOKENS || DEFAULT_OLLAMA_MAX_TOKENS),
+    10
+  )
+  return Number.isFinite(raw) && raw >= 32 ? raw : DEFAULT_OLLAMA_MAX_TOKENS
+}
+
+function getOllamaContextTokens() {
+  const raw = Number.parseInt(
+    String(process.env.OLLAMA_CONTEXT_TOKENS || DEFAULT_OLLAMA_CONTEXT_TOKENS),
+    10
+  )
+  return Number.isFinite(raw) && raw >= 512 ? raw : DEFAULT_OLLAMA_CONTEXT_TOKENS
 }
 
 function buildOllamaHeaders() {
@@ -482,4 +621,147 @@ function buildOllamaHeaders() {
 
   headers.Authorization = `Bearer ${token}`
   return headers
+}
+
+async function requestOllamaCompletion(params: {
+  baseUrl: string
+  model: string
+  prompt: string
+  timeoutMs: number
+  promptVariant: "full" | "compact" | "health"
+  keepAlive: string
+  maxTokens: number
+  contextTokens: number
+}): Promise<
+  | {
+      ok: true
+      answer: string
+      promptVariant: "full" | "compact" | "health"
+      durationMs: number
+    }
+  | {
+      ok: false
+      reason: string
+      promptVariant: "full" | "compact" | "health"
+      durationMs: number
+      message?: string
+    }
+> {
+  const startedAt = Date.now()
+
+  try {
+    const response = await fetch(`${params.baseUrl}/api/generate`, {
+      method: "POST",
+      headers: buildOllamaHeaders(),
+      body: JSON.stringify({
+        model: params.model,
+        prompt: params.prompt,
+        stream: false,
+        keep_alive: params.keepAlive,
+        options: {
+          temperature: params.promptVariant === "health" ? 0 : 0.2,
+          num_predict: params.maxTokens,
+          num_ctx: params.contextTokens,
+        },
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(params.timeoutMs),
+    })
+
+    const durationMs = Date.now() - startedAt
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        reason: `ollama_http_${response.status}`,
+        promptVariant: params.promptVariant,
+        durationMs,
+        message: response.statusText,
+      }
+    }
+
+    const data: any = await response.json()
+    const answer =
+      typeof data?.response === "string" ? data.response.trim() : ""
+
+    if (!answer) {
+      return {
+        ok: false,
+        reason: "ollama_empty_response",
+        promptVariant: params.promptVariant,
+        durationMs,
+      }
+    }
+
+    return {
+      ok: true,
+      answer,
+      promptVariant: params.promptVariant,
+      durationMs,
+    }
+  } catch (error: any) {
+    return {
+      ok: false,
+      reason:
+        typeof error?.name === "string" && error.name === "TimeoutError"
+          ? "ollama_timeout"
+          : "ollama_connection_failed",
+      promptVariant: params.promptVariant,
+      durationMs: Date.now() - startedAt,
+      message: typeof error?.message === "string" ? error.message : undefined,
+    }
+  }
+}
+
+function shouldPreferCompactOllamaPrompt(
+  request: AIProviderReplyRequest,
+  fullPrompt: string
+) {
+  const normalized = normalizeForHeuristics(request.userMessage)
+  const isGreetingOrCapability = includesAny(normalized, [
+    "من انت",
+    "من انتي",
+    "مساء الخير",
+    "صباح الخير",
+    "مرحبا",
+    "اهلا",
+    "hello",
+    "good morning",
+    "good evening",
+    "what can you do",
+    "كيف يمكنك",
+    "كيف تساعد",
+    "امكاني",
+    "قدرات",
+  ])
+
+  return (
+    isGreetingOrCapability ||
+    fullPrompt.length >= 3600 ||
+    request.messages.length >= 8
+  )
+}
+
+function normalizeForHeuristics(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/[ؤئ]/g, "ء")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function includesAny(text: string, values: string[]) {
+  return values.some((value) => text.includes(value))
+}
+
+function limitText(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`
 }
