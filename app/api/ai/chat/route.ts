@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { secureApiRequest } from "@/lib/api-security-enhanced"
@@ -28,6 +29,12 @@ const chatBodySchema = z.object({
     .max(20)
     .optional()
     .default([]),
+})
+
+const closeBodySchema = z.object({
+  action: z.literal("close").default("close"),
+  conversationId: z.string().uuid().optional(),
+  pageKey: z.string().trim().min(1).max(120).optional(),
 })
 
 const reviewRoles = ["owner", "admin", "general_manager", "manager"]
@@ -283,6 +290,107 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PATCH(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const security = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      supabase,
+    })
+
+    if (security.error) return security.error
+    if (!security.user || !security.companyId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const rawPayload = await request.json().catch(() => ({}))
+    const body = closeBodySchema.safeParse({
+      action: rawPayload?.action || "close",
+      conversationId:
+        typeof rawPayload?.conversationId === "string"
+          ? rawPayload.conversationId
+          : undefined,
+      pageKey: normalizeOptionalText(rawPayload?.pageKey, 120),
+    })
+
+    if (!body.success) {
+      return NextResponse.json(
+        { error: "Invalid AI chat close payload", details: body.error.flatten() },
+        { status: 400 }
+      )
+    }
+
+    const conversationId =
+      body.data.conversationId ||
+      (
+        await findLatestConversation({
+          supabase,
+          companyId: security.companyId,
+          userId: security.user.id,
+          pageKey: body.data.pageKey || null,
+        })
+      )?.id ||
+      null
+
+    if (!conversationId) {
+      return NextResponse.json({ success: true, conversationId: null, closed: false })
+    }
+
+    const { error } = await supabase
+      .from("ai_conversations")
+      .update({
+        status: "closed",
+        last_message_at: new Date().toISOString(),
+      })
+      .eq("id", conversationId)
+      .eq("company_id", security.companyId)
+      .eq("user_id", security.user.id)
+      .eq("status", "active")
+
+    if (error) {
+      return NextResponse.json(
+        { error: `Failed to close AI conversation: ${error.message}` },
+        { status: 500 }
+      )
+    }
+
+    const { error: auditError } = await supabase.from("ai_tool_audit").insert({
+      company_id: security.companyId,
+      conversation_id: conversationId,
+      user_id: security.user.id,
+      tool_name: "ai.conversation.close",
+      entity_type: body.data.pageKey ? "page" : null,
+      input_payload: {
+        pageKey: body.data.pageKey || null,
+        action: "close",
+      },
+      output_payload: {
+        status: "closed",
+      },
+      output_hash: createHash("sha256")
+        .update(`${conversationId}:closed`)
+        .digest("hex"),
+    })
+
+    if (auditError) {
+      console.warn("[AI_CHAT][PATCH] Tool audit insert failed:", auditError.message)
+    }
+
+    return NextResponse.json({ success: true, conversationId, closed: true })
+  } catch (error: any) {
+    console.error("[AI_CHAT][PATCH] Error:", error)
+    return NextResponse.json(
+      {
+        error:
+          error?.message ||
+          "Failed to close AI copilot conversation",
+      },
+      { status: 500 }
+    )
+  }
+}
+
 async function resolveConversationId(params: {
   supabase: Awaited<ReturnType<typeof createClient>>
   conversationId?: string
@@ -311,6 +419,7 @@ async function resolveConversationId(params: {
       .eq("id", conversationId)
       .eq("company_id", companyId)
       .eq("user_id", userId)
+      .eq("status", "active")
       .maybeSingle()
 
     if (data?.id) return data.id
@@ -351,6 +460,7 @@ async function findLatestConversation(params: {
     .select("id")
     .eq("company_id", companyId)
     .eq("user_id", userId)
+    .eq("status", "active")
     .order("last_message_at", { ascending: false })
     .limit(1)
 

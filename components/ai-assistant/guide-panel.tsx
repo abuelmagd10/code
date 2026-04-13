@@ -364,8 +364,40 @@ export function GuidePanel({
     }
   }
 
+  const closeActiveConversation = async (id: string | null) => {
+    if (!id) return
+
+    try {
+      await fetch("/api/ai/chat", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "close",
+          conversationId: id,
+          pageKey,
+        }),
+      })
+    } catch {
+      // Closing the drawer should not block the UI if the audit close call fails.
+    }
+  }
+
+  const handleClose = () => {
+    const activeConversationId = conversationId
+    setConversationId(null)
+    setMessages([])
+    setInput("")
+    setCopilotError(null)
+    setIsSending(false)
+    setCopilotBootstrap(null)
+    setHasHydratedCopilot(false)
+    setIsHydratingCopilot(false)
+    void closeActiveConversation(activeConversationId)
+    onClose()
+  }
+
   return (
-    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Sheet open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <SheetContent
         side={lang === "ar" ? "left" : "right"}
         className="flex w-full flex-col overflow-hidden p-0 sm:max-w-lg"
@@ -495,7 +527,7 @@ export function GuidePanel({
                     </label>
                   )}
 
-                  <Button variant="outline" size="sm" className="w-full gap-2" onClick={onClose}>
+                  <Button variant="outline" size="sm" className="w-full gap-2" onClick={handleClose}>
                     <X className="h-3.5 w-3.5" />
                     {t.close}
                   </Button>
@@ -619,7 +651,7 @@ export function GuidePanel({
                       {t.copilotHint}
                     </p>
                     <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" onClick={onClose}>
+                      <Button variant="outline" size="sm" onClick={handleClose}>
                         <X className="h-3.5 w-3.5" />
                         {t.close}
                       </Button>
