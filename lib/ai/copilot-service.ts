@@ -37,6 +37,9 @@ interface IntentAnalysis {
   askGreeting: boolean
   askDefinition: boolean
   askDashboardCardMeaning: boolean
+  askPageContents: boolean
+  askSalesCycle: boolean
+  askPurchaseCycle: boolean
 }
 
 const LOCAL_COPILOT_MODEL = "local-erp-copilot-v2"
@@ -146,6 +149,8 @@ function buildLocalAnswerSections(params: {
   return [
     buildLead(context, intents, userMessage),
     buildCapabilitiesSection(context, intents),
+    buildPageContentsSection(context, intents),
+    buildBusinessCycleSection(context, intents),
     buildDashboardCardMeaningSection(context, intents, userMessage),
     buildLiveSummarySection(context, intents, interactivePayload),
     buildWorkflowSection(context, intents),
@@ -199,6 +204,18 @@ function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {
     language === "ar"
       ? ["ما معنى", "مايعني", "يعني ايه", "يعني ماذا", "ما المقصود", "ما داخل", "ماذا داخل", "ماذا يحتوي", "ما محتوى", "يفهم منه", "يوجد كارت", "هذا الكارت"]
       : ["what does", "what is meant", "what does this mean", "what is inside", "what does this card mean", "what does this widget mean", "what is included"]
+  const pageContentWords =
+    language === "ar"
+      ? ["ما الذي يوجد", "ماذا يوجد", "ما الموجود", "محتويات الصفحه", "محتويات الصفحة", "ماذا تحتوي", "ما الذي تحتويه", "ما الذي بداخل", "ما داخل الصفحة"]
+      : ["what is on this page", "what is inside this page", "what does this page contain", "page contents", "what can i find here"]
+  const salesCycleWords =
+    language === "ar"
+      ? ["دوره البيع", "دورة البيع", "مسار البيع", "المبيعات", "طلبات المبيعات", "الفواتير", "التحصيل", "الذمم المدينه"]
+      : ["sales cycle", "sales flow", "sales order", "invoice flow", "collection flow", "receivables flow"]
+  const purchaseCycleWords =
+    language === "ar"
+      ? ["دوره الشراء", "دورة الشراء", "مسار الشراء", "المشتريات", "اوامر الشراء", "أوامر الشراء", "فاتوره مورد", "فواتير الموردين", "مرتجع مشتريات", "اشعار دائن المورد", "ذمم دائنه"]
+      : ["purchase cycle", "purchasing cycle", "purchase flow", "purchase order flow", "supplier bill flow", "vendor credit flow", "payables flow"]
   const dashboardCardWords =
     language === "ar"
       ? [
@@ -238,6 +255,9 @@ function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {
   const askPrediction = includesAny(text, predictionWords)
   const askValidation = includesAny(text, validationWords)
   const askDefinition = includesAny(text, definitionWords)
+  const askPageContents = includesAny(text, pageContentWords)
+  const askSalesCycle = includesAny(text, salesCycleWords)
+  const askPurchaseCycle = includesAny(text, purchaseCycleWords)
   const askDashboardCardMeaning =
     askDefinition && includesAny(text, dashboardCardWords)
 
@@ -253,6 +273,9 @@ function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {
     askGreeting,
     askDefinition,
     askDashboardCardMeaning,
+    askPageContents,
+    askSalesCycle,
+    askPurchaseCycle,
   }
 }
 
@@ -290,6 +313,18 @@ function buildLead(
       return `أستطيع مساعدتك في فهم العمل داخل ${pageLabel} اعتمادًا على دليل الصفحة، صلاحياتك الحالية، وبيانات النظام الحية.`
     }
 
+    if (intents.askPageContents) {
+      return `سأشرح لك ما الذي ستجده داخل ${pageLabel} وكيف تقرأ مكوناته عمليًا.`
+    }
+
+    if (intents.askSalesCycle) {
+      return `سأشرح لك دورة البيع المرتبطة بـ ${pageLabel} وكيف تنتقل من مستند لآخر داخل التطبيق.`
+    }
+
+    if (intents.askPurchaseCycle) {
+      return `سأشرح لك دورة الشراء المرتبطة بـ ${pageLabel} وكيف ترتبط أوامر الشراء والفواتير والذمم والتسويات.`
+    }
+
     if (intents.askGovernance && !intents.askWorkflow) {
       return `سأوضح لك ما الذي يمكنك فعله داخل ${pageLabel} وفق صلاحياتك الحالية ودون تجاوز الحوكمة.`
     }
@@ -324,6 +359,18 @@ function buildLead(
 
   if (intents.askCapabilities) {
     return `I can help you understand the work on ${pageLabel} using the page guide, your current permissions, and live ERP data.`
+  }
+
+  if (intents.askPageContents) {
+    return `I will explain what you can typically find on ${pageLabel} and how to read its main parts in practice.`
+  }
+
+  if (intents.askSalesCycle) {
+    return `I will explain the sales cycle related to ${pageLabel} and how documents move from one stage to another in the ERP.`
+  }
+
+  if (intents.askPurchaseCycle) {
+    return `I will explain the purchasing cycle related to ${pageLabel} and how orders, supplier bills, payables, and settlements fit together.`
   }
 
   if (intents.askGovernance && !intents.askWorkflow) {
@@ -391,6 +438,55 @@ function buildCapabilitiesSection(
   return lines.join("\n")
 }
 
+function buildPageContentsSection(
+  context: AICopilotContext,
+  intents: IntentAnalysis
+) {
+  if (!intents.askPageContents) return ""
+
+  const playbook = getPagePlaybook(context)
+  if (!playbook) {
+    return context.language === "ar"
+      ? "أستطيع شرح هذه الصفحة إذا ذكرت اسم الجزء الذي تراه أمامك: نموذج، جدول، بطاقة مؤشر، حالة مستند، أو زر إجراء."
+      : "I can explain this page if you mention the part you see: form, table, KPI card, document status, or action button."
+  }
+
+  const header =
+    context.language === "ar"
+      ? "أهم ما ستجده عادة داخل هذه الصفحة:"
+      : "What you will typically find on this page:"
+  const rows = (context.language === "ar" ? playbook.contentsAr : playbook.contentsEn)
+    .slice(0, 5)
+    .map((item) => `- ${item}`)
+    .join("\n")
+
+  return [header, rows].join("\n")
+}
+
+function buildBusinessCycleSection(
+  context: AICopilotContext,
+  intents: IntentAnalysis
+) {
+  const shouldExplainCycle =
+    intents.askSalesCycle ||
+    intents.askPurchaseCycle ||
+    (intents.askCapabilities && hasBusinessCycle(context)) ||
+    (intents.askDefinition && hasBusinessCycle(context))
+
+  if (!shouldExplainCycle) return ""
+
+  const playbook = getPagePlaybook(context)
+  const cycle = context.language === "ar" ? playbook?.cycleAr : playbook?.cycleEn
+  if (!cycle || cycle.length === 0) return ""
+
+  const header =
+    context.language === "ar"
+      ? "الدورة التشغيلية المرتبطة بهذه الصفحة:"
+      : "The operating cycle related to this page:"
+
+  return [header, ...cycle.map((item) => `- ${item}`)].join("\n")
+}
+
 function buildLiveSummarySection(
   context: AICopilotContext,
   intents: IntentAnalysis,
@@ -440,10 +536,15 @@ function buildDashboardCardMeaningSection(
 
 function buildWorkflowSection(context: AICopilotContext, intents: IntentAnalysis) {
   if (!intents.askWorkflow) return ""
-  if (!context.guide) return ""
 
-  const steps = context.guide.steps.slice(0, 5)
-  const tips = context.guide.tips.slice(0, 3)
+  const guideSteps = context.guide?.steps.slice(0, 5) || []
+  const guideTips = context.guide?.tips.slice(0, 3) || []
+  const playbook = getPagePlaybook(context)
+  const fallbackSteps = context.language === "ar" ? playbook?.workflowAr || [] : playbook?.workflowEn || []
+  const fallbackTips = context.language === "ar" ? playbook?.tipsAr || [] : playbook?.tipsEn || []
+  const steps = guideSteps.length > 0 ? guideSteps : fallbackSteps
+  const tips = guideTips.length > 0 ? guideTips : fallbackTips
+
   const stepsBlock =
     steps.length > 0
       ? [
@@ -493,6 +594,7 @@ function buildGovernanceSection(
         ].join("\n")
 
   const domainRule = buildDomainRule(context)
+  const approvalFlow = buildApprovalFlowSection(context, intents)
   const blockers =
     payload.nextActions.length > 0
       ? [
@@ -501,11 +603,19 @@ function buildGovernanceSection(
         ].join("\n")
       : ""
 
-  return [capabilityLine, domainRule, blockers].filter(Boolean).join("\n")
+  return [capabilityLine, domainRule, approvalFlow, blockers].filter(Boolean).join("\n\n")
 }
 
 function buildDomainRule(context: AICopilotContext) {
+  const pageKey = String(context.scope.pageKey || "").toLowerCase()
+
   if (context.language === "ar") {
+    if (isPurchasePageKey(pageKey)) {
+      return "في دورة الشراء: القراءة الصحيحة تكون عبر حالة المستند الحالية، والاستلام أو التأكيد، ثم الذمم الدائنة أو التسوية مع المورد."
+    }
+    if (pageKey === "payments") {
+      return "في المدفوعات: ربط الحركة بالمستند الصحيح وحالة الفترة المحاسبية يحدد ما إذا كانت الحركة تفسيرية فقط أم قابلة للتنفيذ للمستخدم."
+    }
     if (context.domain === "returns") {
       return "في المرتجعات: التنفيذ الفعلي لا يتم إلا بعد اكتمال سلسلة الاعتماد المطلوبة وفق السياسة الحالية."
     }
@@ -516,6 +626,12 @@ function buildDomainRule(context: AICopilotContext) {
       return "في المخزون: أي استفسار عن الإخراج أو الإرجاع يجب قراءته مع حالة الاعتماد وحالة الحركة المرتبطة."
     }
   } else {
+    if (isPurchasePageKey(pageKey)) {
+      return "In the purchase cycle, the correct reading starts with current document status, then receipt or confirmation, and then payables or supplier settlement."
+    }
+    if (pageKey === "payments") {
+      return "In payments, the link between the movement, the source document, and the accounting period determines whether the step is only explanatory or actually allowed for the user."
+    }
     if (context.domain === "returns") {
       return "For returns, final execution happens only after the required approval chain is completed."
     }
@@ -618,6 +734,559 @@ function buildNextStepsSection(
       : ""
 
   return [nextActionsBlock, promptBlock].filter(Boolean).join("\n\n")
+}
+
+interface PagePlaybook {
+  contentsAr: string[]
+  contentsEn: string[]
+  workflowAr: string[]
+  workflowEn: string[]
+  tipsAr: string[]
+  tipsEn: string[]
+  approvalsAr?: string[]
+  approvalsEn?: string[]
+  cycleAr?: string[]
+  cycleEn?: string[]
+}
+
+function buildApprovalFlowSection(
+  context: AICopilotContext,
+  intents: IntentAnalysis
+) {
+  if (!intents.askGovernance && !intents.askValidation && !intents.askAction) return ""
+
+  const playbook = getPagePlaybook(context)
+  const approvals = context.language === "ar" ? playbook?.approvalsAr : playbook?.approvalsEn
+  if (!approvals || approvals.length === 0) return ""
+
+  const header =
+    context.language === "ar"
+      ? "تسلسل الاعتمادات أو القيود التشغيلية:"
+      : "Approvals or operating constraints:"
+
+  return [header, ...approvals.map((item) => `- ${item}`)].join("\n")
+}
+
+function hasBusinessCycle(context: AICopilotContext) {
+  const playbook = getPagePlaybook(context)
+  return Boolean((playbook?.cycleAr && playbook.cycleAr.length > 0) || (playbook?.cycleEn && playbook.cycleEn.length > 0))
+}
+
+function isPurchasePageKey(pageKey: string) {
+  return ["bills", "purchase_orders", "purchase_returns", "vendor_credits", "suppliers"].includes(pageKey)
+}
+
+function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
+  const pageKey = String(context.scope.pageKey || "").toLowerCase()
+
+  switch (pageKey) {
+    case "dashboard":
+      return {
+        contentsAr: [
+          "بطاقات مؤشرات رئيسية مثل الإيرادات والربحية والمصروفات أو المخزون.",
+          "ملخصات تنبيهية لما يحتاج متابعة سريعة.",
+          "فلاتر للفترة أو الفرع أو نطاق العرض.",
+          "مدخلات انتقال سريعة إلى التقارير أو الصفحات التفصيلية.",
+        ],
+        contentsEn: [
+          "Main KPI cards such as revenue, profitability, expenses, or stock.",
+          "Alert summaries for items that need quick follow-up.",
+          "Filters for period, branch, or scope.",
+          "Quick drill-down links into detailed reports or operational pages.",
+        ],
+        workflowAr: [
+          "اختر الفترة أو النطاق الذي تريد قراءته.",
+          "ابدأ ببطاقات الإيرادات والربحية والتكلفة ثم راجع التنبيهات.",
+          "حدد الكارت أو المؤشر غير الطبيعي ثم انتقل للتفاصيل من الصفحة المرتبطة.",
+          "استخدم لوحة التحكم للمتابعة واتخاذ قرار، لا كبديل عن شاشة التنفيذ نفسها.",
+        ],
+        workflowEn: [
+          "Select the period or scope you want to review.",
+          "Start with revenue, profit, and cost cards, then review alerts.",
+          "Identify the unusual KPI and drill down into the linked page.",
+          "Use the dashboard for follow-up and decisions, not as a substitute for execution screens.",
+        ],
+        tipsAr: [
+          "الأرقام تعتمد على البيانات المرحّلة أو الحالات النهائية حسب تصميم الصفحة.",
+          "اقرأ الكروت دائمًا مع الفترة الزمنية والنطاق المختار.",
+        ],
+        tipsEn: [
+          "Figures depend on posted data or final states according to the page design.",
+          "Always read the cards together with the selected period and scope.",
+        ],
+      }
+    case "sales_orders":
+      return {
+        contentsAr: [
+          "بيانات العميل والتاريخ والحالة المرجعية لطلب البيع.",
+          "بنود الطلب: المنتجات والكميات والأسعار والخصومات.",
+          "حالات المتابعة والتحويل إلى فاتورة أو التنفيذ الجزئي.",
+          "مرجع العلاقة بين الطلب والفاتورة والتحصيل اللاحق.",
+        ],
+        contentsEn: [
+          "Customer, date, and reference status for the sales order.",
+          "Order lines: products, quantities, prices, and discounts.",
+          "Tracking states and conversion into invoice or partial execution.",
+          "The link between the order, the invoice, and later collection.",
+        ],
+        workflowAr: [
+          "أنشئ الطلب وحدد العميل والمنتجات والأسعار.",
+          "راجع الحالة والاعتماد الداخلي أو موافقة العميل إن كانت مطلوبة.",
+          "حوّل الطلب إلى فاتورة أو نفّذ جزءًا منه حسب السياسة.",
+          "تابع ما بعد الفاتورة: التسليم والتحصيل أو المرتجع إن وجد.",
+        ],
+        workflowEn: [
+          "Create the order and select the customer, products, and prices.",
+          "Review status and any internal or customer approval if required.",
+          "Convert the order into an invoice or execute it partially if needed.",
+          "Then follow delivery, collection, or returns after invoicing.",
+        ],
+        tipsAr: [
+          "طلب البيع غالبًا مستند تشغيلي يسبق الأثر المالي النهائي.",
+          "التحويل الجزئي أو الكلي يغيّر قراءة الحالة الحالية للطلب.",
+        ],
+        tipsEn: [
+          "A sales order is usually an operational document that precedes the final financial effect.",
+          "Partial or full conversion changes how the current order status should be read.",
+        ],
+        approvalsAr: [
+          "الاعتماد الفعلي يحكمه دورك والصلاحيات الحالية وحالة الطلب.",
+          "الأثر المالي النهائي يرتبط غالبًا بالفاتورة ثم التسليم والتحصيل، لا بطلب البيع وحده.",
+        ],
+        approvalsEn: [
+          "Actual approval depends on your role, permissions, and current order state.",
+          "The final financial effect is usually tied to the invoice, then delivery and collection, not to the sales order alone.",
+        ],
+        cycleAr: [
+          "طلب بيع -> فاتورة -> اعتماد أو تأكيد التسليم -> تحصيل -> مرتجع عند الحاجة.",
+        ],
+        cycleEn: [
+          "Sales order -> invoice -> delivery approval or confirmation -> collection -> return when needed.",
+        ],
+      }
+    case "invoices":
+      return {
+        contentsAr: [
+          "بيانات العميل والفاتورة وتاريخ الاستحقاق والحالة.",
+          "البنود والضرائب والإجمالي والمدفوع والمتبقي.",
+          "حالة التسليم أو اعتماد المخزن عند ارتباطها بالمخزون.",
+          "المدفوعات أو المرتجعات أو الذمم المرتبطة بالفاتورة.",
+        ],
+        contentsEn: [
+          "Customer, invoice, due date, and status details.",
+          "Lines, tax, total, paid, and outstanding values.",
+          "Delivery or warehouse-approval status when inventory is involved.",
+          "Payments, returns, and receivable implications linked to the invoice.",
+        ],
+        workflowAr: [
+          "أنشئ الفاتورة أو راجع المسودة الحالية.",
+          "تحقق من البنود والضرائب والإجماليات.",
+          "راجع حالة التسليم أو اعتماد المخزن إذا كانت الفاتورة مخزنية.",
+          "تابع التحصيل، الرصيد المفتوح، أو أي مرتجع مرتبط.",
+        ],
+        workflowEn: [
+          "Create the invoice or review the current draft.",
+          "Validate lines, taxes, and totals.",
+          "Review delivery or warehouse approval if the invoice affects stock.",
+          "Then follow payment, open balance, or related returns.",
+        ],
+        tipsAr: [
+          "الفاتورة هي نقطة محورية بين التشغيل والمحاسبة والتحصيل.",
+          "قراءة الحالة تحتاج الجمع بين حالة الفاتورة والتسليم والسداد.",
+        ],
+        tipsEn: [
+          "The invoice is the bridge between operations, accounting, and collection.",
+          "Status interpretation requires reading invoice state together with delivery and payment state.",
+        ],
+        approvalsAr: [
+          "إذا كانت الفاتورة مخزنية فاعتماد أو تأكيد التسليم قد يكون جزءًا حاكمًا من الدورة.",
+          "التحصيل أو الإلغاء أو المرتجع يخضع أيضًا لصلاحيات المستخدم والفترة المحاسبية.",
+        ],
+        approvalsEn: [
+          "If the invoice affects stock, delivery approval or confirmation may be a governing step in the cycle.",
+          "Collection, cancellation, or return also depend on user permissions and the accounting period.",
+        ],
+        cycleAr: [
+          "فاتورة -> تسليم أو اعتماد مخزني -> تحصيل أو تسوية ذمم -> مرتجع عند الحاجة.",
+        ],
+        cycleEn: [
+          "Invoice -> delivery or warehouse approval -> collection or receivable settlement -> return when needed.",
+        ],
+      }
+    case "purchase_orders":
+      return {
+        contentsAr: [
+          "بيانات المورد والتواريخ والحالة المرجعية لأمر الشراء.",
+          "بنود الشراء والكميات والأسعار ومواعيد الاستلام المتوقعة.",
+          "العلاقة بين أمر الشراء والاستلام وفاتورة المورد.",
+          "مؤشرات ما إذا كان الأمر ما زال مفتوحًا أو تم تنفيذه جزئيًا أو كليًا.",
+        ],
+        contentsEn: [
+          "Supplier, dates, and reference status for the purchase order.",
+          "Purchase lines, quantities, prices, and expected receipt timing.",
+          "The link between the purchase order, receipt, and supplier bill.",
+          "Signals showing whether the order is still open or partially or fully executed.",
+        ],
+        workflowAr: [
+          "أنشئ أمر الشراء وحدد المورد والبنود والأسعار.",
+          "راجع الطلب قبل الإرسال أو الاعتماد الداخلي إن وجد.",
+          "تابع الاستلام الفعلي أو التحويل إلى فاتورة مورد حسب الإجراء المعتمد.",
+          "بعد ذلك راقب الذمم الدائنة والسداد أو المرتجع إن حصلت تسوية عكسية.",
+        ],
+        workflowEn: [
+          "Create the purchase order with supplier, lines, and prices.",
+          "Review it before sending or any internal approval if applicable.",
+          "Track physical receipt or conversion into a supplier bill according to the approved flow.",
+          "Then follow payables, payment, or any reverse settlement if needed.",
+        ],
+        tipsAr: [
+          "أمر الشراء عادة بداية دورة الشراء وليس نهايتها.",
+          "الوضع الحالي يتضح من الربط بين الأمر والاستلام والفاتورة.",
+        ],
+        tipsEn: [
+          "The purchase order is usually the beginning of the purchase cycle, not the end.",
+          "Its current state becomes clear only when read together with receipt and billing progress.",
+        ],
+        approvalsAr: [
+          "قد توجد موافقة إدارية أو تشغيلية قبل الإرسال أو التنفيذ حسب سياسة الشركة.",
+          "الأثر المالي النهائي لا يكتمل عادة على أمر الشراء وحده، بل عند الفاتورة أو الاستلام المؤكد.",
+        ],
+        approvalsEn: [
+          "There may be management or operational approval before sending or executing the order depending on company policy.",
+          "The final financial effect is usually not complete on the purchase order alone, but on billing or confirmed receipt.",
+        ],
+        cycleAr: [
+          "أمر شراء -> استلام أو تأكيد -> فاتورة مورد -> ذمم دائنة -> سداد أو إشعار دائن.",
+        ],
+        cycleEn: [
+          "Purchase order -> receipt or confirmation -> supplier bill -> payables -> payment or vendor credit.",
+        ],
+      }
+    case "bills":
+      return {
+        contentsAr: [
+          "بيانات المورد والفاتورة وتاريخ الاستحقاق والحالة.",
+          "بنود الفاتورة وقيمتها والضرائب والإجمالي.",
+          "حالة الاستلام أو التأكيد إن كانت مرتبطة بمخزون أو استلام فعلي.",
+          "الرصيد المستحق والسداد وإشعارات الدائن أو التسويات المرتبطة.",
+        ],
+        contentsEn: [
+          "Supplier bill details, due date, and current status.",
+          "Bill lines, value, tax, and total.",
+          "Receipt or confirmation status when inventory or physical receipt is involved.",
+          "Outstanding balance, payment, vendor credits, or related settlements.",
+        ],
+        workflowAr: [
+          "أنشئ أو راجع فاتورة المورد الحالية.",
+          "تحقق من البنود والضرائب وتطابقها مع أمر الشراء أو الاستلام إن وجد.",
+          "راجع الاستلام أو التأكيد قبل اعتبار الدورة مكتملة.",
+          "تابع الذمم الدائنة ثم السداد أو التعويض عبر إشعار دائن المورد.",
+        ],
+        workflowEn: [
+          "Create or review the current supplier bill.",
+          "Validate lines and taxes against the purchase order or receipt when applicable.",
+          "Review receipt or confirmation before treating the cycle as complete.",
+          "Then follow payables and payment or compensation through vendor credits.",
+        ],
+        tipsAr: [
+          "فاتورة المورد هي نقطة الربط بين المشتريات والذمم الدائنة.",
+          "الاستلام أو التأكيد قد يغيّر تفسير الحالة الحالية للفواتير المرتبطة بالمخزون.",
+        ],
+        tipsEn: [
+          "The supplier bill is the bridge between purchasing and payables.",
+          "Receipt or confirmation may change how the current status should be interpreted for inventory-related bills.",
+        ],
+        approvalsAr: [
+          "اعتماد المستند يرتبط بدورك، وحالة الفاتورة، وحالة الاستلام أو الفترة المحاسبية.",
+          "التسوية المالية أو السداد لا تُقرأ بمعزل عن الرصيد المفتوح وإشعارات الدائن المرتبطة.",
+        ],
+        approvalsEn: [
+          "Document approval depends on your role, bill status, and receipt state or accounting period.",
+          "Financial settlement or payment should not be read separately from the open balance and any linked vendor credits.",
+        ],
+        cycleAr: [
+          "فاتورة مورد -> استلام أو تأكيد -> ذمم دائنة -> سداد أو إشعار دائن أو مرتجع مشتريات.",
+        ],
+        cycleEn: [
+          "Supplier bill -> receipt or confirmation -> payables -> payment, vendor credit, or purchase return.",
+        ],
+      }
+    case "purchase_returns":
+      return {
+        contentsAr: [
+          "المورد والأصناف المرتجعة والكميات والأسباب.",
+          "حالة المرتجع: طلب، اعتماد، تنفيذ، أو تسوية.",
+          "العلاقة بين المرتجع والمخزون أو فاتورة المورد أو إشعار الدائن.",
+          "ما إذا كان الأثر المتبقي مخزنيًا أو ماليًا أو كليهما.",
+        ],
+        contentsEn: [
+          "Supplier, returned items, quantities, and reasons.",
+          "Return state: request, approval, execution, or settlement.",
+          "The link between the return, stock, the supplier bill, and vendor credit.",
+          "Whether the remaining impact is inventory, financial, or both.",
+        ],
+        workflowAr: [
+          "أنشئ طلب مرتجع المشتريات وحدد البنود والسبب.",
+          "راجع المرحلة الحالية: هل هو بانتظار اعتماد أم نُفذ فعليًا؟",
+          "تابع أثره على المخزون وعلى فاتورة المورد أو الذمم.",
+          "أغلق الدورة عبر التعويض أو إشعار الدائن أو تسوية المورد.",
+        ],
+        workflowEn: [
+          "Create the purchase return request with lines and reason.",
+          "Review the current stage: is it pending approval or already executed?",
+          "Track its effect on stock and on the supplier bill or payables.",
+          "Close the cycle through compensation, vendor credit, or supplier settlement.",
+        ],
+        tipsAr: [
+          "بعض المرتجعات تنتهي بأثر مخزني وبعضها بتسوية مالية وبعضها بالاثنين معًا.",
+          "ذكر المرحلة الحالية يجعل الشرح أدق بكثير.",
+        ],
+        tipsEn: [
+          "Some purchase returns end as inventory impact, some as financial settlement, and some as both.",
+          "Mentioning the current stage makes the explanation much more precise.",
+        ],
+        approvalsAr: [
+          "اقرأ المرتجع مع حالة الاعتماد الحالية لا مع النتيجة النهائية فقط.",
+          "التنفيذ المالي أو المخزني النهائي يعتمد على حالة المرتجع وسياسة الشركة.",
+        ],
+        approvalsEn: [
+          "Read the return together with its current approval state, not only the final outcome.",
+          "Final financial or inventory execution depends on the return state and company policy.",
+        ],
+        cycleAr: [
+          "مرتجع مشتريات -> اعتماد أو مراجعة -> أثر مخزني أو إشعار دائن -> تسوية مورد.",
+        ],
+        cycleEn: [
+          "Purchase return -> approval or review -> inventory impact or vendor credit -> supplier settlement.",
+        ],
+      }
+    case "vendor_credits":
+      return {
+        contentsAr: [
+          "إشعارات دائن المورد وقيمتها والمورد المرتبط بها.",
+          "الفواتير أو الأرصدة التي يمكن تطبيق الإشعار عليها.",
+          "صلة الإشعار بمرتجع المشتريات أو تسوية المورد.",
+        ],
+        contentsEn: [
+          "Vendor credits, their value, and the linked supplier.",
+          "Bills or balances that the credit can be applied against.",
+          "The connection between the credit, purchase return, and supplier settlement.",
+        ],
+        workflowAr: [
+          "راجع سبب إشعار الدائن ومصدره.",
+          "حدد الفاتورة أو الرصيد الذي سيُطبّق عليه.",
+          "تابع ما إذا كانت الذمم الدائنة انخفضت أو بقي رصيد معلق.",
+        ],
+        workflowEn: [
+          "Review the reason and source of the vendor credit.",
+          "Choose the bill or balance it should be applied against.",
+          "Track whether payables were reduced or whether a residual balance remains.",
+        ],
+        tipsAr: [
+          "إشعار الدائن ليس مجرد مستند مستقل، بل جزء من تسوية دورة الشراء.",
+        ],
+        tipsEn: [
+          "A vendor credit is not just a standalone document, but part of purchase-cycle settlement.",
+        ],
+        approvalsAr: [
+          "التطبيق أو التعديل يخضع لصلاحيات المستخدم وحالة المستندات المرتبطة.",
+        ],
+        approvalsEn: [
+          "Application or adjustment depends on user permissions and linked-document state.",
+        ],
+        cycleAr: [
+          "مرتجع أو تسوية -> إشعار دائن مورد -> تخفيض ذمم أو تطبيق على فاتورة.",
+        ],
+        cycleEn: [
+          "Return or settlement -> vendor credit -> reduce payables or apply against a bill.",
+        ],
+      }
+    case "payments":
+      return {
+        contentsAr: [
+          "نوع الحركة: مقبوض أو مدفوع وطريقة السداد أو التحصيل.",
+          "الطرف المقابل والمستند المرتبط مثل فاتورة عميل أو فاتورة مورد.",
+          "التخصيص أو المطابقة على الأرصدة المفتوحة.",
+          "القيود أو حالة الفترة المحاسبية المرتبطة بالحركة.",
+        ],
+        contentsEn: [
+          "Movement type: receipt or payment, and the payment method.",
+          "The counterparty and linked document such as customer invoice or supplier bill.",
+          "Allocation or matching against open balances.",
+          "The constraints or accounting-period state related to the movement.",
+        ],
+        workflowAr: [
+          "حدد هل الحركة مقبوض أم مدفوع.",
+          "اربطها بالمستند أو الرصيد المفتوح الصحيح.",
+          "راجع المتبقي بعد التخصيص أو التسوية.",
+          "تحقق من الفترة المحاسبية والصلاحيات قبل اعتبار الخطوة مكتملة.",
+        ],
+        workflowEn: [
+          "Decide whether the movement is a receipt or disbursement.",
+          "Link it to the correct document or open balance.",
+          "Review the remaining amount after allocation or settlement.",
+          "Check the accounting period and permissions before treating the step as complete.",
+        ],
+        tipsAr: [
+          "الحركة المالية لا تُقرأ بمعزل عن المستند الذي أغلقت أو خفّضت رصيده.",
+          "الفترة المحاسبية قد تمنع بعض الإجراءات حتى لو ظهرت الصفحة متاحة.",
+        ],
+        tipsEn: [
+          "A cash movement should not be read separately from the document whose balance it closed or reduced.",
+          "The accounting period may block actions even if the page itself is visible.",
+        ],
+        approvalsAr: [
+          "التنفيذ الفعلي يعتمد على نوع الحركة وصلاحية المستخدم وحالة الفترة المحاسبية.",
+        ],
+        approvalsEn: [
+          "Actual execution depends on movement type, user permission, and accounting-period state.",
+        ],
+      }
+    default:
+      if (context.domain === "sales") {
+        return {
+          contentsAr: [
+            "بيانات المستند أو العملية البيعية الحالية.",
+            "حالة الفاتورة أو الطلب وما يرتبط بها من تسليم أو تحصيل.",
+            "مؤشرات الذمم أو المرتجعات إن كانت مرتبطة بالدورة.",
+          ],
+          contentsEn: [
+            "The current sales document or workflow details.",
+            "Order or invoice status together with delivery or collection state.",
+            "Receivable or return indicators linked to the cycle when relevant.",
+          ],
+          workflowAr: [
+            "ابدأ من حالة المستند الحالي.",
+            "اربطه بالتسليم أو التحصيل أو المرتجع عند الحاجة.",
+            "ثم راقب أثره على الذمم أو الإغلاق النهائي للدورة.",
+          ],
+          workflowEn: [
+            "Start with the current document state.",
+            "Connect it to delivery, collection, or return when relevant.",
+            "Then review its effect on receivables or final cycle closure.",
+          ],
+          tipsAr: [
+            "قراءة دورة البيع تحتاج دائمًا الجمع بين المستند والحالة والذمم.",
+          ],
+          tipsEn: [
+            "Reading the sales cycle always requires combining document, status, and receivable context.",
+          ],
+          approvalsAr: [
+            "الاعتماد الفعلي يرتبط بالحالة الحالية وصلاحياتك الفعلية داخل الدورة.",
+          ],
+          approvalsEn: [
+            "Actual approval depends on the current state and your effective permissions in the cycle.",
+          ],
+          cycleAr: [
+            "طلب أو مستند بيع -> فاتورة -> تسليم -> تحصيل -> مرتجع عند الحاجة.",
+          ],
+          cycleEn: [
+            "Sales document -> invoice -> delivery -> collection -> return when needed.",
+          ],
+        }
+      }
+
+      if (context.domain === "inventory") {
+        return {
+          contentsAr: [
+            "الأصناف والكميات والمخازن والحركات المرتبطة بها.",
+            "مؤشرات النقص أو النفاد أو الحركات المعلقة.",
+            "الربط مع الفواتير أو المرتجعات أو التحويلات المخزنية.",
+          ],
+          contentsEn: [
+            "Items, quantities, warehouses, and related movements.",
+            "Low-stock, out-of-stock, or pending-movement signals.",
+            "Links to invoices, returns, or inventory transfers.",
+          ],
+          workflowAr: [
+            "ابدأ بفهم الكمية المتاحة والحالة الحالية.",
+            "راجع الحركة المرتبطة: استلام، صرف، تحويل، أو مرتجع.",
+            "اربط ذلك بالمستند المالي أو التشغيلي المرتبط إن وجد.",
+          ],
+          workflowEn: [
+            "Start by understanding the available quantity and current state.",
+            "Review the linked movement: receipt, issue, transfer, or return.",
+            "Then connect it to any financial or operational source document.",
+          ],
+          tipsAr: [
+            "المخزون يتأثر بالدورة التشغيلية كاملة وليس بعرض الصنف فقط.",
+          ],
+          tipsEn: [
+            "Inventory is shaped by the full operating cycle, not only by the item card.",
+          ],
+        }
+      }
+
+      if (context.domain === "accounting" || context.domain === "receivables") {
+        return {
+          contentsAr: [
+            "المستندات أو الأرصدة أو القيود المرتبطة بالأثر المالي الحالي.",
+            "الحالة المحاسبية أو حالة السداد أو الرصيد المفتوح.",
+            "الربط بين المستند التشغيلي والذمم أو القيود أو التسويات.",
+          ],
+          contentsEn: [
+            "The documents, balances, or entries linked to the current financial effect.",
+            "The accounting, payment, or open-balance state.",
+            "The link between the operational document and entries, receivables, or settlements.",
+          ],
+          workflowAr: [
+            "حدد أولًا نوع المستند أو الرصيد الذي تنظر إليه.",
+            "راجع حالته الحالية: مسودة، مرحّل، مفتوح، مدفوع جزئيًا، أو مغلق.",
+            "ثم اربطه بالمستندات الأخرى أو القيود أو التسويات لفهم الدورة كاملة.",
+          ],
+          workflowEn: [
+            "First identify the type of document or balance you are reviewing.",
+            "Review its current state: draft, posted, open, partially paid, or closed.",
+            "Then connect it to related documents, entries, or settlements to understand the full cycle.",
+          ],
+          tipsAr: [
+            "السؤال الأدق يعطي شرحًا أدق: اذكر نوع المستند أو اسم العملية أو الرصيد.",
+          ],
+          tipsEn: [
+            "A more specific question leads to a more precise explanation: mention the document type, workflow, or balance.",
+          ],
+          approvalsAr: [
+            "النتيجة النهائية تتأثر بصلاحياتك والفترة المحاسبية وحالة المستند الحالي.",
+          ],
+          approvalsEn: [
+            "The final result is shaped by your permissions, the accounting period, and the current document state.",
+          ],
+        }
+      }
+
+      if (context.domain === "governance") {
+        return {
+          contentsAr: [
+            "إعدادات الأدوار والصلاحيات والنطاقات مثل الفرع أو المخزن.",
+            "قيود الوصول والسماح أو المنع حسب المورد أو الصفحة.",
+            "أثر الحوكمة على ما يمكن للمستخدم رؤيته أو تنفيذه.",
+          ],
+          contentsEn: [
+            "Role, permission, and scope settings such as branch or warehouse.",
+            "Access constraints and allow or deny rules by resource or page.",
+            "How governance shapes what the user can view or execute.",
+          ],
+          workflowAr: [
+            "حدد المورد أو الصفحة أو الإجراء الذي تريد فحصه.",
+            "راجع الدور والنطاق أولًا.",
+            "ثم اربط ذلك بما هو مسموح أو محجوب فعليًا للمستخدم.",
+          ],
+          workflowEn: [
+            "Identify the resource, page, or action you want to inspect.",
+            "Review role and scope first.",
+            "Then connect that to what is actually allowed or blocked for the user.",
+          ],
+          tipsAr: [
+            "الرؤية وحدها لا تعني السماح بالتنفيذ.",
+          ],
+          tipsEn: [
+            "Visibility alone does not mean execution is allowed.",
+          ],
+        }
+      }
+
+      return null
+  }
 }
 
 function buildFallbackResult(
@@ -732,6 +1401,7 @@ function buildNextActions(
   const language = context.language
   const actions: AINextAction[] = []
   const canWrite = context.permissionSnapshot.canWrite || context.permissionSnapshot.canUpdate
+  const pageKey = String(context.scope.pageKey || "").toLowerCase()
 
   if (!canWrite) {
     actions.push({
@@ -808,6 +1478,44 @@ function buildNextActions(
       })
       break
     case "accounting":
+      if (isPurchasePageKey(pageKey)) {
+        actions.push({
+          title:
+            language === "ar"
+              ? "مراجعة مرحلة دورة الشراء الحالية"
+              : "Review the current purchasing stage",
+          summary:
+            language === "ar"
+              ? "ابدأ من حالة أمر الشراء أو فاتورة المورد، ثم الاستلام أو التأكيد، ثم الذمم أو التعويض."
+              : "Start with purchase order or supplier bill status, then receipt or confirmation, then payables or compensation.",
+          prompt:
+            language === "ar"
+              ? "ما المرحلة الحالية في دورة الشراء وما الخطوة التالية؟"
+              : "What is the current purchasing stage and what comes next?",
+          severity: "info",
+          confidenceScore: 90,
+        })
+        break
+      }
+      if (pageKey === "payments") {
+        actions.push({
+          title:
+            language === "ar"
+              ? "تحديد المستند المرتبط بالحركة المالية"
+              : "Identify the document linked to the cash movement",
+          summary:
+            language === "ar"
+              ? "ابدأ بتحديد هل الحركة مرتبطة بفاتورة عميل أم فاتورة مورد أم تسوية مستقلة."
+              : "Start by identifying whether the movement is linked to a customer invoice, supplier bill, or a standalone settlement.",
+          prompt:
+            language === "ar"
+              ? "كيف أحدد المستند الصحيح المرتبط بهذه الدفعة أو المقبوض؟"
+              : "How do I identify the correct document linked to this payment or receipt?",
+          severity: "info",
+          confidenceScore: 88,
+        })
+        break
+      }
       actions.push({
         title:
           language === "ar"
@@ -869,6 +1577,7 @@ function buildNextActions(
 function buildPredictedActions(context: AICopilotContext): AIPredictedAction[] {
   const language = context.language
   const predictions: AIPredictedAction[] = []
+  const pageKey = String(context.scope.pageKey || "").toLowerCase()
 
   const pendingDispatch = readMetricCount(context, [
     "بانتظار اعتماد التسليم",
@@ -974,6 +1683,42 @@ function buildPredictedActions(context: AICopilotContext): AIPredictedAction[] {
       }
       break
     case "accounting":
+      if (isPurchasePageKey(pageKey)) {
+        predictions.push({
+          title:
+            language === "ar"
+              ? "المتوقع التالي: متابعة الذمم أو تسوية المورد"
+              : "Predicted next step: follow up on payables or supplier settlement",
+          summary:
+            language === "ar"
+              ? "بعد مراجعة فاتورة المورد أو المرتجع، يميل الاستخدام التالي إلى الذمم الدائنة أو إشعار الدائن أو السداد."
+              : "After reviewing the supplier bill or return, the next likely move is payables, vendor credit, or payment follow-up.",
+          prompt:
+            language === "ar"
+              ? "ما الذمم أو التسويات المرتبطة بالمورد التي تحتاج متابعة الآن؟"
+              : "Which supplier payables or settlements need follow-up now?",
+          confidenceScore: 82,
+        })
+        break
+      }
+      if (pageKey === "payments") {
+        predictions.push({
+          title:
+            language === "ar"
+              ? "المتوقع التالي: مطابقة الحركة مع المستند المفتوح"
+              : "Predicted next step: match the movement to the open document",
+          summary:
+            language === "ar"
+              ? "الاستخدام التالي عادة يكون ربط المقبوض أو المدفوع بالفاتورة أو التسوية الصحيحة."
+              : "The next likely step is usually linking the receipt or payment to the correct invoice or settlement.",
+          prompt:
+            language === "ar"
+              ? "ما المستندات المفتوحة التي يجب أن أربط بها هذه الحركة؟"
+              : "Which open documents should this movement be linked to?",
+          confidenceScore: 85,
+        })
+        break
+      }
       if (draftEntries > 0) {
         predictions.push({
           title:
@@ -1021,6 +1766,7 @@ function buildQuickPrompts(
   const language = context.language
   const prompts: AIQuickPrompt[] = []
   const guideTitle = context.guide?.title
+  const pageKey = String(context.scope.pageKey || "").toLowerCase()
 
   prompts.push(
     {
@@ -1054,6 +1800,32 @@ function buildQuickPrompts(
       category: "governance",
     }
   )
+
+  if (isPurchasePageKey(pageKey)) {
+    prompts.push({
+      label:
+        language === "ar"
+          ? "اشرح لي دورة الشراء في هذه الصفحة"
+          : "Explain the purchase cycle on this page",
+      prompt:
+        language === "ar"
+          ? "اشرح لي دورة الشراء والاعتمادات المرتبطة بهذه الصفحة"
+          : "Explain the purchase cycle and approvals related to this page.",
+      category: "workflow",
+    })
+  } else if (context.domain === "sales") {
+    prompts.push({
+      label:
+        language === "ar"
+          ? "اشرح لي دورة البيع في هذه الصفحة"
+          : "Explain the sales cycle on this page",
+      prompt:
+        language === "ar"
+          ? "اشرح لي دورة البيع والاعتمادات المرتبطة بهذه الصفحة"
+          : "Explain the sales cycle and approvals related to this page.",
+      category: "workflow",
+    })
+  }
 
   if (context.liveContext.metrics.length > 0) {
     prompts.push({
@@ -1196,7 +1968,10 @@ function isPureGreetingIntent(intents: IntentAnalysis) {
     !intents.askPrediction &&
     !intents.askValidation &&
     !intents.askDefinition &&
-    !intents.askDashboardCardMeaning
+    !intents.askDashboardCardMeaning &&
+    !intents.askPageContents &&
+    !intents.askSalesCycle &&
+    !intents.askPurchaseCycle
   )
 }
 
@@ -1379,7 +2154,15 @@ function buildDashboardCardMeaningEnglish(card: DashboardCardDefinition) {
 }
 
 function buildDomainCapabilityLine(context: AICopilotContext) {
+  const pageKey = String(context.scope.pageKey || "").toLowerCase()
+
   if (context.language === "ar") {
+    if (isPurchasePageKey(pageKey)) {
+      return "داخل دورة الشراء أشرح لك الفرق بين أمر الشراء، فاتورة المورد، الاستلام أو التأكيد، الذمم الدائنة، ومرتجع المشتريات أو إشعار الدائن."
+    }
+    if (pageKey === "payments") {
+      return "داخل المدفوعات أشرح لك الفرق بين المقبوضات والمدفوعات والربط مع الفواتير والتسويات والفترات المحاسبية."
+    }
     switch (context.domain) {
       case "sales":
         return "داخل دورة المبيعات أشرح لك الفرق بين طلب البيع، الفاتورة، اعتماد التسليم، التحصيل، والمرتجع."
@@ -1394,6 +2177,13 @@ function buildDomainCapabilityLine(context: AICopilotContext) {
       default:
         return "أربط لك سؤال الصفحة الحالية بالصلاحيات والبيانات الحية الموجودة داخل النظام."
     }
+  }
+
+  if (isPurchasePageKey(pageKey)) {
+    return "Inside the purchase cycle, I can explain the difference between purchase orders, supplier bills, receipt or confirmation, payables, purchase returns, and vendor credits."
+  }
+  if (pageKey === "payments") {
+    return "Inside payments, I can explain receipts, disbursements, invoice allocation, settlements, and accounting-period constraints."
   }
 
   switch (context.domain) {

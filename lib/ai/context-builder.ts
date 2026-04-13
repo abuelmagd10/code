@@ -604,10 +604,7 @@ async function loadAccountingContext(
 
   return {
     domain: "accounting",
-    summary:
-      language === "ar"
-        ? "الموديول المحلي يشرح الأثر المحاسبي والقيود المرتبطة بالعمليات دون إنشاء قيود جديدة."
-        : "The local module explains accounting impact and journal behavior without creating new entries.",
+    summary: buildAccountingSummary(scope.pageKey, language),
     metrics: [
       metric(language, "قيود مرحّلة", "Posted journal entries", postedEntries),
       metric(language, "قيود مسودة", "Draft journal entries", draftEntries),
@@ -615,14 +612,7 @@ async function loadAccountingContext(
       metric(language, "ذمم مدينة مفتوحة", "Open receivables", formatAmount(openReceivables, language)),
     ],
     alerts,
-    suggestions: [
-      language === "ar"
-        ? "إذا كنت تسأل عن قيد عملية، اذكر نوع العملية: فاتورة، دفعة، مرتجع، أو قيد بنكي."
-        : "If you are asking about an entry, mention the transaction type: invoice, payment, return, or banking entry.",
-      language === "ar"
-        ? "للذمم، راقب دائماً الإجمالي والمدفوع والمرتجع قبل تفسير الرصيد."
-        : "For receivables, always compare total, paid, and returned values before interpreting the balance.",
-    ],
+    suggestions: buildAccountingSuggestions(scope.pageKey, language),
   }
 }
 
@@ -834,6 +824,97 @@ function metric(
   return {
     label: language === "ar" ? labelAr : labelEn,
     value: String(value),
+  }
+}
+
+function buildAccountingSummary(
+  pageKey: string | null | undefined,
+  language: "ar" | "en"
+) {
+  switch (String(pageKey || "").toLowerCase()) {
+    case "bills":
+      return language === "ar"
+        ? "الموديول المحلي يقرأ دورة الشراء هنا كسلسلة: أمر شراء -> فاتورة مورد -> استلام/تأكيد -> ذمم دائنة -> سداد أو إشعار دائن."
+        : "The local module reads the purchasing cycle here as: purchase order -> supplier bill -> receipt/confirmation -> payables -> payment or vendor credit."
+    case "purchase_orders":
+      return language === "ar"
+        ? "الموديول المحلي يشرح دورة أمر الشراء من الطلب مع المورد وحتى التحويل إلى فاتورة مورد أو الاستلام الفعلي."
+        : "The local module explains the purchase-order cycle from supplier request through conversion into a supplier bill or physical receipt."
+    case "purchase_returns":
+      return language === "ar"
+        ? "الموديول المحلي يشرح هنا دورة مرتجع المشتريات من طلب الإرجاع وحتى الأثر المالي أو استلام التعويض من المورد."
+        : "The local module explains the purchase-return cycle here from return request through financial impact or supplier compensation."
+    case "vendor_credits":
+      return language === "ar"
+        ? "الموديول المحلي يوضح هنا كيف يعمل إشعار دائن المورد كتخفيض على الذمم أو كتعويض مرتبط بمرتجع أو تسوية."
+        : "The local module explains how a vendor credit reduces payables or compensates a return or settlement."
+    case "payments":
+      return language === "ar"
+        ? "الموديول المحلي يشرح هنا دورة المدفوعات والتحصيل والربط بين الحركة المالية والمستندات المفتوحة."
+        : "The local module explains the payment and collection cycle here, including the link between cash movement and open documents."
+    default:
+      return language === "ar"
+        ? "الموديول المحلي يشرح الأثر المحاسبي والقيود المرتبطة بالعمليات دون إنشاء قيود جديدة."
+        : "The local module explains accounting impact and journal behavior without creating new entries."
+  }
+}
+
+function buildAccountingSuggestions(
+  pageKey: string | null | undefined,
+  language: "ar" | "en"
+) {
+  switch (String(pageKey || "").toLowerCase()) {
+    case "bills":
+      return [
+        language === "ar"
+          ? "إذا كنت تسأل عن دورة الشراء، ابدأ بحالة الفاتورة ثم الاستلام أو التأكيد ثم الذمم والسداد."
+          : "For purchasing-cycle questions, start with bill status, then receipt or confirmation, then payables and payment.",
+        language === "ar"
+          ? "إذا أردت فهم الاعتمادات، اسأل عن حالة الاستلام أو اعتماد المورد أو الإقفال المحاسبي."
+          : "If you need approvals, ask about receipt state, supplier approval, or accounting close constraints.",
+      ]
+    case "purchase_orders":
+      return [
+        language === "ar"
+          ? "اسأل عن الخطوة التالية بين أمر الشراء والاستلام وفاتورة المورد لتحصل على شرح أدق."
+          : "Ask about the next step between purchase order, receipt, and supplier bill for a more precise explanation.",
+        language === "ar"
+          ? "إذا كان السؤال عن المورد، اذكر المستند أو المرحلة الحالية وسأربطها بالدورة المناسبة."
+          : "If the question is about the supplier, mention the document or current stage and I will connect it to the right cycle.",
+      ]
+    case "purchase_returns":
+      return [
+        language === "ar"
+          ? "إذا كان السؤال عن المرتجع، وضح هل المطلوب إعادة مخزنية أم معالجة مالية أم تسوية مع المورد."
+          : "If the question is about the return, clarify whether you need inventory return, financial treatment, or supplier settlement.",
+        language === "ar"
+          ? "اسأل عن حالة الاعتماد الحالية وسأشرح لك الخطوة الصحيحة التالية."
+          : "Ask about the current approval stage and I will explain the correct next step.",
+      ]
+    case "vendor_credits":
+      return [
+        language === "ar"
+          ? "إذا كان السؤال عن إشعار الدائن، اذكر هل تريد فهم إنشائه أم تطبيقه على فاتورة مورد."
+          : "If the question is about the vendor credit, mention whether you want to understand its creation or its application against a supplier bill.",
+      ]
+    case "payments":
+      return [
+        language === "ar"
+          ? "إذا كان السؤال عن السداد أو التحصيل، اذكر نوع الحركة والمستند المرتبط بها لأشرح الربط الصحيح."
+          : "If the question is about payment or collection, mention the movement type and linked document so I can explain the correct linkage.",
+        language === "ar"
+          ? "راجع دائمًا الفترة المحاسبية وحالة المستند قبل تفسير سبب السماح أو المنع."
+          : "Always review the accounting period and document status before interpreting why an action is allowed or blocked.",
+      ]
+    default:
+      return [
+        language === "ar"
+          ? "إذا كنت تسأل عن قيد عملية، اذكر نوع العملية: فاتورة، دفعة، مرتجع، أو قيد بنكي."
+          : "If you are asking about an entry, mention the transaction type: invoice, payment, return, or banking entry.",
+        language === "ar"
+          ? "للذمم، راقب دائماً الإجمالي والمدفوع والمرتجع قبل تفسير الرصيد."
+          : "For receivables, always compare total, paid, and returned values before interpreting the balance.",
+      ]
   }
 }
 

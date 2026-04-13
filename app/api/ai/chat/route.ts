@@ -10,6 +10,9 @@ import {
 } from "@/lib/ai/copilot-service"
 import type { AICopilotInteractivePayload } from "@/lib/ai/contracts"
 
+const MAX_CHAT_MESSAGE_LENGTH = 3600
+const MAX_CHAT_HISTORY_MESSAGES = 12
+
 const chatBodySchema = z.object({
   conversationId: z.string().uuid().optional(),
   pageKey: z.string().trim().min(1).max(120).optional(),
@@ -124,7 +127,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const body = chatBodySchema.safeParse(await request.json())
+    const rawPayload = await request.json()
+    const body = chatBodySchema.safeParse(normalizeChatRequestBody(rawPayload))
     if (!body.success) {
       return NextResponse.json(
         { error: "Invalid AI chat payload", details: body.error.flatten() },
@@ -406,4 +410,47 @@ function asInteractivePayload(value: unknown): AICopilotInteractivePayload | nul
   }
 
   return candidate as AICopilotInteractivePayload
+}
+
+function normalizeChatRequestBody(value: unknown) {
+  const payload =
+    value && typeof value === "object" ? (value as Record<string, unknown>) : {}
+
+  return {
+    conversationId:
+      typeof payload.conversationId === "string" ? payload.conversationId : undefined,
+    pageKey: normalizeOptionalText(payload.pageKey, 120),
+    language: payload.language === "en" ? "en" : "ar",
+    message: normalizeRequiredText(payload.message, MAX_CHAT_MESSAGE_LENGTH),
+    messages: normalizeChatMessages(payload.messages),
+  }
+}
+
+function normalizeChatMessages(value: unknown): CopilotChatMessage[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .slice(-MAX_CHAT_HISTORY_MESSAGES)
+    .flatMap((item) => {
+      if (!item || typeof item !== "object") return []
+
+      const candidate = item as Record<string, unknown>
+      const role = candidate.role
+      if (role !== "user" && role !== "assistant") return []
+
+      const content = normalizeRequiredText(candidate.content, MAX_CHAT_MESSAGE_LENGTH)
+      if (!content) return []
+
+      return [{ role, content }]
+    })
+}
+
+function normalizeRequiredText(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return ""
+  return value.replace(/\r\n/g, "\n").trim().slice(0, maxLength)
+}
+
+function normalizeOptionalText(value: unknown, maxLength: number) {
+  const normalized = normalizeRequiredText(value, maxLength)
+  return normalized || undefined
 }

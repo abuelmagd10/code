@@ -56,6 +56,9 @@ interface ChatMessage {
   responseMeta?: AICopilotInteractivePayload | null
 }
 
+const MAX_OUTGOING_CHAT_HISTORY = 12
+const MAX_OUTGOING_CHAT_CHARS = 3200
+
 const L = {
   ar: {
     loading: "جاري تحميل الدليل...",
@@ -292,7 +295,7 @@ export function GuidePanel({
   }, [copilotBootstrap, messages])
 
   const handleSend = async (forcedQuestion?: string) => {
-    const question = (forcedQuestion ?? input).trim()
+    const question = truncateChatContent(forcedQuestion ?? input)
     if (!question || !pageKey || isSending) return
 
     setIsSending(true)
@@ -307,10 +310,7 @@ export function GuidePanel({
           pageKey,
           language: lang,
           message: question,
-          messages: messages.map((message) => ({
-            role: message.role,
-            content: message.content,
-          })),
+          messages: buildOutgoingChatHistory(messages),
         }),
       })
 
@@ -873,6 +873,20 @@ function buildSuggestedPrompts(
     "What can I do here with my current permissions?",
     "What approvals or governance constraints apply here?",
   ]
+}
+
+function truncateChatContent(value: string, maxLength = MAX_OUTGOING_CHAT_CHARS) {
+  return value.replace(/\r\n/g, "\n").trim().slice(0, maxLength)
+}
+
+function buildOutgoingChatHistory(messages: ChatMessage[]) {
+  return messages
+    .slice(-MAX_OUTGOING_CHAT_HISTORY)
+    .map((message) => ({
+      role: message.role,
+      content: truncateChatContent(message.content),
+    }))
+    .filter((message) => message.content.length > 0)
 }
 
 type Labels = typeof L["ar"]
