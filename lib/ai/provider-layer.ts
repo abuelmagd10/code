@@ -45,6 +45,8 @@ const DEFAULT_OLLAMA_TIMEOUT_MS = 120000
 const DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
 const DEFAULT_OLLAMA_MAX_TOKENS = 220
 const DEFAULT_OLLAMA_CONTEXT_TOKENS = 4096
+const MAX_OLLAMA_FULL_TIMEOUT_MS = 20000
+const MAX_OLLAMA_COMPACT_TIMEOUT_MS = 12000
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com"
 const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
 const LOCAL_FALLBACK_MODEL = "fallback:local-erp-copilot-v2"
@@ -54,6 +56,11 @@ export async function generateAIProviderReply(
 ): Promise<AIProviderReply> {
   const provider = resolveAIProvider()
   const prompt = buildProviderPrompt(request)
+  const fastPathReply = maybeBuildFastPathProviderReply(request)
+
+  if (fastPathReply) {
+    return fastPathReply
+  }
 
   if (provider === "openai") {
     return generateWithOpenAI(request, prompt)
@@ -242,7 +249,7 @@ async function generateWithOllama(
       baseUrl,
       model,
       prompt: attempt.prompt,
-      timeoutMs: getProviderTimeoutMs("ollama"),
+      timeoutMs: getOllamaRequestTimeoutMs(attempt.variant),
       promptVariant: attempt.variant,
       keepAlive,
       maxTokens: attempt.variant === "compact" ? Math.min(maxTokens, 160) : maxTokens,
@@ -284,6 +291,70 @@ async function generateWithOllama(
   }
 
   return buildFallbackProviderReply(request, lastFailureReason || "ollama_connection_failed")
+}
+
+function maybeBuildFastPathProviderReply(
+  request: AIProviderReplyRequest
+): AIProviderReply | null {
+  const normalized = normalizeForHeuristics(request.userMessage)
+  const shortQuestion = normalized.length > 0 && normalized.length <= 180
+  const answerReadyLocally = request.fallbackAnswer.trim().length > 0 && request.fallbackAnswer.length <= 2600
+  const quickGuidanceIntent = includesAny(normalized, [
+    "من انت",
+    "من انتي",
+    "ما هي امكانياتك",
+    "ما هى امكانياتك",
+    "ما امكانياتك",
+    "ما هى اكنياتك",
+    "ما الذي يمكنني فعله",
+    "ما الصلاحيات",
+    "ما القيود",
+    "ما الاعتمادات",
+    "اشرح لي خطوات",
+    "اشرح لي الخطوات",
+    "اشرح لي دوره البيع",
+    "اشرح لي دورة البيع",
+    "اشرح لي دوره الشراء",
+    "اشرح لي دورة الشراء",
+    "كيف يمكنك مساعدتي",
+    "كيف تساعدني",
+    "ما الذي يوجد",
+    "ما الموجود",
+    "ماذا يوجد",
+    "محتويات الصفحة",
+    "ما معنى",
+    "what can you do",
+    "how can you help",
+    "what can i do here",
+    "what approvals",
+    "what constraints",
+    "explain the workflow",
+    "explain the sales cycle",
+    "explain the purchase cycle",
+    "what is on this page",
+    "page contents",
+    "what does this mean",
+  ])
+
+  if (!shortQuestion || !answerReadyLocally || !quickGuidanceIntent) {
+    return null
+  }
+
+  return {
+    provider: "fallback",
+    answer: request.fallbackAnswer,
+    usedModel: "local-fastpath:local-erp-copilot-v2",
+    fallbackUsed: false,
+    fallbackReason: null,
+    toolName: "ai.local_fast_path.generate",
+    auditMeta: {
+      provider: "fallback",
+      fastPath: true,
+      fastPathReason: "guided_local_answer",
+      promptLength: request.fallbackAnswer.length,
+      userMessageLength: request.userMessage.length,
+    },
+  }
 }
 
 async function generateWithOpenAI(
@@ -579,6 +650,20 @@ function getProviderTimeoutMs(provider?: AIProviderName) {
     10
   )
   return Number.isFinite(raw) && raw >= 1000 ? raw : fallbackMs
+}
+
+function getOllamaRequestTimeoutMs(promptVariant: "full" | "compact" | "health") {
+  const configured = getProviderTimeoutMs("ollama")
+
+  if (promptVariant === "health") {
+    return Math.min(configured, 25000)
+  }
+
+  if (promptVariant === "compact") {
+    return Math.min(configured, MAX_OLLAMA_COMPACT_TIMEOUT_MS)
+  }
+
+  return Math.min(configured, MAX_OLLAMA_FULL_TIMEOUT_MS)
 }
 
 function getOllamaKeepAlive() {
