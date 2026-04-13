@@ -10,6 +10,7 @@ import type {
 } from "@/lib/ai/contracts"
 import type { AICopilotContext } from "@/lib/ai/context-builder"
 import { generateAIProviderReply } from "@/lib/ai/provider-layer"
+import { buildERPQuestionBankPrompts } from "@/lib/ai/question-bank"
 
 export interface CopilotChatMessage {
   role: "user" | "assistant"
@@ -170,7 +171,7 @@ function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {
       : ["explain", "steps", "how", "workflow", "process", "use", "operate"]
   const reportWords =
     language === "ar"
-      ? ["تقرير", "ملخص", "ارقام", "احص", "مؤشر", "حاله", "وضع", "احصاء", "ملخص حي"]
+      ? ["تقرير", "ملخص", "ارقام", "احص", "مؤشر", "حاله", "وضع", "احصاء", "ملخص حي", "رصيد", "مديونيه", "اخر العمليات", "اكثر المنتجات", "اكثر العملاء", "نشاط"]
       : ["report", "summary", "numbers", "metrics", "status", "overview", "dashboard"]
   const governanceWords =
     language === "ar"
@@ -190,12 +191,12 @@ function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {
       : ["next step", "predict", "prediction", "after that", "what next", "warning"]
   const validationWords =
     language === "ar"
-      ? ["خطا", "ناقصه", "ناقص", "اكتمال", "تحقق", "مشكله", "مراجعه", "تحذير"]
+      ? ["خطا", "ناقصه", "ناقص", "اكتمال", "تحقق", "مشكله", "مراجعه", "تحذير", "مخاطره", "مخالفه", "سياسات", "اخطاء شائعه"]
       : ["error", "missing", "incomplete", "validate", "issue", "review", "warning"]
   const capabilityWords =
     language === "ar"
-      ? ["امكاني", "اكني", "قدرات", "تستطيع", "تقدر", "ماذا تفعل", "كيف تساعد", "ساعدني", "مساعدتك", "فهم العمل", "شرح التطبيق"]
-      : ["capabilities", "what can you do", "how can you help", "help me", "assist", "support"]
+      ? ["امكاني", "اكني", "قدرات", "تستطيع", "تقدر", "ماذا تفعل", "كيف تساعد", "ساعدني", "مساعدتك", "فهم العمل", "شرح التطبيق", "وظيفتك", "مهمتك", "دورك", "مين انت", "من انت"]
+      : ["capabilities", "what can you do", "how can you help", "help me", "assist", "support", "your job", "your role", "who are you"]
   const greetingWords =
     language === "ar"
       ? ["السلام", "مرحبا", "اهلا", "اهلن", "صباح الخير", "مساء الخير", "مساء النور", "هاي", "السلام عليكم"]
@@ -776,6 +777,14 @@ function isPurchasePageKey(pageKey: string) {
   return ["bills", "purchase_orders", "purchase_returns", "vendor_credits", "suppliers"].includes(pageKey)
 }
 
+function isFixedAssetsPageKey(pageKey: string) {
+  return ["fixed_assets", "asset_categories", "fixed_assets_reports"].includes(pageKey)
+}
+
+function isHRPageKey(pageKey: string) {
+  return ["hr", "employees", "attendance", "payroll", "instant_payouts"].includes(pageKey)
+}
+
 function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
   const pageKey = String(context.scope.pageKey || "").toLowerCase()
 
@@ -911,6 +920,49 @@ function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
         ],
         cycleEn: [
           "Invoice -> delivery or warehouse approval -> collection or receivable settlement -> return when needed.",
+        ],
+      }
+    case "customers":
+      return {
+        contentsAr: [
+          "بيانات العميل وحالة الحساب والرصيد المفتوح إن وجد.",
+          "الفواتير والمدفوعات والمرتجعات المرتبطة بسجل العميل.",
+          "مؤشرات النشاط أو المديونية أو الحاجة لمراجعة التعامل.",
+        ],
+        contentsEn: [
+          "Customer profile, account state, and open balance when available.",
+          "Invoices, payments, and returns linked to the customer record.",
+          "Signals about activity, receivables, or whether the relationship needs review.",
+        ],
+        workflowAr: [
+          "ابدأ من بيانات العميل الأساسية وحالة التفعيل.",
+          "راجع الرصيد والفواتير والمدفوعات المفتوحة.",
+          "اربط أي قرار تعامل بالصلاحيات وسياسة الشركة وحالة الذمم.",
+        ],
+        workflowEn: [
+          "Start with the customer profile and active status.",
+          "Review balance, invoices, and open payments.",
+          "Connect any relationship decision to permissions, company policy, and receivable state.",
+        ],
+        tipsAr: [
+          "سؤال رصيد عميل محدد يحتاج تحديد العميل أو فتح سجله حتى تكون القراءة أدق.",
+          "المديونية تتأثر بالفواتير والمدفوعات والمرتجعات، وليس بالمبيعات فقط.",
+        ],
+        tipsEn: [
+          "A specific customer balance question needs the customer record or name for better precision.",
+          "Receivables are shaped by invoices, payments, and returns, not sales alone.",
+        ],
+        approvalsAr: [
+          "إيقاف التعامل أو تغيير حالة العميل قرار حوكمي يعتمد على دورك وسياسة الشركة.",
+        ],
+        approvalsEn: [
+          "Stopping or changing customer status is a governed decision based on your role and company policy.",
+        ],
+        cycleAr: [
+          "عميل -> عرض أو طلب بيع -> فاتورة -> تحصيل -> رصيد مفتوح أو مرتجع.",
+        ],
+        cycleEn: [
+          "Customer -> estimate or sales order -> invoice -> collection -> open balance or return.",
         ],
       }
     case "purchase_orders":
@@ -1140,6 +1192,118 @@ function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
         ],
         approvalsEn: [
           "Actual execution depends on movement type, user permission, and accounting-period state.",
+        ],
+      }
+    case "fixed_assets":
+      return {
+        contentsAr: [
+          "بيانات الأصل مثل الاسم والتكلفة وتاريخ الاقتناء والحسابات المرتبطة.",
+          "حالة الأصل وجدول الإهلاك والقيمة الدفترية إن كانت متاحة.",
+          "الربط بين الأصل وقيد الإضافة أو الإهلاك أو الاستبعاد.",
+        ],
+        contentsEn: [
+          "Asset details such as name, cost, acquisition date, and linked accounts.",
+          "Asset status, depreciation schedule, and book value when available.",
+          "The link between the asset and acquisition, depreciation, or disposal entries.",
+        ],
+        workflowAr: [
+          "أضف بيانات الأصل الأساسية والتكلفة وتاريخ التشغيل.",
+          "راجع حساب الأصل وحساب مجمع الإهلاك ومصروف الإهلاك.",
+          "تابع الإهلاك الدوري أو حالة الأصل قبل أي استبعاد أو تعديل.",
+        ],
+        workflowEn: [
+          "Enter the asset basics, cost, and in-service date.",
+          "Review the asset, accumulated depreciation, and depreciation expense accounts.",
+          "Track periodic depreciation and asset status before disposal or adjustment.",
+        ],
+        tipsAr: [
+          "الإهلاك يعتمد على بيانات الأصل وسياسة الشركة وليس على اسم الأصل فقط.",
+        ],
+        tipsEn: [
+          "Depreciation depends on asset data and company policy, not only on the asset name.",
+        ],
+        approvalsAr: [
+          "إضافة أو تعديل أو استبعاد الأصل يخضع للصلاحيات وحالة الفترة المحاسبية.",
+        ],
+        approvalsEn: [
+          "Adding, changing, or disposing of an asset depends on permissions and accounting-period state.",
+        ],
+        cycleAr: [
+          "إضافة أصل -> إعداد حسابات وإهلاك -> تشغيل -> إهلاك دوري -> استبعاد أو بيع عند الحاجة.",
+        ],
+        cycleEn: [
+          "Asset addition -> account and depreciation setup -> in service -> periodic depreciation -> disposal or sale when needed.",
+        ],
+      }
+    case "employees":
+    case "payroll":
+      return {
+        contentsAr: [
+          "بيانات الموظف أو مسير الرواتب والحالة التشغيلية الحالية.",
+          "عناصر الراتب مثل الأساسي والبدلات والاستقطاعات والصافي.",
+          "حالة الصرف أو الاعتماد والقيود المرتبطة عند الترحيل.",
+        ],
+        contentsEn: [
+          "Employee or payroll-run details and the current operating state.",
+          "Payroll components such as base salary, allowances, deductions, and net pay.",
+          "Payment or approval status and related entries when posted.",
+        ],
+        workflowAr: [
+          "ابدأ من بيانات الموظف أو فترة الرواتب.",
+          "راجع عناصر الراتب والاستقطاعات قبل الاعتماد.",
+          "تابع حالة الصرف أو الترحيل حسب الصلاحيات والفترة المحاسبية.",
+        ],
+        workflowEn: [
+          "Start with the employee record or payroll period.",
+          "Review salary components and deductions before approval.",
+          "Track payment or posting status according to permissions and the accounting period.",
+        ],
+        tipsAr: [
+          "صافي الراتب ينتج من عناصر الراتب ناقص الاستقطاعات، وقد يتأثر بالحضور والسياسات.",
+        ],
+        tipsEn: [
+          "Net salary comes from payroll components minus deductions and may be affected by attendance and policies.",
+        ],
+        approvalsAr: [
+          "اعتماد أو صرف الرواتب إجراء حوكمي ولا ينفذه المساعد مباشرة.",
+        ],
+        approvalsEn: [
+          "Payroll approval or payment is a governed action and is never executed by the copilot directly.",
+        ],
+        cycleAr: [
+          "موظف -> حضور أو بيانات راتب -> حساب المسير -> اعتماد -> صرف -> قيد عند الترحيل.",
+        ],
+        cycleEn: [
+          "Employee -> attendance or salary data -> payroll calculation -> approval -> payment -> entry when posted.",
+        ],
+      }
+    case "reports":
+      return {
+        contentsAr: [
+          "تقارير تشغيلية أو مالية تعرض ملخصات ومؤشرات حسب الفترة والنطاق.",
+          "فلاتر للتحليل مثل الفرع أو الفترة أو العميل أو المورد حسب التقرير.",
+          "مدخلات لفهم الأداء أو اكتشاف مشاكل تحتاج متابعة.",
+        ],
+        contentsEn: [
+          "Operational or financial reports showing summaries and KPIs by period and scope.",
+          "Analysis filters such as branch, period, customer, or supplier depending on the report.",
+          "Signals for understanding performance or finding issues that need follow-up.",
+        ],
+        workflowAr: [
+          "حدد التقرير والفترة والنطاق.",
+          "اقرأ المؤشرات الأساسية ثم انتقل للتفاصيل أو المستندات المصدر.",
+          "اربط النتيجة بالصفحة التشغيلية المناسبة قبل اتخاذ قرار.",
+        ],
+        workflowEn: [
+          "Select the report, period, and scope.",
+          "Read the key metrics, then drill into details or source documents.",
+          "Connect the result to the relevant operating page before making a decision.",
+        ],
+        tipsAr: [
+          "التقارير تشرح النتائج، لكنها لا تستبدل صفحة التنفيذ أو الاعتماد.",
+        ],
+        tipsEn: [
+          "Reports explain outcomes but do not replace execution or approval pages.",
         ],
       }
     default:
@@ -1801,6 +1965,17 @@ function buildQuickPrompts(
     }
   )
 
+  prompts.push(
+    ...buildERPQuestionBankPrompts({
+      language,
+      domain: context.domain,
+      pageKey,
+      includeGlobal: false,
+      includeAdvanced: true,
+      limit: 4,
+    })
+  )
+
   if (isPurchasePageKey(pageKey)) {
     prompts.push({
       label:
@@ -1869,7 +2044,7 @@ function buildQuickPrompts(
     })
   }
 
-  return dedupeByLabel(prompts).slice(0, 5)
+  return dedupeByLabel(prompts).slice(0, 7)
 }
 
 function inferMetricSeverity(metric: { label: string; value: string }): AISeverity | null {
@@ -2163,6 +2338,12 @@ function buildDomainCapabilityLine(context: AICopilotContext) {
     if (pageKey === "payments") {
       return "داخل المدفوعات أشرح لك الفرق بين المقبوضات والمدفوعات والربط مع الفواتير والتسويات والفترات المحاسبية."
     }
+    if (isFixedAssetsPageKey(pageKey)) {
+      return "داخل الأصول الثابتة أشرح لك الإضافة، الإهلاك، حالة الأصل، والأثر المحاسبي دون تنفيذ أي ترحيل."
+    }
+    if (isHRPageKey(pageKey)) {
+      return "داخل الموظفين والمرتبات أشرح لك عناصر الراتب والاستقطاعات وحالة الصرف أو الاعتماد حسب الصلاحيات."
+    }
     switch (context.domain) {
       case "sales":
         return "داخل دورة المبيعات أشرح لك الفرق بين طلب البيع، الفاتورة، اعتماد التسليم، التحصيل، والمرتجع."
@@ -2184,6 +2365,12 @@ function buildDomainCapabilityLine(context: AICopilotContext) {
   }
   if (pageKey === "payments") {
     return "Inside payments, I can explain receipts, disbursements, invoice allocation, settlements, and accounting-period constraints."
+  }
+  if (isFixedAssetsPageKey(pageKey)) {
+    return "Inside fixed assets, I can explain additions, depreciation, asset status, and accounting impact without posting anything."
+  }
+  if (isHRPageKey(pageKey)) {
+    return "Inside HR and payroll, I can explain salary components, deductions, payment status, and approval constraints."
   }
 
   switch (context.domain) {

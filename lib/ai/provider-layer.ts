@@ -3,6 +3,7 @@ import {
   buildGuideContextBlock,
   type AICopilotContext,
 } from "@/lib/ai/context-builder"
+import { getERPQuestionBankPhrases } from "@/lib/ai/question-bank"
 
 export type AIProviderName = "ollama" | "openai" | "fallback"
 
@@ -298,7 +299,7 @@ function maybeBuildFastPathProviderReply(
 ): AIProviderReply | null {
   const normalized = normalizeForHeuristics(request.userMessage)
   const shortQuestion = normalized.length > 0 && normalized.length <= 180
-  const answerReadyLocally = request.fallbackAnswer.trim().length > 0 && request.fallbackAnswer.length <= 2600
+  const answerReadyLocally = request.fallbackAnswer.trim().length > 0 && request.fallbackAnswer.length <= 4200
   const quickGuidanceIntent = includesAny(normalized, [
     "من انت",
     "من انتي",
@@ -355,6 +356,7 @@ function maybeBuildFastPathProviderReply(
     "what is on this page",
     "page contents",
     "what does this mean",
+    ...getERPQuestionBankPhrases(),
   ])
 
   if (!shortQuestion || !answerReadyLocally || !quickGuidanceIntent) {

@@ -199,10 +199,14 @@ function inferDomainFromPageKey(pageKey?: string | null): AIDomain {
       "purchase_returns",
       "vendor_credits",
       "suppliers",
+      "fixed_assets",
+      "fixed_assets_reports",
+      "payroll",
     ].includes(key)
   ) {
     return "accounting"
   }
+  if (["employees", "attendance", "instant_payouts", "shareholders"].includes(key)) return "support"
   if (["settings", "branches", "cost_centers"].includes(key)) return "governance"
 
   return "support"
@@ -246,6 +250,14 @@ function mapPageKeyToResource(pageKey?: string | null): string | null {
     purchase_returns: "purchase_returns",
     vendor_credits: "vendor_credits",
     suppliers: "suppliers",
+    fixed_assets: "fixed_assets",
+    asset_categories: "asset_categories",
+    fixed_assets_reports: "fixed_assets_reports",
+    employees: "employees",
+    attendance: "attendance",
+    payroll: "payroll",
+    instant_payouts: "instant_payouts",
+    shareholders: "shareholders",
     settings: "settings",
     branches: "branches",
     cost_centers: "cost_centers",

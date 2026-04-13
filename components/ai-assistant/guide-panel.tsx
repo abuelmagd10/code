@@ -32,6 +32,7 @@ import {
   X,
 } from "lucide-react"
 import type { AICopilotInteractivePayload } from "@/lib/ai/contracts"
+import { buildERPQuestionBankPrompts } from "@/lib/ai/question-bank"
 import type { AccountingPattern, PageGuide } from "@/lib/page-guides"
 
 interface GuidePanelProps {
@@ -200,8 +201,8 @@ export function GuidePanel({
     "flex-1 overflow-y-scroll pr-3 [scrollbar-gutter:stable] notification-scrollbar"
 
   const suggestedPrompts = useMemo(
-    () => buildSuggestedPrompts(lang, guide?.title),
-    [guide?.title, lang]
+    () => buildSuggestedPrompts(lang, guide?.title, pageKey),
+    [guide?.title, lang, pageKey]
   )
 
   useEffect(() => {
@@ -854,25 +855,35 @@ function CopilotBootstrapSkeleton({ labels }: { labels: Labels }) {
 
 function buildSuggestedPrompts(
   language: "ar" | "en",
-  guideTitle?: string
+  guideTitle?: string,
+  pageKey?: string | null
 ): string[] {
-  if (language === "ar") {
-    return [
+  const base =
+    language === "ar"
+      ? [
       guideTitle
         ? `اشرح لي خطوات العمل في صفحة ${guideTitle}`
         : "اشرح لي خطوات العمل في هذه الصفحة",
       "ما الذي يمكنني فعله هنا حسب صلاحيتي الحالية؟",
       "ما الاعتمادات أو القيود المرتبطة بهذه العملية؟",
     ]
-  }
+      : [
+          guideTitle
+            ? `Explain the workflow on the ${guideTitle} page`
+            : "Explain the workflow on this page",
+          "What can I do here with my current permissions?",
+          "What approvals or governance constraints apply here?",
+        ]
 
-  return [
-    guideTitle
-      ? `Explain the workflow on the ${guideTitle} page`
-      : "Explain the workflow on this page",
-    "What can I do here with my current permissions?",
-    "What approvals or governance constraints apply here?",
-  ]
+  const modulePrompts = buildERPQuestionBankPrompts({
+    language,
+    pageKey,
+    includeGlobal: false,
+    includeAdvanced: true,
+    limit: 3,
+  }).map((item) => item.prompt)
+
+  return Array.from(new Set([...base, ...modulePrompts])).slice(0, 6)
 }
 
 function truncateChatContent(value: string, maxLength = MAX_OUTGOING_CHAT_CHARS) {
