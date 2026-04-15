@@ -637,192 +637,28 @@ export default function ShareholdersPage() {
     }
 
     try {
-      // 1. العثور على المساهم وحساب رأس ماله
-      const { data: shareholder } = await supabase
-        .from("shareholders")
-        .select("id, name")
-        .eq("id", contributionForm.shareholder_id)
-        .eq("company_id", companyId)
-        .single()
-
-      if (!shareholder) {
-        toast({ title: "خطأ", description: "لم يتم العثور على المساهم", variant: "destructive" })
-        return
-      }
-
-      const capitalAccountName = `رأس مال - ${shareholder.name}`
-      const { data: capitalAccount } = await supabase
-        .from("chart_of_accounts")
-        .select("id, account_code, account_name")
-        .eq("company_id", companyId)
-        .eq("account_type", "equity")
-        .eq("account_name", capitalAccountName)
-        .maybeSingle()
-
-      if (!capitalAccount) {
-        toast({
-          title: appLang === 'en' ? 'Account Not Found' : 'حساب غير موجود',
-          description: appLang === 'en'
-            ? `Capital account not found for ${shareholder.name}. Please create it first.`
-            : `حساب رأس المال غير موجود لـ ${shareholder.name}. يرجى إنشاؤه أولاً.`,
-          variant: "destructive"
-        })
-        return
-      }
-
-      // 2. التحقق من وجود الحساب المصرفي/الخزنة
-      const { data: paymentAccount } = await supabase
-        .from("chart_of_accounts")
-        .select("id, account_code, account_name")
-        .eq("id", contributionForm.payment_account_id)
-        .eq("company_id", companyId)
-        .maybeSingle()
-
-      if (!paymentAccount) {
-        toast({ title: "خطأ", description: "الحساب المصرفي/الخزنة غير موجود", variant: "destructive" })
-        return
-      }
-
-      const contributionAmount = Number(contributionForm.amount || 0)
-
-      // 3. التحقق من صحة القيد (Debit = Credit)
-      const totalDebit = contributionAmount
-      const totalCredit = contributionAmount
-      if (Math.abs(totalDebit - totalCredit) > 0.01) {
-        toast({
-          title: appLang === 'en' ? 'Invalid Entry' : 'قيد غير صحيح',
-          description: appLang === 'en'
-            ? 'Debit and Credit amounts must be equal'
-            : 'يجب أن يكون المبلغ المدين مساوياً للمبلغ الدائن',
-          variant: "destructive"
-        })
-        return
-      }
-
-      // 4. حفظ المساهمة
-      const { data: contribution, error: contribError } = await supabase
-        .from("capital_contributions")
-        .insert([
-          {
-            company_id: companyId,
-            shareholder_id: contributionForm.shareholder_id,
-            contribution_date: contributionForm.contribution_date,
-            amount: contributionAmount,
-            notes: contributionForm.notes || null,
-          },
-        ])
-        .select("id")
-        .single()
-
-      if (contribError) throw contribError
-
-      // ERP Fix: Fetch a default branch since journal_entries requires a NOT NULL branch_id
-      let entryBranchId = branchId;
-      if (!entryBranchId) {
-        const { data: mainBranch } = await supabase
-          .from("branches")
-          .select("id")
-          .eq("company_id", companyId)
-          .eq("is_main", true)
-          .maybeSingle();
-        entryBranchId = mainBranch?.id || null;
-      }
-      if (!entryBranchId) {
-        const { data: anyBranch } = await supabase
-          .from("branches")
-          .select("id")
-          .eq("company_id", companyId)
-          .limit(1)
-          .maybeSingle();
-        entryBranchId = anyBranch?.id || null;
-      }
-      if (!entryBranchId) {
-        await supabase.from("capital_contributions").delete().eq("id", contribution.id);
-        throw new Error("No branch available to record the journal entry. Please create a branch first.");
-      }
-
-      // 5. إنشاء القيد المحاسبي مبدئياً كـ draft (لتجاوز DIRECT_POST_BLOCKED)
-      const { data: journalEntry, error: entryError } = await supabase
-        .from("journal_entries")
-        .insert([
-          {
-            company_id: companyId,
-            reference_type: "capital_contribution",
-            reference_id: contribution.id,
-            entry_date: contributionForm.contribution_date,
-            description: `مساهمة رأس مال من ${shareholder.name} - ${contributionAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-            branch_id: entryBranchId,
-            status: "draft" // إجباري لعدم تفعيل زناد المنع
-          },
-        ])
-        .select("id")
-        .single()
-
-      if (entryError) {
-        // Rollback: حذف المساهمة إذا فشل إنشاء القيد
-        await supabase.from("capital_contributions").delete().eq("id", contribution.id)
-        throw entryError
-      }
-
-      // 6. إنشاء سطور القيد (Double Entry Accounting)
-      // القيد الصحيح: عند استلام مساهمة رأس مال
-      // - حساب البنك/الخزنة (Asset) يزيد → Debit
-      // - حساب رأس المال (Equity) يزيد → Credit
-      const journalLines = [
-        {
-          journal_entry_id: journalEntry.id,
-          account_id: paymentAccount.id, // الحساب المصرفي/الخزنة (Asset) - مدين
-          debit_amount: contributionAmount,
-          credit_amount: 0,
-          description: `استلام مساهمة رأس مال من ${shareholder.name}`,
-          branch_id: entryBranchId,
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `capital-contribution-${Date.now()}`
+      const response = await fetch("/api/shareholders/contributions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
         },
-        {
-          journal_entry_id: journalEntry.id,
-          account_id: capitalAccount.id, // حساب رأس المال (Equity) - دائن
-          debit_amount: 0,
-          credit_amount: contributionAmount,
-          description: `مساهمة رأس مال من ${shareholder.name}`,
-          branch_id: entryBranchId,
-        },
-      ]
+        body: JSON.stringify({
+          shareholderId: contributionForm.shareholder_id,
+          contributionDate: contributionForm.contribution_date,
+          amount: Number(contributionForm.amount || 0),
+          paymentAccountId: contributionForm.payment_account_id,
+          notes: contributionForm.notes || null,
+          branchId: branchId || null,
+          costCenterId: costCenterId || null,
+          uiSurface: "shareholders_page",
+        }),
+      })
 
-      const { error: linesError } = await supabase
-        .from("journal_entry_lines")
-        .insert(journalLines)
-
-      if (linesError) {
-        // Rollback: حذف القيد والمساهمة
-        await supabase.from("journal_entries").delete().eq("id", journalEntry.id)
-        await supabase.from("capital_contributions").delete().eq("id", contribution.id)
-        throw linesError
-      }
-
-      // 7. التحقق النهائي من توازن القيد
-      const { data: linesCheck } = await supabase
-        .from("journal_entry_lines")
-        .select("debit_amount, credit_amount")
-        .eq("journal_entry_id", journalEntry.id)
-
-      const finalDebit = (linesCheck || []).reduce((sum: number, line: { debit_amount?: number; credit_amount?: number }) => sum + (line.debit_amount || 0), 0)
-      const finalCredit = (linesCheck || []).reduce((sum: number, line: { debit_amount?: number; credit_amount?: number }) => sum + (line.credit_amount || 0), 0)
-
-      if (Math.abs(finalDebit - finalCredit) > 0.01) {
-        // Rollback: حذف كل شيء إذا كان القيد غير متوازن
-        await supabase.from("journal_entry_lines").delete().eq("journal_entry_id", journalEntry.id)
-        await supabase.from("journal_entries").delete().eq("id", journalEntry.id)
-        await supabase.from("capital_contributions").delete().eq("id", contribution.id)
-        throw new Error("القيد غير متوازن - Debit و Credit غير متساويين")
-      }
-
-      // 8. اعتماد القيد (Posting)
-      const { error: postError } = await supabase
-        .from("journal_entries")
-        .update({ status: "posted" })
-        .eq("id", journalEntry.id)
-
-      if (postError) {
-        throw new Error("فشل اعتماد القيد المحاسبي: " + postError.message)
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (appLang === 'en' ? 'Failed to save contribution' : 'فشل حفظ المساهمة'))
       }
 
       setIsContributionOpen(false)

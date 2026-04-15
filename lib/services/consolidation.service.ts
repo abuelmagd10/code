@@ -1,5 +1,6 @@
 import { createHash } from "crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { emitEvent } from "@/lib/event-bus"
 import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
 
@@ -16,6 +17,7 @@ export type ConsolidationStepName = "extract" | "translate" | "eliminate" | "pos
 export type ConsolidationScopeMode = "full_group" | "entity_subset" | "manual_selection"
 
 export interface ConsolidationActor { userId: string; email?: string | null }
+type TraceRecord = { transaction_id: string; request_hash: string | null }
 export interface ConsolidationEntityScope {
   scopeMode: ConsolidationScopeMode
   legalEntityIds?: string[]
@@ -31,6 +33,7 @@ export interface ConsolidationRateSetLock {
   averageRateWindowEnd: string
 }
 export interface ConsolidationIdempotencyContext { idempotencyKey?: string | null; requestHash?: string | null; replayFromRunId?: string | null }
+export interface ConsolidationExecutionContext extends ConsolidationIdempotencyContext { uiSurface?: string | null }
 export interface CreateConsolidationRunInput {
   hostCompanyId: string
   consolidationGroupId: string
@@ -268,6 +271,7 @@ export class ConsolidationService {
       return { run, entries: [], skipped: true }
     }
     this.assertPosting()
+    await this.assertRunPeriodOpen(run)
     const book = await this.ensureDefaultBook(run.consolidation_group_id, run.translation_policy_snapshot?.presentation_currency || "EGP")
     const { data: candidates, error } = await this.adminSupabase.from("consolidation_elimination_candidates").select("*").eq("consolidation_run_id", run.id).in("status", ["draft", "approved"])
     if (error) throw new Error(`Failed to load elimination candidates: ${error.message}`)
@@ -304,20 +308,35 @@ export class ConsolidationService {
     return { run, statementRuns: outputs }
   }
 
-  async executeRun(input: ExecuteConsolidationRunInput, actor: ConsolidationActor) {
+  async executeRun(input: ExecuteConsolidationRunInput, actor: ConsolidationActor, ctx: ConsolidationExecutionContext = {}) {
     this.assertEngine()
     const run = await this.getRun(input.runId)
     await this.assertManagementAccess(run.host_company_id, actor.userId)
-    if (run.status === "completed") return { run, executedSteps: [], statementRuns: await this.loadStatementRuns(run.id), traceId: null, alreadyCompleted: true }
-
     const mode = input.executionMode || run.execution_mode || "dry_run"
+    const requestHash = ctx.requestHash || hash({ runId: run.id, executionMode: mode, steps: input.steps || null, statementTypes: input.statementTypes || null })
+    if (run.status === "completed") {
+      const existingTrace = ctx.idempotencyKey
+        ? await this.findTraceByIdempotency(run.host_company_id, "consolidation_run_executed", ctx.idempotencyKey)
+        : null
+      if (existingTrace?.request_hash && existingTrace.request_hash !== requestHash) throw new Error("Idempotency key already used with a different consolidation request payload")
+      return { run, executedSteps: [], statementRuns: await this.loadStatementRuns(run.id), traceId: existingTrace?.transaction_id || null, alreadyCompleted: true }
+    }
+
     if (mode === "commit_run") this.assertPosting()
     if (mode === "commit_run") await this.assertDryRunBaseline(run)
-    await this.updateRun(run.id, { status: "extracting", execution_mode: mode })
-
     const steps: ConsolidationStepName[] = input.steps?.length
       ? input.steps
       : ["extract", "translate", "eliminate", "post", "statements", "validate", "finalize"]
+    if (mode === "commit_run" && steps.some((step) => step === "post" || step === "finalize")) {
+      await this.assertRunPeriodOpen(run)
+    }
+
+    await this.updateRun(run.id, {
+      status: "extracting",
+      execution_mode: mode,
+      ...(ctx.replayFromRunId ? { replay_of_run_id: ctx.replayFromRunId } : {}),
+    })
+
     const executedSteps: ConsolidationStepName[] = []
     for (const step of steps) {
       const stepStartedAt = Date.now()
@@ -332,15 +351,25 @@ export class ConsolidationService {
       await this.stepTrace(run.host_company_id, run.id, step, actor.userId, {
         duration_ms: Date.now() - stepStartedAt,
         execution_mode: mode,
+        replay_of_run_id: ctx.replayFromRunId || run.replay_of_run_id || null,
+        ui_surface: ctx.uiSurface || "consolidation_execute_api",
+      }, {
+        idempotencyKey: ctx.idempotencyKey ? `${ctx.idempotencyKey}:step:${step}` : null,
+        requestHash,
       })
       executedSteps.push(step)
     }
 
     const finalRun = await this.getRun(run.id)
-    const traceId = await this.trace(finalRun.host_company_id, finalRun.id, "consolidation_run_executed", actor.userId, null, null, { executed_steps: executedSteps, execution_mode: mode })
+    const traceId = await this.trace(finalRun.host_company_id, finalRun.id, "consolidation_run_executed", actor.userId, ctx.idempotencyKey || null, requestHash, {
+      executed_steps: executedSteps,
+      execution_mode: mode,
+      replay_of_run_id: ctx.replayFromRunId || finalRun.replay_of_run_id || null,
+      ui_surface: ctx.uiSurface || "consolidation_execute_api",
+    })
     await this.linkTrace(traceId, "consolidation_run", finalRun.id, "execution", "consolidation_run")
-    await this.emit("consolidation.executed", finalRun.host_company_id, finalRun.id, actor.userId, undefined, { traceId, executedSteps })
-    if (finalRun.status === "completed") await this.emit("consolidation.completed", finalRun.host_company_id, finalRun.id, actor.userId, undefined, { traceId })
+    await this.emit("consolidation.executed", finalRun.host_company_id, finalRun.id, actor.userId, ctx.idempotencyKey || undefined, { traceId, executedSteps, requestHash })
+    if (finalRun.status === "completed") await this.emit("consolidation.completed", finalRun.host_company_id, finalRun.id, actor.userId, ctx.idempotencyKey || undefined, { traceId, requestHash })
     return { run: finalRun, executedSteps, statementRuns: await this.loadStatementRuns(finalRun.id), traceId, alreadyCompleted: false }
   }
 
@@ -525,19 +554,61 @@ export class ConsolidationService {
     if (!data || data.length === 0) throw new Error("Dry-run baseline must complete before commit_run")
   }
 
-  private async trace(companyId: string, sourceId: string, eventType: string, actorUserId: string, idempotencyKey?: string | null, requestHash?: string | null, metadata?: Record<string, unknown>) {
-    const { data, error } = await this.adminSupabase.from("financial_operation_traces").insert({ company_id: companyId, source_entity: "consolidation_run", source_id: sourceId, event_type: eventType, actor_id: actorUserId, idempotency_key: idempotencyKey || null, request_hash: requestHash || null, metadata: metadata || {}, created_at: nowIso() }).select("transaction_id").single()
-    if (error || !data?.transaction_id) throw new Error(`Failed to create financial trace: ${error?.message || "unknown_error"}`)
-    return data.transaction_id as string
+  private async assertRunPeriodOpen(run: any) {
+    if (!run?.host_company_id || !run?.period_end) throw new Error("Consolidation run period context is incomplete")
+    await requireOpenFinancialPeriod(run.host_company_id, run.period_end)
   }
 
-  private async stepTrace(companyId: string, runId: string, step: ConsolidationStepName, actorUserId: string, metadata?: Record<string, unknown>) {
-    const traceId = await this.trace(companyId, runId, "consolidation_step_completed", actorUserId, null, null, {
+  private async trace(companyId: string, sourceId: string, eventType: string, actorUserId: string, idempotencyKey?: string | null, requestHash?: string | null, metadata?: Record<string, unknown>) {
+    if (idempotencyKey) {
+      const existing = await this.findTraceByIdempotency(companyId, eventType, idempotencyKey)
+      if (existing) {
+        if (existing.request_hash && requestHash && existing.request_hash !== requestHash) throw new Error("Idempotency key already used with a different consolidation request payload")
+        return existing.transaction_id
+      }
+    }
+
+    const { data, error } = await this.adminSupabase.rpc("create_financial_operation_trace", {
+      p_company_id: companyId,
+      p_source_entity: "consolidation_run",
+      p_source_id: sourceId,
+      p_event_type: eventType,
+      p_actor_id: actorUserId,
+      p_idempotency_key: idempotencyKey || null,
+      p_request_hash: requestHash || null,
+      p_metadata: metadata || {},
+      p_audit_flags: [],
+    })
+    if (error || !data) {
+      if (idempotencyKey && this.isDuplicateTrace(error?.message)) {
+        const existing = await this.findTraceByIdempotency(companyId, eventType, idempotencyKey)
+        if (existing) {
+          if (existing.request_hash && requestHash && existing.request_hash !== requestHash) throw new Error("Idempotency key already used with a different consolidation request payload")
+          return existing.transaction_id
+        }
+      }
+      throw new Error(`Failed to create financial trace: ${error?.message || "unknown_error"}`)
+    }
+    return String(data)
+  }
+
+  private async stepTrace(companyId: string, runId: string, step: ConsolidationStepName, actorUserId: string, metadata?: Record<string, unknown>, ctx: ConsolidationIdempotencyContext = {}) {
+    const traceId = await this.trace(companyId, runId, "consolidation_step_completed", actorUserId, ctx.idempotencyKey || null, ctx.requestHash || null, {
       step,
       ...(metadata || {}),
     })
     await this.linkTrace(traceId, "consolidation_run", runId, `step:${step}`, "consolidation_step")
     return traceId
+  }
+
+  private async findTraceByIdempotency(companyId: string, eventType: string, idempotencyKey: string): Promise<TraceRecord | null> {
+    const { data, error } = await this.adminSupabase.from("financial_operation_traces").select("transaction_id, request_hash").eq("company_id", companyId).eq("event_type", eventType).eq("idempotency_key", idempotencyKey).maybeSingle()
+    if (error || !data) return null
+    return data as TraceRecord
+  }
+
+  private isDuplicateTrace(message?: string | null) {
+    return !!message && (message.includes("duplicate key value violates unique constraint") || message.includes("idx_financial_operation_traces_idempotency"))
   }
 
   private async linkTrace(traceId: string, entityType: string, entityId: string, linkRole?: string, referenceType?: string) {

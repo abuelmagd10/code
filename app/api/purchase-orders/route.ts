@@ -129,6 +129,10 @@ export async function POST(request: NextRequest) {
     }
     // ------------------------------------
 
+    const normalizedRole = String(governance.role || '').trim().toLowerCase().replace(/\s+/g, '_')
+    const canCreateLinkedBill = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
+    const shouldCreateLinkedBill = Boolean(body.createLinkedBill) && canCreateLinkedBill
+
     // 4️⃣ الإدخال في قاعدة البيانات
     const { data: newOrder, error: insertError } = await supabase
       .from("purchase_orders")
@@ -144,6 +148,7 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Insert Items if provided ---
+    const createdItems = body.items && Array.isArray(body.items) ? body.items : []
     if (body.items && Array.isArray(body.items) && body.items.length > 0) {
       const itemsToInsert = body.items.map((item: any) => ({
         ...item,
@@ -152,6 +157,72 @@ export async function POST(request: NextRequest) {
       const { error: itemsError } = await supabase.from("purchase_order_items").insert(itemsToInsert);
       if (itemsError) {
         console.error("Failed to insert items:", itemsError);
+      }
+    }
+
+    let linkedBillId: string | null = null
+
+    if (shouldCreateLinkedBill) {
+      const { data: linkedBill, error: linkedBillError } = await supabase
+        .from("bills")
+        .insert({
+          company_id: governance.companyId,
+          supplier_id: dataWithGovernance.supplier_id,
+          bill_date: dataWithGovernance.po_date,
+          due_date: dataWithGovernance.due_date || null,
+          subtotal: dataWithGovernance.subtotal,
+          tax_amount: dataWithGovernance.tax_amount,
+          total_amount: dataWithGovernance.total_amount || dataWithGovernance.total,
+          discount_type: dataWithGovernance.discount_type,
+          discount_value: dataWithGovernance.discount_value,
+          discount_position: dataWithGovernance.discount_position,
+          tax_inclusive: dataWithGovernance.tax_inclusive,
+          shipping: dataWithGovernance.shipping,
+          shipping_tax_rate: dataWithGovernance.shipping_tax_rate,
+          shipping_provider_id: dataWithGovernance.shipping_provider_id || null,
+          adjustment: dataWithGovernance.adjustment,
+          status: "draft",
+          currency_code: dataWithGovernance.currency || "EGP",
+          exchange_rate: dataWithGovernance.exchange_rate || 1,
+          purchase_order_id: newOrder.id,
+          branch_id: dataWithGovernance.branch_id,
+          warehouse_id: dataWithGovernance.warehouse_id,
+          cost_center_id: dataWithGovernance.cost_center_id,
+        })
+        .select("id")
+        .single()
+
+      if (linkedBillError) {
+        console.error("Failed to create linked bill:", linkedBillError)
+      } else if (linkedBill?.id) {
+        linkedBillId = linkedBill.id
+
+        const { error: poLinkError } = await supabase
+          .from("purchase_orders")
+          .update({ bill_id: linkedBillId })
+          .eq("id", newOrder.id)
+
+        if (poLinkError) {
+          console.error("Failed to link purchase order to bill:", poLinkError)
+        }
+
+        if (createdItems.length > 0) {
+          const billItems = createdItems.map((item: any) => ({
+            bill_id: linkedBillId,
+            product_id: item.product_id || null,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            tax_rate: item.tax_rate,
+            discount_percent: item.discount_percent || 0,
+            item_type: item.item_type || 'product',
+            line_total: item.line_total,
+          }))
+
+          const { error: billItemsError } = await supabase.from("bill_items").insert(billItems)
+          if (billItemsError) {
+            console.error("Failed to insert linked bill items:", billItemsError)
+          }
+        }
       }
     }
 
@@ -171,7 +242,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: newOrder,
+      data: {
+        ...newOrder,
+        bill_id: linkedBillId || newOrder.bill_id || null,
+      },
+      linkedBillId,
       message: "Purchase order created successfully",
       message_ar: "تم إنشاء أمر الشراء بنجاح",
       governance: {
@@ -192,4 +267,3 @@ export async function POST(request: NextRequest) {
     })
   }
 }
-

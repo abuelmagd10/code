@@ -64,6 +64,14 @@ type PurchaseReturn = {
   purchase_return_items?: ReturnItem[]
 }
 
+type PurchaseReturnCommandApiResponse = {
+  success?: boolean
+  error?: string
+  created_by?: string | null
+  workflowStatus?: string
+  purchaseReturnId?: string
+}
+
 const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
 
 export default function PurchaseReturnsPage() {
@@ -229,6 +237,24 @@ export default function PurchaseReturnsPage() {
   const loadReturnsRef = useRef(loadReturns)
   loadReturnsRef.current = loadReturns
 
+  const postPurchaseReturnCommand = async (path: string, payload: Record<string, unknown>) => {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': crypto.randomUUID(),
+      },
+      body: JSON.stringify(payload),
+    })
+
+    const result = await response.json().catch(() => ({})) as PurchaseReturnCommandApiResponse
+    if (!response.ok || result.success === false) {
+      throw new Error(result.error || (appLang === 'en' ? 'Purchase return command failed' : 'فشل تنفيذ أمر مرتجع المشتريات'))
+    }
+
+    return result
+  }
+
   // ===================== Enterprise Approval/Rejection =====================
   const handleApprovePR = async (pr: PurchaseReturn) => {
     if (!currentUserId) return
@@ -237,18 +263,10 @@ export default function PurchaseReturnsPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      const { data: result, error } = await supabase.rpc('approve_purchase_return_atomic', {
-        p_pr_id: pr.id,
-        p_user_id: currentUserId,
-        p_company_id: companyId,
-        p_action: 'approve',
-        p_reason: null,
+      await postPurchaseReturnCommand(`/api/purchase-returns/${pr.id}/approve`, {
+        action: 'APPROVE',
+        uiSurface: 'purchase_returns_page',
       })
-
-      if (error || !result?.success) {
-        toast({ title: appLang === 'en' ? '❌ Approval Failed' : '❌ فشل الاعتماد', description: result?.error || error?.message, variant: 'destructive' })
-        return
-      }
 
       // Notify creator that their return was approved
       if (pr.created_by) {
@@ -301,18 +319,11 @@ export default function PurchaseReturnsPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      const { data: result, error } = await supabase.rpc('approve_purchase_return_atomic', {
-        p_pr_id: prToReject.id,
-        p_user_id: currentUserId,
-        p_company_id: companyId,
-        p_action: 'reject',
-        p_reason: rejectionReason.trim(),
+      await postPurchaseReturnCommand(`/api/purchase-returns/${prToReject.id}/approve`, {
+        action: 'REJECT',
+        rejectionReason: rejectionReason.trim(),
+        uiSurface: 'purchase_returns_page',
       })
-
-      if (error || !result?.success) {
-        toast({ title: appLang === 'en' ? '❌ Rejection Failed' : '❌ فشل الرفض', description: result?.error || error?.message, variant: 'destructive' })
-        return
-      }
 
       // Notify the creator that admin rejected their return
       if (prToReject.created_by) {
@@ -353,20 +364,10 @@ export default function PurchaseReturnsPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      const { data: result, error } = await supabase.rpc('reject_warehouse_return', {
-        p_purchase_return_id: prToWarehouseReject.id,
-        p_rejected_by: currentUserId,
-        p_reason: warehouseRejectionReason.trim(),
+      const result = await postPurchaseReturnCommand(`/api/purchase-returns/${prToWarehouseReject.id}/reject-warehouse`, {
+        rejectionReason: warehouseRejectionReason.trim(),
+        uiSurface: 'purchase_returns_page',
       })
-
-      if (error || !result?.success) {
-        toast({
-          title: appLang === 'en' ? '❌ Rejection Failed' : '❌ فشل الرفض',
-          description: result?.error || error?.message,
-          variant: 'destructive'
-        })
-        return
-      }
 
       // إشعار المنشئ بالرفض
       const createdBy = result?.created_by || prToWarehouseReject.created_by
@@ -451,25 +452,12 @@ export default function PurchaseReturnsPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      const { data: rpcResult, error: rpcError } = await supabase.rpc(
-        'confirm_purchase_return_delivery_v2',
-        {
-          p_purchase_return_id: pr.id,
-          p_confirmed_by: currentUserId,
-          p_notes: appLang === 'en'
-            ? `Confirmed by warehouse manager on ${new Date().toLocaleDateString()}`
-            : `تم الاعتماد بواسطة مسؤول المخزن بتاريخ ${new Date().toLocaleDateString('ar-EG')}`,
-        }
-      )
-
-      if (rpcError) {
-        toast({
-          title: appLang === 'en' ? '❌ Confirmation Failed' : '❌ فشل الاعتماد',
-          description: formatSupabaseError(rpcError, appLang),
-          variant: 'destructive',
-        })
-        return
-      }
+      await postPurchaseReturnCommand(`/api/purchase-returns/${pr.id}/confirm-delivery`, {
+        notes: appLang === 'en'
+          ? `Confirmed by warehouse manager on ${new Date().toLocaleDateString()}`
+          : `تم الاعتماد بواسطة مسؤول المخزن بتاريخ ${new Date().toLocaleDateString('ar-EG')}`,
+        uiSurface: 'purchase_returns_page',
+      })
 
       // إشعار منشئ المرتجع (فرع الفاتورة / المنشئ)
       if (pr.created_by && pr.created_by !== currentUserId) {
@@ -532,29 +520,19 @@ export default function PurchaseReturnsPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      const { data: rpcResult, error: rpcError } = await supabase.rpc(
-        'confirm_warehouse_allocation',
-        {
-          p_allocation_id: alloc.id,
-          p_confirmed_by: currentUserId,
-          p_notes: appLang === 'en'
-            ? `Confirmed by warehouse manager on ${new Date().toLocaleDateString()}`
-            : `تم الاعتماد بواسطة مسؤول المخزن بتاريخ ${new Date().toLocaleDateString('ar-EG')}`,
-        }
-      )
+      const rpcResult = await postPurchaseReturnCommand(`/api/purchase-returns/${pr.id}/confirm-delivery`, {
+        allocationId: alloc.id,
+        notes: appLang === 'en'
+          ? `Confirmed by warehouse manager on ${new Date().toLocaleDateString()}`
+          : `تم الاعتماد بواسطة مسؤول المخزن بتاريخ ${new Date().toLocaleDateString('ar-EG')}`,
+        uiSurface: 'purchase_returns_page',
+      })
 
-      if (rpcError) {
-        toast({
-          title: appLang === 'en' ? '❌ Confirmation Failed' : '❌ فشل الاعتماد',
-          description: formatSupabaseError(rpcError, appLang),
-          variant: 'destructive',
-        })
-        return
-      }
-
-      const overallStatus = (rpcResult as any)?.overall_status
-      const pendingCount = (rpcResult as any)?.pending_allocations || 0
+      const refreshed = returns.find((item) => item.id === pr.id)
+      const overallStatus = rpcResult.workflowStatus || refreshed?.workflow_status || pr.workflow_status
+      const pendingCount = Math.max((pr.allocations || []).filter((item) => item.id !== alloc.id && item.workflow_status !== 'confirmed').length, 0)
       const supplierName = (pr.suppliers as any)?.name || ''
+      const isFullyConfirmed = ['confirmed', 'completed'].includes(String(overallStatus || '').toLowerCase())
 
       // إشعار
       if (pr.created_by) {
@@ -570,7 +548,7 @@ export default function PurchaseReturnsPage() {
             totalAmount: alloc.total_amount,
             currency: appCurrency,
             pendingAllocations: pendingCount,
-            isFullyConfirmed: overallStatus === 'confirmed',
+            isFullyConfirmed,
             confirmedByName: currentUserName,
             createdBy: pr.created_by,
             appLang,
@@ -581,10 +559,10 @@ export default function PurchaseReturnsPage() {
       }
 
       toast({
-        title: overallStatus === 'confirmed'
+        title: isFullyConfirmed
           ? (appLang === 'en' ? '✅ All Warehouses Confirmed' : '✅ اكتمل اعتماد جميع المخازن')
           : (appLang === 'en' ? '✅ Warehouse Confirmed' : '✅ تم اعتماد المخزن'),
-        description: overallStatus === 'confirmed'
+        description: isFullyConfirmed
           ? (appLang === 'en'
             ? `Return ${pr.return_number} fully confirmed. All stock deducted and journal entries posted.`
             : `تم اعتماد المرتجع ${pr.return_number} كاملاً. تم خصم المخزون ونشر جميع القيود.`)
@@ -608,59 +586,13 @@ export default function PurchaseReturnsPage() {
 
   // ===================== تسجيل استلام المبلغ المسترد من المورد =====================
   const handleRecordRefund = async () => {
-    if (!prToRefund || !currentUserId) return
+    if (!prToRefund) return
     setIsRecordingRefund(true)
     try {
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-
-      const now = new Date().toISOString()
-
-      // 1. تحديث حالة المرتجع إلى "closed" بعد استلام المبلغ
-      const { error } = await supabase
-        .from('purchase_returns')
-        .update({
-          status: 'closed',
-          workflow_status: 'closed',
-          financial_status: 'refund_recorded',
-          notes: prToRefund.reason + (refundNotes ? ` | استلام الاسترداد: ${refundNotes}` : ' | تم استلام الاسترداد'),
-        })
-        .eq('id', prToRefund.id)
-
-      if (error) throw error
-
-      // 2. سجل تدقيق
-      try {
-        await supabase.from('audit_logs').insert({
-          company_id: companyId,
-          user_id: currentUserId,
-          action: 'purchase_return_refund_received',
-          entity: 'purchase_return',
-          entity_id: prToRefund.id,
-          new_data: {
-            return_number: prToRefund.return_number,
-            total_amount: prToRefund.total_amount,
-            settlement_method: prToRefund.settlement_method,
-            notes: refundNotes,
-            recorded_by: currentUserId,
-            timestamp: now,
-          },
-          created_at: now,
-        })
-      } catch (auditErr) { console.warn('Audit log failed:', auditErr) }
-
-      // 3. إشعار للإدارة العليا بتأكيد استلام المبلغ المسترد
-      // أصبح يدار عبر نظام DB events
-      try {
-        await supabase.rpc('emit_system_event_manual', {
-            p_company_id: companyId,
-            p_event_type: 'purchase_return.closed',
-            p_reference_type: 'purchase_return',
-            p_reference_id: prToRefund.id,
-            p_user_id: currentUserId,
-            p_payload: { return_number: prToRefund.return_number }
-        });
-      } catch (e) { }
+      await postPurchaseReturnCommand(`/api/purchase-returns/${prToRefund.id}/record-refund`, {
+        notes: refundNotes.trim() || null,
+        uiSurface: 'purchase_returns_page',
+      })
 
       setIsRefundDialogOpen(false)
       setPrToRefund(null)
@@ -673,7 +605,16 @@ export default function PurchaseReturnsPage() {
       })
       loadReturns()
     } catch (err) {
-      toast({ title: '❌ Error', description: String(err), variant: 'destructive' })
+      toast({
+        title: '❌ Error',
+        description: formatSupabaseError(err as {
+          message?: string | null
+          details?: string | null
+          hint?: string | null
+          code?: string | null
+        } | null | undefined, appLang),
+        variant: 'destructive',
+      })
     } finally {
       setIsRecordingRefund(false)
     }

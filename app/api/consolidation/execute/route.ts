@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const runId = String(body?.runId || "").trim()
     const executionMode = String(body?.executionMode || "dry_run").trim()
+    const replayFromRunId = body?.replayFromRunId ? String(body.replayFromRunId).trim() : null
 
     if (!runId) return badRequestError("runId is required")
 
@@ -59,7 +60,13 @@ export async function POST(req: NextRequest) {
         steps: Array.isArray(body?.steps) ? body.steps : undefined,
         statementTypes: Array.isArray(body?.statementTypes) ? body.statementTypes : undefined,
       },
-      actorOf(user)
+      actorOf(user),
+      {
+        idempotencyKey,
+        requestHash,
+        replayFromRunId,
+        uiSurface: "consolidation_execute_api",
+      }
     )
 
     return NextResponse.json({

@@ -3,13 +3,13 @@
 // =====================================================
 // This component MUST follow the approved pattern:
 // 1) Draft:    no journal_entries, no inventory_transactions.
-// 2) Sent/Received: increase stock ONLY via inventory_transactions(type='purchase'),
-//                   NO accounting entries at this stage.
-// 3) First Payment:
-//      - create 'bill' entry (Inventory/Expense + VAT input + Shipping vs AP),
-//      - create 'bill_payment' entry (AP vs Cash/Bank or Supplier Advance).
+// 2) Sent:     workflow only (no journal_entries, no inventory_transactions).
+// 3) Received: create 'bill' entry (Inventory + VAT input vs AP)
+//              and stock-in via inventory_transactions(type='purchase').
+// 4) Payment:
+//      - create 'bill_payment' entry only (AP vs Cash/Bank or Supplier Advance).
 //    Subsequent payments: 'bill_payment' only (no extra stock movement).
-// 4) Purchase Returns (Vendor Credits):
+// 5) Purchase Returns (Vendor Credits):
 //      - decrease stock via 'purchase_return',
 //      - decrease AP and reverse VAT on purchases when applicable.
 // Any new code here that breaks this pattern is a BUG, not a spec change.
@@ -46,7 +46,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
-import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-reversal"
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
 import { createNotification } from "@/lib/governance-layer"
 import { notifyBillApprovedToPOCreator, notifyPRApprovalRequest } from "@/lib/notification-helpers"
@@ -660,33 +659,6 @@ export default function BillViewPage() {
       const returnNumber = `PR-${bill.bill_number}-${Date.now()}`
       const returnDate = new Date().toISOString().slice(0, 10)
 
-      // 1. إنشاء سجل المرتجع بحالة pending_approval
-      const { data: prData, error: prError } = await supabase
-        .from('purchase_returns')
-        .insert({
-          company_id: bill.company_id,
-          supplier_id: bill.supplier_id,
-          bill_id: bill.id,
-          return_number: returnNumber,
-          return_date: returnDate,
-          status: 'pending_approval',
-          workflow_status: 'pending_admin_approval',
-          settlement_method: returnMethod,
-          reason: returnNotes || (appLang === 'en' ? 'Purchase return request' : 'طلب مرتجع مشتريات'),
-          notes: returnNotes || null,
-          total_amount: returnTotal,
-          subtotal: returnTotal,
-          branch_id: bill.branch_id || null,
-          cost_center_id: bill.cost_center_id || null,
-          warehouse_id: bill.warehouse_id || null,
-          created_by: user.id,
-        })
-        .select('id')
-        .single()
-
-      if (prError) throw prError
-
-      // 2. إضافة بنود المرتجع
       const prItems = returnItems
         .filter(it => it.return_qty > 0)
         .map(it => {
@@ -695,7 +667,6 @@ export default function BillViewPage() {
           const taxRate = Number(billItem?.tax_rate || 0)
           const lineNet = it.unit_price * (1 - discountPct / 100) * it.return_qty
           return {
-            purchase_return_id: prData.id,
             bill_item_id: it.item_id,
             product_id: it.product_id,
             description: it.product_name,
@@ -707,31 +678,55 @@ export default function BillViewPage() {
           }
         })
 
-      if (prItems.length > 0) {
-        const { error: itemsError } = await supabase
-          .from('purchase_return_items')
-          .insert(prItems)
-        if (itemsError) throw itemsError
-      }
+      const response = await fetch('/api/purchase-returns', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          mode: 'create',
+          strategy: 'single',
+          supplierId: bill.supplier_id,
+          billId: bill.id,
+          purchaseReturn: {
+            return_number: returnNumber,
+            return_date: returnDate,
+            status: 'pending_approval',
+            workflow_status: 'pending_admin_approval',
+            settlement_method: returnMethod,
+            reason: returnNotes || (appLang === 'en' ? 'Purchase return request' : 'طلب مرتجع مشتريات'),
+            notes: returnNotes || null,
+            total_amount: returnTotal,
+            subtotal: returnTotal,
+            branch_id: bill.branch_id || null,
+            cost_center_id: bill.cost_center_id || null,
+            warehouse_id: bill.warehouse_id || null,
+          },
+          returnItems: prItems.map(item => ({
+            bill_item_id: item.bill_item_id,
+            product_id: item.product_id,
+            description: item.description,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            tax_rate: item.tax_rate,
+            discount_percent: item.discount_percent,
+            line_total: item.line_total,
+          })),
+          uiSurface: 'bill_detail_page',
+        }),
+      })
 
-      // 3. سجل تدقيق
-      try {
-        await supabase.from('audit_logs').insert({
-          company_id: companyId,
-          user_id: user.id,
-          action: 'purchase_return_submitted',
-          entity_type: 'purchase_return',
-          entity_id: prData.id,
-          new_values: { bill_id: bill.id, return_number: returnNumber, total_amount: returnTotal },
-          created_at: new Date().toISOString(),
-        })
-      } catch (auditErr) { console.warn('Audit log failed:', auditErr) }
+      const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string; purchaseReturnId?: string }
+      if (!response.ok || result.success === false || !result.purchaseReturnId) {
+        throw new Error(result.error || (appLang === 'en' ? 'Failed to submit purchase return' : 'فشل إرسال مرتجع المشتريات'))
+      }
 
       // 4. إشعار للإدارة العليا للموافقة (eventKey ثابت لمنع التكرار)
       try {
         await notifyPRApprovalRequest({
           companyId,
-          prId: prData.id,
+          prId: result.purchaseReturnId,
           prNumber: returnNumber,
           supplierName: supplier?.name || bill.bill_number,
           amount: returnTotal,
@@ -774,97 +769,6 @@ export default function BillViewPage() {
     const isDraft = bill.status?.toLowerCase() === "draft"
     return isDraft && !hasPayments
   }, [bill, payments])
-
-  // Helper: locate account ids for posting
-  const findAccountIds = async (companyIdParam?: string) => {
-    // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
-    const { getActiveCompanyId } = await import("@/lib/company")
-    const resolvedCompanyId = companyIdParam || await getActiveCompanyId(supabase)
-    if (!resolvedCompanyId) return null
-
-    const { data: accounts } = await supabase
-      .from("chart_of_accounts")
-      .select("id, account_code, account_type, account_name, sub_type, parent_id")
-      .eq("company_id", resolvedCompanyId)
-      .eq("is_active", true) // 📌 فلترة الحسابات النشطة فقط
-    if (!accounts) return null
-    // اعتماد الحسابات الورقية فقط (غير الأب)
-    const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))
-    const leafAccounts = (accounts || []).filter((a: any) => !parentIds.has(a.id))
-    const byCode = (code: string) => leafAccounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
-    const byType = (type: string) => leafAccounts.find((a: any) => String(a.account_type || "") === type)?.id
-    const byNameIncludes = (name: string) => leafAccounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
-    const bySubType = (st: string) => leafAccounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
-
-    const ap =
-      bySubType("accounts_payable") ||
-      byCode("AP") ||
-      byNameIncludes("payable") ||
-      byNameIncludes("الحسابات الدائنة") ||
-      byCode("2000") ||
-      byType("liability")
-    const inventory =
-      bySubType("inventory") ||
-      byCode("INV") ||
-      byNameIncludes("inventory") ||
-      byNameIncludes("المخزون") ||
-      byCode("1200") ||
-      byCode("1201") ||
-      byCode("1202") ||
-      byCode("1203") ||
-      null
-    const expense =
-      bySubType("operating_expenses") ||
-      byNameIncludes("expense") ||
-      byNameIncludes("مصروف") ||
-      byNameIncludes("مصروفات") ||
-      byType("expense")
-    // 📌 حساب المشتريات (Purchases) - مستقل عن المخزون
-    const purchases =
-      bySubType("purchases") ||
-      byCode("5100") ||
-      byNameIncludes("purchases") ||
-      byNameIncludes("مشتريات") ||
-      expense // fallback to expense account
-    // 📌 ضريبة المدخلات (VAT Input) - للخصم
-    const vatInput =
-      bySubType("vat_input") ||
-      byCode("VATIN") ||
-      byCode("1500") ||
-      byNameIncludes("vat input") ||
-      byNameIncludes("ضريبة المدخلات") ||
-      byNameIncludes("ضريبة") ||
-      null
-    const vatReceivable =
-      bySubType("vat_input") ||
-      byCode("VATIN") ||
-      byNameIncludes("vat") ||
-      byNameIncludes("ضريبة") ||
-      byType("asset")
-    const cash = bySubType("cash") || byCode("CASH") || byNameIncludes("cash") || byType("asset")
-    const bank = bySubType("bank") || byNameIncludes("bank") || byType("asset")
-    const supplierAdvance =
-      bySubType("supplier_advance") ||
-      byCode("1400") ||
-      byNameIncludes("supplier advance") ||
-      byNameIncludes("advance to suppliers") ||
-      byNameIncludes("advances") ||
-      byNameIncludes("prepaid to suppliers") ||
-      byNameIncludes("prepayment") ||
-      byType("asset")
-
-    // 📌 حساب Vendor Credit Liability (AP Contra) - لإشعارات دائن الموردين
-    const vendorCreditLiability =
-      bySubType("vendor_credit_liability") ||
-      bySubType("ap_contra") ||
-      byCode("VC") ||
-      byNameIncludes("vendor credit") ||
-      byNameIncludes("إشعار دائن المورد") ||
-      byNameIncludes("ap contra") ||
-      null // إذا لم يوجد، نستخدم AP كـ fallback
-
-    return { companyId: resolvedCompanyId, ap, inventory, expense, purchases, vatInput, vatReceivable, cash, bank, supplierAdvance, vendorCreditLiability }
-  }
 
   // === دالة تحديث حالة أمر الشراء المرتبط (مع مزامنة البيانات المالية) ===
   const updateLinkedPurchaseOrderStatus = async (billId: string) => {
@@ -948,370 +852,7 @@ export default function BillViewPage() {
     }
   }
 
-  // === دالة تحديث حالة أمر الشراء بعد حذف الفاتورة ===
-  const updatePurchaseOrderStatusAfterBillDelete = async (poId: string) => {
-    try {
-      // جلب بنود أمر الشراء
-      const { data: poItems } = await supabase
-        .from("purchase_order_items")
-        .select("product_id, quantity")
-        .eq("purchase_order_id", poId)
-
-      // جلب جميع الفواتير المرتبطة بأمر الشراء (غير الملغاة)
-      const { data: linkedBills } = await supabase
-        .from("bills")
-        .select("id, status")
-        .eq("purchase_order_id", poId)
-        .not("status", "in", "(voided,cancelled)")
-
-      const billIds = (linkedBills || []).map((b: any) => b.id)
-
-      // جلب بنود جميع الفواتير المرتبطة
-      let billedQtyMap: Record<string, number> = {}
-      if (billIds.length > 0) {
-        const { data: allBillItems } = await supabase
-          .from("bill_items")
-          .select("product_id, quantity, returned_quantity")
-          .in("bill_id", billIds)
-
-        for (const item of (allBillItems || [])) {
-          const netQty = Number(item.quantity || 0) - Number(item.returned_quantity || 0)
-          billedQtyMap[item.product_id] = (billedQtyMap[item.product_id] || 0) + netQty
-        }
-      }
-
-      // تحديد الحالة الجديدة
-      let newStatus = 'draft'
-      if (billIds.length > 0) {
-        const allFullyBilled = (poItems || []).every((item: any) => {
-          const ordered = Number(item.quantity || 0)
-          const billed = billedQtyMap[item.product_id] || 0
-          return billed >= ordered
-        })
-
-        const anyBilled = Object.values(billedQtyMap).some(qty => qty > 0)
-
-        if (allFullyBilled) {
-          newStatus = 'billed'
-        } else if (anyBilled) {
-          newStatus = 'partially_billed'
-        }
-      }
-
-      // تحديث حالة أمر الشراء
-      await supabase
-        .from("purchase_orders")
-        .update({ status: newStatus, bill_id: billIds.length > 0 ? billIds[0] : null })
-        .eq("id", poId)
-
-      console.log(`✅ Updated PO ${poId} status after bill delete to: ${newStatus}`)
-    } catch (err) {
-      console.warn("Failed to update PO status after bill delete:", err)
-    }
-  }
-
-  // ===== 📌 Cash Basis: قيد المشتريات والذمم عند الدفع =====
-  // عند Paid: Debit Inventory + VAT / Credit AP
-  // هذا يسجل المصروف عند الدفع فقط (وليس عند الاستلام)
-  const postAPPurchaseJournal = async () => {
-    try {
-      if (!bill) return
-
-      const mapping = await findAccountIds(bill.company_id)
-      // ✅ تحسين: استخدام المخزون كبديل للمشتريات إذا لم يكن متوفراً
-      if (!mapping || !mapping.ap || (!mapping.purchases && !mapping.inventory)) {
-        console.warn("Account mapping incomplete: AP and (Purchases or Inventory) not found. Skipping AP/Purchases journal.")
-        return
-      }
-
-      // تجنب التكرار - التحقق من عدم وجود قيد سابق
-      const { data: existing } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "bill") // قيد الفاتورة الرئيسي
-        .eq("reference_id", bill.id)
-        .limit(1)
-      if (existing && existing.length > 0) return
-
-      // ===== 1) قيد المشتريات والذمم الدائنة =====
-      const { data: entry, error: entryError } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: bill.company_id,
-          reference_type: "bill", // قيد الفاتورة - نظام الاستحقاق
-          reference_id: bill.id,
-          entry_date: bill.bill_date,
-          description: `فاتورة مشتريات ${bill.bill_number}`,
-          branch_id: bill.branch_id || null,
-          cost_center_id: bill.cost_center_id || null,
-          warehouse_id: bill.warehouse_id || null,
-        })
-        .select()
-        .single()
-
-      if (entryError) throw entryError
-
-      // القيد: Debit Inventory/Purchases + VAT / Credit AP
-      const lines: any[] = []
-
-      // Debit: المخزون (Asset) - المشتريات تُسجل كأصل وليس مصروف
-      // ✅ حسب المعيار المحاسبي: المشتريات → المخزون (Asset)
-      // عند البيع → COGS يُسجل تلقائيًا بواسطة Trigger
-      lines.push({
-        journal_entry_id: entry.id,
-        account_id: mapping.inventory || mapping.purchases,
-        debit_amount: bill.subtotal,
-        credit_amount: 0,
-        description: "المخزون (أصل)",
-        branch_id: bill.branch_id || null,
-        cost_center_id: bill.cost_center_id || null,
-      })
-
-      // Debit: ضريبة المدخلات إن وجدت
-      if (mapping.vatInput && bill.tax_amount && bill.tax_amount > 0) {
-        lines.push({
-          journal_entry_id: entry.id,
-          account_id: mapping.vatInput,
-          debit_amount: bill.tax_amount,
-          credit_amount: 0,
-          description: "ضريبة القيمة المضافة المدفوعة",
-          branch_id: bill.branch_id || null,
-          cost_center_id: bill.cost_center_id || null,
-        })
-      }
-
-      // Credit: الذمم الدائنة (الموردين)
-      lines.push({
-        journal_entry_id: entry.id,
-        account_id: mapping.ap,
-        debit_amount: 0,
-        credit_amount: bill.total_amount,
-        description: "الذمم الدائنة (الموردين)",
-        branch_id: bill.branch_id || null,
-        cost_center_id: bill.cost_center_id || null,
-      })
-
-      const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
-      if (linesError) throw linesError
-
-      console.log(`✅ تم إنشاء قيد المشتريات للفاتورة ${bill.bill_number} (Accrual Basis)`)
-    } catch (err) {
-      console.error("Error posting AP/Purchase journal:", err)
-    }
-  }
-
-  // === منطق الفاتورة المرسلة (Sent) ===
-  // عند الإرسال: إضافة المخزون + قيد AP/Purchases (نظام الاستحقاق)
-  // قيد السداد فقط يُنشأ عند الدفع
-  const postBillInventoryOnly = async () => {
-    try {
-      if (!bill) return
-      setPosting(true)
-      const mapping = await findAccountIds(bill.company_id)
-      if (!mapping) {
-        toastActionError(toast, "الإرسال", "فاتورة المورد", "لم يتم العثور على إعدادات الحسابات")
-        return
-      }
-
-      // Prevent duplicate inventory transactions
-      const { data: existingTx } = await supabase
-        .from("inventory_transactions")
-        .select("id")
-        .eq("reference_id", bill.id)
-        .eq("transaction_type", "purchase")
-        .limit(1)
-      if (existingTx && existingTx.length > 0) {
-        toastActionSuccess(toast, "التحقق", "تم إضافة المخزون مسبقاً")
-        return
-      }
-
-      // Inventory transactions from bill items (products only, not services)
-      const { data: billItems } = await supabase
-        .from("bill_items")
-        .select("product_id, quantity, products(item_type)")
-        .eq("bill_id", bill.id)
-
-      // ✅ التحقق من الحوكمة قبل إنشاء inventory_transactions
-      if (!bill.branch_id || !bill.warehouse_id || !bill.cost_center_id) {
-        const errorMsg = appLang === 'en'
-          ? 'Branch, Warehouse, and Cost Center are required for inventory transactions'
-          : 'الفرع والمخزن ومركز التكلفة مطلوبة لحركات المخزون'
-        toastActionError(toast, "الإرسال", "فاتورة المورد", errorMsg)
-        return
-      }
-
-      // ✅ التحقق من أن branch_id ينتمي للشركة
-      const { data: branchCheck } = await supabase
-        .from("branches")
-        .select("id, company_id")
-        .eq("id", bill.branch_id)
-        .eq("company_id", bill.company_id)
-        .single()
-
-      if (!branchCheck) {
-        const errorMsg = appLang === 'en'
-          ? 'Branch does not belong to company'
-          : 'الفرع المحدد لا ينتمي للشركة'
-        toastActionError(toast, "الإرسال", "فاتورة المورد", errorMsg)
-        return
-      }
-
-      // ✅ التحقق من أن warehouse_id ينتمي للشركة
-      const { data: warehouseCheck } = await supabase
-        .from("warehouses")
-        .select("id, company_id")
-        .eq("id", bill.warehouse_id)
-        .eq("company_id", bill.company_id)
-        .single()
-
-      if (!warehouseCheck) {
-        const errorMsg = appLang === 'en'
-          ? 'Warehouse does not belong to company'
-          : 'المخزن المحدد لا ينتمي للشركة'
-        toastActionError(toast, "الإرسال", "فاتورة المورد", errorMsg)
-        return
-      }
-
-      // ✅ التحقق من أن cost_center_id ينتمي للشركة
-      const { data: costCenterCheck } = await supabase
-        .from("cost_centers")
-        .select("id, company_id")
-        .eq("id", bill.cost_center_id)
-        .eq("company_id", bill.company_id)
-        .single()
-
-      if (!costCenterCheck) {
-        const errorMsg = appLang === 'en'
-          ? 'Cost Center does not belong to company'
-          : 'مركز التكلفة المحدد لا ينتمي للشركة'
-        toastActionError(toast, "الإرسال", "فاتورة المورد", errorMsg)
-        return
-      }
-
-      const invTx = (billItems || [])
-        .filter((it: any) => it.product_id && it.products?.item_type !== 'service')
-        .map((it: any) => ({
-          company_id: bill.company_id,
-          product_id: it.product_id,
-          transaction_type: "purchase",
-          quantity_change: it.quantity,
-          reference_id: bill.id,
-          notes: `فاتورة شراء ${bill.bill_number}`,
-          branch_id: bill.branch_id,
-          warehouse_id: bill.warehouse_id,
-          cost_center_id: bill.cost_center_id,
-        }))
-
-      if (invTx.length > 0) {
-        const { error: invErr } = await supabase
-          .from("inventory_transactions")
-          .insert(invTx)
-        if (invErr) {
-          console.error("Failed inserting inventory transactions from bill:", invErr)
-          const errorMsg = appLang === 'en'
-            ? `Failed to create inventory transactions: ${invErr.message}`
-            : `فشل إنشاء حركات المخزون: ${invErr.message}`
-          toastActionError(toast, "الإرسال", "فاتورة المورد", errorMsg)
-          return
-        }
-        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
-        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
-      }
-
-      toastActionSuccess(toast, "الإرسال", "تم إضافة الكميات للمخزون")
-    } catch (err: any) {
-      console.error("Error posting bill inventory:", err)
-      const msg = String(err?.message || "")
-      toastActionError(toast, "الإرسال", "فاتورة المورد", msg)
-    } finally {
-      setPosting(false)
-    }
-  }
-
-  /**
-   * ✅ ATOMIC Bill Posting (Replacement for postBillInventoryOnly + postAPPurchaseJournal)
-   * Uses AccountingTransactionService.postBillAtomic for atomic execution
-   */
-  const postBillAtomic = async () => {
-    try {
-      if (!bill) return
-      setPosting(true)
-
-      // Get account mapping
-      const mapping = await findAccountIds(bill.company_id)
-      if (!mapping || !mapping.ap || (!mapping.purchases && !mapping.inventory)) {
-        toastActionError(toast, "الإرسال", "فاتورة المورد", "لم يتم العثور على إعدادات الحسابات")
-        setPosting(false)
-        return
-      }
-
-      // Governance validation
-      if (!bill.branch_id || !bill.warehouse_id || !bill.cost_center_id) {
-        const errorMsg = appLang === 'en'
-          ? 'Branch, Warehouse, and Cost Center are required'
-          : 'الفرع والمخزن ومركز التكلفة مطلوبة'
-        toastActionError(toast, "الإرسال", "فاتورة المورد", errorMsg)
-        setPosting(false)
-        return
-      }
-
-      // Check for existing transactions (idempotency)
-      const { data: existingTx } = await supabase
-        .from("inventory_transactions")
-        .select("id")
-        .eq("reference_id", bill.id)
-        .eq("transaction_type", "purchase")
-        .limit(1)
-
-      if (existingTx && existingTx.length > 0) {
-        toastActionSuccess(toast, "التحقق", "تم إضافة المخزون مسبقاً")
-        setPosting(false)
-        return
-      }
-
-      // ✅ ATOMIC EXECUTION: Use AccountingTransactionService
-      const { AccountingTransactionService } = await import('@/lib/accounting-transaction-service')
-      const service = new AccountingTransactionService(supabase)
-
-      const result = await service.postBillAtomic(
-        {
-          billId: bill.id,
-          billNumber: bill.bill_number,
-          billDate: bill.bill_date,
-          companyId: bill.company_id,
-          branchId: bill.branch_id,
-          warehouseId: bill.warehouse_id,
-          costCenterId: bill.cost_center_id,
-          subtotal: Number(bill.subtotal || 0),
-          taxAmount: Number(bill.tax_amount || 0),
-          totalAmount: Number(bill.total_amount || 0),
-          status: 'sent'
-        },
-        {
-          companyId: mapping.companyId,
-          ap: mapping.ap,
-          inventory: mapping.inventory,
-          purchases: mapping.purchases,
-          vatInput: mapping.vatInput
-        }
-      )
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to post bill')
-      }
-
-      console.log(`✅ Bill posted atomically: ${bill.bill_number}`)
-      toastActionSuccess(toast, "الإرسال", "تم إرسال الفاتورة بنجاح")
-    } catch (err: any) {
-      console.error('Atomic bill posting error:', err)
-      toastActionError(toast, "الإرسال", "فاتورة المورد", err.message || 'فشل إرسال الفاتورة')
-    } finally {
-      setPosting(false)
-    }
-  }
-
-  // ✅ اعتماد استلام البضاعة من مسؤول المخزن - يُنشئ inventory_transactions هنا فقط
+  // ✅ اعتماد استلام البضاعة من مسؤول المخزن عبر backend command موحّد
   const handleApproveReceipt = async () => {
     try {
       if (!bill) return
@@ -1321,96 +862,27 @@ export default function BillViewPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!companyId || !user) { setPosting(false); return }
 
-      // 1. إضافة المخزون ذرياً (بدون تغيير حالة الفاتورة هنا)
-      const mapping = await findAccountIds(bill.company_id)
-      if (!mapping || !mapping.ap) {
-        throw new Error(appLang === 'en' ? 'Account settings not found' : 'لم يتم العثور على إعدادات الحسابات')
-      }
+      const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/confirm-receipt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": `bill:${bill.id}:confirm-receipt`,
+        },
+        body: JSON.stringify({
+          ui_surface: "bill_detail",
+        }),
+      })
 
-      // التحقق من وجود حركات مخزون سابقة (idempotency)
-      const { data: existingTx } = await supabase
-        .from("inventory_transactions")
-        .select("id")
-        .eq("reference_id", bill.id)
-        .eq("transaction_type", "purchase")
-        .limit(1)
-
-      const now = new Date().toISOString()
-      const billUpdatePayload = {
-        status: 'received',
-        receipt_status: 'received',
-        received_by: user.id,
-        received_at: now
-      }
-
-      if (!existingTx || existingTx.length === 0) {
-        // استدعاء RPC للترحيل الذري (المخزون + القيود المحاسبية + تحديث الفاتورة)
-        const { AccountingTransactionService } = await import('@/lib/accounting-transaction-service')
-        const service = new AccountingTransactionService(supabase)
-        const result = await service.postBillAtomic(
-          {
-            billId: bill.id,
-            billNumber: bill.bill_number,
-            billDate: bill.bill_date,
-            companyId: bill.company_id,
-            branchId: bill.branch_id || null,
-            warehouseId: bill.warehouse_id || null,
-            costCenterId: bill.cost_center_id || null,
-            subtotal: Number(bill.subtotal || 0),
-            taxAmount: Number(bill.tax_amount || 0),
-            totalAmount: Number(bill.total_amount || 0),
-            status: 'received',
-            receiptStatus: 'received',
-            receivedBy: user.id,
-            receivedAt: now
-          },
-          {
-            companyId: mapping.companyId,
-            ap: mapping.ap,
-            inventory: mapping.inventory,
-            purchases: mapping.purchases,
-            vatInput: mapping.vatInput
-          }
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.error ||
+          (appLang === 'en' ? 'Failed to confirm purchase bill receipt' : 'تعذر اعتماد استلام الفاتورة')
         )
-        if (!result.success) {
-          throw new Error(result.error || (appLang === 'en' ? 'Failed to post bill inventory' : 'فشل ترحيل مخزون الفاتورة'))
-        }
-      } else {
-        // إذا تم إنشاء حركات المخزون في محاولة سابقة ولم تُحدّث الفاتورة (بسبب RLS سابقاً)
-        // يتم تحديث الفاتورة هنا باستخدام الـ RPC لتجاوز RLS للـ store_manager
-        const { error: rpcError } = await supabase.rpc('post_purchase_transaction', {
-          p_transaction_type: 'post_bill',
-          p_company_id: bill.company_id,
-          p_bill_id: bill.id,
-          p_bill_update: billUpdatePayload
-        })
-        if (rpcError) throw rpcError
       }
 
       // 3. تحديث حالة أمر الشراء المرتبط
       await updateLinkedPurchaseOrderStatus(bill.id)
-
-      // 4. تسجيل حدث في سجل التدقيق (Audit Log)
-      try {
-        await supabase.from("audit_logs").insert({
-          company_id: companyId,
-          user_id: user.id,
-          action: "APPROVE",
-          target_table: "bills",
-          record_id: bill.id,
-          record_identifier: bill.bill_number,
-          new_data: {
-            status: "received",
-            receipt_status: "received",
-            branch_id: bill.branch_id || null,
-            warehouse_id: bill.warehouse_id || null,
-            received_by: user.id,
-            timestamp: now
-          }
-        })
-      } catch (auditErr) {
-        console.warn("Audit log for goods_receipt_approved failed:", auditErr)
-      }
 
       // 5. إشعار للإدارة العليا بنجاح استلام البضاعة + إشعار منشئ أمر الشراء (Fix 4 & 5)
       try {
@@ -1497,7 +969,7 @@ export default function BillViewPage() {
         toast,
         appLang === "en" ? "Receipt Approval" : "اعتماد الاستلام",
         appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
-        appLang === "en" ? "Failed to approve receipt" : "تعذر اعتماد الاستلام",
+        err.message || (appLang === "en" ? "Failed to approve receipt" : "تعذر اعتماد الاستلام"),
         appLang
       )
     } finally {
@@ -1522,12 +994,25 @@ export default function BillViewPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!companyId || !user) { setPosting(false); return }
 
-      const { error } = await supabase.from("bills").update({
-        status: "rejected",
-        receipt_status: "rejected",
-        receipt_rejection_reason: receiptRejectionReason.trim()
-      }).eq("id", bill.id)
-      if (error) throw error
+      const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/reject-receipt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": `bill:${bill.id}:reject-receipt:${receiptRejectionReason.trim()}`,
+        },
+        body: JSON.stringify({
+          rejectionReason: receiptRejectionReason.trim(),
+          ui_surface: "bill_detail",
+        }),
+      })
+
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.error ||
+          (appLang === "en" ? "Failed to reject bill receipt" : "تعذر رفض استلام الفاتورة")
+        )
+      }
 
       // إشعار لمنشئ الفاتورة بالرفض أو لمنشئ أمر الشراء (موظف الفرع) وللإدارة العليا
       try {
@@ -1671,22 +1156,26 @@ export default function BillViewPage() {
         }
       }
 
-      // عند التحويل إلى "مرسلة": نضيف receipt_status = 'pending' بدون تحديث المخزون
-      const updateData: Record<string, unknown> = { status: newStatus }
       if (newStatus === "sent") {
-        updateData.receipt_status = 'pending'
-      } else if ((newStatus === "draft" || newStatus === "cancelled") && bill.receipt_status === 'received') {
-        // عند الإلغاء بعد اعتماد الاستلام: إعادة ضبط بيانات الاستلام
-        updateData.receipt_status = null
-        updateData.received_by = null
-        updateData.received_at = null
-      }
+        const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/submit-for-receipt`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": `bill:${bill.id}:submit-for-receipt`,
+          },
+          body: JSON.stringify({
+            ui_surface: "bill_detail",
+          }),
+        })
 
-      const { error } = await supabase.from("bills").update(updateData).eq("id", bill.id)
-      if (error) throw error
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok || !result.success) {
+          throw new Error(
+            result.error ||
+            (appLang === "en" ? "Failed to submit bill for warehouse receipt" : "تعذر إرسال الفاتورة لاعتماد الاستلام")
+          )
+        }
 
-      if (newStatus === "sent") {
-        // ✅ إرسال إشعار لمسؤول المخزن لاعتماد الاستلام (المخزون لم يُحدَّث بعد)
         try {
           const companyId = await getActiveCompanyId(supabase)
           const { data: { user } } = await supabase.auth.getUser()
@@ -1715,10 +1204,26 @@ export default function BillViewPage() {
         } catch (notifErr) {
           console.warn("Receipt pending notification failed:", notifErr)
         }
-        // تحديث حالة أمر الشراء المرتبط
+
         await updateLinkedPurchaseOrderStatus(bill.id)
-        console.log(`✅ BILL Sent: Awaiting warehouse receipt approval (inventory NOT yet updated)`)
-      } else if (newStatus === "draft" || newStatus === "cancelled") {
+        await loadData()
+        toastActionSuccess(toast, "التحديث", "فاتورة المورد")
+        return
+      }
+
+      // عند التحويل إلى "مرسلة": نضيف receipt_status = 'pending' بدون تحديث المخزون
+      const updateData: Record<string, unknown> = { status: newStatus }
+      if ((newStatus === "draft" || newStatus === "cancelled") && bill.receipt_status === 'received') {
+        // عند الإلغاء بعد اعتماد الاستلام: إعادة ضبط بيانات الاستلام
+        updateData.receipt_status = null
+        updateData.received_by = null
+        updateData.received_at = null
+      }
+
+      const { error } = await supabase.from("bills").update(updateData).eq("id", bill.id)
+      if (error) throw error
+
+      if (newStatus === "draft" || newStatus === "cancelled") {
         // قاعدة البيانات تتكفل تلقائياً بالقيود المحاسبية وحركات المخزون عند العودة إلى مسودة
         // عبر Database Trigger: accrual_accounting_engine
         // لا نحتاج لأي تدخل يدوي هنا.
@@ -1742,19 +1247,22 @@ export default function BillViewPage() {
   const handleDelete = async () => {
     if (!bill) return
     try {
-      // حفظ purchase_order_id قبل الحذف لتحديث حالة أمر الشراء لاحقاً
-      const linkedPOId = (bill as any).purchase_order_id
-
       // إن كانت مسودة ولا تحتوي على مدفوعات: حذف مباشر بدون عكس
       if (canHardDelete) {
-        const { error: delItemsErr } = await supabase.from("bill_items").delete().eq("bill_id", bill.id)
-        if (delItemsErr) throw delItemsErr
-        const { error: delBillErr } = await supabase.from("bills").delete().eq("id", bill.id)
-        if (delBillErr) throw delBillErr
+        const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/delete`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `bill-delete-${bill.id}`,
+          },
+          body: JSON.stringify({
+            uiSurface: "bill_detail_page",
+          }),
+        })
 
-        // تحديث حالة أمر الشراء المرتبط بعد الحذف
-        if (linkedPOId) {
-          await updatePurchaseOrderStatusAfterBillDelete(linkedPOId)
+        const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || (appLang === 'en' ? 'Failed to delete purchase bill' : 'فشل حذف فاتورة المورد'))
         }
 
         toastActionSuccess(toast, "الحذف", "الفاتورة")
@@ -1762,150 +1270,9 @@ export default function BillViewPage() {
         return
       }
 
-      // غير المسودة أو بها مدفوعات: نفّذ العكس أولاً ثم ألغِ الفاتورة
-      const mapping = await findAccountIds()
-      if (!mapping || !mapping.ap) throw new Error("غياب إعدادات حسابات الدائنين (AP)")
-
-      // اعادة تحميل بيانات الفاتورة الحالية بالقيم المالية
-      const { data: billRow } = await supabase
-        .from("bills")
-        .select("id, bill_number, bill_date, subtotal, tax_amount, total_amount, paid_amount, status")
-        .eq("id", bill.id)
-        .single()
-
-      // 1) عكس المدفوعات المرتبطة بالفاتورة
-      const { data: linkedPays } = await supabase
-        .from("payments")
-        .select("id, amount, payment_date, account_id, supplier_id")
-        .eq("bill_id", bill.id)
-
-      if (Array.isArray(linkedPays) && linkedPays.length > 0) {
-        for (const p of linkedPays as any[]) {
-          // حدد المبلغ المطبّق عبر advance_applications إن وجد
-          const { data: apps } = await supabase
-            .from("advance_applications")
-            .select("amount_applied")
-            .eq("payment_id", p.id)
-            .eq("bill_id", bill.id)
-          const applied = (apps || []).reduce((s: number, r: any) => s + Number(r.amount_applied || 0), 0)
-
-          const cashAccountId = p.account_id || mapping.cash || mapping.bank
-
-          const { data: revEntry } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: mapping.companyId,
-              reference_type: "bill_payment_reversal",
-              reference_id: bill.id,
-              entry_date: new Date().toISOString().slice(0, 10),
-              description: `عكس تطبيق دفعة على فاتورة مورد ${billRow?.bill_number || bill.bill_number}`,
-            })
-            .select()
-            .single()
-          if (revEntry?.id) {
-            const amt = applied > 0 ? applied : Number(p.amount || 0)
-            const debitAdvanceId = mapping.supplierAdvance || cashAccountId
-            await supabase.from("journal_entry_lines").insert([
-              { journal_entry_id: revEntry.id, account_id: debitAdvanceId!, debit_amount: amt, credit_amount: 0, description: mapping.supplierAdvance ? "عكس تسوية سلف الموردين" : "عكس نقد/بنك" },
-              { journal_entry_id: revEntry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: amt, description: "عكس حسابات دائنة" },
-            ])
-          }
-
-          // حدّث الفاتورة: طرح المبلغ المطبّق وأعد حالة الفاتورة
-          const newPaid = Math.max(Number(billRow?.paid_amount || 0) - (applied > 0 ? applied : Number(p.amount || 0)), 0)
-          const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
-          await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", bill.id)
-          await supabase.from("advance_applications").delete().eq("payment_id", p.id).eq("bill_id", bill.id)
-          await supabase.from("payments").update({ bill_id: null }).eq("id", p.id)
-        }
-      }
-
-      // 2) عكس المخزون (إن وُجدت معاملات شراء مسجلة)
-      try {
-        const { data: invExist } = await supabase
-          .from("inventory_transactions")
-          .select("id")
-          .eq("reference_id", bill.id)
-          .limit(1)
-        const hasPostedInventory = Array.isArray(invExist) && invExist.length > 0
-        if (hasPostedInventory) {
-          const { data: itemsToReverse } = await supabase
-            .from("bill_items")
-            .select("product_id, quantity")
-            .eq("bill_id", bill.id)
-
-          const { data: invRevEntry } = await supabase
-            .from("journal_entries")
-            .insert({ company_id: mapping.companyId, reference_type: "bill_inventory_reversal", reference_id: bill.id, entry_date: new Date().toISOString().slice(0, 10), description: `عكس مخزون لفاتورة ${billRow?.bill_number || bill.bill_number}` })
-            .select()
-            .single()
-
-          const reversalTx = (itemsToReverse || []).filter((it: any) => !!it.product_id).map((it: any) => ({
-            company_id: mapping.companyId,
-            product_id: it.product_id,
-            transaction_type: "purchase_reversal",
-            quantity_change: -Number(it.quantity || 0),
-            reference_id: bill.id,
-            journal_entry_id: invRevEntry?.id,
-            notes: "عكس مخزون بسبب إلغاء/حذف الفاتورة",
-          }))
-          if (reversalTx.length > 0) {
-            const { error: revErr } = await supabase
-              .from("inventory_transactions")
-              .upsert(reversalTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
-            if (revErr) console.warn("Failed upserting purchase reversal inventory transactions on bill delete", revErr)
-            // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
-            // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
-          }
-        }
-      } catch (e) {
-        console.warn("Error while reversing inventory on bill delete", e)
-      }
-
-      // 3) عكس قيد الفاتورة (AP/Inventory|Expense/VAT receivable)
-      if (billRow && mapping.ap) {
-        const { data: revEntryInv } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: mapping.companyId,
-            reference_type: "bill_reversal",
-            reference_id: billRow.id,
-            entry_date: new Date().toISOString().slice(0, 10),
-            description: `عكس قيد فاتورة شراء ${billRow.bill_number}`,
-          })
-          .select()
-          .single()
-        if (revEntryInv?.id) {
-          const lines: any[] = [
-            { journal_entry_id: revEntryInv.id, account_id: mapping.ap, debit_amount: Number(billRow.total_amount || 0), credit_amount: 0, description: "عكس حسابات دائنة" },
-          ]
-          if (mapping.vatReceivable && Number(billRow.tax_amount || 0) > 0) {
-            lines.push({ journal_entry_id: revEntryInv.id, account_id: mapping.vatReceivable, debit_amount: 0, credit_amount: Number(billRow.tax_amount || 0), description: "عكس ضريبة قابلة للاسترداد" })
-          }
-          const invOrExp = mapping.inventory || mapping.expense
-          if (invOrExp) {
-            lines.push({ journal_entry_id: revEntryInv.id, account_id: invOrExp, debit_amount: 0, credit_amount: Number(billRow.subtotal || 0), description: mapping.inventory ? "عكس المخزون" : "عكس المصروف" })
-          }
-          const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
-          if (linesErr) console.warn("Failed inserting bill reversal lines", linesErr)
-        }
-      }
-
-      // أخيرًا: إلغاء الفاتورة (void) مع تصفير كل حالات الاعتماد والاستلام
-      const { error: voidErr } = await supabase
-        .from("bills")
-        .update({
-          status: "voided",
-          approval_status: null,
-          approved_by: null,
-          approved_at: null,
-          receipt_status: null,
-          receipt_rejection_reason: null,
-        })
-        .eq("id", bill.id)
-      if (voidErr) throw voidErr
-      toastActionSuccess(toast, "الإلغاء", "الفاتورة")
-      await loadData()
+      throw new Error(appLang === 'en'
+        ? 'Bill void/delete is only available through the backend command for draft bills without payments.'
+        : 'إلغاء/حذف فاتورة المورد متاح فقط عبر أمر خلفي لفواتير المسودة بدون مدفوعات.')
     } catch (err: any) {
       const msg = typeof err?.message === "string" ? err.message : "حدث خطأ غير متوقع"
       const detail = (err?.code === "23503" || /foreign key/i.test(String(err?.message))) ? "لا يمكن حذف الفاتورة لوجود مراجع مرتبطة (مدفوعات/أرصدة/مستندات)." : undefined
@@ -2069,20 +1436,24 @@ export default function BillViewPage() {
                         const { data: { user } } = await supabase.auth.getUser()
                         if (!user) return
 
-                        const { error } = await supabase
-                          .from("bills")
-                          .update({
-                            status: "draft",
-                            approval_status: "approved",
-                            approved_by: user.id,
-                            approved_at: new Date().toISOString(),
-                            rejection_reason: null,
-                            rejected_by: null,
-                            rejected_at: null,
-                          })
-                          .eq("id", bill.id)
+                        const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/approve`, {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            "Idempotency-Key": `bill:${bill.id}:approve`,
+                          },
+                          body: JSON.stringify({
+                            ui_surface: "bill_detail",
+                          }),
+                        })
 
-                        if (error) throw error
+                        const result = await response.json().catch(() => ({}))
+                        if (!response.ok || !result.success) {
+                          throw new Error(
+                            result.error ||
+                            (appLang === 'en' ? 'Failed to approve bill' : 'تعذر اعتماد الفاتورة')
+                          )
+                        }
 
                         // ✅ إرسال إشعار لمنشئ أمر الشراء إذا كانت الفاتورة مرتبطة بأمر شراء
                         if (bill.purchase_order_id) {
@@ -3244,20 +2615,25 @@ export default function BillViewPage() {
                     return
                   }
 
-                  // تحديث حالة الفاتورة إلى rejected
-                  const { error } = await supabase
-                    .from("bills")
-                    .update({
-                      status: "rejected",
-                      approval_status: "rejected",
-                      rejection_reason: rejectionReason.trim(),
-                      rejected_by: user.id,
-                      rejected_at: new Date().toISOString()
-                    })
-                    .eq("id", bill.id)
-                    .eq("company_id", companyId)
+                  const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/reject`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "Idempotency-Key": `bill:${bill.id}:reject:${rejectionReason.trim()}`,
+                    },
+                    body: JSON.stringify({
+                      rejectionReason: rejectionReason.trim(),
+                      ui_surface: "bill_detail",
+                    }),
+                  })
 
-                  if (error) throw error
+                  const result = await response.json().catch(() => ({}))
+                  if (!response.ok || !result.success) {
+                    throw new Error(
+                      result.error ||
+                      (appLang === 'en' ? 'Failed to reject bill' : 'تعذر رفض الفاتورة')
+                    )
+                  }
 
                   // إرسال الإشعارات
                   const rejectionTitle = appLang === 'en'

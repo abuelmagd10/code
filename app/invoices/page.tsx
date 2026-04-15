@@ -1466,130 +1466,26 @@ export default function InvoicesPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
-      const companyId = await getActiveCompanyId(supabase)
-
-      // جلب بيانات الفاتورة مع أمر البيع المرتبط
-      const { data: invoice } = await supabase
-        .from("invoices")
-        .select("id, invoice_number, subtotal, tax_amount, total_amount, paid_amount, status, shipping, sales_order_id, branch_id, warehouse_id, cost_center_id")
-        .eq("id", id)
-        .single()
-
-      if (!invoice || !companyId) {
-        throw new Error("لم يتم العثور على الفاتورة أو الشركة")
-      }
-
-      // ===============================
-      // 🔒 System Guard: منع حذف الفواتير التي لها حركات مخزون
-      // ===============================
-      const { data: inventoryTx } = await supabase
-        .from("inventory_transactions")
-        .select("id")
-        .eq("company_id", companyId)
-        .eq("branch_id", (invoice as any).branch_id)
-        .eq("warehouse_id", (invoice as any).warehouse_id)
-        .eq("cost_center_id", (invoice as any).cost_center_id)
-        .eq("reference_id", id)
-        .limit(1)
-
-      if (inventoryTx && inventoryTx.length > 0) {
-        // الفاتورة لها حركات مخزون - يجب إلغاؤها بدلاً من حذفها
+      const response = await fetch(`/api/invoices/${id}/delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `invoice-delete-${id}-${Date.now()}`,
+        },
+        body: JSON.stringify({ uiSurface: "invoices_page" }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
         toast({
           variant: "destructive",
           title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
-          description: appLang === 'en'
-            ? "This invoice has inventory transactions. Use 'Return' instead of delete to maintain audit trail."
-            : "هذه الفاتورة لها حركات مخزون. استخدم 'مرتجع' بدلاً من الحذف للحفاظ على سجل التدقيق.",
+          description: result.error || (appLang === 'en' ? "Invoice deletion failed" : "تعذر حذف الفاتورة"),
           duration: 5000,
         })
         return
       }
 
-      // حفظ sales_order_id قبل الحذف لتحديث أمر البيع لاحقاً
-      const linkedSalesOrderId = (invoice as any).sales_order_id
-
-      // التحقق من وجود دفعات مرتبطة
-      const { data: linkedPays } = await supabase
-        .from("payments")
-        .select("id, amount")
-        .eq("invoice_id", id)
-
-      const hasLinkedPayments = Array.isArray(linkedPays) && linkedPays.length > 0
-
-      // ===============================
-      // 🔒 System Guard: منع حذف الفواتير التي لها قيود محاسبية
-      // ===============================
-      const { data: journalEntries } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("reference_id", id)
-        .limit(1)
-
-      if (journalEntries && journalEntries.length > 0) {
-        toast({
-          variant: "destructive",
-          title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
-          description: appLang === 'en'
-            ? "This invoice has journal entries. Use 'Return' instead of delete to maintain audit trail."
-            : "هذه الفاتورة لها قيود محاسبية. استخدم 'مرتجع' بدلاً من الحذف للحفاظ على سجل التدقيق.",
-          duration: 5000,
-        })
-        return
-      }
-
-      // ===============================
-      // 🔒 System Guard: منع حذف الفواتير التي لها دفعات
-      // ===============================
-      if (hasLinkedPayments) {
-        toast({
-          variant: "destructive",
-          title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
-          description: appLang === 'en'
-            ? "This invoice has linked payments. Use 'Return' instead of delete."
-            : "هذه الفاتورة لها دفعات مرتبطة. استخدم 'مرتجع' بدلاً من الحذف.",
-          duration: 5000,
-        })
-        return
-      }
-
-      // ===============================
-      // ✅ الفاتورة مسودة بدون حركات - يمكن حذفها
-      // ===============================
-      // حذف بنود الفاتورة
-      console.log("🗑️ Deleting invoice items for invoice:", id)
-      const { error: itemsError } = await supabase.from("invoice_items").delete().eq("invoice_id", id)
-      if (itemsError) {
-        console.error("❌ Error deleting invoice items:", itemsError)
-        throw itemsError
-      }
-      console.log("✅ Invoice items deleted successfully")
-
-      // حذف الفاتورة
-      console.log("🗑️ Deleting invoice:", id)
-      const { error } = await supabase.from("invoices").delete().eq("id", id)
-      if (error) {
-        console.error("❌ Error deleting invoice:", error)
-        throw error
-      }
-      console.log("✅ Invoice deleted successfully")
-
-      // تحديث أمر البيع المرتبط (إن وجد)
-      if (linkedSalesOrderId) {
-        console.log("🔄 Updating linked sales order:", linkedSalesOrderId)
-        await supabase
-          .from("sales_orders")
-          .update({
-            status: "draft",
-            invoice_id: null
-          })
-          .eq("id", linkedSalesOrderId)
-        console.log("✅ Reset linked sales order status:", linkedSalesOrderId)
-      }
-
-      console.log("🔄 Reloading invoices...")
       await loadInvoices()
-      console.log("✅ Invoices reloaded")
       toastDeleteSuccess(toast, appLang === 'en' ? "Invoice deleted" : "تم حذف الفاتورة")
     } catch (error) {
       console.error("Error deleting invoice:", error)

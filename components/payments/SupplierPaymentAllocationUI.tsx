@@ -128,26 +128,43 @@ export function SupplierPaymentAllocationUI({
 
       const service = new PaymentService(supabase)
       
-      const paymentId = await service.createSupplierPaymentWithAllocations({
-        company_id: companyId,
-        supplier_id: supplierId,
-        payment_amount: amount,
-        payment_date: paymentDate,
-        payment_method: method,
-        account_id: accountId,
-        branch_id: branchId,
-        currency_code: currency,
-        exchange_rate: exchangeRate,
-        base_currency_amount: amount * exchangeRate,
-        allocations: allocArray
+      const response = await fetch('/api/supplier-payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': globalThis.crypto?.randomUUID?.() || `supplier-batch-payment-${Date.now()}`,
+        },
+        body: JSON.stringify({
+          supplierId,
+          amount,
+          paymentDate,
+          paymentMethod: method,
+          accountId,
+          branchId,
+          currencyCode: currency,
+          exchangeRate,
+          baseCurrencyAmount: amount * exchangeRate,
+          originalAmount: amount,
+          originalCurrency: currency,
+          allocations: allocArray.map((allocation) => ({
+            billId: allocation.bill_id,
+            amount: allocation.amount,
+          })),
+          uiSurface: 'supplier_payment_allocation_ui',
+        }),
       })
 
+      const result = await response.json()
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || 'Failed to create supplier payment')
+      }
+
       // 🔔 Non-privileged users: send notification for approval
-      if (member?.role && !['admin', 'owner', 'general_manager'].includes(member.role)) {
+      if (!result?.approved && member?.role && !['admin', 'owner', 'general_manager'].includes(member.role)) {
         const supplierName = suppliers.find(s => s.id === supplierId)?.name || 'مورد'
         await notifyPaymentApprovalRequest({
           companyId,
-          paymentId,
+          paymentId: result.paymentId,
           partyName: supplierName,
           amount,
           currency,

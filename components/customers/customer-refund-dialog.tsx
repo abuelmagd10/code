@@ -209,66 +209,9 @@ export function CustomerRefundDialog({
     setIsProcessing(true)
 
     try {
-      const activeCompanyId = await getActiveCompanyId(supabase)
-      if (!activeCompanyId) {
-        throw new Error('No active company')
-      }
-
-      // Find appropriate accounts
-      // الأولوية: حساب الالتزامات ذو sub_type=customer_credit (رصيد دائن للعميل = التزام على الشركة)
-      // ثم sub_type=customer_advance، ثم البحث بالاسم كاحتياط أخير
-      const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
-      const findLiability = (f: (a: any) => boolean) =>
-        (accounts || []).find((a: any) => String(a.account_type || '').toLowerCase() === 'liability' && f(a))?.id
-      const customerCredit =
-        findLiability((a: any) => String(a.sub_type || "").toLowerCase() === "customer_credit") ||
-        find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_credit") ||
-        findLiability((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") ||
-        find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") ||
-        find((a: any) => String(a.account_name || "").toLowerCase().includes("سلف العملاء")) ||
-        find((a: any) => String(a.account_name || "").toLowerCase().includes("رصيد العملاء"))
-
-      // 🛡️ تحقق صريح: إذا لم يُوجد حساب رصيد العملاء الدائن في دليل الحسابات نوقف العملية
-      // هذا يمنع إنشاء قيد محاسبي غير متوازن بدون سطر المدين
-      if (!customerCredit) {
-        toast({
-          title: appLang === 'en' ? 'Account Configuration Error' : 'خطأ في إعداد الحسابات',
-          description: appLang === 'en'
-            ? 'No customer credit/advance account found in chart of accounts. Please add an account with sub_type "customer_credit" or "customer_advance", or name it "Customer Credit Balance" / "Customer Advances".'
-            : 'لم يُعثر على حساب رصيد دائن أو سلفة عملاء في دليل الحسابات. يرجى إضافة حساب بـ sub_type يساوي "customer_credit" أو "customer_advance"، أو تسميته "رصيد العملاء الدائن" أو "سلف العملاء".',
-          variant: 'destructive',
-        })
-        setIsProcessing(false)
-        return
-      }
-
-      // Calculate base amount in app currency
-      const baseRefundAmount = refundCurrency === appCurrency ?
-        refundAmount :
-        Math.round(refundAmount * refundExRate.rate * 10000) / 10000
-
-      // 🔐 التحقق من رصيد حساب الصرف (النقد/البنك) قبل المتابعة
-      // الرصيد = مجموع المدين - مجموع الدائن من journal_entry_lines المرتبطة بقيود مُرحَّلة
-      const { data: balanceLines } = await supabase
-        .from("journal_entry_lines")
-        .select("debit_amount, credit_amount, journal_entries!inner(company_id, status)")
-        .eq("account_id", refundAccountId)
-        .eq("journal_entries.company_id", activeCompanyId)
-        .eq("journal_entries.status", "posted")
-      const accountBalance = (balanceLines || []).reduce((sum: number, line: any) => {
-        return sum + Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
-      }, 0)
-      if (accountBalance < baseRefundAmount) {
-        toast({
-          title: appLang === 'en' ? 'Insufficient Account Balance' : 'رصيد الحساب غير كافٍ',
-          description: appLang === 'en'
-            ? `Account balance (${accountBalance.toFixed(2)}) is less than the refund amount (${baseRefundAmount.toFixed(2)}). Please select a different account or reduce the refund amount.`
-            : `رصيد الحساب (${accountBalance.toFixed(2)}) أقل من مبلغ الصرف (${baseRefundAmount.toFixed(2)}). يرجى اختيار حساب آخر أو تخفيض المبلغ.`,
-          variant: 'destructive',
-        })
-        setIsProcessing(false)
-        return
-      }
+      const baseRefundAmount = refundCurrency === appCurrency
+        ? refundAmount
+        : Math.round(refundAmount * refundExRate.rate * 10000) / 10000
 
       // 🔐 تحديد الفرع ومركز التكلفة للقيد (قيمة "none" تعني بدون فرع/مركز تكلفة)
       const finalBranchId = isPrivilegedUser
@@ -278,144 +221,36 @@ export function CustomerRefundDialog({
         ? (selectedCostCenterId && selectedCostCenterId !== 'none' ? selectedCostCenterId : null)
         : (userCostCenterId || null)
 
-      // ===== إنشاء قيد صرف رصيد العميل =====
-      // القيد المحاسبي:
-      // مدين: رصيد العميل الدائن (تقليل الالتزام) - customerCredit
-      // دائن: النقد/البنك (خروج المبلغ) - refundAccountId
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `customer-refund-${Date.now()}`
+      const response = await fetch("/api/customers/refunds", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({
+          customerId,
+          amount: refundAmount,
+          currencyCode: refundCurrency,
+          exchangeRate: refundExRate.rate,
+          baseAmount: baseRefundAmount,
+          refundAccountId,
+          refundDate,
+          refundMethod,
+          notes: refundNotes || null,
+          invoiceId,
+          invoiceNumber,
+          branchId: finalBranchId,
+          costCenterId: finalCostCenterId,
+          exchangeRateId: refundExRate.rateId || null,
+          rateSource: refundExRate.source || null,
+          uiSurface: "customer_refund_dialog",
+        }),
+      })
 
-      // 📄 تحديد الوصف مع رقم الفاتورة إن وُجد
-      const descriptionWithInvoice = invoiceNumber
-        ? (appLang === 'en'
-            ? `Customer credit refund - ${customerName} - Invoice #${invoiceNumber}`
-            : `صرف رصيد دائن للعميل - ${customerName} - فاتورة #${invoiceNumber}`)
-        : (refundNotes || (appLang === 'en' ? `Customer credit refund - ${customerName}` : `صرف رصيد دائن للعميل - ${customerName}`))
-
-      const { data: entry, error: entryError } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: activeCompanyId,
-          reference_type: invoiceId ? "invoice_credit_refund" : "customer_credit_refund",
-          reference_id: invoiceId || customerId,
-          entry_date: refundDate,
-          description: descriptionWithInvoice,
-          branch_id: finalBranchId,
-          cost_center_id: finalCostCenterId
-        })
-        .select()
-        .single()
-
-      if (entryError) throw entryError
-
-      if (entry?.id) {
-        const lines = []
-        // مدين: رصيد العميل (نخفض الالتزام تجاه العميل)
-        if (customerCredit) {
-          lines.push({
-            journal_entry_id: entry.id,
-            account_id: customerCredit,
-            debit_amount: baseRefundAmount,
-            credit_amount: 0,
-            description: appLang === 'en' ? 'Customer credit refund' : 'صرف رصيد العميل الدائن',
-            original_currency: refundCurrency,
-            original_debit: refundAmount,
-            original_credit: 0,
-            exchange_rate_used: refundExRate.rate,
-            exchange_rate_id: refundExRate.rateId || null,
-            branch_id: finalBranchId,
-            cost_center_id: finalCostCenterId
-          })
-        }
-        // دائن: النقد/البنك (خروج المبلغ للعميل)
-        lines.push({
-          journal_entry_id: entry.id,
-          account_id: refundAccountId,
-          debit_amount: 0,
-          credit_amount: baseRefundAmount,
-          description: appLang === 'en' ? 'Cash/Bank payment to customer' : 'صرف نقدي/بنكي للعميل',
-          original_currency: refundCurrency,
-          original_debit: 0,
-          original_credit: refundAmount,
-          exchange_rate_used: refundExRate.rate,
-          exchange_rate_id: refundExRate.rateId || null,
-          branch_id: finalBranchId,
-          cost_center_id: finalCostCenterId
-        })
-
-        const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
-        if (linesError) throw linesError
-      }
-
-      // ===== تحديث جدول customer_credits لخصم المبلغ المصروف =====
-      const { data: credits } = await supabase
-        .from("customer_credits")
-        .select("id, amount, used_amount, applied_amount")
-        .eq("company_id", activeCompanyId)
-        .eq("customer_id", customerId)
-        .eq("status", "active")
-        .order("credit_date", { ascending: true })
-
-      let remainingToDeduct = refundAmount
-      if (credits && credits.length > 0) {
-        for (const credit of credits) {
-          if (remainingToDeduct <= 0) break
-          // حساب المتاح = المبلغ - المستخدم - المطبق
-          const usedAmt = Number(credit.used_amount || 0)
-          const appliedAmt = Number(credit.applied_amount || 0)
-          const totalUsed = usedAmt + appliedAmt
-          const available = Number(credit.amount || 0) - totalUsed
-          if (available <= 0) continue
-
-          const deductAmount = Math.min(available, remainingToDeduct)
-          const newUsedAmount = usedAmt + deductAmount
-          const newStatus = (newUsedAmount + appliedAmt) >= Number(credit.amount || 0) ? "used" : "active"
-
-          await supabase
-            .from("customer_credits")
-            .update({
-              used_amount: newUsedAmount,
-              status: newStatus,
-              updated_at: new Date().toISOString()
-            })
-            .eq("id", credit.id)
-
-          remainingToDeduct -= deductAmount
-        }
-      }
-
-      // ===== إنشاء سجل دفعة صرف =====
-      // 📄 تحديد الملاحظات مع رقم الفاتورة إن وُجد
-      const paymentNotes = invoiceNumber
-        ? (appLang === 'en'
-            ? `Credit refund to customer ${customerName} - Invoice #${invoiceNumber}`
-            : `صرف رصيد دائن للعميل ${customerName} - فاتورة #${invoiceNumber}`)
-        : (refundNotes || (appLang === 'en' ? `Credit refund to customer ${customerName}` : `صرف رصيد دائن للعميل ${customerName}`))
-
-      // ⚠️ لا نضيف invoice_id هنا عمداً:
-      // صرف الرصيد الدائن هو عملية شركة→عميل مستقلة وليست دفعة على الفاتورة.
-      // ربطها بـ invoice_id يُسبب تحديث paid_amount في الفاتورة (عبر trigger قاعدة البيانات)
-      // مما يُغير الحالة من "مدفوعة" إلى "مدفوعة جزئياً" بشكل خاطئ.
-      // رقم الفاتورة موجود في notes و reference_number للمرجعية.
-      const paymentPayload: any = {
-        company_id: activeCompanyId,
-        customer_id: customerId,
-        payment_date: refundDate,
-        amount: -refundAmount, // سالب لأنه صرف للعميل
-        payment_method: refundMethod === "bank" ? "bank" : "cash",
-        reference_number: invoiceNumber ? `REF-INV-${invoiceNumber}-${Date.now()}` : `REF-${Date.now()}`,
-        notes: paymentNotes,
-        branch_id: finalBranchId,
-        cost_center_id: finalCostCenterId
-      }
-      try {
-        // محاولة إدراج مع account_id
-        const payloadWithAccount = { ...paymentPayload, account_id: refundAccountId }
-        const { error: payErr } = await supabase.from("payments").insert(payloadWithAccount)
-        if (payErr) {
-          // إذا فشل بسبب account_id، نحاول بدونه
-          await supabase.from("payments").insert(paymentPayload)
-        }
-      } catch {
-        // تجاهل أخطاء الدفعة - القيد المحاسبي هو الأهم
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (appLang === 'en' ? 'Failed to record customer refund' : 'فشل تسجيل صرف رصيد العميل'))
       }
 
       toastActionSuccess(toast, appLang === 'en' ? 'Refund' : 'الصرف', appLang === 'en' ? 'Customer credit refund completed' : 'تم صرف رصيد العميل بنجاح')

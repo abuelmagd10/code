@@ -141,6 +141,9 @@ export default function ReportsPage() {
     {
       title: t('System Reports', 'تقارير النظام'),
       items: [
+        { title: t('Financial Trace Explorer', 'مستكشف التتبع المالي'), description: t('Trace lineage across financial commands', 'تتبع سلسلة العمليات المالية عبر الأوامر'), href: "/reports/financial-trace-explorer", icon: "🧭" },
+        { title: t('Financial Integrity Checks', 'فحوصات سلامة التنفيذ المالي'), description: t('Find orphan journals and broken trace lineage', 'اكتشاف القيود اليتيمة وروابط التتبع المكسورة'), href: "/reports/financial-integrity-checks", icon: "🧪" },
+        { title: t('Financial Replay & Recovery', 'إعادة تشغيل واسترداد العمليات المالية'), description: t('Dry-run replay planning by trace or idempotency key', 'تخطيط dry-run لإعادة التشغيل عبر التتبع أو مفتاح عدم التكرار'), href: "/reports/financial-replay-recovery", icon: "🔁" },
         { title: t('Audit Log', 'سجل العمليات'), description: t('Audit trail', 'سجل التدقيق'), href: "/settings/audit-log", icon: "📝" },
         { title: t('Users & Permissions', 'تقرير المستخدمين وصلاحياتهم'), description: t('Users and roles', 'المستخدمون والصلاحيات'), href: "/settings/users", icon: "👥" },
         { title: t('Login Activity', 'تقرير نشاط الدخول والخروج'), description: t('Login/logout activity', 'نشاط الدخول والخروج'), href: "/reports/login-activity", icon: "🔐" },

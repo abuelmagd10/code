@@ -55,6 +55,13 @@ type WarehouseAllocation = {
 
 const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
 
+type PurchaseReturnApiResult = {
+  success?: boolean
+  purchaseReturnId?: string
+  purchaseReturn_id?: string
+  purchase_return_id?: string
+}
+
 export default function NewPurchaseReturnPage() {
   const supabase = useSupabase()
   const router = useRouter()
@@ -131,6 +138,24 @@ export default function NewPurchaseReturnPage() {
   const [exchangeRate, setExchangeRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
   const baseCurrency = typeof window !== 'undefined' ? localStorage.getItem('app_currency') || 'EGP' : 'EGP'
   const currencySymbols: Record<string, string> = { EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ' }
+
+  const submitPurchaseReturnCommand = async (payload: Record<string, unknown>) => {
+    const response = await fetch('/api/purchase-returns', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': crypto.randomUUID(),
+      },
+      body: JSON.stringify(payload),
+    })
+
+    const result = await response.json().catch(() => ({})) as PurchaseReturnApiResult & { error?: string }
+    if (!response.ok || result.success === false) {
+      throw new Error(result.error || (appLang === 'en' ? 'Purchase return request failed' : 'فشل تنفيذ طلب المرتجع'))
+    }
+
+    return result
+  }
 
   useEffect(() => {
     ; (async () => {
@@ -736,39 +761,35 @@ export default function NewPurchaseReturnPage() {
       return
     }
 
-    const { data: rpcResult, error: rpcError } = await supabase.rpc(
-      'process_purchase_return_multi_warehouse',
-      {
-        p_company_id: companyId,
-        p_supplier_id: form.supplier_id,
-        p_bill_id: form.bill_id,
-        p_purchase_return: {
-          return_number: form.return_number,
-          return_date: form.return_date,
-          status: 'pending_approval',
-          subtotal: filteredGroups.reduce((s, g) => s + (g?.subtotal || 0), 0),
-          tax_amount: filteredGroups.reduce((s, g) => s + (g?.tax_amount || 0), 0),
-          total_amount: filteredGroups.reduce((s, g) => s + (g?.total_amount || 0), 0),
-          settlement_method: form.settlement_method,
-          reason: form.reason,
-          notes: form.notes,
-          original_currency: form.currency,
-          original_subtotal: allocSubtotal,
-          original_tax_amount: allocTaxAmount,
-          original_total_amount: allocTotal,
-          exchange_rate_used: exchangeRate.rate,
-          exchange_rate_id: exchangeRate.rateId || null,
-          exchange_rate_at_return: exchangeRate.rate,  // FIX 1: snapshot for FX gain/loss at confirmation
-        },
-        p_warehouse_groups: filteredGroups,
-        p_created_by: currentUserId || null,
-      }
-    )
+    const result = await submitPurchaseReturnCommand({
+      mode: 'create',
+      strategy: 'multi',
+      supplierId: form.supplier_id,
+      billId: form.bill_id,
+      purchaseReturn: {
+        return_number: form.return_number,
+        return_date: form.return_date,
+        status: 'pending_approval',
+        subtotal: filteredGroups.reduce((s, g) => s + (g?.subtotal || 0), 0),
+        tax_amount: filteredGroups.reduce((s, g) => s + (g?.tax_amount || 0), 0),
+        total_amount: filteredGroups.reduce((s, g) => s + (g?.total_amount || 0), 0),
+        settlement_method: form.settlement_method,
+        reason: form.reason,
+        notes: form.notes,
+        original_currency: form.currency,
+        original_subtotal: allocSubtotal,
+        original_tax_amount: allocTaxAmount,
+        original_total_amount: allocTotal,
+        exchange_rate_used: exchangeRate.rate,
+        exchange_rate_id: exchangeRate.rateId || null,
+        exchange_rate_at_return: exchangeRate.rate,
+      },
+      warehouseGroups: filteredGroups,
+      uiSurface: 'purchase_returns_new_page',
+    })
 
-    if (rpcError) throw new Error(`فشل حفظ المرتجع متعدد المخازن: ${rpcError.message}`)
-
-    const purchaseReturnId = (rpcResult as any)?.purchase_return_id
-    const allocationIds: string[] = (rpcResult as any)?.allocation_ids || []
+    const purchaseReturnId = result.purchaseReturnId || result.purchaseReturn_id || result.purchase_return_id
+    const allocationIds: string[] = (result as any)?.allocationIds || (result as any)?.allocation_ids || []
 
     // إشعار للإدارة العليا (pending_admin_approval — نفس سياسة المرتجع الفردي)
     const selectedSupplier = suppliers.find(s => s.id === form.supplier_id)
@@ -1124,30 +1145,27 @@ export default function NewPurchaseReturnPage() {
           line_total: item.line_total,
         }))
 
-        const { data: resubmitResult, error: resubmitError } = await supabase.rpc(
-          'resubmit_purchase_return',
-          {
-            p_return_id: editReturnId,
-            p_user_id: currentUserId,
-            p_purchase_return: {
-              reason: form.reason,
-              notes: form.notes,
-              settlement_method: form.settlement_method,
-              return_date: form.return_date,
-              subtotal: finalBaseSubtotal,
-              tax_amount: finalBaseTax,
-              total_amount: finalBaseTotal,
-              original_subtotal: effectiveSubtotal,
-              original_tax_amount: effectiveTaxAmount,
-              original_total_amount: effectiveTotal,
-            },
-            p_return_items: returnItems,
-          }
-        )
-
-        if (resubmitError || !(resubmitResult as any)?.success) {
-          throw new Error(`فشل إعادة إرسال المرتجع: ${resubmitError?.message || (resubmitResult as any)?.error || 'خطأ غير معروف'}`)
-        }
+        await submitPurchaseReturnCommand({
+          mode: 'resubmit',
+          strategy: 'single',
+          supplierId: form.supplier_id,
+          billId: form.bill_id,
+          returnId: editReturnId,
+          purchaseReturn: {
+            reason: form.reason,
+            notes: form.notes,
+            settlement_method: form.settlement_method,
+            return_date: form.return_date,
+            subtotal: finalBaseSubtotal,
+            tax_amount: finalBaseTax,
+            total_amount: finalBaseTotal,
+            original_subtotal: effectiveSubtotal,
+            original_tax_amount: effectiveTaxAmount,
+            original_total_amount: effectiveTotal,
+          },
+          returnItems,
+          uiSurface: 'purchase_returns_new_page',
+        })
 
         const selectedSupplier = suppliers.find(s => s.id === form.supplier_id)
         try {
@@ -1181,62 +1199,46 @@ export default function NewPurchaseReturnPage() {
       // ===================== 🔥 الاستدعاء الأتومي (Transaction واحدة) =====================
       // pending_approval: ينشئ المرتجع والقيد (draft) بدون خصم مخزون
       // confirmed: ينشئ كل شيء فوراً
-      const { data: rpcResult, error: rpcError } = await supabase.rpc(
-        'process_purchase_return_atomic',
-        {
-          p_company_id: companyId,
-          p_supplier_id: form.supplier_id,
-          p_bill_id: form.bill_id || null,
-          p_purchase_return: {
-            return_number: form.return_number,
-            return_date: form.return_date,
-            status: 'pending_approval',
-            subtotal: finalBaseSubtotal,
-            tax_amount: finalBaseTax,
-            total_amount: finalBaseTotal,
-            settlement_method: form.settlement_method,
-            reason: form.reason,
-            notes: form.notes,
-            branch_id: billBranchId,
-            cost_center_id: billCostCenterId,
-            warehouse_id: effectiveWarehouseId || billWarehouseId,
-            original_currency: form.currency,
-            original_subtotal: effectiveSubtotal,
-            original_tax_amount: effectiveTaxAmount,
-            original_total_amount: effectiveTotal,
-            exchange_rate_used: exchangeRate.rate,
-            exchange_rate_id: exchangeRate.rateId || null,
-            exchange_rate_at_return: exchangeRate.rate,  // FIX 1: snapshot for FX gain/loss at confirmation
-          },
-          p_return_items: validItems.map(item => ({
-            bill_item_id: item.bill_item_id,
-            product_id: item.product_id,
-            description: item.product_name,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            tax_rate: item.tax_rate,
-            discount_percent: item.discount_percent,
-            line_total: item.line_total,
-          })),
-          p_journal_entry: needsJournalEntry ? {
-            entry_date: form.return_date,
-            description: `مرتجع مشتريات رقم ${form.return_number}`,
-            status: 'draft',
-          } : null,
-          p_journal_lines: (needsJournalEntry && journalLines.length > 0) ? journalLines : null,
-          p_vendor_credit: vendorCreditData,
-          p_vendor_credit_items: vendorCreditItemsData,
-          p_bill_update: null,
-          p_workflow_status: workflowStatus,
-          p_created_by: currentUserId || null,
-        }
-      )
+      const commandResult = await submitPurchaseReturnCommand({
+        mode: 'create',
+        strategy: 'single',
+        supplierId: form.supplier_id,
+        billId: form.bill_id || null,
+        purchaseReturn: {
+          return_number: form.return_number,
+          return_date: form.return_date,
+          status: 'pending_approval',
+          subtotal: finalBaseSubtotal,
+          tax_amount: finalBaseTax,
+          total_amount: finalBaseTotal,
+          settlement_method: form.settlement_method,
+          reason: form.reason,
+          notes: form.notes,
+          branch_id: billBranchId,
+          cost_center_id: billCostCenterId,
+          warehouse_id: effectiveWarehouseId || billWarehouseId,
+          original_currency: form.currency,
+          original_subtotal: effectiveSubtotal,
+          original_tax_amount: effectiveTaxAmount,
+          original_total_amount: effectiveTotal,
+          exchange_rate_used: exchangeRate.rate,
+          exchange_rate_id: exchangeRate.rateId || null,
+          exchange_rate_at_return: exchangeRate.rate,
+        },
+        returnItems: validItems.map(item => ({
+          bill_item_id: item.bill_item_id,
+          product_id: item.product_id,
+          description: item.product_name,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_rate: item.tax_rate,
+          discount_percent: item.discount_percent,
+          line_total: item.line_total,
+        })),
+        uiSurface: 'purchase_returns_new_page',
+      })
 
-      if (rpcError) {
-        throw new Error(`فشل حفظ المرتجع: ${rpcError.message}`)
-      }
-
-      const purchaseReturnId = (rpcResult as any)?.purchase_return_id
+      const purchaseReturnId = commandResult.purchaseReturnId
       console.log(`✅ تم حفظ المرتجع بنجاح (Atomic): ${purchaseReturnId}, workflow: ${workflowStatus}`)
 
       // ===================== 🔍 Audit Log: purchase_return_created =====================
@@ -1919,4 +1921,3 @@ export default function NewPurchaseReturnPage() {
     </div>
   )
 }
-

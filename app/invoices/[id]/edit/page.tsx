@@ -476,6 +476,67 @@ export default function EditInvoicePage() {
         }
       }
 
+      const commandResponse = await fetch(`/api/invoices/${invoiceId}/update`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `invoice-update-${invoiceId}-${Date.now()}`,
+        },
+        body: JSON.stringify({
+          customer_id: formData.customer_id,
+          invoice_date: formData.invoice_date,
+          due_date: formData.due_date,
+          subtotal: totals.subtotal,
+          tax_amount: totals.tax,
+          total_amount: totals.total,
+          original_subtotal: totals.subtotal,
+          original_tax_amount: totals.tax,
+          original_total: totals.total,
+          discount_type: invoiceDiscountType,
+          discount_value: Math.max(0, invoiceDiscount || 0),
+          discount_position: invoiceDiscountPosition,
+          tax_inclusive: !!taxInclusive,
+          shipping: Math.max(0, shippingCharge || 0),
+          shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+          shipping_provider_id: shippingProviderId || null,
+          adjustment: adjustment || 0,
+          branch_id: branchId || null,
+          cost_center_id: costCenterId || null,
+          warehouse_id: warehouseId || null,
+          items: invoiceItems.map((item) => {
+            const rateFactor = 1 + item.tax_rate / 100
+            const discountFactor = 1 - (item.discount_percent ?? 0) / 100
+            const base = item.quantity * item.unit_price * discountFactor
+            const netLine = taxInclusive ? base / rateFactor : base
+            return {
+              id: item.id || null,
+              product_id: item.product_id,
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              tax_rate: item.tax_rate,
+              discount_percent: item.discount_percent ?? 0,
+              line_total: netLine,
+              returned_quantity: (item as any).returned_quantity ?? 0,
+              item_type: item.item_type || "product",
+            }
+          }),
+          uiSurface: "invoice_edit_page",
+        }),
+      })
+      const commandResult = await commandResponse.json().catch(() => ({}))
+      if (!commandResponse.ok || !commandResult?.success) {
+        throw new Error(commandResult?.error || (appLang === "en" ? "Failed to update invoice" : "فشل تحديث الفاتورة"))
+      }
+
+      toastActionSuccess(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Invoice" : "الفاتورة")
+      router.push(`/invoices/${invoiceId}`)
+      return
+
+      /*
+       * Legacy direct UI mutation path retained as a reference only.
+       * X1.6 routes live invoice edits through /api/invoices/[id]/update.
+       * Do not re-enable this block; all financial/inventory mutations belong in backend commands.
+       *
       // حمّل بيانات الفاتورة والبنود الحالية قبل التعديل لأجل العكس الصحيح
       const { data: prevInvoice } = await supabase
         .from("invoices")
@@ -926,6 +987,7 @@ export default function EditInvoicePage() {
 
       toastActionSuccess(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Invoice" : "الفاتورة")
       router.push(`/invoices/${invoiceId}`)
+      */
     } catch (error: any) {
       const serialized = typeof error === "object" ? JSON.stringify(error) : String(error)
       console.error("Error updating invoice:", serialized)

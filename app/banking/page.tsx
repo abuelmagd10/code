@@ -431,39 +431,6 @@ export default function BankingPage() {
         });
         return;
       }
-      let cid: string | null = null;
-      try {
-        const res = await fetch("/api/my-company");
-        if (res.ok) {
-          const j = await res.json();
-          cid = String((j?.data?.company?.id || j?.company?.id) || "") || null;
-        }
-      } catch { }
-      if (!cid) cid = await getActiveCompanyId(supabase);
-      if (!cid) return;
-
-      // Find the source account to get its branch
-      const sourceAccount = accounts.find((a) => a.id === transfer.from_id);
-      const effectiveBranchId = sourceAccount?.branch_id || userContext?.branch_id || null;
-
-      const { data: entry, error: entryErr } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: cid,
-          branch_id: effectiveBranchId,
-          reference_type: "bank_transfer",
-          entry_date: transfer.date,
-          status: "draft",
-          description:
-            transfer.description ||
-            (appLang === "en"
-              ? "Transfer between cash/bank accounts"
-              : "تحويل بين حسابات نقد/بنك"),
-        })
-        .select()
-        .single();
-      if (entryErr) throw entryErr;
-
       // Get base currency
       const baseCurrency =
         typeof window !== "undefined"
@@ -474,43 +441,35 @@ export default function BankingPage() {
       const finalBaseAmount =
         transfer.currency === baseCurrency ? transfer.amount : baseAmount;
 
-      const { error: linesErr } = await supabase
-        .from("journal_entry_lines")
-        .insert([
-          {
-            journal_entry_id: entry.id,
-            account_id: transfer.to_id,
-            debit_amount: finalBaseAmount,
-            credit_amount: 0,
-            description: appLang === "en" ? "Incoming transfer" : "تحويل وارد",
-            // Multi-currency support - store original and base values
-            original_debit: transfer.amount,
-            original_credit: 0,
-            original_currency: transfer.currency,
-            exchange_rate_used: exchangeRate,
-            exchange_rate_id: exchangeRateId,
-          },
-          {
-            journal_entry_id: entry.id,
-            account_id: transfer.from_id,
-            debit_amount: 0,
-            credit_amount: finalBaseAmount,
-            description: appLang === "en" ? "Outgoing transfer" : "تحويل صادر",
-            // Multi-currency support - store original and base values
-            original_credit: transfer.amount,
-            original_currency: transfer.currency,
-            exchange_rate_used: exchangeRate,
-            exchange_rate_id: exchangeRateId,
-          },
-        ]);
-      if (linesErr) throw linesErr;
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `bank-transfer-${Date.now()}`
+      const response = await fetch("/api/banking/transfers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({
+          fromAccountId: transfer.from_id,
+          toAccountId: transfer.to_id,
+          amount: transfer.amount,
+          transferDate: transfer.date,
+          description: transfer.description ||
+            (appLang === "en"
+              ? "Transfer between cash/bank accounts"
+              : "تحويل بين حسابات نقد/بنك"),
+          currencyCode: transfer.currency,
+          exchangeRate,
+          baseAmount: finalBaseAmount,
+          exchangeRateId,
+          rateSource,
+          uiSurface: "banking_page",
+        }),
+      })
 
-      // Mark as posted after lines are inserted
-      const { error: updateErr } = await supabase
-        .from("journal_entries")
-        .update({ status: "posted" })
-        .eq("id", entry.id);
-      if (updateErr) throw updateErr;
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (appLang === "en" ? "Failed to record bank transfer" : "تعذر تسجيل التحويل البنكي"))
+      }
 
       setTransfer({
         ...transfer,

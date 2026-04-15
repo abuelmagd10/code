@@ -140,31 +140,43 @@ export function CustomerPaymentAllocationUI({
 
       const allocArray = Object.entries(allocations)
         .filter(([_, amt]) => amt > 0)
-        .map(([invId, amt]) => ({ invoice_id: invId, amount: amt }))
+        .map(([invId, amt]) => ({ invoiceId: invId, amount: amt }))
 
-      const service = new PaymentService(supabase)
-      const paymentId = await service.createCustomerPaymentWithAllocations({
-        company_id: companyId,
-        customer_id: customerId,
-        payment_amount: amount,
-        payment_date: paymentDate,
-        payment_method: method,
-        account_id: accountId,
-        branch_id: member?.branch_id || "",
-        currency_code: currency,
-        exchange_rate: exchangeRate,
-        base_currency_amount: amount * exchangeRate,
-        reference_number: reference || undefined,
-        notes: notes || undefined,
-        allocations: allocArray,
+      const response = await fetch("/api/customer-payments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `customer-payment-batch-${customerId}-${Date.now()}`,
+        },
+        body: JSON.stringify({
+          customerId,
+          amount,
+          paymentDate,
+          paymentMethod: method,
+          accountId,
+          branchId: member?.branch_id || null,
+          currencyCode: currency,
+          exchangeRate,
+          baseCurrencyAmount: amount * exchangeRate,
+          originalAmount: amount,
+          originalCurrency: currency,
+          referenceNumber: reference || null,
+          notes: notes || null,
+          allocations: allocArray,
+          uiSurface: "customer_payment_allocation_ui",
+        }),
       })
+      const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string; paymentId?: string }
+      if (!response.ok || !result.success || !result.paymentId) {
+        throw new Error(result.error || (appLang === 'en' ? "Failed to create customer receipt" : "فشل تسجيل التحصيل"))
+      }
 
       // 🔔 Non-privileged users: send notification for approval
       if (member?.role && !['admin', 'owner', 'general_manager'].includes(member.role)) {
         const customerName = customers.find(c => c.id === customerId)?.name || 'عميل'
         await notifyPaymentApprovalRequest({
           companyId,
-          paymentId,
+          paymentId: result.paymentId,
           partyName: customerName,
           amount,
           currency,

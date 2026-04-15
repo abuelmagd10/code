@@ -193,99 +193,36 @@ export function SupplierReceiptDialog({
     if (!validateInputs()) return
     setIsProcessing(true)
     try {
-      const activeCompanyId = await getActiveCompanyId(supabase)
-      if (!activeCompanyId) throw new Error('No active company')
-
-      // Find supplier debit account
-      const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
-      const supplierDebit = find((a: any) => String(a.sub_type || "").toLowerCase() === "supplier_debit") ||
-                           find((a: any) => String(a.sub_type || "").toLowerCase() === "supplier_advance") ||
-                           find((a: any) => String(a.sub_type || "").toLowerCase() === "vendor_advance") ||
-                           find((a: any) => String(a.account_name || "").toLowerCase().includes("سلف الموردين")) ||
-                           find((a: any) => String(a.account_name || "").toLowerCase().includes("رصيد الموردين"))
-
-      // Calculate base amount in app currency
       const baseReceiptAmount = receiptCurrency === appCurrency
         ? receiptAmount
         : Math.round(receiptAmount * receiptExRate.rate * 10000) / 10000
 
-      // ==== إنشاء قيد استقبال رصيد المورد (مباشر للمميزين) ====
-      const receiptRefId = crypto.randomUUID()
-      const { data: entry, error: entryError } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: activeCompanyId,
-          reference_type: "supplier_debit_receipt",
-          reference_id: receiptRefId,
-          entry_date: receiptDate,
-          description: receiptNotes || (appLang === 'en' ? `Supplier cash refund - ${supplierName}` : `استرداد نقدي من المورد - ${supplierName}`),
-        })
-        .select()
-        .single()
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `supplier-refund-receipt-${Date.now()}`
+      const response = await fetch("/api/suppliers/refunds/receipt", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({
+          supplierId,
+          amount: receiptAmount,
+          currencyCode: receiptCurrency,
+          exchangeRate: receiptExRate.rate,
+          baseAmount: baseReceiptAmount,
+          receiptAccountId,
+          receiptDate,
+          notes: receiptNotes || (appLang === 'en' ? `Supplier cash refund - ${supplierName}` : `استرداد نقدي من المورد - ${supplierName}`),
+          branchId: branchId || null,
+          exchangeRateId: receiptExRate.rateId || null,
+          rateSource: receiptExRate.source || null,
+          uiSurface: "supplier_receipt_dialog",
+        }),
+      })
 
-      if (entryError) throw entryError
-
-      if (entry?.id) {
-        const lines: any[] = []
-        // مدين: النقد/البنك
-        lines.push({
-          journal_entry_id: entry.id,
-          account_id: receiptAccountId,
-          debit_amount: baseReceiptAmount,
-          credit_amount: 0,
-          description: appLang === 'en' ? 'Cash/Bank receipt from supplier' : 'استقبال نقدي/بنكي من المورد',
-          original_currency: receiptCurrency,
-          original_debit: receiptAmount,
-          original_credit: 0,
-          exchange_rate_used: receiptExRate.rate,
-          exchange_rate_id: receiptExRate.rateId || null
-        })
-        // دائن: رصيد المورد المدين
-        if (supplierDebit) {
-          lines.push({
-            journal_entry_id: entry.id,
-            account_id: supplierDebit,
-            debit_amount: 0,
-            credit_amount: baseReceiptAmount,
-            description: appLang === 'en' ? 'Supplier debit settlement' : 'تسوية رصيد المورد المدين',
-            original_currency: receiptCurrency,
-            original_debit: 0,
-            original_credit: receiptAmount,
-            exchange_rate_used: receiptExRate.rate,
-            exchange_rate_id: receiptExRate.rateId || null
-          })
-        }
-
-        const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
-        if (linesError) throw linesError
-      }
-
-      // ==== تحديث vendor_credits ====
-      const { data: debits } = await supabase
-        .from("vendor_credits")
-        .select("id, total_amount, applied_amount")
-        .eq("company_id", activeCompanyId)
-        .eq("supplier_id", supplierId)
-        .in("status", ["open", "partially_applied"])
-        .order("credit_date", { ascending: true })
-
-      let remainingToDeduct = receiptAmount
-      if (debits && debits.length > 0) {
-        for (const debit of debits) {
-          if (remainingToDeduct <= 0) break
-          const totalAmt = Number(debit.total_amount || 0)
-          const appliedAmt = Number(debit.applied_amount || 0)
-          const available = totalAmt - appliedAmt
-          if (available <= 0) continue
-          const deductAmount = Math.min(available, remainingToDeduct)
-          const newAppliedAmount = appliedAmt + deductAmount
-          const newStatus = newAppliedAmount >= totalAmt ? "applied" : "partially_applied"
-          await supabase
-            .from("vendor_credits")
-            .update({ applied_amount: newAppliedAmount, status: newStatus, updated_at: new Date().toISOString() })
-            .eq("id", debit.id)
-          remainingToDeduct -= deductAmount
-        }
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (appLang === 'en' ? 'Failed to record supplier refund' : 'فشل تسجيل استرداد المورد'))
       }
 
       toastActionSuccess(

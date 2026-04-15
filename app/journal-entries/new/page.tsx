@@ -279,6 +279,14 @@ export default function NewJournalEntryPage() {
       toast({ title: "القيد غير متوازن", description: "الديون والدائنين غير متوازنة", variant: "destructive" })
       return
     }
+    if (!formData.description.trim()) {
+      toast({ title: "بيانات غير مكتملة", description: "يرجى إدخال سبب/وصف القيد اليدوي", variant: "destructive" })
+      return
+    }
+    if (!branchId) {
+      toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار الفرع للقيد اليدوي", variant: "destructive" })
+      return
+    }
 
     try {
       setIsSaving(true)
@@ -288,54 +296,7 @@ export default function NewJournalEntryPage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
-      const { getActiveCompanyId } = await import("@/lib/company")
-      const saveCompanyId = await getActiveCompanyId(supabase)
-      if (!saveCompanyId) return
-
-      // ✅ ERP-Grade: Period Lock Check - منع إنشاء قيود في فترات مغلقة
-      try {
-        const { assertPeriodNotLocked } = await import("@/lib/accounting-period-lock")
-        const { createClient } = await import("@supabase/supabase-js")
-        const serviceSupabase = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
-        await assertPeriodNotLocked(serviceSupabase, {
-          companyId: saveCompanyId,
-          date: formData.entry_date,
-        })
-      } catch (lockError: any) {
-        toast({
-          title: "❌ الفترة المحاسبية مقفلة",
-          description: lockError.message || "لا يمكن إنشاء قيد في فترة محاسبية مغلقة",
-          variant: "destructive",
-        })
-        setIsSaving(false)
-        return
-      }
-
-      // Create journal entry
-      const { data: entryData, error: entryError } = await supabase
-        .from("journal_entries")
-        .insert([
-          {
-            company_id: saveCompanyId,
-            entry_date: formData.entry_date,
-            description: formData.description,
-            reference_type: "manual_entry",
-            branch_id: branchId || null,
-            cost_center_id: costCenterId || null,
-          },
-        ])
-        .select()
-        .single()
-
-      if (entryError) throw entryError
-
-      // Create journal entry lines with multi-currency support
-      // If entry currency differs from base, convert amounts for accounting
-      const linesToInsert = entryLines.map((line) => {
+      const commandLines = entryLines.map((line) => {
         // Original values are what user entered (in entry currency)
         const originalDebit = line.debit_amount
         const originalCredit = line.credit_amount
@@ -345,18 +306,14 @@ export default function NewJournalEntryPage() {
         const convertedCredit = entryCurrency !== baseCurrency ? originalCredit * exchangeRate : originalCredit
 
         return {
-          journal_entry_id: entryData.id,
           account_id: line.account_id,
-          // Amounts stored for accounting (in base currency)
+          description: line.description,
           debit_amount: convertedDebit,
           credit_amount: convertedCredit,
-          description: line.description,
-          // Store original values (in entry currency) for audit trail
           original_debit: originalDebit,
           original_credit: originalCredit,
           original_currency: entryCurrency,
           exchange_rate_used: exchangeRate,
-          // Professional multi-currency fields
           exchange_rate_id: exchangeRateId || null,
           cost_center_id: (line as any).cost_center_id || null,
           branch_id: (line as any).cost_center_id
@@ -365,9 +322,26 @@ export default function NewJournalEntryPage() {
         }
       })
 
-      const { error: linesError } = await supabase.from("journal_entry_lines").insert(linesToInsert)
-
-      if (linesError) throw linesError
+      const response = await fetch("/api/journal-entries/manual", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `manual-journal-${Date.now()}`,
+        },
+        body: JSON.stringify({
+          entry_date: formData.entry_date,
+          description: formData.description,
+          justification: formData.description,
+          branch_id: branchId || null,
+          cost_center_id: costCenterId || null,
+          lines: commandLines,
+          ui_surface: "manual_journal_new_page",
+        }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || "فشل إنشاء القيد")
+      }
 
       toastActionSuccess(toast, "الإنشاء", "القيد")
       router.push("/journal-entries")

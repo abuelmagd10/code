@@ -73,6 +73,12 @@ type ReturnDetail = {
   }>
 }
 
+type PurchaseReturnCommandApiResponse = {
+  success?: boolean
+  error?: string
+  created_by?: string | null
+}
+
 const WORKFLOW_BADGES: Record<string, { ar: string; en: string; cls: string }> = {
   pending_admin_approval: { ar: 'بانتظار اعتماد الإدارة', en: 'Pending Admin Approval', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' },
   pending_warehouse:      { ar: 'بانتظار اعتماد المخزن',  en: 'Pending Warehouse',      cls: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
@@ -213,22 +219,33 @@ export default function PurchaseReturnDetailPage() {
   const dir = appLang === 'ar' ? 'rtl' : 'ltr'
   const t   = (ar: string, en: string) => appLang === 'en' ? en : ar
 
+  const postPurchaseReturnCommand = async (path: string, payload: Record<string, unknown>) => {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': crypto.randomUUID(),
+      },
+      body: JSON.stringify(payload),
+    })
+
+    const result = await response.json().catch(() => ({})) as PurchaseReturnCommandApiResponse
+    if (!response.ok || result.success === false) {
+      throw new Error(result.error || t('فشل تنفيذ أمر المرتجع', 'Purchase return command failed'))
+    }
+
+    return result
+  }
+
   // ─── Admin Approve ───────────────────────────────────────────────────────
   const handleApprovePR = async () => {
     if (!pr || !currentUserId || !companyId) return
     setIsApproving(true)
     try {
-      const { data: result, error } = await supabase.rpc('approve_purchase_return_atomic', {
-        p_pr_id:      pr.id,
-        p_user_id:    currentUserId,
-        p_company_id: companyId,
-        p_action:     'approve',
-        p_reason:     null,
+      await postPurchaseReturnCommand(`/api/purchase-returns/${pr.id}/approve`, {
+        action: 'APPROVE',
+        uiSurface: 'purchase_return_detail_page',
       })
-      if (error || !result?.success) {
-        toast({ title: t('❌ فشل الاعتماد', '❌ Approval Failed'), description: result?.error || error?.message, variant: 'destructive' })
-        return
-      }
       if (pr.created_by) {
         notifyPRApproved({
           companyId, prId: pr.id, prNumber: pr.return_number,
@@ -257,17 +274,11 @@ export default function PurchaseReturnDetailPage() {
     if (!pr || !currentUserId || !companyId || !rejectionReason.trim()) return
     setIsApproving(true)
     try {
-      const { data: result, error } = await supabase.rpc('approve_purchase_return_atomic', {
-        p_pr_id:      pr.id,
-        p_user_id:    currentUserId,
-        p_company_id: companyId,
-        p_action:     'reject',
-        p_reason:     rejectionReason.trim(),
+      await postPurchaseReturnCommand(`/api/purchase-returns/${pr.id}/approve`, {
+        action: 'REJECT',
+        rejectionReason: rejectionReason.trim(),
+        uiSurface: 'purchase_return_detail_page',
       })
-      if (error || !result?.success) {
-        toast({ title: t('❌ فشل الرفض', '❌ Rejection Failed'), description: result?.error || error?.message, variant: 'destructive' })
-        return
-      }
       if (pr.created_by) {
         notifyPRRejected({
           companyId, prId: pr.id, prNumber: pr.return_number,
@@ -291,29 +302,13 @@ export default function PurchaseReturnDetailPage() {
     if (!pr || !currentUserId || !companyId) return
     setIsConfirming(true)
     try {
-      const { error } = await supabase.rpc('confirm_purchase_return_delivery_v2', {
-        p_purchase_return_id: pr.id,
-        p_confirmed_by: currentUserId,
-        p_notes: t(
+      await postPurchaseReturnCommand(`/api/purchase-returns/${pr.id}/confirm-delivery`, {
+        notes: t(
           `تم الاعتماد بواسطة مسؤول المخزن بتاريخ ${new Date().toLocaleDateString('ar-EG')}`,
           `Confirmed by warehouse manager on ${new Date().toLocaleDateString()}`
         ),
+        uiSurface: 'purchase_return_detail_page',
       })
-      if (error) {
-        toast({
-          title: t('❌ فشل الاعتماد', '❌ Confirmation Failed'),
-          description: formatSupabaseError(error, appLang),
-          variant: 'destructive'
-        })
-        return
-      }
-
-      // ✅ Patch: 
-      // RP confirm_purchase_return_delivery_v2 does not natively populate confirmed_by.
-      // So we update it here directly so the warehouse manager's name correctly appears.
-      await supabase.from('purchase_returns')
-        .update({ confirmed_by: currentUserId, confirmed_at: new Date().toISOString() })
-        .eq('id', pr.id)
       if (pr.created_by && pr.created_by !== currentUserId) {
         notifyPurchaseReturnConfirmed({
           companyId,
@@ -346,16 +341,11 @@ export default function PurchaseReturnDetailPage() {
     if (!pr || !currentUserId || !companyId || !warehouseRejectionReason.trim()) return
     setIsWarehouseRejecting(true)
     try {
-      const { data: result, error } = await supabase.rpc('reject_warehouse_return', {
-        p_purchase_return_id: pr.id,
-        p_rejected_by: currentUserId,
-        p_reason: warehouseRejectionReason.trim(),
+      const result = await postPurchaseReturnCommand(`/api/purchase-returns/${pr.id}/reject-warehouse`, {
+        rejectionReason: warehouseRejectionReason.trim(),
+        uiSurface: 'purchase_return_detail_page',
       })
-      if (error || !result?.success) {
-        toast({ title: t('❌ فشل الرفض', '❌ Rejection Failed'), description: result?.error || error?.message, variant: 'destructive' })
-        return
-      }
-      const createdBy = result?.created_by || pr.created_by
+      const createdBy = result.created_by || pr.created_by
       // إشعار المنشئ بالرفض
       if (createdBy) {
         notifyWarehouseReturnRejected({

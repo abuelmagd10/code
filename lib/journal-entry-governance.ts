@@ -27,6 +27,9 @@ export type JournalReferenceType =
   | "write_off"
   | "customer_payment"
   | "supplier_payment"
+  | "customer_payment_reversal"
+  | "customer_payment_deletion"
+  | "invoice_payment_reversal"
 
 /**
  * التحقق من وجود قيد سابق لنفس المرجع
@@ -451,4 +454,3 @@ export async function createExpenseJournalEntry(
     ]
   )
 }
-

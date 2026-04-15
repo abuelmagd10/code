@@ -153,288 +153,10 @@ export default function JournalEntryDetailPage() {
     load()
   }, [entryId, supabase])
 
-  // Auto-generate lines on first load if none exist for invoice-linked entries
-  useEffect(() => {
-    if (isLoading) return
-    if (autoAttempted) return
-    if (!entry) return
-    const noLines = !(Array.isArray(lines) && lines.length > 0)
-    if (
-      noLines &&
-      ["invoice", "bill", "invoice_payment"].includes(String(entry.reference_type || "")) &&
-      entry.reference_id
-    ) {
-      setAutoAttempted(true)
-      handleGenerateLines()
-    }
-  }, [isLoading, entry, lines])
-
-  const findAccountIds = async () => {
-    if (!entry || !entry.company_id) return null
-    const { data: accounts } = await supabase
-      .from("chart_of_accounts")
-      .select("id, account_code, account_type, account_name, sub_type")
-      .eq("company_id", entry.company_id)
-    if (!accounts) return null
-
-    const byCode = (code: string) => accounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
-    const byTypeFirst = (type: string) => accounts.find((a: any) => String(a.account_type || "").toLowerCase() === type.toLowerCase())?.id
-    const byNameIncludes = (name: string) => accounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
-    const bySubType = (st: string) => accounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
-
-    // Primary: use explicit sub_type seeded in Arabic COA
-    const ar =
-      bySubType("accounts_receivable") ||
-      byCode("1130") ||
-      byNameIncludes("الحسابات المدينة") ||
-      byNameIncludes("receivable") ||
-      byTypeFirst("asset")
-
-    const revenue =
-      bySubType("sales_revenue") ||
-      byCode("4000") ||
-      byNameIncludes("المبيعات") ||
-      byNameIncludes("revenue") ||
-      byTypeFirst("income")
-
-    const vatPayable =
-      bySubType("vat_output") ||
-      byCode("2103") ||
-      byNameIncludes("output vat") ||
-      byNameIncludes("ضريبة") ||
-      byTypeFirst("liability")
-
-    const cash =
-      bySubType("cash") ||
-      byCode("1110") ||
-      byNameIncludes("cash") ||
-      byNameIncludes("نقد") ||
-      byTypeFirst("asset")
-
-    const bank =
-      bySubType("bank") ||
-      byCode("1010") ||
-      byCode("1120") ||
-      byNameIncludes("bank") ||
-      byNameIncludes("بنك") ||
-      byTypeFirst("asset")
-
-    const ap =
-      bySubType("accounts_payable") ||
-      byCode("2000") ||
-      byNameIncludes("الحسابات الدائنة") ||
-      byNameIncludes("payable") ||
-      byTypeFirst("liability")
-
-    const vatReceivable =
-      bySubType("vat_input") ||
-      byCode("1140") ||
-      byNameIncludes("input vat") ||
-      byNameIncludes("ضريبة") ||
-      byTypeFirst("asset")
-
-    const inventory =
-      bySubType("inventory") ||
-      byNameIncludes("inventory") ||
-      byTypeFirst("asset")
-
-    const expense =
-      bySubType("operating_expenses") ||
-      byNameIncludes("مصروف") ||
-      byNameIncludes("expense") ||
-      byTypeFirst("expense")
-
-    const shippingAccount =
-      byCode("7000") ||
-      byNameIncludes("بوسطة") ||
-      byNameIncludes("byosta") ||
-      byNameIncludes("الشحن") ||
-      byNameIncludes("shipping") ||
-      null
-
-    return { ar, revenue, vatPayable, cash, bank, ap, vatReceivable, inventory, expense, shippingAccount, companyId: entry.company_id }
-  }
-
   const handleGenerateLines = async () => {
-    try {
-      if (!entry) return
-      setIsPosting(true)
-
-      // Support auto-generation for invoice- and bill-linked entries
-      if (!entry.reference_id) {
-        toastActionError(toast, "التوليد", "بنود القيد", "القيد لا يحتوي على مرجع صالح")
-        return
-      }
-
-      // Check if lines already exist
-      const { data: existing } = await supabase
-        .from("journal_entry_lines")
-        .select("id")
-        .eq("journal_entry_id", entry.id)
-        .limit(1)
-      if (existing && existing.length > 0) {
-        return
-      }
-
-      const mapping = await findAccountIds()
-      let linesToInsert: any[] = []
-
-      if (entry.reference_type === "invoice") {
-        if (!mapping || !mapping.ar || !mapping.revenue) {
-          console.warn("لم يتم العثور على حسابات AR/Revenue المناسبة.")
-          toastActionError(toast, "الجلب", "حسابات القيد", "تعذر العثور على حسابات الح.المدينة/المبيعات")
-          return
-        }
-        const { data: inv } = await supabase
-          .from("invoices")
-          .select("invoice_number, subtotal, tax_amount, total_amount, shipping")
-          .eq("id", entry.reference_id)
-          .single()
-        if (!inv) {
-          console.warn("تعذر جلب بيانات الفاتورة المرتبطة بالقيد.")
-          toastActionError(toast, "الجلب", "الفاتورة", "تعذر جلب بيانات الفاتورة المرتبطة بالقيد")
-          return
-        }
-        linesToInsert = [
-          {
-            journal_entry_id: entry.id,
-            account_id: mapping.ar,
-            debit_amount: Number(inv.total_amount || 0),
-            credit_amount: 0,
-            description: inv.invoice_number ? `الحسابات المدينة — ${inv.invoice_number}` : "الحسابات المدينة",
-          },
-          {
-            journal_entry_id: entry.id,
-            account_id: mapping.revenue,
-            debit_amount: 0,
-            credit_amount: Number(inv.subtotal || 0),
-            description: inv.invoice_number ? `المبيعات — ${inv.invoice_number}` : "المبيعات",
-          },
-        ]
-        if (Number(inv.shipping || 0) > 0) {
-          linesToInsert.push({
-            journal_entry_id: entry.id,
-            account_id: mapping.shippingAccount || mapping.revenue,
-            debit_amount: 0,
-            credit_amount: Number(inv.shipping || 0),
-            description: "الشحن",
-          })
-        }
-        if (mapping.vatPayable && inv.tax_amount && Number(inv.tax_amount) > 0) {
-          linesToInsert.push({
-            journal_entry_id: entry.id,
-            account_id: mapping.vatPayable,
-            debit_amount: 0,
-            credit_amount: Number(inv.tax_amount || 0),
-            description: inv.invoice_number ? `ضريبة القيمة المضافة المستحقة — ${inv.invoice_number}` : "ضريبة القيمة المضافة المستحقة",
-          })
-        }
-      } else if (entry.reference_type === "invoice_payment") {
-        const cashOrBank = mapping?.cash || mapping?.bank
-        if (!mapping || !mapping.ar || !cashOrBank) {
-          const missing = !mapping?.ar ? "الحسابات المدينة" : "نقد/بنك"
-          toastActionError(toast, "الجلب", "حسابات القيد", `تعذر العثور على حساب ${missing}`)
-          return
-        }
-        const { data: inv } = await supabase
-          .from("invoices")
-          .select("invoice_number, paid_amount")
-          .eq("id", entry.reference_id)
-          .single()
-        if (!inv) {
-          toastActionError(toast, "الجلب", "الفاتورة", "تعذر جلب بيانات الفاتورة المرتبطة بالدفع")
-          return
-        }
-        const amount = Number(inv.paid_amount || 0)
-        if (amount <= 0) {
-          toastActionError(toast, "التوليد", "بنود القيد", "مبلغ السداد غير صالح أو يساوي صفرًا")
-          return
-        }
-        linesToInsert = [
-          {
-            journal_entry_id: entry.id,
-            account_id: cashOrBank,
-            debit_amount: amount,
-            credit_amount: 0,
-            description: inv.invoice_number ? `نقد/بنك — ${inv.invoice_number}` : "نقد/بنك",
-          },
-          {
-            journal_entry_id: entry.id,
-            account_id: mapping.ar,
-            debit_amount: 0,
-            credit_amount: amount,
-            description: inv.invoice_number ? `الحسابات المدينة — ${inv.invoice_number}` : "الحسابات المدينة",
-          },
-        ]
-      } else if (entry.reference_type === "bill") {
-        if (!mapping || !mapping.ap) {
-          toastActionError(toast, "الجلب", "حسابات القيد", "تعذر العثور على حساب الح.الدائنة")
-          return
-        }
-        const invOrExp = mapping.inventory || mapping.expense
-        if (!invOrExp) {
-          toastActionError(toast, "الجلب", "حسابات القيد", "تعذر العثور على المخزون أو المصروفات")
-          return
-        }
-        const { data: bill } = await supabase
-          .from("bills")
-          .select("bill_number, subtotal, tax_amount, total_amount")
-          .eq("id", entry.reference_id)
-          .single()
-        if (!bill) {
-          toastActionError(toast, "الجلب", "الفاتورة", "تعذر جلب بيانات فاتورة المورد المرتبطة")
-          return
-        }
-        linesToInsert = [
-          {
-            journal_entry_id: entry.id,
-            account_id: invOrExp,
-            debit_amount: Number(bill.subtotal || 0),
-            credit_amount: 0,
-            description: (mapping.inventory ? "المخزون" : "مصروفات") + (bill.bill_number ? ` — ${bill.bill_number}` : ""),
-          },
-          {
-            journal_entry_id: entry.id,
-            account_id: mapping.ap,
-            debit_amount: 0,
-            credit_amount: Number(bill.total_amount || 0),
-            description: bill.bill_number ? `الحسابات الدائنة — ${bill.bill_number}` : "الحسابات الدائنة",
-          },
-        ]
-        if (mapping.vatReceivable && bill.tax_amount && Number(bill.tax_amount) > 0) {
-          linesToInsert.splice(1, 0, {
-            journal_entry_id: entry.id,
-            account_id: mapping.vatReceivable,
-            debit_amount: Number(bill.tax_amount || 0),
-            credit_amount: 0,
-            description: bill.bill_number ? `ضريبة قابلة للاسترداد — ${bill.bill_number}` : "ضريبة قابلة للاسترداد",
-          })
-        }
-      } else {
-        toastActionError(toast, "التوليد", "بنود القيد", "نوع المرجع غير مدعوم")
-        return
-      }
-
-      const { error: linesErr } = await supabase.from("journal_entry_lines").insert(linesToInsert)
-      if (linesErr) throw linesErr
-      toastActionSuccess(toast, "الإنشاء", "بنود القيد")
-
-      // Reload lines
-      const { data: linesData, error: reloadErr } = await supabase
-        .from("journal_entry_lines")
-        .select("id, account_id, debit_amount, credit_amount, description, chart_of_accounts(account_code, account_name)")
-        .eq("journal_entry_id", entry.id)
-      if (reloadErr) {
-        console.warn("فشل إعادة تحميل بنود القيد:", reloadErr.message)
-      }
-      setLines((linesData as JournalLine[]) || [])
-    } catch (err: any) {
-      console.error("فشل إنشاء بنود القيد تلقائيًا:", err)
-      const message = err?.message ? String(err.message) : "حدث خطأ مجهول أثناء الإنشاء"
-      toastActionError(toast, "الإنشاء", "بنود القيد", message)
-    } finally {
-      setIsPosting(false)
-    }
+    toastActionError(toast, "التوليد", "بنود القيد", appLang === 'en'
+      ? "Journal lines must be regenerated from the source document command, not from the journal UI."
+      : "يجب إعادة توليد بنود القيد من أمر المستند الأصلي وليس من واجهة القيود.")
   }
 
   const totals = useMemo(() => {
@@ -462,127 +184,6 @@ export default function JournalEntryDetailPage() {
     setEditLines(next)
   }
 
-  // 🔐 تحديث المصدر المرتبط (الفاتورة/السند) عند تعديل القيد
-  const updateLinkedSource = async (refType: string, refId: string, newTotal: number, oldTotal: number) => {
-    try {
-      console.log(`🔄 تحديث المصدر المرتبط: ${refType} | المبلغ القديم: ${oldTotal} | المبلغ الجديد: ${newTotal}`)
-
-      // تحديث فاتورة المبيعات
-      // 📌 النمط المحاسبي الصارم: لا invoice_cogs
-      if (refType === "invoice") {
-        const { error } = await supabase.from("invoices").update({ total_amount: newTotal }).eq("id", refId)
-        if (error) console.error("خطأ تحديث فاتورة المبيعات:", error)
-        else console.log(`✅ تم تحديث total_amount للفاتورة: ${newTotal}`)
-      }
-
-      // تحديث قيد سداد فاتورة مبيعات - نحدث paid_amount و جدول payments
-      if (refType === "invoice_payment") {
-        const { data: inv } = await supabase.from("invoices").select("total_amount").eq("id", refId).single()
-        if (inv) {
-          const total = Number(inv.total_amount || 0)
-          const newStatus = newTotal <= 0 ? "sent" : newTotal >= total ? "paid" : "partially_paid"
-
-          // تحديث الفاتورة
-          const { error: invError } = await supabase.from("invoices").update({ paid_amount: newTotal, status: newStatus }).eq("id", refId)
-          if (invError) console.error("خطأ تحديث سداد فاتورة المبيعات:", invError)
-          else console.log(`✅ تم تحديث paid_amount للفاتورة: ${newTotal} | الحالة: ${newStatus}`)
-
-          // تحديث جدول payments أيضاً (مصدر عرض المدفوعات في صفحة الفاتورة)
-          const { data: paymentRecord } = await supabase.from("payments").select("id").eq("invoice_id", refId).single()
-          if (paymentRecord) {
-            const { error: payError } = await supabase.from("payments").update({ amount: newTotal }).eq("id", paymentRecord.id)
-            if (payError) console.error("خطأ تحديث جدول payments:", payError)
-            else console.log(`✅ تم تحديث جدول payments: ${newTotal}`)
-          }
-        }
-      }
-
-      // تحديث فاتورة المشتريات
-      if (refType === "bill") {
-        const { error } = await supabase.from("bills").update({ total_amount: newTotal }).eq("id", refId)
-        if (error) console.error("خطأ تحديث فاتورة المشتريات:", error)
-        else console.log(`✅ تم تحديث total_amount للفاتورة: ${newTotal}`)
-      }
-
-      // تحديث قيد سداد فاتورة مشتريات - نحدث paid_amount و جدول payments
-      if (refType === "bill_payment") {
-        const { data: bill } = await supabase.from("bills").select("total_amount").eq("id", refId).single()
-        if (bill) {
-          const total = Number(bill.total_amount || 0)
-          const newStatus = newTotal <= 0 ? "sent" : newTotal >= total ? "paid" : "partially_paid"
-
-          // تحديث الفاتورة
-          const { error: billError } = await supabase.from("bills").update({ paid_amount: newTotal, status: newStatus }).eq("id", refId)
-          if (billError) console.error("خطأ تحديث سداد فاتورة المشتريات:", billError)
-          else console.log(`✅ تم تحديث paid_amount للفاتورة: ${newTotal} | الحالة: ${newStatus}`)
-
-          // تحديث جدول payments أيضاً (مصدر عرض المدفوعات في صفحة الفاتورة)
-          const { data: paymentRecord } = await supabase.from("payments").select("id").eq("bill_id", refId).single()
-          if (paymentRecord) {
-            const { error: payError } = await supabase.from("payments").update({ amount: newTotal }).eq("id", paymentRecord.id)
-            if (payError) console.error("خطأ تحديث جدول payments:", payError)
-            else console.log(`✅ تم تحديث جدول payments: ${newTotal}`)
-          }
-        }
-      }
-
-      // تحديث سندات القبض
-      if (refType === "customer_payment") {
-        // تحديث سجل الدفع إذا كان reference_id يشير إلى payments
-        if (refId) {
-          const { error } = await supabase.from("payments").update({ amount: newTotal }).eq("id", refId)
-          if (error) console.error("خطأ تحديث سند القبض:", error)
-          else console.log(`✅ تم تحديث مبلغ سند القبض: ${newTotal}`)
-        }
-
-        // تحديث الفاتورة المرتبطة إذا وجدت
-        const { data: payment } = await supabase.from("payments").select("invoice_id").eq("id", refId).single()
-        if (payment?.invoice_id) {
-          const { data: inv } = await supabase.from("invoices").select("total_amount").eq("id", payment.invoice_id).single()
-          if (inv) {
-            const total = Number(inv.total_amount || 0)
-            const newStatus = newTotal <= 0 ? "sent" : newTotal >= total ? "paid" : "partially_paid"
-            await supabase.from("invoices").update({ paid_amount: newTotal, status: newStatus }).eq("id", payment.invoice_id)
-            console.log(`✅ تم تحديث الفاتورة المرتبطة: paid_amount=${newTotal}`)
-          }
-        }
-      }
-
-      // تحديث سندات الصرف
-      if (refType === "supplier_payment") {
-        // تحديث سجل الدفع إذا كان reference_id يشير إلى payments
-        if (refId) {
-          const { error } = await supabase.from("payments").update({ amount: newTotal }).eq("id", refId)
-          if (error) console.error("خطأ تحديث سند الصرف:", error)
-          else console.log(`✅ تم تحديث مبلغ سند الصرف: ${newTotal}`)
-        }
-
-        // تحديث فاتورة المشتريات المرتبطة إذا وجدت
-        const { data: payment } = await supabase.from("payments").select("bill_id").eq("id", refId).single()
-        if (payment?.bill_id) {
-          const { data: bill } = await supabase.from("bills").select("total_amount").eq("id", payment.bill_id).single()
-          if (bill) {
-            const total = Number(bill.total_amount || 0)
-            const newStatus = newTotal <= 0 ? "sent" : newTotal >= total ? "paid" : "partially_paid"
-            await supabase.from("bills").update({ paid_amount: newTotal, status: newStatus }).eq("id", payment.bill_id)
-            console.log(`✅ تم تحديث فاتورة المشتريات المرتبطة: paid_amount=${newTotal}`)
-          }
-        }
-      }
-
-      // تحديث دفعات المرتبات - payroll_payment يشير إلى payroll_runs
-      // المبلغ يتم حسابه من payslips ولا يُخزن في جدول منفصل
-      // التعديل يتم فقط على journal_entry_lines (تم بالفعل في handleSaveEdit)
-      if (refType === "payroll_payment") {
-        console.log(`ℹ️ قيد دفع مرتبات - التعديل يتم على سطور القيد فقط`)
-      }
-
-    } catch (err) {
-      console.error("خطأ في تحديث المصدر المرتبط:", err)
-      // لا نرمي الخطأ لأن القيد تم حفظه بنجاح
-    }
-  }
-
   // 🔒 قائمة أنواع المراجع المحمية (لا يمكن تعديل القيود المرتبطة بها)
   // 📌 النمط المحاسبي الصارم: لا invoice_cogs أو invoice_cogs_reversal
   const PROTECTED_REFERENCE_TYPES = [
@@ -604,8 +205,8 @@ export default function JournalEntryDetailPage() {
     // 🔒 منع تعديل القيود المُرحَّلة (posted) — قاعدة البيانات تمنع ذلك أيضاً
     if (entry?.status === 'posted') return false
 
-    // 🔒 منع تعديل القيود المرتبطة بالفواتير والمدفوعات
-    if (entry?.reference_type && PROTECTED_REFERENCE_TYPES.includes(entry.reference_type)) {
+    // 🔒 فقط القيود اليدوية legacy غير المرحّلة يمكن تعديلها عبر command service
+    if (!entry?.reference_type || !["manual_entry", "manual_journal"].includes(entry.reference_type)) {
       return false
     }
 
@@ -629,8 +230,8 @@ export default function JournalEntryDetailPage() {
       return
     }
 
-    // 🔒 منع تعديل القيود المرتبطة بالفواتير والمدفوعات
-    if (entry?.reference_type && PROTECTED_REFERENCE_TYPES.includes(entry.reference_type)) {
+    // 🔒 فقط القيود اليدوية legacy غير المرحّلة يمكن تعديلها عبر command service
+    if (!entry?.reference_type || !["manual_entry", "manual_journal"].includes(entry.reference_type)) {
       toastActionError(toast, "التعديل", "القيد", appLang === 'en'
         ? "Cannot edit entries linked to invoices, bills, or payments. Edit the source document instead."
         : "لا يمكن تعديل القيود المرتبطة بالفواتير أو المدفوعات. قم بتعديل المستند الأصلي بدلاً من ذلك.")
@@ -664,60 +265,40 @@ export default function JournalEntryDetailPage() {
       if (!entry) return
       setIsPosting(true)
 
-      // 🔐 تسجيل التعديل في الـ Audit Log - إلزامي لجميع القيود
-      if (entry.company_id) {
-        const userInfo = await getCurrentUserInfo(supabase)
-        if (userInfo) {
-          await logJournalEntryEdit(supabase, {
-            companyId: entry.company_id,
-            userId: userInfo.userId,
-            userEmail: userInfo.email,
-            userName: userInfo.name,
-            journalEntryId: entry.id,
-            referenceNumber: referenceNumber || entry.description || "",
-            oldLines: originalLines.map(l => ({
-              account_id: l.account_id,
-              debit_amount: Number(l.debit_amount || 0),
-              credit_amount: Number(l.credit_amount || 0)
-            })),
-            newLines: editLines.map(l => ({
-              account_id: l.account_id,
-              debit_amount: Number(l.debit_amount || 0),
-              credit_amount: Number(l.credit_amount || 0)
-            })),
-            reason: reason,
-            referenceType: entry.reference_type || undefined,
-            referenceId: entry.reference_id || undefined
-          })
-        }
+      if (entry.reference_type && !["manual_entry", "manual_journal"].includes(entry.reference_type)) {
+        throw new Error(appLang === 'en'
+          ? "Linked journal entries must be corrected from their source document."
+          : "القيود المرتبطة بمستندات يجب تصحيحها من المستند الأصلي.")
       }
 
-      const { error: updErr } = await supabase
-        .from("journal_entries")
-        .update({
+      const response = await fetch("/api/journal-entries/manual", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `manual-journal-update-${entry.id}-${Date.now()}`,
+        },
+        body: JSON.stringify({
+          entry_id: entry.id,
           entry_date: editHeaderDate,
           description: editHeaderDesc,
+          justification: reason,
+          supporting_reference: referenceNumber || null,
           branch_id: branchId || null,
           cost_center_id: costCenterId || null,
-        })
-        .eq("id", entry.id)
-      if (updErr) throw updErr
-      const { error: delErr } = await supabase
-        .from("journal_entry_lines")
-        .delete()
-        .eq("journal_entry_id", entry.id)
-      if (delErr) throw delErr
-      const payload = editLines.map((l) => ({ journal_entry_id: entry.id, account_id: l.account_id, description: l.description || null, debit_amount: Number(l.debit_amount || 0), credit_amount: Number(l.credit_amount || 0) }))
-      const { error: insErr } = await supabase.from("journal_entry_lines").insert(payload)
-      if (insErr) throw insErr
-
-      // 🔐 تحديث المصدر المرتبط (الفاتورة/السند) - دائماً يتم التحديث لضمان التطابق
-      if (entry.reference_type && entry.reference_id) {
-        const newTotal = editLines.reduce((sum, l) => sum + Number(l.debit_amount || 0), 0)
-        const oldTotal = originalLines.reduce((sum, l) => sum + Number(l.debit_amount || 0), 0)
-
-        // تحديث المصدر المرتبط بالقيمة الجديدة
-        await updateLinkedSource(entry.reference_type, entry.reference_id, newTotal, oldTotal)
+          lines: editLines.map((line) => ({
+            account_id: line.account_id,
+            description: line.description || null,
+            debit_amount: Number(line.debit_amount || 0),
+            credit_amount: Number(line.credit_amount || 0),
+            branch_id: branchId || null,
+            cost_center_id: costCenterId || null,
+          })),
+          ui_surface: "manual_journal_detail_page",
+        }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || "تعذر حفظ القيد")
       }
 
       toastActionSuccess(toast, "الحفظ", "القيد")

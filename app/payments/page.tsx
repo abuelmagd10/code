@@ -11,9 +11,9 @@
 // - ❌ لا COGS في أي مرحلة
 //
 // 📌 فواتير المشتريات:
-// - Received: ✅ زيادة مخزون فقط - ❌ لا قيد محاسبي
-// - Payment (أول دفعة): ✅ قيد الفاتورة (Inventory/AP) + ✅ قيد السداد (AP/Cash)
-// - Payment (دفعات لاحقة): ✅ قيد السداد فقط (AP/Cash)
+// - Received: ✅ قيد الفاتورة (Inventory/AP) + ✅ زيادة مخزون
+// - Payment: ✅ قيد السداد فقط (AP/Cash أو AP/Supplier Advance)
+// - ❌ لا يجوز إنشاء قيد فاتورة المشتريات عند الدفع
 //
 // 📌 أي كود يخالف هذا النمط يُعد خطأ جسيم ويجب تعديله فورًا
 // =====================================================
@@ -33,7 +33,7 @@ import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { CreditCard } from "lucide-react"
-import { getExchangeRate, getActiveCurrencies, calculateFXGainLoss, createFXGainLossEntry, type Currency } from "@/lib/currency-service"
+import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { getActiveCompanyId } from "@/lib/company"
 import { computeLeafAccountBalancesAsOf } from "@/lib/ledger"
@@ -120,23 +120,16 @@ interface BillRow {
   branches?: { name: string } | null;
 }
 interface Account { id: string; account_code: string; account_name: string; account_type: string }
-interface AccountMapping {
-  companyId: string;
-  ar: string | undefined;
-  ap: string | undefined;
-  cash: string | undefined;
-  bank: string | undefined;
-  revenue: string | undefined;
-  inventory: string | undefined;
-  cogs: string | undefined;
-  vatPayable: string | undefined;
-  shippingAccount: string | undefined;
-  supplierAdvance: string | undefined;
-  customerAdvance: string | undefined;
-  branchId: string | null;
-  costCenterId: string | null;
-  fxGain?: string;
-  fxLoss?: string;
+
+type SupplierPaymentApiResult = {
+  success: boolean
+  paymentId: string
+  status: string
+  approved: boolean
+  posted: boolean
+  transactionId: string | null
+  journalEntryId: string | null
+  eventType: string
 }
 
 export default function PaymentsPage() {
@@ -1059,112 +1052,45 @@ export default function PaymentsPage() {
         }
       }
 
-      // Attempt insert including account_id; fallback if column not exists
-      const basePayload: any = {
-        company_id: companyId,
-        customer_id: newCustPayment.customer_id,
-        payment_date: newCustPayment.date,
-        amount: newCustPayment.amount,
-        payment_method: newCustPayment.method,
-        reference_number: newCustPayment.ref || null,
-        notes: newCustPayment.notes || null,
-        account_id: newCustPayment.account_id || null,
-        // Multi-currency support - store original and converted values
-        currency_code: paymentCurrency,
-        exchange_rate: exchangeRate,
-        exchange_rate_used: exchangeRate,
-        exchange_rate_id: exchangeRateId || null, // Reference to exchange_rates table
-        rate_source: rateSource, // 'api', 'manual', 'database'
-        base_currency_amount: paymentCurrency !== baseCurrency ? newCustPayment.amount * exchangeRate : newCustPayment.amount,
-        // Store original values (never modified)
-        original_amount: newCustPayment.amount,
-        original_currency: paymentCurrency,
-      }
-      let insertErr: any = null
-      {
-        const { error } = await supabase.from("payments").insert(basePayload)
-        insertErr = error || null
-      }
-      if (insertErr) {
-        const msg = String(insertErr?.message || insertErr || "")
-        const mentionsAccountId = msg.toLowerCase().includes("account_id")
-        const looksMissingColumn = mentionsAccountId && (
-          msg.toLowerCase().includes("does not exist") ||
-          msg.toLowerCase().includes("not found") ||
-          msg.toLowerCase().includes("schema cache") ||
-          msg.toLowerCase().includes("column")
-        )
-        if (looksMissingColumn || mentionsAccountId) {
-          console.warn("payments.insert fallback: removing account_id due to schema mismatch:", msg)
-          const fallbackPayload = { ...basePayload }
-          delete fallbackPayload.account_id
-          const { error: retryError } = await supabase.from("payments").insert(fallbackPayload)
-          if (retryError) throw retryError
-        } else {
-          throw insertErr
-        }
-      }
-
-      // Journal: treat as customer advance if not linked to invoice yet
-      const mapping = await findAccountIds()
-      if (mapping) {
-        const cashAccountId = newCustPayment.account_id || mapping.cash || mapping.bank
-        const advanceId = mapping.customerAdvance
-        // ✅ ERP-Grade: Period Lock Check
-        try {
-          const { assertPeriodNotLocked } = await import("@/lib/accounting-period-lock")
-          const { createClient } = await import("@supabase/supabase-js")
-          const serviceSupabase = createClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-          )
-          await assertPeriodNotLocked(serviceSupabase, {
-            companyId: mapping.companyId,
-            date: newCustPayment.date,
-          })
-        } catch (lockError: any) {
-          toast({
-            title: "❌ الفترة المحاسبية مقفلة",
-            description: lockError.message || "لا يمكن تسجيل دفعة في فترة محاسبية مغلقة",
-            variant: "destructive",
-          })
-          return
-        }
-
-        if (cashAccountId && advanceId) {
-          const { data: entry } = await supabase
-            .from("journal_entries").insert({
-              company_id: mapping.companyId,
-              reference_type: "customer_payment",
-              reference_id: null,
-              entry_date: newCustPayment.date,
-              description: `سداد عميل كسلفة(${newCustPayment.method})`,
-              branch_id: mapping.branchId!,
-              cost_center_id: mapping.costCenterId || null,
-            }).select().single()
-          if (entry?.id) {
-            await supabase.from("journal_entry_lines").insert([
-              { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: newCustPayment.amount, credit_amount: 0, description: "نقد/بنك", original_debit: newCustPayment.amount, original_credit: 0, original_currency: paymentCurrency, exchange_rate_used: exchangeRate },
-              { journal_entry_id: entry.id, account_id: advanceId, debit_amount: 0, credit_amount: newCustPayment.amount, description: "سلف من العملاء", original_debit: 0, original_credit: newCustPayment.amount, original_currency: paymentCurrency, exchange_rate_used: exchangeRate },
-            ])
-          }
-        }
-      }
-      const savedCustomerId = newCustPayment.customer_id
       const savedAmount = newCustPayment.amount
+      const allocations = selectedFormInvoiceId
+        ? [{ invoiceId: selectedFormInvoiceId, amount: savedAmount }]
+        : []
+      const response = await fetch("/api/customer-payments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `customer-payment-create-${newCustPayment.customer_id}-${Date.now()}`,
+        },
+        body: JSON.stringify({
+          customerId: newCustPayment.customer_id,
+          amount: savedAmount,
+          paymentDate: newCustPayment.date,
+          paymentMethod: newCustPayment.method,
+          accountId: newCustPayment.account_id || null,
+          referenceNumber: newCustPayment.ref || null,
+          notes: newCustPayment.notes || null,
+          currencyCode: paymentCurrency,
+          exchangeRate,
+          baseCurrencyAmount: paymentCurrency !== baseCurrency ? savedAmount * exchangeRate : savedAmount,
+          originalAmount: savedAmount,
+          originalCurrency: paymentCurrency,
+          exchangeRateId: exchangeRateId || null,
+          rateSource,
+          allocations,
+          uiSurface: selectedFormInvoiceId ? "payments_page_customer_form_auto_invoice" : "payments_page_customer_form",
+        }),
+      })
+
+      const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (appLang === 'en' ? 'Failed to create customer payment' : 'فشل إنشاء دفعة العميل'))
+      }
+
       setNewCustPayment({ customer_id: "", amount: 0, date: newCustPayment.date, method: "cash", ref: "", notes: "", account_id: "" })
       toastActionSuccess(toast, "الإنشاء", "الدفعة")
       // 🔐 إعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
       await reloadPaymentsWithFilters()
-      // إذا اختار المستخدم فاتورة من الجدول في النموذج: اربط أحدث دفعة عميل بهذه الفاتورة مباشرة
-      if (selectedFormInvoiceId && customerPayments && customerPayments.length > 0) {
-        const latest = customerPayments.find((p: any) => p.customer_id === savedCustomerId && !p.invoice_id) || customerPayments[0]
-        try {
-          await applyPaymentToInvoiceWithOverrides(latest as any, selectedFormInvoiceId, Number(latest?.amount || savedAmount || 0))
-        } catch (linkErr) {
-          console.error("Error auto-linking payment to invoice:", linkErr)
-        }
-      }
     } catch (err: any) {
       console.error("Error creating customer payment:", { message: err?.message, details: err })
       toastActionError(toast, "الإنشاء", "الدفعة", "فشل إنشاء الدفعة")
@@ -1254,10 +1180,6 @@ export default function PaymentsPage() {
           }
         }
       }
-      // Attempt insert including account_id; fallback if column not exists
-      // ✅ APPROVAL WORKFLOW: determine role
-      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
-      const isPrivilegedRole = !!(userContext?.role && PRIVILEGED_ROLES.includes(userContext.role))
       const currentUserId = (await supabase.auth.getUser()).data.user?.id || null
 
       // ✅ Get the bill's branch_id if a bill is selected (use it over user's branch for accuracy)
@@ -1266,65 +1188,43 @@ export default function PaymentsPage() {
         : null
       const billBranchId = (selectedBillData as any)?.branch_id || null
 
-      const basePayload: any = {
-        company_id: companyId,
-        supplier_id: newSuppPayment.supplier_id,
-        payment_date: newSuppPayment.date,
+      const supplierPaymentPayload = {
+        supplierId: newSuppPayment.supplier_id,
         amount: newSuppPayment.amount,
-        payment_method: newSuppPayment.method,
-        reference_number: newSuppPayment.ref || null,
+        paymentDate: newSuppPayment.date,
+        paymentMethod: newSuppPayment.method,
+        referenceNumber: newSuppPayment.ref || null,
         notes: newSuppPayment.notes || null,
-        account_id: newSuppPayment.account_id || null,
-        // Multi-currency support
-        currency_code: paymentCurrency,
-        exchange_rate: exchangeRate,
-        exchange_rate_used: exchangeRate,
-        exchange_rate_id: exchangeRateId || null,
-        rate_source: rateSource,
-        base_currency_amount: paymentCurrency !== baseCurrency ? newSuppPayment.amount * exchangeRate : newSuppPayment.amount,
-        original_amount: newSuppPayment.amount,
-        original_currency: paymentCurrency,
-        // ✅ Audit trail
-        created_by: currentUserId,
-        // ✅ Branch: bill's branch takes priority over user's branch
-        branch_id: billBranchId || userContext?.branch_id || null,
-        // ✅ Store bill_id even for pending (triggers only fire for status='approved')
-        ...(selectedFormBillId ? { bill_id: selectedFormBillId } : {}),
-        // ✅ Role-based status
-        status: isPrivilegedRole ? 'approved' : 'pending_approval',
-        ...(isPrivilegedRole ? { approved_by: currentUserId, approved_at: new Date().toISOString() } : {}),
-      }
-      let insertErr: any = null
-      let insertedPayment: any = null
-      {
-        const { data, error } = await supabase
-          .from("payments")
-          .insert(basePayload)
-          .select()
-          .single()
-        insertErr = error || null
-        insertedPayment = data || null
-
-      }
-      if (insertErr) {
-        const msg = String(insertErr?.message || insertErr || "")
-        if (msg.includes('column "account_id" does not exist') || msg.toLowerCase().includes("account_id") && msg.toLowerCase().includes("does not exist")) {
-          const fallbackPayload = { ...basePayload }
-          delete fallbackPayload.account_id
-          const { error: retryError } = await supabase
-            .from("payments")
-            .insert(fallbackPayload)
-            .select()
-            .single()
-          if (retryError) throw retryError
-        } else {
-          throw insertErr
-        }
+        accountId: newSuppPayment.account_id || null,
+        currencyCode: paymentCurrency,
+        exchangeRate,
+        exchangeRateId: exchangeRateId || null,
+        rateSource,
+        baseCurrencyAmount: paymentCurrency !== baseCurrency ? newSuppPayment.amount * exchangeRate : newSuppPayment.amount,
+        originalAmount: newSuppPayment.amount,
+        originalCurrency: paymentCurrency,
+        branchId: billBranchId || userContext?.branch_id || null,
+        allocations: selectedFormBillId
+          ? [{ billId: selectedFormBillId, amount: newSuppPayment.amount }]
+          : [],
+        uiSurface: selectedFormBillId ? "payments_page_single_bill" : "payments_page_single_advance",
       }
 
-      // === منطق القيود المحاسبية ===
-      // ✅ APPROVAL WORKFLOW: skip journal entries and bill linking for pending payments
-      if (!isPrivilegedRole) {
+      const response = await fetch("/api/supplier-payments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `supplier-payment-${Date.now()}`,
+        },
+        body: JSON.stringify(supplierPaymentPayload),
+      })
+
+      const result = await response.json() as SupplierPaymentApiResult & { error?: string }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "فشل إنشاء دفعة المورد")
+      }
+
+      if (!result.approved) {
         // 🔔 Non-privileged: notify managers for approval via SECURITY DEFINER RPC
         // ✅ استخدام notifyPaymentApprovalRequest بدلاً من الاستعلام المباشر عن company_members
         // لأن RLS تمنع المستخدمين العاديين من رؤية بيانات الأدوار الإدارية
@@ -1332,7 +1232,7 @@ export default function PaymentsPage() {
           const supplierName = suppliers.find(s => s.id === newSuppPayment.supplier_id)?.name || 'مورد'
           await notifyPaymentApprovalRequest({
             companyId,
-            paymentId: insertedPayment?.id || '',
+            paymentId: result.paymentId,
             partyName: supplierName,
             amount: newSuppPayment.amount,
             currency: paymentCurrency,
@@ -1360,60 +1260,15 @@ export default function PaymentsPage() {
         return
       }
 
-      // === Privileged role: execute journal entries immediately ===
-      const mapping = await findAccountIds()
-      const willLinkToBill = !!selectedFormBillId
-
-      if (mapping && !willLinkToBill) {
-        // لا توجد فاتورة محددة - إنشاء قيد سلفة فقط
-        const cashAccountId = newSuppPayment.account_id || mapping.cash || mapping.bank
-        const advanceId = mapping.supplierAdvance
-        if (cashAccountId && advanceId) {
-          const { data: entry } = await supabase
-            .from("journal_entries").insert({
-              company_id: mapping.companyId,
-              reference_type: "supplier_payment",
-              reference_id: insertedPayment?.id || null,
-              entry_date: newSuppPayment.date,
-              description: `سداد مورّد كسلفة (${newSuppPayment.method})`,
-              branch_id: mapping.branchId!,
-              cost_center_id: mapping.costCenterId || null,
-            }).select().single()
-          if (entry?.id) {
-            const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-              { journal_entry_id: entry.id, account_id: advanceId, debit_amount: newSuppPayment.amount, credit_amount: 0, description: "سلف للموردين", original_debit: newSuppPayment.amount, original_credit: 0, original_currency: paymentCurrency, exchange_rate_used: exchangeRate },
-              { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: newSuppPayment.amount, description: "نقد/بنك", original_debit: 0, original_credit: newSuppPayment.amount, original_currency: paymentCurrency, exchange_rate_used: exchangeRate },
-            ])
-            if (linesErr) throw linesErr
-          }
-        }
-      }
-      // ملاحظة: إذا willLinkToBill = true، سيتم إنشاء قيد bill_payment فقط في applyPaymentToBillWithOverrides
-
       setNewSuppPayment({ supplier_id: "", amount: 0, date: newSuppPayment.date, method: "cash", ref: "", notes: "", account_id: "" })
-      const { data: suppPays } = await supabase
-        .from("payments").select("*")
-        .eq("company_id", companyId)
-        .not("supplier_id", "is", null)
-        .order("payment_date", { ascending: false })
-      setSupplierPayments(suppPays || [])
-
-      // إذا تم اختيار فاتورة، نربط الدفعة بها (وينشأ قيد bill_payment فقط)
-      if (selectedFormBillId && insertedPayment) {
-        try {
-          await applyPaymentToBillWithOverrides(insertedPayment as any, selectedFormBillId, Number(insertedPayment?.amount || newSuppPayment.amount || 0), newSuppAccountType)
-        } catch (linkErr) {
-          console.error("Error auto-linking payment to bill:", linkErr)
-        }
-      } else if (selectedFormBillId && suppPays && suppPays.length > 0) {
-        // fallback: البحث عن الدفعة الأخيرة إذا لم نحصل على insertedPayment
-        const latest = suppPays.find((p: any) => p.supplier_id === newSuppPayment.supplier_id && !p.bill_id) || suppPays[0]
-        try {
-          await applyPaymentToBillWithOverrides(latest as any, selectedFormBillId, Number(latest?.amount || newSuppPayment.amount || 0), newSuppAccountType)
-        } catch (linkErr) {
-          console.error("Error auto-linking payment to bill:", linkErr)
-        }
-      }
+      setSelectedFormBillId("")
+      await reloadPaymentsWithFilters()
+      toast({
+        title: appLang === 'en' ? '✅ Payment Created' : '✅ تم إنشاء الدفعة',
+        description: result.posted
+          ? (appLang === 'en' ? 'Supplier payment posted successfully.' : 'تم ترحيل دفعة المورد محاسبياً بنجاح.')
+          : (appLang === 'en' ? 'Payment created and advanced to the next approval stage.' : 'تم إنشاء الدفعة وتحويلها لمسار الاعتماد.'),
+      })
     } catch (err: any) {
       // اطبع الكائن الأصلي للخطأ لتسهيل التشخيص
       console.error("Error creating supplier payment:", err)
@@ -1432,76 +1287,36 @@ export default function PaymentsPage() {
     try {
       setSaving(true)
       const currentUserId = (await supabase.auth.getUser()).data.user?.id || null
-
-      // 1. Process stage securely via DB RPC
-      const { error: rpcErr } = await supabase.rpc('process_payment_approval_stage', {
-        p_payment_id: payment.id,
-        p_action: 'APPROVE',
-        p_rejection_reason: null
+      const response = await fetch(`/api/supplier-payments/${payment.id}/approve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `supplier-payment-approve-${payment.id}-${Date.now()}`,
+        },
+        body: JSON.stringify({
+          action: "APPROVE",
+          uiSurface: "payments_page",
+        }),
       })
-      if (rpcErr) throw rpcErr
 
-      // 2. Fetch updated payment status to see if it reached final approval
-      const { data: updatedPayment, error: fetchErr } = await supabase
-        .from('payments')
-        .select('status, approved_by')
-        .eq('id', payment.id)
-        .single()
-      if (fetchErr) throw fetchErr
+      const updatedPayment = await response.json() as SupplierPaymentApiResult & { error?: string }
+      if (!response.ok || !updatedPayment.success) {
+        throw new Error(updatedPayment.error || "فشل اعتماد دفعة المورد")
+      }
 
-      // 3. Only if FULLY approved do we generate journal entries and link bills
-      if (updatedPayment.status === 'approved') {
-        const mapping = await findAccountIds()
-        if (mapping) {
-          const paymentCurr = payment.original_currency || payment.currency_code || baseCurrency
-          const exRate = payment.exchange_rate_used || payment.exchange_rate || 1
-
-          if (payment.bill_id) {
-            // Apply payment to bill directly
-            await applyPaymentToBillWithOverrides(payment, payment.bill_id, Number(payment.amount || 0), "")
-          } else {
-            // Check if there are allocations, if so we don't need a single standalone advance entry
-            const { data: allocations } = await supabase.from('payment_allocations').select('*').eq('payment_id', payment.id)
-            if (!allocations || allocations.length === 0) {
-              // Standalone advance payment (legacy)
-              const cashAccountId = payment.account_id || mapping.cash || mapping.bank
-              const advanceId = mapping.supplierAdvance
-              if (cashAccountId && advanceId) {
-                const { data: entry } = await supabase.from("journal_entries").insert({
-                  company_id: mapping.companyId,
-                  reference_type: "supplier_payment",
-                  reference_id: payment.id,
-                  entry_date: payment.payment_date,
-                  description: `سداد مورّد كسلفة (${payment.payment_method || 'نقد'})`,
-                  branch_id: mapping.branchId!,
-                  cost_center_id: mapping.costCenterId || null,
-                }).select().single()
-                if (entry?.id) {
-                  await supabase.from("journal_entry_lines").insert([
-                    { journal_entry_id: entry.id, account_id: advanceId, debit_amount: payment.amount, credit_amount: 0, description: "سلف للموردين", original_debit: payment.amount, original_credit: 0, original_currency: paymentCurr, exchange_rate_used: exRate },
-                    { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: payment.amount, description: "نقد/بنك", original_debit: 0, original_credit: payment.amount, original_currency: paymentCurr, exchange_rate_used: exRate },
-                  ])
-                }
-              }
-            }
-          }
-        }
-        
-        // Notify creator of final approval
-        if (payment.created_by) {
-          const supplierName = suppliers.find(s => s.id === payment.supplier_id)?.name || 'مورد'
-          await notifyPaymentApproved({
-            companyId,
-            paymentId: payment.id,
-            partyName: supplierName,
-            amount: Number(payment.amount),
-            currency: payment.original_currency || payment.currency_code || baseCurrency,
-            createdBy: payment.created_by,
-            approvedBy: currentUserId || '',
-            paymentType: 'supplier',
-            appLang
-          })
-        }
+      if (updatedPayment.status === 'approved' && payment.created_by) {
+        const supplierName = suppliers.find(s => s.id === payment.supplier_id)?.name || 'مورد'
+        await notifyPaymentApproved({
+          companyId,
+          paymentId: payment.id,
+          partyName: supplierName,
+          amount: Number(payment.amount),
+          currency: payment.original_currency || payment.currency_code || baseCurrency,
+          createdBy: payment.created_by,
+          approvedBy: currentUserId || '',
+          paymentType: 'supplier',
+          appLang
+        })
       }
 
       // 4. Refresh list
@@ -1509,7 +1324,9 @@ export default function PaymentsPage() {
       setApprovingPaymentId(null)
       toast({
         title: appLang === 'en' ? '✅ Stage Approved' : '✅ تمت الموافقة',
-        description: updatedPayment.status === 'approved' ? (appLang === 'en' ? 'Payment posted to accounts.' : 'تم تسجيل القيود المحاسبية.') : (appLang === 'en' ? 'Stage approved successfully.' : 'تم إتمام مرحلة الاعتماد بنجاح.'),
+        description: updatedPayment.status === 'approved'
+          ? (appLang === 'en' ? 'Payment posted to accounts.' : 'تم تسجيل القيود المحاسبية.')
+          : (appLang === 'en' ? 'Stage approved successfully.' : 'تم إتمام مرحلة الاعتماد بنجاح.'),
       })
     } catch (err: any) {
       toastActionError(toast, "الاعتماد", "الدفعة", String(err?.message || err))
@@ -1524,13 +1341,23 @@ export default function PaymentsPage() {
     try {
       setSaving(true)
       const currentUserId = (await supabase.auth.getUser()).data.user?.id || null
-      const { error: updateErr } = await supabase.from("payments").update({
-        status: 'rejected',
-        rejected_by: currentUserId,
-        rejected_at: new Date().toISOString(),
-        rejection_reason: rejectionReason.trim(),
-      }).eq("id", rejectingPayment.id)
-      if (updateErr) throw updateErr
+      const response = await fetch(`/api/supplier-payments/${rejectingPayment.id}/approve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `supplier-payment-reject-${rejectingPayment.id}-${Date.now()}`,
+        },
+        body: JSON.stringify({
+          action: "REJECT",
+          rejectionReason: rejectionReason.trim(),
+          uiSurface: "payments_page",
+        }),
+      })
+
+      const result = await response.json() as SupplierPaymentApiResult & { error?: string }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "فشل رفض دفعة المورد")
+      }
 
       // Notify the payment creator
       if (rejectingPayment.created_by) {
@@ -1549,10 +1376,7 @@ export default function PaymentsPage() {
         })
       }
 
-      const { data: suppPays } = await supabase.from("payments").select("*")
-        .eq("company_id", companyId).not("supplier_id", "is", null)
-        .order("payment_date", { ascending: false })
-      setSupplierPayments(suppPays || [])
+      await reloadPaymentsWithFilters()
       setRejectOpen(false)
       setRejectingPayment(null)
       setRejectionReason("")
@@ -1564,99 +1388,6 @@ export default function PaymentsPage() {
       toastActionError(toast, "الرفض", "الدفعة", String(err?.message || err))
     } finally {
       setSaving(false)
-    }
-  }
-
-  const findAccountIds = async (): Promise<AccountMapping | null> => {
-    if (!companyId) return null
-    const { data: accounts } = await supabase
-      .from("chart_of_accounts")
-      .select("id, account_code, account_type, account_name, sub_type, parent_id")
-      .eq("company_id", companyId)
-    if (!accounts) return null
-
-    // اعمل على الحسابات الورقية فقط (ليست آباء لغيرها)
-    const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))
-    const leafAccounts = (accounts || []).filter((a: any) => !parentIds.has(a.id))
-
-    const byCode = (code: string) => leafAccounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
-    const byType = (type: string) => leafAccounts.find((a: any) => a.account_type === type)?.id
-    const byNameIncludes = (name: string) => leafAccounts.find((a: any) => (a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
-    const bySubType = (st: string) => leafAccounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
-
-    const ar = bySubType("accounts_receivable") || byCode("AR") || byNameIncludes("receivable") || byNameIncludes("الحسابات المدينة") || byType("asset")
-    const ap = bySubType("accounts_payable") || byCode("AP") || byNameIncludes("payable") || byNameIncludes("الموردين") || byType("liability")
-    const cash = bySubType("cash") || byCode("CASH") || byNameIncludes("cash") || byNameIncludes("الصندوق") || byType("asset")
-    const bank = bySubType("bank") || byNameIncludes("bank") || byNameIncludes("البنك") || byType("asset")
-
-    // حساب الإيرادات
-    const revenue = byCode("4100") || byNameIncludes("إيرادات المبيعات") || byNameIncludes("sales") || byNameIncludes("revenue") || byType("income")
-
-    // حساب المخزون وتكلفة البضاعة المباعة
-    const inventory = bySubType("inventory") || byCode("1300") || byNameIncludes("inventory") || byNameIncludes("المخزون") || byNameIncludes("مخزون") || byType("asset")
-    const cogs = bySubType("cogs") || byCode("5100") || byNameIncludes("cost of goods") || byNameIncludes("cogs") || byNameIncludes("تكلفة المبيعات") || byNameIncludes("تكلفة البضاعة") || byType("expense")
-
-    // حساب الضريبة
-    const vatPayable = byNameIncludes("VAT") || byNameIncludes("ضريبة القيمة المضافة") || byNameIncludes("ضريبة المبيعات") || byNameIncludes("tax payable") || byType("liability")
-
-    // حساب الشحن
-    const shippingAccount = byNameIncludes("shipping") || byNameIncludes("الشحن") || byNameIncludes("شحن") || byNameIncludes("freight")
-
-    // حساب "سلف للموردين"
-    const supplierAdvance =
-      bySubType("supplier_advance") ||
-      byCode("1400") ||
-      byNameIncludes("supplier advance") ||
-      byNameIncludes("advance to suppliers") ||
-      byNameIncludes("advances") ||
-      byNameIncludes("prepaid to suppliers") ||
-      byNameIncludes("prepayment") ||
-      byType("asset")
-    // حساب "سلف من العملاء" (التزامات)
-    const customerAdvance =
-      bySubType("customer_advance") ||
-      byCode("1500") ||
-      byNameIncludes("customer advance") ||
-      byNameIncludes("advance from customers") ||
-      byNameIncludes("deposit") ||
-      byType("liability")
-
-    // branch_id إجباري لـ journal_entries: استخدام فرع المستخدم أو الفرع الافتراضي للشركة
-    let branchId = userContext?.branch_id ?? null
-    if (!branchId) {
-      const { data: defBranch } = await supabase
-        .from("branches")
-        .select("id")
-        .eq("company_id", companyId)
-        .eq("is_active", true)
-        .order("is_main", { ascending: false })
-        .order("name")
-        .limit(1)
-        .maybeSingle()
-      branchId = defBranch?.id ?? null
-    }
-
-    // 📌 أرباح وخسائر فروق صرف العملة
-    const fxGain = byCode("4200") || byNameIncludes("أرباح فروق صرف") || byNameIncludes("fx gain") || byNameIncludes("exchange gain")
-    const fxLoss = byCode("5200") || byNameIncludes("خسائر فروق صرف") || byNameIncludes("fx loss") || byNameIncludes("exchange loss")
-
-    return { 
-      companyId, 
-      ar, 
-      ap, 
-      cash, 
-      bank, 
-      revenue, 
-      inventory, 
-      cogs, 
-      vatPayable, 
-      shippingAccount, 
-      supplierAdvance, 
-      customerAdvance,
-      branchId,
-      costCenterId: userContext?.cost_center_id || null,
-      fxGain,
-      fxLoss
     }
   }
 
@@ -1781,8 +1512,6 @@ export default function PaymentsPage() {
         return
       }
       setSaving(true)
-      const mapping = await findAccountIds()
-      if (!mapping || !mapping.ar) return
       const { data: inv } = await supabase.from("invoices").select("*").eq("id", invoiceId).single()
       if (!inv) return
 
@@ -1800,312 +1529,30 @@ export default function PaymentsPage() {
       }
       const remaining = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
       const amount = Math.min(rawAmount, remaining)
-
-      // ===== التحقق: هل هذه أول دفعة على فاتورة مرسلة؟ =====
-      const isFirstPaymentOnSentInvoice = inv.status === "sent"
-
-      // تحديث الفاتورة مع حفظ القيمة الأصلية
-      const newPaid = Number(inv.paid_amount || 0) + amount
-      const newStatus = newPaid >= Number(inv.total_amount || 0) ? "paid" : "partially_paid"
-      const { data: currentInv } = await supabase.from("invoices").select("original_paid").eq("id", inv.id).single()
-      const currentOriginalPaid = currentInv?.original_paid ?? inv.paid_amount ?? 0
-      const newOriginalPaid = Number(currentOriginalPaid) + amount
-      const { error: invErr } = await supabase.from("invoices").update({ paid_amount: newPaid, original_paid: newOriginalPaid, status: newStatus }).eq("id", inv.id)
-      if (invErr) throw invErr
-
-      // ربط الدفعة
-      const { error: payErr } = await supabase.from("payments").update({ invoice_id: inv.id }).eq("id", payment.id)
-      if (payErr) throw payErr
-
-      // ===== إنشاء القيود المحاسبية =====
-      // استخدام حساب النقد/البنك المحدد في الدفعة
-      const paymentCashAccountId = payment.account_id || mapping.cash || mapping.bank
-
-      // التحقق من وجود قيد دفع سابق لهذه الفاتورة
-      const { data: existingPaymentJournal } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice_payment")
-        .eq("reference_id", inv.id)
-        .limit(1)
-
-      // ===== 📌 النمط المحاسبي الصارم (MANDATORY) =====
-      // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
-      // عند الدفع الأول على فاتورة Sent: قيد الفاتورة (AR/Revenue) + قيد السداد (Cash/AR)
-      // عند الدفعات اللاحقة: قيد السداد فقط (Cash/AR)
-      if (isFirstPaymentOnSentInvoice) {
-        // 1️⃣ إنشاء قيد الفاتورة (AR/Revenue) - لأنه لم يُنشأ عند Sent
-        await postInvoiceJournalOnFirstPayment(inv, mapping)
-      }
-      // 2️⃣ إنشاء قيد السداد (Cash/AR)
-      await postPaymentJournalOnly(inv, amount, payment.payment_date, mapping, paymentCashAccountId)
-
-      await supabase.from("advance_applications").insert({
-        company_id: mapping.companyId,
-        customer_id: payment.customer_id || null,
-        supplier_id: null,
-        payment_id: payment.id,
-        invoice_id: inv.id,
-        bill_id: null,
-        amount_applied: amount,
-        applied_date: payment.payment_date,
-        notes: "تطبيق سلفة عميل على فاتورة",
+      const response = await fetch(`/api/customer-payments/${encodeURIComponent(payment.id)}/apply-invoice`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `customer-payment-apply-invoice-${payment.id}-${invoiceId}-${amount}`,
+        },
+        body: JSON.stringify({
+          invoiceId: inv.id,
+          amount,
+          uiSurface: "payments_page_auto_apply_invoice",
+        }),
       })
 
-      // 🔐 إعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
+      const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (appLang === 'en' ? 'Failed to apply payment to invoice' : 'فشل تطبيق الدفعة على الفاتورة'))
+      }
+
       await reloadPaymentsWithFilters()
+      return
     } catch (err) {
       console.error("Error applying payment to invoice (overrides):", err)
     } finally {
       setSaving(false)
-    }
-  }
-
-  // ===== 📌 النمط المحاسبي الصارم: قيد الفاتورة عند الدفع الأول =====
-  // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
-  // عند الدفع الأول على فاتورة Sent: إنشاء قيد الفاتورة (AR/Revenue)
-  const postInvoiceJournalOnFirstPayment = async (inv: any, mapping: any) => {
-    try {
-      if (!inv || !mapping) return
-      if (!mapping.ar || !mapping.revenue) {
-        console.warn("Missing AR or Revenue account for invoice journal")
-        return
-      }
-
-      // التحقق من عدم وجود قيد فاتورة سابق
-      const { data: existingInvoiceJournal } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice")
-        .eq("reference_id", inv.id)
-        .limit(1)
-
-      if (existingInvoiceJournal && existingInvoiceJournal.length > 0) {
-        console.log(`⚠️ قيد الفاتورة موجود مسبقاً للفاتورة ${inv.invoice_number}`)
-        return
-      }
-
-      // جلب معلومات الفرع ومركز التكلفة من الفاتورة
-      const { data: invoiceData } = await supabase
-        .from("invoices")
-        .select("branch_id, cost_center_id")
-        .eq("id", inv.id)
-        .single()
-
-      // إنشاء قيد الفاتورة: Debit AR / Credit Revenue
-      const { data: invEntry, error: invError } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: mapping.companyId,
-          reference_type: "invoice",
-          reference_id: inv.id,
-          entry_date: inv.invoice_date || new Date().toISOString().slice(0, 10),
-          description: `فاتورة مبيعات ${inv.invoice_number}`,
-          branch_id: invoiceData?.branch_id || mapping.branchId!,
-          cost_center_id: invoiceData?.cost_center_id || null,
-        })
-        .select()
-        .single()
-
-      if (!invError && invEntry) {
-        await supabase.from("journal_entry_lines").insert([
-          { journal_entry_id: invEntry.id, account_id: mapping.ar, debit_amount: Number(inv.total_amount || 0), credit_amount: 0, description: "الذمم المدينة", branch_id: invoiceData?.branch_id || mapping.branchId!, cost_center_id: invoiceData?.cost_center_id || null },
-          { journal_entry_id: invEntry.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: Number(inv.total_amount || 0), description: "إيرادات المبيعات", branch_id: invoiceData?.branch_id || mapping.branchId!, cost_center_id: invoiceData?.cost_center_id || null },
-        ])
-        console.log(`✅ تم إنشاء قيد الفاتورة ${inv.invoice_number} عند الدفع الأول - مبلغ: ${inv.total_amount}`)
-      }
-    } catch (err) {
-      console.error("Error posting invoice journal on first payment:", err)
-    }
-  }
-
-  // ===== 📌 Cash Basis: قيد فاتورة الشراء عند الدفع الأول =====
-  // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
-  // عند الدفع الأول على فاتورة Sent/Received: إنشاء قيد الفاتورة (Inventory/AP)
-  const postBillJournalOnFirstPayment = async (bill: any, mapping: any, billCurrency: string, billExRate: number) => {
-    try {
-      if (!bill || !mapping) return
-      if (!mapping.ap) {
-        console.warn("Missing AP account for bill journal")
-        return
-      }
-
-      // التحقق من عدم وجود قيد فاتورة سابق
-      const { data: existingBillJournal } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "bill")
-        .eq("reference_id", bill.id)
-        .limit(1)
-
-      if (existingBillJournal && existingBillJournal.length > 0) {
-        console.log(`⚠️ قيد الفاتورة موجود مسبقاً للفاتورة ${bill.bill_number}`)
-        return
-      }
-
-      // إنشاء قيد الفاتورة
-      const { data: billEntry, error: billEntryErr } = await supabase
-        .from("journal_entries").insert({
-          company_id: mapping.companyId,
-          reference_type: "bill",
-          reference_id: bill.id,
-          entry_date: bill.bill_date,
-          description: `فاتورة شراء ${bill.bill_number}`,
-          branch_id: bill.branch_id || mapping.branchId!,
-          cost_center_id: bill.cost_center_id || null,
-        }).select().single()
-
-      if (billEntryErr) {
-        console.error("Error creating bill journal entry:", billEntryErr)
-        return
-      }
-
-      const invOrExp = mapping.inventory || mapping.cogs
-      const billLines: any[] = []
-
-      // ✅ حساب المبالغ بناءً على total_amount الحالي (بعد المرتجعات)
-      // حساب الإجمالي الأصلي (قبل المرتجعات)
-      const originalTotal = Number(bill.total_amount || 0) + Number(bill.returned_amount || 0)
-      const currentTotal = Number(bill.total_amount || 0)
-      
-      // حساب نسبة المرتجع لتطبيقها على subtotal و tax_amount
-      const returnRatio = originalTotal > 0 ? currentTotal / originalTotal : 1
-      
-      // حساب subtotal و tax_amount الحاليين بناءً على النسبة
-      const currentSubtotal = Number(bill.subtotal || 0) * returnRatio
-      const currentTaxAmount = Number(bill.tax_amount || 0) * returnRatio
-      const currentShipping = Number(bill.shipping_charge || 0) * returnRatio
-
-      // Debit: المخزون أو المصروفات (المجموع الفرعي الحالي)
-      if (invOrExp && currentSubtotal > 0) {
-        billLines.push({
-          journal_entry_id: billEntry.id,
-          account_id: invOrExp,
-          debit_amount: currentSubtotal,
-          credit_amount: 0,
-          description: mapping.inventory ? "المخزون" : "تكلفة البضاعة المباعة",
-          original_debit: currentSubtotal,
-          original_credit: 0,
-          original_currency: billCurrency,
-          exchange_rate_used: billExRate
-        })
-      }
-
-      // Debit: الضريبة (إن وجدت) - المبلغ الحالي بعد المرتجع
-      if (currentTaxAmount > 0) {
-        const vatInputAccount = accounts.find(a =>
-          a.account_type === 'asset' && (
-            (a as any).sub_type === 'vat_input' ||
-            a.account_code?.toLowerCase().includes('vatin') ||
-            a.account_name?.toLowerCase().includes('vat') ||
-            a.account_name?.includes('ضريبة')
-          )
-        )
-        if (vatInputAccount) {
-          billLines.push({
-            journal_entry_id: billEntry.id,
-            account_id: vatInputAccount.id,
-            debit_amount: currentTaxAmount,
-            credit_amount: 0,
-            description: "ضريبة المدخلات",
-            original_debit: currentTaxAmount,
-            original_credit: 0,
-            original_currency: billCurrency,
-            exchange_rate_used: billExRate
-          })
-        }
-      }
-
-      // Debit: الشحن (إن وجد) - المبلغ الحالي بعد المرتجع
-      if (currentShipping > 0 && mapping.shippingAccount) {
-        billLines.push({
-          journal_entry_id: billEntry.id,
-          account_id: mapping.shippingAccount,
-          debit_amount: currentShipping,
-          credit_amount: 0,
-          description: "مصاريف الشحن",
-          original_debit: currentShipping,
-          original_credit: 0,
-          original_currency: billCurrency,
-          exchange_rate_used: billExRate
-        })
-      }
-
-      // Credit: الحسابات الدائنة (الإجمالي الحالي بعد المرتجع)
-      billLines.push({
-        journal_entry_id: billEntry.id,
-        account_id: mapping.ap,
-        debit_amount: 0,
-        credit_amount: currentTotal,
-        description: "حسابات دائنة",
-        original_debit: 0,
-        original_credit: currentTotal,
-        original_currency: billCurrency,
-        exchange_rate_used: billExRate
-      })
-
-      if (billLines.length > 0) {
-        const { error: billLinesErr } = await supabase.from("journal_entry_lines").insert(billLines)
-        if (billLinesErr) {
-          console.error("Error creating bill journal lines:", billLinesErr)
-          return
-        }
-      }
-      console.log(`✅ تم إنشاء قيد فاتورة الشراء ${bill.bill_number} عند الدفع الأول - مبلغ: ${bill.total_amount}`)
-    } catch (err) {
-      console.error("Error posting bill journal on first payment:", err)
-    }
-  }
-
-  // ===== 📌 النمط المحاسبي الصارم: قيد السداد =====
-  // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
-  // قيد السداد: Debit Cash / Credit AR
-  const postPaymentJournalOnly = async (inv: any, paymentAmount: number, paymentDate: string, mapping: any, paymentAccountId?: string | null) => {
-    try {
-      if (!inv || !mapping) return
-
-      // استخدام حساب النقد/البنك المحدد في الدفعة أولاً، ثم الحساب الافتراضي
-      const cashAccountId = paymentAccountId || mapping.cash || mapping.bank
-
-      if (!cashAccountId || !mapping.ar) {
-        console.warn("Missing cash or AR account for payment journal")
-        return
-      }
-
-      // جلب معلومات الفرع ومركز التكلفة من الفاتورة
-      const { data: invoiceData } = await supabase
-        .from("invoices")
-        .select("branch_id, cost_center_id")
-        .eq("id", inv.id)
-        .single()
-
-      const { data: payEntry, error: payError } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: mapping.companyId,
-          reference_type: "invoice_payment",
-          reference_id: inv.id,
-          entry_date: paymentDate,
-          description: `دفعة على فاتورة ${inv.invoice_number}`,
-          branch_id: invoiceData?.branch_id || mapping.branchId!,
-          cost_center_id: invoiceData?.cost_center_id || null,
-        })
-        .select()
-        .single()
-
-      if (!payError && payEntry) {
-        // قيد السداد: Debit Cash / Credit AR
-        await supabase.from("journal_entry_lines").insert([
-          { journal_entry_id: payEntry.id, account_id: cashAccountId, debit_amount: paymentAmount, credit_amount: 0, description: "نقد/بنك", branch_id: invoiceData?.branch_id || mapping.branchId!, cost_center_id: invoiceData?.cost_center_id || null },
-          { journal_entry_id: payEntry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: paymentAmount, description: "الذمم المدينة", branch_id: invoiceData?.branch_id || mapping.branchId!, cost_center_id: invoiceData?.cost_center_id || null },
-        ])
-        console.log(`✅ تم إنشاء قيد السداد للفاتورة ${inv.invoice_number} - مبلغ: ${paymentAmount}`)
-      }
-    } catch (err) {
-      console.error("Error posting payment journal:", err)
     }
   }
 
@@ -2124,13 +1571,6 @@ export default function PaymentsPage() {
     // ⚡ INP Fix: تأجيل العمليات الثقيلة باستخدام setTimeout
     setTimeout(async () => {
       try {
-        const mapping = await findAccountIds()
-        if (!mapping || !mapping.ar) {
-          startTransition(() => {
-            setSaving(false)
-          })
-          return
-        }
         // Load invoice to compute remaining
         const { data: inv } = await supabase.from("invoices").select("*").eq("id", applyDocId).single()
         if (!inv) return
@@ -2151,95 +1591,36 @@ export default function PaymentsPage() {
         }
         const remaining = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
         const amount = Math.min(applyAmount, remaining)
-
-        // ✅ تطبيق دفعة على فاتورة بيع = مقبوضات (مدخلات) - لا نحتاج للتحقق من الرصيد
-        // المال يدخل للحساب من العميل
-
-        // Update invoice with original_paid
-        const newPaid = Number(inv.paid_amount || 0) + amount
-        const newStatus = newPaid >= Number(inv.total_amount || 0) ? "paid" : "partially_paid"
-        const { data: currentInv } = await supabase.from("invoices").select("original_paid").eq("id", inv.id).single()
-        const currentOriginalPaid = currentInv?.original_paid ?? inv.paid_amount ?? 0
-        const newOriginalPaid = Number(currentOriginalPaid) + amount
-        const { error: invErr } = await supabase.from("invoices").update({ paid_amount: newPaid, original_paid: newOriginalPaid, status: newStatus }).eq("id", inv.id)
-        if (invErr) throw invErr
-
-        // Update payment to link invoice
-        const { error: payErr } = await supabase.from("payments").update({ invoice_id: inv.id }).eq("id", selectedPayment.id)
-        if (payErr) throw payErr
-
-        // ===== 📌 نظام النقدية (Cash Basis): قيد الدفع فقط =====
-        // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
-        // عند الدفع: إنشاء قيد AR/Revenue (إذا لم يكن موجوداً) + قيد السداد
-        // قيد الفاتورة: Dr. AR / Cr. Revenue (عند أول دفعة)
-        // قيد السداد: Dr. Cash / Cr. AR (مع كل دفعة)
-
-        // ⚠️ حماية: التأكد من وجود قيد الفاتورة قبل إنشاء قيد الدفعة
-        const { data: existingInvoiceEntry } = await supabase
-          .from("journal_entries")
-          .select("id")
-          .eq("company_id", mapping.companyId)
-          .eq("reference_type", "invoice")
-          .eq("reference_id", inv.id)
-          .limit(1)
-
-        const hasInvoiceEntry = existingInvoiceEntry && existingInvoiceEntry.length > 0
-
-        if (!hasInvoiceEntry) {
-          console.warn("⚠️ لا يوجد قيد فاتورة - سيتم إنشاء قيد AR/Revenue أولاً")
-          await postInvoiceJournalOnFirstPayment(inv, mapping)
-        }
-
-        // إنشاء قيد السداد (Cash/AR)
-        const selectedPaymentCashAccountId = selectedPayment.account_id || mapping.cash || mapping.bank
-        await postPaymentJournalOnly(inv, amount, selectedPayment.payment_date, mapping, selectedPaymentCashAccountId)
-
-        // Calculate FX Gain/Loss if invoice and payment have different exchange rates
-        const invoiceRate = inv.exchange_rate_used || inv.exchange_rate || 1
-        const payExRate2 = (selectedPayment as any).exchange_rate_used || (selectedPayment as any).exchange_rate || 1
-        if (invoiceRate !== payExRate2 && companyId && mapping.fxGain && mapping.fxLoss && mapping.ar) {
-          const fxResult = calculateFXGainLoss(amount, invoiceRate, payExRate2)
-          if (fxResult.hasGainLoss && Math.abs(fxResult.amount) >= 0.01) {
-            await createFXGainLossEntry(
-              supabase, 
-              companyId, 
-              fxResult, 
-              'payment', 
-              selectedPayment.id, 
-              mapping.fxGain, 
-              mapping.fxLoss, 
-              mapping.ar, 
-              `فرق صرف - فاتورة ${inv.invoice_number}`, 
-              paymentCurrency
-            )
-          }
-        }
-
-        toastActionSuccess(toast, "التحديث", "الفاتورة")
-
-        // Link advance application record
-        await supabase.from("advance_applications").insert({
-          company_id: mapping.companyId,
-          customer_id: selectedPayment.customer_id || null,
-          supplier_id: null,
-          payment_id: selectedPayment.id,
-          invoice_id: inv.id,
-          bill_id: null,
-          amount_applied: amount,
-          applied_date: selectedPayment.payment_date,
-          notes: "تطبيق سلفة عميل على فاتورة",
+        const response = await fetch(`/api/customer-payments/${encodeURIComponent(selectedPayment.id)}/apply-invoice`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `customer-payment-apply-invoice-${selectedPayment.id}-${inv.id}-${amount}`,
+          },
+          body: JSON.stringify({
+            invoiceId: inv.id,
+            amount,
+            uiSurface: "payments_page_apply_invoice_dialog",
+          }),
         })
 
-        // refresh lists
+        const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || (appLang === 'en' ? 'Failed to apply payment to invoice' : 'فشل تطبيق الدفعة على الفاتورة'))
+        }
+
         startTransition(() => {
           setApplyInvoiceOpen(false)
           setSelectedPayment(null)
+          setApplyDocId("")
+          setApplyAmount(0)
         })
-        // 🔐 إعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
         await reloadPaymentsWithFilters()
         startTransition(() => {
           setSaving(false)
         })
+        toastActionSuccess(toast, "التحديث", "الفاتورة")
+        return
       } catch (err) {
         console.error("Error applying payment to invoice:", err)
         startTransition(() => {
@@ -2254,57 +1635,55 @@ export default function PaymentsPage() {
     try {
       if (!selectedPayment || !applyDocId || applyAmount <= 0) return
       setSaving(true)
-      const mapping = await findAccountIds()
-      if (!mapping || !mapping.supplierAdvance || !mapping.cash) return
       const { data: po } = await supabase.from("purchase_orders").select("*").eq("id", applyDocId).single()
       if (!po) return
+
+      if (!canPayOnDocument(po.branch_id)) {
+        toast({
+          title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
+          description: appLang === 'en'
+            ? 'You cannot make payments on purchase orders from other branches. Please contact your administrator.'
+            : 'لا يمكنك إجراء دفعات على أوامر شراء من فروع أخرى. يرجى التواصل مع المسؤول.',
+          variant: 'destructive'
+        })
+        setSaving(false)
+        return
+      }
+
       const remaining = Math.max(Number(po.total_amount || 0) - Number(po.received_amount || 0), 0)
       const amount = Math.min(applyAmount, remaining)
+      const response = await fetch(`/api/supplier-payments/${encodeURIComponent(selectedPayment.id)}/apply-po`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `supplier-payment-apply-po-${selectedPayment.id}-${applyDocId}-${amount}`,
+        },
+        body: JSON.stringify({
+          purchaseOrderId: po.id,
+          amount,
+          uiSurface: "payments_page_apply_po",
+        }),
+      })
 
-      // Update PO
-      const newReceived = Number(po.received_amount || 0) + amount
-      const newStatus = newReceived >= Number(po.total_amount || 0) ? "received" : "received_partial"
-      const { error: poErr } = await supabase.from("purchase_orders").update({ received_amount: newReceived, status: newStatus }).eq("id", po.id)
-      if (poErr) throw poErr
-
-      // Link payment
-      const { error: payErr } = await supabase.from("payments").update({ purchase_order_id: po.id }).eq("id", selectedPayment.id)
-      if (payErr) throw payErr
-
-      // Post journal
-      const cashAccountId = selectedPayment?.account_id || mapping.cash
-      const { data: entry, error: entryErr } = await supabase
-        .from("journal_entries").insert({
-          company_id: mapping.companyId,
-          reference_type: "po_payment",
-          reference_id: po.id,
-          entry_date: selectedPayment.payment_date,
-          description: `سداد مرتبط بأمر شراء ${po.po_number}`,
-          branch_id: po.branch_id || mapping.branchId!,
-          cost_center_id: po.cost_center_id || null,
-        }).select().single()
-      if (entryErr) throw entryErr
-      const poCurrency = selectedPayment.original_currency || selectedPayment.currency_code || 'EGP'
-      const poExRate = selectedPayment.exchange_rate_used || selectedPayment.exchange_rate || 1
-      const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-        { journal_entry_id: entry.id, account_id: mapping.supplierAdvance, debit_amount: amount, credit_amount: 0, description: "سلف للموردين", original_debit: amount, original_credit: 0, original_currency: poCurrency, exchange_rate_used: poExRate },
-        { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: amount, description: "نقد/بنك", original_debit: 0, original_credit: amount, original_currency: poCurrency, exchange_rate_used: poExRate },
-      ])
-      if (linesErr) throw linesErr
-
-      toastActionSuccess(toast, "التحديث", "أمر الشراء")
+      const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string; posted?: boolean }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (appLang === 'en' ? 'Failed to apply payment to purchase order' : 'فشل تطبيق الدفعة على أمر الشراء'))
+      }
 
       setApplyPoOpen(false)
       setSelectedPayment(null)
-      const { data: suppPays } = await supabase
-        .from("payments").select("*")
-        .eq("company_id", mapping.companyId)
-        .not("supplier_id", "is", null)
-        .order("payment_date", { ascending: false })
-      setSupplierPayments(suppPays || [])
+      setApplyDocId("")
+      setApplyAmount(0)
+      await reloadPaymentsWithFilters()
+      toast({
+        title: appLang === 'en' ? '✅ Payment Applied' : '✅ تم تطبيق الدفعة',
+        description: result.posted
+          ? (appLang === 'en' ? 'The purchase order settlement was synced successfully.' : 'تمت مزامنة تسوية أمر الشراء بنجاح.')
+          : (appLang === 'en' ? 'The purchase order allocation was recorded successfully.' : 'تم تسجيل تخصيص أمر الشراء بنجاح.'),
+      })
     } catch (err) {
       console.error("Error applying payment to PO:", err)
-      toastActionError(toast, "التحديث", "أمر الشراء", "فشل تطبيق الدفعة على أمر الشراء")
+      toastActionError(toast, "التحديث", "أمر الشراء", String((err as any)?.message || err || "فشل تطبيق الدفعة على أمر الشراء"))
     } finally {
       setSaving(false)
     }
@@ -2314,8 +1693,6 @@ export default function PaymentsPage() {
     try {
       if (!selectedPayment || !applyDocId || applyAmount <= 0) return
       setSaving(true)
-      const mapping = await findAccountIds()
-      if (!mapping || !mapping.ap) return
       const { data: bill } = await supabase.from("bills").select("*").eq("id", applyDocId).single()
       if (!bill) return
 
@@ -2339,460 +1716,39 @@ export default function PaymentsPage() {
       )
       const remaining = netOutstanding
       const amount = Math.min(applyAmount, remaining)
-
-      // 🔍 التحقق من كفاية الرصيد قبل تطبيق الدفعة
-      const paymentAccountId = selectedPayment.account_id || mapping.cash || mapping.bank || null
-      const balanceCheck = await checkAccountBalance(
-        paymentAccountId,
-        amount,
-        selectedPayment.payment_date || new Date().toISOString().slice(0, 10)
-      )
-
-      if (!balanceCheck.sufficient) {
-        toast({
-          title: appLang === 'en' ? 'Insufficient Balance' : 'رصيد غير كافٍ',
-          description: appLang === 'en'
-            ? `The account "${balanceCheck.accountName || 'Selected Account'}" has insufficient balance. Current balance: ${balanceCheck.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Required: ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
-            : `رصيد الحساب "${balanceCheck.accountName || 'الحساب المختار'}" غير كافٍ. الرصيد الحالي: ${balanceCheck.currentBalance.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. المطلوب: ${amount.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
-          variant: 'destructive'
-        })
-        setSaving(false)
-        return
-      }
-
-      // Link payment first, then update bill; rollback on failure
-      const originalPaid = Number(bill.paid_amount || 0)
-      const isFirstPayment = originalPaid === 0 && (bill.status === 'sent' || bill.status === 'received')
-
-      {
-        // ✅ ربط الدفعة بالفاتورة وأمر الشراء المرتبط (إن وجد)
-        const updateData: any = { bill_id: bill.id }
-        if (bill.purchase_order_id) {
-          updateData.purchase_order_id = bill.purchase_order_id
-        }
-        const { error: payErr } = await supabase.from("payments").update(updateData).eq("id", selectedPayment.id)
-        if (payErr) throw payErr
-      }
-      {
-        const newPaid = originalPaid + amount
-        // Use net amount (total - returned) for status determination
-        const netAmount = Math.max(Number(bill.total_amount || 0) - Number(bill.returned_amount || 0), 0)
-        const newStatus = newPaid >= netAmount ? "paid" : "partially_paid"
-        const { error: billErr } = await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", bill.id)
-        if (billErr) {
-          await supabase.from("payments").update({ bill_id: null }).eq("id", selectedPayment.id)
-          throw billErr
-        }
-      }
-
-      const billCurrency = bill.original_currency || bill.currency_code || selectedPayment.original_currency || selectedPayment.currency_code || 'EGP'
-      const billExRate = bill.exchange_rate_used || selectedPayment.exchange_rate_used || selectedPayment.exchange_rate || 1
-      const cashAccountId = selectedPayment.account_id || mapping.cash || mapping.bank
-
-      // ===== 📌 Cash Basis: قيد الفاتورة والدفع عند الدفع =====
-      // عند الدفع الأول: إنشاء قيد AP/Inventory + قيد السداد
-      // عند الدفعات التالية: قيد السداد فقط (Dr. AP / Cr. Cash)
-
-      // ⚠️ حماية: التحقق من وجود قيد الفاتورة قبل إنشاء قيد الدفعة
-      const { data: existingBillEntry } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "bill")
-        .eq("reference_id", bill.id)
-        .limit(1)
-
-      const hasBillEntry = existingBillEntry && existingBillEntry.length > 0
-
-      if (!hasBillEntry) {
-        console.warn("⚠️ لا يوجد قيد فاتورة - سيتم إنشاء قيد AP/Inventory عند الدفع الأول (Cash Basis)")
-        // إنشاء قيد الفاتورة (AP/Expense) إذا لم يكن موجوداً
-        const { data: billEntry, error: billEntryErr } = await supabase
-          .from("journal_entries").insert({
-            company_id: mapping.companyId,
-            reference_type: "bill",
-            reference_id: bill.id,
-            entry_date: bill.bill_date,
-            description: `فاتورة شراء ${bill.bill_number}`,
-            branch_id: bill.branch_id || mapping.branchId!,
-            cost_center_id: bill.cost_center_id || null,
-          }).select().single()
-        if (billEntryErr) throw billEntryErr
-
-        const invOrExp = mapping.inventory || mapping.cogs
-        const billLines: any[] = []
-
-        // ✅ حساب المبالغ بناءً على total_amount الحالي (بعد المرتجعات)
-        // حساب الإجمالي الأصلي (قبل المرتجعات)
-        const originalTotal = Number(bill.total_amount || 0) + Number(bill.returned_amount || 0)
-        const currentTotal = Number(bill.total_amount || 0)
-        
-        // حساب نسبة المرتجع لتطبيقها على subtotal و tax_amount
-        const returnRatio = originalTotal > 0 ? currentTotal / originalTotal : 1
-        
-        // حساب subtotal و tax_amount الحاليين بناءً على النسبة
-        const currentSubtotal = Number(bill.subtotal || 0) * returnRatio
-        const currentTaxAmount = Number(bill.tax_amount || 0) * returnRatio
-        const currentShipping = Number(bill.shipping_charge || 0) * returnRatio
-
-        // Debit: المخزون أو المصروفات (المجموع الفرعي الحالي)
-        if (invOrExp && currentSubtotal > 0) {
-          billLines.push({
-            journal_entry_id: billEntry.id,
-            account_id: invOrExp,
-            debit_amount: currentSubtotal,
-            credit_amount: 0,
-            description: mapping.inventory ? "المخزون" : "تكلفة البضاعة المباعة",
-            original_debit: currentSubtotal,
-            original_credit: 0,
-            original_currency: billCurrency,
-            exchange_rate_used: billExRate
-          })
-        }
-
-        // Debit: الضريبة (إن وجدت) - المبلغ الحالي بعد المرتجع
-        if (currentTaxAmount > 0) {
-          const vatInputAccount = accounts.find(a =>
-            a.account_type === 'asset' && (
-              (a as any).sub_type === 'vat_input' ||
-              a.account_code?.toLowerCase().includes('vatin') ||
-              a.account_name?.toLowerCase().includes('vat') ||
-              a.account_name?.includes('ضريبة')
-            )
-          )
-          if (vatInputAccount) {
-            billLines.push({
-              journal_entry_id: billEntry.id,
-              account_id: vatInputAccount.id,
-              debit_amount: currentTaxAmount,
-              credit_amount: 0,
-              description: "ضريبة المدخلات",
-              original_debit: currentTaxAmount,
-              original_credit: 0,
-              original_currency: billCurrency,
-              exchange_rate_used: billExRate
-            })
-          }
-        }
-
-        // Debit: الشحن (إن وجد) - المبلغ الحالي بعد المرتجع
-        if (currentShipping > 0 && mapping.shippingAccount) {
-          billLines.push({
-            journal_entry_id: billEntry.id,
-            account_id: mapping.shippingAccount,
-            debit_amount: currentShipping,
-            credit_amount: 0,
-            description: "مصاريف الشحن",
-            original_debit: currentShipping,
-            original_credit: 0,
-            original_currency: billCurrency,
-            exchange_rate_used: billExRate
-          })
-        }
-
-        // Credit: الحسابات الدائنة (الإجمالي الحالي بعد المرتجع)
-        billLines.push({
-          journal_entry_id: billEntry.id,
-          account_id: mapping.ap,
-          debit_amount: 0,
-          credit_amount: currentTotal,
-          description: "حسابات دائنة",
-          original_debit: 0,
-          original_credit: currentTotal,
-          original_currency: billCurrency,
-          exchange_rate_used: billExRate
-        })
-
-        if (billLines.length > 0) {
-          const { error: billLinesErr } = await supabase.from("journal_entry_lines").insert(billLines)
-          if (billLinesErr) throw billLinesErr
-        }
-        console.log(`✅ تم إنشاء قيد AP/Expense للفاتورة ${bill.bill_number}`)
-      }
-
-      // === التحقق إذا كانت الدفعة لها قيد سلفة سابق ===
-      // إذا كان لها قيد سلفة: نُسوّي من حساب السلف بدلاً من النقد
-      // إذا لم يكن: نخصم من النقد مباشرة (حالة الربط المباشر عند الإنشاء)
-      const { data: existingAdvanceEntry } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "supplier_payment")
-        .eq("reference_id", selectedPayment.id)
-        .maybeSingle()
-
-      const hasAdvanceEntry = !!existingAdvanceEntry
-      // إذا كان لها قيد سلفة، نستخدم حساب السلف. وإلا نستخدم النقد
-      const creditAccountId = hasAdvanceEntry && mapping.supplierAdvance
-        ? mapping.supplierAdvance
-        : cashAccountId
-      const creditDescription = hasAdvanceEntry && mapping.supplierAdvance
-        ? "تسوية سلف الموردين"
-        : "نقد/بنك"
-
-      // 2. قيد الدفع (الحسابات الدائنة مدين / سلف أو نقد دائن)
-      const { data: payEntry, error: payEntryErr } = await supabase
-        .from("journal_entries").insert({
-          company_id: mapping.companyId,
-          reference_type: "bill_payment",
-          reference_id: bill.id,
-          entry_date: selectedPayment.payment_date,
-          description: `سداد فاتورة مورد ${bill.bill_number}`,
-          branch_id: bill.branch_id || mapping.branchId!,
-          cost_center_id: bill.cost_center_id || null,
-        }).select().single()
-      if (payEntryErr) throw payEntryErr
-
-      const { error: payLinesErr } = await supabase.from("journal_entry_lines").insert([
-        {
-          journal_entry_id: payEntry.id,
-          account_id: mapping.ap,
-          debit_amount: amount,
-          credit_amount: 0,
-          description: "حسابات دائنة",
-          original_debit: amount,
-          original_credit: 0,
-          original_currency: billCurrency,
-          exchange_rate_used: billExRate
+      const response = await fetch(`/api/supplier-payments/${encodeURIComponent(selectedPayment.id)}/apply-bill`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `supplier-payment-apply-bill-${selectedPayment.id}-${applyDocId}-${amount}`,
         },
-        {
-          journal_entry_id: payEntry.id,
-          account_id: creditAccountId,
-          debit_amount: 0,
-          credit_amount: amount,
-          description: creditDescription,
-          original_debit: 0,
-          original_credit: amount,
-          original_currency: billCurrency,
-          exchange_rate_used: billExRate
-        },
-      ])
-      if (payLinesErr) throw payLinesErr
-      console.log(`✅ تم إنشاء قيد الدفع فقط (AP/Cash) - نظام الاستحقاق`)
-
-      // Link advance application record
-      await supabase.from("advance_applications").insert({
-        company_id: mapping.companyId,
-        customer_id: null,
-        supplier_id: selectedPayment.supplier_id || null,
-        payment_id: selectedPayment.id,
-        invoice_id: null,
-        bill_id: bill.id,
-        amount_applied: amount,
-        applied_date: selectedPayment.payment_date,
-        notes: isFirstPayment ? "الدفعة الأولى - تفعيل الفاتورة محاسبياً" : "دفعة إضافية على فاتورة شراء",
+        body: JSON.stringify({
+          billId: bill.id,
+          amount,
+          uiSurface: "payments_page_apply_bill",
+        }),
       })
 
-      // تحديث حالة أمر الشراء المرتبط
-      await updateLinkedPurchaseOrderStatus(bill.id)
+      const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string; posted?: boolean; approved?: boolean }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (appLang === 'en' ? 'Failed to apply payment to bill' : 'فشل تطبيق الدفعة على الفاتورة'))
+      }
 
       setApplyBillOpen(false)
       setSelectedPayment(null)
-      const { data: suppPays } = await supabase
-        .from("payments").select("*")
-        .eq("company_id", mapping.companyId)
-        .not("supplier_id", "is", null)
-        .order("payment_date", { ascending: false })
-      setSupplierPayments(suppPays || [])
+      setApplyDocId("")
+      setApplyAmount(0)
+      await reloadPaymentsWithFilters()
+      toast({
+        title: appLang === 'en' ? '✅ Payment Applied' : '✅ تم تطبيق الدفعة',
+        description: result.posted
+          ? (appLang === 'en' ? 'The bill settlement was posted successfully.' : 'تم ترحيل تسوية الفاتورة محاسبياً بنجاح.')
+          : (appLang === 'en' ? 'The allocation was recorded and will post after approval.' : 'تم تسجيل التخصيص وسيُرحّل بعد الاعتماد.'),
+      })
     } catch (err: any) {
       console.error("Error applying payment to bill:", { message: String(err?.message || err || ""), details: err?.details ?? err })
+      toastActionError(toast, "التحديث", "فاتورة المورد", String(err?.message || err || "فشل تطبيق الدفعة على الفاتورة"))
     } finally { setSaving(false) }
-  }
-
-  // تنفيذ ربط دفع مورّد بفاتورة مورد باستخدام معطيات محددة دون الاعتماد على حالة الواجهة
-  const applyPaymentToBillWithOverrides = async (payment: Payment, billId: string, rawAmount: number, _accountType?: string) => {
-    try {
-      if (!payment || !billId || rawAmount <= 0) return
-      setSaving(true)
-      const mapping = await findAccountIds()
-      if (!mapping || !mapping.ap) {
-        toast({ title: appLang === 'en' ? 'AP Account Missing' : 'حساب AP مفقود', description: appLang === 'en' ? 'Configure Accounts Payable in chart of accounts.' : 'يرجى إعداد حساب الذمم الدائنة في شجرة الحسابات.', variant: 'destructive' })
-        setSaving(false); return
-      }
-      if (!mapping.cash && !mapping.bank) {
-        toast({ title: appLang === 'en' ? 'No Cash/Bank Account' : 'لا يوجد حساب نقد/بنك', description: appLang === 'en' ? 'No cash or bank account found in chart of accounts.' : 'لم يتم العثور على حساب نقدي أو بنكي في شجرة الحسابات.', variant: 'destructive' })
-        setSaving(false); return
-      }
-      const { data: bill } = await supabase.from("bills").select("*").eq("id", billId).single()
-      if (!bill) {
-        toast({ title: appLang === 'en' ? 'Bill Not Found' : 'الفاتورة غير موجودة', description: appLang === 'en' ? 'Could not load the selected bill.' : 'تعذر تحميل الفاتورة المختارة.', variant: 'destructive' })
-        setSaving(false); return
-      }
-
-      // 🔐 ERP Governance: التحقق من صلاحية الدفع على هذه الفاتورة
-      if (!canPayOnDocument(bill.branch_id)) {
-        toast({
-          title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
-          description: appLang === 'en'
-            ? 'You cannot make payments on bills from other branches. Please contact your administrator.'
-            : 'لا يمكنك إجراء دفعات على فواتير من فروع أخرى. يرجى التواصل مع المسؤول.',
-          variant: 'destructive'
-        })
-        setSaving(false)
-        return
-      }
-      // 🔐 Net Outstanding = total - returned - paid (overpayment guard)
-      const netOutstandingOvr = Math.max(
-        Number(bill.total_amount || 0) - Number(bill.returned_amount || 0) - Number(bill.paid_amount || 0),
-        0
-      )
-      const remaining = netOutstandingOvr
-      const amount = Math.min(rawAmount, remaining)
-      if (amount <= 0) {
-        toast({
-          title: appLang === 'en' ? 'Bill fully settled' : 'الفاتورة مسددة بالكامل',
-          description: appLang === 'en'
-            ? 'Net outstanding is 0 after deducting returns. No payment needed.'
-            : 'الصافي المستحق = 0 بعد خصم المرتجعات. لا توجد دفعة مطلوبة.',
-          variant: 'destructive'
-        })
-        setSaving(false)
-        return
-      }
-
-      // Track state for potential rollback
-      const originalPaid = Number(bill.paid_amount || 0)
-      const isFirstPayment = originalPaid === 0 && (bill.status === 'sent' || bill.status === 'received')
-      let linkedPayment = false
-
-      // 1) Link payment first to avoid updating bill when link fails (RLS/constraints)
-      {
-        // ✅ ربط الدفعة بالفاتورة وأمر الشراء المرتبط (إن وجد)
-        const updateData: any = { bill_id: bill.id }
-        if (bill.purchase_order_id) {
-          updateData.purchase_order_id = bill.purchase_order_id
-        }
-        const { error: payErr } = await supabase.from("payments").update(updateData).eq("id", payment.id)
-        if (payErr) throw payErr
-        linkedPayment = true
-      }
-
-      // 2) Update bill totals/status
-      {
-        const newPaid = originalPaid + amount
-        // Use net amount (total - returned) for status determination
-        const netAmountOvr = Math.max(Number(bill.total_amount || 0) - Number(bill.returned_amount || 0), 0)
-        const newStatus = newPaid >= netAmountOvr ? "paid" : "partially_paid"
-        const { error: billErr } = await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", bill.id)
-        if (billErr) {
-          if (linkedPayment) {
-            await supabase.from("payments").update({ bill_id: null }).eq("id", payment.id)
-          }
-          throw billErr
-        }
-      }
-
-      const billCurrency2 = bill.original_currency || bill.currency_code || payment.original_currency || payment.currency_code || 'EGP'
-      const billExRate2 = bill.exchange_rate_used || payment.exchange_rate_used || payment.exchange_rate || 1
-      const cashAccountId = payment.account_id || mapping.cash || mapping.bank
-
-      // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد الدفع فقط =====
-      // 📌 المرجع: ACCRUAL_ACCOUNTING_PATTERN.md
-      // قيد AP/Expense تم إنشاؤه عند Sent/Received
-      // الآن ننشئ قيد الدفع فقط: Dr. AP / Cr. Cash
-
-      // ⚠️ حماية: التأكد من وجود قيد الفاتورة قبل إنشاء قيد الدفعة
-      const { data: existingBillEntry2 } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "bill")
-        .eq("reference_id", bill.id)
-        .limit(1)
-
-      const hasBillEntry2 = existingBillEntry2 && existingBillEntry2.length > 0
-
-      if (!hasBillEntry2) {
-        console.warn("⚠️ لا يوجد قيد فاتورة - سيتم إنشاء قيد AP/Expense أولاً")
-        await postBillJournalOnFirstPayment(bill, mapping, billCurrency2, billExRate2)
-      }
-
-      // === التحقق إذا كانت الدفعة لها قيد سلفة سابق ===
-      const { data: existingAdvanceEntry2 } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "supplier_payment")
-        .eq("reference_id", payment.id)
-        .maybeSingle()
-
-      const hasAdvanceEntry2 = !!existingAdvanceEntry2
-      // إذا كان لها قيد سلفة، نستخدم حساب السلف. وإلا نستخدم النقد
-      const creditAccountId2 = hasAdvanceEntry2 && mapping.supplierAdvance
-        ? mapping.supplierAdvance
-        : cashAccountId
-      const creditDescription2 = hasAdvanceEntry2 && mapping.supplierAdvance
-        ? "تسوية سلف الموردين"
-        : "نقد/بنك"
-
-      // قيد السداد: Debit AP / Credit Cash
-      const { data: payEntry, error: payEntryErr } = await supabase
-        .from("journal_entries").insert({
-          company_id: mapping.companyId,
-          reference_type: "bill_payment",
-          reference_id: bill.id,
-          entry_date: payment.payment_date,
-          description: `سداد فاتورة مورد ${bill.bill_number}`,
-          branch_id: bill.branch_id || mapping.branchId!,
-          cost_center_id: bill.cost_center_id || null,
-        }).select().single()
-      if (payEntryErr) throw payEntryErr
-
-      const { error: payLinesErr } = await supabase.from("journal_entry_lines").insert([
-        { journal_entry_id: payEntry.id, account_id: mapping.ap, debit_amount: amount, credit_amount: 0, description: "حسابات دائنة", original_debit: amount, original_credit: 0, original_currency: billCurrency2, exchange_rate_used: billExRate2 },
-        { journal_entry_id: payEntry.id, account_id: creditAccountId2, debit_amount: 0, credit_amount: amount, description: creditDescription2, original_debit: 0, original_credit: amount, original_currency: billCurrency2, exchange_rate_used: billExRate2 },
-      ])
-      if (payLinesErr) throw payLinesErr
-      console.log(`✅ تم إنشاء قيد السداد للفاتورة ${bill.bill_number} - مبلغ: ${amount}`)
-
-      // Calculate FX Gain/Loss if bill and payment have different exchange rates
-      const payExRate3 = payment.exchange_rate_used || payment.exchange_rate || 1
-      if (billExRate2 !== payExRate3 && mapping.fxGain && mapping.fxLoss && mapping.ap) {
-        const fxResult = calculateFXGainLoss(amount, billExRate2, payExRate3)
-        if (fxResult.hasGainLoss && Math.abs(fxResult.amount) >= 0.01) {
-          await createFXGainLossEntry(
-            supabase,
-            mapping.companyId,
-            fxResult,
-            'supplier_payment',
-            payment.id,
-            mapping.fxGain,
-            mapping.fxLoss,
-            mapping.ap,
-            `فرق صرف - فاتورة المورد ${bill.bill_number}`,
-            billCurrency2
-          )
-        }
-      }
-
-      await supabase.from("advance_applications").insert({
-        company_id: mapping.companyId,
-        customer_id: null,
-        supplier_id: payment.supplier_id || null,
-        payment_id: payment.id,
-        invoice_id: null,
-        bill_id: bill.id,
-        amount_applied: amount,
-        applied_date: payment.payment_date,
-        notes: isFirstPayment ? "الدفعة الأولى - تفعيل الفاتورة محاسبياً" : "دفعة إضافية على فاتورة شراء",
-      })
-
-      // تحديث حالة أمر الشراء المرتبط
-      await updateLinkedPurchaseOrderStatus(bill.id)
-
-      const { data: suppPays } = await supabase
-        .from("payments").select("*")
-        .eq("company_id", mapping.companyId)
-        .not("supplier_id", "is", null)
-        .order("payment_date", { ascending: false })
-      setSupplierPayments(suppPays || [])
-    } catch (err: any) {
-      const msg = String(err?.message || err || "")
-      const details = err?.details ?? err
-      console.error("Error applying payment to bill (overrides):", { message: msg, details })
-    } finally {
-      setSaving(false)
-    }
   }
 
   if (loading) {
@@ -3603,338 +2559,67 @@ export default function PaymentsPage() {
                   if (!editingPayment) return
                   if (!online) { toastActionError(toast, "الاتصال", "التعديل", "لا يوجد اتصال بالإنترنت"); return }
                   setSaving(true)
-                  const mapping = await findAccountIds()
-                  const isCustomer = !!editingPayment.customer_id
-                  const isApplied = !!(editingPayment.invoice_id || editingPayment.bill_id || editingPayment.purchase_order_id)
+                  if (editingPayment.supplier_id) {
+                    const response = await fetch(`/api/supplier-payments/${encodeURIComponent(editingPayment.id)}/update`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `supplier-payment-update-${editingPayment.id}`,
+                      },
+                      body: JSON.stringify({
+                        paymentDate: editFields.payment_date || editingPayment.payment_date,
+                        paymentMethod: editFields.payment_method || editingPayment.payment_method || "cash",
+                        accountId: editFields.account_id || null,
+                        referenceNumber: editFields.reference_number || null,
+                        notes: editFields.notes || null,
+                        uiSurface: "payments_page_edit_dialog",
+                      }),
+                    })
 
-                  // إذا لم تكن مرتبطة بأي مستند: ننفذ قيد عكسي ثم نقيد الدفعة بالقيم الجديدة لضمان اتساق القيود
-                  if (!isApplied) {
-                    const cashAccountIdOriginal = editingPayment.account_id || (mapping ? (mapping.cash || mapping.bank) : undefined)
-                    if (mapping && cashAccountIdOriginal) {
-                      const { data: revEntry } = await supabase
-                        .from("journal_entries").insert({
-                          company_id: mapping.companyId,
-                          reference_type: isCustomer ? "customer_payment_reversal" : "supplier_payment_reversal",
-                          reference_id: null,
-                          entry_date: new Date().toISOString().slice(0, 10),
-                          description: isCustomer ? "عكس دفعة عميل غير مرتبطة" : "عكس دفعة مورد غير مرتبطة",
-                          branch_id: mapping.branchId!,
-                          cost_center_id: mapping.costCenterId || null,
-                        }).select().single()
-                      if (revEntry?.id) {
-                        const editCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
-                        const editExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
-                        if (isCustomer) {
-                          if (mapping.customerAdvance) {
-                            await supabase.from("journal_entry_lines").insert([
-                              { journal_entry_id: revEntry.id, account_id: mapping.customerAdvance, debit_amount: editingPayment.amount, credit_amount: 0, description: "عكس سلف العملاء", original_debit: editingPayment.amount, original_credit: 0, original_currency: editCurrency, exchange_rate_used: editExRate },
-                              { journal_entry_id: revEntry.id, account_id: cashAccountIdOriginal, debit_amount: 0, credit_amount: editingPayment.amount, description: "عكس نقد/بنك", original_debit: 0, original_credit: editingPayment.amount, original_currency: editCurrency, exchange_rate_used: editExRate },
-                            ])
-                          }
-                        } else {
-                          if (mapping.supplierAdvance) {
-                            await supabase.from("journal_entry_lines").insert([
-                              { journal_entry_id: revEntry.id, account_id: cashAccountIdOriginal, debit_amount: editingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك", original_debit: editingPayment.amount, original_credit: 0, original_currency: editCurrency, exchange_rate_used: editExRate },
-                              { journal_entry_id: revEntry.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: editingPayment.amount, description: "عكس سلف الموردين", original_debit: 0, original_credit: editingPayment.amount, original_currency: editCurrency, exchange_rate_used: editExRate },
-                            ])
-                          }
-                        }
-                      }
+                    const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
+                    if (!response.ok || !result.success) {
+                      throw new Error(result.error || (appLang === 'en' ? 'Failed to update supplier payment' : 'فشل تعديل دفعة المورد'))
                     }
 
-                    // قيد جديد بالقيم المحدّثة
-                    const cashAccountIdNew = editFields.account_id || (mapping ? (mapping.cash || mapping.bank) : undefined)
-                    
-                    // 🔍 التحقق من رصيد الحساب الجديد قبل التعديل (للدفعات غير المرتبطة)
-                    if (cashAccountIdNew && cashAccountIdOriginal && cashAccountIdNew !== cashAccountIdOriginal) {
-                      const balanceCheck = await checkAccountBalance(
-                        cashAccountIdNew,
-                        editingPayment.amount,
-                        editFields.payment_date || editingPayment.payment_date
-                      )
-                      
-                      if (!balanceCheck.sufficient) {
-                        toast({
-                          title: appLang === 'en' ? 'Insufficient Balance' : 'رصيد غير كافٍ',
-                          description: appLang === 'en'
-                            ? `The account "${balanceCheck.accountName || 'Selected Account'}" has insufficient balance. Current balance: ${balanceCheck.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Required: ${editingPayment.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
-                            : `رصيد الحساب "${balanceCheck.accountName || 'الحساب المختار'}" غير كافٍ. الرصيد الحالي: ${balanceCheck.currentBalance.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. المطلوب: ${editingPayment.amount.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
-                          variant: 'destructive'
-                        })
-                        setSaving(false)
-                        return
-                      }
-                    }
-                    
-                    if (mapping && cashAccountIdNew) {
-                      const { data: newEntry } = await supabase
-                        .from("journal_entries").insert({
-                          company_id: mapping.companyId,
-                          reference_type: isCustomer ? "customer_payment" : "supplier_payment",
-                          reference_id: null,
-                          entry_date: editFields.payment_date || editingPayment.payment_date,
-                          description: isCustomer ? `سداد عميل (${editFields.payment_method || editingPayment.payment_method || "cash"})` : `سداد مورّد (${editFields.payment_method || editingPayment.payment_method || "cash"})`,
-                          branch_id: mapping.branchId!,
-                          cost_center_id: mapping.costCenterId || null,
-                        }).select().single()
-                      if (newEntry?.id) {
-                        const newCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
-                        const newExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
-                        if (isCustomer) {
-                          if (mapping.customerAdvance) {
-                            await supabase.from("journal_entry_lines").insert([
-                              { journal_entry_id: newEntry.id, account_id: cashAccountIdNew, debit_amount: editingPayment.amount, credit_amount: 0, description: "نقد/بنك", original_debit: editingPayment.amount, original_credit: 0, original_currency: newCurrency, exchange_rate_used: newExRate },
-                              { journal_entry_id: newEntry.id, account_id: mapping.customerAdvance, debit_amount: 0, credit_amount: editingPayment.amount, description: "سلف من العملاء", original_debit: 0, original_credit: editingPayment.amount, original_currency: newCurrency, exchange_rate_used: newExRate },
-                            ])
-                          }
-                        } else {
-                          if (mapping.supplierAdvance) {
-                            await supabase.from("journal_entry_lines").insert([
-                              { journal_entry_id: newEntry.id, account_id: mapping.supplierAdvance, debit_amount: editingPayment.amount, credit_amount: 0, description: "سلف للموردين", original_debit: editingPayment.amount, original_credit: 0, original_currency: newCurrency, exchange_rate_used: newExRate },
-                              { journal_entry_id: newEntry.id, account_id: cashAccountIdNew, debit_amount: 0, credit_amount: editingPayment.amount, description: "نقد/بنك", original_debit: 0, original_credit: editingPayment.amount, original_currency: newCurrency, exchange_rate_used: newExRate },
-                            ])
-                          }
-                        }
-                      }
-                    }
-                    if (!mapping || !cashAccountIdOriginal || !cashAccountIdNew || (isCustomer && !mapping?.customerAdvance) || (!isCustomer && !mapping?.supplierAdvance)) {
-                      toast({ title: "تحذير", description: "تم حفظ التعديل لكن تعذر تسجيل قيود عكسية/مستحدثة لغياب إعدادات الحسابات.", variant: "default" })
-                    }
-                  } else {
-                    // ✅ الدفعة مرتبطة بمستند: عند تغيير حساب النقد/البنك، يجب عكس القيد الأصلي بالكامل وإنشاء قيد جديد
-                    const oldCashId = editingPayment.account_id || (mapping ? (mapping.cash || mapping.bank) : null)
-                    const newCashId = editFields.account_id || (mapping ? (mapping.cash || mapping.bank) : null)
-                    
-                    if (mapping && oldCashId && newCashId && oldCashId !== newCashId) {
-                      // 🔍 التحقق من رصيد الحساب الجديد قبل التعديل
-                      const balanceCheck = await checkAccountBalance(
-                        newCashId,
-                        editingPayment.amount,
-                        editFields.payment_date || editingPayment.payment_date
-                      )
-                      
-                      if (!balanceCheck.sufficient) {
-                        toast({
-                          title: appLang === 'en' ? 'Cannot Change Payment Account' : 'لا يمكن تغيير حساب الدفع',
-                          description: appLang === 'en'
-                            ? `Cannot change payment account due to insufficient balance. Current balance: ${balanceCheck.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Required: ${editingPayment.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
-                            : `لا يمكن تغيير حساب الدفع لعدم كفاية رصيد الحساب المحدد. الرصيد الحالي: ${balanceCheck.currentBalance.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. المطلوب: ${editingPayment.amount.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
-                          variant: 'destructive'
-                        })
-                        setSaving(false)
-                        return
-                      }
-                      
-                      const paymentCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
-                      const paymentExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
-                      
-                      // ✅ 1. البحث عن القيد الأصلي المرتبط بالدفعة
-                      let originalEntryId: string | null = null
-                      let originalEntryLines: any[] = []
-                      
-                      if (editingPayment.invoice_id) {
-                        // البحث عن قيد invoice_payment
-                        const { data: originalEntry } = await supabase
-                          .from("journal_entries")
-                          .select("id")
-                          .eq("company_id", mapping.companyId)
-                          .eq("reference_type", "invoice_payment")
-                          .eq("reference_id", editingPayment.invoice_id)
-                          .order("entry_date", { ascending: false })
-                          .limit(1)
-                          .maybeSingle()
-                        
-                        if (originalEntry?.id) {
-                          originalEntryId = originalEntry.id
-                          const { data: lines } = await supabase
-                            .from("journal_entry_lines")
-                            .select("*")
-                            .eq("journal_entry_id", originalEntryId)
-                          originalEntryLines = lines || []
-                        }
-                      } else if (editingPayment.bill_id) {
-                        // البحث عن قيد bill_payment
-                        const { data: originalEntry } = await supabase
-                          .from("journal_entries")
-                          .select("id")
-                          .eq("company_id", mapping.companyId)
-                          .eq("reference_type", "bill_payment")
-                          .eq("reference_id", editingPayment.bill_id)
-                          .order("entry_date", { ascending: false })
-                          .limit(1)
-                          .maybeSingle()
-                        
-                        if (originalEntry?.id) {
-                          originalEntryId = originalEntry.id
-                          const { data: lines } = await supabase
-                            .from("journal_entry_lines")
-                            .select("*")
-                            .eq("journal_entry_id", originalEntryId)
-                          originalEntryLines = lines || []
-                        }
-                      }
-                      
-                      // ✅ 2. عكس القيد الأصلي بالكامل (إن وجد)
-                      if (originalEntryId && originalEntryLines.length > 0) {
-                        const { data: revEntry } = await supabase
-                        .from("journal_entries").insert({
-                          company_id: mapping.companyId,
-                            reference_type: isCustomer ? "invoice_payment_reversal" : "bill_payment_reversal",
-                            reference_id: editingPayment.invoice_id || editingPayment.bill_id || null,
-                          entry_date: editFields.payment_date || editingPayment.payment_date,
-                            description: isCustomer 
-                              ? `عكس قيد سداد فاتورة (تغيير حساب الدفع)`
-                              : `عكس قيد سداد فاتورة مورد (تغيير حساب الدفع)`,
-                          branch_id: mapping.branchId!,
-                          cost_center_id: mapping.costCenterId || null,
-                        }).select().single()
-                        
-                        if (revEntry?.id) {
-                          // عكس جميع بنود القيد الأصلي
-                          const reversedLines = originalEntryLines.map((line: any) => ({
-                            journal_entry_id: revEntry.id,
-                            account_id: line.account_id,
-                            debit_amount: line.credit_amount, // عكس: مدين ← دائن
-                            credit_amount: line.debit_amount,  // عكس: دائن ← مدين
-                            description: `عكس: ${line.description || ""}`,
-                            original_debit: line.original_credit || 0,
-                            original_credit: line.original_debit || 0,
-                            original_currency: line.original_currency || paymentCurrency,
-                            exchange_rate_used: line.exchange_rate_used || paymentExRate,
-                            branch_id: line.branch_id || mapping.branchId!,
-                            cost_center_id: line.cost_center_id || null,
-                          }))
-                          
-                          await supabase.from("journal_entry_lines").insert(reversedLines)
-                        }
-                      }
-                      
-                      // ✅ 3. إنشاء قيد جديد بالكامل بالحساب الجديد
-                      const referenceId = editingPayment.invoice_id || editingPayment.bill_id || null
-                      const referenceType = editingPayment.invoice_id ? "invoice_payment" : "bill_payment"
-                      
-                      // جلب بيانات المستند للحصول على branch_id و cost_center_id
-                      let branchId = mapping.branchId || null
-                      let costCenterId = mapping.costCenterId || null
-                      
-                      if (editingPayment.invoice_id) {
-                        const { data: inv } = await supabase
-                          .from("invoices")
-                          .select("branch_id, cost_center_id, invoice_number")
-                          .eq("id", editingPayment.invoice_id)
-                          .maybeSingle()
-                        if (inv) {
-                          branchId = inv.branch_id || branchId
-                          costCenterId = inv.cost_center_id || costCenterId
-                        }
-                      } else if (editingPayment.bill_id) {
-                        const { data: bill } = await supabase
-                          .from("bills")
-                          .select("branch_id, cost_center_id, bill_number")
-                          .eq("id", editingPayment.bill_id)
-                          .maybeSingle()
-                        if (bill) {
-                          branchId = bill.branch_id || branchId
-                          costCenterId = bill.cost_center_id || costCenterId
-                        }
-                      }
-                      
-                      const { data: newEntry } = await supabase
-                        .from("journal_entries").insert({
-                          company_id: mapping.companyId,
-                          reference_type: referenceType,
-                          reference_id: referenceId,
-                          entry_date: editFields.payment_date || editingPayment.payment_date,
-                          description: isCustomer 
-                            ? `سداد فاتورة (حساب دفع محدث)`
-                            : `سداد فاتورة مورد (حساب دفع محدث)`,
-                          branch_id: branchId || mapping.branchId!,
-                          cost_center_id: costCenterId,
-                        }).select().single()
-                      
-                      if (newEntry?.id) {
-                        // إنشاء بنود القيد الجديد
-                        if (isCustomer && mapping.ar) {
-                          // قيد سداد فاتورة عميل: Dr. Cash/Bank / Cr. AR
-                          await supabase.from("journal_entry_lines").insert([
-                            {
-                              journal_entry_id: newEntry.id,
-                              account_id: newCashId,
-                              debit_amount: editingPayment.amount,
-                              credit_amount: 0,
-                              description: "نقد/بنك",
-                              original_debit: editingPayment.amount,
-                              original_credit: 0,
-                              original_currency: paymentCurrency,
-                              exchange_rate_used: paymentExRate,
-                              branch_id: branchId,
-                              cost_center_id: costCenterId,
-                            },
-                            {
-                              journal_entry_id: newEntry.id,
-                              account_id: mapping.ar,
-                              debit_amount: 0,
-                              credit_amount: editingPayment.amount,
-                              description: "الذمم المدينة",
-                              original_debit: 0,
-                              original_credit: editingPayment.amount,
-                              original_currency: paymentCurrency,
-                              exchange_rate_used: paymentExRate,
-                              branch_id: branchId,
-                              cost_center_id: costCenterId,
-                            },
-                          ])
-                        } else if (!isCustomer && mapping.ap) {
-                          // قيد سداد فاتورة مورد: Dr. AP / Cr. Cash/Bank
-                          await supabase.from("journal_entry_lines").insert([
-                            {
-                              journal_entry_id: newEntry.id,
-                              account_id: mapping.ap,
-                              debit_amount: editingPayment.amount,
-                              credit_amount: 0,
-                              description: "حسابات دائنة",
-                              original_debit: editingPayment.amount,
-                              original_credit: 0,
-                              original_currency: paymentCurrency,
-                              exchange_rate_used: paymentExRate,
-                              branch_id: branchId,
-                              cost_center_id: costCenterId,
-                            },
-                            {
-                              journal_entry_id: newEntry.id,
-                              account_id: newCashId,
-                              debit_amount: 0,
-                              credit_amount: editingPayment.amount,
-                              description: "نقد/بنك",
-                              original_debit: 0,
-                              original_credit: editingPayment.amount,
-                              original_currency: paymentCurrency,
-                              exchange_rate_used: paymentExRate,
-                              branch_id: branchId,
-                              cost_center_id: costCenterId,
-                            },
-                          ])
-                        }
-                      }
-                    }
+                    toastActionSuccess(toast, "التحديث", "الدفعة")
+                    setEditOpen(false)
+                    setEditingPayment(null)
+                    await reloadPaymentsWithFilters()
+                    return
                   }
 
-                  // تحديث صف الدفعة
-                  const { error: updErr } = await supabase.from("payments").update({
-                    payment_date: editFields.payment_date || editingPayment.payment_date,
-                    payment_method: editFields.payment_method || editingPayment.payment_method,
-                    reference_number: editFields.reference_number || null,
-                    notes: editFields.notes || null,
-                    account_id: editFields.account_id || null,
-                  }).eq("id", editingPayment.id)
-                  if (updErr) throw updErr
+                  if (editingPayment.customer_id) {
+                    const response = await fetch(`/api/customer-payments/${encodeURIComponent(editingPayment.id)}/update`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `customer-payment-update-${editingPayment.id}`,
+                      },
+                      body: JSON.stringify({
+                        paymentDate: editFields.payment_date || editingPayment.payment_date,
+                        paymentMethod: editFields.payment_method || editingPayment.payment_method || "cash",
+                        accountId: editFields.account_id || null,
+                        referenceNumber: editFields.reference_number || null,
+                        notes: editFields.notes || null,
+                        uiSurface: "payments_page_edit_dialog",
+                      }),
+                    })
 
-                  toastActionSuccess(toast, "التحديث", "الدفعة")
-                  setEditOpen(false)
-                  setEditingPayment(null)
+                    const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
+                    if (!response.ok || !result.success) {
+                      throw new Error(result.error || (appLang === 'en' ? 'Failed to update customer payment' : 'فشل تعديل دفعة العميل'))
+                    }
 
-                  // 🔐 إعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
-                  await reloadPaymentsWithFilters()
+                    toastActionSuccess(toast, "التحديث", "الدفعة")
+                    setEditOpen(false)
+                    setEditingPayment(null)
+                    await reloadPaymentsWithFilters()
+                    return
+                  }
+
+                  throw new Error(appLang === 'en'
+                    ? 'Unsupported legacy payment owner. Payments must be updated through customer/supplier command services.'
+                    : 'نوع الدفعة غير مدعوم. يجب تعديل المدفوعات عبر أوامر العملاء/الموردين الخلفية.')
                 } catch (err) {
                   console.error("Error updating payment:", err)
                   toastActionError(toast, "التحديث", "الدفعة", "فشل تعديل الدفعة")
@@ -3967,187 +2652,57 @@ export default function PaymentsPage() {
                   if (!deletingPayment) return
                   if (!online) { toastActionError(toast, "الاتصال", "الحذف", "لا يوجد اتصال بالإنترنت"); return }
                   setSaving(true)
-                  const mapping = await findAccountIds()
-                  const isCustomer = !!deletingPayment.customer_id
-                  const cashAccountId = deletingPayment.account_id || (mapping ? (mapping.cash || mapping.bank) : undefined)
-                  let skipBaseReversal = false
-                  // 1) إذا كانت الدفعة مرتبطة بمستند، نعكس القيود ونُحدّث المستند
-                  if (deletingPayment.invoice_id) {
-                    if (!mapping || !mapping.ar) throw new Error("غياب إعدادات الذمم المدينة (AR)")
-                    const { data: inv } = await supabase.from("invoices").select("id, invoice_number, total_amount, paid_amount, status").eq("id", deletingPayment.invoice_id).single()
-                    if (!inv) throw new Error("الفاتورة غير موجودة")
-                    const { data: apps } = await supabase
-                      .from("advance_applications")
-                      .select("amount_applied")
-                      .eq("payment_id", deletingPayment.id)
-                      .eq("invoice_id", inv.id)
-                    const applied = (apps || []).reduce((s: number, r: any) => s + Number(r.amount_applied || 0), 0)
-                    if (applied > 0) {
-                      const { data: revEntry } = await supabase
-                        .from("journal_entries").insert({
-                          company_id: mapping.companyId,
-                          reference_type: "invoice_payment_reversal",
-                          reference_id: inv.id,
-                          entry_date: new Date().toISOString().slice(0, 10),
-                          description: `عكس تطبيق دفعة على فاتورة ${inv.invoice_number}`,
-                          branch_id: inv.branch_id || mapping.branchId!,
-                          cost_center_id: inv.cost_center_id || mapping.costCenterId || null,
-                        }).select().single()
-                      if (revEntry?.id) {
-                        const creditAdvanceId = mapping.customerAdvance || cashAccountId
-                        const delCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
-                        const delExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
-                        await supabase.from("journal_entry_lines").insert([
-                          { journal_entry_id: revEntry.id, account_id: mapping.ar, debit_amount: applied, credit_amount: 0, description: "عكس ذمم مدينة", original_debit: applied, original_credit: 0, original_currency: delCurrency, exchange_rate_used: delExRate },
-                          { journal_entry_id: revEntry.id, account_id: creditAdvanceId!, debit_amount: 0, credit_amount: applied, description: mapping.customerAdvance ? "عكس تسوية سلف العملاء" : "عكس نقد/بنك", original_debit: 0, original_credit: applied, original_currency: delCurrency, exchange_rate_used: delExRate },
-                        ])
-                      }
-                      // تحديث الفاتورة
-                      const newPaid = Math.max(Number(inv.paid_amount || 0) - applied, 0)
-                      const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
-                      await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", inv.id)
-                      // إزالة سجلات التطبيق
-                      await supabase.from("advance_applications").delete().eq("payment_id", deletingPayment.id).eq("invoice_id", inv.id)
-                      // إزالة الربط من الدفعة
-                      await supabase.from("payments").update({ invoice_id: null }).eq("id", deletingPayment.id)
-                    } else {
-                      // دفع مباشر على الفاتورة بدون سجلات سلفة: نعكس نقد/بنك -> ذمم مدينة
-                      const { data: revEntryDirect } = await supabase
-                        .from("journal_entries").insert({
-                          company_id: mapping.companyId,
-                          reference_type: "invoice_payment_reversal",
-                          reference_id: inv.id,
-                          entry_date: new Date().toISOString().slice(0, 10),
-                          description: `عكس دفع مباشر للفاتورة ${inv.invoice_number}`,
-                          branch_id: inv.branch_id || mapping.branchId!,
-                          cost_center_id: inv.cost_center_id || mapping.costCenterId || null,
-                        }).select().single()
-                      if (revEntryDirect?.id && cashAccountId) {
-                        const directCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
-                        const directExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
-                        await supabase.from("journal_entry_lines").insert([
-                          { journal_entry_id: revEntryDirect.id, account_id: mapping.ar, debit_amount: Number(deletingPayment.amount || 0), credit_amount: 0, description: "عكس الذمم المدينة", original_debit: Number(deletingPayment.amount || 0), original_credit: 0, original_currency: directCurrency, exchange_rate_used: directExRate },
-                          { journal_entry_id: revEntryDirect.id, account_id: cashAccountId, debit_amount: 0, credit_amount: Number(deletingPayment.amount || 0), description: "عكس نقد/بنك", original_debit: 0, original_credit: Number(deletingPayment.amount || 0), original_currency: directCurrency, exchange_rate_used: directExRate },
-                        ])
-                      }
-                      const newPaid = Math.max(Number(inv.paid_amount || 0) - Number(deletingPayment.amount || 0), 0)
-                      const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
-                      await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", inv.id)
-                      await supabase.from("payments").update({ invoice_id: null }).eq("id", deletingPayment.id)
-                      // لا نعكس القيد الأساسي لاحقًا لأن الدفعة لم تُسجّل كسلفة
-                      skipBaseReversal = true
+                  if (deletingPayment.supplier_id) {
+                    const response = await fetch(`/api/supplier-payments/${encodeURIComponent(deletingPayment.id)}/delete`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `supplier-payment-delete-${deletingPayment.id}`,
+                      },
+                      body: JSON.stringify({
+                        uiSurface: "payments_page_delete_dialog",
+                      }),
+                    })
+
+                    const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
+                    if (!response.ok || !result.success) {
+                      throw new Error(result.error || (appLang === 'en' ? 'Failed to delete supplier payment' : 'فشل حذف دفعة المورد'))
                     }
-                  } else if (deletingPayment.bill_id) {
-                    if (!mapping || !mapping.ap) throw new Error("غياب إعدادات الحسابات الدائنة (AP)")
-                    const { data: bill } = await supabase.from("bills").select("id, bill_number, total_amount, paid_amount, status").eq("id", deletingPayment.bill_id).single()
-                    if (!bill) throw new Error("فاتورة المورد غير موجودة")
-                    const { data: apps } = await supabase
-                      .from("advance_applications")
-                      .select("amount_applied")
-                      .eq("payment_id", deletingPayment.id)
-                      .eq("bill_id", bill.id)
-                    const applied = (apps || []).reduce((s: number, r: any) => s + Number(r.amount_applied || 0), 0)
-                    if (applied > 0) {
-                      const { data: revEntry } = await supabase
-                        .from("journal_entries").insert({
-                          company_id: mapping.companyId,
-                          reference_type: "bill_payment_reversal",
-                          reference_id: bill.id,
-                          entry_date: new Date().toISOString().slice(0, 10),
-                          description: `عكس تطبيق دفعة على فاتورة مورد ${bill.bill_number}`,
-                          branch_id: bill.branch_id || mapping.branchId!,
-                          cost_center_id: bill.cost_center_id || mapping.costCenterId || null,
-                        }).select().single()
-                      if (revEntry?.id) {
-                        const debitAdvanceId = mapping.supplierAdvance || cashAccountId
-                        const billDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
-                        const billDelExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
-                        await supabase.from("journal_entry_lines").insert([
-                          { journal_entry_id: revEntry.id, account_id: debitAdvanceId!, debit_amount: applied, credit_amount: 0, description: mapping.supplierAdvance ? "عكس تسوية سلف الموردين" : "عكس نقد/بنك", original_debit: applied, original_credit: 0, original_currency: billDelCurrency, exchange_rate_used: billDelExRate },
-                          { journal_entry_id: revEntry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: applied, description: "عكس حسابات دائنة", original_debit: 0, original_credit: applied, original_currency: billDelCurrency, exchange_rate_used: billDelExRate },
-                        ])
-                      }
-                      const newPaid = Math.max(Number(bill.paid_amount || 0) - applied, 0)
-                      const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
-                      await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", bill.id)
-                      await supabase.from("advance_applications").delete().eq("payment_id", deletingPayment.id).eq("bill_id", bill.id)
-                      await supabase.from("payments").update({ bill_id: null }).eq("id", deletingPayment.id)
-                    }
-                  } else if (deletingPayment.purchase_order_id) {
-                    // عكس تطبيق الدفعة على أمر شراء: الأصل كان (سلف للموردين مدين / نقد دائن)
-                    const { data: po } = await supabase.from("purchase_orders").select("id, po_number, total_amount, received_amount, status").eq("id", deletingPayment.purchase_order_id).single()
-                    if (po && mapping) {
-                      const { data: revEntry } = await supabase
-                        .from("journal_entries").insert({
-                          company_id: mapping.companyId,
-                          reference_type: "po_payment_reversal",
-                          reference_id: po.id,
-                          entry_date: new Date().toISOString().slice(0, 10),
-                          description: `عكس تطبيق دفعة على أمر شراء ${po.po_number}`,
-                          branch_id: (po as any).branch_id || mapping.branchId!,
-                          cost_center_id: (po as any).cost_center_id || mapping.costCenterId || null,
-                        }).select().single()
-                      if (revEntry?.id && cashAccountId && mapping.supplierAdvance) {
-                        const poDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
-                        const poDelExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
-                        await supabase.from("journal_entry_lines").insert([
-                          { journal_entry_id: revEntry.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك", original_debit: deletingPayment.amount, original_credit: 0, original_currency: poDelCurrency, exchange_rate_used: poDelExRate },
-                          { journal_entry_id: revEntry.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين", original_debit: 0, original_credit: deletingPayment.amount, original_currency: poDelCurrency, exchange_rate_used: poDelExRate },
-                        ])
-                      }
-                      const newReceived = Math.max(Number(po.received_amount || 0) - Number(deletingPayment.amount || 0), 0)
-                      const newStatus = newReceived <= 0 ? "received_partial" : (newReceived >= Number(po.total_amount || 0) ? "received" : "received_partial")
-                      await supabase.from("purchase_orders").update({ received_amount: newReceived, status: newStatus }).eq("id", po.id)
-                      await supabase.from("payments").update({ purchase_order_id: null }).eq("id", deletingPayment.id)
-                    }
+
+                    toastActionSuccess(toast, "الحذف", "الدفعة")
+                    setDeleteOpen(false)
+                    setDeletingPayment(null)
+                    await reloadPaymentsWithFilters()
+                    return
                   }
 
-                  // 2) عكس قيد إنشاء الدفعة (نقد/سلف) إن لم يكن دفعًا مباشرًا على الفاتورة
-                  if (!skipBaseReversal && mapping && cashAccountId) {
-                    const { data: revEntryBase } = await supabase
-                      .from("journal_entries").insert({
-                        company_id: mapping.companyId,
-                        reference_type: isCustomer ? "customer_payment_deletion" : "supplier_payment_deletion",
-                        reference_id: deletingPayment.id,
-                        entry_date: new Date().toISOString().slice(0, 10),
-                        description: isCustomer ? "حذف دفعة عميل" : "حذف دفعة مورد",
-                        branch_id: mapping.branchId!,
-                        cost_center_id: mapping.costCenterId || null,
-                      }).select().single()
-                    if (revEntryBase?.id) {
-                      const baseDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
-                      const baseDelExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
-                      if (isCustomer && mapping.customerAdvance) {
-                        await supabase.from("journal_entry_lines").insert([
-                          { journal_entry_id: revEntryBase.id, account_id: mapping.customerAdvance, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس سلف العملاء", original_debit: deletingPayment.amount, original_credit: 0, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
-                          { journal_entry_id: revEntryBase.id, account_id: cashAccountId, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس نقد/بنك", original_debit: 0, original_credit: deletingPayment.amount, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
-                        ])
-                      } else if (!isCustomer && mapping.supplierAdvance) {
-                        await supabase.from("journal_entry_lines").insert([
-                          { journal_entry_id: revEntryBase.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك", original_debit: deletingPayment.amount, original_credit: 0, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
-                          { journal_entry_id: revEntryBase.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين", original_debit: 0, original_credit: deletingPayment.amount, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
-                        ])
-                      }
+                  if (deletingPayment.customer_id) {
+                    const response = await fetch(`/api/customer-payments/${encodeURIComponent(deletingPayment.id)}/delete`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `customer-payment-delete-${deletingPayment.id}`,
+                      },
+                      body: JSON.stringify({
+                        uiSurface: "payments_page_delete_dialog",
+                      }),
+                    })
+
+                    const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
+                    if (!response.ok || !result.success) {
+                      throw new Error(result.error || (appLang === 'en' ? 'Failed to delete customer payment' : 'فشل حذف دفعة العميل'))
                     }
+
+                    toastActionSuccess(toast, "الحذف", "الدفعة")
+                    setDeleteOpen(false)
+                    setDeletingPayment(null)
+                    await reloadPaymentsWithFilters()
+                    return
                   }
-                  if (!mapping || !cashAccountId) {
-                    toast({ title: "تحذير", description: "تم حذف الدفعة لكن تعذر تسجيل بعض القيود لغياب إعدادات الحسابات.", variant: "default" })
-                  }
-                  const { error: delErr } = await supabase.from("payments").delete().eq("id", deletingPayment.id)
-                  if (delErr) {
-                    // رمز 23503 يعبّر عادة عن قيود مفاتيح خارجية
-                    if ((delErr as any).code === "23503") {
-                      toastActionError(toast, "الحذف", "الدفعة", "تعذر حذف الدفعة لارتباطها بسجلات أخرى")
-                      return
-                    }
-                    throw delErr
-                  }
-                  toastActionSuccess(toast, "الحذف", "الدفعة")
-                  setDeleteOpen(false)
-                  setDeletingPayment(null)
-                  if (!companyId) return
-                  // 🔐 إعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
-                  await reloadPaymentsWithFilters()
+
+                  throw new Error(appLang === 'en'
+                    ? 'Unsupported legacy payment owner. Payments must be deleted through customer/supplier command services.'
+                    : 'نوع الدفعة غير مدعوم. يجب حذف المدفوعات عبر أوامر العملاء/الموردين الخلفية.')
                 } catch (err) {
                   console.error("Error deleting payment:", err)
                   toastActionError(toast, "الحذف", "الدفعة", "فشل حذف الدفعة")

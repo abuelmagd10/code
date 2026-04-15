@@ -29,7 +29,6 @@ import {
   validateShippingProvider
 } from "@/lib/third-party-inventory"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
-import { checkDuplicateJournalEntry } from "@/lib/journal-entry-governance"
 import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
 import { getActiveCurrencies, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
 import { useAccess } from "@/lib/access-context"
@@ -1014,30 +1013,12 @@ export default function InvoiceDetailPage() {
         })
 
         if (invoice) {
-          const { data: { user } } = await supabase.auth.getUser()
-          const auditUserId = user?.id || null
-
           if (newStatus === "paid" || newStatus === "partially_paid") {
             console.log("ℹ️ Payment status must be driven by the backend payment API. Skipping client-side accounting logic.")
           } else if (newStatus === "draft" || newStatus === "cancelled") {
-            await reverseInventoryForInvoice()
-            // عكس القيود المحاسبية إن وجدت (للفواتير المدفوعة سابقاً)
-            await reverseInvoiceJournals()
-
-            // 📝 Audit Log: تسجيل عملية الإلغاء/الإرجاع لمسودة
-            if (auditUserId && invoice.company_id) {
-              const { error: auditErr2 } = await supabase.from("audit_logs").insert({
-                company_id: invoice.company_id,
-                user_id: auditUserId,
-                action: "UPDATE",
-                target_table: "invoices",
-                record_id: invoiceId,
-                record_identifier: invoice.invoice_number,
-                old_data: { status: invoice.status },
-                new_data: { status: newStatus }
-              })
-              if (auditErr2) console.warn("Audit log failed:", auditErr2)
-            }
+            throw new Error(appLang === 'en'
+              ? 'Invoice reversal must be executed through a backend command service.'
+              : 'عكس الفاتورة يجب أن يتم عبر أمر خلفي فقط.')
           }
         }
 
@@ -1054,101 +1035,6 @@ export default function InvoiceDetailPage() {
         toastActionError(toast, "التحديث", "الفاتورة", "تعذر تحديث حالة الفاتورة")
       }
     }, 0)
-  }
-
-  const findAccountIds = async (companyId?: string) => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) return null
-
-    // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
-    const { getActiveCompanyId } = await import("@/lib/company")
-    const resolvedCompanyId = companyId || await getActiveCompanyId(supabase)
-    if (!resolvedCompanyId) return null
-
-    const { data: accounts } = await supabase
-      .from("chart_of_accounts")
-      .select("id, account_code, account_type, account_name, sub_type, parent_id")
-      .eq("company_id", resolvedCompanyId)
-      .eq("is_active", true) // 📌 فلترة الحسابات النشطة فقط - تجنب الحسابات المؤرشفة/المعطلة
-
-    if (!accounts) return null
-
-    // اعمل على الحسابات الورقية فقط (ليست آباء لغيرها)
-    const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))
-    const leafAccounts = (accounts || []).filter((a: any) => !parentIds.has(a.id))
-
-    const byCode = (code: string) => leafAccounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
-    const byType = (type: string) => leafAccounts.find((a: any) => String(a.account_type || "") === type)?.id
-    const byNameIncludes = (name: string) =>
-      leafAccounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
-    const bySubType = (st: string) => leafAccounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
-
-    const ar =
-      bySubType("accounts_receivable") ||
-      byCode("AR") ||
-      byNameIncludes("receivable") ||
-      byNameIncludes("الحسابات المدينة") ||
-      byCode("1100") ||
-      byType("asset")
-    const revenue =
-      bySubType("sales_revenue") ||
-      byCode("REV") ||
-      byNameIncludes("revenue") ||
-      byNameIncludes("المبيعات") ||
-      byCode("4000") ||
-      byType("income")
-    const vatPayable =
-      bySubType("vat_output") ||
-      byCode("VAT") ||
-      byCode("VATOUT") ||
-      byNameIncludes("vat") ||
-      byNameIncludes("ضريبة") ||
-      byType("liability")
-    // تجنب fallback عام إلى نوع "أصول" عند تحديد النقد/البنك
-    const cash =
-      bySubType("cash") ||
-      byCode("CASH") ||
-      byNameIncludes("cash") ||
-      byNameIncludes("خزينة") ||
-      byNameIncludes("نقد") ||
-      byNameIncludes("صندوق") ||
-      null
-    const bank =
-      bySubType("bank") ||
-      byNameIncludes("bank") ||
-      byNameIncludes("بنك") ||
-      byNameIncludes("مصرف") ||
-      null
-    const inventory =
-      bySubType("inventory") ||
-      byCode("INV") ||
-      byNameIncludes("inventory") ||
-      byNameIncludes("المخزون") ||
-      byCode("1200") ||
-      byCode("1201") ||
-      byCode("1202") ||
-      byCode("1203") ||
-      null
-    const cogs =
-      bySubType("cogs") ||
-      byCode("COGS") ||
-      byNameIncludes("cost of goods") ||
-      byNameIncludes("cogs") ||
-      byNameIncludes("تكلفة البضاعة المباعة") ||
-      byCode("5000") ||
-      byType("expense")
-
-    const shippingAccount =
-      byCode("7000") ||
-      byNameIncludes("بوسطة") ||
-      byNameIncludes("byosta") ||
-      byNameIncludes("الشحن") ||
-      byNameIncludes("shipping") ||
-      null
-
-    return { companyId: resolvedCompanyId, ar, revenue, vatPayable, cash, bank, inventory, cogs, shippingAccount }
   }
 
   // === دالة تحديث أمر البيع المرتبط بالفاتورة ===
@@ -1189,111 +1075,6 @@ export default function InvoiceDetailPage() {
       }
     } catch (err) {
       console.warn("Failed to update linked SO status:", err)
-    }
-  }
-
-  // ===== 📌 نظام النقدية (Cash Basis): قيد المبيعات والذمم عند الدفع =====
-  // 📌 المرجع: ACCOUNTING_PATTERN.md (Single Source of Truth)
-  // عند Paid: Debit AR / Credit Revenue + VAT + Shipping
-  // هذا يسجل الإيراد عند الدفع فقط (وليس عند الإرسال)
-  // ❌ لا يتم استدعاء هذه الدالة عند Sent
-  const postARRevenueJournal = async () => {
-    try {
-      if (!invoice) return
-
-      const mapping = await findAccountIds()
-      if (!mapping || !mapping.ar || !mapping.revenue) {
-        console.warn("Account mapping incomplete: AR/Revenue not found. Skipping AR/Revenue journal.")
-        return
-      }
-
-      // 🔐 GOVERNANCE: تجنب التكرار - التحقق من عدم وجود قيد سابق
-      const duplicateCheck = await checkDuplicateJournalEntry(
-        supabase,
-        mapping.companyId,
-        "invoice",
-        invoiceId
-      )
-      if (duplicateCheck.exists) {
-        console.log(`🔐 GOVERNANCE: Invoice journal already exists for ${invoiceId}`)
-        return
-      }
-
-      // ===== 1) قيد المبيعات والذمم المدينة (draft → أسطر → ترحيل لتجنب منع إضافة أسطر لقالب مرحّل) =====
-      const { data: entry, error: entryError } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: mapping.companyId,
-          reference_type: "invoice", // قيد الفاتورة - Cash Basis
-          reference_id: invoiceId,
-          entry_date: invoice.invoice_date,
-          description: `فاتورة مبيعات ${invoice.invoice_number}`,
-          status: "draft",
-          branch_id: invoice.branch_id || null,
-          cost_center_id: invoice.cost_center_id || null,
-          warehouse_id: invoice.warehouse_id || null,
-        })
-        .select()
-        .single()
-
-      if (entryError) throw entryError
-
-      // القيد: Debit AR / Credit Revenue + VAT + Shipping
-      const lines: any[] = [
-        {
-          journal_entry_id: entry.id,
-          account_id: mapping.ar,
-          debit_amount: invoice.total_amount,
-          credit_amount: 0,
-          description: "الذمم المدينة (العملاء)",
-          branch_id: invoice.branch_id || null,
-          cost_center_id: invoice.cost_center_id || null,
-        },
-        {
-          journal_entry_id: entry.id,
-          account_id: mapping.revenue,
-          debit_amount: 0,
-          credit_amount: invoice.subtotal,
-          description: "إيراد المبيعات",
-          branch_id: invoice.branch_id || null,
-          cost_center_id: invoice.cost_center_id || null,
-        },
-      ]
-
-      // إضافة الشحن إن وجد
-      if (Number(invoice.shipping || 0) > 0) {
-        lines.push({
-          journal_entry_id: entry.id,
-          account_id: mapping.shippingAccount || mapping.revenue,
-          debit_amount: 0,
-          credit_amount: Number(invoice.shipping || 0),
-          description: "إيراد الشحن",
-        })
-      }
-
-      // إضافة ضريبة القيمة المضافة إن وجدت
-      if (mapping.vatPayable && invoice.tax_amount && invoice.tax_amount > 0) {
-        lines.push({
-          journal_entry_id: entry.id,
-          account_id: mapping.vatPayable,
-          debit_amount: 0,
-          credit_amount: invoice.tax_amount,
-          description: "ضريبة القيمة المضافة المستحقة",
-        })
-      }
-
-      const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
-      if (linesError) throw linesError
-
-      await supabase.from("journal_entries").update({ status: "posted" }).eq("id", entry.id)
-
-      // ===== 📌 ملاحظة: لا قيد COGS =====
-      // حسب النمط المطلوب (Cash Basis): لا COGS في النظام المحاسبي
-      // COGS يُحسب فقط للتقارير الإدارية (خارج القيود المحاسبية)
-
-      console.log(`✅ تم إنشاء قيد المبيعات والذمم للفاتورة ${invoice.invoice_number} (Cash Basis)`)
-    } catch (err) {
-      console.error("Error posting AR/Revenue journal:", err)
     }
   }
 
@@ -2203,49 +1984,6 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  const reverseInventoryForInvoice = async () => {
-    try {
-      if (!invoice) return
-      const mapping = await findAccountIds()
-      if (!mapping || !mapping.inventory || !mapping.cogs) return
-
-      const { data: invItems } = await supabase
-        .from("invoice_items")
-        .select("product_id, quantity, products(cost_price, item_type)")
-        .eq("invoice_id", invoiceId)
-
-      // فلترة المنتجات فقط (وليس الخدمات)
-      const productItems = (invItems || []).filter(
-        (it: any) => !!it.product_id && it.products?.item_type !== "service",
-      )
-
-      // عكس حركة المخزون دائماً عند الرجوع من sent/paid إلى draft/cancelled
-      const reversalTx = productItems.map((it: any) => ({
-        company_id: mapping.companyId,
-        product_id: it.product_id,
-        transaction_type: "sale_reversal",
-        quantity_change: Number(it.quantity || 0),
-        reference_id: invoiceId,
-        notes: `عكس بيع للفاتورة ${invoice.invoice_number}`,
-      }))
-
-      if (reversalTx.length > 0) {
-        const { error: invErr } = await supabase
-          .from("inventory_transactions")
-          .insert(reversalTx)
-        if (invErr) console.warn("Failed inserting sale reversal inventory transactions", invErr)
-        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
-        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
-      }
-
-      // 📌 النمط المحاسبي الصارم: لا COGS Reversal
-      // COGS يُحسب عند الحاجة من cost_price × quantity المباع
-      // لا قيد COGS في أي مرحلة، لذلك لا حاجة لعكسه
-    } catch (e) {
-      console.warn("Error reversing inventory for invoice", e)
-    }
-  }
-
   // ===== دالة خصم المخزون فقط بدون قيود محاسبية =====
   // 📌 نظام بضائع لدى الغير (Goods with Third Party)
   // تُستخدم عند إرسال الفاتورة (حالة sent)
@@ -2272,169 +2010,6 @@ export default function InvoiceDetailPage() {
 
     } catch (err) {
       console.error("Error executing atomic posting for invoice:", err)
-    }
-  }
-
-  // ===== دالة عكس جميع القيود المحاسبية للفاتورة =====
-  // تُستخدم عند إلغاء الفاتورة أو إعادتها لمسودة
-  // ✅ Soft Delete: يتم تعيين is_deleted=true و deleted_at بدلاً من الحذف الدائم
-  // ✅ Audit Trail: البيانات محفوظة للتدقيق - لا حذف نهائي
-  const reverseInvoiceJournals = async () => {
-    try {
-      if (!invoice) return
-      const mapping = await findAccountIds()
-      if (!mapping) return
-
-      // جلب قيود الفاتورة الأصلية (جميع الأنواع) بما فيها قيد COGS
-      const { data: invoiceEntries } = await supabase
-        .from("journal_entries")
-        .select("id, description, entry_date, reference_type")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_id", invoiceId)
-        .in("reference_type", ["invoice", "invoice_payment", "invoice_ar", "invoice_cogs", "sales_return", "payment_reversal"])
-        .is("deleted_at", null) // فقط القيود غير المحذوفة سابقاً
-
-      if (invoiceEntries && invoiceEntries.length > 0) {
-        const entryIds = invoiceEntries.map((e: any) => e.id)
-        const deletedAt = new Date().toISOString()
-
-        // ✅ Soft Delete: تعيين is_deleted=true و deleted_at (للحفاظ على Audit Trail)
-        await supabase
-          .from("journal_entries")
-          .update({ is_deleted: true, deleted_at: deletedAt })
-          .in("id", entryIds)
-
-        // ✅ Audit Log: تسجيل عملية الإلغاء/الإرجاع
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user?.id && invoice.company_id) {
-          try {
-            await supabase.from("audit_logs").insert({
-              company_id: invoice.company_id,
-              user_id: user.id,
-              action: "SOFT_DELETE",
-              target_table: "journal_entries",
-              record_id: invoiceId,
-              record_identifier: invoice.invoice_number,
-              old_data: {
-                reversed_entries: entryIds.length,
-                entry_types: invoiceEntries.map((e: any) => e.reference_type),
-                reason: "invoice_cancelled_or_reverted_to_draft"
-              },
-              new_data: { is_deleted: true, deleted_at: deletedAt }
-            })
-          } catch (auditErr) {
-            console.warn("Audit log failed (non-blocking):", auditErr)
-          }
-        }
-
-        console.log(`✅ Soft-deleted ${entryIds.length} journal entries for invoice ${invoice.invoice_number}`)
-      }
-    } catch (err) {
-      console.error("Error reversing invoice journals:", err)
-    }
-  }
-
-  // ===== 📌 دالة إنشاء جميع القيود المحاسبية للفاتورة عند الدفع =====
-  // ===== 📌 Cash Basis (أساس النقدية) =====
-  // الإيراد يُسجل عند الدفع فقط (وليس عند Sent)
-  // هذه الدالة للتوافق مع البيانات القديمة التي ليس لها قيود
-  const postAllInvoiceJournals = async (paymentAmount: number, paymentDate: string, paymentAccountId: string) => {
-    try {
-      if (!invoice) return
-      const mapping = await findAccountIds()
-      if (!mapping || !mapping.ar || !mapping.revenue) {
-        console.warn("Account mapping incomplete. Skipping journal posting.")
-        return
-      }
-
-      // 🔐 GOVERNANCE: التحقق من عدم وجود قيد إيراد سابق للفاتورة
-      const invoiceEntryCheck = await checkDuplicateJournalEntry(
-        supabase,
-        mapping.companyId,
-        "invoice",
-        invoiceId
-      )
-
-      // ===== 1) قيد المبيعات والذمم (للتوافق مع البيانات القديمة) =====
-      // Debit: AR / Credit: Revenue + VAT + Shipping
-      // هذا يحدث فقط إذا لم يكن هناك قيد فاتورة سابق (بيانات قديمة)
-      if (!invoiceEntryCheck.exists) {
-        const { data: entry, error: entryError } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: mapping.companyId,
-            reference_type: "invoice",
-            reference_id: invoiceId,
-            entry_date: invoice.invoice_date, // تاريخ الفاتورة وليس الدفع
-            description: `فاتورة مبيعات ${invoice.invoice_number}`,
-            status: "draft",
-            branch_id: invoice.branch_id || null,
-            cost_center_id: invoice.cost_center_id || null,
-            warehouse_id: invoice.warehouse_id || null,
-          })
-          .select()
-          .single()
-
-        if (!entryError && entry) {
-          const lines: any[] = [
-            // من ح/ الذمم المدينة (العملاء)
-            {
-              journal_entry_id: entry.id,
-              account_id: mapping.ar,
-              debit_amount: invoice.total_amount,
-              credit_amount: 0,
-              description: "الذمم المدينة (العملاء)",
-              branch_id: invoice.branch_id || null,
-              cost_center_id: invoice.cost_center_id || null,
-            },
-            // إلى ح/ المبيعات (الإيراد)
-            {
-              journal_entry_id: entry.id,
-              account_id: mapping.revenue,
-              debit_amount: 0,
-              credit_amount: invoice.subtotal,
-              description: "إيراد المبيعات",
-              branch_id: invoice.branch_id || null,
-              cost_center_id: invoice.cost_center_id || null,
-            },
-          ]
-
-          // ===== 2) إيراد الشحن (إن وجد) =====
-          if (Number(invoice.shipping || 0) > 0 && mapping.shippingAccount) {
-            lines.push({
-              journal_entry_id: entry.id,
-              account_id: mapping.shippingAccount,
-              debit_amount: 0,
-              credit_amount: Number(invoice.shipping || 0),
-              description: "إيراد الشحن",
-            })
-          } else if (Number(invoice.shipping || 0) > 0) {
-            lines[1].credit_amount += Number(invoice.shipping || 0)
-          }
-
-          // ===== 3) ضريبة القيمة المضافة (إن وجدت) =====
-          if (mapping.vatPayable && invoice.tax_amount && invoice.tax_amount > 0) {
-            lines.push({
-              journal_entry_id: entry.id,
-              account_id: mapping.vatPayable,
-              debit_amount: 0,
-              credit_amount: invoice.tax_amount,
-              description: "ضريبة القيمة المضافة",
-            })
-          }
-
-          await supabase.from("journal_entry_lines").insert(lines)
-          await supabase.from("journal_entries").update({ status: "posted" }).eq("id", entry.id)
-          console.log(`✅ تم إنشاء قيد الإيراد للفاتورة ${invoice.invoice_number} (توافق مع بيانات قديمة)`)
-        }
-      }
-
-      // 📌 النمط المحاسبي الصارم: لا COGS
-      // COGS يُحسب عند الحاجة من cost_price × quantity المباع
-
-      // ===== 4) قيد الدفع: يُنشأ من trigger عند INSERT في payments — لا إنشاء يدوي هنا =====
-    } catch (err) {
-      console.error("Error posting all invoice journals:", err)
     }
   }
 

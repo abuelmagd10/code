@@ -10,7 +10,6 @@ import { getExchangeRate, getActiveCurrencies, type Currency, DEFAULT_CURRENCIES
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
-import { getActiveCompanyId } from "@/lib/company"
 
 interface CustomerVoucherDialogProps {
   open: boolean
@@ -118,162 +117,38 @@ export function CustomerVoucherDialog({
     setIsProcessing(true)
 
     try {
-      const activeCompanyId = await getActiveCompanyId(supabase)
-      if (!activeCompanyId) {
-        throw new Error('No active company')
+      const baseAmount = voucherCurrency === appCurrency
+        ? voucherAmount
+        : Math.round(voucherAmount * voucherExRate.rate * 10000) / 10000
+
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `customer-voucher-${Date.now()}`
+      const response = await fetch("/api/customers/vouchers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({
+          customerId,
+          amount: voucherAmount,
+          currencyCode: voucherCurrency,
+          exchangeRate: voucherExRate.rate,
+          baseAmount,
+          voucherDate,
+          voucherMethod,
+          voucherAccountId,
+          referenceNumber: voucherRef || null,
+          notes: voucherNotes || null,
+          exchangeRateId: voucherExRate.rateId || null,
+          rateSource: voucherExRate.source || null,
+          uiSurface: "customer_voucher_dialog",
+        }),
+      })
+
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (appLang==='en' ? 'Failed to create customer voucher' : 'فشل إنشاء سند العميل'))
       }
-
-      // Validate account
-      if (voucherAccountId) {
-        const { data: acct, error: acctErr } = await supabase
-          .from("chart_of_accounts")
-          .select("id, company_id")
-          .eq("id", voucherAccountId)
-          .eq("company_id", activeCompanyId)
-          .single()
-        
-        if (acctErr || !acct) {
-          toastActionError(toast, appLang==='en' ? 'Validation' : 'التحقق', appLang==='en' ? 'Account' : 'الحساب', appLang==='en' ? 'Selected account is invalid' : 'الحساب المختار غير صالح', appLang, 'INVALID_INPUT')
-          return
-        }
-      }
-
-      const payload: any = {
-        company_id: activeCompanyId,
-        customer_id: customerId,
-        payment_date: voucherDate,
-        amount: voucherAmount,
-        payment_method: voucherMethod === "bank" ? "bank" : (voucherMethod === "cash" ? "cash" : "refund"),
-        reference_number: voucherRef || null,
-        notes: voucherNotes || null,
-        account_id: voucherAccountId || null,
-      }
-
-      let insertedPayment: any = null
-      let insertErr: any = null
-      
-      // Try to insert payment
-      const { data, error } = await supabase.from("payments").insert(payload).select().single()
-      insertedPayment = data || null
-      insertErr = error || null
-
-      if (insertErr) {
-        const msg = String(insertErr?.message || insertErr || "")
-        const mentionsAccountId = msg.toLowerCase().includes("account_id")
-        const looksMissingColumn = mentionsAccountId && (msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("column"))
-        
-        if (looksMissingColumn || mentionsAccountId) {
-          // Retry without account_id if it's causing issues
-          const fallback = { ...payload }
-          delete (fallback as any).account_id
-          const { error: retryError } = await supabase.from("payments").insert(fallback)
-          if (retryError) throw retryError
-        } else {
-          throw insertErr
-        }
-      }
-
-      // Create journal entry if accounts are available
-      try {
-        if (accounts.length > 0) {
-          const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
-          const customerAdvance = find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") || 
-                               find((a: any) => String(a.account_name || "").toLowerCase().includes("advance")) || 
-                               find((a: any) => String(a.account_name || "").toLowerCase().includes("deposit"))
-          const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || 
-                      find((a: any) => String(a.account_name || "").toLowerCase().includes("cash"))
-          const bank = find((a: any) => String(a.sub_type || "").toLowerCase() === "bank") ||
-                      find((a: any) => String(a.account_name || "").toLowerCase().includes("bank"))
-
-          const cashAccountId = voucherAccountId || bank || cash
-
-          if (customerAdvance && cashAccountId) {
-            // Calculate base amounts for multi-currency
-            const baseAmount = voucherCurrency === appCurrency ? 
-              voucherAmount : 
-              Math.round(voucherAmount * voucherExRate.rate * 10000) / 10000
-
-            const { data: entry } = await supabase
-              .from("journal_entries")
-              .insert({
-                company_id: activeCompanyId,
-                reference_type: "customer_voucher",
-                reference_id: insertedPayment?.id,
-                entry_date: voucherDate,
-                description: appLang==='en' ? 'Customer payment voucher' : 'سند صرف عميل',
-              })
-              .select()
-              .single()
-
-            if (entry?.id) {
-              await supabase.from("journal_entry_lines").insert([
-                {
-                  journal_entry_id: entry.id,
-                  account_id: customerAdvance,
-                  debit_amount: baseAmount,
-                  credit_amount: 0,
-                  description: appLang==='en' ? 'Customer advance' : 'سلف العملاء',
-                  original_currency: voucherCurrency,
-                  original_debit: voucherAmount,
-                  original_credit: 0,
-                  exchange_rate_used: voucherExRate.rate,
-                  exchange_rate_id: voucherExRate.rateId,
-                  rate_source: voucherExRate.source
-                },
-                {
-                  journal_entry_id: entry.id,
-                  account_id: cashAccountId,
-                  debit_amount: 0,
-                  credit_amount: baseAmount,
-                  description: appLang==='en' ? 'Cash/Bank' : 'نقد/بنك',
-                  original_currency: voucherCurrency,
-                  original_debit: 0,
-                  original_credit: voucherAmount,
-                  exchange_rate_used: voucherExRate.rate,
-                  exchange_rate_id: voucherExRate.rateId,
-                  rate_source: voucherExRate.source
-                },
-              ])
-            }
-          }
-        }
-      } catch (_) { 
-        /* ignore journal errors, voucher still created */ 
-      }
-
-      // Apply to outstanding invoices if payment was created
-      try {
-        if (insertedPayment?.id && customerId) {
-          const { data: invoices } = await supabase
-            .from("invoices")
-            .select("id, total_amount, paid_amount, status")
-            .eq("company_id", activeCompanyId)
-            .eq("customer_id", customerId)
-            .in("status", ["sent", "partially_paid"])
-            .order("issue_date", { ascending: true })
-
-          let remaining = Number(voucherAmount || 0)
-          for (const inv of (invoices || [])) {
-            if (remaining <= 0) break
-            const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
-            const applyAmt = Math.min(remaining, due)
-            if (applyAmt > 0) {
-              await supabase.from("advance_applications").insert({ 
-                company_id: activeCompanyId, 
-                customer_id: customerId, 
-                invoice_id: inv.id, 
-                amount_applied: applyAmt, 
-                payment_id: insertedPayment.id 
-              })
-              await supabase.from("invoices").update({ 
-                paid_amount: Number(inv.paid_amount || 0) + applyAmt, 
-                status: Number(inv.total_amount || 0) <= (Number(inv.paid_amount || 0) + applyAmt) ? "paid" : "partially_paid" 
-              }).eq("id", inv.id)
-              remaining -= applyAmt
-            }
-          }
-        }
-      } catch (_) {}
 
       toastActionSuccess(toast, appLang==='en' ? 'Create' : 'الإنشاء', appLang==='en' ? 'Customer voucher' : 'سند صرف عميل')
       

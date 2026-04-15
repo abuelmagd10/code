@@ -54,7 +54,7 @@ tmp_ipv6_proxy.py
 # Build caches and generated outputs
 tsconfig.tsbuildinfo
 artifacts/
-reports/
+/reports/
 temp/
 
 # Generated Ollama / OCI deployment artifacts

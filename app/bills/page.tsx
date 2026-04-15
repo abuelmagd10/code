@@ -1142,68 +1142,57 @@ export default function BillsPage() {
       const returnNumber = `PR-${returnBillNumber}-${Date.now()}`
       const returnDate = new Date().toISOString().slice(0, 10)
 
-      // 1. إنشاء سجل المرتجع بحالة pending_approval
-      const { data: prData, error: prError } = await supabase
-        .from('purchase_returns')
-        .insert({
-          company_id: companyId,
-          supplier_id: billRow.supplier_id,
-          bill_id: returnBillId,
-          return_number: returnNumber,
-          return_date: returnDate,
-          status: 'pending_approval',
-          workflow_status: 'pending_admin_approval',
-          settlement_method: returnMethod,
-          reason: appLang === 'en' ? `Purchase return (${returnMode})` : `مرتجع مشتريات (${returnMode === 'full' ? 'كامل' : 'جزئي'})`,
-          total_amount: returnTotal,
-          subtotal: returnTotal,
-          branch_id: (billRow as any).branch_id || null,
-          cost_center_id: (billRow as any).cost_center_id || null,
-          warehouse_id: (billRow as any).warehouse_id || null,
-          created_by: user.id,
-        })
-        .select('id')
-        .single()
-
-      if (prError) throw prError
-
-      // 2. إضافة بنود المرتجع
       const validItems = returnItems.filter(r => r.qtyToReturn > 0)
-      if (validItems.length > 0) {
-        const prItems = validItems.map(r => ({
-          purchase_return_id: prData.id,
-          bill_item_id: r.id,
-          product_id: r.product_id,
-          description: r.name || r.product_id,
-          quantity: r.qtyToReturn,
-          unit_price: r.unit_price,
-          tax_rate: r.tax_rate || 0,
-          discount_percent: 0,
-          line_total: Number((r.unit_price * r.qtyToReturn).toFixed(2)),
-        }))
-        const { error: itemsError } = await supabase.from('purchase_return_items').insert(prItems)
-        if (itemsError) throw itemsError
-      }
+      const prItems = validItems.map(r => ({
+        bill_item_id: r.id,
+        product_id: r.product_id,
+        description: r.name || r.product_id,
+        quantity: r.qtyToReturn,
+        unit_price: r.unit_price,
+        tax_rate: r.tax_rate || 0,
+        discount_percent: 0,
+        line_total: Number((r.unit_price * r.qtyToReturn).toFixed(2)),
+      }))
 
-      // 3. سجل تدقيق
-      try {
-        await supabase.from('audit_logs').insert({
-          company_id: companyId,
-          user_id: user.id,
-          action: 'purchase_return_submitted',
-          entity_type: 'purchase_return',
-          entity_id: prData.id,
-          new_values: { bill_id: returnBillId, return_number: returnNumber, total_amount: returnTotal },
-          created_at: new Date().toISOString(),
-        })
-      } catch (auditErr) { console.warn('Audit log failed:', auditErr) }
+      const response = await fetch('/api/purchase-returns', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          mode: 'create',
+          strategy: 'single',
+          supplierId: billRow.supplier_id,
+          billId: returnBillId,
+          purchaseReturn: {
+            return_number: returnNumber,
+            return_date: returnDate,
+            status: 'pending_approval',
+            workflow_status: 'pending_admin_approval',
+            settlement_method: returnMethod,
+            reason: appLang === 'en' ? `Purchase return (${returnMode})` : `مرتجع مشتريات (${returnMode === 'full' ? 'كامل' : 'جزئي'})`,
+            total_amount: returnTotal,
+            subtotal: returnTotal,
+            branch_id: (billRow as any).branch_id || null,
+            cost_center_id: (billRow as any).cost_center_id || null,
+            warehouse_id: (billRow as any).warehouse_id || null,
+          },
+          returnItems: prItems,
+          uiSurface: 'bills_page',
+        }),
+      })
+
+      const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string; purchaseReturnId?: string }
+      if (!response.ok || result.success === false || !result.purchaseReturnId) {
+        throw new Error(result.error || (appLang === 'en' ? 'Failed to submit purchase return' : 'فشل إرسال مرتجع المشتريات'))
+      }
 
       // 4. إشعار للإدارة العليا للموافقة (eventKey ثابت لمنع التكرار)
       try {
-        const selectedSupplier = (billRow as any).supplier_id
         await notifyPRApprovalRequest({
           companyId,
-          prId: prData.id,
+          prId: result.purchaseReturnId,
           prNumber: returnNumber,
           supplierName: returnBillNumber,
           amount: returnTotal,

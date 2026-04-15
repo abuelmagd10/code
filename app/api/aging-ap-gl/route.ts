@@ -89,9 +89,22 @@ export async function GET(req: NextRequest) {
       .is("deleted_at", null)
 
     const paymentJournalIds = (paymentJournals || []).map((j: any) => j.id)
+    const paymentReferenceIds = (paymentJournals || []).map((j: any) => String(j.reference_id || ""))
+    const { data: paymentAllocations } = paymentReferenceIds.length > 0
+      ? await supabase
+          .from("payment_allocations")
+          .select("id, bill_id")
+          .in("id", paymentReferenceIds)
+      : { data: [] as any[] }
+
+    const allocationToBill = new Map(
+      (paymentAllocations || []).map((allocation: any) => [String(allocation.id), String(allocation.bill_id)])
+    )
+
     const paymentJournalToBill: Record<string, string> = {}
-    for (const j of paymentJournals || []) {
-      paymentJournalToBill[j.id] = j.reference_id
+    for (const journal of paymentJournals || []) {
+      const referenceId = String(journal.reference_id || "")
+      paymentJournalToBill[journal.id] = allocationToBill.get(referenceId) || referenceId
     }
 
     // ✅ Step 4: Get posted purchase_return journals (reference_id = purchase_return.id)

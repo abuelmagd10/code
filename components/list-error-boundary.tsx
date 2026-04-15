@@ -123,8 +123,9 @@ export class ListErrorBoundary extends Component<ListErrorBoundaryProps, ListErr
       this.props.onError(error, errorInfo)
     }
 
-    if (typeof window !== 'undefined' && window.gtag) {
-      window.gtag('event', 'exception', {
+    const analytics = typeof window !== 'undefined' ? (window as any).gtag : null
+    if (analytics) {
+      analytics('event', 'exception', {
         description: `${this.props.listType} list error: ${error.toString()}`,
         fatal: false
       })

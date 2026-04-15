@@ -17,7 +17,6 @@ import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Package, CheckCircle, Warehouse, Building2, AlertCircle, Loader2, Eye } from "lucide-react"
-import { createPurchaseInventoryJournal } from "@/lib/accrual-accounting-engine"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { createNotification } from "@/lib/governance-layer"
 import { Textarea } from "@/components/ui/textarea"
@@ -757,58 +756,24 @@ export default function GoodsReceiptPage() {
         return
       }
 
-      // ✅ إنشاء قيد المشتريات الرسمي أولاً (مطلوب لربط حركات المخزون)
-      // هذا يضمن وجود journal_entry قبل إنشاء inventory_transactions
-      // createPurchaseInventoryJournal ترجع journal_entry_id إذا كان موجوداً أو أنشأته
-      const journalEntryId = await createPurchaseInventoryJournal(supabase, selectedBill.id, companyId)
+      const response = await fetch(`/api/bills/${encodeURIComponent(selectedBill.id)}/confirm-receipt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": `bill:${selectedBill.id}:confirm-receipt`,
+        },
+        body: JSON.stringify({
+          ui_surface: "goods_receipt_page",
+        }),
+      })
 
-      if (!journalEntryId) {
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
         throw new Error(
-          appLang === "en"
-            ? "Failed to create or find purchase journal entry"
-            : "فشل إنشاء أو العثور على قيد المشتريات"
+          result.error ||
+          (appLang === "en" ? "Failed to confirm goods receipt" : "تعذر اعتماد استلام الفاتورة")
         )
       }
-
-      // ✅ إنشاء حركات المخزون من كميات الفاتورة المعتمدة (لا تعديل)
-      // trigger auto_link_inventory_to_journal() سيربطها تلقائياً بـ journal_entry
-      const invRows = receiptItems
-        .filter((it) => it.max_qty > 0) // ✅ استخدام max_qty (كمية الفاتورة)
-        .map((it) => ({
-          company_id: companyId,
-          branch_id: branchId,
-          warehouse_id: warehouseId,
-          cost_center_id: costCenterId,
-          product_id: it.product_id,
-          transaction_type: "purchase",
-          quantity_change: it.max_qty, // ✅ دائماً = كمية الفاتورة
-          reference_id: selectedBill.id,
-          notes:
-            appLang === "en"
-              ? `Goods receipt for bill ${selectedBill.bill_number}`
-              : `اعتماد استلام فاتورة مشتريات ${selectedBill.bill_number}`
-        }))
-
-      if (invRows.length > 0) {
-        const { error: invErr } = await supabase.from("inventory_transactions").insert(invRows)
-        if (invErr) throw invErr
-      }
-
-      // تحديث حالة الفاتورة إلى received وتسجيل من اعتمد الاستلام
-      const now = new Date().toISOString()
-      const { error: updErr } = await supabase
-        .from("bills")
-        .update({
-          status: "received",
-          receipt_status: "received",
-          received_by: user.id,
-          received_at: now,
-          receipt_rejection_reason: null // ✅ مسح سبب الرفض عند الاستلام
-        })
-        .eq("id", selectedBill.id)
-        .eq("company_id", companyId)
-
-      if (updErr) throw updErr
 
       // ✅ Fix 3 & 5: Notify all relevant parties about goods receipt confirmation
       try {
@@ -924,7 +889,9 @@ export default function GoodsReceiptPage() {
         toast,
         appLang === "en" ? "Receipt" : "الاستلام",
         appLang === "en" ? "Purchase Bill" : "فاتورة المشتريات",
-        appLang === "en" ? "Failed to confirm goods receipt" : "تعذر اعتماد استلام الفاتورة",
+        err instanceof Error
+          ? err.message
+          : (appLang === "en" ? "Failed to confirm goods receipt" : "تعذر اعتماد استلام الفاتورة"),
         appLang
       )
     } finally {
@@ -949,17 +916,25 @@ export default function GoodsReceiptPage() {
       const warehouseId = selectedBill.warehouse_id
       const costCenterId = selectedBill.cost_center_id
 
-      // تحديث حالة الفاتورة إلى rejected مع سبب الرفض
-      const { error: updErr } = await supabase
-        .from("bills")
-        .update({
-          receipt_status: "rejected",
-          receipt_rejection_reason: rejectionReason.trim()
-        })
-        .eq("id", selectedBill.id)
-        .eq("company_id", companyId)
+      const response = await fetch(`/api/bills/${encodeURIComponent(selectedBill.id)}/reject-receipt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": `bill:${selectedBill.id}:reject-receipt:${rejectionReason.trim()}`,
+        },
+        body: JSON.stringify({
+          rejectionReason: rejectionReason.trim(),
+          ui_surface: "goods_receipt_page",
+        }),
+      })
 
-      if (updErr) throw updErr
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.error ||
+          (appLang === "en" ? "Failed to reject goods receipt" : "تعذر رفض اعتماد الاستلام")
+        )
+      }
 
       // ✅ إشعار لمنشئ الفاتورة (أو منشئ أمر الشراء للفرع) وللإدارة العليا بالرفض
       try {
@@ -1522,4 +1497,3 @@ export default function GoodsReceiptPage() {
     </div>
   )
 }
-
