@@ -920,7 +920,7 @@ export default function GoodsReceiptPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Idempotency-Key": `bill:${selectedBill.id}:reject-receipt:${rejectionReason.trim()}`,
+          "Idempotency-Key": `bill:${selectedBill.id}:reject-receipt:${encodeURIComponent(rejectionReason.trim()).slice(0, 160)}`,
         },
         body: JSON.stringify({
           rejectionReason: rejectionReason.trim(),

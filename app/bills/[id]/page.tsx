@@ -998,7 +998,7 @@ export default function BillViewPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Idempotency-Key": `bill:${bill.id}:reject-receipt:${receiptRejectionReason.trim()}`,
+          "Idempotency-Key": `bill:${bill.id}:reject-receipt:${encodeURIComponent(receiptRejectionReason.trim()).slice(0, 160)}`,
         },
         body: JSON.stringify({
           rejectionReason: receiptRejectionReason.trim(),
@@ -2619,7 +2619,7 @@ export default function BillViewPage() {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
-                      "Idempotency-Key": `bill:${bill.id}:reject:${rejectionReason.trim()}`,
+                      "Idempotency-Key": `bill:${bill.id}:reject:${encodeURIComponent(rejectionReason.trim()).slice(0, 160)}`,
                     },
                     body: JSON.stringify({
                       rejectionReason: rejectionReason.trim(),
