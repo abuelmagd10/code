@@ -90,9 +90,34 @@ export async function POST(request: NextRequest) {
     const governance = await enforceGovernance()
 
     const body = await request.json()
+    const commandItems = Array.isArray(body.items) ? body.items : []
+    const purchaseOrderPayload = {
+      supplier_id: body.supplier_id,
+      po_date: body.po_date,
+      due_date: body.due_date || null,
+      notes: body.notes || null,
+      subtotal: body.subtotal,
+      tax_amount: body.tax_amount,
+      total: body.total,
+      total_amount: body.total_amount,
+      discount_type: body.discount_type,
+      discount_value: body.discount_value,
+      discount_position: body.discount_position,
+      tax_inclusive: body.tax_inclusive,
+      shipping: body.shipping,
+      shipping_tax_rate: body.shipping_tax_rate,
+      adjustment: body.adjustment,
+      status: body.status,
+      currency: body.currency,
+      exchange_rate: body.exchange_rate,
+      branch_id: body.branch_id || null,
+      cost_center_id: body.cost_center_id || null,
+      warehouse_id: body.warehouse_id || null,
+      created_by_user_id: body.created_by_user_id || null,
+    }
 
     // 2️⃣ إضافة بيانات الحوكمة تلقائياً
-    const dataWithGovernance = addGovernanceData(body, governance)
+    const dataWithGovernance = addGovernanceData(purchaseOrderPayload, governance)
 
     // 3️⃣ التحقق من صحة البيانات (إلزامي)
     validateGovernanceData(dataWithGovernance, governance)
@@ -100,8 +125,8 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient()
 
     // --- Product Branch Isolation Check ---
-    if (body.items && Array.isArray(body.items) && body.items.length > 0) {
-      const productIds = body.items.map((item: any) => item.product_id).filter(Boolean);
+    if (commandItems.length > 0) {
+      const productIds = commandItems.map((item: any) => item.product_id).filter(Boolean);
       if (productIds.length > 0) {
         const { data: productsData, error: productsError } = await supabase
           .from("products")
@@ -148,9 +173,9 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Insert Items if provided ---
-    const createdItems = body.items && Array.isArray(body.items) ? body.items : []
-    if (body.items && Array.isArray(body.items) && body.items.length > 0) {
-      const itemsToInsert = body.items.map((item: any) => ({
+    const createdItems = commandItems
+    if (commandItems.length > 0) {
+      const itemsToInsert = commandItems.map((item: any) => ({
         ...item,
         purchase_order_id: newOrder.id
       }));
@@ -179,7 +204,7 @@ export async function POST(request: NextRequest) {
           tax_inclusive: dataWithGovernance.tax_inclusive,
           shipping: dataWithGovernance.shipping,
           shipping_tax_rate: dataWithGovernance.shipping_tax_rate,
-          shipping_provider_id: dataWithGovernance.shipping_provider_id || null,
+          shipping_provider_id: body.shipping_provider_id || null,
           adjustment: dataWithGovernance.adjustment,
           status: "draft",
           currency_code: dataWithGovernance.currency || "EGP",
