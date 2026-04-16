@@ -40,6 +40,12 @@ type BillForReceipt = {
   received_by?: string | null
   received_at?: string | null
   received_by_name?: string | null
+  updated_at?: string | null
+  receipt_action_at?: string | null
+  receipt_action_by?: string | null
+  receipt_action_by_name?: string | null
+  branch_name?: string | null
+  warehouse_name?: string | null
 }
 
 type BillItemRow = {
@@ -132,7 +138,7 @@ export default function GoodsReceiptPage() {
 
   const isOwnerAdmin = useMemo(() => {
     const role = String(userContext?.role || "").trim().toLowerCase()
-    return role === "owner" || role === "admin"
+    return role === "owner" || role === "admin" || role === "general_manager"
   }, [userContext])
 
   useEffect(() => {
@@ -378,7 +384,7 @@ export default function GoodsReceiptPage() {
 
         // ✅ للأدوار الإدارية: تحديث selectedBranchId و selectedWarehouseId إذا كانت الفاتورة في فرع/مخزن مختلف
         const role = String(userContext.role || "").trim().toLowerCase()
-        if ((role === "owner" || role === "admin") && billData.branch_id && billData.warehouse_id) {
+        if ((role === "owner" || role === "admin" || role === "general_manager") && billData.branch_id && billData.warehouse_id) {
           // ✅ استخدام refs للتحقق من القيم الحالية بدلاً من dependencies لتجنب re-runs
           const currentBranchId = selectedBranchIdRef.current
           const currentWarehouseId = selectedWarehouseIdRef.current
@@ -475,6 +481,8 @@ export default function GoodsReceiptPage() {
 
       // دور المستخدم الحالي
       const role = String(context.role || "").trim().toLowerCase()
+      const isSeniorRole = role === "owner" || role === "admin" || role === "general_manager"
+      const isCompanyWideHistory = isReceivedTab && isSeniorRole
 
       // فقط أدوار store_manager / owner / admin / general_manager / manager ترى شاشة اعتماد الاستلام
       if (!["store_manager", "owner", "admin", "general_manager", "manager"].includes(role)) {
@@ -487,16 +495,16 @@ export default function GoodsReceiptPage() {
 
       // فرع ومخزن العمل الفعلي (للأدوار الإدارية يمكن التبديل)
       const effectiveBranchId =
-        (role === "owner" || role === "admin") && selectedBranchId
+        !isCompanyWideHistory && isSeniorRole && selectedBranchId
           ? selectedBranchId
           : context.branch_id
       const effectiveWarehouseId =
-        (role === "owner" || role === "admin") && selectedWarehouseId
+        !isCompanyWideHistory && isSeniorRole && selectedWarehouseId
           ? selectedWarehouseId
           : context.warehouse_id
 
       // يجب أن يكون لدى مسؤول المخزن فرع ومخزن محدد
-      if (!effectiveBranchId || !effectiveWarehouseId) {
+      if (!isCompanyWideHistory && (!effectiveBranchId || !effectiveWarehouseId)) {
         toastActionError(
           toast,
           appLang === "en" ? "Access" : "الوصول",
@@ -518,30 +526,35 @@ export default function GoodsReceiptPage() {
 
       // تحميل اسم الفرع والمخزن للعرض بدلاً من عرض المعرّفات الخام
       try {
-        const { data: branchRow } = await supabase
-          .from("branches")
-          .select("id, name, branch_name")
-          .eq("company_id", companyId)
-          .eq("id", branchId)
-          .maybeSingle()
-        if (branchRow) {
-          const label = (branchRow as any).name || (branchRow as any).branch_name || null
-          setBranchName(label)
+        if (isCompanyWideHistory) {
+          setBranchName(appLang === "en" ? "Company-wide" : "كل فروع الشركة")
+          setWarehouseName(appLang === "en" ? "All warehouses" : "كل المخازن")
         } else {
-          setBranchName(null)
-        }
+          const { data: branchRow } = await supabase
+            .from("branches")
+            .select("id, name, branch_name")
+            .eq("company_id", companyId)
+            .eq("id", branchId)
+            .maybeSingle()
+          if (branchRow) {
+            const label = (branchRow as any).name || (branchRow as any).branch_name || null
+            setBranchName(label)
+          } else {
+            setBranchName(null)
+          }
 
-        const { data: whRow } = await supabase
-          .from("warehouses")
-          .select("id, name, code")
-          .eq("company_id", companyId)
-          .eq("id", warehouseId)
-          .maybeSingle()
-        if (whRow) {
-          const label = (whRow as any).name || (whRow as any).code || null
-          setWarehouseName(label)
-        } else {
-          setWarehouseName(null)
+          const { data: whRow } = await supabase
+            .from("warehouses")
+            .select("id, name, code")
+            .eq("company_id", companyId)
+            .eq("id", warehouseId)
+            .maybeSingle()
+          if (whRow) {
+            const label = (whRow as any).name || (whRow as any).code || null
+            setWarehouseName(label)
+          } else {
+            setWarehouseName(null)
+          }
         }
       } catch {
         // في حال فشل جلب الأسماء نكتفي بعرض المعرفات
@@ -567,44 +580,138 @@ export default function GoodsReceiptPage() {
       let q = supabase
         .from("bills")
         .select(
-          "id, bill_number, bill_date, supplier_id, status, receipt_status, receipt_rejection_reason, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, created_by_user_id, received_by, received_at, suppliers(name)"
+          "id, bill_number, bill_date, supplier_id, status, receipt_status, receipt_rejection_reason, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, created_by_user_id, received_by, received_at, updated_at, suppliers(name)"
         )
         .eq("company_id", companyId)
-        .eq("branch_id", branchId)
-        .eq("warehouse_id", warehouseId)
+
+      if (!isCompanyWideHistory) {
+        q = q
+          .eq("branch_id", branchId)
+          .eq("warehouse_id", warehouseId)
+      }
         
       if (isReceivedTab) {
-        q = q.eq("receipt_status", "received").eq("status", "received")
+        q = q.in("receipt_status", ["received", "rejected"])
       } else {
         q = q.eq("status", "sent").or("receipt_status.is.null,receipt_status.eq.pending")
       }
 
-      q = applyDataVisibilityFilter(q, rules, "bills")
+      if (!isCompanyWideHistory) {
+        q = applyDataVisibilityFilter(q, rules, "bills")
+      }
 
-      const { data, error } = await q.order(isReceivedTab ? "received_at" : "bill_date", { ascending: false })
+      const { data, error } = await q.order(isReceivedTab ? "updated_at" : "bill_date", { ascending: false })
       if (error) throw error
 
       let fetchedBills = (data || []) as BillForReceipt[]
       
-      // جلب أسماء المستلمين إن وجدت
+      // جلب بيانات قرارات الاستلام: اعتماد أو رفض
       if (isReceivedTab && fetchedBills.length > 0) {
-        const receivedByIds = [...new Set(fetchedBills.map(b => b.received_by).filter(Boolean))] as string[]
-        if (receivedByIds.length > 0) {
+        const billIds = fetchedBills.map((b) => b.id)
+        const latestTraceByBillAndEvent = new Map<string, { actor_id?: string | null; created_at?: string | null }>()
+
+        try {
+          const { data: traceRows, error: traceError } = await supabase
+            .from("financial_operation_traces")
+            .select("source_id, event_type, actor_id, created_at")
+            .eq("company_id", companyId)
+            .eq("source_entity", "bill")
+            .in("source_id", billIds)
+            .in("event_type", ["bill_receipt_posting", "bill_receipt_rejection"])
+            .order("created_at", { ascending: false })
+
+          if (traceError) {
+            console.warn("[GoodsReceipt] Could not load receipt traces:", traceError)
+          } else {
+            for (const trace of traceRows || []) {
+              const key = `${String((trace as any).source_id)}:${String((trace as any).event_type)}`
+              if (!latestTraceByBillAndEvent.has(key)) {
+                latestTraceByBillAndEvent.set(key, {
+                  actor_id: (trace as any).actor_id || null,
+                  created_at: (trace as any).created_at || null,
+                })
+              }
+            }
+          }
+        } catch (traceErr) {
+          console.warn("[GoodsReceipt] Receipt trace lookup failed:", traceErr)
+        }
+
+        const actorIds = [
+          ...new Set(
+            fetchedBills
+              .flatMap((bill) => {
+                const eventType = bill.receipt_status === "rejected" ? "bill_receipt_rejection" : "bill_receipt_posting"
+                const trace = latestTraceByBillAndEvent.get(`${bill.id}:${eventType}`)
+                return [bill.received_by, trace?.actor_id]
+              })
+              .filter(Boolean)
+          ),
+        ] as string[]
+
+        const usersMap = new Map<string, string>()
+        if (actorIds.length > 0) {
           const { data: usersData } = await supabase
             .from("user_profiles")
             .select("user_id, display_name, username")
-            .in("user_id", receivedByIds)
+            .in("user_id", actorIds)
             
-          const usersMap = new Map()
           if (usersData) {
             usersData.forEach((u: any) => usersMap.set(u.user_id, u.display_name || u.username))
           }
-          
-          fetchedBills = fetchedBills.map(b => ({
-            ...b,
-            received_by_name: b.received_by ? usersMap.get(b.received_by) : null
-          }))
         }
+
+        const branchIds = [...new Set(fetchedBills.map((b) => b.branch_id).filter(Boolean))] as string[]
+        const warehouseIds = [...new Set(fetchedBills.map((b) => b.warehouse_id).filter(Boolean))] as string[]
+        const branchMap = new Map<string, string>()
+        const warehouseMap = new Map<string, string>()
+
+        if (branchIds.length > 0) {
+          const { data: branchRows } = await supabase
+            .from("branches")
+            .select("id, name, branch_name")
+            .eq("company_id", companyId)
+            .in("id", branchIds)
+
+          for (const branch of branchRows || []) {
+            branchMap.set(String((branch as any).id), String((branch as any).name || (branch as any).branch_name || ""))
+          }
+        }
+
+        if (warehouseIds.length > 0) {
+          const { data: warehouseRows } = await supabase
+            .from("warehouses")
+            .select("id, name, code")
+            .eq("company_id", companyId)
+            .in("id", warehouseIds)
+
+          for (const warehouse of warehouseRows || []) {
+            warehouseMap.set(String((warehouse as any).id), String((warehouse as any).name || (warehouse as any).code || ""))
+          }
+        }
+
+        fetchedBills = fetchedBills
+          .map((bill) => {
+            const eventType = bill.receipt_status === "rejected" ? "bill_receipt_rejection" : "bill_receipt_posting"
+            const trace = latestTraceByBillAndEvent.get(`${bill.id}:${eventType}`)
+            const actionBy = bill.receipt_status === "rejected" ? trace?.actor_id || null : bill.received_by || trace?.actor_id || null
+            const actionAt = bill.receipt_status === "rejected" ? trace?.created_at || bill.updated_at || null : bill.received_at || trace?.created_at || bill.updated_at || null
+
+            return {
+              ...bill,
+              received_by_name: bill.received_by ? usersMap.get(bill.received_by) || null : null,
+              receipt_action_by: actionBy,
+              receipt_action_by_name: actionBy ? usersMap.get(actionBy) || null : null,
+              receipt_action_at: actionAt,
+              branch_name: bill.branch_id ? branchMap.get(bill.branch_id) || null : null,
+              warehouse_name: bill.warehouse_id ? warehouseMap.get(bill.warehouse_id) || null : null,
+            }
+          })
+          .sort((a, b) => {
+            const left = a.receipt_action_at ? new Date(a.receipt_action_at).getTime() : 0
+            const right = b.receipt_action_at ? new Date(b.receipt_action_at).getTime() : 0
+            return right - left
+          })
       }
 
       if (loadRequestRef.current !== requestId) return
@@ -1046,6 +1153,8 @@ export default function GoodsReceiptPage() {
     () => bills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0),
     [bills]
   )
+  const isReceiptHistoryTab = activeTab === "received"
+  const showCompanyScopeColumns = isReceiptHistoryTab && isOwnerAdmin
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -1072,73 +1181,88 @@ export default function GoodsReceiptPage() {
               {userContext && (
                 <div className="flex flex-col text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                   {isOwnerAdmin ? (
-                    <>
-                      <span className="flex items-center gap-1">
-                        <Building2 className="w-4 h-4" />
-                        {appLang === "en" ? "Branch:" : "الفرع:"}{" "}
-                        <Select
-                          value={selectedBranchId || ""}
-                          onValueChange={(val) => {
-                            setSelectedBranchId(val)
-                            selectedBranchIdRef.current = val
-                            // ✅ مسح المخزن المحدد عند تغيير الفرع (سيتم تحديده تلقائياً في useEffect)
-                            setSelectedWarehouseId(null)
-                            selectedWarehouseIdRef.current = null
-                          }}
-                        >
-                          <SelectTrigger className="h-7 w-40 text-xs">
-                            <SelectValue
-                              placeholder={appLang === "en" ? "Select branch" : "اختر الفرع"}
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {branches.map((b) => (
-                              <SelectItem key={b.id} value={b.id}>
-                                {b.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </span>
-                      <span className="flex items-center gap-1 mt-1">
-                        <Warehouse className="w-4 h-4" />
-                        {appLang === "en" ? "Warehouse:" : "المخزن:"}{" "}
-                        <Select
-                          value={selectedWarehouseId || ""}
-                          onValueChange={(val) => {
-                            // ✅ لا نسمح بإلغاء الاختيار - إذا حاول المستخدم اختيار قيمة فارغة، نستخدم أول مخزن متاح
-                            if (!val && warehouses.length > 0) {
-                              setSelectedWarehouseId(warehouses[0].id)
-                              selectedWarehouseIdRef.current = warehouses[0].id
-                            } else {
-                              setSelectedWarehouseId(val)
-                              selectedWarehouseIdRef.current = val
-                            }
-                          }}
-                          disabled={!selectedBranchId || warehouses.length === 0}
-                        >
-                          <SelectTrigger className="h-7 w-44 text-xs">
-                            <SelectValue
-                              placeholder={
-                                selectedWarehouseId
-                                  ? warehouses.find((w) => w.id === selectedWarehouseId)?.name ||
-                                  (appLang === "en" ? "Select warehouse" : "اختر المخزن")
-                                  : appLang === "en"
-                                    ? "Select warehouse"
-                                    : "اختر المخزن"
+                    activeTab === "received" ? (
+                      <>
+                        <span className="flex items-center gap-1">
+                          <Building2 className="w-4 h-4" />
+                          {appLang === "en" ? "Scope:" : "النطاق:"}{" "}
+                          {appLang === "en" ? "Company-wide" : "كل فروع الشركة"}
+                        </span>
+                        <span className="flex items-center gap-1 mt-1">
+                          <Warehouse className="w-4 h-4" />
+                          {appLang === "en" ? "Warehouses:" : "المخازن:"}{" "}
+                          {appLang === "en" ? "All warehouses" : "كل المخازن"}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="flex items-center gap-1">
+                          <Building2 className="w-4 h-4" />
+                          {appLang === "en" ? "Branch:" : "الفرع:"}{" "}
+                          <Select
+                            value={selectedBranchId || ""}
+                            onValueChange={(val) => {
+                              setSelectedBranchId(val)
+                              selectedBranchIdRef.current = val
+                              // ✅ مسح المخزن المحدد عند تغيير الفرع (سيتم تحديده تلقائياً في useEffect)
+                              setSelectedWarehouseId(null)
+                              selectedWarehouseIdRef.current = null
+                            }}
+                          >
+                            <SelectTrigger className="h-7 w-40 text-xs">
+                              <SelectValue
+                                placeholder={appLang === "en" ? "Select branch" : "اختر الفرع"}
+                              />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {branches.map((b) => (
+                                <SelectItem key={b.id} value={b.id}>
+                                  {b.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </span>
+                        <span className="flex items-center gap-1 mt-1">
+                          <Warehouse className="w-4 h-4" />
+                          {appLang === "en" ? "Warehouse:" : "المخزن:"}{" "}
+                          <Select
+                            value={selectedWarehouseId || ""}
+                            onValueChange={(val) => {
+                              // ✅ لا نسمح بإلغاء الاختيار - إذا حاول المستخدم اختيار قيمة فارغة، نستخدم أول مخزن متاح
+                              if (!val && warehouses.length > 0) {
+                                setSelectedWarehouseId(warehouses[0].id)
+                                selectedWarehouseIdRef.current = warehouses[0].id
+                              } else {
+                                setSelectedWarehouseId(val)
+                                selectedWarehouseIdRef.current = val
                               }
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {warehouses.map((w) => (
-                              <SelectItem key={w.id} value={w.id}>
-                                {w.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </span>
-                    </>
+                            }}
+                            disabled={!selectedBranchId || warehouses.length === 0}
+                          >
+                            <SelectTrigger className="h-7 w-44 text-xs">
+                              <SelectValue
+                                placeholder={
+                                  selectedWarehouseId
+                                    ? warehouses.find((w) => w.id === selectedWarehouseId)?.name ||
+                                    (appLang === "en" ? "Select warehouse" : "اختر المخزن")
+                                    : appLang === "en"
+                                      ? "Select warehouse"
+                                      : "اختر المخزن"
+                                }
+                              />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {warehouses.map((w) => (
+                                <SelectItem key={w.id} value={w.id}>
+                                  {w.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </span>
+                      </>
+                    )
                   ) : (
                     <>
                       <span className="flex items-center gap-1">
@@ -1190,7 +1314,7 @@ export default function GoodsReceiptPage() {
                 <CardTitle className="text-base sm:text-lg">
                   {activeTab === "pending" 
                     ? (appLang === "en" ? "Bills awaiting warehouse receipt" : "فواتير بانتظار اعتماد الاستلام من المخزن")
-                    : (appLang === "en" ? "Completed goods receipts" : "فواتير تم استلامها وإدخالها للمخزن")}
+                    : (appLang === "en" ? "Receipt decision history" : "سجل قرارات الاستلام")}
                 </CardTitle>
               </div>
               {hasBills && (
@@ -1216,23 +1340,34 @@ export default function GoodsReceiptPage() {
                         ? "No approved purchase bills pending warehouse receipt in your branch/warehouse."
                         : "لا توجد فواتير مشتريات معتمدة وبانتظار اعتماد الاستلام في فرعك ومخزنك.")
                       : (appLang === "en" 
-                        ? "No received bills found in your branch/warehouse." 
-                        : "لا توجد سجلات استلام فواتير سابقة في فرعك ومخزنك.")}
+                        ? "No receipt approval or rejection records found."
+                        : "لا توجد سجلات اعتماد أو رفض استلام.")}
                   </p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-[720px] w-full text-sm">
+                  <table className="min-w-[980px] w-full text-sm">
                     <thead className="bg-gray-50 dark:bg-slate-800">
                       <tr>
                         <th className="px-3 py-2 text-right">{appLang === "en" ? "Bill #" : "رقم الفاتورة"}</th>
                         <th className="px-3 py-2 text-right">{appLang === "en" ? "Supplier" : "المورد"}</th>
-                        <th className="px-3 py-2 text-right">{appLang === "en" ? "Date" : "التاريخ"}</th>
+                        {showCompanyScopeColumns && (
+                          <>
+                            <th className="px-3 py-2 text-right">{appLang === "en" ? "Branch" : "الفرع"}</th>
+                            <th className="px-3 py-2 text-right">{appLang === "en" ? "Warehouse" : "المخزن"}</th>
+                          </>
+                        )}
+                        <th className="px-3 py-2 text-right">
+                          {activeTab === "received" ? (appLang === "en" ? "Decision Date" : "تاريخ القرار") : (appLang === "en" ? "Date" : "التاريخ")}
+                        </th>
                         <th className="px-3 py-2 text-right">{appLang === "en" ? "Amount" : "المبلغ"}</th>
                         {activeTab === "received" && (
-                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Received By" : "مسئول المخزن"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Handled By" : "منفذ القرار"}</th>
                         )}
                         <th className="px-3 py-2 text-center">{appLang === "en" ? "Status" : "الحالة"}</th>
+                        {activeTab === "received" && (
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Reason" : "سبب الرفض"}</th>
+                        )}
                         <th className="px-3 py-2 text-center">{appLang === "en" ? "Action" : "الإجراء"}</th>
                       </tr>
                     </thead>
@@ -1245,23 +1380,45 @@ export default function GoodsReceiptPage() {
                           <td className="px-3 py-2">
                             {bill.suppliers?.name || bill.supplier_id}
                           </td>
+                          {showCompanyScopeColumns && (
+                            <>
+                              <td className="px-3 py-2">
+                                {bill.branch_name || bill.branch_id || "-"}
+                              </td>
+                              <td className="px-3 py-2">
+                                {bill.warehouse_name || bill.warehouse_id || "-"}
+                              </td>
+                            </>
+                          )}
                           <td className="px-3 py-2">
-                            {new Date(activeTab === "received" && bill.received_at ? bill.received_at : bill.bill_date).toLocaleDateString(
-                              appLang === "en" ? "en" : "ar"
-                            )}
+                            {new Date(
+                              activeTab === "received" && bill.receipt_action_at
+                                ? bill.receipt_action_at
+                                : bill.bill_date
+                            ).toLocaleDateString(appLang === "en" ? "en" : "ar")}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {Number(bill.total_amount || 0).toFixed(2)}
                           </td>
                           {activeTab === "received" && (
-                            <td className="px-3 py-2 font-medium text-emerald-700 dark:text-emerald-400">
-                              {bill.received_by_name || bill.received_by || "-"}
+                            <td className={`px-3 py-2 font-medium ${
+                              bill.receipt_status === "rejected"
+                                ? "text-red-700 dark:text-red-400"
+                                : "text-emerald-700 dark:text-emerald-400"
+                            }`}>
+                              {bill.receipt_action_by_name || bill.receipt_action_by || "-"}
                             </td>
                           )}
                           <td className="px-3 py-2 text-center">
                             {activeTab === "received" ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                                {appLang === "en" ? "Received" : "تم الاستلام"}
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
+                                bill.receipt_status === "rejected"
+                                  ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                              }`}>
+                                {bill.receipt_status === "rejected"
+                                  ? (appLang === "en" ? "Rejected" : "مرفوض")
+                                  : (appLang === "en" ? "Received" : "تم الاستلام")}
                               </span>
                             ) : (
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
@@ -1269,6 +1426,11 @@ export default function GoodsReceiptPage() {
                               </span>
                             )}
                           </td>
+                          {activeTab === "received" && (
+                            <td className="px-3 py-2 max-w-[220px] truncate text-gray-600 dark:text-gray-300">
+                              {bill.receipt_status === "rejected" ? bill.receipt_rejection_reason || "-" : "-"}
+                            </td>
+                          )}
                           <td className="px-3 py-2 text-center">
                             {activeTab === "received" ? (
                               <Button
@@ -1309,8 +1471,12 @@ export default function GoodsReceiptPage() {
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>
               {appLang === "en"
-                ? `Goods receipt for bill ${selectedBill?.bill_number || ""}`
-                : `اعتماد استلام فاتورة ${selectedBill?.bill_number || ""}`}
+                ? selectedBill?.receipt_status === "rejected"
+                  ? `Rejected goods receipt for bill ${selectedBill?.bill_number || ""}`
+                  : `Goods receipt for bill ${selectedBill?.bill_number || ""}`
+                : selectedBill?.receipt_status === "rejected"
+                  ? `تفاصيل رفض استلام فاتورة ${selectedBill?.bill_number || ""}`
+                  : `اعتماد استلام فاتورة ${selectedBill?.bill_number || ""}`}
             </DialogTitle>
           </DialogHeader>
           <form
@@ -1354,10 +1520,50 @@ export default function GoodsReceiptPage() {
                   {activeTab === "received" && (
                     <div>
                       <span className="block text-gray-400 mb-1">
-                        {appLang === "en" ? "Received By" : "مسئول المخزن المستلم"}
+                        {appLang === "en" ? "Decision By" : "منفذ القرار"}
                       </span>
-                      <span className="font-medium text-emerald-700 dark:text-emerald-400">
-                        {selectedBill.received_by_name || selectedBill.received_by || "-"}
+                      <span className={`font-medium ${
+                        selectedBill.receipt_status === "rejected"
+                          ? "text-red-700 dark:text-red-400"
+                          : "text-emerald-700 dark:text-emerald-400"
+                      }`}>
+                        {selectedBill.receipt_action_by_name || selectedBill.receipt_action_by || "-"}
+                      </span>
+                    </div>
+                  )}
+                  {activeTab === "received" && (
+                    <div>
+                      <span className="block text-gray-400 mb-1">
+                        {appLang === "en" ? "Decision" : "القرار"}
+                      </span>
+                      <span className={`font-medium ${
+                        selectedBill.receipt_status === "rejected"
+                          ? "text-red-700 dark:text-red-400"
+                          : "text-emerald-700 dark:text-emerald-400"
+                      }`}>
+                        {selectedBill.receipt_status === "rejected"
+                          ? (appLang === "en" ? "Rejected" : "مرفوض")
+                          : (appLang === "en" ? "Received" : "تم الاستلام")}
+                      </span>
+                    </div>
+                  )}
+                  {activeTab === "received" && selectedBill.receipt_action_at && (
+                    <div>
+                      <span className="block text-gray-400 mb-1">
+                        {appLang === "en" ? "Decision At" : "تاريخ القرار"}
+                      </span>
+                      <span className="font-medium">
+                        {new Date(selectedBill.receipt_action_at).toLocaleString(appLang === "en" ? "en" : "ar")}
+                      </span>
+                    </div>
+                  )}
+                  {activeTab === "received" && selectedBill.receipt_status === "rejected" && (
+                    <div className="col-span-2 md:col-span-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+                      <span className="block text-xs font-medium mb-1">
+                        {appLang === "en" ? "Rejection Reason" : "سبب الرفض"}
+                      </span>
+                      <span className="text-sm">
+                        {selectedBill.receipt_rejection_reason || "-"}
                       </span>
                     </div>
                   )}
