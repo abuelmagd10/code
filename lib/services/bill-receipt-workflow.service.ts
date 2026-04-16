@@ -328,7 +328,11 @@ export class BillReceiptWorkflowService {
 
     const alreadyPending = bill.status === "sent" && bill.receipt_status === "pending"
     if (!alreadyPending) {
-      const approved = bill.approval_status === "approved" || bill.status === "approved" || bill.status === "rejected"
+      if (bill.status === "rejected" && bill.receipt_status === "rejected") {
+        throw new Error("Rejected goods receipt must be corrected and re-approved before resubmission")
+      }
+
+      const approved = bill.approval_status === "approved" || bill.status === "approved"
       if (!approved) {
         throw new Error("Bill must be approved before sending it for warehouse receipt")
       }

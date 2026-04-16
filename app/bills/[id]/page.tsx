@@ -998,7 +998,7 @@ export default function BillViewPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Idempotency-Key": `bill:${bill.id}:reject-receipt:${encodeURIComponent(receiptRejectionReason.trim()).slice(0, 160)}`,
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `bill:${bill.id}:reject-receipt:${Date.now()}`,
         },
         body: JSON.stringify({
           rejectionReason: receiptRejectionReason.trim(),
@@ -1106,6 +1106,18 @@ export default function BillViewPage() {
       }
 
       // منع الإرسال للمخزن إذا لم تكن الفاتورة معتمدة إدارياً
+      if (newStatus === "sent" && bill.status === "rejected" && bill.receipt_status === "rejected") {
+        toastActionError(
+          toast,
+          "التحديث",
+          "فاتورة المورد",
+          appLang === "en"
+            ? "Rejected goods receipt must be corrected and re-approved before resubmission"
+            : "يجب تعديل الفاتورة بعد رفض المخزن وإعادة اعتمادها إدارياً قبل إعادة الإرسال للاستلام"
+        )
+        return
+      }
+
       if (newStatus === "sent" && bill.approval_status !== "approved" && bill.status !== "approved") {
         toastActionError(
           toast, 
@@ -1161,7 +1173,7 @@ export default function BillViewPage() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Idempotency-Key": `bill:${bill.id}:submit-for-receipt`,
+            "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `bill:${bill.id}:submit-for-receipt:${Date.now()}`,
           },
           body: JSON.stringify({
             ui_surface: "bill_detail",
@@ -1413,6 +1425,8 @@ export default function BillViewPage() {
                 {(bill.approval_status === "approved" || bill.status === "approved") &&
                  bill.receipt_status !== 'received' && 
                  bill.receipt_status !== 'pending' &&
+                 bill.status !== 'rejected' &&
+                 bill.status !== 'pending_approval' &&
                  canSubmitForApproval && (
                   <Button
                     onClick={() => changeStatus("sent")}
@@ -1422,7 +1436,9 @@ export default function BillViewPage() {
                   >
                     <Package className="w-4 h-4 sm:mr-1" />
                     <span className="hidden sm:inline">
-                      {posting ? "..." : (appLang === 'en' ? 'Submit for Receipt' : 'إرسال للاستلام المخزني')}
+                      {posting ? "..." : bill.receipt_status === 'rejected'
+                        ? (appLang === 'en' ? 'Resubmit for Receipt' : 'إعادة إرسال للاستلام المخزني')
+                        : (appLang === 'en' ? 'Submit for Receipt' : 'إرسال للاستلام المخزني')}
                     </span>
                   </Button>
                 )}
@@ -1440,7 +1456,7 @@ export default function BillViewPage() {
                           method: "POST",
                           headers: {
                             "Content-Type": "application/json",
-                            "Idempotency-Key": `bill:${bill.id}:approve`,
+                            "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `bill:${bill.id}:approve:${Date.now()}`,
                           },
                           body: JSON.stringify({
                             ui_surface: "bill_detail",
@@ -2619,7 +2635,7 @@ export default function BillViewPage() {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
-                      "Idempotency-Key": `bill:${bill.id}:reject:${encodeURIComponent(rejectionReason.trim()).slice(0, 160)}`,
+                      "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `bill:${bill.id}:reject:${Date.now()}`,
                     },
                     body: JSON.stringify({
                       rejectionReason: rejectionReason.trim(),

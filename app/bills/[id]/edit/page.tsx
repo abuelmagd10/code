@@ -447,8 +447,12 @@ export default function EditBillPage() {
                 approval_status: "pending",
                 approved_by: null,
                 approved_at: null,
-                receipt_status: null,
-                receipt_rejection_reason: null,
+                ...(receiptStatus === "rejected"
+                  ? {}
+                  : {
+                      receipt_status: null,
+                      receipt_rejection_reason: null,
+                    }),
               }
             : {}),
         })
