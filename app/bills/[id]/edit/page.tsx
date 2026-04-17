@@ -62,6 +62,103 @@ const CAN_OVERRIDE_BILL_CONTEXT_ROLES = new Set([
   "superadmin",
 ])
 
+async function loadWarehouseForBillEdit(supabase: any, companyId: string, warehouseId: string | null) {
+  if (!warehouseId) return null
+  const { data } = await supabase
+    .from("warehouses")
+    .select("id, branch_id, cost_center_id")
+    .eq("company_id", companyId)
+    .eq("id", warehouseId)
+    .maybeSingle()
+  return data || null
+}
+
+async function loadCostCenterForBillEdit(supabase: any, companyId: string, costCenterId: string | null) {
+  if (!costCenterId) return null
+  const { data } = await supabase
+    .from("cost_centers")
+    .select("id, branch_id")
+    .eq("company_id", companyId)
+    .eq("id", costCenterId)
+    .maybeSingle()
+  return data || null
+}
+
+async function resolveBillGovernanceForEdit(supabase: any, companyId: string, bill: any) {
+  const branchId = bill.branch_id || null
+  let warehouseId = bill.warehouse_id || null
+  let costCenterId = bill.cost_center_id || null
+
+  if (!branchId) {
+    return { branch_id: branchId, warehouse_id: warehouseId, cost_center_id: costCenterId }
+  }
+
+  const { data: branch } = await supabase
+    .from("branches")
+    .select("id, default_warehouse_id, default_cost_center_id")
+    .eq("company_id", companyId)
+    .eq("id", branchId)
+    .maybeSingle()
+
+  const currentWarehouse = await loadWarehouseForBillEdit(supabase, companyId, warehouseId)
+  let resolvedWarehouse = currentWarehouse?.branch_id === branchId ? currentWarehouse : null
+
+  if (!resolvedWarehouse && branch?.default_warehouse_id) {
+    const defaultWarehouse = await loadWarehouseForBillEdit(supabase, companyId, branch.default_warehouse_id)
+    resolvedWarehouse = defaultWarehouse?.branch_id === branchId ? defaultWarehouse : null
+  }
+
+  if (!resolvedWarehouse) {
+    const { data: fallbackWarehouse } = await supabase
+      .from("warehouses")
+      .select("id, branch_id, cost_center_id")
+      .eq("company_id", companyId)
+      .eq("branch_id", branchId)
+      .eq("is_active", true)
+      .order("is_main", { ascending: false })
+      .order("name", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    resolvedWarehouse = fallbackWarehouse || null
+  }
+
+  if (resolvedWarehouse?.id) {
+    warehouseId = resolvedWarehouse.id
+  }
+
+  const currentCostCenter = await loadCostCenterForBillEdit(supabase, companyId, costCenterId)
+  let resolvedCostCenter = currentCostCenter?.branch_id === branchId ? currentCostCenter : null
+
+  if (!resolvedCostCenter && branch?.default_cost_center_id) {
+    const defaultCostCenter = await loadCostCenterForBillEdit(supabase, companyId, branch.default_cost_center_id)
+    resolvedCostCenter = defaultCostCenter?.branch_id === branchId ? defaultCostCenter : null
+  }
+
+  if (!resolvedCostCenter && resolvedWarehouse?.cost_center_id) {
+    const warehouseCostCenter = await loadCostCenterForBillEdit(supabase, companyId, resolvedWarehouse.cost_center_id)
+    resolvedCostCenter = warehouseCostCenter?.branch_id === branchId ? warehouseCostCenter : null
+  }
+
+  if (!resolvedCostCenter) {
+    const { data: fallbackCostCenter } = await supabase
+      .from("cost_centers")
+      .select("id, branch_id")
+      .eq("company_id", companyId)
+      .eq("branch_id", branchId)
+      .eq("is_active", true)
+      .order("cost_center_name", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    resolvedCostCenter = fallbackCostCenter || null
+  }
+
+  if (resolvedCostCenter?.id) {
+    costCenterId = resolvedCostCenter.id
+  }
+
+  return { branch_id: branchId, warehouse_id: warehouseId, cost_center_id: costCenterId }
+}
+
 export default function EditBillPage() {
   const supabase = useSupabase()
   const router = useRouter()
@@ -198,7 +295,14 @@ export default function EditBillPage() {
         .single()
       
       if (!billData) { setExistingBill(null); return }
-      setExistingBill(billData as any)
+      const resolvedGovernance = await resolveBillGovernanceForEdit(supabase, companyId, billData)
+      const billWithResolvedGovernance = {
+        ...billData,
+        branch_id: resolvedGovernance.branch_id,
+        cost_center_id: resolvedGovernance.cost_center_id,
+        warehouse_id: resolvedGovernance.warehouse_id,
+      }
+      setExistingBill(billWithResolvedGovernance as any)
       setFormData({
         supplier_id: billData.supplier_id,
         bill_date: billData.bill_date ? String(billData.bill_date).slice(0, 10) : "",
@@ -212,13 +316,14 @@ export default function EditBillPage() {
       setShippingTaxRate(Number(billData.shipping_tax_rate || 0))
       setShippingProviderId(billData.shipping_provider_id || '')
       setAdjustment(Number(billData.adjustment || 0))
-      // Load branch, cost center, and warehouse
-      setBranchId(billData.branch_id || null)
-      setCostCenterId(billData.cost_center_id || null)
-      setWarehouseId(billData.warehouse_id || null)
+      // Load branch, cost center, and warehouse from the bill context, repairing
+      // stale branch mismatches for display/save without mutating on page load.
+      setBranchId(resolvedGovernance.branch_id || null)
+      setCostCenterId(resolvedGovernance.cost_center_id || null)
+      setWarehouseId(resolvedGovernance.warehouse_id || null)
 
       // Load shipping providers (filtered by branch for RBAC)
-      const branchIdForProviders = billData.branch_id || null
+      const branchIdForProviders = resolvedGovernance.branch_id || null
       const provRes = await fetch(
         `/api/shipping-providers${branchIdForProviders ? `?branch_id=${encodeURIComponent(branchIdForProviders)}` : ''}`
       )
