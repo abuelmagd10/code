@@ -14,6 +14,156 @@ import {
   addGovernanceData
 } from "@/lib/governance-middleware"
 
+const PURCHASE_PRIVILEGED_ROLES = new Set([
+  "super_admin",
+  "admin",
+  "general_manager",
+  "gm",
+  "owner",
+  "generalmanager",
+  "superadmin",
+])
+
+const normalizeRole = (role: unknown) => String(role || "").trim().toLowerCase().replace(/\s+/g, "_")
+
+async function loadWarehouse(supabase: any, companyId: string, warehouseId: string | null) {
+  if (!warehouseId) return null
+  const { data, error } = await supabase
+    .from("warehouses")
+    .select("id, branch_id, cost_center_id")
+    .eq("company_id", companyId)
+    .eq("id", warehouseId)
+    .maybeSingle()
+  if (error) throw new Error(`Failed to validate warehouse: ${error.message}`)
+  return data || null
+}
+
+async function loadCostCenter(supabase: any, companyId: string, costCenterId: string | null) {
+  if (!costCenterId) return null
+  const { data, error } = await supabase
+    .from("cost_centers")
+    .select("id, branch_id")
+    .eq("company_id", companyId)
+    .eq("id", costCenterId)
+    .maybeSingle()
+  if (error) throw new Error(`Failed to validate cost center: ${error.message}`)
+  return data || null
+}
+
+async function resolvePurchaseBranchContext(supabase: any, governance: any, data: any) {
+  let branchId = data.branch_id || governance.branchIds?.[0] || null
+  let warehouseId = data.warehouse_id || null
+  let costCenterId = data.cost_center_id || null
+
+  const requestedWarehouse = await loadWarehouse(supabase, governance.companyId, warehouseId)
+  if (!branchId && requestedWarehouse?.branch_id) {
+    branchId = requestedWarehouse.branch_id
+  }
+
+  if (!branchId) {
+    throw new Error("Governance Violation: branch_id is required for purchase orders")
+  }
+
+  if (!governance.branchIds?.includes(branchId)) {
+    throw new Error("Governance Violation: Invalid branch_id")
+  }
+
+  const { data: branch, error: branchError } = await supabase
+    .from("branches")
+    .select("id, default_warehouse_id, default_cost_center_id")
+    .eq("company_id", governance.companyId)
+    .eq("id", branchId)
+    .maybeSingle()
+
+  if (branchError) {
+    throw new Error(`Failed to validate branch defaults: ${branchError.message}`)
+  }
+
+  if (!branch) {
+    throw new Error("Governance Violation: Branch not found")
+  }
+
+  let resolvedWarehouse = requestedWarehouse?.branch_id === branchId ? requestedWarehouse : null
+
+  if (!resolvedWarehouse && branch.default_warehouse_id) {
+    resolvedWarehouse = await loadWarehouse(supabase, governance.companyId, branch.default_warehouse_id)
+    if (resolvedWarehouse?.branch_id !== branchId) {
+      resolvedWarehouse = null
+    }
+  }
+
+  if (!resolvedWarehouse) {
+    const { data: fallbackWarehouse, error: fallbackWarehouseError } = await supabase
+      .from("warehouses")
+      .select("id, branch_id, cost_center_id")
+      .eq("company_id", governance.companyId)
+      .eq("branch_id", branchId)
+      .eq("is_active", true)
+      .order("is_main", { ascending: false })
+      .order("name", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (fallbackWarehouseError) {
+      throw new Error(`Failed to resolve branch warehouse: ${fallbackWarehouseError.message}`)
+    }
+
+    resolvedWarehouse = fallbackWarehouse || null
+  }
+
+  if (!resolvedWarehouse?.id) {
+    throw new Error("Governance Violation: Branch has no default warehouse")
+  }
+
+  warehouseId = resolvedWarehouse.id
+
+  const requestedCostCenter = await loadCostCenter(supabase, governance.companyId, costCenterId)
+  let resolvedCostCenter = requestedCostCenter?.branch_id === branchId ? requestedCostCenter : null
+
+  if (!resolvedCostCenter && branch.default_cost_center_id) {
+    resolvedCostCenter = await loadCostCenter(supabase, governance.companyId, branch.default_cost_center_id)
+    if (resolvedCostCenter?.branch_id !== branchId) {
+      resolvedCostCenter = null
+    }
+  }
+
+  if (!resolvedCostCenter && resolvedWarehouse.cost_center_id) {
+    resolvedCostCenter = await loadCostCenter(supabase, governance.companyId, resolvedWarehouse.cost_center_id)
+    if (resolvedCostCenter?.branch_id !== branchId) {
+      resolvedCostCenter = null
+    }
+  }
+
+  if (!resolvedCostCenter) {
+    const { data: fallbackCostCenter, error: fallbackCostCenterError } = await supabase
+      .from("cost_centers")
+      .select("id, branch_id")
+      .eq("company_id", governance.companyId)
+      .eq("branch_id", branchId)
+      .eq("is_active", true)
+      .order("cost_center_name", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (fallbackCostCenterError) {
+      throw new Error(`Failed to resolve branch cost center: ${fallbackCostCenterError.message}`)
+    }
+
+    resolvedCostCenter = fallbackCostCenter || null
+  }
+
+  if (!resolvedCostCenter?.id) {
+    throw new Error("Governance Violation: Branch has no default cost center")
+  }
+
+  return {
+    ...data,
+    branch_id: branchId,
+    warehouse_id: warehouseId,
+    cost_center_id: resolvedCostCenter.id,
+  }
+}
+
 /**
  * GET /api/purchase-orders
  * جلب أوامر الشراء مع تطبيق فلاتر الحوكمة
@@ -116,13 +266,14 @@ export async function POST(request: NextRequest) {
       created_by_user_id: body.created_by_user_id || null,
     }
 
-    // 2️⃣ إضافة بيانات الحوكمة تلقائياً
-    const dataWithGovernance = addGovernanceData(purchaseOrderPayload, governance)
+    const supabase = await createClient()
+
+    // 2️⃣ إضافة بيانات الحوكمة تلقائياً ثم تثبيت سياق الفرع
+    let dataWithGovernance = addGovernanceData(purchaseOrderPayload, governance)
+    dataWithGovernance = await resolvePurchaseBranchContext(supabase, governance, dataWithGovernance)
 
     // 3️⃣ التحقق من صحة البيانات (إلزامي)
     validateGovernanceData(dataWithGovernance, governance)
-
-    const supabase = await createClient()
 
     // --- Product Branch Isolation Check ---
     if (commandItems.length > 0) {
@@ -137,7 +288,7 @@ export async function POST(request: NextRequest) {
            return NextResponse.json({ error: "Failed to validate products" }, { status: 500 });
         }
 
-        const isAdmin = ['super_admin', 'admin', 'general_manager', 'gm', 'owner'].includes(governance.role);
+        const isAdmin = PURCHASE_PRIVILEGED_ROLES.has(normalizeRole(governance.role));
         const docBranchId = dataWithGovernance.branch_id;
 
         if (!isAdmin && docBranchId) {
@@ -154,8 +305,8 @@ export async function POST(request: NextRequest) {
     }
     // ------------------------------------
 
-    const normalizedRole = String(governance.role || '').trim().toLowerCase().replace(/\s+/g, '_')
-    const canCreateLinkedBill = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
+    const normalizedRole = normalizeRole(governance.role)
+    const canCreateLinkedBill = PURCHASE_PRIVILEGED_ROLES.has(normalizedRole)
     const shouldCreateLinkedBill = Boolean(body.createLinkedBill) && canCreateLinkedBill
 
     // 4️⃣ الإدخال في قاعدة البيانات
