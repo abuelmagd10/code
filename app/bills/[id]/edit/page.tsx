@@ -46,7 +46,21 @@ interface Bill {
   status: string
   receipt_status?: string | null
   receipt_rejection_reason?: string | null
+  branch_id?: string | null
+  cost_center_id?: string | null
+  warehouse_id?: string | null
 }
+
+const normalizeRole = (role: unknown) => String(role || "").trim().toLowerCase().replace(/\s+/g, "_")
+const CAN_OVERRIDE_BILL_CONTEXT_ROLES = new Set([
+  "owner",
+  "admin",
+  "super_admin",
+  "general_manager",
+  "generalmanager",
+  "gm",
+  "superadmin",
+])
 
 export default function EditBillPage() {
   const supabase = useSupabase()
@@ -170,7 +184,7 @@ export default function EditBillPage() {
         role: role,
       }
       setUserContext(context)
-      setCanOverrideContext(["owner", "admin", "manager"].includes(role))
+      setCanOverrideContext(CAN_OVERRIDE_BILL_CONTEXT_ROLES.has(normalizeRole(role)))
 
       const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId)
       setSuppliers(supps || [])
@@ -303,20 +317,29 @@ export default function EditBillPage() {
       return
     }
 
-    // 🔐 ERP Access Control - التحقق من صلاحية تعديل العملية المالية
-    // ✅ لضمان استقرار الخادم وعدم كسر الحوكمة بسبب الواجهة:
-    // إذا كان الموظف عادياً (لا يملك صلاحية التخطي يمكنه التعديل ضمن نطاقه فقط),
-    // نجبر النظام على استخدام بيانات المركز الخاصة به مهما كان الوضع في الواجهة
-    const finalBranchId = (!canOverrideContext && userContext?.branch_id) ? userContext.branch_id : branchId
-    const finalCostCenterId = (!canOverrideContext && userContext?.cost_center_id) ? userContext.cost_center_id : costCenterId
-    const finalWarehouseId = (!canOverrideContext && userContext?.warehouse_id) ? userContext.warehouse_id : warehouseId
+    // 🔐 Ordinary users may edit bill contents only; they must never rewrite the
+    // bill's existing branch/cost-center/warehouse context from their profile.
+    const finalBranchId = canOverrideContext ? branchId : (existingBill.branch_id || branchId || null)
+    const finalCostCenterId = canOverrideContext ? costCenterId : (existingBill.cost_center_id || costCenterId || null)
+    const finalWarehouseId = canOverrideContext ? warehouseId : (existingBill.warehouse_id || warehouseId || null)
 
-    if (userContext) {
+    if (!canOverrideContext && userContext?.branch_id && finalBranchId && finalBranchId !== userContext.branch_id) {
+      toast({
+        title: appLang === "en" ? "Invalid Branch" : "فرع غير صالح",
+        description: appLang === "en"
+          ? "You can only edit supplier bills in your assigned branch"
+          : "يمكنك تعديل فواتير المشتريات داخل فرعك فقط",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (canOverrideContext && userContext) {
       const accessResult = validateFinancialTransaction(
         userContext,
         finalBranchId,
         finalCostCenterId,
-        canOverrideContext,
+        true,
         appLang
       )
       if (!accessResult.isValid && accessResult.error) {
@@ -714,8 +737,8 @@ export default function EditBillPage() {
                   ? `Purchase bill ${existingBill.bill_number} has been modified after receipt rejection and requires your approval`
                   : `تم تعديل فاتورة المشتريات رقم ${existingBill.bill_number} بعد رفض الاستلام وبانتظار اعتمادكم`,
                 createdBy: user.id,
-                branchId: branchId || undefined,
-                costCenterId: costCenterId || undefined,
+                branchId: finalBranchId || undefined,
+                costCenterId: finalCostCenterId || undefined,
                 assignedToRole: role,
                 priority: "high",
                 eventKey: `bill:${existingBill.id}:pending_approval_${role}_after_reject:${Date.now()}`,
