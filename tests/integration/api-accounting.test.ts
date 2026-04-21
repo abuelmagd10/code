@@ -5,10 +5,26 @@
  * =============================================
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { createTestClient, createTestCompany, cleanupTestData, createTestCustomer, createTestProduct, createTestInvoice, TestSupabaseClient } from '../helpers/test-setup'
+import * as dotenv from 'dotenv'
+dotenv.config({ path: '.env.local' })
 
-describe('API Accounting Integration Tests', () => {
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import {
+  createTestClient,
+  createTestCompany,
+  cleanupTestData,
+  createTestCustomer,
+  createTestProduct,
+  createTestInvoice,
+  getApiIntegrationBaseUrl,
+  shouldRunApiIntegrationScenarios,
+  TestSupabaseClient,
+} from '../helpers/test-setup'
+
+const describeApiAccountingIntegration = shouldRunApiIntegrationScenarios() ? describe : describe.skip
+const apiBaseUrl = getApiIntegrationBaseUrl()
+
+describeApiAccountingIntegration('API Accounting Integration Tests', () => {
   let supabase: TestSupabaseClient
   let companyId: string
   let userId: string
@@ -118,7 +134,7 @@ describe('API Accounting Integration Tests', () => {
     })
 
     it('should return 404 for non-existent invoice', async () => {
-      const response = await fetch('http://localhost:3000/api/repair-invoice?invoice_number=NONEXISTENT-999', {
+      const response = await fetch(`${apiBaseUrl}/api/repair-invoice?invoice_number=NONEXISTENT-999`, {
         method: 'GET'
       })
       // Should return 404 (would be 401 without auth, but structure test)

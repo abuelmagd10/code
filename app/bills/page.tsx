@@ -41,8 +41,6 @@ import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-reversal"
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
-import { createNotification } from "@/lib/governance-layer"
-import { notifyPRApprovalRequest } from "@/lib/notification-helpers"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
 import { getCachedPage, setCachedPage, invalidateCache, prefetchPage } from "@/lib/page-cache"
@@ -1180,6 +1178,7 @@ export default function BillsPage() {
           },
           returnItems: prItems,
           uiSurface: 'bills_page',
+          appLang,
         }),
       })
 
@@ -1187,22 +1186,6 @@ export default function BillsPage() {
       if (!response.ok || result.success === false || !result.purchaseReturnId) {
         throw new Error(result.error || (appLang === 'en' ? 'Failed to submit purchase return' : 'فشل إرسال مرتجع المشتريات'))
       }
-
-      // 4. إشعار للإدارة العليا للموافقة (eventKey ثابت لمنع التكرار)
-      try {
-        await notifyPRApprovalRequest({
-          companyId,
-          prId: result.purchaseReturnId,
-          prNumber: returnNumber,
-          supplierName: returnBillNumber,
-          amount: returnTotal,
-          currency: 'EGP',
-          createdBy: user.id,
-          branchId: (billRow as any).branch_id || undefined,
-          costCenterId: (billRow as any).cost_center_id || undefined,
-          appLang,
-        })
-      } catch (notifErr) { console.warn('Notification failed:', notifErr) }
 
       setReturnOpen(false)
       setReturnItems([])

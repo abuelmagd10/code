@@ -18,7 +18,6 @@ import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/curre
 import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
 import { type ShippingProvider } from "@/lib/shipping"
-import { notifyPOApprovalRequest } from "@/lib/notification-helpers"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 
@@ -499,6 +498,7 @@ export default function NewPurchaseOrderPage() {
           created_by_user_id: currentUser?.id || null,
           items: itemRows,
           createLinkedBill: isAdmin,
+          appLang,
         }),
       })
 
@@ -509,34 +509,6 @@ export default function NewPurchaseOrderPage() {
       }
       if (!response.ok || result.success === false || !result.data?.id || !result.data?.po_number) {
         throw new Error(result.error || (appLang === 'en' ? 'Failed to create purchase order' : 'فشل إنشاء أمر الشراء'))
-      }
-
-      const poData = result.data
-      const poId = poData.id!
-      const poNumber = poData.po_number!
-
-      if (!isAdmin) {
-        // Normal user creates PO -> pending approval -> NO BILL YET
-        const supplierName = suppliers.find(s => s.id === formData.supplier_id)?.name || "Unknown Supplier"
-
-        // ✅ الإشعار في try-catch منفصل حتى لا يُوقف نجاح إنشاء أمر الشراء
-        try {
-          await notifyPOApprovalRequest({
-            companyId,
-            poId,
-            poNumber,
-            supplierName: supplierName,
-            amount: totals.total,
-            currency: poCurrency,
-            branchId: branchId || undefined,
-            costCenterId: costCenterId || undefined,
-            createdBy: currentUser?.id || "",
-            appLang: appLang
-          })
-          console.log(`✅ PO approval notifications sent for PO ${poNumber}`)
-        } catch (notifErr) {
-          console.error('⚠️ PO approval notification failed (non-critical):', notifErr)
-        }
       }
 
       toastActionSuccess(toast, appLang === 'en' ? 'Save' : 'حفظ', appLang === 'en' ? 'Purchase Order' : 'أمر الشراء')

@@ -137,6 +137,7 @@ export function getFirstAllowedRoute(allowedPages: string[]): string {
   const priorityPages = [
     "dashboard",
     "approvals",
+    "manufacturing_boms",
     "invoices",
     "sales_orders",
     "customers",
@@ -154,7 +155,9 @@ export function getFirstAllowedRoute(allowedPages: string[]): string {
   // البحث عن أول صفحة مسموحة حسب الأولوية
   for (const page of priorityPages) {
     if (allowedPages.includes(page)) {
-      // تحويل resource إلى route
+      if (page === "manufacturing_boms") {
+        return "/manufacturing/boms"
+      }
       return `/${page.replace(/_/g, "-")}`
     }
   }
@@ -162,6 +165,9 @@ export function getFirstAllowedRoute(allowedPages: string[]): string {
   // إذا لم توجد صفحة من الأولويات، إرجاع أول صفحة من allowedPages
   const firstPage = allowedPages[0]
   if (firstPage) {
+    if (firstPage === "manufacturing_boms") {
+      return "/manufacturing/boms"
+    }
     return `/${firstPage.replace(/_/g, "-")}`
   }
 
@@ -247,6 +253,7 @@ async function fetchAccessProfile(
       // جميع الصفحات والعمليات
       allowed_pages = [
         "dashboard",
+        "manufacturing_boms",
         "products",
         "inventory",
         "customers",

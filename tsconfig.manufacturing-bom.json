@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "app/manufacturing/**/*.tsx",
+    "app/api/manufacturing/**/*.ts",
+    "components/manufacturing/**/*.tsx",
+    "lib/manufacturing/**/*.ts",
+    "lib/permissions-context.tsx",
+    "lib/access-context.tsx",
+    "lib/authz.ts",
+    "components/sidebar.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next",
+    "website",
+    "supabase/functions",
+    "scripts",
+    "temp",
+    "tests"
+  ]
+}

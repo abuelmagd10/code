@@ -169,6 +169,7 @@ const PATH_TO_RESOURCE: Record<string, string> = {
   '/inventory/write-offs': 'write_offs',
   '/inventory-transfers': 'inventory_transfers',
   '/inventory/goods-receipt': 'inventory_goods_receipt',
+  '/manufacturing/boms': 'manufacturing_boms',
 
   // 🏦 المالية والمحاسبة
   '/expenses': 'expenses',
@@ -447,4 +448,3 @@ export function useCanAccessPage(resource: string): { canAccess: boolean; isLoad
     isLoading: !isReady || isLoading,
   }
 }
-

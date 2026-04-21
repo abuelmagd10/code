@@ -14,7 +14,6 @@ import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/curre
 import { getActiveCompanyId } from "@/lib/company"
 import { canReturnBill, getBillOperationError, billRequiresJournalEntries } from "@/lib/validation"
 import { validatePurchaseReturnStock, formatStockShortageMessage } from "@/lib/purchase-return-validation"
-import { notifyPRApprovalRequest } from "@/lib/notification-helpers"
 
 type Supplier = { id: string; name: string; phone?: string | null }
 type Bill = { id: string; bill_number: string; supplier_id: string; total_amount: number; status: string; receipt_status?: string | null; branch_id?: string | null; cost_center_id?: string | null; warehouse_id?: string | null }
@@ -88,7 +87,6 @@ export default function NewPurchaseReturnPage() {
   // صلاحيات المستخدم
   const [currentUserRole, setCurrentUserRole] = useState<string>('accountant')
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [currentUserName, setCurrentUserName] = useState<string>('')
   const isPrivileged = PRIVILEGED_ROLES.includes(currentUserRole.toLowerCase())
 
   // المخازن (للمالك/المدير العام)
@@ -146,7 +144,7 @@ export default function NewPurchaseReturnPage() {
         'Content-Type': 'application/json',
         'Idempotency-Key': crypto.randomUUID(),
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, appLang }),
     })
 
     const result = await response.json().catch(() => ({})) as PurchaseReturnApiResult & { error?: string }
@@ -181,7 +179,6 @@ export default function NewPurchaseReturnPage() {
       const role = isOwner ? "owner" : (memberData?.role || "accountant")
       const userBranchId = memberData?.branch_id || null
       setCurrentUserRole(role)
-      setCurrentUserName(user.email || '')
 
       // 🔐 بناء استعلام الفواتير حسب الصلاحيات
       const isPrivilegedRole = PRIVILEGED_ROLES.includes(role.toLowerCase())
@@ -788,29 +785,6 @@ export default function NewPurchaseReturnPage() {
       uiSurface: 'purchase_returns_new_page',
     })
 
-    const purchaseReturnId = result.purchaseReturnId || result.purchaseReturn_id || result.purchase_return_id
-    const allocationIds: string[] = (result as any)?.allocationIds || (result as any)?.allocation_ids || []
-
-    // إشعار للإدارة العليا (pending_admin_approval — نفس سياسة المرتجع الفردي)
-    const selectedSupplier = suppliers.find(s => s.id === form.supplier_id)
-    if (purchaseReturnId) {
-      try {
-        const totalAmt = filteredGroups.reduce((s: number, g: any) => s + (g?.total_amount || 0), 0)
-        await notifyPRApprovalRequest({
-          companyId,
-          prId: purchaseReturnId,
-          prNumber: form.return_number,
-          supplierName: selectedSupplier?.name || form.supplier_id,
-          amount: totalAmt,
-          currency: baseCurrency,
-          createdBy: currentUserId || '',
-          appLang,
-        })
-      } catch (notifyErr) {
-        console.warn('⚠️ Multi-warehouse admin notification failed (non-critical):', notifyErr)
-      }
-    }
-
     toast({
       title: appLang === 'en' ? '📋 Multi-Warehouse Return Submitted for Admin Approval' : '📋 تم إرسال المرتجع متعدد المخازن للاعتماد الإداري',
       description: appLang === 'en'
@@ -1167,25 +1141,6 @@ export default function NewPurchaseReturnPage() {
           uiSurface: 'purchase_returns_new_page',
         })
 
-        const selectedSupplier = suppliers.find(s => s.id === form.supplier_id)
-        try {
-          await notifyPRApprovalRequest({
-            companyId,
-            prId: editReturnId,
-            prNumber: form.return_number,
-            supplierName: selectedSupplier?.name || form.supplier_id,
-            amount: finalBaseTotal,
-            currency: baseCurrency,
-            createdBy: currentUserId || '',
-            branchId: billBranchId || undefined,
-            costCenterId: billCostCenterId || undefined,
-            appLang,
-            isResubmit: true,
-          })
-        } catch (notifyErr) {
-          console.warn('⚠️ Admin resubmit notification failed (non-critical):', notifyErr)
-        }
-
         toast({
           title: appLang === 'en' ? '✅ Return Resubmitted for Approval' : '✅ تمت إعادة إرسال المرتجع للاعتماد',
           description: appLang === 'en'
@@ -1259,28 +1214,6 @@ export default function NewPurchaseReturnPage() {
           })
         } catch (auditErr) {
           console.warn('Audit log failed (non-critical):', auditErr)
-        }
-      }
-
-      // ===================== 🔔 إشعارات الإدارة (pending_admin_approval) =====================
-      // جميع المرتجعات تُرسل إشعاراً للإدارة العليا فقط - لا إشعار للمخزن في هذه المرحلة
-      if (purchaseReturnId) {
-        try {
-          const selectedSupplier = suppliers.find(s => s.id === form.supplier_id)
-          await notifyPRApprovalRequest({
-            companyId,
-            prId: purchaseReturnId,
-            prNumber: form.return_number,
-            supplierName: selectedSupplier?.name || form.supplier_id,
-            amount: finalBaseTotal,
-            currency: baseCurrency,
-            createdBy: currentUserId || '',
-            branchId: billBranchId || undefined,
-            costCenterId: billCostCenterId || undefined,
-            appLang,
-          })
-        } catch (notifyErr) {
-          console.warn('⚠️ Admin notification failed (non-critical):', notifyErr)
         }
       }
 

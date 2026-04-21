@@ -350,18 +350,24 @@ export default function NewCustomerDebitNotePage() {
 
       if (error) throw error
 
-      // إنشاء إشعار للمحاسب والمدير
+      // إنشاء الإشعار من الخلفية فقط
       if (data && data.id) {
         try {
-          const { notifyCustomerDebitNoteCreated } = await import('@/lib/notification-helpers')
-          await notifyCustomerDebitNoteCreated({
-            companyId,
-            debitNoteId: data.id,
-            branchId: branchId || undefined,
-            costCenterId: costCenterId || undefined,
-            createdBy: userId,
-            appLang
+          const response = await fetch(`/api/customer-debit-notes/${data.id}/notifications`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: "created",
+              appLang,
+            }),
           })
+
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}))
+            throw new Error(payload?.error || "Failed to dispatch customer debit note notification")
+          }
         } catch (notifError) {
           console.error("Error creating notification:", notifError)
           // لا نوقف العملية إذا فشل إنشاء الإشعار
@@ -585,4 +591,3 @@ export default function NewCustomerDebitNotePage() {
     </div>
   )
 }
-

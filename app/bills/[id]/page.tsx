@@ -47,8 +47,6 @@ import {
 } from "@/components/ui/alert-dialog"
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
-import { createNotification } from "@/lib/governance-layer"
-import { notifyBillApprovedToPOCreator, notifyPRApprovalRequest } from "@/lib/notification-helpers"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
@@ -714,6 +712,7 @@ export default function BillViewPage() {
             line_total: item.line_total,
           })),
           uiSurface: 'bill_detail_page',
+          appLang,
         }),
       })
 
@@ -721,22 +720,6 @@ export default function BillViewPage() {
       if (!response.ok || result.success === false || !result.purchaseReturnId) {
         throw new Error(result.error || (appLang === 'en' ? 'Failed to submit purchase return' : 'فشل إرسال مرتجع المشتريات'))
       }
-
-      // 4. إشعار للإدارة العليا للموافقة (eventKey ثابت لمنع التكرار)
-      try {
-        await notifyPRApprovalRequest({
-          companyId,
-          prId: result.purchaseReturnId,
-          prNumber: returnNumber,
-          supplierName: supplier?.name || bill.bill_number,
-          amount: returnTotal,
-          currency: bill.currency_code || 'EGP',
-          createdBy: user.id,
-          branchId: bill.branch_id || undefined,
-          costCenterId: bill.cost_center_id || undefined,
-          appLang,
-        })
-      } catch (notifErr) { console.warn('Notification failed:', notifErr) }
 
       setReturnOpen(false)
       toastActionSuccess(
@@ -858,10 +841,6 @@ export default function BillViewPage() {
       if (!bill) return
       setPosting(true)
 
-      const companyId = await getActiveCompanyId(supabase)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!companyId || !user) { setPosting(false); return }
-
       const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/confirm-receipt`, {
         method: "POST",
         headers: {
@@ -883,78 +862,6 @@ export default function BillViewPage() {
 
       // 3. تحديث حالة أمر الشراء المرتبط
       await updateLinkedPurchaseOrderStatus(bill.id)
-
-      // 5. إشعار للإدارة العليا بنجاح استلام البضاعة + إشعار منشئ أمر الشراء (Fix 4 & 5)
-      try {
-        const receiptTimestamp = Date.now() // للرسالة فقط، ليس للـ eventKey
-        const receiptTitle = appLang === "en"
-          ? "Goods receipt approved - inventory updated"
-          : "تم اعتماد استلام البضاعة وتحديث المخزون"
-        const receiptMessage = appLang === "en"
-          ? `Goods for purchase bill ${bill.bill_number} have been received and warehouse inventory has been updated`
-          : `تم استلام البضاعة لفاتورة المشتريات رقم ${bill.bill_number} وتم تحديث مخزون الفرع`
-
-        // 1️⃣ Notify Top Management (stable eventKey — Fix 5)
-        for (const role of ['admin', 'owner', 'general_manager']) {
-          await createNotification({
-            companyId,
-            referenceType: "bill",
-            referenceId: bill.id,
-            title: receiptTitle,
-            message: receiptMessage,
-            createdBy: user.id,
-            branchId: bill.branch_id || undefined,
-            costCenterId: bill.cost_center_id || undefined,
-            warehouseId: bill.warehouse_id || undefined,
-            assignedToRole: role,
-            priority: "normal",
-            eventKey: `bill:${bill.id}:receipt_approved:${role}`,
-            severity: "info",
-            category: "inventory"
-          })
-        }
-
-        // 2️⃣ Fix 4: Notify PO Creator (branch employee) that goods were received
-        try {
-          const poCreatorNotifTitle = appLang === "en"
-            ? "Your Purchase Order: Goods Received & Inventory Updated"
-            : "أمر شرائك: تم استلام البضاعة وتحديث المخزون"
-          const poCreatorNotifMsg = appLang === "en"
-            ? `The goods for purchase bill ${bill.bill_number} have been received and warehouse inventory has been updated successfully.`
-            : `تم استلام البضاعة وتحديث المخزون بنجاح لفاتورة المشتريات رقم ${bill.bill_number}.`
-
-          // Fetch PO creator from linked purchase order
-          if (bill.purchase_order_id) {
-            const { data: poData } = await supabase
-              .from('purchase_orders')
-              .select('created_by_user_id')
-              .eq('id', bill.purchase_order_id)
-              .maybeSingle()
-
-            const poCreatorId = (poData as any)?.created_by_user_id
-            if (poCreatorId && poCreatorId !== user.id) {
-              await createNotification({
-                companyId,
-                referenceType: "bill",
-                referenceId: bill.id,
-                title: poCreatorNotifTitle,
-                message: poCreatorNotifMsg,
-                createdBy: user.id,
-                assignedToUser: poCreatorId,
-                branchId: undefined,
-                priority: "normal",
-                eventKey: `bill:${bill.id}:receipt_approved:creator`,
-                severity: "info",
-                category: "inventory"
-              })
-            }
-          }
-        } catch (creatorNotifErr) {
-          console.warn("Failed to notify PO creator on receipt approval:", creatorNotifErr)
-        }
-      } catch (notifErr) {
-        console.warn("Receipt approval notifications failed:", notifErr)
-      }
 
       toastActionSuccess(
         toast,
@@ -990,10 +897,6 @@ export default function BillViewPage() {
     }
     try {
       setPosting(true)
-      const companyId = await getActiveCompanyId(supabase)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!companyId || !user) { setPosting(false); return }
-
       const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/reject-receipt`, {
         method: "POST",
         headers: {
@@ -1012,64 +915,6 @@ export default function BillViewPage() {
           result.error ||
           (appLang === "en" ? "Failed to reject bill receipt" : "تعذر رفض استلام الفاتورة")
         )
-      }
-
-      // إشعار لمنشئ الفاتورة بالرفض أو لمنشئ أمر الشراء (موظف الفرع) وللإدارة العليا
-      try {
-        let poCreatorId = null
-        if (bill.purchase_order_id) {
-          const { data: po } = await supabase
-            .from('purchase_orders')
-            .select('created_by_user_id')
-            .eq('id', bill.purchase_order_id)
-            .maybeSingle()
-          if (po && po.created_by_user_id) {
-            poCreatorId = po.created_by_user_id
-          }
-        }
-
-        const targetUserId = poCreatorId || bill.created_by
-        if (targetUserId) {
-          await createNotification({
-            companyId,
-            referenceType: "bill",
-            referenceId: bill.id,
-            title: appLang === "en" ? "Goods receipt rejected" : "تم رفض استلام البضاعة",
-            message: appLang === "en"
-              ? `The goods receipt for bill ${bill.bill_number} was rejected. Reason: ${receiptRejectionReason.trim()}`
-              : `تم رفض استلام البضاعة للفاتورة رقم ${bill.bill_number}. السبب: ${receiptRejectionReason.trim()}`,
-            createdBy: user.id,
-            branchId: bill.branch_id || undefined,
-            assignedToUser: targetUserId,
-            priority: "high",
-            eventKey: `bill:${bill.id}:receipt_rejected_user:${Date.now()}`,
-            severity: "error",
-            category: "inventory"
-          })
-        }
-
-        // إشعار للإدارة العليا
-        const targetRoles = ["owner", "general_manager"]
-        for (const r of targetRoles) {
-          await createNotification({
-            companyId,
-            referenceType: "bill",
-            referenceId: bill.id,
-            title: appLang === "en" ? "Goods receipt rejected" : "تم رفض استلام البضاعة",
-            message: appLang === "en"
-              ? `The goods receipt for bill ${bill.bill_number} was rejected. Reason: ${receiptRejectionReason.trim()}`
-              : `تم رفض استلام البضاعة للفاتورة رقم ${bill.bill_number}. السبب: ${receiptRejectionReason.trim()}`,
-            createdBy: user.id,
-            branchId: bill.branch_id || undefined,
-            assignedToRole: r,
-            priority: "high",
-            eventKey: `bill:${bill.id}:receipt_rejected_${r}:${Date.now()}`,
-            severity: "error",
-            category: "inventory"
-          })
-        }
-      } catch (notifErr) {
-        console.warn("Receipt rejection notification failed:", notifErr)
       }
 
       setReceiptRejectDialogOpen(false)
@@ -1186,35 +1031,6 @@ export default function BillViewPage() {
             result.error ||
             (appLang === "en" ? "Failed to submit bill for warehouse receipt" : "تعذر إرسال الفاتورة لاعتماد الاستلام")
           )
-        }
-
-        try {
-          const companyId = await getActiveCompanyId(supabase)
-          const { data: { user } } = await supabase.auth.getUser()
-          if (companyId && user) {
-            await createNotification({
-              companyId,
-              referenceType: "bill",
-              referenceId: bill.id,
-              title: appLang === "en"
-                ? "Goods receipt approval required"
-                : "مطلوب اعتماد استلام البضاعة",
-              message: appLang === "en"
-                ? `Purchase bill ${bill.bill_number} is awaiting warehouse receipt approval. Please review and approve the goods receipt.`
-                : `فاتورة المشتريات رقم ${bill.bill_number} بانتظار اعتماد الاستلام في المخزن. يرجى مراجعة واعتماد استلام البضاعة.`,
-              createdBy: user.id,
-              branchId: bill.branch_id || undefined,
-              costCenterId: bill.cost_center_id || undefined,
-              warehouseId: bill.warehouse_id || undefined,
-              assignedToRole: "store_manager",
-              priority: "high",
-              eventKey: `bill:${bill.id}:sent_pending_receipt:${Date.now()}`,
-              severity: "info",
-              category: "inventory"
-            })
-          }
-        } catch (notifErr) {
-          console.warn("Receipt pending notification failed:", notifErr)
         }
 
         await updateLinkedPurchaseOrderStatus(bill.id)
@@ -1449,9 +1265,6 @@ export default function BillViewPage() {
                     onClick={async () => {
                       try {
                         setPosting(true)
-                        const { data: { user } } = await supabase.auth.getUser()
-                        if (!user) return
-
                         const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/approve`, {
                           method: "POST",
                           headers: {
@@ -1460,6 +1273,7 @@ export default function BillViewPage() {
                           },
                           body: JSON.stringify({
                             ui_surface: "bill_detail",
+                            app_lang: appLang,
                           }),
                         })
 
@@ -1469,34 +1283,6 @@ export default function BillViewPage() {
                             result.error ||
                             (appLang === 'en' ? 'Failed to approve bill' : 'تعذر اعتماد الفاتورة')
                           )
-                        }
-
-                        // ✅ إرسال إشعار لمنشئ أمر الشراء إذا كانت الفاتورة مرتبطة بأمر شراء
-                        if (bill.purchase_order_id) {
-                          try {
-                            const { data: poData } = await supabase
-                              .from("purchase_orders")
-                              .select("id, po_number, created_by_user_id")
-                              .eq("id", bill.purchase_order_id)
-                              .single()
-
-                            if (poData?.created_by_user_id) {
-                              await notifyBillApprovedToPOCreator({
-                                companyId: bill.company_id,
-                                billId: bill.id,
-                                billNumber: bill.bill_number,
-                                purchaseOrderId: poData.id,
-                                poNumber: poData.po_number,
-                                poCreatedBy: poData.created_by_user_id,
-                                approvedBy: user.id,
-                                branchId: bill.branch_id,
-                                costCenterId: bill.cost_center_id,
-                                appLang,
-                              })
-                            }
-                          } catch (notifyErr) {
-                            console.warn("Failed to notify PO creator after bill approval:", notifyErr)
-                          }
                         }
 
                         toastActionSuccess(toast, "الاعتماد", "تعديلات الفاتورة", appLang)
@@ -2624,13 +2410,6 @@ export default function BillViewPage() {
                 if (!bill || !rejectionReason.trim()) return
                 try {
                   setPosting(true)
-                  const companyId = await getActiveCompanyId(supabase)
-                  const { data: { user } } = await supabase.auth.getUser()
-                  if (!companyId || !user) {
-                    setPosting(false)
-                    return
-                  }
-
                   const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/reject`, {
                     method: "POST",
                     headers: {
@@ -2649,54 +2428,6 @@ export default function BillViewPage() {
                       result.error ||
                       (appLang === 'en' ? 'Failed to reject bill' : 'تعذر رفض الفاتورة')
                     )
-                  }
-
-                  // إرسال الإشعارات
-                  const rejectionTitle = appLang === 'en'
-                    ? 'Purchase Bill Rejected'
-                    : 'تم رفض فاتورة المشتريات'
-                  const rejectionMessage = appLang === 'en'
-                    ? `Purchase bill ${bill.bill_number} has been rejected. Reason: ${rejectionReason.trim()}`
-                    : `تم رفض فاتورة المشتريات رقم ${bill.bill_number}. السبب: ${rejectionReason.trim()}`
-
-                  try {
-                    // 1️⃣ إشعار لمنشئ الفاتورة
-                    if (bill.created_by) {
-                      await createNotification({
-                        companyId,
-                        referenceType: "bill",
-                        referenceId: bill.id,
-                        title: rejectionTitle,
-                        message: rejectionMessage,
-                        createdBy: user.id,
-                        branchId: bill.branch_id || undefined,
-                        costCenterId: bill.cost_center_id || undefined,
-                        assignedToUser: bill.created_by,
-                        priority: "high",
-                        eventKey: `bill:${bill.id}:admin_rejected:creator:${Date.now()}`,
-                        severity: "error",
-                        category: "approvals"
-                      })
-                    }
-
-                    // 2️⃣ إشعار لمحاسب الفرع
-                    await createNotification({
-                      companyId,
-                      referenceType: "bill",
-                      referenceId: bill.id,
-                      title: rejectionTitle,
-                      message: rejectionMessage,
-                      createdBy: user.id,
-                      branchId: bill.branch_id || undefined,
-                      costCenterId: bill.cost_center_id || undefined,
-                      assignedToRole: "accountant",
-                      priority: "high",
-                      eventKey: `bill:${bill.id}:admin_rejected:accountant:${Date.now()}`,
-                      severity: "error",
-                      category: "approvals"
-                    })
-                  } catch (notifErr) {
-                    console.warn("Failed to send rejection notifications:", notifErr)
                   }
 
                   toastActionSuccess(

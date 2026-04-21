@@ -1253,45 +1253,16 @@ export default function WriteOffsPage() {
 
       if (itemsErr) throw itemsErr
 
-      // 🔔 إرسال إشعار للمعتمدين (Owner و Admin) عند إنشاء إهلاك جديد
-      // ⚠️ مهم: يجب تشغيل QUICK_FIX_NOTIFICATIONS.sql في Supabase أولاً
       try {
-        const { notifyWriteOffApprovalRequest } = await import('@/lib/notification-helpers')
-        console.log('🔔 [WRITE-OFF CREATE] Starting notification process...')
-        console.log('🔔 [WRITE-OFF CREATE] Parameters:', {
-          companyId,
-          writeOffId: wo.id,
-          writeOffNumber: wo.write_off_number,
-          branchId: branchId || 'null',
-          warehouseId: warehouseId || 'null',
-          costCenterId: costCenterId || 'null',
-          createdBy: user?.user?.id || 'null'
-        })
-
-        await notifyWriteOffApprovalRequest({
-          companyId,
-          writeOffId: wo.id,
-          writeOffNumber: wo.write_off_number,
-          branchId: branchId || undefined,
-          warehouseId: warehouseId || undefined,
-          costCenterId: costCenterId || undefined,
-          createdBy: user?.user?.id || '',
-          appLang: isAr ? 'ar' : 'en'
-        })
-        
+        await dispatchWriteOffNotificationEvent(wo.id, "approval_requested")
         console.log('✅ [WRITE-OFF CREATE] Write-off approval notification sent successfully')
       } catch (notificationError: any) {
-        console.error('❌ [WRITE-OFF CREATE] CRITICAL: Error sending write-off approval notification')
-        console.error('❌ [WRITE-OFF CREATE] Error message:', notificationError?.message)
-        console.error('❌ [WRITE-OFF CREATE] Error stack:', notificationError?.stack)
-        console.error('❌ [WRITE-OFF CREATE] Full error:', JSON.stringify(notificationError, null, 2))
-        
-        // ⚠️ تحذير للمستخدم إذا فشل الإشعار
+        console.error('❌ [WRITE-OFF CREATE] Error sending write-off approval notification:', notificationError)
         toast({
           title: isAr ? "تحذير" : "Warning",
           description: isAr 
-            ? "تم إنشاء الإهلاك بنجاح، لكن فشل إرسال الإشعارات. يرجى التحقق من إعدادات قاعدة البيانات."
-            : "Write-off created successfully, but failed to send notifications. Please check database settings.",
+            ? "تم إنشاء الإهلاك بنجاح، لكن تعذر إرسال إشعار سير العمل."
+            : "Write-off created successfully, but the workflow notification could not be sent.",
           variant: "destructive",
           duration: 8000
         })
@@ -2149,34 +2120,7 @@ export default function WriteOffsPage() {
       
       if (currentStatus === 'pending') {
           try {
-            // ✅ التأكد من أن userId معرف
-            let finalUserId = userId
-            if (!finalUserId) {
-              console.warn('⚠️ [NOTIFICATION_WARNING] userId is missing! Trying to get from auth.getUser()...')
-              const { data: userData } = await supabase.auth.getUser()
-              finalUserId = userData?.user?.id
-              if (!finalUserId) {
-                console.error('❌ [NOTIFICATION_ERROR] Cannot get userId from auth.getUser()')
-                throw new Error('User ID is required to send notification')
-              }
-              console.log('✅ [NOTIFICATION] Using userId from auth.getUser():', finalUserId)
-            }
-            
-            const { notifyWriteOffModified } = await import('@/lib/notification-helpers')
-            const appLang: 'ar' | 'en' = isAr ? 'ar' : 'en'
-            const notificationParams = {
-              companyId,
-              writeOffId: writeOffIdToUpdate,
-              writeOffNumber: finalRefresh?.write_off_number || selectedWriteOff.write_off_number,
-              branchId: finalBranchId || undefined,
-              warehouseId: finalWarehouseId || undefined,
-              costCenterId: finalCostCenterId || undefined,
-              modifiedBy: finalUserId,
-              appLang
-            }
-            
-            console.log('🔔 [NOTIFICATION] Sending write-off modification notification:', notificationParams)
-            await notifyWriteOffModified(notificationParams)
+            await dispatchWriteOffNotificationEvent(writeOffIdToUpdate, "modified")
             console.log('✅ [NOTIFICATION] Write-off modification notification sent successfully')
           } catch (notificationError: any) {
             console.error('❌ [NOTIFICATION_ERROR] Error sending write-off modification notification:', notificationError)
@@ -2318,6 +2262,32 @@ export default function WriteOffsPage() {
     }
   }
 
+  const dispatchWriteOffNotificationEvent = useCallback(
+    async (
+      writeOffId: string,
+      action: "approval_requested" | "modified" | "rejected" | "cancelled",
+      extra?: { rejectionReason?: string; cancellationReason?: string }
+    ) => {
+      const response = await fetch(`/api/write-offs/${writeOffId}/notifications`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action,
+          appLang,
+          ...extra,
+        }),
+      })
+
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || result?.error_en || "Failed to dispatch write-off workflow notification")
+      }
+    },
+    [appLang]
+  )
+
   // رفض الإهلاك
   const handleReject = async () => {
     if (!selectedWriteOff || !rejectionReason) {
@@ -2330,21 +2300,6 @@ export default function WriteOffsPage() {
       const { data: authData, error: authError } = await supabase.auth.getUser()
       if (authError || !authData?.user) {
         throw new Error(isAr ? "فشل في جلب بيانات المستخدم" : "Failed to get user data")
-      }
-
-      // ✅ جلب اسم من قام بالرفض
-      let rejectedByName: string | undefined
-      try {
-        const { data: profile } = await supabase
-          .from('user_profiles')
-          .select('display_name, username')
-          .eq('user_id', authData.user.id)
-          .maybeSingle()
-        
-        rejectedByName = profile?.display_name || profile?.username || authData.user.email?.split('@')[0] || undefined
-      } catch (profileError) {
-        console.warn('Could not fetch rejecter name:', profileError)
-        rejectedByName = authData.user.email?.split('@')[0] || undefined
       }
 
       const nowIso = new Date().toISOString()
@@ -2362,21 +2317,9 @@ export default function WriteOffsPage() {
 
       if (error) throw error
 
-      // 🔔 إرسال إشعار للمنشئ الأصلي
       try {
-        const { notifyWriteOffRejected } = await import('@/lib/notification-helpers')
-        await notifyWriteOffRejected({
-          companyId: selectedWriteOff.company_id || '',
-          writeOffId: selectedWriteOff.id,
-          writeOffNumber: selectedWriteOff.write_off_number,
-          createdBy: selectedWriteOff.created_by || authData.user.id,
-          rejectedBy: authData.user.id,
-          rejectedByName,
+        await dispatchWriteOffNotificationEvent(selectedWriteOff.id, "rejected", {
           rejectionReason,
-          branchId: selectedWriteOff.branch_id || undefined,
-          warehouseId: selectedWriteOff.warehouse_id || undefined,
-          costCenterId: selectedWriteOff.cost_center_id || undefined,
-          appLang: isAr ? 'ar' : 'en'
         })
       } catch (notificationError) {
         console.error('Error sending write-off rejection notification:', notificationError)
@@ -2408,18 +2351,6 @@ export default function WriteOffsPage() {
         throw new Error(isAr ? "فشل في جلب بيانات المستخدم" : "Failed to get user data")
       }
 
-      let cancelledByName: string | undefined
-      try {
-        const { data: profile } = await supabase
-          .from('user_profiles')
-          .select('display_name, username')
-          .eq('user_id', authData.user.id)
-          .maybeSingle()
-        cancelledByName = profile?.display_name || profile?.username || authData.user.email?.split('@')[0] || undefined
-      } catch {
-        cancelledByName = authData.user.email?.split('@')[0] || undefined
-      }
-
       const { data: result, error } = await supabase.rpc("cancel_approved_write_off", {
         p_write_off_id: selectedWriteOff.id,
         p_cancelled_by: authData.user.id,
@@ -2430,19 +2361,8 @@ export default function WriteOffsPage() {
       if (!result?.success) throw new Error(result?.error || "Unknown error")
 
       try {
-        const { notifyWriteOffCancelled } = await import('@/lib/notification-helpers')
-        await notifyWriteOffCancelled({
-          companyId: selectedWriteOff.company_id || '',
-          writeOffId: selectedWriteOff.id,
-          writeOffNumber: selectedWriteOff.write_off_number,
-          createdBy: selectedWriteOff.created_by || authData.user.id,
-          cancelledBy: authData.user.id,
-          cancelledByName,
+        await dispatchWriteOffNotificationEvent(selectedWriteOff.id, "cancelled", {
           cancellationReason,
-          branchId: selectedWriteOff.branch_id || undefined,
-          warehouseId: selectedWriteOff.warehouse_id || undefined,
-          costCenterId: selectedWriteOff.cost_center_id || undefined,
-          appLang: isAr ? 'ar' : 'en'
         })
       } catch (notificationError) {
         console.error('Error sending write-off cancellation notification:', notificationError)

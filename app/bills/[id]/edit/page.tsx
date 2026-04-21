@@ -20,7 +20,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { validateFinancialTransaction, type UserContext } from "@/lib/validation"
-import { createNotification } from "@/lib/governance-layer"
 import { getActiveCompanyId } from "@/lib/company"
 
 interface Supplier { id: string; name: string }
@@ -824,36 +823,30 @@ export default function EditBillPage() {
 
       await syncLinkedPurchaseOrder()
 
-      // ✅ إذا كانت الفاتورة في دورة اعتماد تم البدء فيها (وليست مسودة/مغلقة)، نرسل إشعارات اعتماد جديدة للمالك والمدير العام
+      // ✅ إذا كانت الفاتورة في دورة اعتماد تم البدء فيها (وليست مسودة/مغلقة)،
+      // نُطلق إشعارات إعادة الاعتماد من backend فقط.
       if (needsApprovalRestart) {
         try {
-          const companyId = await getActiveCompanyId(supabase)
-          const { data: { user } } = await supabase.auth.getUser()
-          if (companyId && user && existingBill) {
-            for (const role of ['owner', 'general_manager']) {
-              await createNotification({
-                companyId,
-                referenceType: "bill",
-                referenceId: existingBill.id,
-                title: appLang === "en"
-                  ? "Bill modification pending approval"
-                  : "تعديل الفاتورة بانتظار الاعتماد",
-                message: appLang === "en"
-                  ? `Purchase bill ${existingBill.bill_number} has been modified after receipt rejection and requires your approval`
-                  : `تم تعديل فاتورة المشتريات رقم ${existingBill.bill_number} بعد رفض الاستلام وبانتظار اعتمادكم`,
-                createdBy: user.id,
-                branchId: finalBranchId || undefined,
-                costCenterId: finalCostCenterId || undefined,
-                assignedToRole: role,
-                priority: "high",
-                eventKey: `bill:${existingBill.id}:pending_approval_${role}_after_reject:${Date.now()}`,
-                severity: "warning",
-                category: "approvals",
-              })
+          if (existingBill) {
+            const response = await fetch(`/api/bills/${encodeURIComponent(existingBill.id)}/restart-approval-notifications`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Idempotency-Key": `bill:${existingBill.id}:approval-restart-notifications`,
+              },
+              body: JSON.stringify({
+                ui_surface: "bill_edit_page",
+                trigger_reason: "bill_edit_after_receipt_rejection",
+              }),
+            })
+
+            const result = await response.json().catch(() => ({}))
+            if (!response.ok || !result.success) {
+              throw new Error(result.error || "Failed to dispatch bill approval restart notifications")
             }
           }
         } catch (notifErr) {
-          console.warn("Failed to send re-approval notifications after goods receipt rejection fix:", notifErr)
+          console.warn("Failed to dispatch re-approval notifications after goods receipt rejection fix:", notifErr)
         }
       }
 

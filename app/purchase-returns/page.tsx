@@ -14,8 +14,6 @@ import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useToast } from "@/hooks/use-toast"
-import { notifyPurchaseReturnConfirmed, notifyWarehouseAllocationConfirmed, notifyPRApproved, notifyPRRejected, notifyPurchaseReturnPendingApproval, notifyWarehouseReturnRejected, notifyManagementPRWarehouseConfirmed, notifyManagementPRWarehouseRejected } from "@/lib/notification-helpers"
-import { createNotification } from "@/lib/governance-layer"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
@@ -81,7 +79,6 @@ export default function PurchaseReturnsPage() {
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [currentUserRole, setCurrentUserRole] = useState<string>('viewer')
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [currentUserName, setCurrentUserName] = useState<string>('')
   const [currentWarehouseId, setCurrentWarehouseId] = useState<string | null>(null)
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null)
 
@@ -166,8 +163,6 @@ export default function PurchaseReturnsPage() {
         userWarehouseId = memberData?.warehouse_id || null
         setCurrentWarehouseId(userWarehouseId)
         setCurrentBranchId(memberData?.branch_id || null)
-        setCurrentUserName(user.email || '')
-
         // تحميل المخازن التي لديها مسؤول مخزن مُعيَّن
         const { data: managersData } = await supabase
           .from('company_members')
@@ -244,7 +239,7 @@ export default function PurchaseReturnsPage() {
         'Content-Type': 'application/json',
         'Idempotency-Key': crypto.randomUUID(),
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, appLang }),
     })
 
     const result = await response.json().catch(() => ({})) as PurchaseReturnCommandApiResponse
@@ -260,48 +255,10 @@ export default function PurchaseReturnsPage() {
     if (!currentUserId) return
     setIsApproving(true)
     try {
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-
       await postPurchaseReturnCommand(`/api/purchase-returns/${pr.id}/approve`, {
         action: 'APPROVE',
         uiSurface: 'purchase_returns_page',
       })
-
-      // Notify creator that their return was approved
-      if (pr.created_by) {
-        try {
-          await notifyPRApproved({
-            companyId,
-            prId: pr.id,
-            prNumber: pr.return_number,
-            supplierName: (pr.suppliers as any)?.name || '',
-            amount: pr.total_amount,
-            currency: appCurrency,
-            createdBy: pr.created_by,
-            approvedBy: currentUserId!,
-            branchId: pr.branch_id || undefined,
-            appLang,
-          })
-        } catch (e) { console.warn('notifyPRApproved failed:', e) }
-      }
-
-      // Notify store manager to execute warehouse confirmation
-      try {
-        await notifyPurchaseReturnPendingApproval({
-          companyId,
-          purchaseReturnId: pr.id,
-          returnNumber: pr.return_number,
-          supplierName: (pr.suppliers as any)?.name || '',
-          totalAmount: pr.total_amount,
-          currency: appCurrency,
-          warehouseId: pr.warehouse_id || '',
-          branchId: pr.branch_id || undefined,
-          createdBy: currentUserId!,
-          createdByName: currentUserName,
-          appLang,
-        })
-      } catch (e) { console.warn('notifyPurchaseReturnPendingApproval failed:', e) }
 
       toast({ title: appLang === 'en' ? '✅ Return Approved' : '✅ تم اعتماد المرتجع', description: pr.return_number })
       loadReturns()
@@ -316,33 +273,11 @@ export default function PurchaseReturnsPage() {
     if (!prToReject || !currentUserId || !rejectionReason.trim()) return
     setIsApproving(true)
     try {
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-
       await postPurchaseReturnCommand(`/api/purchase-returns/${prToReject.id}/approve`, {
         action: 'REJECT',
         rejectionReason: rejectionReason.trim(),
         uiSurface: 'purchase_returns_page',
       })
-
-      // Notify the creator that admin rejected their return
-      if (prToReject.created_by) {
-        try {
-          await notifyPRRejected({
-            companyId,
-            prId: prToReject.id,
-            prNumber: prToReject.return_number,
-            supplierName: (prToReject.suppliers as any)?.name || '',
-            amount: prToReject.total_amount,
-            currency: appCurrency,
-            reason: rejectionReason.trim(),
-            createdBy: prToReject.created_by,
-            rejectedBy: currentUserId!,
-            branchId: prToReject.branch_id || undefined,
-            appLang,
-          })
-        } catch (e) { console.warn('notifyPRRejected failed:', e) }
-      }
 
       toast({ title: appLang === 'en' ? '✅ Return Rejected' : '✅ تم رفض المرتجع', description: prToReject.return_number })
       setIsRejectDialogOpen(false)
@@ -361,49 +296,10 @@ export default function PurchaseReturnsPage() {
     if (!prToWarehouseReject || !currentUserId || !warehouseRejectionReason.trim()) return
     setIsWarehouseRejecting(true)
     try {
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-
-      const result = await postPurchaseReturnCommand(`/api/purchase-returns/${prToWarehouseReject.id}/reject-warehouse`, {
+      await postPurchaseReturnCommand(`/api/purchase-returns/${prToWarehouseReject.id}/reject-warehouse`, {
         rejectionReason: warehouseRejectionReason.trim(),
         uiSurface: 'purchase_returns_page',
       })
-
-      // إشعار المنشئ بالرفض
-      const createdBy = result?.created_by || prToWarehouseReject.created_by
-      if (createdBy) {
-        try {
-          await notifyWarehouseReturnRejected({
-            companyId,
-            prId: prToWarehouseReject.id,
-            prNumber: prToWarehouseReject.return_number,
-            supplierName: (prToWarehouseReject.suppliers as any)?.name || '',
-            amount: prToWarehouseReject.total_amount,
-            currency: appCurrency,
-            reason: warehouseRejectionReason.trim(),
-            createdBy,
-            rejectedBy: currentUserId,
-            branchId: prToWarehouseReject.branch_id || undefined,
-            appLang,
-          })
-        } catch (e) { console.warn('notifyWarehouseReturnRejected failed:', e) }
-      }
-      // إشعار الإدارة العليا بالرفض
-      try {
-        await notifyManagementPRWarehouseRejected({
-          companyId,
-          prId: prToWarehouseReject.id,
-          prNumber: prToWarehouseReject.return_number,
-          supplierName: (prToWarehouseReject.suppliers as any)?.name || '',
-          amount: prToWarehouseReject.total_amount,
-          currency: appCurrency,
-          reason: warehouseRejectionReason.trim(),
-          rejectedBy: currentUserId,
-          creatorUserId: createdBy || undefined,
-          branchId: prToWarehouseReject.branch_id || undefined,
-          appLang,
-        })
-      } catch (e) { console.warn('notifyManagementPRWarehouseRejected failed:', e) }
 
       toast({
         title: appLang === 'en' ? '✅ Warehouse Rejected' : '✅ تم رفض المرتجع من المخزن',
@@ -449,46 +345,12 @@ export default function PurchaseReturnsPage() {
     if (!currentUserId) return
     setConfirmingId(pr.id)
     try {
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-
       await postPurchaseReturnCommand(`/api/purchase-returns/${pr.id}/confirm-delivery`, {
         notes: appLang === 'en'
           ? `Confirmed by warehouse manager on ${new Date().toLocaleDateString()}`
           : `تم الاعتماد بواسطة مسؤول المخزن بتاريخ ${new Date().toLocaleDateString('ar-EG')}`,
         uiSurface: 'purchase_returns_page',
       })
-
-      // إشعار منشئ المرتجع (فرع الفاتورة / المنشئ)
-      if (pr.created_by && pr.created_by !== currentUserId) {
-        try {
-          await notifyPurchaseReturnConfirmed({
-            companyId,
-            purchaseReturnId: pr.id,
-            returnNumber: pr.return_number,
-            supplierName: (pr.suppliers as any)?.name || '',
-            totalAmount: pr.total_amount,
-            currency: appCurrency,
-            createdBy: pr.created_by,
-            appLang,
-          })
-        } catch (e) { console.warn('notifyPurchaseReturnConfirmed failed:', e) }
-      }
-
-      // إشعار الإدارة العليا بالاعتماد (بدون ربط فرع على الإشعار — يظهر لجميع المستلمين)
-      try {
-        await notifyManagementPRWarehouseConfirmed({
-          companyId,
-          prId: pr.id,
-          prNumber: pr.return_number,
-          supplierName: (pr.suppliers as any)?.name || '',
-          amount: pr.total_amount,
-          currency: appCurrency,
-          confirmedBy: currentUserId,
-          prCreatorUserId: pr.created_by || undefined,
-          appLang,
-        })
-      } catch (e) { console.warn('notifyManagementPRWarehouseConfirmed failed:', e) }
 
       toast({
         title: appLang === 'en' ? '✅ Delivery Confirmed' : '✅ تم اعتماد التسليم',
@@ -517,9 +379,6 @@ export default function PurchaseReturnsPage() {
     if (!currentUserId) return
     setConfirmingAllocationId(alloc.id)
     try {
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-
       const rpcResult = await postPurchaseReturnCommand(`/api/purchase-returns/${pr.id}/confirm-delivery`, {
         allocationId: alloc.id,
         notes: appLang === 'en'
@@ -531,32 +390,7 @@ export default function PurchaseReturnsPage() {
       const refreshed = returns.find((item) => item.id === pr.id)
       const overallStatus = rpcResult.workflowStatus || refreshed?.workflow_status || pr.workflow_status
       const pendingCount = Math.max((pr.allocations || []).filter((item) => item.id !== alloc.id && item.workflow_status !== 'confirmed').length, 0)
-      const supplierName = (pr.suppliers as any)?.name || ''
       const isFullyConfirmed = ['confirmed', 'completed'].includes(String(overallStatus || '').toLowerCase())
-
-      // إشعار
-      if (pr.created_by) {
-        try {
-          await notifyWarehouseAllocationConfirmed({
-            companyId,
-            purchaseReturnId: pr.id,
-            returnNumber: pr.return_number,
-            supplierName,
-            allocationId: alloc.id,
-            warehouseId: alloc.warehouse_id,
-            warehouseName: (alloc.warehouses as any)?.name || alloc.warehouse_id,
-            totalAmount: alloc.total_amount,
-            currency: appCurrency,
-            pendingAllocations: pendingCount,
-            isFullyConfirmed,
-            confirmedByName: currentUserName,
-            createdBy: pr.created_by,
-            appLang,
-          })
-        } catch (notifyErr) {
-          console.warn('⚠️ Notification failed (non-critical):', notifyErr)
-        }
-      }
 
       toast({
         title: isFullyConfirmed

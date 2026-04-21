@@ -19,6 +19,31 @@ export interface TestContext {
   testInvoiceId?: string
 }
 
+export function hasTestSupabaseCredentials() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  return Boolean(String(url || '').trim() && String(key || '').trim())
+}
+
+export function getApiIntegrationBaseUrl() {
+  return (
+    String(
+      process.env.TEST_APP_URL ||
+      process.env.INTEGRATION_BASE_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      ''
+    ).trim() || null
+  )
+}
+
+export function shouldRunApiIntegrationScenarios() {
+  return (
+    hasTestSupabaseCredentials() &&
+    Boolean(getApiIntegrationBaseUrl()) &&
+    String(process.env.RUN_API_INTEGRATION_TESTS || '').trim() === '1'
+  )
+}
+
 /**
  * Initialize test Supabase client
  */

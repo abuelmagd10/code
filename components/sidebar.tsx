@@ -25,6 +25,7 @@ import {
   Search,
   CheckCircle,
   RefreshCw,
+  Factory,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -140,7 +141,7 @@ export function Sidebar() {
       setPermissionsReady(true)
       // حساب deniedResources من allowed_pages
       const allResources = [
-        'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'shareholders', 'taxes', 'exchange_rates', 'accounting_maintenance', 'accounting_periods', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses', 'settings', 'users', 'company_settings', 'audit_log', 'backup', 'shipping', 'profile', 'orders_rules', 'system_status', 'permission_sharing', 'permission_transfers', 'user_branch_access', 'role_permissions'
+        'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'manufacturing_boms', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'shareholders', 'taxes', 'exchange_rates', 'accounting_maintenance', 'accounting_periods', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses', 'settings', 'users', 'company_settings', 'audit_log', 'backup', 'shipping', 'profile', 'orders_rules', 'system_status', 'permission_sharing', 'permission_transfers', 'user_branch_access', 'role_permissions'
       ]
       const denied = allResources.filter(r => !profile.allowed_pages.includes(r) && r !== "profile")
       setDeniedResources(denied)
@@ -169,6 +170,7 @@ export function Sidebar() {
     if (href.includes('/inventory/goods-receipt')) return 'inventory_goods_receipt'
     if (href.includes('/inventory/product-availability')) return 'product_availability'
     if (href.includes('/inventory')) return 'inventory'
+    if (href.includes('/manufacturing/boms')) return 'manufacturing_boms'
     // الموارد البشرية
     if (href.includes('/hr/employees')) return 'employees'
     if (href.includes('/hr/attendance')) return 'attendance'
@@ -369,9 +371,28 @@ export function Sidebar() {
 
   // ✅ استخدام useRef لتخزين أحدث إصدار من loadUnreadCount لتجنب infinite loop
   const loadUnreadCountRef = useRef(loadUnreadCount)
+  const unreadCountRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     loadUnreadCountRef.current = loadUnreadCount
   }, [loadUnreadCount])
+
+  const scheduleUnreadCountRefresh = useCallback((delayMs = 150) => {
+    if (unreadCountRefreshTimeoutRef.current) {
+      clearTimeout(unreadCountRefreshTimeoutRef.current)
+    }
+
+    unreadCountRefreshTimeoutRef.current = setTimeout(() => {
+      loadUnreadCountRef.current()
+    }, delayMs)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (unreadCountRefreshTimeoutRef.current) {
+        clearTimeout(unreadCountRefreshTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // 🔔 Real-Time: تحديث عدد الإشعارات غير المقروءة تلقائياً (ERP Standard)
   useEffect(() => {
@@ -381,93 +402,6 @@ export function Sidebar() {
       userId: currentUserId,
       companyId: activeCompanyId
     })
-
-    // ✅ جلب دور المستخدم والفرع للفلترة الصحيحة
-    let userRoleForFiltering: string | null = null
-    let userBranchIdForFiltering: string | null = null
-    let userWarehouseIdForFiltering: string | null = null
-    const loadUserRole = async () => {
-      try {
-        const { data: member } = await supabaseHook
-          .from('company_members')
-          .select('role, branch_id, warehouse_id')
-          .eq('company_id', activeCompanyId)
-          .eq('user_id', currentUserId)
-          .maybeSingle()
-        userRoleForFiltering = member?.role || null
-        userBranchIdForFiltering = member?.branch_id || null
-        userWarehouseIdForFiltering = member?.warehouse_id || null
-      } catch (error: any) {
-        // ✅ معالجة AbortError بشكل صحيح
-        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-          console.warn('⚠️ [Sidebar] Loading user role for notification filtering aborted')
-          return
-        }
-        console.error('Error loading user role for notification filtering:', error)
-      }
-    }
-    loadUserRole()
-
-    // ✅ دالة مساعدة للتحقق من أن الإشعار يؤثر على العدد
-    const shouldAffectCount = (notification: any): boolean => {
-      // 1. التحقق من company_id
-      if (notification.company_id !== activeCompanyId) {
-        return false
-      }
-
-      // 2. التحقق من assigned_to_user
-      if (notification.assigned_to_user) {
-        if (notification.assigned_to_user !== currentUserId) {
-          // إلا إذا كان owner أو admin
-          if (userRoleForFiltering !== 'owner' && userRoleForFiltering !== 'admin') {
-            return false
-          }
-        }
-      }
-
-      // 3. التحقق من assigned_to_role
-      if (notification.assigned_to_role) {
-        if (notification.assigned_to_role !== userRoleForFiltering) {
-          // إلا إذا كان owner أو admin
-          if (userRoleForFiltering !== 'owner' && userRoleForFiltering !== 'admin') {
-            // owner يرى إشعارات admin
-            if (!(notification.assigned_to_role === 'admin' && userRoleForFiltering === 'owner')) {
-              return false
-            }
-          }
-        }
-      }
-
-      // 4. التحقق من الفرع والمخزن (لغير owner و admin)
-      if (userRoleForFiltering !== 'owner' && userRoleForFiltering !== 'admin') {
-        if (userBranchIdForFiltering && notification.branch_id && notification.branch_id !== userBranchIdForFiltering) {
-          return false
-        }
-        if (userWarehouseIdForFiltering && notification.warehouse_id && notification.warehouse_id !== userWarehouseIdForFiltering) {
-          return false
-        }
-      }
-
-      // 5. التحقق من الحالة (unread فقط)
-      if (notification.status !== 'unread') {
-        return false
-      }
-
-      // 5. التحقق من انتهاء الصلاحية
-      if (notification.expires_at) {
-        const expiresAt = new Date(notification.expires_at)
-        if (expiresAt <= new Date()) {
-          return false
-        }
-      }
-
-      // 6. استبعاد المؤرشفة
-      if (notification.status === 'archived') {
-        return false
-      }
-
-      return true
-    }
 
     // إنشاء Realtime channel لتحديث عدد الإشعارات
     const channel = supabaseHook
@@ -485,45 +419,9 @@ export function Sidebar() {
             eventType: payload.eventType,
             notificationId: payload.new?.id || payload.old?.id
           })
-
-          // ✅ تحديث العدد مباشرة بناءً على الحدث
-          if (payload.eventType === 'INSERT') {
-            const notification = payload.new as any
-            if (shouldAffectCount(notification)) {
-              console.log('➕ [SIDEBAR_REALTIME] New unread notification - incrementing count')
-              setUnreadCount(prev => prev + 1)
-            }
-          } else if (payload.eventType === 'UPDATE') {
-            const notification = payload.new as any
-            const oldNotification = payload.old as any
-
-            // إذا تغيرت الحالة من unread إلى read/archived
-            if (oldNotification.status === 'unread' && notification.status !== 'unread') {
-              if (shouldAffectCount(oldNotification)) {
-                console.log('➖ [SIDEBAR_REALTIME] Notification marked as read - decrementing count')
-                setUnreadCount(prev => Math.max(0, prev - 1))
-              }
-            }
-            // إذا تغيرت الحالة من read إلى unread
-            else if (oldNotification.status !== 'unread' && notification.status === 'unread') {
-              if (shouldAffectCount(notification)) {
-                console.log('➕ [SIDEBAR_REALTIME] Notification marked as unread - incrementing count')
-                setUnreadCount(prev => prev + 1)
-              }
-            }
-          } else if (payload.eventType === 'DELETE') {
-            const notification = payload.old as any
-            if (shouldAffectCount(notification)) {
-              console.log('➖ [SIDEBAR_REALTIME] Notification deleted - decrementing count')
-              setUnreadCount(prev => Math.max(0, prev - 1))
-            }
-          }
-
-          // ✅ أيضاً تحديث العدد الكامل (للتأكد من الدقة)
-          // استخدام ref لتجنب infinite loop
-          setTimeout(() => {
-            loadUnreadCountRef.current()
-          }, 500)
+          // ✅ source of truth = get_user_notifications + notification_user_states
+          // لذلك نعيد الحساب من الخلفية بدلاً من الاعتماد على notification.status داخل الصف.
+          scheduleUnreadCountRefresh()
         }
       )
       .subscribe((status: any) => {
@@ -535,12 +433,33 @@ export function Sidebar() {
         }
       })
 
+    const userStateChannel = supabaseHook
+      .channel(`notification_user_state_count:${activeCompanyId}:${currentUserId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notification_user_states',
+          filter: `user_id=eq.${currentUserId}`
+        },
+        () => {
+          scheduleUnreadCountRefresh()
+        }
+      )
+      .subscribe((status: any) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('❌ [SIDEBAR_REALTIME] Notification user-state channel error')
+        }
+      })
+
     // تنظيف الاشتراك عند إلغاء التثبيت
     return () => {
       console.log('🔕 [SIDEBAR_REALTIME] Unsubscribing from notification count updates...')
       supabaseHook.removeChannel(channel)
+      supabaseHook.removeChannel(userStateChannel)
     }
-  }, [currentUserId, activeCompanyId, supabaseHook])
+  }, [currentUserId, activeCompanyId, supabaseHook, scheduleUnreadCountRefresh])
 
   useEffect(() => {
     const supabase = createClient()
@@ -1081,6 +1000,11 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
                     { label: (lang === 'en' ? 'Dispatch Approvals' : 'موافقات الإرسال'), href: `/inventory/dispatch-approvals${q}`, icon: CheckCircle },
                     { label: (lang === 'en' ? 'Purchase Goods Receipt' : 'اعتماد استلام المشتريات'), href: `/inventory/goods-receipt${q}`, icon: CheckCircle },
+                  ]
+                },
+                {
+                  key: 'manufacturing', icon: Factory, label: (lang === 'en' ? 'Manufacturing' : 'التصنيع'), items: [
+                    { label: (lang === 'en' ? 'Bill of Materials' : 'هياكل BOM'), href: `/manufacturing/boms${q}`, icon: Factory },
                   ]
                 },
                 {

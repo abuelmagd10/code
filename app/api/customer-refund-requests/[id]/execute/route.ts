@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
+import { buildNotificationEventKey, normalizeNotificationSeverity } from "@/lib/notification-workflow"
+import { NotificationRecipientResolverService } from "@/lib/services/notification-recipient-resolver.service"
 
 export async function POST(
   request: NextRequest,
@@ -27,7 +29,7 @@ export async function POST(
     // Validate the refund request exists and belongs to this company
     const { data: refundReq } = await supabase
       .from("customer_refund_requests")
-      .select("id, status, amount, customer_id, customers(name), invoices(invoice_number)")
+      .select("id, status, amount, customer_id, branch_id, cost_center_id, customers(name), invoices(invoice_number)")
       .eq("id", id)
       .eq("company_id", companyId)
       .maybeSingle()
@@ -59,47 +61,66 @@ export async function POST(
 
     const customerName = (refundReq as any)?.customers?.name || ""
     const amount = Number(refundReq.amount)
+    const resolver = new NotificationRecipientResolverService(supabase)
 
     // Notify Accountant
     try {
-      await supabase.rpc("create_notification", {
-        p_company_id:       companyId,
-        p_reference_type:   "customer_refund_request",
-        p_reference_id:     id,
-        p_title:            "تم ترحيل قيد استرداد نقدي",
-        p_message:          `تم تنفيذ استرداد نقدي بقيمة ${amount.toLocaleString()} للعميل ${customerName}. رقم القيد: ${rpcData.entry_number}`,
-        p_created_by:       user.id,
-        p_branch_id:        null,
-        p_cost_center_id:   null,
-        p_warehouse_id:     null,
-        p_assigned_to_role: "accountant",
-        p_assigned_to_user: null,
-        p_priority:         "normal",
-        p_event_key:        `customer_refund:${id}:executed:accountant`,
-        p_severity:         "success",
-        p_category:         "finance"
-      })
+      const recipients = resolver.resolveBranchAccountantRecipients(refundReq.branch_id || null, refundReq.cost_center_id || null)
+      for (const recipient of recipients) {
+        await supabase.rpc("create_notification", {
+          p_company_id:       companyId,
+          p_reference_type:   "customer_refund_request",
+          p_reference_id:     id,
+          p_title:            "تم ترحيل قيد استرداد نقدي",
+          p_message:          `تم تنفيذ استرداد نقدي بقيمة ${amount.toLocaleString()} للعميل ${customerName}. رقم القيد: ${rpcData.entry_number}`,
+          p_created_by:       user.id,
+          p_branch_id:        recipient.branchId ?? refundReq.branch_id ?? null,
+          p_cost_center_id:   recipient.costCenterId ?? refundReq.cost_center_id ?? null,
+          p_warehouse_id:     recipient.warehouseId ?? null,
+          p_assigned_to_role: recipient.kind === "role" ? recipient.role : null,
+          p_assigned_to_user: recipient.kind === "user" ? recipient.userId : null,
+          p_priority:         "normal",
+          p_event_key:        buildNotificationEventKey(
+            "payments",
+            "customer_refund_request",
+            id,
+            "executed_accountant",
+            ...resolver.buildRecipientScopeSegments(recipient)
+          ),
+          p_severity:         normalizeNotificationSeverity("info"),
+          p_category:         "finance"
+        })
+      }
     } catch (e: any) { console.warn("⚠️ Notification failed:", e.message) }
 
     // Notify Management
     try {
-      await supabase.rpc("create_notification", {
-        p_company_id:       companyId,
-        p_reference_type:   "customer_refund_request",
-        p_reference_id:     id,
-        p_title:            "تم صرف استرداد نقدي لعميل",
-        p_message:          `تم صرف استرداد نقدي بقيمة ${amount.toLocaleString()} للعميل ${customerName}. رقم القيد المحاسبي: ${rpcData.entry_number}`,
-        p_created_by:       user.id,
-        p_branch_id:        null,
-        p_cost_center_id:   null,
-        p_warehouse_id:     null,
-        p_assigned_to_role: "general_manager",
-        p_assigned_to_user: null,
-        p_priority:         "normal",
-        p_event_key:        `customer_refund:${id}:executed:management`,
-        p_severity:         "info",
-        p_category:         "finance"
-      })
+      const recipients = resolver.resolveRoleRecipients(["general_manager"], null, null, null)
+      for (const recipient of recipients) {
+        await supabase.rpc("create_notification", {
+          p_company_id:       companyId,
+          p_reference_type:   "customer_refund_request",
+          p_reference_id:     id,
+          p_title:            "تم صرف استرداد نقدي لعميل",
+          p_message:          `تم صرف استرداد نقدي بقيمة ${amount.toLocaleString()} للعميل ${customerName}. رقم القيد المحاسبي: ${rpcData.entry_number}`,
+          p_created_by:       user.id,
+          p_branch_id:        recipient.branchId ?? null,
+          p_cost_center_id:   recipient.costCenterId ?? null,
+          p_warehouse_id:     recipient.warehouseId ?? null,
+          p_assigned_to_role: recipient.kind === "role" ? recipient.role : null,
+          p_assigned_to_user: recipient.kind === "user" ? recipient.userId : null,
+          p_priority:         "normal",
+          p_event_key:        buildNotificationEventKey(
+            "payments",
+            "customer_refund_request",
+            id,
+            "executed_management",
+            ...resolver.buildRecipientScopeSegments(recipient)
+          ),
+          p_severity:         normalizeNotificationSeverity("info"),
+          p_category:         "finance"
+        })
+      }
     } catch (e: any) { console.warn("⚠️ Notification failed:", e.message) }
 
     return NextResponse.json({

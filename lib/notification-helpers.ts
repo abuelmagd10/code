@@ -1,17 +1,43 @@
 /**
- * 🔔 Notification Helpers
- * دوال مساعدة لإنشاء إشعارات تلقائية عند الأحداث المهمة
+ * LEGACY ISOLATED - DO NOT USE IN NEW CODE
  *
- * Phase 6: ENABLE_ASYNC_NOTIFICATIONS flag + notifyBatch()
+ * This module is no longer part of any live runtime workflow inside app/.
+ * It remains temporarily as a compatibility shim during the decommission
+ * observation window so that any unexpected legacy call fails safely by
+ * warning loudly while preserving previous behavior.
+ *
+ * Decommission target:
+ * - Freeze: complete
+ * - Runtime references in app/: removed
+ * - Compatibility observation window: active
+ * - Final removal: after stable observation / CI confirmation
  */
 
-import { createNotification, type NotificationPriority } from '@/lib/governance-layer'
+import { createNotification as createLegacyCompatNotification, type NotificationPriority } from '@/lib/governance-layer'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── Feature Flag ─────────────────────────────────────────────
 export const ENABLE_ASYNC_NOTIFICATIONS = process.env.ENABLE_ASYNC_NOTIFICATIONS !== 'false'
 
 // ✅ Import Supabase client للفحص من التكرار
+
+const LEGACY_NOTIFICATION_HELPERS_WARN_KEY = "__erb_notification_helpers_legacy_warned__"
+
+function emitLegacyNotificationHelpersWarning() {
+  const globalState = globalThis as typeof globalThis & Record<string, boolean | undefined>
+  if (globalState[LEGACY_NOTIFICATION_HELPERS_WARN_KEY]) return
+  globalState[LEGACY_NOTIFICATION_HELPERS_WARN_KEY] = true
+
+  console.warn(
+    "[LEGACY_NOTIFICATION_HELPERS] Deprecated compatibility shim invoked. " +
+    "notification-helpers.ts is legacy isolated debt and must not be used in new runtime flows."
+  )
+}
+
+async function createNotification(...args: Parameters<typeof createLegacyCompatNotification>) {
+  emitLegacyNotificationHelpersWarning()
+  return createLegacyCompatNotification(...args)
+}
 
 /**
  * جلب معرفات المستخدمين ذوي الأدوار الإدارية في الشركة (fan-out للإشعارات).
@@ -358,7 +384,7 @@ export async function notifyPurchaseReturnPendingApproval(params: {
 
   // نضمّن warehouse_id في event_key لتجنب الدمج بين إشعارات مخازن مختلفة
   const warehouseSuffix = warehouseId ? `:${warehouseId}` : ''
-  const eventKey = `purchase_return:${purchaseReturnId}:pending_approval${warehouseSuffix}:${Date.now()}`
+  const eventKey = `purchase_return:${purchaseReturnId}:pending_approval${warehouseSuffix}`
 
   // إشعار لمسؤول المخزن
   await createNotification({
@@ -1276,7 +1302,7 @@ export async function notifyTransferModified(params: {
     createdBy: modifiedBy,
     branchId: sourceBranchId,
     priority: 'high' as NotificationPriority,
-    eventKey: `transfer_approval:${transferId}:modified:${Date.now()}`,
+    eventKey: `transfer_approval:${transferId}:modified`,
     severity: 'warning',
     category: 'approvals'
   })
@@ -1685,7 +1711,7 @@ export async function notifyPOApprovalRequest(params: {
   const branchRoles = ['manager']
 
   // توحيد الـ timestamp للعملية الواحدة (جميع الإشعارات من نفس الـ Request تأخذ نفس التوقيت)
-  const resubmitTimestamp = isResubmission ? `:${Date.now()}` : ''
+  const resubmitTimestamp = isResubmission ? ':resubmission' : ''
 
   for (const role of topRoles) {
     try {
@@ -1910,7 +1936,7 @@ export async function notifyPRApprovalRequest(params: {
   // للإرسال الأول: eventKey ثابت لكل دور لمنع تكرار نفس الدور
   // لإعادة الإرسال: يُضاف timestamp لضمان وصول الإشعار كجديد
   const baseKey = isResubmit
-    ? `purchase_return:${prId}:pending_admin_approval:resubmit:${Date.now()}`
+    ? `purchase_return:${prId}:pending_admin_approval:resubmit`
     : `purchase_return:${prId}:pending_admin_approval`
 
   // ⚠️ نستخدم 'admin' + 'general_manager' فقط (بدون owner)
@@ -1972,8 +1998,8 @@ export async function notifyPRApproved(params: {
     branchId,
     costCenterId,
     priority: 'normal' as NotificationPriority,
-    eventKey: `purchase_return:${prId}:approved:${Date.now()}`,
-    severity: 'success' as any,
+    eventKey: `purchase_return:${prId}:approved`,
+    severity: 'info',
     category: 'approvals'
   })
 }
@@ -2016,7 +2042,7 @@ export async function notifyPRRejected(params: {
     branchId,
     costCenterId,
     priority: 'high' as NotificationPriority,
-    eventKey: `purchase_return:${prId}:rejected:${Date.now()}`,
+    eventKey: `purchase_return:${prId}:rejected`,
     severity: 'error',
     category: 'approvals'
   })
@@ -2127,8 +2153,8 @@ export async function notifyManagementPRWarehouseConfirmed(params: {
           assignedToUser: uid,
           // بدون branch/cost_center — يظهر لكل المستلمين المحددين بـ user_id بغض النظر عن فرع الجلسة
           priority: 'normal' as NotificationPriority,
-          eventKey: `purchase_return:${prId}:warehouse_confirmed:mgmt:${uid}:${Date.now()}`,
-          severity: 'success' as any,
+          eventKey: `purchase_return:${prId}:warehouse_confirmed:mgmt:${uid}`,
+          severity: 'info',
           category: 'approvals'
         })
       } catch (err) {
@@ -2151,8 +2177,8 @@ export async function notifyManagementPRWarehouseConfirmed(params: {
         createdBy: confirmedBy,
         assignedToRole: role,
         priority: 'normal' as NotificationPriority,
-        eventKey: `purchase_return:${prId}:warehouse_confirmed:mgmt:${role}:${Date.now()}`,
-        severity: 'success' as any,
+        eventKey: `purchase_return:${prId}:warehouse_confirmed:mgmt:${role}`,
+        severity: 'info',
         category: 'approvals'
       })
     } catch (err) {
@@ -2210,7 +2236,7 @@ export async function notifyManagementPRWarehouseRejected(params: {
           branchId: branchId || undefined,
           costCenterId: costCenterId || undefined,
           priority: 'high' as NotificationPriority,
-          eventKey: `purchase_return:${prId}:warehouse_rejected_mgmt:${uid}:${Date.now()}`,
+          eventKey: `purchase_return:${prId}:warehouse_rejected_mgmt:${uid}`,
           severity: 'warning',
           category: 'approvals'
         })
@@ -2236,7 +2262,7 @@ export async function notifyManagementPRWarehouseRejected(params: {
         costCenterId: costCenterId || undefined,
         assignedToRole: role,
         priority: 'high' as NotificationPriority,
-        eventKey: `purchase_return:${prId}:warehouse_rejected_mgmt:${role}:${Date.now()}`,
+        eventKey: `purchase_return:${prId}:warehouse_rejected_mgmt:${role}`,
         severity: 'warning',
         category: 'approvals'
       })
@@ -2289,7 +2315,7 @@ export async function notifyWarehouseReturnRejected(params: {
       branchId,
       costCenterId,
       priority: 'high' as NotificationPriority,
-      eventKey: `purchase_return:${prId}:warehouse_rejected:${Date.now()}`,
+      eventKey: `purchase_return:${prId}:warehouse_rejected`,
       severity: 'error',
       category: 'approvals'
     })

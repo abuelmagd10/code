@@ -57,10 +57,11 @@ export interface BillPostingResult {
             product_id: string
             transaction_type: string
             quantity_change: number
+            unit_cost: number
+            total_cost: number
             reference_id: string
             reference_type: string
             notes: string
-            transaction_date: string
         }>
         billUpdate?: {
             status: string
@@ -316,19 +317,26 @@ export async function prepareBillPosting(
         })
 
         // 3️⃣ Prepare Inventory Transactions
-        const inventoryTransactions = productItems.map((item: any) => ({
-            company_id: companyId,
-            branch_id: branchId,
-            warehouse_id: warehouseId,
-            cost_center_id: costCenterId,
-            product_id: item.product_id,
-            transaction_type: 'purchase',
-            quantity_change: Number(item.quantity || 0),
-            reference_id: billId,
-            reference_type: 'bill',
-            notes: `فاتورة شراء ${billNumber}`,
-            transaction_date: billDate
-        }))
+        const inventoryTransactions = productItems.map((item: any) => {
+            const quantity = Number(item.quantity || 0)
+            const unitCost = Number(item.unit_price || 0)
+            const totalCost = Number((quantity * unitCost).toFixed(4))
+
+            return {
+                company_id: companyId,
+                branch_id: branchId,
+                warehouse_id: warehouseId,
+                cost_center_id: costCenterId,
+                product_id: item.product_id,
+                transaction_type: 'purchase',
+                quantity_change: quantity,
+                unit_cost: unitCost,
+                total_cost: totalCost,
+                reference_id: billId,
+                reference_type: 'bill',
+                notes: `فاتورة شراء ${billNumber} بتاريخ ${billDate}`,
+            }
+        })
 
         // 4️⃣ Build Payload
         return {
@@ -502,10 +510,11 @@ export function prepareBillPostingFromPayload(payload: BillReceiptReplayPayload)
                         product_id: line.product_id!,
                         transaction_type: 'purchase',
                         quantity_change: Number(line.quantity || 0),
+                        unit_cost: Number(line.unit_price || 0),
+                        total_cost: Number(line.quantity || 0) * Number(line.unit_price || 0),
                         reference_id: bill.bill_id,
                         reference_type: 'bill',
-                        notes: `فاتورة شراء ${bill.bill_number || bill.bill_id}`,
-                        transaction_date: bill.effective_receipt_date
+                        notes: `فاتورة شراء ${bill.bill_number || bill.bill_id} بتاريخ ${bill.effective_receipt_date}`
                     }))
                     : undefined,
                 billUpdate: {

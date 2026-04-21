@@ -235,20 +235,23 @@ export default function NewVendorCreditPage() {
       const { error: itemsErr } = await supabase.from("vendor_credit_items").insert(rows)
       if (itemsErr) throw itemsErr
 
-      // إنشاء إشعار للمحاسب والمدير
+      // إنشاء الإشعار من الخلفية فقط
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          const { notifyVendorCreditCreated } = await import('@/lib/notification-helpers')
-          const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
-          await notifyVendorCreditCreated({
-            companyId,
-            vendorCreditId: vc.id,
-            branchId: branchId || undefined,
-            costCenterId: costCenterId || undefined,
-            createdBy: user.id,
-            appLang
-          })
+        const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+        const response = await fetch(`/api/vendor-credits/${vc.id}/notifications`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "created",
+            appLang,
+          }),
+        })
+
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}))
+          throw new Error(payload?.error || "Failed to dispatch vendor-credit notification")
         }
       } catch (notifError) {
         console.error("Error creating notification:", notifError)

@@ -5,10 +5,24 @@
  * =============================================
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { createTestClient, createTestCompany, cleanupTestData, createTestCustomer, createTestProduct, createTestInvoice, TestSupabaseClient } from '../helpers/test-setup'
+import * as dotenv from 'dotenv'
+dotenv.config({ path: '.env.local' })
 
-describe('API Inventory Integration Tests', () => {
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import {
+  createTestClient,
+  createTestCompany,
+  cleanupTestData,
+  createTestCustomer,
+  createTestProduct,
+  createTestInvoice,
+  shouldRunApiIntegrationScenarios,
+  TestSupabaseClient,
+} from '../helpers/test-setup'
+
+const describeApiInventoryIntegration = shouldRunApiIntegrationScenarios() ? describe : describe.skip
+
+describeApiInventoryIntegration('API Inventory Integration Tests', () => {
   let supabase: TestSupabaseClient
   let companyId: string
   let userId: string

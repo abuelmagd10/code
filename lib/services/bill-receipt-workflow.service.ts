@@ -1,3 +1,5 @@
+import { BillReceiptNotificationService } from "@/lib/services/bill-receipt-notification.service"
+
 type SupabaseLike = any
 
 const BILL_RECEIPT_SUBMISSION_EVENT = "bill_receipt_submission"
@@ -38,6 +40,8 @@ type BillRecord = {
   cost_center_id: string | null
   supplier_id: string | null
   purchase_order_id: string | null
+  created_by?: string | null
+  created_by_user_id?: string | null
 }
 
 type TraceRecord = {
@@ -171,7 +175,7 @@ export class BillReceiptWorkflowService {
   async approveBill(
     actor: ActorContext,
     billId: string,
-    options: { idempotencyKey: string; requestHash: string; uiSurface?: string | null }
+    options: { idempotencyKey: string; requestHash: string; uiSurface?: string | null; appLang?: "ar" | "en" }
   ): Promise<BillReceiptWorkflowResult> {
     if (!ADMIN_APPROVAL_ROLES.has(normalizeRole(actor.actorRole))) {
       throw new Error("You do not have permission to approve this purchase bill")
@@ -231,6 +235,14 @@ export class BillReceiptWorkflowService {
 
     await this.linkTrace(traceId, "bill", billId, "bill", BILL_ADMIN_APPROVAL_EVENT)
     await this.insertAuditLog(actor.companyId, actor.actorId, "bill_admin_approved", refreshedBill)
+    if (!alreadyApproved) {
+      await this.notifications().notifyBillApprovedToPurchaseOrderCreator(
+        { companyId: actor.companyId, actorId: actor.actorId },
+        refreshedBill,
+        traceId,
+        options.appLang === "en" ? "en" : "ar"
+      )
+    }
 
     return await this.buildResult(billId, BILL_ADMIN_APPROVAL_EVENT, traceId, alreadyApproved)
   }
@@ -301,6 +313,14 @@ export class BillReceiptWorkflowService {
 
     await this.linkTrace(traceId, "bill", billId, "bill", BILL_ADMIN_REJECTION_EVENT)
     await this.insertAuditLog(actor.companyId, actor.actorId, "bill_admin_rejected", refreshedBill, { rejection_reason: rejectionReason })
+    if (!alreadyRejected) {
+      await this.notifications().notifyBillAdminRejected(
+        { companyId: actor.companyId, actorId: actor.actorId },
+        refreshedBill,
+        rejectionReason,
+        traceId
+      )
+    }
 
     return await this.buildResult(billId, BILL_ADMIN_REJECTION_EVENT, traceId, alreadyRejected)
   }
@@ -375,6 +395,13 @@ export class BillReceiptWorkflowService {
 
     await this.linkTrace(traceId, "bill", billId, "bill", BILL_RECEIPT_SUBMISSION_EVENT)
     await this.insertAuditLog(actor.companyId, actor.actorId, "bill_receipt_submitted", refreshedBill)
+    if (!alreadyPending) {
+      await this.notifications().notifySubmittedForReceipt(
+        { companyId: actor.companyId, actorId: actor.actorId },
+        refreshedBill,
+        traceId
+      )
+    }
 
     return await this.buildResult(billId, BILL_RECEIPT_SUBMISSION_EVENT, traceId, alreadyPending)
   }
@@ -448,6 +475,14 @@ export class BillReceiptWorkflowService {
 
     await this.linkTrace(traceId, "bill", billId, "bill", BILL_RECEIPT_REJECTION_EVENT)
     await this.insertAuditLog(actor.companyId, actor.actorId, "bill_receipt_rejected", refreshedBill, { rejection_reason: rejectionReason })
+    if (!alreadyRejected) {
+      await this.notifications().notifyReceiptRejected(
+        { companyId: actor.companyId, actorId: actor.actorId },
+        refreshedBill,
+        rejectionReason,
+        traceId
+      )
+    }
 
     return await this.buildResult(billId, BILL_RECEIPT_REJECTION_EVENT, traceId, alreadyRejected)
   }
@@ -520,7 +555,9 @@ export class BillReceiptWorkflowService {
         warehouse_id,
         cost_center_id,
         supplier_id,
-        purchase_order_id
+        purchase_order_id,
+        created_by,
+        created_by_user_id
       `)
       .eq("id", billId)
 
@@ -707,6 +744,10 @@ export class BillReceiptWorkflowService {
     } catch (error) {
       console.warn("[BILL_RECEIPT_WORKFLOW_AUDIT]", error)
     }
+  }
+
+  private notifications() {
+    return new BillReceiptNotificationService(this.adminSupabase)
   }
 }
 

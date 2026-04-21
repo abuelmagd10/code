@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
+import { buildNotificationEventKey, normalizeNotificationSeverity } from "@/lib/notification-workflow"
+import { NotificationRecipientResolverService } from "@/lib/services/notification-recipient-resolver.service"
 
 export async function POST(
   request: NextRequest,
@@ -50,23 +52,34 @@ export async function POST(
 
     // Notify accountant to execute
     try {
-      await supabase.rpc("create_notification", {
-        p_company_id: companyId,
-        p_reference_type: "customer_refund_request",
-        p_reference_id: id,
-        p_title: "تمت الموافقة على طلب استرداد عميل",
-        p_message: `تمت الموافقة على طلب استرداد نقدي بمبلغ ${Number(refundReq.amount).toLocaleString()} للعميل ${refundReq.customers?.name || ""}. يرجى تنفيذ الدفع.`,
-        p_created_by: user.id,
-        p_branch_id: null,
-        p_cost_center_id: null,
-        p_warehouse_id: null,
-        p_assigned_to_role: "accountant",
-        p_assigned_to_user: null,
-        p_priority: "high",
-        p_event_key: `customer_refund:${id}:approved`,
-        p_severity: "info",
-        p_category: "finance"
-      })
+      const resolver = new NotificationRecipientResolverService(supabase)
+      const recipients = resolver.resolveBranchAccountantRecipients(refundReq.branch_id || null, refundReq.cost_center_id || null)
+
+      for (const recipient of recipients) {
+        await supabase.rpc("create_notification", {
+          p_company_id: companyId,
+          p_reference_type: "customer_refund_request",
+          p_reference_id: id,
+          p_title: "تمت الموافقة على طلب استرداد عميل",
+          p_message: `تمت الموافقة على طلب استرداد نقدي بمبلغ ${Number(refundReq.amount).toLocaleString()} للعميل ${refundReq.customers?.name || ""}. يرجى تنفيذ الدفع.`,
+          p_created_by: user.id,
+          p_branch_id: recipient.branchId ?? refundReq.branch_id ?? null,
+          p_cost_center_id: recipient.costCenterId ?? refundReq.cost_center_id ?? null,
+          p_warehouse_id: recipient.warehouseId ?? null,
+          p_assigned_to_role: recipient.kind === "role" ? recipient.role : null,
+          p_assigned_to_user: recipient.kind === "user" ? recipient.userId : null,
+          p_priority: "high",
+          p_event_key: buildNotificationEventKey(
+            "payments",
+            "customer_refund_request",
+            id,
+            "approved_for_execution",
+            ...resolver.buildRecipientScopeSegments(recipient)
+          ),
+          p_severity: normalizeNotificationSeverity("info"),
+          p_category: "finance"
+        })
+      }
     } catch (notifErr: any) {
       console.warn("⚠️ Notification failed:", notifErr.message)
     }

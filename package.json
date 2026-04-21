@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "node scripts/build/run-next-build.js",
     "dev": "next dev",
     "lint": "eslint .",
     "start": "next start",
+    "typecheck:release": "node --max-old-space-size=8192 ./node_modules/typescript/bin/tsc -p tsconfig.release.json --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:critical": "vitest run tests/critical",

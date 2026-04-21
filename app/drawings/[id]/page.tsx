@@ -114,7 +114,6 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
                 const cId = await getActiveCompanyId(supabase)
                 if (cId) {
                     const { data: approvers } = await supabase.from('company_members').select('user_id').eq('company_id', cId).in('role', ['owner', 'admin', 'general_manager'])
-                    const timestamp = Date.now()
                     for (const a of approvers || []) {
                         await createNotification({
                             companyId: cId,
@@ -125,7 +124,7 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
                             createdBy: userId,
                             assignedToUser: a.user_id,
                             priority: 'high',
-                            eventKey: `drawing:${drawing.id}:pending:${a.user_id}:${timestamp}`,
+                            eventKey: `drawing:${drawing.id}:pending:${a.user_id}`,
                             severity: 'warning',
                             category: 'approvals',
                         })

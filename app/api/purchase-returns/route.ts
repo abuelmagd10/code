@@ -3,6 +3,7 @@ import { apiGuard } from "@/lib/core/security/api-guard"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { PurchaseReturnCommandService, isPrivilegedRole, type CreatePurchaseReturnCommand } from "@/lib/services/purchase-return-command.service"
+import { PurchaseReturnNotificationService } from "@/lib/services/purchase-return-notification.service"
 
 function asString(value: unknown) {
   return String(value || "").trim()
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
     const returnItems = body?.returnItems || body?.return_items || []
     const warehouseGroups = body?.warehouseGroups || body?.warehouse_groups || []
     const uiSurface = body?.uiSurface || body?.ui_surface || "purchase_returns_page"
+    const appLang = String(body?.appLang || body?.app_lang || "ar").trim().toLowerCase() === "en" ? "en" : "ar"
 
     if (!supplierId && mode !== "resubmit") {
       return NextResponse.json({ success: false, error: "Supplier is required" }, { status: 400 })
@@ -130,6 +132,26 @@ export async function POST(request: NextRequest) {
       command,
       { idempotencyKey, requestHash }
     )
+
+    if (!result.cached) {
+      const notificationService = new PurchaseReturnNotificationService(adminSupabase)
+      if (mode === "resubmit") {
+        await notificationService.archiveApprovalRequestNotifications({
+          companyId: context.companyId,
+          purchaseReturnId: result.purchaseReturnId,
+          branchId: command.purchaseReturn?.branch_id || null,
+          costCenterId: command.purchaseReturn?.cost_center_id || null,
+        })
+      }
+
+      await notificationService.notifyApprovalRequested({
+        companyId: context.companyId,
+        purchaseReturnId: result.purchaseReturnId,
+        actorUserId: context.user.id,
+        appLang,
+        isResubmission: mode === "resubmit",
+      })
+    }
 
     return NextResponse.json(result, { status: 200 })
   } catch (error: any) {

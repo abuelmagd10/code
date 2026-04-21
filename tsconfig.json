@@ -39,7 +39,10 @@
   ],
   "exclude": [
     "node_modules",
+    "tests",
+    "website",
     "supabase/functions",
-    "scripts"
+    "scripts",
+    "temp"
   ]
 }

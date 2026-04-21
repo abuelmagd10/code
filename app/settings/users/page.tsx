@@ -151,6 +151,34 @@ export default function UsersSettingsPage() {
   const [savingMemberBranches, setSavingMemberBranches] = useState(false)
   const [resendingInvite, setResendingInvite] = useState<string | null>(null)
 
+  const getAppLang = () => {
+    if (typeof window === "undefined") return "ar"
+    return (localStorage.getItem("app_language") || "ar") === "en" ? "en" : "ar"
+  }
+
+  const dispatchUserWorkflowNotification = async (
+    userId: string,
+    payload:
+      | { action: "branch_changed"; branchId: string }
+      | { action: "role_changed"; oldRole: string; newRole: string }
+  ) => {
+    const response = await fetch(`/api/settings/users/${userId}/notifications`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...payload,
+        appLang: getAppLang(),
+      }),
+    })
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      throw new Error(data?.error || "Failed to dispatch user workflow notification")
+    }
+  }
+
   useEffect(() => {
     const load = async () => {
       setPageLoading(true)
@@ -840,20 +868,17 @@ export default function UsersSettingsPage() {
 
       toastActionSuccess(toast, "حفظ", "فرع الموظف")
 
-      // إنشاء إشعار للمستخدم عند تغيير فرعه
-      try {
-        const { notifyUserBranchChanged } = await import('@/lib/notification-helpers')
-        const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
-        await notifyUserBranchChanged({
-          companyId,
-          userId: editingMemberId,
-          branchId: memberBranchId || undefined,
-          changedBy: currentUserId,
-          appLang
-        })
-      } catch (notifError) {
-        console.error("Error creating notification:", notifError)
-        // لا نوقف العملية إذا فشل إنشاء الإشعار
+      // إنشاء إشعار للمستخدم عند تغيير فرعه من الخلفية فقط
+      if ((currentMember?.branch_id || "") !== memberBranchId) {
+        try {
+          await dispatchUserWorkflowNotification(editingMemberId, {
+            action: "branch_changed",
+            branchId: memberBranchId,
+          })
+        } catch (notifError) {
+          console.error("Error creating notification:", notifError)
+          // لا نوقف العملية إذا فشل إنشاء الإشعار
+        }
       }
 
       setShowMemberBranchDialog(false)
@@ -987,15 +1012,10 @@ export default function UsersSettingsPage() {
       // إنشاء إشعار للمستخدم عند تغيير دوره
       if (oldRole !== role) {
         try {
-          const { notifyUserRoleChanged } = await import('@/lib/notification-helpers')
-          const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
-          await notifyUserRoleChanged({
-            companyId,
-            userId: m.user_id,
+          await dispatchUserWorkflowNotification(m.user_id, {
+            action: "role_changed",
             oldRole,
             newRole: role,
-            changedBy: currentUserId,
-            appLang
           })
         } catch (notifError) {
           console.error("Error creating notification:", notifError)

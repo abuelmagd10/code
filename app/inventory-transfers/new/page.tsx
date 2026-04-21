@@ -12,7 +12,6 @@ import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import { ArrowLeftRight, Plus, Trash2, Warehouse, Package, Save, ArrowRight, AlertCircle, Clock } from "lucide-react"
-import { notifyStockTransferRequest, notifyTransferApprovalRequest } from "@/lib/notification-helpers"
 import { Badge } from "@/components/ui/badge"
 
 interface Product {
@@ -366,28 +365,20 @@ export default function NewTransferPage() {
 
       // 🔔 إرسال الإشعارات حسب الحالة
       try {
-        if (isAccountant) {
-          // 🔐 المحاسب: إرسال طلب اعتماد للإدارة
-          await notifyTransferApprovalRequest({
-            companyId: companyId,
-            transferId: transfer.id,
-            transferNumber: transfer.transfer_number,
-            sourceBranchId: srcWarehouse?.branch_id || undefined,
-            destinationBranchId: destWarehouse?.branch_id || undefined,
-            createdBy: user.id,
-            appLang: appLang
-          })
-        } else {
-          // ✅ Owner/Admin/Manager: إشعار لمسؤول المخزن الوجهة
-          await notifyStockTransferRequest({
-            companyId: companyId,
-            transferId: transfer.id,
-            sourceBranchId: srcWarehouse?.branch_id || undefined,
-            destinationBranchId: destWarehouse?.branch_id || undefined,
-            destinationWarehouseId: destinationWarehouseId || undefined,
-            createdBy: user.id,
-            appLang: appLang
-          })
+        const response = await fetch(`/api/inventory-transfers/${transfer.id}/notifications`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: isAccountant ? "approval_requested" : "destination_request_created",
+            appLang,
+          }),
+        })
+
+        const result = await response.json().catch(() => null)
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.error || "Failed to dispatch inventory transfer notification")
         }
       } catch (notifError) {
         // لا نوقف العملية إذا فشل إرسال الإشعار

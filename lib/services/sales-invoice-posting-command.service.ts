@@ -4,6 +4,8 @@ import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-g
 import { emitEvent } from "@/lib/event-bus"
 import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
+import { buildNotificationEventKey, normalizeNotificationSeverity } from "@/lib/notification-workflow"
+import { NotificationRecipientResolverService } from "@/lib/services/notification-recipient-resolver.service"
 
 type SupabaseLike = any
 
@@ -45,7 +47,7 @@ export class SalesInvoicePostingCommandService {
 
     const { data: invoice } = await this.supabase
       .from("invoices")
-      .select("invoice_date, status, invoice_number, branch_id, warehouse_status, approval_status, approval_reason, approved_by, approval_date, rejected_by, rejected_at, warehouse_rejection_reason, warehouse_rejected_at")
+      .select("invoice_date, status, invoice_number, branch_id, cost_center_id, warehouse_status, approval_status, approval_reason, approved_by, approval_date, rejected_by, rejected_at, warehouse_rejection_reason, warehouse_rejected_at")
       .eq("id", command.invoiceId)
       .eq("company_id", actor.companyId)
       .maybeSingle()
@@ -165,61 +167,40 @@ export class SalesInvoicePostingCommandService {
   private async notifyWarehouseManagers(params: { actor: SalesInvoicePostingActor; invoice: any; invoiceId: string }) {
     const { actor, invoice, invoiceId } = params
     try {
-      const warehouseRoles = ["warehouse_manager", "store_manager"]
-      const { data: warehouseManagers } = await this.supabase
-        .from("company_members")
-        .select("user_id, role")
-        .eq("company_id", actor.companyId)
-        .in("role", warehouseRoles)
-        .eq("branch_id", invoice?.branch_id || "")
+      const resolver = new NotificationRecipientResolverService(this.supabase)
+      const recipients = await resolver.resolveWarehouseRecipientsForBranch(actor.companyId, invoice?.branch_id || null)
 
-      if (warehouseManagers && warehouseManagers.length > 0) {
-        for (const manager of warehouseManagers) {
-          const nowTs = Date.now()
-          const { error: notificationError } = await this.supabase.rpc("create_notification", {
-            p_company_id: actor.companyId,
-            p_reference_type: "invoice",
-            p_reference_id: invoiceId,
-            p_title: "فاتورة جاهزة للشحن",
-            p_message: `الفاتورة رقم (${invoice?.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
-            p_created_by: actor.userId,
-            p_branch_id: invoice?.branch_id || null,
-            p_cost_center_id: null,
-            p_warehouse_id: null,
-            p_assigned_to_role: manager.role,
-            p_assigned_to_user: manager.user_id,
-            p_priority: "high",
-            p_event_key: `invoice:${invoiceId}:sent:${manager.user_id}:${nowTs}`,
-            p_severity: "warning",
-            p_category: "inventory",
-          })
-          if (notificationError) {
-            console.warn(`⚠️ [INVOICE_POST] Notification failed for user ${manager.user_id}:`, notificationError.message)
-          } else {
-            console.log(`✅ [INVOICE_POST] Notification sent to ${manager.role} (${manager.user_id}) for invoice:`, invoice?.invoice_number)
-          }
+      for (const recipient of recipients) {
+        const { error: notificationError } = await this.supabase.rpc("create_notification", {
+          p_company_id: actor.companyId,
+          p_reference_type: "invoice",
+          p_reference_id: invoiceId,
+          p_title: "فاتورة جاهزة للشحن",
+          p_message: `الفاتورة رقم (${invoice?.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
+          p_created_by: actor.userId,
+          p_branch_id: recipient.branchId ?? invoice?.branch_id ?? null,
+          p_cost_center_id: recipient.costCenterId ?? invoice?.cost_center_id ?? null,
+          p_warehouse_id: recipient.warehouseId ?? null,
+          p_assigned_to_role: recipient.kind === "role" ? recipient.role : null,
+          p_assigned_to_user: recipient.kind === "user" ? recipient.userId : null,
+          p_priority: "high",
+          p_event_key: buildNotificationEventKey(
+            "sales",
+            "invoice",
+            invoiceId,
+            "warehouse_dispatch_pending",
+            ...resolver.buildRecipientScopeSegments(recipient)
+          ),
+          p_severity: normalizeNotificationSeverity("warning"),
+          p_category: "inventory",
+        })
+        if (notificationError) {
+          console.warn(
+            `⚠️ [INVOICE_POST] Notification failed for ${recipient.kind === "role" ? recipient.role : recipient.userId}:`,
+            notificationError.message
+          )
         }
-        return
       }
-
-      console.warn(`⚠️ [INVOICE_POST] No warehouse/store managers found in branch ${invoice?.branch_id}. Sending role-based fallback notification.`)
-      await this.supabase.rpc("create_notification", {
-        p_company_id: actor.companyId,
-        p_reference_type: "invoice",
-        p_reference_id: invoiceId,
-        p_title: "فاتورة جاهزة للشحن",
-        p_message: `الفاتورة رقم (${invoice?.invoice_number || invoiceId}) اعتُمدت من المحاسبة — يرجى تجهيز البضاعة وتأكيد الإخراج من المخزن`,
-        p_created_by: actor.userId,
-        p_branch_id: invoice?.branch_id || null,
-        p_cost_center_id: null,
-        p_warehouse_id: null,
-        p_assigned_to_role: "store_manager",
-        p_assigned_to_user: null,
-        p_priority: "high",
-        p_event_key: `invoice:${invoiceId}:sent:store_manager:${Date.now()}`,
-        p_severity: "warning",
-        p_category: "inventory",
-      })
     } catch (notificationError: any) {
       console.warn("⚠️ [INVOICE_POST] Warehouse notification failed:", notificationError.message)
     }

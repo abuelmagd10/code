@@ -855,9 +855,11 @@ export class AccountingTransactionService {
                 throw new Error(preparation.error || 'Failed to prepare bill posting data')
             }
 
-            // 2. استدعاء RPC
-            const { data: rpcResult, error: rpcError } = await this.supabase.rpc('post_purchase_transaction', {
-                p_transaction_type: 'post_bill',
+            // 2. استدعاء RPC متخصص لفاتورة الاستلام
+            // نبتعد هنا عن post_purchase_transaction لأنه:
+            // 1) overloaded في البيئة الحية ويسبب ambiguity في PostgREST
+            // 2) يعتمد على transaction_date غير الموجود في inventory_transactions الحية
+            const { data: rpcResult, error: rpcError } = await this.supabase.rpc('post_bill_receipt_atomic', {
                 p_company_id: params.companyId,
                 p_bill_id: params.billId,
                 p_bill_update: preparation.payload.billUpdate,

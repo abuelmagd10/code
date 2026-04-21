@@ -26,7 +26,6 @@ import { useRouter } from "next/navigation"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { BranchFilter } from "@/components/BranchFilter"
-import { notifyVendorRefundDecision } from "@/lib/notification-helpers"
 
 interface Supplier {
   id: string
@@ -133,6 +132,29 @@ export default function SuppliersPage() {
   const [rejectReason, setRejectReason] = useState("")
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [currentUserBranchId, setCurrentUserBranchId] = useState<string | null>(null)
+
+  const dispatchVendorRefundDecisionNotification = async (
+    requestId: string,
+    action: "approved" | "rejected",
+    rejectionReason?: string
+  ) => {
+    const response = await fetch(`/api/vendor-refund-requests/${requestId}/notifications`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        action,
+        rejectionReason: rejectionReason || null,
+        appLang,
+      }),
+    })
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}))
+      throw new Error(payload?.error || "Failed to dispatch vendor refund notification")
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -1068,18 +1090,10 @@ export default function SuppliersPage() {
                                       if (!result?.success) throw new Error(result?.error || 'Unknown error')
                                       // Notification
                                       try {
-                                        const { data: { user } } = await supabase.auth.getUser()
-                                        if (user) {
-                                          notifyVendorRefundDecision({
-                                            companyId, requestId: req.id,
-                                            supplierName: req.supplier?.name || '',
-                                            amount: req.amount, currency: req.currency,
-                                            action: 'approved',
-                                            decidedBy: user.id, createdBy: req.created_by,
-                                            branchId: req.branch_id, appLang
-                                          }).catch(console.warn)
-                                        }
-                                      } catch {}
+                                        await dispatchVendorRefundDecisionNotification(req.id, 'approved')
+                                      } catch (notificationError) {
+                                        console.warn('Failed to dispatch vendor refund approval notification:', notificationError)
+                                      }
                                       toastActionSuccess(toast, appLang === 'en' ? 'Approved' : 'تم الاعتماد', appLang === 'en' ? 'Refund processed successfully' : 'تم تنفيذ الاسترداد النقدي بنجاح وتحديث الأرصدة')
                                       loadRefundRequests()
                                       loadSuppliers()
@@ -1173,18 +1187,14 @@ export default function SuppliersPage() {
                       if (!result?.success) throw new Error(result?.error || 'Unknown error')
                       // إشعار المنشئ
                       try {
-                        const { data: { user } } = await supabase.auth.getUser()
-                        if (user) {
-                          notifyVendorRefundDecision({
-                            companyId, requestId: selectedRequestForReject.id,
-                            supplierName: selectedRequestForReject.supplier?.name || '',
-                            amount: selectedRequestForReject.amount, currency: selectedRequestForReject.currency,
-                            action: 'rejected', rejectionReason: rejectReason.trim(),
-                            decidedBy: user.id, createdBy: selectedRequestForReject.created_by,
-                            branchId: selectedRequestForReject.branch_id, appLang,
-                          }).catch(console.warn)
-                        }
-                      } catch { }
+                        await dispatchVendorRefundDecisionNotification(
+                          selectedRequestForReject.id,
+                          'rejected',
+                          rejectReason.trim()
+                        )
+                      } catch (notificationError) {
+                        console.warn('Failed to dispatch vendor refund rejection notification:', notificationError)
+                      }
                       toastActionSuccess(toast, appLang === 'en' ? 'Rejected' : 'الرفض', appLang === 'en' ? 'Request rejected' : 'تم رفض الطلب')
                       setRejectDialogOpen(false)
                       loadRefundRequests()

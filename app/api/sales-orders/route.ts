@@ -7,13 +7,11 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
 import {
   enforceGovernance,
   applyGovernanceFilters,
-  validateGovernanceData,
-  addGovernanceData
 } from "@/lib/governance-middleware"
+import { SalesOrderNotificationService } from "@/lib/services/sales-order-notification.service"
 
 // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
 const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
@@ -315,43 +313,6 @@ export async function POST(request: NextRequest) {
       const soNumber = newSalesOrder.so_number || 'غير محدد'
       const companyId = enhancedContext.companyId || enhancedContext.company_id || finalData.company_id
 
-      // helper: استدعاء create_notification مباشراً عبر server-side supabase
-      const sendNotification = async (params: {
-        branchId?: string | null
-        costCenterId?: string | null
-        warehouseId?: string | null
-        assignedToRole: string
-        title: string
-        message: string
-        eventKey: string
-        category: string
-        referenceType?: string
-        referenceId?: string
-      }) => {
-        const { error: notifErr } = await supabase.rpc('create_notification', {
-          p_company_id: companyId,
-          p_reference_type: params.referenceType || 'sales_order',
-          p_reference_id: params.referenceId || newSalesOrder.id,
-          p_title: params.title,
-          p_message: params.message,
-          p_created_by: createdById,
-          p_branch_id: params.branchId ?? null,
-          p_cost_center_id: params.costCenterId ?? null,
-          p_warehouse_id: params.warehouseId ?? null,
-          p_assigned_to_role: params.assignedToRole,
-          p_assigned_to_user: null,
-          p_priority: 'normal',
-          p_event_key: params.eventKey,
-          p_severity: 'info',
-          p_category: params.category
-        })
-        if (notifErr) {
-          console.error(`⚠️ [SALES_ORDER] Failed to notify ${params.assignedToRole}:`, notifErr.message)
-        } else {
-          console.log(`✅ [SALES_ORDER] Notified ${params.assignedToRole} successfully`)
-        }
-      }
-
       // 8a️⃣ إنشاء فاتورة بيع مسودة تلقائياً أولاً (قبل الإشعارات)
       // ✅ يجب أن يكون قبل إشعار المحاسب حتى يُوجّه إلى الفاتورة وليس أمر البيع
       let autoInvoiceResult: { success: boolean; invoice_id?: string; invoice_number?: string; already_exists?: boolean } | null = null;
@@ -370,48 +331,17 @@ export async function POST(request: NextRequest) {
         console.error('⚠️ [SALES_ORDER] Auto invoice creation failed:', autoInvErr.message)
       }
 
-      // 1️⃣ إشعار لمحاسب الفرع — يُوجَّه للفاتورة إن وُجدت، وإلا لأمر البيع
-      const accountantRefType = autoInvoiceResult?.invoice_id ? 'invoice' : 'sales_order'
-      const accountantRefId   = autoInvoiceResult?.invoice_id ?? newSalesOrder.id
-      const accountantMsg     = autoInvoiceResult?.invoice_id
-        ? `تم إنشاء فاتورة بيع جديدة رقم (${autoInvoiceResult.invoice_number}) في فرعكم وبانتظار المتابعة`
-        : `تم إنشاء أمر بيع جديد في فرعكم رقم (${soNumber}) وبانتظار المتابعة`
-
-      await sendNotification({
+      await new SalesOrderNotificationService(supabase).notifySalesOrderCreated({
+        companyId,
+        createdBy: createdById,
+        salesOrderId: newSalesOrder.id,
+        salesOrderNumber: soNumber,
         branchId: branchIdForNotif,
         costCenterId: enhancedContext.cost_center_id || null,
         warehouseId: enhancedContext.warehouse_id || null,
-        assignedToRole: 'accountant',
-        title: autoInvoiceResult?.invoice_id ? 'فاتورة بيع جديدة في فرعكم' : 'أمر بيع جديد في فرعكم',
-        message: accountantMsg,
-        eventKey: `sales_order:${newSalesOrder.id}:created:accountant`,
-        category: 'finance',
-        referenceType: accountantRefType,
-        referenceId: accountantRefId,
-      })
-
-      // 2️⃣ إشعار لمالك الشركة (جميع الفروع - بدون branch_id)
-      await sendNotification({
-        branchId: null,
-        costCenterId: null,
-        warehouseId: null,
-        assignedToRole: 'owner',
-        title: 'أمر بيع جديد',
-        message: `تم إنشاء أمر بيع جديد رقم (${soNumber}) في فرع (${branchName})`,
-        eventKey: `sales_order:${newSalesOrder.id}:created:owner`,
-        category: 'sales'
-      })
-
-      // 3️⃣ إشعار للمدير العام (جميع الفروع - بدون branch_id)
-      await sendNotification({
-        branchId: null,
-        costCenterId: null,
-        warehouseId: null,
-        assignedToRole: 'general_manager',
-        title: 'أمر بيع جديد',
-        message: `تم إنشاء أمر بيع جديد رقم (${soNumber}) في فرع (${branchName})`,
-        eventKey: `sales_order:${newSalesOrder.id}:created:general_manager`,
-        category: 'sales'
+        branchName,
+        linkedInvoiceId: autoInvoiceResult?.invoice_id || null,
+        linkedInvoiceNumber: autoInvoiceResult?.invoice_number || null,
       })
 
       console.log('✅ [SALES_ORDER] Notifications sent successfully for SO:', soNumber)
@@ -452,4 +382,3 @@ export async function POST(request: NextRequest) {
     })
   }
 }
-

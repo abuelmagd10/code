@@ -200,8 +200,6 @@ export default function ExpenseDetailPage() {
 
       // Send notifications to approvers (Owner, Admin, and General Manager)
       try {
-        const timestamp = Date.now()
-
         // ✅ Get all approvers (Owner, Admin, and General Manager) - synchronized with canApprove and RLS policy
         const { data: approvers } = await supabase
           .from("company_members")
@@ -224,7 +222,7 @@ export default function ExpenseDetailPage() {
               warehouseId: expense.warehouse_id,
               assignedToUser: approver.user_id, // ✅ إرسال لمستخدم محدد
               priority: "high",
-              eventKey: `expense:${expense.id}:pending_approval:${approver.user_id}:${timestamp}`, // ✅ eventKey فريد لكل مستخدم
+              eventKey: `expense:${expense.id}:pending_approval:${approver.user_id}`, // ✅ deterministic per approver
               severity: "warning",
               category: "approvals"
             })
@@ -363,7 +361,7 @@ export default function ExpenseDetailPage() {
             warehouseId: expense.warehouse_id,
             assignedToUser: expense.created_by,
             priority: "normal",
-            eventKey: `expense:${expense.id}:approved:${Date.now()}`,
+            eventKey: `expense:${expense.id}:approved`,
             severity: "info",
             category: "approvals"
           })
@@ -428,7 +426,7 @@ export default function ExpenseDetailPage() {
             warehouseId: expense.warehouse_id,
             assignedToUser: expense.created_by,
             priority: "high",
-            eventKey: `expense:${expense.id}:rejected:${Date.now()}`,
+            eventKey: `expense:${expense.id}:rejected`,
             severity: "error",
             category: "approvals"
           })
@@ -845,4 +843,3 @@ export default function ExpenseDetailPage() {
     </div>
   )
 }
-

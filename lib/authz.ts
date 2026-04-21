@@ -380,6 +380,7 @@ const FALLBACK_PAGES = [
   { resource: "purchase_returns", path: "/purchase-returns" },
   { resource: "vendor_credits", path: "/vendor-credits" },
   // المخزون
+  { resource: "manufacturing_boms", path: "/manufacturing/boms" },
   { resource: "products", path: "/products" },
   { resource: "inventory", path: "/inventory" },
   { resource: "write_offs", path: "/inventory/write-offs" },

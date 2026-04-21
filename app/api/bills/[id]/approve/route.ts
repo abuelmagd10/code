@@ -17,6 +17,7 @@ export async function POST(
     const { id } = await params
     const body = await request.json().catch(() => ({}))
     const uiSurface = String(body?.uiSurface || body?.ui_surface || "bill_detail_page")
+    const appLang = String(body?.appLang || body?.app_lang || "ar").trim().toLowerCase() === "en" ? "en" : "ar"
 
     const idempotencyKey = resolveFinancialIdempotencyKey(
       request.headers.get("Idempotency-Key"),
@@ -41,7 +42,7 @@ export async function POST(
         actorWarehouseId: context.member.warehouse_id,
       },
       id,
-      { idempotencyKey, requestHash, uiSurface }
+      { idempotencyKey, requestHash, uiSurface, appLang }
     )
 
     return NextResponse.json(result, { status: 200 })

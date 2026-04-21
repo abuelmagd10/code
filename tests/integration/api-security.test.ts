@@ -5,10 +5,22 @@
  * =============================================
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { createTestClient, createTestCompany, cleanupTestData } from '../helpers/test-setup'
+import * as dotenv from 'dotenv'
+dotenv.config({ path: '.env.local' })
 
-describe('API Security Integration Tests', () => {
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import {
+  createTestClient,
+  createTestCompany,
+  cleanupTestData,
+  getApiIntegrationBaseUrl,
+  shouldRunApiIntegrationScenarios,
+} from '../helpers/test-setup'
+
+const describeApiSecurityIntegration = shouldRunApiIntegrationScenarios() ? describe : describe.skip
+const apiBaseUrl = getApiIntegrationBaseUrl()
+
+describeApiSecurityIntegration('API Security Integration Tests', () => {
   let supabase: ReturnType<typeof createTestClient>
   let companyId: string
   let userId: string
@@ -30,28 +42,28 @@ describe('API Security Integration Tests', () => {
 
   describe('requireOwnerOrAdmin - Critical Maintenance Endpoints', () => {
     it('should reject unauthenticated requests to /api/fix-inventory', async () => {
-      const response = await fetch('http://localhost:3000/api/fix-inventory', {
+      const response = await fetch(`${apiBaseUrl}/api/fix-inventory`, {
         method: 'GET'
       })
       expect(response.status).toBe(401)
     })
 
     it('should reject unauthenticated requests to /api/fix-sent-invoice-journals', async () => {
-      const response = await fetch('http://localhost:3000/api/fix-sent-invoice-journals', {
+      const response = await fetch(`${apiBaseUrl}/api/fix-sent-invoice-journals`, {
         method: 'GET'
       })
       expect(response.status).toBe(401)
     })
 
     it('should reject unauthenticated requests to /api/repair-invoice', async () => {
-      const response = await fetch('http://localhost:3000/api/repair-invoice?invoice_number=TEST-001', {
+      const response = await fetch(`${apiBaseUrl}/api/repair-invoice?invoice_number=TEST-001`, {
         method: 'GET'
       })
       expect(response.status).toBe(401)
     })
 
     it('should reject unauthenticated requests to /api/apply-write-off-fix', async () => {
-      const response = await fetch('http://localhost:3000/api/apply-write-off-fix', {
+      const response = await fetch(`${apiBaseUrl}/api/apply-write-off-fix`, {
         method: 'POST'
       })
       expect(response.status).toBe(401)
@@ -74,7 +86,7 @@ describe('API Security Integration Tests', () => {
 
   describe('Error Handling Unification', () => {
     it('should return standardized error format from apiError helpers', async () => {
-      const response = await fetch('http://localhost:3000/api/fix-inventory', {
+      const response = await fetch(`${apiBaseUrl}/api/fix-inventory`, {
         method: 'GET'
       })
       const data = await response.json().catch(() => null)

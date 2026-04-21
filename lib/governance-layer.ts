@@ -6,6 +6,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client'
+import { normalizeNotificationSeverity } from '@/lib/notification-workflow'
 
 // =====================================================
 // Types
@@ -171,7 +172,7 @@ export async function createNotification(params: {
     p_priority: params.priority || 'normal',
     // ✅ المعاملات الجديدة
     p_event_key: params.eventKey || null,
-    p_severity: params.severity || 'info',
+    p_severity: normalizeNotificationSeverity(params.severity),
     p_category: params.category || 'system'
   })
 

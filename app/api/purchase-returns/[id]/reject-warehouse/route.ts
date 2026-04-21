@@ -3,6 +3,7 @@ import { apiGuard } from "@/lib/core/security/api-guard"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { PurchaseReturnCommandService } from "@/lib/services/purchase-return-command.service"
+import { PurchaseReturnNotificationService } from "@/lib/services/purchase-return-notification.service"
 
 export async function POST(
   request: NextRequest,
@@ -18,6 +19,7 @@ export async function POST(
     const body = await request.json().catch(() => ({}))
     const rejectionReason = String(body?.rejectionReason || body?.rejection_reason || body?.reason || "").trim()
     const uiSurface = body?.uiSurface || body?.ui_surface || "purchase_returns_page"
+    const appLang = String(body?.appLang || body?.app_lang || "ar").trim().toLowerCase() === "en" ? "en" : "ar"
 
     if (!rejectionReason) {
       return NextResponse.json({ success: false, error: "Rejection reason is required" }, { status: 400 })
@@ -51,6 +53,21 @@ export async function POST(
       rejectionReason,
       { idempotencyKey, requestHash, uiSurface }
     )
+
+    if (!result.cached) {
+      const notificationService = new PurchaseReturnNotificationService(adminSupabase)
+      await notificationService.archiveWarehousePendingNotifications({
+        companyId: context.companyId,
+        purchaseReturnId: id,
+      })
+      await notificationService.notifyWarehouseRejected({
+        companyId: context.companyId,
+        purchaseReturnId: id,
+        actorUserId: context.user.id,
+        appLang,
+        rejectionReason,
+      })
+    }
 
     return NextResponse.json(result, { status: 200 })
   } catch (error: any) {

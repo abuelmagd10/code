@@ -3,6 +3,7 @@ import { apiGuard } from "@/lib/core/security/api-guard"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { PurchaseReturnCommandService, type PurchaseReturnDecisionAction } from "@/lib/services/purchase-return-command.service"
+import { PurchaseReturnNotificationService } from "@/lib/services/purchase-return-notification.service"
 
 export async function POST(
   request: NextRequest,
@@ -19,6 +20,7 @@ export async function POST(
     const action = String(body?.action || "APPROVE").trim().toUpperCase() as PurchaseReturnDecisionAction
     const rejectionReason = String(body?.rejectionReason || body?.rejection_reason || "").trim() || null
     const uiSurface = body?.uiSurface || body?.ui_surface || "purchase_returns_page"
+    const appLang = String(body?.appLang || body?.app_lang || "ar").trim().toLowerCase() === "en" ? "en" : "ar"
 
     if (action !== "APPROVE" && action !== "REJECT") {
       return NextResponse.json({ success: false, error: "Unsupported purchase return decision action" }, { status: 400 })
@@ -58,6 +60,42 @@ export async function POST(
       rejectionReason,
       { idempotencyKey, requestHash, uiSurface }
     )
+
+    if (!result.cached) {
+      const notificationService = new PurchaseReturnNotificationService(adminSupabase)
+
+      await notificationService.archiveApprovalRequestNotifications({
+        companyId: context.companyId,
+        purchaseReturnId: id,
+      })
+
+      if (action === "APPROVE") {
+        await notificationService.archiveWarehousePendingNotifications({
+          companyId: context.companyId,
+          purchaseReturnId: id,
+        })
+        await notificationService.notifyApproved({
+          companyId: context.companyId,
+          purchaseReturnId: id,
+          actorUserId: context.user.id,
+          appLang,
+        })
+        await notificationService.notifyWarehousePending({
+          companyId: context.companyId,
+          purchaseReturnId: id,
+          actorUserId: context.user.id,
+          appLang,
+        })
+      } else if (rejectionReason) {
+        await notificationService.notifyRejected({
+          companyId: context.companyId,
+          purchaseReturnId: id,
+          actorUserId: context.user.id,
+          appLang,
+          rejectionReason,
+        })
+      }
+    }
 
     return NextResponse.json(result, { status: 200 })
   } catch (error: any) {

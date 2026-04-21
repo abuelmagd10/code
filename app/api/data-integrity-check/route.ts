@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { secureApiRequest } from '@/lib/api-security-enhanced'
-import { serverError, forbiddenError } from '@/lib/api-security-enhanced'
+import { serverError } from '@/lib/api-security-enhanced'
+import { GovernanceNotificationService } from '@/lib/services/governance-notification.service'
 
 export async function GET(request: NextRequest) {
   try {
     // التحقق من الأمان والصلاحيات
-    const { user, companyId, member, error } = await secureApiRequest(request, {
+    const { user, companyId, error } = await secureApiRequest(request, {
       requireAuth: true,
       requireCompany: true,
       requirePermission: { resource: 'reports', action: 'read' },
@@ -65,6 +66,22 @@ export async function GET(request: NextRequest) {
         const companyAlerts = (schedData || []).filter((r: any) => r.company_id === companyId)
         const criticalCount = companyAlerts.filter((r: any) => r.severity === 'critical').length
         const warningCount  = companyAlerts.filter((r: any) => r.severity === 'warning').length
+
+        if (companyAlerts.length > 0 && user?.id) {
+          try {
+            await new GovernanceNotificationService(supabase).notifyIntegrityAlertsDetected({
+              companyId,
+              createdBy: user.id,
+              companyScopeId: companyId,
+              cycleDate: new Date().toISOString().slice(0, 10),
+              totalAlerts: companyAlerts.length,
+              criticalCount,
+              warningCount,
+            })
+          } catch (notificationError: any) {
+            console.error('[DATA_INTEGRITY_CHECK][NOTIFICATIONS]', notificationError)
+          }
+        }
 
         return NextResponse.json({
           success: true,

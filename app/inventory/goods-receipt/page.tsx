@@ -18,7 +18,6 @@ import { NumericInput } from "@/components/ui/numeric-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Package, CheckCircle, Warehouse, Building2, AlertCircle, Loader2, Eye } from "lucide-react"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
-import { createNotification } from "@/lib/governance-layer"
 import { Textarea } from "@/components/ui/textarea"
 
 type BillForReceipt = {
@@ -754,8 +753,10 @@ export default function GoodsReceiptPage() {
 
       // إشعارات اعتماد لفواتير المشتريات بانتظار الاستلام
       if (record.reference_type !== "bill") return false
-      if (record.category !== "approvals") return false
-      if (!record.event_key || !record.event_key.includes("approved_waiting_receipt")) return false
+      if (record.category && !["inventory", "approvals"].includes(record.category)) return false
+
+      const eventKey = String(record.event_key || "")
+      if (!eventKey.includes("warehouse_receipt_pending")) return false
 
       return true
     },
@@ -839,12 +840,6 @@ export default function GoodsReceiptPage() {
     }
     try {
       setProcessing(true)
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
       const branchId = selectedBill.branch_id
       const warehouseId = selectedBill.warehouse_id
       const costCenterId = selectedBill.cost_center_id
@@ -882,103 +877,6 @@ export default function GoodsReceiptPage() {
         )
       }
 
-      // ✅ Fix 3 & 5: Notify all relevant parties about goods receipt confirmation
-      try {
-        const receiptTitle = appLang === "en"
-          ? "Goods Received — Inventory Updated"
-          : "تم استلام البضاعة وتحديث المخزون"
-        const receiptMessage = appLang === "en"
-          ? `Purchase bill ${selectedBill.bill_number} goods have been received and confirmed. Warehouse inventory updated.`
-          : `تم استلام البضاعة واعتماد الاستلام لفاتورة مشتريات رقم ${selectedBill.bill_number}. تم تحديث مخزون المستودع.`
-
-        // 1️⃣ Notify Accountant
-        await createNotification({
-          companyId,
-          referenceType: "bill",
-          referenceId: selectedBill.id,
-          title: receiptTitle,
-          message: receiptMessage,
-          createdBy: user.id,
-          branchId: branchId || undefined,
-          warehouseId: warehouseId || undefined,
-          costCenterId: costCenterId || undefined,
-          assignedToRole: "accountant",
-          priority: "normal",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed:accountant`,
-          severity: "info",
-          category: "inventory"
-        })
-
-        // 2️⃣ Notify Branch Manager
-        await createNotification({
-          companyId,
-          referenceType: "bill",
-          referenceId: selectedBill.id,
-          title: receiptTitle,
-          message: receiptMessage,
-          createdBy: user.id,
-          branchId: branchId || undefined,
-          warehouseId: warehouseId || undefined,
-          costCenterId: costCenterId || undefined,
-          assignedToRole: "manager",
-          priority: "normal",
-          eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed:manager`,
-          severity: "info",
-          category: "inventory"
-        })
-
-        // 3️⃣ Fix 3: Notify Top Management (owner + general_manager) — no branchId for company-wide visibility
-        for (const role of ['owner', 'general_manager']) {
-          await createNotification({
-            companyId,
-            referenceType: "bill",
-            referenceId: selectedBill.id,
-            title: receiptTitle,
-            message: receiptMessage,
-            createdBy: user.id,
-            branchId: undefined, // Company-wide for top management
-            assignedToRole: role,
-            priority: "normal",
-            eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed:${role}`,
-            severity: "info",
-            category: "inventory"
-          })
-        }
-
-        // 4️⃣ Fix 3: Notify PO Creator (branch employee who initiated the purchase)
-        try {
-          const { data: billWithPO } = await supabase
-            .from('bills')
-            .select('purchase_order_id, purchase_orders!purchase_order_id(created_by_user_id)')
-            .eq('id', selectedBill.id)
-            .maybeSingle()
-
-          const poCreatorId = (billWithPO as any)?.purchase_orders?.created_by_user_id
-          if (poCreatorId) {
-            await createNotification({
-              companyId,
-              referenceType: "bill",
-              referenceId: selectedBill.id,
-              title: appLang === "en" ? "Your Purchase Order: Goods Received" : "أمر شرائك: تم استلام البضاعة",
-              message: appLang === "en"
-                ? `The goods for purchase bill ${selectedBill.bill_number} have been received and confirmed by the warehouse team.`
-                : `تم استلام واعتماد البضاعة الخاصة بفاتورة المشتريات رقم ${selectedBill.bill_number} من فريق المخزن.`,
-              createdBy: user.id,
-              assignedToUser: poCreatorId,
-              branchId: undefined,
-              priority: "normal",
-              eventKey: `bill:${selectedBill.id}:goods_receipt_confirmed:creator`,
-              severity: "info",
-              category: "inventory"
-            })
-          }
-        } catch (creatorNotifErr) {
-          console.warn("Failed to notify PO creator on goods receipt:", creatorNotifErr)
-        }
-      } catch (notifErr) {
-        console.warn("Failed to send receipt confirmation notifications:", notifErr)
-      }
-
       toastActionSuccess(
         toast,
         appLang === "en" ? "Receipt" : "الاستلام",
@@ -1013,16 +911,6 @@ export default function GoodsReceiptPage() {
     }
     try {
       setProcessing(true)
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const branchId = selectedBill.branch_id
-      const warehouseId = selectedBill.warehouse_id
-      const costCenterId = selectedBill.cost_center_id
-
       const response = await fetch(`/api/bills/${encodeURIComponent(selectedBill.id)}/reject-receipt`, {
         method: "POST",
         headers: {
@@ -1041,83 +929,6 @@ export default function GoodsReceiptPage() {
           result.error ||
           (appLang === "en" ? "Failed to reject goods receipt" : "تعذر رفض اعتماد الاستلام")
         )
-      }
-
-      // ✅ إشعار لمنشئ الفاتورة (أو منشئ أمر الشراء للفرع) وللإدارة العليا بالرفض
-      try {
-        const rejectionTitle = appLang === "en"
-          ? "Purchase bill goods receipt rejected"
-          : "تم رفض اعتماد استلام فاتورة مشتريات"
-        const rejectionMessage = appLang === "en"
-          ? `Purchase bill ${selectedBill.bill_number} goods receipt was rejected by warehouse manager. Reason: ${rejectionReason.trim()}`
-          : `تم رفض اعتماد استلام فاتورة مشتريات رقم ${selectedBill.bill_number} من مسؤول المخزن. السبب: ${rejectionReason.trim()}`
-
-        const notifTs = Date.now()
-
-        let poCreatorId = null
-
-        // استخراج purchase_order_id من الفاتورة إذا كان موجوداً
-        const { data: bData } = await supabase
-          .from('bills')
-          .select('purchase_order_id')
-          .eq('id', selectedBill.id)
-          .maybeSingle()
-
-        if (bData && bData.purchase_order_id) {
-          const { data: po } = await supabase
-            .from('purchase_orders')
-            .select('created_by_user_id')
-            .eq('id', bData.purchase_order_id)
-            .maybeSingle()
-          if (po && po.created_by_user_id) {
-            poCreatorId = po.created_by_user_id
-          }
-        }
-
-        const targetUserId = poCreatorId || selectedBill.created_by_user_id
-
-        // 1️⃣ إشعار لموظف الفرع الأصلي (أو منشئ الفاتورة)
-        if (targetUserId) {
-          await createNotification({
-            companyId,
-            referenceType: "bill",
-            referenceId: selectedBill.id,
-            title: rejectionTitle,
-            message: rejectionMessage,
-            createdBy: user.id,
-            branchId: branchId || undefined,
-            warehouseId: warehouseId || undefined,
-            costCenterId: costCenterId || undefined,
-            assignedToUser: targetUserId,
-            priority: "high",
-            eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_creator:${notifTs}`,
-            severity: "warning",
-            category: "approvals"
-          })
-        }
-
-        // 2️⃣ إشعار للـ الإدارة العليا
-        const targetRoles = ["owner", "general_manager"]
-        for (const r of targetRoles) {
-          await createNotification({
-            companyId,
-            referenceType: "bill",
-            referenceId: selectedBill.id,
-            title: rejectionTitle,
-            message: rejectionMessage,
-            createdBy: user.id,
-            branchId: branchId || undefined,
-            warehouseId: warehouseId || undefined,
-            costCenterId: costCenterId || undefined,
-            assignedToRole: r,
-            priority: "high",
-            eventKey: `bill:${selectedBill.id}:goods_receipt_rejected_${r}:${notifTs}`,
-            severity: "warning",
-            category: "approvals"
-          })
-        }
-      } catch (notifErr) {
-        console.warn("Failed to send rejection notifications:", notifErr)
       }
 
       toastActionSuccess(

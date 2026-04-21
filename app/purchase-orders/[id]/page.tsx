@@ -17,7 +17,6 @@ import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { notifyPOApproved, notifyPORejected, notifyManagementPOApproved } from "@/lib/notification-helpers"
 // 🏷️ Canonical shared types — Single Source of Truth
 import type {
   PurchaseOrder as PO,   // نستخدم PO كاسم مختصر داخل الصفحة للتوافق
@@ -53,7 +52,6 @@ export default function PurchaseOrderDetailPage() {
   const [canSendOrder, setCanSendOrder] = useState(false)
   const [canReceiveOrder, setCanReceiveOrder] = useState(false)
   const [canViewPrices, setCanViewPrices] = useState(false)
-  const [poCreatedBy, setPoCreatedBy] = useState<string | null>(null)
 
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false)
   const [rejectionReason, setRejectionReason] = useState("")
@@ -176,9 +174,6 @@ export default function PurchaseOrderDetailPage() {
         }
 
         setPo(poData)
-
-        // Use created_by_user_id from the purchase order table
-        setPoCreatedBy((poData as any)?.created_by_user_id || null)
 
         // 🔐 تحديث صلاحيات الإرسال والاستلام
         // purchase_orders لا يحتوي على created_by - تمرير null
@@ -617,37 +612,25 @@ export default function PurchaseOrderDetailPage() {
 
       // Notify creator, assuming po history might not have exact creator reliably stored since it wasn't there before
       // but if we don't have createdBy, we'll try to omit it or pass known values.
-      const companyId = await getActiveCompanyId(supabase)
-      if (companyId) {
-        // ✅ Fix 2 & 5: Notify PO Creator (branch employee) that PO is approved
-        await notifyPOApproved({
-          companyId,
-          poId,
-          linkedBillId: data.bill_id || po.bill_id || null,
-          poNumber: po.po_number,
-          supplierName: po.suppliers?.name || "Unknown",
-          amount: po.total_amount || 0,
-          currency: po.currency || "EGP",
-          branchId: userContext.branch_id || undefined,
-          costCenterId: userContext.cost_center_id || undefined,
-          createdBy: poCreatedBy || "",
-          approvedBy: user.id,
-          appLang
+      try {
+        const notificationResponse = await fetch(`/api/purchase-orders/${poId}/notifications`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "approved",
+            linkedBillId: data.bill_id || po.bill_id || null,
+            appLang,
+          }),
         })
 
-        // ✅ User Request: Alert Management securely without notifying the store manager prematurely.
-        await notifyManagementPOApproved({
-          companyId,
-          poId,
-          poNumber: po.po_number,
-          supplierName: po.suppliers?.name || "Unknown",
-          amount: po.total_amount || 0,
-          currency: po.currency || "EGP",
-          branchId: userContext.branch_id || undefined,
-          approvedBy: user.id,
-          appLang
-        })
-
+        const notificationResult = await notificationResponse.json().catch(() => null)
+        if (!notificationResponse.ok || !notificationResult?.success) {
+          throw new Error(notificationResult?.error || "Failed to dispatch PO approval notifications")
+        }
+      } catch (notifyErr) {
+        console.warn("Failed to dispatch PO approval notifications:", notifyErr)
       }
 
       toastActionSuccess(toast, appLang === 'en' ? "Approve" : "اعتماد", appLang === 'en' ? "Purchase Order" : "أمر الشراء")
@@ -689,22 +672,25 @@ export default function PurchaseOrderDetailPage() {
       setPo(prev => prev ? ({ ...prev, status: "rejected", rejection_reason: rejectionReason, rejected_by: user.id }) : null)
       setIsRejectDialogOpen(false)
 
-      const companyId = await getActiveCompanyId(supabase)
-      if (companyId) {
-        await notifyPORejected({
-          companyId,
-          poId,
-          poNumber: po.po_number,
-          supplierName: po.suppliers?.name || "Unknown",
-          amount: po.total_amount || 0,
-          currency: po.currency || "EGP",
-          branchId: userContext.branch_id || undefined,
-          costCenterId: userContext.cost_center_id || undefined,
-          createdBy: poCreatedBy || "",
-          rejectedBy: user.id,
-          reason: rejectionReason,
-          appLang
+      try {
+        const notificationResponse = await fetch(`/api/purchase-orders/${poId}/notifications`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "rejected",
+            rejectionReason,
+            appLang,
+          }),
         })
+
+        const notificationResult = await notificationResponse.json().catch(() => null)
+        if (!notificationResponse.ok || !notificationResult?.success) {
+          throw new Error(notificationResult?.error || "Failed to dispatch PO rejection notification")
+        }
+      } catch (notifyErr) {
+        console.warn("Failed to dispatch PO rejection notification:", notifyErr)
       }
 
       toastActionSuccess(toast, appLang === 'en' ? "Reject" : "رفض", appLang === 'en' ? "Purchase Order" : "أمر الشراء")

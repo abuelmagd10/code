@@ -16,15 +16,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { formatSupabaseError } from "@/lib/error-messages"
-import {
-  notifyPRApproved,
-  notifyPRRejected,
-  notifyPurchaseReturnPendingApproval,
-  notifyPurchaseReturnConfirmed,
-  notifyWarehouseReturnRejected,
-  notifyManagementPRWarehouseConfirmed,
-  notifyManagementPRWarehouseRejected,
-} from "@/lib/notification-helpers"
 
 const PRIVILEGED_ROLES  = ['owner', 'admin', 'general_manager']
 const STORE_MANAGER_ROLES = ['store_manager']
@@ -109,7 +100,6 @@ export default function PurchaseReturnDetailPage() {
   const [currentUserRole, setCurrentUserRole] = useState<string>('viewer')
   const [currentUserId, setCurrentUserId]     = useState<string | null>(null)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
-  const [appCurrency, setAppCurrency] = useState('EGP')
 
   // Admin approval state
   const [isApproving, setIsApproving]               = useState(false)
@@ -125,7 +115,6 @@ export default function PurchaseReturnDetailPage() {
   useEffect(() => {
     try {
       setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
-      setAppCurrency(localStorage.getItem('app_currency') || 'EGP')
     } catch {}
   }, [])
 
@@ -226,7 +215,7 @@ export default function PurchaseReturnDetailPage() {
         'Content-Type': 'application/json',
         'Idempotency-Key': crypto.randomUUID(),
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, appLang }),
     })
 
     const result = await response.json().catch(() => ({})) as PurchaseReturnCommandApiResponse
@@ -246,21 +235,6 @@ export default function PurchaseReturnDetailPage() {
         action: 'APPROVE',
         uiSurface: 'purchase_return_detail_page',
       })
-      if (pr.created_by) {
-        notifyPRApproved({
-          companyId, prId: pr.id, prNumber: pr.return_number,
-          supplierName: pr.suppliers?.name || '', amount: pr.total_amount,
-          currency: appCurrency, createdBy: pr.created_by, approvedBy: currentUserId,
-          branchId: pr.branch_id || undefined, appLang,
-        }).catch(console.warn)
-      }
-      notifyPurchaseReturnPendingApproval({
-        companyId, purchaseReturnId: pr.id, returnNumber: pr.return_number,
-        supplierName: pr.suppliers?.name || '', totalAmount: pr.total_amount,
-        currency: appCurrency, warehouseId: pr.warehouse_id || '',
-        branchId: pr.branch_id || undefined,
-        createdBy: currentUserId, createdByName: '', appLang,
-      }).catch(console.warn)
 
       toast({ title: t('✅ تم اعتماد المرتجع', '✅ Return Approved'), description: pr.return_number })
       loadPR()
@@ -279,15 +253,6 @@ export default function PurchaseReturnDetailPage() {
         rejectionReason: rejectionReason.trim(),
         uiSurface: 'purchase_return_detail_page',
       })
-      if (pr.created_by) {
-        notifyPRRejected({
-          companyId, prId: pr.id, prNumber: pr.return_number,
-          supplierName: pr.suppliers?.name || '', amount: pr.total_amount,
-          currency: appCurrency, reason: rejectionReason.trim(),
-          createdBy: pr.created_by, rejectedBy: currentUserId,
-          branchId: pr.branch_id || undefined, appLang,
-        }).catch(console.warn)
-      }
       toast({ title: t('✅ تم رفض المرتجع', '✅ Return Rejected'), description: pr.return_number })
       setIsRejectDialogOpen(false)
       setRejectionReason('')
@@ -309,25 +274,6 @@ export default function PurchaseReturnDetailPage() {
         ),
         uiSurface: 'purchase_return_detail_page',
       })
-      if (pr.created_by && pr.created_by !== currentUserId) {
-        notifyPurchaseReturnConfirmed({
-          companyId,
-          purchaseReturnId: pr.id,
-          returnNumber: pr.return_number,
-          supplierName: pr.suppliers?.name || '',
-          totalAmount: pr.total_amount,
-          currency: appCurrency,
-          createdBy: pr.created_by,
-          appLang,
-        }).catch(console.warn)
-      }
-      notifyManagementPRWarehouseConfirmed({
-        companyId, prId: pr.id, prNumber: pr.return_number,
-        supplierName: pr.suppliers?.name || '', amount: pr.total_amount,
-        currency: appCurrency, confirmedBy: currentUserId,
-        prCreatorUserId: pr.created_by || undefined,
-        appLang,
-      }).catch(console.warn)
 
       toast({ title: t('✅ تم اعتماد تسليم المرتجع', '✅ Delivery Confirmed'), description: pr.return_number })
       loadPR()
@@ -341,30 +287,10 @@ export default function PurchaseReturnDetailPage() {
     if (!pr || !currentUserId || !companyId || !warehouseRejectionReason.trim()) return
     setIsWarehouseRejecting(true)
     try {
-      const result = await postPurchaseReturnCommand(`/api/purchase-returns/${pr.id}/reject-warehouse`, {
+      await postPurchaseReturnCommand(`/api/purchase-returns/${pr.id}/reject-warehouse`, {
         rejectionReason: warehouseRejectionReason.trim(),
         uiSurface: 'purchase_return_detail_page',
       })
-      const createdBy = result.created_by || pr.created_by
-      // إشعار المنشئ بالرفض
-      if (createdBy) {
-        notifyWarehouseReturnRejected({
-          companyId, prId: pr.id, prNumber: pr.return_number,
-          supplierName: pr.suppliers?.name || '', amount: pr.total_amount,
-          currency: appCurrency, reason: warehouseRejectionReason.trim(),
-          createdBy, rejectedBy: currentUserId,
-          branchId: pr.branch_id || undefined, appLang,
-        }).catch(console.warn)
-      }
-      // إشعار الإدارة العليا بالرفض
-      notifyManagementPRWarehouseRejected({
-        companyId, prId: pr.id, prNumber: pr.return_number,
-        supplierName: pr.suppliers?.name || '', amount: pr.total_amount,
-        currency: appCurrency, reason: warehouseRejectionReason.trim(),
-        rejectedBy: currentUserId,
-        creatorUserId: createdBy || undefined,
-        branchId: pr.branch_id || undefined, appLang,
-      }).catch(console.warn)
 
       toast({ title: t('✅ تم رفض المرتجع من المخزن', '✅ Warehouse Rejected'), description: pr.return_number })
       setIsWarehouseRejectDialogOpen(false)

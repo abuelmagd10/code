@@ -18,7 +18,6 @@ import { BranchCostCenterSelector } from "@/components/branch-cost-center-select
 import { useOrderPermissions } from "@/hooks/use-order-permissions"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
-import { notifyPOApprovalRequest } from "@/lib/notification-helpers"
 
 interface Supplier {
   id: string
@@ -580,22 +579,22 @@ export default function EditPurchaseOrderPage() {
       // 🔔 Trigger resubmission notification if returning to pending_approval
       if (newStatus === "pending_approval" && !isAdmin) {
         try {
-          const { data: { user } } = await supabase.auth.getUser()
-          const supplierName = suppliers.find(s => s.id === formData.supplier_id)?.name || "Unknown Supplier"
-          
-          await notifyPOApprovalRequest({
-            companyId: companyId,
-            poId: orderId,
-            poNumber: formData.po_number || 'PO-EDIT',
-            supplierName: supplierName,
-            amount: totals.total,
-            currency: poCurrency,
-            branchId: branchId || undefined,
-            costCenterId: costCenterId || undefined,
-            createdBy: user?.id || "",
-            appLang: appLang,
-            isResubmission: true
+          const response = await fetch(`/api/purchase-orders/${orderId}/notifications`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: "approval_resubmitted",
+              appLang,
+            }),
           })
+
+          const result = await response.json().catch(() => null)
+          if (!response.ok || !result?.success) {
+            throw new Error(result?.error || "Failed to dispatch PO resubmission notification")
+          }
+
           console.log(`✅ PO resubmission notifications sent for PO ${formData.po_number}`)
         } catch (notifErr) {
           console.error('⚠️ PO resubmission notification failed (non-critical):', notifErr)

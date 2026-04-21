@@ -6,6 +6,7 @@ import { getAccrualAccountMapping } from "@/lib/accrual-accounting-engine"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import type { BillReceiptReplayAccountSnapshot, BillReceiptReplayPayload } from "@/lib/purchase-posting"
+import { BillReceiptNotificationService } from "@/lib/services/bill-receipt-notification.service"
 
 const BILL_RECEIPT_EVENT = "bill_receipt_posting"
 const BILL_RECEIPT_REPLAY_PAYLOAD_VERSION = "bill_receipt_v1"
@@ -567,6 +568,34 @@ async function clearReceiptRejectionReason(supabase: any, companyId: string, bil
   }
 }
 
+async function repairBillReceiptStatus(
+  supabase: any,
+  companyId: string,
+  billId: string,
+  payload: {
+    status: string
+    receipt_status: string
+    received_by: string
+    received_at: string
+  }
+) {
+  const { error } = await supabase
+    .from("bills")
+    .update({
+      status: payload.status,
+      receipt_status: payload.receipt_status,
+      received_by: payload.received_by,
+      received_at: payload.received_at,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("company_id", companyId)
+    .eq("id", billId)
+
+  if (error) {
+    throw new Error(error.message || "Failed to repair bill receipt status")
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -676,17 +705,7 @@ export async function POST(
           received_by: bill.received_by || context.user.id,
           received_at: bill.received_at || new Date().toISOString(),
         }
-
-        const { error: repairError } = await supabase.rpc("post_purchase_transaction", {
-          p_transaction_type: "post_bill",
-          p_company_id: context.companyId,
-          p_bill_id: bill.id,
-          p_bill_update: repairPayload,
-        })
-
-        if (repairError) {
-          throw new Error(repairError.message || "Failed to repair bill receipt status")
-        }
+        await repairBillReceiptStatus(supabase, context.companyId, bill.id, repairPayload)
       }
 
       const traceId = await ensureTraceForReceipt(
@@ -800,6 +819,12 @@ export async function POST(
     } catch (auditError: any) {
       console.warn("[BILL_CONFIRM_RECEIPT] Audit log failed:", auditError?.message || auditError)
     }
+
+    await new BillReceiptNotificationService(supabase).notifyReceiptConfirmed(
+      { companyId: context.companyId, actorId: context.user.id },
+      bill,
+      traceId
+    )
 
     return NextResponse.json({
       success: true,

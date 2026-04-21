@@ -15,7 +15,6 @@ import { getActiveCompanyId } from "@/lib/company"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { Filter, X, Search, Calendar, Check, Ban } from "lucide-react"
 import { usePermissions } from "@/lib/permissions-context"
-import { notifyBankVoucherRequestCreated, notifyBankVoucherApproved, notifyBankVoucherRejected } from "@/lib/notification-helpers"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string; branch_id?: string | null; cost_center_id?: string | null; branch_name?: string; cost_center_name?: string }
@@ -320,24 +319,18 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   const approveRequest = async (req: BankVoucherRequest) => {
     try {
       setSaving(true)
-      const { data: { user } } = await supabase.auth.getUser()
-      const { data, error } = await supabase.rpc('approve_bank_voucher', {
-        p_request_id: req.id,
-        p_approved_by: user?.id
+      const response = await fetch(`/api/banking/vouchers/${req.id}/workflow`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "APPROVE",
+          appLang,
+        }),
       })
-      if (error) throw error
-
-      await notifyBankVoucherApproved({
-        companyId: companyId!,
-        requestId: req.id,
-        voucherType: req.voucher_type,
-        amount: req.amount,
-        currency: req.currency,
-        branchId: account?.branch_id || undefined,
-        costCenterId: account?.cost_center_id || undefined,
-        createdBy: req.created_by,
-        approvedBy: user?.id || ""
-      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) throw new Error(result?.error || "Failed to approve voucher request")
 
       toastActionSuccess(toast, "اعتماد", "السند")
       await loadData()
@@ -349,12 +342,18 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   const postRequest = async (req: BankVoucherRequest) => {
     try {
       setSaving(true)
-      const { data: { user } } = await supabase.auth.getUser()
-      const { error } = await supabase.rpc('post_bank_voucher', {
-        p_request_id: req.id,
-        p_posted_by: user?.id
+      const response = await fetch(`/api/banking/vouchers/${req.id}/workflow`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "POST",
+          appLang,
+        }),
       })
-      if (error) throw error
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) throw new Error(result?.error || "Failed to post voucher request")
 
       toastActionSuccess(toast, "ترحيل", "السند")
       await loadData()
@@ -371,26 +370,19 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
     if (!rejectingReq || !rejectReason.trim()) return;
     try {
       setSaving(true)
-      const { data: { user } } = await supabase.auth.getUser()
-      const { error } = await supabase.rpc('reject_bank_voucher', {
-        p_request_id: rejectingReq.id,
-        p_rejected_by: user?.id,
-        p_reason: rejectReason
+      const response = await fetch(`/api/banking/vouchers/${rejectingReq.id}/workflow`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "REJECT",
+          reason: rejectReason,
+          appLang,
+        }),
       })
-      if (error) throw error
-
-      await notifyBankVoucherRejected({
-        companyId: companyId!,
-        requestId: rejectingReq.id,
-        voucherType: rejectingReq.voucher_type,
-        amount: rejectingReq.amount,
-        currency: rejectingReq.currency,
-        branchId: account?.branch_id || undefined,
-        costCenterId: account?.cost_center_id || undefined,
-        createdBy: rejectingReq.created_by,
-        rejectedBy: user?.id || "",
-        reason: rejectReason
-      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) throw new Error(result?.error || "Failed to reject voucher request")
 
       toastActionSuccess(toast, "رفض", "السند")
       setRejectingReq(null)

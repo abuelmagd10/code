@@ -13,6 +13,7 @@ import {
   validateGovernanceData,
   addGovernanceData
 } from "@/lib/governance-middleware"
+import { PurchaseOrderNotificationService } from "@/lib/services/purchase-order-notification.service"
 
 const PURCHASE_PRIVILEGED_ROLES = new Set([
   "super_admin",
@@ -414,6 +415,32 @@ export async function POST(request: NextRequest) {
         new_values: newOrder,
         created_at: new Date().toISOString()
       })
+    }
+
+    if (!canCreateLinkedBill) {
+      const { data: supplier } = await supabase
+        .from("suppliers")
+        .select("name")
+        .eq("id", dataWithGovernance.supplier_id)
+        .maybeSingle()
+
+      try {
+        await new PurchaseOrderNotificationService(supabase).notifyApprovalRequested({
+          companyId: governance.companyId,
+          poId: newOrder.id,
+          poNumber: newOrder.po_number,
+          supplierName: supplier?.name || "Unknown Supplier",
+          amount: Number(newOrder.total_amount || newOrder.total || 0),
+          currency: newOrder.currency || "EGP",
+          branchId: dataWithGovernance.branch_id,
+          costCenterId: dataWithGovernance.cost_center_id,
+          createdBy: newOrder.created_by_user_id || user?.id || "",
+          appLang: body.appLang === "en" ? "en" : "ar",
+          isResubmission: false,
+        })
+      } catch (notificationError) {
+        console.error("Failed to dispatch purchase order approval notification:", notificationError)
+      }
     }
 
     return NextResponse.json({

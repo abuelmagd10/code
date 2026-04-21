@@ -180,7 +180,7 @@ export async function approveDrawing(drawingId: string): Promise<{ success: bool
                 createdBy: user.id,
                 assignedToUser: row.created_by,
                 priority: 'normal',
-                eventKey: `drawing:${drawingId}:approved:${Date.now()}`,
+                eventKey: `drawing:${drawingId}:approved`,
                 severity: 'info',
             })
         } catch (_) { /* ignore */ }
@@ -233,7 +233,7 @@ export async function rejectDrawing(drawingId: string, reason: string): Promise<
                 createdBy: user.id,
                 assignedToUser: row.created_by,
                 priority: 'high',
-                eventKey: `drawing:${drawingId}:rejected:${Date.now()}`,
+                eventKey: `drawing:${drawingId}:rejected`,
                 severity: 'warning',
             })
         } catch (_) { /* ignore */ }

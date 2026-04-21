@@ -44,7 +44,6 @@ import { BranchFilter } from "@/components/BranchFilter"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { SupplierPaymentAllocationUI } from "@/components/payments/SupplierPaymentAllocationUI"
 import { CustomerPaymentAllocationUI } from "@/components/payments/CustomerPaymentAllocationUI"
-import { notifyPaymentApprovalRequest, notifyPaymentApproved, notifyPaymentRejected } from "@/lib/notification-helpers"
 import { PaymentDetailsModal } from "@/components/payments/PaymentDetailsModal"
 import { Eye } from "lucide-react"
 
@@ -1180,8 +1179,6 @@ export default function PaymentsPage() {
           }
         }
       }
-      const currentUserId = (await supabase.auth.getUser()).data.user?.id || null
-
       // ✅ Get the bill's branch_id if a bill is selected (use it over user's branch for accuracy)
       const selectedBillData = selectedFormBillId
         ? formSupplierBills.find((b: any) => b.id === selectedFormBillId)
@@ -1208,6 +1205,7 @@ export default function PaymentsPage() {
           ? [{ billId: selectedFormBillId, amount: newSuppPayment.amount }]
           : [],
         uiSurface: selectedFormBillId ? "payments_page_single_bill" : "payments_page_single_advance",
+        appLang,
       }
 
       const response = await fetch("/api/supplier-payments", {
@@ -1225,26 +1223,6 @@ export default function PaymentsPage() {
       }
 
       if (!result.approved) {
-        // 🔔 Non-privileged: notify managers for approval via SECURITY DEFINER RPC
-        // ✅ استخدام notifyPaymentApprovalRequest بدلاً من الاستعلام المباشر عن company_members
-        // لأن RLS تمنع المستخدمين العاديين من رؤية بيانات الأدوار الإدارية
-        try {
-          const supplierName = suppliers.find(s => s.id === newSuppPayment.supplier_id)?.name || 'مورد'
-          await notifyPaymentApprovalRequest({
-            companyId,
-            paymentId: result.paymentId,
-            partyName: supplierName,
-            amount: newSuppPayment.amount,
-            currency: paymentCurrency,
-            branchId: userContext?.branch_id || undefined,
-            createdBy: currentUserId || '',
-            paymentType: 'supplier',
-            appLang
-          })
-        } catch (notifErr) {
-          console.warn('⚠️ Failed to send payment approval notification:', notifErr)
-          // لا نوقف العملية بسبب فشل الإشعار
-        }
         // Reset form and refresh list
         setNewSuppPayment({ supplier_id: "", amount: 0, date: newSuppPayment.date, method: "cash", ref: "", notes: "", account_id: "" })
         setSelectedFormBillId("")
@@ -1286,7 +1264,6 @@ export default function PaymentsPage() {
     if (!companyId) return
     try {
       setSaving(true)
-      const currentUserId = (await supabase.auth.getUser()).data.user?.id || null
       const response = await fetch(`/api/supplier-payments/${payment.id}/approve`, {
         method: "POST",
         headers: {
@@ -1296,27 +1273,13 @@ export default function PaymentsPage() {
         body: JSON.stringify({
           action: "APPROVE",
           uiSurface: "payments_page",
+          appLang,
         }),
       })
 
       const updatedPayment = await response.json() as SupplierPaymentApiResult & { error?: string }
       if (!response.ok || !updatedPayment.success) {
         throw new Error(updatedPayment.error || "فشل اعتماد دفعة المورد")
-      }
-
-      if (updatedPayment.status === 'approved' && payment.created_by) {
-        const supplierName = suppliers.find(s => s.id === payment.supplier_id)?.name || 'مورد'
-        await notifyPaymentApproved({
-          companyId,
-          paymentId: payment.id,
-          partyName: supplierName,
-          amount: Number(payment.amount),
-          currency: payment.original_currency || payment.currency_code || baseCurrency,
-          createdBy: payment.created_by,
-          approvedBy: currentUserId || '',
-          paymentType: 'supplier',
-          appLang
-        })
       }
 
       // 4. Refresh list
@@ -1340,7 +1303,6 @@ export default function PaymentsPage() {
     if (!rejectingPayment || !companyId || !rejectionReason.trim()) return
     try {
       setSaving(true)
-      const currentUserId = (await supabase.auth.getUser()).data.user?.id || null
       const response = await fetch(`/api/supplier-payments/${rejectingPayment.id}/approve`, {
         method: "POST",
         headers: {
@@ -1351,29 +1313,13 @@ export default function PaymentsPage() {
           action: "REJECT",
           rejectionReason: rejectionReason.trim(),
           uiSurface: "payments_page",
+          appLang,
         }),
       })
 
       const result = await response.json() as SupplierPaymentApiResult & { error?: string }
       if (!response.ok || !result.success) {
         throw new Error(result.error || "فشل رفض دفعة المورد")
-      }
-
-      // Notify the payment creator
-      if (rejectingPayment.created_by) {
-        const supplierName = suppliers.find(s => s.id === rejectingPayment.supplier_id)?.name || 'مورد'
-        await notifyPaymentRejected({
-          companyId,
-          paymentId: rejectingPayment.id,
-          partyName: supplierName,
-          amount: Number(rejectingPayment.amount),
-          currency: rejectingPayment.original_currency || rejectingPayment.currency_code || baseCurrency,
-          reason: rejectionReason.trim(),
-          createdBy: rejectingPayment.created_by,
-          rejectedBy: currentUserId || '',
-          paymentType: 'supplier',
-          appLang
-        })
       }
 
       await reloadPaymentsWithFilters()

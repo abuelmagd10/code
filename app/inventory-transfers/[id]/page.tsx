@@ -22,7 +22,6 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeftRight, Warehouse, Package, CheckCircle2, Clock, XCircle, Truck, ArrowLeft, User, Calendar, FileText, Send, PackageCheck, X, Trash2, ShieldCheck, ShieldX, AlertTriangle, Edit } from "lucide-react"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
-import { notifyTransferApproved, notifyTransferRejected, notifyStockTransferRequest, notifyTransferStarted, notifyTransferReceived } from "@/lib/notification-helpers"
 
 interface TransferData {
   id: string
@@ -196,6 +195,42 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       setIsLoading(false)
     }
   }
+
+  const dispatchTransferNotificationEvent = useCallback(
+    async (
+      action:
+        | "approval_requested"
+        | "approval_resubmitted"
+        | "modified"
+        | "approved"
+        | "rejected"
+        | "destination_request_created"
+        | "destination_started"
+        | "started"
+        | "received",
+      extra?: { rejectionReason?: string }
+    ) => {
+      if (!transfer) return
+
+      const response = await fetch(`/api/inventory-transfers/${transfer.id}/notifications`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action,
+          appLang,
+          ...extra,
+        }),
+      })
+
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || "Failed to dispatch inventory transfer workflow notification")
+      }
+    },
+    [appLang, transfer]
+  )
 
   // 🔄 Realtime: تحديث تفاصيل التحويل تلقائياً عند أي تغيير
   const loadDataRef = useRef(loadData)
@@ -413,29 +448,14 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
       // إنشاء إشعار لمسؤول المخزن الوجهة
       try {
-        await notifyStockTransferRequest({
-          companyId,
-          transferId: transfer.id,
-          sourceBranchId: transfer.source_branch_id || undefined,
-          destinationBranchId: transfer.destination_branch_id || undefined,
-          destinationWarehouseId: transfer.destination_warehouse_id,
-          createdBy: user.id,
-          appLang
-        })
+        await dispatchTransferNotificationEvent("destination_started")
       } catch (notifError) {
         console.error("Error creating notification:", notifError)
       }
 
       // إشعار للمنشئ الأصلي بأن النقل بدأ
       try {
-        await notifyTransferStarted({
-          companyId,
-          transferId: transfer.id,
-          transferNumber: transfer.transfer_number,
-          createdBy: transfer.created_by,
-          startedBy: user.id,
-          appLang
-        })
+        await dispatchTransferNotificationEvent("started")
       } catch (notifError) {
         console.error("Error sending start notification:", notifError)
       }
@@ -483,15 +503,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
       // إرسال إشعار للمحاسب المنشئ
       try {
-        await notifyTransferApproved({
-          companyId,
-          transferId: transfer.id,
-          transferNumber: transfer.transfer_number,
-          branchId: transfer.source_branch_id || undefined,
-          approvedBy: user.id,
-          createdBy: transfer.created_by,
-          appLang
-        })
+        await dispatchTransferNotificationEvent("approved")
       } catch (notifError) {
         console.error("Error sending approval notification:", notifError)
       }
@@ -543,23 +555,8 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       // ⚠️ لا نرسل branch_id لأن الإشعار شخصي (assigned_to_user)
       // وقد يكون المحاسب في فرع مختلف عن فرع المخزن المصدر
       try {
-        console.log('🔔 [REJECT] Sending rejection notification:', {
-          companyId,
-          transferId: transfer.id,
-          transferNumber: transfer.transfer_number,
-          rejectedBy: user.id,
+        await dispatchTransferNotificationEvent("rejected", {
           rejectionReason: reason,
-          createdBy: transfer.created_by
-        })
-        await notifyTransferRejected({
-          companyId,
-          transferId: transfer.id,
-          transferNumber: transfer.transfer_number,
-          // ⚠️ لا نرسل branchId - الإشعار شخصي للمستخدم
-          rejectedBy: user.id,
-          rejectionReason: reason,
-          createdBy: transfer.created_by,
-          appLang
         })
         console.log('✅ [REJECT] Rejection notification sent successfully')
       } catch (notifError) {
@@ -611,16 +608,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
       // إرسال إشعار للإدارة
       try {
-        const { notifyTransferApprovalRequest } = await import('@/lib/notification-helpers')
-        await notifyTransferApprovalRequest({
-          companyId,
-          transferId: transfer.id,
-          transferNumber: transfer.transfer_number,
-          sourceBranchId: transfer.source_branch_id || undefined,
-          destinationBranchId: transfer.destination_branch_id || undefined,
-          createdBy: user.id,
-          appLang
-        })
+        await dispatchTransferNotificationEvent("approval_resubmitted")
       } catch (notifError) {
         console.error("Error sending resubmit notification:", notifError)
       }
@@ -835,14 +823,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
       // إشعار للمنشئ الأصلي بأن النقل تم استلامه
       try {
-        await notifyTransferReceived({
-          companyId,
-          transferId: transfer.id,
-          transferNumber: transfer.transfer_number,
-          createdBy: transfer.created_by,
-          receivedBy: user.id,
-          appLang
-        })
+        await dispatchTransferNotificationEvent("received")
       } catch (notifError) {
         console.error("Error sending receive notification:", notifError)
       }

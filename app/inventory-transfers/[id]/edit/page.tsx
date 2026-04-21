@@ -13,7 +13,6 @@ import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import { ArrowLeftRight, Plus, Trash2, Warehouse, Package, Save, ArrowLeft, AlertCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { notifyTransferModified } from "@/lib/notification-helpers"
 
 interface Product {
   id: string
@@ -444,14 +443,22 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
 
       // إرسال إشعار للإدارة بأن الطلب تم تعديله ويحتاج اعتماد
       try {
-        await notifyTransferModified({
-          companyId,
-          transferId: transfer.id,
-          transferNumber: transfer.transfer_number,
-          sourceBranchId: transfer.source_branch_id || undefined,
-          modifiedBy: userId,
-          appLang
+        const response = await fetch(`/api/inventory-transfers/${transfer.id}/notifications`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "modified",
+            appLang,
+          }),
         })
+
+        const result = await response.json().catch(() => null)
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.error || "Failed to dispatch transfer modified notification")
+        }
+
         console.log('✅ [EDIT] Notification sent')
       } catch (notifError) {
         console.error("Error sending modification notification:", notifError)
@@ -680,4 +687,3 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
     </div>
   )
 }
-

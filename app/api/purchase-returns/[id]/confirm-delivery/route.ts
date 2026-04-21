@@ -3,6 +3,7 @@ import { apiGuard } from "@/lib/core/security/api-guard"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { PurchaseReturnCommandService } from "@/lib/services/purchase-return-command.service"
+import { PurchaseReturnNotificationService } from "@/lib/services/purchase-return-notification.service"
 
 export async function POST(
   request: NextRequest,
@@ -19,6 +20,7 @@ export async function POST(
     const allocationId = String(body?.allocationId || body?.allocation_id || "").trim() || null
     const notes = String(body?.notes || "").trim() || null
     const uiSurface = body?.uiSurface || body?.ui_surface || "purchase_returns_page"
+    const appLang = String(body?.appLang || body?.app_lang || "ar").trim().toLowerCase() === "en" ? "en" : "ar"
 
     const authSupabase = await createClient()
     const adminSupabase = createServiceClient()
@@ -49,6 +51,21 @@ export async function POST(
       { allocationId, notes, uiSurface },
       { idempotencyKey, requestHash }
     )
+
+    if (!result.cached) {
+      const notificationService = new PurchaseReturnNotificationService(adminSupabase)
+      await notificationService.archiveWarehousePendingNotifications({
+        companyId: context.companyId,
+        purchaseReturnId: id,
+      })
+      await notificationService.notifyConfirmed({
+        companyId: context.companyId,
+        purchaseReturnId: id,
+        actorUserId: context.user.id,
+        allocationId,
+        appLang,
+      })
+    }
 
     return NextResponse.json(result, { status: 200 })
   } catch (error: any) {

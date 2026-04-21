@@ -16,6 +16,7 @@ import { getActiveCompanyId } from '@/lib/company'
 import { NextRequest, NextResponse } from 'next/server'
 import { createWriteOffJournal } from '@/lib/accrual-accounting-engine'
 import { consumeFIFOLotsWithCOGS } from '@/lib/fifo-engine'
+import { WriteOffNotificationService } from '@/lib/services/write-off-notification.service'
 
 export async function POST(request: NextRequest) {
   try {
@@ -334,11 +335,6 @@ export async function POST(request: NextRequest) {
 
     // 🔔 إرسال إشعارات عند اعتماد الإهلاك
     try {
-      const { 
-        notifyWriteOffApproved, 
-        archiveWriteOffApprovalNotifications 
-      } = await import('@/lib/notification-helpers')
-
       // ✅ جلب اسم من قام بالاعتماد (من user_profiles أو email)
       let approvedByName: string | undefined
       try {
@@ -354,8 +350,10 @@ export async function POST(request: NextRequest) {
         approvedByName = user.email?.split('@')[0] || undefined
       }
 
+      const notificationService = new WriteOffNotificationService(supabase)
+
       // إرسال إشعار للمنشئ
-      await notifyWriteOffApproved({
+      await notificationService.notifyApproved({
         companyId,
         writeOffId,
         writeOffNumber: writeOff.write_off_number,
@@ -369,9 +367,12 @@ export async function POST(request: NextRequest) {
       })
 
       // أرشفة إشعارات الاعتماد السابقة
-      await archiveWriteOffApprovalNotifications({
+      await notificationService.archiveApprovalNotifications({
         companyId,
-        writeOffId
+        writeOffId,
+        branchId: writeOff.branch_id,
+        warehouseId: writeOff.warehouse_id,
+        costCenterId: writeOff.cost_center_id,
       })
     } catch (notificationError) {
       console.error('Error sending write-off approval notifications:', notificationError)
