@@ -262,7 +262,10 @@ export function Sidebar() {
       return null
     }
 
-    const isAnyActive = allowedItems.some((it: any) => pathname === it.href)
+    const isAnyActive = allowedItems.some((it: any) => {
+      const href = it.href.split('?')[0]
+      return pathname === href || pathname.startsWith(href + '/')
+    })
     const [open, setOpen] = useState<boolean>(isAnyActive)
     const IconMain = group.icon
 
@@ -282,7 +285,7 @@ export function Sidebar() {
           <div className="space-y-0.5 sm:space-y-1">
             {allowedItems.map((it: any) => {
               const Icon = it.icon
-              const isActive = pathname === it.href
+              const isActive = (() => { const h = it.href.split('?')[0]; return pathname === h || pathname.startsWith(h + '/') })()
               return (
                 <Link key={it.href} href={it.href} prefetch={false}>
                   <button
