@@ -1009,7 +1009,7 @@ export function Sidebar() {
                 },
                 {
                   key: 'manufacturing', icon: Factory, label: (lang === 'en' ? 'Manufacturing' : 'التصنيع'), items: [
-                    { label: (lang === 'en' ? 'Bill of Materials' : 'هياكل BOM'), href: `/manufacturing/boms${q}`, icon: Factory },
+                    { label: (lang === 'en' ? 'Bill of Materials' : 'هياكل المواد'), href: `/manufacturing/boms${q}`, icon: Factory },
                     { label: (lang === 'en' ? 'Routings' : 'مسارات التشغيل'), href: `/manufacturing/routings${q}`, icon: Factory },
                     { label: (lang === 'en' ? 'Production Orders' : 'أوامر الإنتاج'), href: `/manufacturing/production-orders${q}`, icon: Factory },
                   ]

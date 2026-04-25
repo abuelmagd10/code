@@ -166,7 +166,7 @@ export function RoutingListPage() {
           extra={
             <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
               <Factory className="h-3.5 w-3.5" />
-              Routing Engine
+              مديول التصنيع
             </div>
           }
           actions={
@@ -177,7 +177,7 @@ export function RoutingListPage() {
               </Button>
               <Button onClick={() => setCreateOpen(true)} disabled={!canWrite} className="gap-2">
                 <Plus className="h-4 w-4" />
-                إنشاء Routing
+                إنشاء مسار تشغيلي جديد
               </Button>
             </>
           }
@@ -214,7 +214,7 @@ export function RoutingListPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>المنتج المرتبط</Label>
+                  <Label>المنتج</Label>
                   <Input
                     value={filterForm.productId || ""}
                     onChange={(event) => setFilterForm((current) => ({ ...current, productId: event.target.value }))}
@@ -222,7 +222,7 @@ export function RoutingListPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>الاستخدام</Label>
+                  <Label>نوع الاستخدام</Label>
                   <Select
                     value={filterForm.routingUsage || "all"}
                     onValueChange={(value) => setFilterForm((current) => ({ ...current, routingUsage: value as RoutingListFilters["routingUsage"] }))}
@@ -272,7 +272,7 @@ export function RoutingListPage() {
                 <Factory className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
               </div>
               <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Routing headers المعروضة</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">مسارات التشغيل المعروضة</p>
                 <p className="text-xl font-bold text-gray-900 dark:text-white">{routings.length}</p>
               </div>
             </div>
@@ -296,7 +296,7 @@ export function RoutingListPage() {
                 <Package2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               </div>
               <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Headers النشطة حاليًا</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">مسارات التشغيل النشطة حاليًا</p>
                 <p className="text-xl font-bold text-gray-900 dark:text-white">
                   {routings.filter((routing) => routing.is_active).length}
                 </p>
@@ -323,7 +323,7 @@ export function RoutingListPage() {
                       Array.from({ length: 4 }).map((_, index) => (
                         <TableRow key={`loading-${index}`}>
                           <TableCell colSpan={7} className="py-6 text-center text-slate-500">
-                            جاري تحميل Routing list...
+                            جاري تحميل مسارات التشغيل...
                           </TableCell>
                         </TableRow>
                       ))
@@ -332,9 +332,9 @@ export function RoutingListPage() {
                         <TableCell colSpan={7} className="py-12 text-center">
                           <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-center">
                             <Factory className="h-10 w-10 text-slate-300" />
-                            <div className="text-lg font-medium text-slate-800">لا توجد Routing مطابقة</div>
+                            <div className="text-lg font-medium text-slate-800">لا توجد مسارات تشغيل مطابقة</div>
                             <p className="text-sm leading-6 text-slate-500">
-                              يمكنك تعديل الفلاتر أو إنشاء Routing جديدة من الزر أعلى الصفحة.
+                              يمكنك تعديل الفلاتر أو إنشاء مسار تشغيلي جديد من الزر أعلى الصفحة.
                             </p>
                           </div>
                         </TableCell>
@@ -353,7 +353,7 @@ export function RoutingListPage() {
                                   <Badge variant={routing.is_active ? "default" : "outline"}>
                                     {routing.is_active ? "نشط" : "غير نشط"}
                                   </Badge>
-                                  <Badge variant="outline">{routing.versions.length} versions</Badge>
+                                  <Badge variant="outline">{routing.versions.length} نسخة</Badge>
                                 </div>
                               </div>
                             </TableCell>
@@ -406,11 +406,11 @@ export function RoutingListPage() {
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>إنشاء Routing جديدة</DialogTitle>
+              <DialogTitle>إنشاء مسار تشغيلي جديد</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-2 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>الفرع</Label>
+                <Label>الفرع (اختياري)</Label>
                 <Input
                   value={createForm.branch_id || ""}
                   onChange={(event) => setCreateForm((current) => ({ ...current, branch_id: event.target.value }))}
@@ -418,7 +418,7 @@ export function RoutingListPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>المنتج المرتبط</Label>
+                <Label>معرف المنتج المالك</Label>
                 <Input
                   value={createForm.product_id}
                   onChange={(event) => setCreateForm((current) => ({ ...current, product_id: event.target.value }))}
@@ -426,7 +426,7 @@ export function RoutingListPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>كود المسار</Label>
+                <Label>كود مسار التشغيل</Label>
                 <Input
                   value={createForm.routing_code}
                   onChange={(event) => setCreateForm((current) => ({ ...current, routing_code: event.target.value }))}
@@ -434,7 +434,7 @@ export function RoutingListPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>اسم المسار</Label>
+                <Label>اسم مسار التشغيل</Label>
                 <Input
                   value={createForm.routing_name}
                   onChange={(event) => setCreateForm((current) => ({ ...current, routing_name: event.target.value }))}
@@ -442,7 +442,7 @@ export function RoutingListPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>الاستخدام</Label>
+                <Label>نوع الاستخدام</Label>
                 <Select
                   value={createForm.routing_usage}
                   onValueChange={(value) => setCreateForm((current) => ({ ...current, routing_usage: value as RoutingCreatePayload["routing_usage"] }))}
@@ -483,7 +483,7 @@ export function RoutingListPage() {
                 إلغاء
               </Button>
               <Button onClick={handleCreate} disabled={creating}>
-                {creating ? "جاري الإنشاء..." : "إنشاء Routing"}
+                {creating ? "جاري الإنشاء..." : "إنشاء مسار التشغيل"}
               </Button>
             </DialogFooter>
           </DialogContent>

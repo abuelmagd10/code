@@ -638,7 +638,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                   <div className="grid gap-4 md:grid-cols-3">
                     <Card className="border-cyan-200 bg-cyan-50/80">
                       <CardContent className="p-4">
-                        <div className="text-sm text-slate-500">المنتج المرتبط</div>
+                        <div className="text-sm text-slate-500">Owner Product</div>
                         <div className="mt-1 text-base font-semibold text-slate-900">{buildProductLabel(ownerProduct)}</div>
                         {ownerProduct?.product_type ? (
                           <Badge variant="outline" className="mt-2">{ownerProduct.product_type}</Badge>
@@ -647,7 +647,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                     </Card>
                     <Card className="border-indigo-200 bg-indigo-50/80">
                       <CardContent className="p-4">
-                        <div className="text-sm text-slate-500">الاستخدام</div>
+                        <div className="text-sm text-slate-500">Routing Usage</div>
                         <div className="mt-1 text-base font-semibold text-slate-900">
                           {ROUTING_USAGE_OPTIONS.find((option) => option.value === routing.routing_usage)?.labelAr || routing.routing_usage}
                         </div>
@@ -668,7 +668,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                   <div className="grid gap-6 xl:grid-cols-[280px,minmax(0,1fr)]">
                     <Card className="h-fit">
                       <CardHeader>
-                        <CardTitle className="text-base">إدارة النسخ</CardTitle>
+                        <CardTitle className="text-base">Version Management</CardTitle>
                         <CardDescription>اختر النسخة الحالية أو أنشئ نسخة جديدة من نفس الـ routing.</CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-3">
@@ -774,19 +774,19 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
 
                           <Tabs defaultValue="overview" className="space-y-4">
                             <TabsList className="grid w-full grid-cols-2">
-                              <TabsTrigger value="overview">نظرة عامة</TabsTrigger>
-                              <TabsTrigger value="operations">محرر العمليات</TabsTrigger>
+                              <TabsTrigger value="overview">Overview</TabsTrigger>
+                              <TabsTrigger value="operations">Operations Editor</TabsTrigger>
                             </TabsList>
 
                             <TabsContent value="overview" className="space-y-6">
                               <Card>
                                 <CardHeader>
-                                  <CardTitle className="text-base">بيانات المسار</CardTitle>
+                                  <CardTitle className="text-base">Routing Header</CardTitle>
                                   <CardDescription>identity fields للقراءة فقط، والحقول القابلة للتحديث تحفظ عبر `PATCH /routings/[id]`.</CardDescription>
                                 </CardHeader>
                                 <CardContent className="grid gap-4 md:grid-cols-2">
                                   <div className="space-y-2">
-                                    <Label>كود المسار</Label>
+                                    <Label>Routing Code</Label>
                                     <Input
                                       value={headerForm.routing_code}
                                       onChange={(event) => setHeaderForm((current) => ({ ...current, routing_code: event.target.value }))}
@@ -794,7 +794,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>اسم المسار</Label>
+                                    <Label>Routing Name</Label>
                                     <Input
                                       value={headerForm.routing_name}
                                       onChange={(event) => setHeaderForm((current) => ({ ...current, routing_name: event.target.value }))}
@@ -802,15 +802,15 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>المنتج المرتبط</Label>
+                                    <Label>Owner Product</Label>
                                     <Input value={buildProductLabel(ownerProduct)} disabled />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>الفرع</Label>
+                                    <Label>Branch ID</Label>
                                     <Input value={routing.branch_id} disabled className="font-mono text-xs" />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>الاستخدام</Label>
+                                    <Label>Routing Usage</Label>
                                     <Input
                                       value={ROUTING_USAGE_OPTIONS.find((option) => option.value === routing.routing_usage)?.labelAr || routing.routing_usage}
                                       disabled
@@ -818,7 +818,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                   </div>
                                   <div className="flex items-center justify-between rounded-xl border px-4 py-3">
                                     <div className="space-y-1">
-                                      <div className="font-medium text-slate-900">نشط</div>
+                                      <div className="font-medium text-slate-900">Header Active</div>
                                       <div className="text-sm text-slate-500">هذه الحالة خاصة بالـ header نفسه وليست version status.</div>
                                     </div>
                                     <Switch
@@ -828,7 +828,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     />
                                   </div>
                                   <div className="space-y-2 md:col-span-2">
-                                    <Label>الوصف</Label>
+                                    <Label>Description</Label>
                                     <Textarea
                                       value={headerForm.description}
                                       onChange={(event) => setHeaderForm((current) => ({ ...current, description: event.target.value }))}
@@ -846,12 +846,12 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
 
                               <Card>
                                 <CardHeader>
-                                  <CardTitle className="text-base">بيانات النسخة</CardTitle>
+                                  <CardTitle className="text-base">Version Header</CardTitle>
                                   <CardDescription>هذه الحقول تقرأ وتكتب عبر `PATCH /routing-versions/[id]` وتبقى قابلة للتعديل فقط في draft.</CardDescription>
                                 </CardHeader>
                                 <CardContent className="grid gap-4 md:grid-cols-2">
                                   <div className="space-y-2">
-                                    <Label>صالح من</Label>
+                                    <Label>Effective From</Label>
                                     <Input
                                       type="datetime-local"
                                       value={versionForm.effective_from}
@@ -860,7 +860,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>صالح إلى</Label>
+                                    <Label>Effective To</Label>
                                     <Input
                                       type="datetime-local"
                                       value={versionForm.effective_to}
@@ -869,7 +869,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     />
                                   </div>
                                   <div className="space-y-2 md:col-span-2">
-                                    <Label>ملخص التغيير</Label>
+                                    <Label>Change Summary</Label>
                                     <Textarea
                                       value={versionForm.change_summary}
                                       onChange={(event) => setVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
@@ -877,7 +877,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     />
                                   </div>
                                   <div className="space-y-2 md:col-span-2">
-                                    <Label>ملاحظات</Label>
+                                    <Label>Notes</Label>
                                     <Textarea
                                       value={versionForm.notes}
                                       onChange={(event) => setVersionForm((current) => ({ ...current, notes: event.target.value }))}
@@ -899,7 +899,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                 <CardHeader>
                                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                     <div>
-                                      <CardTitle className="text-base">هيكل العمليات</CardTitle>
+                                      <CardTitle className="text-base">Operations Structure</CardTitle>
                                       <CardDescription>
                                         جميع التعديلات تُحفظ فقط عبر `PUT /routing-versions/[id]/operations` داخل replace transaction واحدة.
                                       </CardDescription>
@@ -967,7 +967,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                           </CardHeader>
                                           <CardContent className="grid gap-4 pt-6 md:grid-cols-2 xl:grid-cols-4">
                                             <div className="space-y-2">
-                                              <Label>رقم العملية</Label>
+                                              <Label>Operation No</Label>
                                               <Input
                                                 type="number"
                                                 min="1"
@@ -984,7 +984,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2">
-                                              <Label>كود العملية</Label>
+                                              <Label>Operation Code</Label>
                                               <Input
                                                 value={operation.operation_code}
                                                 onChange={(event) =>
@@ -998,7 +998,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2 xl:col-span-2">
-                                              <Label>اسم العملية</Label>
+                                              <Label>Operation Name</Label>
                                               <Input
                                                 value={operation.operation_name}
                                                 onChange={(event) =>
@@ -1012,7 +1012,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2 xl:col-span-2">
-                                              <Label>مركز العمل</Label>
+                                              <Label>Work Center ID</Label>
                                               <Input
                                                 value={operation.work_center_id}
                                                 onChange={(event) =>
@@ -1037,7 +1037,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="flex items-center justify-between rounded-xl border px-4 py-3 xl:col-span-2">
                                               <div className="space-y-1">
-                                                <div className="font-medium text-slate-900">نقطة فحص جودة</div>
+                                                <div className="font-medium text-slate-900">Quality Checkpoint</div>
                                                 <div className="text-sm text-slate-500">يبقى Boolean بسيطًا في v1.</div>
                                               </div>
                                               <Switch
@@ -1155,7 +1155,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2 xl:col-span-4">
-                                              <Label>التعليمات</Label>
+                                              <Label>Instructions</Label>
                                               <Textarea
                                                 value={operation.instructions || ""}
                                                 onChange={(event) =>
@@ -1179,19 +1179,19 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                               {activeSnapshot?.operations.length ? (
                                 <Card>
                                   <CardHeader>
-                                    <CardTitle className="text-base">اللقطة الحالية للعمليات</CardTitle>
+                                    <CardTitle className="text-base">Current Persisted Snapshot</CardTitle>
                                     <CardDescription>مرجع سريع للنسخة المحفوظة فعليًا بعد آخر reload من الـ API.</CardDescription>
                                   </CardHeader>
                                   <CardContent>
                                     <Table>
                                       <TableHeader>
                                         <TableRow>
-                                          <TableHead>الرقم</TableHead>
-                                          <TableHead>الكود</TableHead>
-                                          <TableHead>الاسم</TableHead>
-                                          <TableHead>مركز العمل</TableHead>
-                                          <TableHead>وقت التنفيذ للوحدة</TableHead>
-                                          <TableHead>الجودة</TableHead>
+                                          <TableHead>No</TableHead>
+                                          <TableHead>Code</TableHead>
+                                          <TableHead>Name</TableHead>
+                                          <TableHead>Work Center</TableHead>
+                                          <TableHead>Run / Unit</TableHead>
+                                          <TableHead>Quality</TableHead>
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
@@ -1229,7 +1229,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
             </DialogHeader>
             <div className="grid gap-4 py-2 md:grid-cols-2">
               <div className="space-y-2 md:col-span-2">
-                <Label>استنساخ من نسخة</Label>
+                <Label>Clone From Version</Label>
                 <Input
                   value={createVersionForm.clone_from_version_id || ""}
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, clone_from_version_id: event.target.value.trim() || null }))}
@@ -1237,7 +1237,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 />
               </div>
               <div className="space-y-2">
-                <Label>صالح من</Label>
+                <Label>Effective From</Label>
                 <Input
                   type="datetime-local"
                   value={isoToLocalDateTimeInput(createVersionForm.effective_from)}
@@ -1245,7 +1245,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 />
               </div>
               <div className="space-y-2">
-                <Label>صالح إلى</Label>
+                <Label>Effective To</Label>
                 <Input
                   type="datetime-local"
                   value={isoToLocalDateTimeInput(createVersionForm.effective_to)}
@@ -1253,14 +1253,14 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label>ملخص التغيير</Label>
+                <Label>Change Summary</Label>
                 <Textarea
                   value={typeof createVersionForm.change_summary === "string" ? createVersionForm.change_summary : ""}
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label>ملاحظات</Label>
+                <Label>Notes</Label>
                 <Textarea
                   value={typeof createVersionForm.notes === "string" ? createVersionForm.notes : ""}
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, notes: event.target.value }))}

@@ -228,13 +228,13 @@ export function BomListPage() {
     <PageGuard resource="manufacturing_boms">
       <div className="container mx-auto p-4 space-y-6">
         <ERPPageHeader
-          title="هياكل Bill of Materials"
+          title="هياكل المواد (BOM)"
           description="إدارة هياكل المنتجات، النسخ، والاعتماد"
           variant="list"
           extra={
             <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
               <Factory className="h-3.5 w-3.5" />
-              BOM Engine
+              مديول التصنيع
             </div>
           }
           actions={
@@ -250,7 +250,7 @@ export function BomListPage() {
               </Button>
               <Button onClick={handleOpenCreate} disabled={!canWrite || lookupsLoading} className="gap-2">
                 <Plus className="h-4 w-4" />
-                إنشاء BOM
+                إنشاء هيكل جديد
               </Button>
             </>
           }
@@ -298,7 +298,7 @@ export function BomListPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>نوع BOM</Label>
+                  <Label>نوع الهيكل</Label>
                   <Select
                     value={filterForm.bomUsage || "all"}
                     onValueChange={(value) => setFilterForm((current) => ({ ...current, bomUsage: value as BomListFilters["bomUsage"] }))}
@@ -348,7 +348,7 @@ export function BomListPage() {
                 <Factory className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
               </div>
               <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">إجمالي BOMs المعروضة</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">إجمالي الهياكل المعروضة</p>
                 <p className="text-xl font-bold text-gray-900 dark:text-white">{boms.length}</p>
               </div>
             </div>
@@ -372,7 +372,7 @@ export function BomListPage() {
                 <Package2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               </div>
               <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">BOMs النشطة حاليًا</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">الهياكل النشطة حاليًا</p>
                 <p className="text-xl font-bold text-gray-900 dark:text-white">
                   {boms.filter((bom) => bom.is_active).length}
                 </p>
@@ -399,7 +399,7 @@ export function BomListPage() {
                       Array.from({ length: 4 }).map((_, index) => (
                         <TableRow key={`loading-${index}`}>
                           <TableCell colSpan={7} className="py-6 text-center text-slate-500">
-                            جاري تحميل بيانات BOM...
+                            جاري تحميل بيانات الهياكل...
                           </TableCell>
                         </TableRow>
                       ))
@@ -408,9 +408,9 @@ export function BomListPage() {
                         <TableCell colSpan={7} className="py-12 text-center">
                           <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-center">
                             <Factory className="h-10 w-10 text-slate-300" />
-                            <div className="text-lg font-medium text-slate-800">لا توجد BOMs مطابقة</div>
+                            <div className="text-lg font-medium text-slate-800">لا توجد هياكل مطابقة</div>
                             <p className="text-sm leading-6 text-slate-500">
-                              يمكنك تعديل الفلاتر الحالية أو إنشاء BOM جديدة من الزر أعلى الصفحة.
+                              يمكنك تعديل الفلاتر الحالية أو إنشاء هيكل جديد من الزر أعلى الصفحة.
                             </p>
                           </div>
                         </TableCell>
@@ -430,7 +430,7 @@ export function BomListPage() {
                                   <Badge variant={bom.is_active ? "default" : "outline"}>
                                     {bom.is_active ? "نشط" : "غير نشط"}
                                   </Badge>
-                                  <Badge variant="outline">{bom.versions.length} versions</Badge>
+                                  <Badge variant="outline">{bom.versions.length} نسخة</Badge>
                                 </div>
                               </div>
                             </TableCell>
@@ -458,7 +458,7 @@ export function BomListPage() {
                                     <Badge variant={getVersionStatusVariant(featuredVersion.status)}>
                                       {getVersionStatusLabel(featuredVersion.status)}
                                     </Badge>
-                                    {featuredVersion.is_default ? <Badge variant="outline">افتراضي</Badge> : null}
+                                    {featuredVersion.is_default ? <Badge variant="outline">افتراضية</Badge> : null}
                                   </div>
                                 </div>
                               ) : (
@@ -489,7 +489,7 @@ export function BomListPage() {
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>إنشاء BOM جديدة</DialogTitle>
+              <DialogTitle>إنشاء هيكل مواد جديد (BOM)</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-2 md:grid-cols-2">
               <div className="space-y-2">
@@ -535,7 +535,7 @@ export function BomListPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>كود BOM</Label>
+                <Label>كود الهيكل</Label>
                 <Input
                   value={createForm.bom_code}
                   onChange={(event) => setCreateForm((current) => ({ ...current, bom_code: event.target.value }))}
@@ -543,7 +543,7 @@ export function BomListPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>اسم BOM</Label>
+                <Label>اسم الهيكل</Label>
                 <Input
                   value={createForm.bom_name}
                   onChange={(event) => setCreateForm((current) => ({ ...current, bom_name: event.target.value }))}
@@ -570,7 +570,7 @@ export function BomListPage() {
               </div>
               <div className="flex items-center justify-between rounded-xl border px-4 py-3">
                 <div className="space-y-1">
-                  <div className="font-medium text-slate-900">تفعيل BOM</div>
+                  <div className="font-medium text-slate-900">تفعيل الهيكل</div>
                   <div className="text-sm text-slate-500">يمكن تعطيل السجل لاحقًا من صفحة التفاصيل.</div>
                 </div>
                 <Switch
@@ -592,7 +592,7 @@ export function BomListPage() {
                 إلغاء
               </Button>
               <Button onClick={handleCreate} disabled={creating || lookupsLoading}>
-                {creating ? "جاري الإنشاء..." : "إنشاء BOM"}
+                {creating ? "جاري الإنشاء..." : "إنشاء الهيكل"}
               </Button>
             </DialogFooter>
           </DialogContent>

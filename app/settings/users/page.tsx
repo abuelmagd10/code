@@ -1121,7 +1121,7 @@ export default function UsersSettingsPage() {
     manufacturing: {
       label: '🏭 التصنيع',
       resources: [
-        { value: 'manufacturing_boms', label: 'التصنيع' },
+        { value: 'manufacturing_boms', label: 'التصنيع (هياكل المواد، مسارات التشغيل، أوامر الإنتاج)' },
       ]
     },
     finance: {
