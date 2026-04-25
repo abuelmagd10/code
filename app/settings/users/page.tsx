@@ -1118,6 +1118,12 @@ export default function UsersSettingsPage() {
         { value: 'inventory_goods_receipt', label: 'اعتماد استلام فواتير المشتريات' },
       ]
     },
+    manufacturing: {
+      label: '🏭 التصنيع',
+      resources: [
+        { value: 'manufacturing_boms', label: 'التصنيع' },
+      ]
+    },
     finance: {
       label: '🏦 المالية والمحاسبة',
       resources: [

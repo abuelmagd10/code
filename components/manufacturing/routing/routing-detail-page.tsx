@@ -19,6 +19,7 @@ import {
 import { PageGuard } from "@/components/page-guard"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -577,47 +578,44 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
 
   return (
     <PageGuard resource="manufacturing_boms">
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(8,145,178,0.08),_transparent_30%),linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_100%)]">
-        <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 pb-12 pt-20 md:px-8 md:pt-10">
-          <Card className="overflow-hidden border-slate-200/70 shadow-lg shadow-slate-200/40">
-            <CardHeader className="border-b bg-white/80 backdrop-blur">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                <div className="space-y-2">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
-                    <Factory className="h-3.5 w-3.5" />
-                    Routing Workspace
-                  </div>
-                  <CardTitle className="text-2xl font-semibold text-slate-900">
-                    {routing ? `${routing.routing_code} — ${routing.routing_name}` : "تفاصيل Routing"}
-                  </CardTitle>
-                  <CardDescription className="max-w-3xl text-sm leading-6 text-slate-600">
-                    هذه الشاشة تدير الـ header والنسخ والعمليات والتفعيل/الإيقاف/الأرشفة. جميع الأوامر الحساسة تمر عبر B6 RPCs مع reload كامل بعد كل command.
-                  </CardDescription>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button variant="outline" onClick={() => refreshWorkspace(selectedVersionId)} disabled={loadingRouting || loadingVersion} className="gap-2">
-                    <RefreshCw className={`h-4 w-4 ${loadingRouting || loadingVersion ? "animate-spin" : ""}`} />
-                    تحديث
-                  </Button>
-                  <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite || !routing} className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    إنشاء نسخة
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => setConfirmAction("delete-routing")}
-                    disabled={!canDelete || !canDeleteRoutingRecord}
-                    className="gap-2"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    حذف Routing
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
+      <div className="container mx-auto p-4 space-y-6">
+        <ERPPageHeader
+          title={routing ? `${routing.routing_code} — ${routing.routing_name}` : "تفاصيل Routing"}
+          description="هذه الشاشة تدير الـ header والنسخ والعمليات والتفعيل/الإيقاف/الأرشفة. جميع الأوامر الحساسة تمر عبر B6 RPCs مع reload كامل بعد كل command."
+          variant="detail"
+          backHref="/manufacturing/routings"
+          backLabel="العودة للقائمة"
+          extra={
+            <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
+              <Factory className="h-3.5 w-3.5" />
+              Routing Workspace
+            </div>
+          }
+          actions={
+            <>
+              <Button variant="outline" onClick={() => refreshWorkspace(selectedVersionId)} disabled={loadingRouting || loadingVersion} className="gap-2">
+                <RefreshCw className={`h-4 w-4 ${loadingRouting || loadingVersion ? "animate-spin" : ""}`} />
+                تحديث
+              </Button>
+              <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite || !routing} className="gap-2">
+                <Plus className="h-4 w-4" />
+                إنشاء نسخة
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => setConfirmAction("delete-routing")}
+                disabled={!canDelete || !canDeleteRoutingRecord}
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                حذف Routing
+              </Button>
+            </>
+          }
+        />
 
-            <CardContent className="space-y-6 p-6">
-              {loadingRouting && !routing ? (
+        <div className="space-y-6">
+          {loadingRouting && !routing ? (
                 <div className="flex items-center justify-center gap-2 rounded-2xl border bg-white p-12 text-slate-500">
                   <Loader2 className="h-5 w-5 animate-spin" />
                   جاري تحميل Routing...
@@ -640,7 +638,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                   <div className="grid gap-4 md:grid-cols-3">
                     <Card className="border-cyan-200 bg-cyan-50/80">
                       <CardContent className="p-4">
-                        <div className="text-sm text-slate-500">Owner Product</div>
+                        <div className="text-sm text-slate-500">المنتج المرتبط</div>
                         <div className="mt-1 text-base font-semibold text-slate-900">{buildProductLabel(ownerProduct)}</div>
                         {ownerProduct?.product_type ? (
                           <Badge variant="outline" className="mt-2">{ownerProduct.product_type}</Badge>
@@ -649,7 +647,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                     </Card>
                     <Card className="border-indigo-200 bg-indigo-50/80">
                       <CardContent className="p-4">
-                        <div className="text-sm text-slate-500">Routing Usage</div>
+                        <div className="text-sm text-slate-500">الاستخدام</div>
                         <div className="mt-1 text-base font-semibold text-slate-900">
                           {ROUTING_USAGE_OPTIONS.find((option) => option.value === routing.routing_usage)?.labelAr || routing.routing_usage}
                         </div>
@@ -670,7 +668,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                   <div className="grid gap-6 xl:grid-cols-[280px,minmax(0,1fr)]">
                     <Card className="h-fit">
                       <CardHeader>
-                        <CardTitle className="text-base">Version Management</CardTitle>
+                        <CardTitle className="text-base">إدارة النسخ</CardTitle>
                         <CardDescription>اختر النسخة الحالية أو أنشئ نسخة جديدة من نفس الـ routing.</CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-3">
@@ -776,19 +774,19 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
 
                           <Tabs defaultValue="overview" className="space-y-4">
                             <TabsList className="grid w-full grid-cols-2">
-                              <TabsTrigger value="overview">Overview</TabsTrigger>
-                              <TabsTrigger value="operations">Operations Editor</TabsTrigger>
+                              <TabsTrigger value="overview">نظرة عامة</TabsTrigger>
+                              <TabsTrigger value="operations">محرر العمليات</TabsTrigger>
                             </TabsList>
 
                             <TabsContent value="overview" className="space-y-6">
                               <Card>
                                 <CardHeader>
-                                  <CardTitle className="text-base">Routing Header</CardTitle>
+                                  <CardTitle className="text-base">بيانات المسار</CardTitle>
                                   <CardDescription>identity fields للقراءة فقط، والحقول القابلة للتحديث تحفظ عبر `PATCH /routings/[id]`.</CardDescription>
                                 </CardHeader>
                                 <CardContent className="grid gap-4 md:grid-cols-2">
                                   <div className="space-y-2">
-                                    <Label>Routing Code</Label>
+                                    <Label>كود المسار</Label>
                                     <Input
                                       value={headerForm.routing_code}
                                       onChange={(event) => setHeaderForm((current) => ({ ...current, routing_code: event.target.value }))}
@@ -796,7 +794,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>Routing Name</Label>
+                                    <Label>اسم المسار</Label>
                                     <Input
                                       value={headerForm.routing_name}
                                       onChange={(event) => setHeaderForm((current) => ({ ...current, routing_name: event.target.value }))}
@@ -804,15 +802,15 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>Owner Product</Label>
+                                    <Label>المنتج المرتبط</Label>
                                     <Input value={buildProductLabel(ownerProduct)} disabled />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>Branch ID</Label>
+                                    <Label>الفرع</Label>
                                     <Input value={routing.branch_id} disabled className="font-mono text-xs" />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>Routing Usage</Label>
+                                    <Label>الاستخدام</Label>
                                     <Input
                                       value={ROUTING_USAGE_OPTIONS.find((option) => option.value === routing.routing_usage)?.labelAr || routing.routing_usage}
                                       disabled
@@ -820,7 +818,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                   </div>
                                   <div className="flex items-center justify-between rounded-xl border px-4 py-3">
                                     <div className="space-y-1">
-                                      <div className="font-medium text-slate-900">Header Active</div>
+                                      <div className="font-medium text-slate-900">نشط</div>
                                       <div className="text-sm text-slate-500">هذه الحالة خاصة بالـ header نفسه وليست version status.</div>
                                     </div>
                                     <Switch
@@ -830,7 +828,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     />
                                   </div>
                                   <div className="space-y-2 md:col-span-2">
-                                    <Label>Description</Label>
+                                    <Label>الوصف</Label>
                                     <Textarea
                                       value={headerForm.description}
                                       onChange={(event) => setHeaderForm((current) => ({ ...current, description: event.target.value }))}
@@ -848,12 +846,12 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
 
                               <Card>
                                 <CardHeader>
-                                  <CardTitle className="text-base">Version Header</CardTitle>
+                                  <CardTitle className="text-base">بيانات النسخة</CardTitle>
                                   <CardDescription>هذه الحقول تقرأ وتكتب عبر `PATCH /routing-versions/[id]` وتبقى قابلة للتعديل فقط في draft.</CardDescription>
                                 </CardHeader>
                                 <CardContent className="grid gap-4 md:grid-cols-2">
                                   <div className="space-y-2">
-                                    <Label>Effective From</Label>
+                                    <Label>صالح من</Label>
                                     <Input
                                       type="datetime-local"
                                       value={versionForm.effective_from}
@@ -862,7 +860,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>Effective To</Label>
+                                    <Label>صالح إلى</Label>
                                     <Input
                                       type="datetime-local"
                                       value={versionForm.effective_to}
@@ -871,7 +869,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     />
                                   </div>
                                   <div className="space-y-2 md:col-span-2">
-                                    <Label>Change Summary</Label>
+                                    <Label>ملخص التغيير</Label>
                                     <Textarea
                                       value={versionForm.change_summary}
                                       onChange={(event) => setVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
@@ -879,7 +877,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     />
                                   </div>
                                   <div className="space-y-2 md:col-span-2">
-                                    <Label>Notes</Label>
+                                    <Label>ملاحظات</Label>
                                     <Textarea
                                       value={versionForm.notes}
                                       onChange={(event) => setVersionForm((current) => ({ ...current, notes: event.target.value }))}
@@ -901,7 +899,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                 <CardHeader>
                                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                     <div>
-                                      <CardTitle className="text-base">Operations Structure</CardTitle>
+                                      <CardTitle className="text-base">هيكل العمليات</CardTitle>
                                       <CardDescription>
                                         جميع التعديلات تُحفظ فقط عبر `PUT /routing-versions/[id]/operations` داخل replace transaction واحدة.
                                       </CardDescription>
@@ -969,7 +967,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                           </CardHeader>
                                           <CardContent className="grid gap-4 pt-6 md:grid-cols-2 xl:grid-cols-4">
                                             <div className="space-y-2">
-                                              <Label>Operation No</Label>
+                                              <Label>رقم العملية</Label>
                                               <Input
                                                 type="number"
                                                 min="1"
@@ -986,7 +984,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2">
-                                              <Label>Operation Code</Label>
+                                              <Label>كود العملية</Label>
                                               <Input
                                                 value={operation.operation_code}
                                                 onChange={(event) =>
@@ -1000,7 +998,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2 xl:col-span-2">
-                                              <Label>Operation Name</Label>
+                                              <Label>اسم العملية</Label>
                                               <Input
                                                 value={operation.operation_name}
                                                 onChange={(event) =>
@@ -1014,7 +1012,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2 xl:col-span-2">
-                                              <Label>Work Center ID</Label>
+                                              <Label>مركز العمل</Label>
                                               <Input
                                                 value={operation.work_center_id}
                                                 onChange={(event) =>
@@ -1039,7 +1037,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="flex items-center justify-between rounded-xl border px-4 py-3 xl:col-span-2">
                                               <div className="space-y-1">
-                                                <div className="font-medium text-slate-900">Quality Checkpoint</div>
+                                                <div className="font-medium text-slate-900">نقطة فحص جودة</div>
                                                 <div className="text-sm text-slate-500">يبقى Boolean بسيطًا في v1.</div>
                                               </div>
                                               <Switch
@@ -1157,7 +1155,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2 xl:col-span-4">
-                                              <Label>Instructions</Label>
+                                              <Label>التعليمات</Label>
                                               <Textarea
                                                 value={operation.instructions || ""}
                                                 onChange={(event) =>
@@ -1181,19 +1179,19 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                               {activeSnapshot?.operations.length ? (
                                 <Card>
                                   <CardHeader>
-                                    <CardTitle className="text-base">Current Persisted Snapshot</CardTitle>
+                                    <CardTitle className="text-base">اللقطة الحالية للعمليات</CardTitle>
                                     <CardDescription>مرجع سريع للنسخة المحفوظة فعليًا بعد آخر reload من الـ API.</CardDescription>
                                   </CardHeader>
                                   <CardContent>
                                     <Table>
                                       <TableHeader>
                                         <TableRow>
-                                          <TableHead>No</TableHead>
-                                          <TableHead>Code</TableHead>
-                                          <TableHead>Name</TableHead>
-                                          <TableHead>Work Center</TableHead>
-                                          <TableHead>Run / Unit</TableHead>
-                                          <TableHead>Quality</TableHead>
+                                          <TableHead>الرقم</TableHead>
+                                          <TableHead>الكود</TableHead>
+                                          <TableHead>الاسم</TableHead>
+                                          <TableHead>مركز العمل</TableHead>
+                                          <TableHead>وقت التنفيذ للوحدة</TableHead>
+                                          <TableHead>الجودة</TableHead>
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
@@ -1222,9 +1220,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                   </div>
                 </>
               )}
-            </CardContent>
-          </Card>
-        </main>
+        </div>
 
         <Dialog open={createVersionOpen} onOpenChange={setCreateVersionOpen}>
           <DialogContent className="max-w-2xl">
@@ -1233,7 +1229,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
             </DialogHeader>
             <div className="grid gap-4 py-2 md:grid-cols-2">
               <div className="space-y-2 md:col-span-2">
-                <Label>Clone From Version</Label>
+                <Label>استنساخ من نسخة</Label>
                 <Input
                   value={createVersionForm.clone_from_version_id || ""}
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, clone_from_version_id: event.target.value.trim() || null }))}
@@ -1241,7 +1237,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Effective From</Label>
+                <Label>صالح من</Label>
                 <Input
                   type="datetime-local"
                   value={isoToLocalDateTimeInput(createVersionForm.effective_from)}
@@ -1249,7 +1245,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Effective To</Label>
+                <Label>صالح إلى</Label>
                 <Input
                   type="datetime-local"
                   value={isoToLocalDateTimeInput(createVersionForm.effective_to)}
@@ -1257,14 +1253,14 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label>Change Summary</Label>
+                <Label>ملخص التغيير</Label>
                 <Textarea
                   value={typeof createVersionForm.change_summary === "string" ? createVersionForm.change_summary : ""}
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label>Notes</Label>
+                <Label>ملاحظات</Label>
                 <Textarea
                   value={typeof createVersionForm.notes === "string" ? createVersionForm.notes : ""}
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, notes: event.target.value }))}

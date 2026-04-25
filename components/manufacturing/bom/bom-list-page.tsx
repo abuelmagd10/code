@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Factory, Plus, RefreshCw, Search, ArrowUpRight, GitBranch, Package2, Layers3 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
+import { ERPPageHeader } from "@/components/erp-page-header"
+import { FilterContainer } from "@/components/ui/filter-container"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -213,42 +215,57 @@ export function BomListPage() {
     return bom.versions.find((version) => version.is_default) || bom.versions[0] || null
   }
 
+  const activeFilterCount = useMemo(() => {
+    let count = 0
+    if (appliedFilters.branchId && appliedFilters.branchId !== "all") count++
+    if (appliedFilters.bomUsage && appliedFilters.bomUsage !== "all") count++
+    if (appliedFilters.isActive && appliedFilters.isActive !== "all") count++
+    if (appliedFilters.q && appliedFilters.q.trim() !== "") count++
+    return count
+  }, [appliedFilters])
+
   return (
     <PageGuard resource="manufacturing_boms">
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,116,144,0.10),_transparent_28%),linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_100%)]">
-        <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 pb-12 pt-20 md:px-8 md:pt-10">
-          <Card className="overflow-hidden border-slate-200/70 shadow-lg shadow-slate-200/50">
-            <CardHeader className="border-b bg-white/80 backdrop-blur">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="space-y-2">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
-                    <Factory className="h-3.5 w-3.5" />
-                    BOM Engine
-                  </div>
-                  <CardTitle className="text-2xl font-semibold text-slate-900">هياكل Bill of Materials</CardTitle>
-                  <CardDescription className="max-w-2xl text-sm leading-6 text-slate-600">
-                    هذه الشاشة تعرض هياكل BOM على مستوى المنتج والفرع، وتفتح لك صفحة التفاصيل لإدارة النسخ والاعتماد والـ explosion preview بالكامل عبر B6 APIs.
-                  </CardDescription>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={() => loadBoms(appliedFilters)}
-                    disabled={loading}
-                    className="gap-2"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                    تحديث
-                  </Button>
-                  <Button onClick={handleOpenCreate} disabled={!canWrite || lookupsLoading} className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    إنشاء BOM
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6 p-6">
-              <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 lg:grid-cols-[2fr,1fr,1fr,1fr,auto]">
+      <div className="container mx-auto p-4 space-y-6">
+        <ERPPageHeader
+          title="هياكل Bill of Materials"
+          description="إدارة هياكل المنتجات، النسخ، والاعتماد"
+          variant="list"
+          extra={
+            <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
+              <Factory className="h-3.5 w-3.5" />
+              BOM Engine
+            </div>
+          }
+          actions={
+            <>
+              <Button
+                variant="outline"
+                onClick={() => loadBoms(appliedFilters)}
+                disabled={loading}
+                className="gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                تحديث
+              </Button>
+              <Button onClick={handleOpenCreate} disabled={!canWrite || lookupsLoading} className="gap-2">
+                <Plus className="h-4 w-4" />
+                إنشاء BOM
+              </Button>
+            </>
+          }
+        />
+
+        <FilterContainer
+          title="الفلاتر"
+          activeCount={activeFilterCount}
+          onClear={() => {
+            setFilterForm({ branchId: "", bomUsage: "all", isActive: "all", q: "" })
+            setAppliedFilters({ branchId: "", bomUsage: "all", isActive: "all", q: "" })
+          }}
+          defaultOpen={false}
+        >
+          <div className="grid gap-3 lg:grid-cols-[2fr,1fr,1fr,1fr,auto]">
                 <div className="space-y-2">
                   <Label>بحث سريع</Label>
                   <div className="relative">
@@ -321,45 +338,52 @@ export function BomListPage() {
                     تطبيق
                   </Button>
                 </div>
-              </div>
+          </div>
+        </FilterContainer>
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card className="border-cyan-200 bg-cyan-50/80">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <Factory className="h-8 w-8 text-cyan-700" />
-                    <div>
-                      <div className="text-2xl font-semibold text-slate-900">{boms.length}</div>
-                      <div className="text-sm text-slate-600">إجمالي BOMs المعروضة</div>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-indigo-200 bg-indigo-50/80">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <Layers3 className="h-8 w-8 text-indigo-700" />
-                    <div>
-                      <div className="text-2xl font-semibold text-slate-900">
-                        {boms.reduce((sum, bom) => sum + bom.versions.length, 0)}
-                      </div>
-                      <div className="text-sm text-slate-600">إجمالي النسخ المرتبطة</div>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-emerald-200 bg-emerald-50/80">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <Package2 className="h-8 w-8 text-emerald-700" />
-                    <div>
-                      <div className="text-2xl font-semibold text-slate-900">
-                        {boms.filter((bom) => bom.is_active).length}
-                      </div>
-                      <div className="text-sm text-slate-600">BOMs النشطة حاليًا</div>
-                    </div>
-                  </CardContent>
-                </Card>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 rounded-lg">
+                <Factory className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
               </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">إجمالي BOMs المعروضة</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">{boms.length}</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+                <Layers3 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">إجمالي النسخ المرتبطة</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  {boms.reduce((sum, bom) => sum + bom.versions.length, 0)}
+                </p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                <Package2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">BOMs النشطة حاليًا</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  {boms.filter((bom) => bom.is_active).length}
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
 
-              <div className="rounded-2xl border bg-white">
-                <Table>
-                  <TableHeader>
+        <Card className="p-0 overflow-hidden">
+          <Table>
+            <TableHeader>
                     <TableRow>
                       <TableHead>الكود / الاسم</TableHead>
                       <TableHead>المنتج</TableHead>
@@ -434,7 +458,7 @@ export function BomListPage() {
                                     <Badge variant={getVersionStatusVariant(featuredVersion.status)}>
                                       {getVersionStatusLabel(featuredVersion.status)}
                                     </Badge>
-                                    {featuredVersion.is_default ? <Badge variant="outline">Default</Badge> : null}
+                                    {featuredVersion.is_default ? <Badge variant="outline">افتراضي</Badge> : null}
                                   </div>
                                 </div>
                               ) : (
@@ -460,10 +484,7 @@ export function BomListPage() {
                     )}
                   </TableBody>
                 </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </main>
+        </Card>
 
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent className="max-w-2xl">

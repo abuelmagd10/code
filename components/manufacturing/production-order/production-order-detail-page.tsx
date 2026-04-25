@@ -19,6 +19,7 @@ import {
 import { PageGuard } from "@/components/page-guard"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -532,73 +533,64 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
 
   return (
     <PageGuard resource="manufacturing_boms">
-      <div
-        dir={getTextDirection(appLang)}
-        className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(6,182,212,0.10),_transparent_28%),linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_100%)]"
-      >
-        <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 pb-12 pt-20 md:px-8 md:pt-10">
-          <Card className="overflow-hidden border-slate-200/70 shadow-lg shadow-slate-200/50">
-            <CardHeader className="border-b bg-white/80 backdrop-blur">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                <div className="space-y-2">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
-                    <Factory className="h-3.5 w-3.5" />
-                    {copy.detail.pill}
-                  </div>
-                  <CardTitle className="text-2xl font-semibold text-slate-900">
-                    {order?.order_no || copy.detail.title}
-                  </CardTitle>
-                  <CardDescription className="max-w-3xl text-sm leading-6 text-slate-600">
-                    {copy.detail.description}
-                  </CardDescription>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button variant="outline" onClick={() => router.push("/manufacturing/production-orders")}>
-                    {copy.detail.back}
-                  </Button>
-                  <Button variant="outline" onClick={refreshWorkspace} disabled={busy} className="gap-2">
-                    <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                    {copy.detail.reload}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setRegenerateOpen(true)}
-                    disabled={!regenerateEnabled || busy}
-                    className="gap-2"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                    {copy.detail.regenerate}
-                  </Button>
-                  <Button onClick={() => setReleaseConfirmOpen(true)} disabled={!releaseEnabled || busy} className="gap-2">
-                    <Send className="h-4 w-4" />
-                    {copy.detail.release}
-                  </Button>
-                  <Button onClick={() => setStartConfirmOpen(true)} disabled={!startEnabled || busy} className="gap-2">
-                    <PlayCircle className="h-4 w-4" />
-                    {copy.detail.start}
-                  </Button>
-                  <Button onClick={() => setCompleteOpen(true)} disabled={!completeEnabled || busy} className="gap-2">
-                    <CheckCircle2 className="h-4 w-4" />
-                    {copy.detail.complete}
-                  </Button>
-                  <Button variant="destructive" onClick={() => setCancelOpen(true)} disabled={!cancelEnabled || busy} className="gap-2">
-                    <XCircle className="h-4 w-4" />
-                    {copy.detail.cancel}
-                  </Button>
-                  <Button variant="outline" onClick={() => setDeleteConfirmOpen(true)} disabled={!deleteEnabled || busy} className="gap-2">
-                    <Trash2 className="h-4 w-4" />
-                    {copy.detail.delete}
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
+      <div dir={getTextDirection(appLang)} className="container mx-auto p-4 space-y-6">
+        <ERPPageHeader
+          title={order?.order_no || copy.detail.title}
+          description={copy.detail.description}
+          variant="detail"
+          backHref="/manufacturing/production-orders"
+          backLabel={copy.detail.back}
+          extra={
+            <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
+              <Factory className="h-3.5 w-3.5" />
+              {copy.detail.pill}
+            </div>
+          }
+          actions={
+            <>
+              <Button variant="outline" onClick={refreshWorkspace} disabled={busy} className="gap-2">
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                {copy.detail.reload}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setRegenerateOpen(true)}
+                disabled={!regenerateEnabled || busy}
+                className="gap-2"
+              >
+                <RotateCcw className="h-4 w-4" />
+                {copy.detail.regenerate}
+              </Button>
+              <Button onClick={() => setReleaseConfirmOpen(true)} disabled={!releaseEnabled || busy} className="gap-2">
+                <Send className="h-4 w-4" />
+                {copy.detail.release}
+              </Button>
+              <Button onClick={() => setStartConfirmOpen(true)} disabled={!startEnabled || busy} className="gap-2">
+                <PlayCircle className="h-4 w-4" />
+                {copy.detail.start}
+              </Button>
+              <Button onClick={() => setCompleteOpen(true)} disabled={!completeEnabled || busy} className="gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                {copy.detail.complete}
+              </Button>
+              <Button variant="destructive" onClick={() => setCancelOpen(true)} disabled={!cancelEnabled || busy} className="gap-2">
+                <XCircle className="h-4 w-4" />
+                {copy.detail.cancel}
+              </Button>
+              <Button variant="outline" onClick={() => setDeleteConfirmOpen(true)} disabled={!deleteEnabled || busy} className="gap-2">
+                <Trash2 className="h-4 w-4" />
+                {copy.detail.delete}
+              </Button>
+            </>
+          }
+        />
 
-            <CardContent className="space-y-6 p-6">
-              {loading ? (
-                <div className="rounded-2xl border bg-white px-6 py-16 text-center text-slate-500">
-                  {copy.detail.loading}
-                </div>
-              ) : !snapshot || !order ? (
+        <div className="space-y-6">
+          {loading ? (
+            <div className="rounded-2xl border bg-white px-6 py-16 text-center text-slate-500">
+              {copy.detail.loading}
+            </div>
+          ) : !snapshot || !order ? (
                 <div className="rounded-2xl border bg-white px-6 py-16 text-center">
                   <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-center">
                     <AlertTriangle className="h-10 w-10 text-slate-300" />
@@ -968,9 +960,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                   </Tabs>
                 </>
               )}
-            </CardContent>
-          </Card>
-        </main>
+        </div>
       </div>
 
       <Dialog open={regenerateOpen} onOpenChange={setRegenerateOpen}>

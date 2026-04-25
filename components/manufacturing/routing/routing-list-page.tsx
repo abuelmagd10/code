@@ -1,9 +1,11 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowUpRight, Factory, GitBranch, Package2, Plus, RefreshCw, Search } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
+import { ERPPageHeader } from "@/components/erp-page-header"
+import { FilterContainer } from "@/components/ui/filter-container"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -144,39 +146,54 @@ export function RoutingListPage() {
     }
   }
 
+  const activeFilterCount = useMemo(() => {
+    let count = 0
+    if (appliedFilters.branchId && appliedFilters.branchId.trim() !== "") count++
+    if (appliedFilters.productId && appliedFilters.productId.trim() !== "") count++
+    if (appliedFilters.routingUsage && appliedFilters.routingUsage !== "all") count++
+    if (appliedFilters.isActive && appliedFilters.isActive !== "all") count++
+    if (appliedFilters.q && appliedFilters.q.trim() !== "") count++
+    return count
+  }, [appliedFilters])
+
   return (
     <PageGuard resource="manufacturing_boms">
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(8,145,178,0.08),_transparent_30%),linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_100%)]">
-        <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 pb-12 pt-20 md:px-8 md:pt-10">
-          <Card className="overflow-hidden border-slate-200/70 shadow-lg shadow-slate-200/40">
-            <CardHeader className="border-b bg-white/80 backdrop-blur">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="space-y-2">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
-                    <Factory className="h-3.5 w-3.5" />
-                    Routing Engine
-                  </div>
-                  <CardTitle className="text-2xl font-semibold text-slate-900">مسارات التشغيل Routing</CardTitle>
-                  <CardDescription className="max-w-2xl text-sm leading-6 text-slate-600">
-                    هذه الصفحة تعرض routing headers وتفتح صفحة التفاصيل لإدارة النسخ والعمليات وتفعيل النسخ عبر B6 APIs فقط.
-                  </CardDescription>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button variant="outline" onClick={() => loadRoutings(appliedFilters)} disabled={loading} className="gap-2">
-                    <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                    تحديث
-                  </Button>
-                  <Button onClick={() => setCreateOpen(true)} disabled={!canWrite} className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    إنشاء Routing
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
+      <div className="container mx-auto p-4 space-y-6">
+        <ERPPageHeader
+          title="مسارات التشغيل Routing"
+          description="هذه الصفحة تعرض routing headers وتفتح صفحة التفاصيل لإدارة النسخ والعمليات وتفعيل النسخ عبر B6 APIs فقط."
+          variant="list"
+          extra={
+            <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
+              <Factory className="h-3.5 w-3.5" />
+              Routing Engine
+            </div>
+          }
+          actions={
+            <>
+              <Button variant="outline" onClick={() => loadRoutings(appliedFilters)} disabled={loading} className="gap-2">
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                تحديث
+              </Button>
+              <Button onClick={() => setCreateOpen(true)} disabled={!canWrite} className="gap-2">
+                <Plus className="h-4 w-4" />
+                إنشاء Routing
+              </Button>
+            </>
+          }
+        />
 
-            <CardContent className="space-y-6 p-6">
-              <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 lg:grid-cols-[1.2fr,1.2fr,1fr,1fr,1fr,auto]">
-                <div className="space-y-2">
+        <FilterContainer
+          title="الفلاتر"
+          activeCount={activeFilterCount}
+          onClear={() => {
+            setFilterForm({ branchId: "", productId: "", routingUsage: "all", isActive: "all", q: "" })
+            setAppliedFilters({ branchId: "", productId: "", routingUsage: "all", isActive: "all", q: "" })
+          }}
+          defaultOpen={false}
+        >
+          <div className="grid gap-3 lg:grid-cols-[1.2fr,1.2fr,1fr,1fr,1fr,auto]">
+            <div className="space-y-2">
                   <Label>بحث سريع</Label>
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -189,7 +206,7 @@ export function RoutingListPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Branch ID</Label>
+                  <Label>الفرع</Label>
                   <Input
                     value={filterForm.branchId || ""}
                     onChange={(event) => setFilterForm((current) => ({ ...current, branchId: event.target.value }))}
@@ -197,7 +214,7 @@ export function RoutingListPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Product ID</Label>
+                  <Label>المنتج المرتبط</Label>
                   <Input
                     value={filterForm.productId || ""}
                     onChange={(event) => setFilterForm((current) => ({ ...current, productId: event.target.value }))}
@@ -205,7 +222,7 @@ export function RoutingListPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Routing Usage</Label>
+                  <Label>الاستخدام</Label>
                   <Select
                     value={filterForm.routingUsage || "all"}
                     onValueChange={(value) => setFilterForm((current) => ({ ...current, routingUsage: value as RoutingListFilters["routingUsage"] }))}
@@ -245,49 +262,56 @@ export function RoutingListPage() {
                     تطبيق
                   </Button>
                 </div>
-              </div>
+          </div>
+        </FilterContainer>
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card className="border-cyan-200 bg-cyan-50/80">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <Factory className="h-8 w-8 text-cyan-700" />
-                    <div>
-                      <div className="text-2xl font-semibold text-slate-900">{routings.length}</div>
-                      <div className="text-sm text-slate-600">Routing headers المعروضة</div>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-indigo-200 bg-indigo-50/80">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <GitBranch className="h-8 w-8 text-indigo-700" />
-                    <div>
-                      <div className="text-2xl font-semibold text-slate-900">
-                        {routings.reduce((sum, routing) => sum + routing.versions.length, 0)}
-                      </div>
-                      <div className="text-sm text-slate-600">إجمالي النسخ المرتبطة</div>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-emerald-200 bg-emerald-50/80">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <Package2 className="h-8 w-8 text-emerald-700" />
-                    <div>
-                      <div className="text-2xl font-semibold text-slate-900">
-                        {routings.filter((routing) => routing.is_active).length}
-                      </div>
-                      <div className="text-sm text-slate-600">Headers النشطة حاليًا</div>
-                    </div>
-                  </CardContent>
-                </Card>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 rounded-lg">
+                <Factory className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
               </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Routing headers المعروضة</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">{routings.length}</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+                <GitBranch className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">إجمالي النسخ المرتبطة</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  {routings.reduce((sum, routing) => sum + routing.versions.length, 0)}
+                </p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                <Package2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Headers النشطة حاليًا</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  {routings.filter((routing) => routing.is_active).length}
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
 
-              <div className="rounded-2xl border bg-white">
-                <Table>
-                  <TableHeader>
+        <Card className="p-0 overflow-hidden">
+          <Table>
+            <TableHeader>
                     <TableRow>
                       <TableHead>الكود / الاسم</TableHead>
                       <TableHead>المنتج</TableHead>
-                      <TableHead>Branch ID</TableHead>
+                      <TableHead>الفرع</TableHead>
                       <TableHead>الاستخدام</TableHead>
                       <TableHead>النسخة البارزة</TableHead>
                       <TableHead>آخر تحديث</TableHead>
@@ -377,10 +401,7 @@ export function RoutingListPage() {
                     )}
                   </TableBody>
                 </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </main>
+        </Card>
 
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent className="max-w-2xl">
@@ -389,7 +410,7 @@ export function RoutingListPage() {
             </DialogHeader>
             <div className="grid gap-4 py-2 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>Branch ID</Label>
+                <Label>الفرع</Label>
                 <Input
                   value={createForm.branch_id || ""}
                   onChange={(event) => setCreateForm((current) => ({ ...current, branch_id: event.target.value }))}
@@ -397,7 +418,7 @@ export function RoutingListPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Owner Product ID</Label>
+                <Label>المنتج المرتبط</Label>
                 <Input
                   value={createForm.product_id}
                   onChange={(event) => setCreateForm((current) => ({ ...current, product_id: event.target.value }))}
@@ -405,7 +426,7 @@ export function RoutingListPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Routing Code</Label>
+                <Label>كود المسار</Label>
                 <Input
                   value={createForm.routing_code}
                   onChange={(event) => setCreateForm((current) => ({ ...current, routing_code: event.target.value }))}
@@ -413,7 +434,7 @@ export function RoutingListPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Routing Name</Label>
+                <Label>اسم المسار</Label>
                 <Input
                   value={createForm.routing_name}
                   onChange={(event) => setCreateForm((current) => ({ ...current, routing_name: event.target.value }))}
@@ -421,7 +442,7 @@ export function RoutingListPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Routing Usage</Label>
+                <Label>الاستخدام</Label>
                 <Select
                   value={createForm.routing_usage}
                   onValueChange={(value) => setCreateForm((current) => ({ ...current, routing_usage: value as RoutingCreatePayload["routing_usage"] }))}

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowUpRight, Factory, Package2, PlayCircle, Plus, RefreshCw } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
+import { ERPPageHeader } from "@/components/erp-page-header"
+import { FilterContainer } from "@/components/ui/filter-container"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -195,42 +197,53 @@ export function ProductionOrderListPage() {
     }
   }
 
+  const activeFilterCount = useMemo(() => {
+    let count = 0
+    if (appliedFilters.branchId && appliedFilters.branchId.trim() !== "") count++
+    if (appliedFilters.productId && appliedFilters.productId.trim() !== "") count++
+    if (appliedFilters.status && appliedFilters.status !== "all") count++
+    if (appliedFilters.q && appliedFilters.q.trim() !== "") count++
+    return count
+  }, [appliedFilters])
+
   return (
     <PageGuard resource="manufacturing_boms">
-      <div
-        dir={getTextDirection(appLang)}
-        className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.10),_transparent_30%),linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_100%)]"
-      >
-        <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 pb-12 pt-20 md:px-8 md:pt-10">
-          <Card className="overflow-hidden border-slate-200/70 shadow-lg shadow-slate-200/50">
-            <CardHeader className="border-b bg-white/80 backdrop-blur">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="space-y-2">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
-                    <Factory className="h-3.5 w-3.5" />
-                    {copy.list.pill}
-                  </div>
-                  <CardTitle className="text-2xl font-semibold text-slate-900">{copy.list.title}</CardTitle>
-                  <CardDescription className="max-w-3xl text-sm leading-6 text-slate-600">
-                    {copy.list.description}
-                  </CardDescription>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button variant="outline" onClick={() => loadOrders(appliedFilters)} disabled={loading} className="gap-2">
-                    <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                    {copy.list.refresh}
-                  </Button>
-                  <Button onClick={handleOpenCreate} disabled={!canWrite} className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    {copy.list.create}
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
+      <div dir={getTextDirection(appLang)} className="container mx-auto p-4 space-y-6">
+        <ERPPageHeader
+          title={copy.list.title}
+          description={copy.list.description}
+          variant="list"
+          extra={
+            <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
+              <Factory className="h-3.5 w-3.5" />
+              {copy.list.pill}
+            </div>
+          }
+          actions={
+            <>
+              <Button variant="outline" onClick={() => loadOrders(appliedFilters)} disabled={loading} className="gap-2">
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                {copy.list.refresh}
+              </Button>
+              <Button onClick={handleOpenCreate} disabled={!canWrite} className="gap-2">
+                <Plus className="h-4 w-4" />
+                {copy.list.create}
+              </Button>
+            </>
+          }
+        />
 
-            <CardContent className="space-y-6 p-6">
-              <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 lg:grid-cols-[1.4fr,1fr,1fr,1fr,auto]">
-                <div className="space-y-2">
+        <FilterContainer
+          title={copy.list.search}
+          activeCount={activeFilterCount}
+          onClear={() => {
+            setFilterForm({ branchId: "", productId: "", status: "all", q: "" })
+            setAppliedFilters({ branchId: "", productId: "", status: "all", q: "" })
+          }}
+          defaultOpen={false}
+        >
+          <div className="grid gap-3 lg:grid-cols-[1.4fr,1fr,1fr,1fr,auto]">
+            <div className="space-y-2">
                   <Label>{copy.list.search}</Label>
                   <Input
                     value={filterForm.q || ""}
@@ -280,41 +293,48 @@ export function ProductionOrderListPage() {
                     {copy.list.apply}
                   </Button>
                 </div>
-              </div>
+          </div>
+        </FilterContainer>
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card className="border-cyan-200 bg-cyan-50/80">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <Factory className="h-8 w-8 text-cyan-700" />
-                    <div>
-                      <div className="text-2xl font-semibold text-slate-900">{orders.length}</div>
-                      <div className="text-sm text-slate-600">{copy.list.statsShown}</div>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-indigo-200 bg-indigo-50/80">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <PlayCircle className="h-8 w-8 text-indigo-700" />
-                    <div>
-                      <div className="text-2xl font-semibold text-slate-900">{openOrdersCount}</div>
-                      <div className="text-sm text-slate-600">{copy.list.statsOpen}</div>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-emerald-200 bg-emerald-50/80">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <Package2 className="h-8 w-8 text-emerald-700" />
-                    <div>
-                      <div className="text-2xl font-semibold text-slate-900">{completedOrdersCount}</div>
-                      <div className="text-sm text-slate-600">{copy.list.statsCompleted}</div>
-                    </div>
-                  </CardContent>
-                </Card>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 rounded-lg">
+                <Factory className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
               </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{copy.list.statsShown}</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">{orders.length}</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+                <PlayCircle className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{copy.list.statsOpen}</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">{openOrdersCount}</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                <Package2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{copy.list.statsCompleted}</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">{completedOrdersCount}</p>
+              </div>
+            </div>
+          </Card>
+        </div>
 
-              <div className="rounded-2xl border bg-white">
-                <Table>
-                  <TableHeader>
+        <Card className="p-0 overflow-hidden">
+          <Table>
+            <TableHeader>
                     <TableRow>
                       <TableHead>{copy.list.tableOrder}</TableHead>
                       <TableHead>{copy.list.tableOwner}</TableHead>
@@ -395,10 +415,7 @@ export function ProductionOrderListPage() {
                     )}
                   </TableBody>
                 </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </main>
+        </Card>
       </div>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
