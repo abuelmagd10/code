@@ -17,6 +17,7 @@ import {
   XCircle,
 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
+import { CompanyHeader } from "@/components/company-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ERPPageHeader } from "@/components/erp-page-header"
@@ -533,8 +534,11 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
 
   return (
     <PageGuard resource="manufacturing_boms">
-      <div dir={getTextDirection(appLang)} className="container mx-auto p-4 space-y-6">
-        <ERPPageHeader
+      <div dir={getTextDirection(appLang)} className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+          <CompanyHeader />
+          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
+            <ERPPageHeader
           title={order?.order_no || copy.detail.title}
           description={copy.detail.description}
           variant="detail"
@@ -583,7 +587,8 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
               </Button>
             </>
           }
-        />
+            />
+          </div>
 
         <div className="space-y-6">
           {loading ? (
@@ -961,7 +966,6 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                 </>
               )}
         </div>
-      </div>
 
       <Dialog open={regenerateOpen} onOpenChange={setRegenerateOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
@@ -1282,12 +1286,14 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={runningAction === "delete"}>{copy.common.cancel}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} disabled={runningAction === "delete"}>
+             <AlertDialogAction onClick={handleDelete} disabled={runningAction === "delete"}>
               {runningAction === "delete" ? copy.common.loadingAction : copy.detail.delete}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+        </main>
+      </div>
     </PageGuard>
   )
 }

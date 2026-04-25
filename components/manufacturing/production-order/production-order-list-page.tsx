@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowUpRight, Factory, Package2, PlayCircle, Plus, RefreshCw } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
+import { CompanyHeader } from "@/components/company-header"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { FilterContainer } from "@/components/ui/filter-container"
 import { Button } from "@/components/ui/button"
@@ -208,30 +209,34 @@ export function ProductionOrderListPage() {
 
   return (
     <PageGuard resource="manufacturing_boms">
-      <div dir={getTextDirection(appLang)} className="container mx-auto p-4 space-y-6">
-        <ERPPageHeader
-          title={copy.list.title}
-          description={copy.list.description}
-          variant="list"
-          extra={
-            <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
-              <Factory className="h-3.5 w-3.5" />
-              {copy.list.pill}
-            </div>
-          }
-          actions={
-            <>
-              <Button variant="outline" onClick={() => loadOrders(appliedFilters)} disabled={loading} className="gap-2">
-                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                {copy.list.refresh}
-              </Button>
-              <Button onClick={handleOpenCreate} disabled={!canWrite} className="gap-2">
-                <Plus className="h-4 w-4" />
-                {copy.list.create}
-              </Button>
-            </>
-          }
-        />
+      <div dir={getTextDirection(appLang)} className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+          <CompanyHeader />
+          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
+            <ERPPageHeader
+              title={copy.list.title}
+              description={copy.list.description}
+              variant="list"
+              extra={
+                <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
+                  <Factory className="h-3.5 w-3.5" />
+                  {copy.list.pill}
+                </div>
+              }
+              actions={
+                <>
+                  <Button variant="outline" onClick={() => loadOrders(appliedFilters)} disabled={loading} className="gap-2">
+                    <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                    {copy.list.refresh}
+                  </Button>
+                  <Button onClick={handleOpenCreate} disabled={!canWrite} className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    {copy.list.create}
+                  </Button>
+                </>
+              }
+            />
+          </div>
 
         <FilterContainer
           title={copy.list.search}
@@ -416,9 +421,8 @@ export function ProductionOrderListPage() {
                   </TableBody>
                 </Table>
         </Card>
-      </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{copy.list.createDialogTitle}</DialogTitle>
@@ -555,6 +559,8 @@ export function ProductionOrderListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </main>
+      </div>
     </PageGuard>
   )
 }

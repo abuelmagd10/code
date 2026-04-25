@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowUpRight, Factory, GitBranch, Package2, Plus, RefreshCw, Search } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
+import { CompanyHeader } from "@/components/company-header"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { FilterContainer } from "@/components/ui/filter-container"
 import { Button } from "@/components/ui/button"
@@ -158,30 +159,34 @@ export function RoutingListPage() {
 
   return (
     <PageGuard resource="manufacturing_boms">
-      <div className="container mx-auto p-4 space-y-6">
-        <ERPPageHeader
-          title="مسارات التشغيل Routing"
-          description="هذه الصفحة تعرض routing headers وتفتح صفحة التفاصيل لإدارة النسخ والعمليات وتفعيل النسخ عبر B6 APIs فقط."
-          variant="list"
-          extra={
-            <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
-              <Factory className="h-3.5 w-3.5" />
-              مديول التصنيع
-            </div>
-          }
-          actions={
-            <>
-              <Button variant="outline" onClick={() => loadRoutings(appliedFilters)} disabled={loading} className="gap-2">
-                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                تحديث
-              </Button>
-              <Button onClick={() => setCreateOpen(true)} disabled={!canWrite} className="gap-2">
-                <Plus className="h-4 w-4" />
-                إنشاء مسار تشغيلي جديد
-              </Button>
-            </>
-          }
-        />
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+          <CompanyHeader />
+          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
+            <ERPPageHeader
+              title="مسارات التشغيل"
+              description="إدارة مسارات التشغيل، النسخ، والعمليات"
+              variant="list"
+              extra={
+                <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
+                  <Factory className="h-3.5 w-3.5" />
+                  مديول التصنيع
+                </div>
+              }
+              actions={
+                <>
+                  <Button variant="outline" onClick={() => loadRoutings(appliedFilters)} disabled={loading} className="gap-2">
+                    <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                    تحديث
+                  </Button>
+                  <Button onClick={() => setCreateOpen(true)} disabled={!canWrite} className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    إنشاء مسار تشغيلي جديد
+                  </Button>
+                </>
+              }
+            />
+          </div>
 
         <FilterContainer
           title="الفلاتر"
@@ -488,6 +493,7 @@ export function RoutingListPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </main>
       </div>
     </PageGuard>
   )

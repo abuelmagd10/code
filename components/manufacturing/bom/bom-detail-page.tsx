@@ -20,6 +20,7 @@ import {
   WandSparkles,
 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
+import { CompanyHeader } from "@/components/company-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ERPPageHeader } from "@/components/erp-page-header"
@@ -753,8 +754,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
 
   return (
     <PageGuard resource="manufacturing_boms">
-      <div className="container mx-auto p-4 space-y-6">
-        <ERPPageHeader
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+          <CompanyHeader />
+          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
+            <ERPPageHeader
           title={loadingBom ? "جاري تحميل BOM..." : bom ? `${bom.bom_code} — ${bom.bom_name}` : "BOM غير متاحة"}
           description="هذه الصفحة هي workspace كاملة لإدارة BOM header والنسخ والهيكل وعمليات الاعتماد والـ explosion preview، وكل عملية حساسة فيها تمر حصريًا عبر B6 APIs الذرّية."
           variant="detail"
@@ -778,7 +782,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
               </Button>
             </>
           }
-        />
+            />
+          </div>
 
         <div className="space-y-6">
           {loadingBom && !bom ? (
@@ -1799,6 +1804,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        </main>
       </div>
     </PageGuard>
   )
