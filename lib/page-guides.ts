@@ -171,6 +171,12 @@ export const PAGE_KEY_MAP: Array<{ prefix: string; key: string }> = [
   { prefix: "/warehouses", key: "warehouses" },
   { prefix: "/cost-centers", key: "cost_centers" },
   { prefix: "/settings", key: "settings" },
+
+  // ── Manufacturing ─────────────────────────────────────────────────────────
+  // Note: detail pages (with ID) are matched via regex in getPageKeyFromPath below
+  { prefix: "/manufacturing/boms", key: "manufacturing_boms" },
+  { prefix: "/manufacturing/routings", key: "manufacturing_routings" },
+  { prefix: "/manufacturing/production-orders", key: "manufacturing_production_orders" },
 ]
 
 /** Pages where the AI assistant should NOT appear */
@@ -200,6 +206,21 @@ export function getPageKeyFromPath(pathname: string): string | null {
   }
   // Root redirect page — no guide
   if (pathname === "/" || pathname === "") return null
+
+  // ── Special: Manufacturing detail pages (/manufacturing/module/id) ────────
+  // Must run BEFORE the general prefix loop so detail pages get their own key
+  // instead of falling through to the shorter list-page prefix.
+  const mfgDetailMatch = pathname.match(
+    /^\/manufacturing\/(boms|routings|production-orders)\/[^/]+/
+  )
+  if (mfgDetailMatch) {
+    const detailKeyMap: Record<string, string> = {
+      "boms": "manufacturing_bom_detail",
+      "routings": "manufacturing_routing_detail",
+      "production-orders": "manufacturing_production_order_detail",
+    }
+    return detailKeyMap[mfgDetailMatch[1]] ?? null
+  }
 
   // Find the most specific matching prefix (longest wins)
   let bestMatch: { prefix: string; key: string } | null = null
