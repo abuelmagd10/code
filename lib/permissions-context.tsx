@@ -170,6 +170,8 @@ const PATH_TO_RESOURCE: Record<string, string> = {
   '/inventory-transfers': 'inventory_transfers',
   '/inventory/goods-receipt': 'inventory_goods_receipt',
   '/manufacturing/boms': 'manufacturing_boms',
+  '/manufacturing/routings': 'manufacturing_boms',
+  '/manufacturing/production-orders': 'manufacturing_boms',
 
   // 🏦 المالية والمحاسبة
   '/expenses': 'expenses',

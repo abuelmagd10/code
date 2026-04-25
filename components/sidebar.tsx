@@ -171,6 +171,8 @@ export function Sidebar() {
     if (href.includes('/inventory/product-availability')) return 'product_availability'
     if (href.includes('/inventory')) return 'inventory'
     if (href.includes('/manufacturing/boms')) return 'manufacturing_boms'
+    if (href.includes('/manufacturing/routings')) return 'manufacturing_boms'
+    if (href.includes('/manufacturing/production-orders')) return 'manufacturing_boms'
     // الموارد البشرية
     if (href.includes('/hr/employees')) return 'employees'
     if (href.includes('/hr/attendance')) return 'attendance'
@@ -1005,6 +1007,8 @@ export function Sidebar() {
                 {
                   key: 'manufacturing', icon: Factory, label: (lang === 'en' ? 'Manufacturing' : 'التصنيع'), items: [
                     { label: (lang === 'en' ? 'Bill of Materials' : 'هياكل BOM'), href: `/manufacturing/boms${q}`, icon: Factory },
+                    { label: (lang === 'en' ? 'Routings' : 'مسارات التشغيل'), href: `/manufacturing/routings${q}`, icon: Factory },
+                    { label: (lang === 'en' ? 'Production Orders' : 'أوامر الإنتاج'), href: `/manufacturing/production-orders${q}`, icon: Factory },
                   ]
                 },
                 {

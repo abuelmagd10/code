@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { apiGuard, asyncAuditLog, ErrorHandler, ERPError } from "@/lib/core"
+import { resolveProductClassification } from "@/lib/product-type"
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +18,16 @@ export async function POST(req: Request) {
     const body = await req.json()
     const supabase = await createClient()
 
+    let classification
+    try {
+      classification = resolveProductClassification({
+        itemType: body.item_type,
+        productType: body.product_type,
+      })
+    } catch (error: any) {
+      return ErrorHandler.handle(ErrorHandler.validation(error?.message || "تصنيف المنتج غير صالح"))
+    }
+
     // 1️⃣ Permissions Scope Evaluation
     const isCompanyLevelAdmin = ["owner", "admin", "manager"].includes(member.role)
     const isNormalRole = !isCompanyLevelAdmin
@@ -24,12 +35,12 @@ export async function POST(req: Request) {
     // 2️⃣ Enforce role constraints
     let finalBranchId = body.branch_id || null
     let finalCostCenterId = body.cost_center_id || null
-    let finalWarehouseId = body.item_type === 'service' ? null : (body.warehouse_id || null)
+    let finalWarehouseId = classification.itemType === 'service' ? null : (body.warehouse_id || null)
 
     if (isNormalRole) {
       finalBranchId = member.branch_id || finalBranchId
       finalCostCenterId = member.cost_center_id || finalCostCenterId
-      if (body.item_type === 'product') {
+      if (classification.itemType === 'product') {
         finalWarehouseId = member.warehouse_id || finalWarehouseId
       } else {
         finalWarehouseId = null
@@ -47,7 +58,8 @@ export async function POST(req: Request) {
       p_unit: body.unit || 'piece',
       p_quantity_on_hand: body.quantity_on_hand || 0,
       p_reorder_level: body.reorder_level || 0,
-      p_item_type: body.item_type || 'product',
+      p_item_type: classification.itemType,
+      p_product_type: classification.productType,
       p_income_account_id: body.income_account_id || null,
       p_expense_account_id: body.expense_account_id || null,
       p_tax_code_id: body.tax_code_id || null,
@@ -74,7 +86,8 @@ export async function POST(req: Request) {
       recordIdentifier: body.sku,
       newData: {
         name: body.name,
-        item_type: body.item_type,
+        item_type: classification.itemType,
+        product_type: classification.productType,
         branch_id: finalBranchId,
         warehouse_id: rpcResult.final_warehouse_id,
         cost_center_id: rpcResult.final_cost_center_id
@@ -87,6 +100,8 @@ export async function POST(req: Request) {
       data: {
         id: rpcResult.product_id,
         ...body,
+        item_type: classification.itemType,
+        product_type: classification.productType,
         branch_id: finalBranchId,
         warehouse_id: rpcResult.final_warehouse_id,
         cost_center_id: rpcResult.final_cost_center_id

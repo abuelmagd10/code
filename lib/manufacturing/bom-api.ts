@@ -4,10 +4,15 @@ import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 import { getCompanyMembership, type CompanyMembership } from "@/lib/company-authorization"
 import { checkPermission, type ActionType } from "@/lib/authz"
+import { normalizeProductTypeInput } from "@/lib/product-type"
 
 export const BOM_USAGE_VALUES = ["production", "engineering"] as const
 export const BOM_LINE_TYPE_VALUES = ["component", "co_product", "by_product"] as const
 export const SUBSTITUTE_STRATEGY_VALUES = ["none", "primary_only"] as const
+export const MANUFACTURING_OWNER_PRODUCT_TYPE = "manufactured" as const
+export const BOM_ALLOWED_INPUT_PRODUCT_TYPES = ["raw_material", "purchased", "manufactured"] as const
+
+const BOM_ALLOWED_INPUT_PRODUCT_TYPE_SET = new Set<string>(BOM_ALLOWED_INPUT_PRODUCT_TYPES)
 
 const uuidSchema = z.string().uuid()
 
@@ -125,6 +130,10 @@ export const updateBomStructureSchema = z.object({
   })
 })
 
+export type BomLineSubstituteInput = z.infer<typeof bomLineSubstituteInputSchema>
+export type BomLineInput = z.infer<typeof bomLineInputSchema>
+export type UpdateBomStructureInput = z.infer<typeof updateBomStructureSchema>
+
 export const rejectBomVersionSchema = z.object({
   rejection_reason: trimmedString.min(1, "rejection_reason is required"),
 })
@@ -157,6 +166,10 @@ export interface ManufacturingApiContext {
   supabase: Awaited<ReturnType<typeof createClient>>
   admin: ReturnType<typeof createServiceClient>
 }
+
+type ManufacturingDbClient =
+  | Awaited<ReturnType<typeof createClient>>
+  | ReturnType<typeof createServiceClient>
 
 export function jsonError(status: number, message: string, details?: unknown) {
   return NextResponse.json(
@@ -284,7 +297,7 @@ export function resolveScopedBranchId(member: CompanyMembership, requestedBranch
   return requestedBranchId
 }
 
-export async function assertManufacturingOwnerProductEligibility(
+export async function assertManufacturableProduct(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: {
     companyId: string
@@ -294,7 +307,7 @@ export async function assertManufacturingOwnerProductEligibility(
 ) {
   const { data: product, error } = await supabase
     .from("products")
-    .select("id, company_id, branch_id, item_type, sku, name")
+    .select("*")
     .eq("id", params.productId)
     .eq("company_id", params.companyId)
     .maybeSingle()
@@ -307,8 +320,20 @@ export async function assertManufacturingOwnerProductEligibility(
     throw new ManufacturingApiError(404, "Owner product not found")
   }
 
-  if (String(product.item_type || "") !== "product") {
-    throw new ManufacturingApiError(400, "Only product items can own a BOM in v1")
+  const productType = String((product as any).product_type || "").trim()
+
+  if (!productType) {
+    throw new ManufacturingApiError(
+      409,
+      "Manufacturing eligibility requires products.product_type to be populated"
+    )
+  }
+
+  if (productType !== MANUFACTURING_OWNER_PRODUCT_TYPE) {
+    throw new ManufacturingApiError(
+      400,
+      `Only ${MANUFACTURING_OWNER_PRODUCT_TYPE} products can own manufacturing records in v1`
+    )
   }
 
   if (product.branch_id && product.branch_id !== params.branchId) {
@@ -316,6 +341,123 @@ export async function assertManufacturingOwnerProductEligibility(
   }
 
   return product
+}
+
+function formatProductLabel(product: any, fallbackId: string) {
+  return product?.sku || product?.name || fallbackId
+}
+
+export function isBomInputProductTypeAllowed(productType: string | null | undefined) {
+  if (typeof productType !== "string") return false
+  return BOM_ALLOWED_INPUT_PRODUCT_TYPE_SET.has(productType.trim())
+}
+
+export async function assertBomStructureEligibleProducts(
+  supabase: ManufacturingDbClient,
+  params: {
+    companyId: string
+    branchId: string
+    lines: UpdateBomStructureInput["lines"]
+  }
+) {
+  const productIds = Array.from(
+    new Set(
+      params.lines.flatMap((line) => [
+        line.component_product_id,
+        ...(line.substitutes || []).map((substitute) => substitute.substitute_product_id),
+      ])
+    )
+  )
+
+  if (productIds.length === 0) {
+    return
+  }
+
+  const { data: products, error } = await supabase
+    .from("products")
+    .select("id, company_id, branch_id, product_type, sku, name")
+    .eq("company_id", params.companyId)
+    .in("id", productIds)
+
+  if (error) throw error
+
+  const productsById = new Map((products || []).map((product) => [product.id, product]))
+
+  for (const line of params.lines) {
+    const component = productsById.get(line.component_product_id)
+    if (!component) {
+      throw new ManufacturingApiError(404, `Component product not found: ${line.component_product_id}`)
+    }
+
+    const componentType = normalizeProductTypeInput(component.product_type)
+    const componentLabel = formatProductLabel(component, line.component_product_id)
+
+    if (!componentType) {
+      throw new ManufacturingApiError(
+        409,
+        `Component product ${componentLabel} must have product_type populated`
+      )
+    }
+
+    if (!isBomInputProductTypeAllowed(componentType)) {
+      throw new ManufacturingApiError(
+        400,
+        `Component product ${componentLabel} with product_type=${componentType} is not eligible for BOM quantity logic`
+      )
+    }
+
+    if (component.branch_id && component.branch_id !== params.branchId) {
+      throw new ManufacturingApiError(
+        400,
+        `Component product ${componentLabel} must be same-branch or global`
+      )
+    }
+
+    if ((line.substitutes?.length || 0) > 0 && line.line_type !== "component") {
+      throw new ManufacturingApiError(
+        400,
+        `Substitutes are allowed only for component lines. line_no=${line.line_no}`
+      )
+    }
+
+    for (const substitute of line.substitutes || []) {
+      const substituteProduct = productsById.get(substitute.substitute_product_id)
+      if (!substituteProduct) {
+        throw new ManufacturingApiError(404, `Substitute product not found: ${substitute.substitute_product_id}`)
+      }
+
+      const substituteType = normalizeProductTypeInput(substituteProduct.product_type)
+      const substituteLabel = formatProductLabel(substituteProduct, substitute.substitute_product_id)
+
+      if (!substituteType) {
+        throw new ManufacturingApiError(
+          409,
+          `Substitute product ${substituteLabel} must have product_type populated`
+        )
+      }
+
+      if (!isBomInputProductTypeAllowed(substituteType)) {
+        throw new ManufacturingApiError(
+          400,
+          `Substitute product ${substituteLabel} with product_type=${substituteType} is not eligible for BOM quantity logic`
+        )
+      }
+
+      if (substituteProduct.branch_id && substituteProduct.branch_id !== params.branchId) {
+        throw new ManufacturingApiError(
+          400,
+          `Substitute product ${substituteLabel} must be same-branch or global`
+        )
+      }
+
+      if (substitute.substitute_product_id === line.component_product_id) {
+        throw new ManufacturingApiError(
+          400,
+          `Substitute product cannot be the same as the primary component on line ${line.line_no}`
+        )
+      }
+    }
+  }
 }
 
 export async function assertBomAccessible(
@@ -412,7 +554,7 @@ export async function loadBomVersionSnapshot(
   if (productIds.length > 0) {
     const { data: products, error: productsError } = await supabase
       .from("products")
-      .select("id, sku, name, branch_id, item_type")
+      .select("*")
       .in("id", productIds)
 
     if (productsError) throw productsError

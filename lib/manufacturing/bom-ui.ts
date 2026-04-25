@@ -34,6 +34,7 @@ export interface ProductOption {
   name?: string | null
   branch_id?: string | null
   item_type?: string | null
+  product_type?: string | null
 }
 
 export interface BomVersionSummary {

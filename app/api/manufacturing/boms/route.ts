@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import {
-  assertManufacturingOwnerProductEligibility,
+  assertManufacturableProduct,
   createBomSchema,
   getManufacturingApiContext,
   handleManufacturingApiError,
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
       productIds.length > 0
         ? supabase
             .from("products")
-            .select("id, sku, name, branch_id, item_type")
+            .select("*")
             .in("id", productIds)
         : Promise.resolve({ data: [], error: null }),
     ])
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     const payload = await parseJsonBody(request, createBomSchema)
     const finalBranchId = resolveScopedBranchId(member, payload.branch_id || null)
 
-    await assertManufacturingOwnerProductEligibility(supabase, {
+    await assertManufacturableProduct(supabase, {
       companyId,
       branchId: finalBranchId,
       productId: payload.product_id,

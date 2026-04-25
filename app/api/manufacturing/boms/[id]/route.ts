@@ -26,7 +26,7 @@ export async function GET(
         .order("version_no", { ascending: false }),
       supabase
         .from("products")
-        .select("id, sku, name, branch_id, item_type")
+        .select("*")
         .eq("id", bom.product_id)
         .maybeSingle(),
     ])

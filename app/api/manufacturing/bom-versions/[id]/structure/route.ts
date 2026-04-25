@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import {
+  assertBomStructureEligibleProducts,
   assertBomVersionAccessible,
   getManufacturingApiContext,
   handleManufacturingApiError,
@@ -17,6 +18,12 @@ export async function PUT(
     const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "update")
     const payload = await parseJsonBody(request, updateBomStructureSchema)
     const version = await assertBomVersionAccessible(supabase, companyId, id)
+
+    await assertBomStructureEligibleProducts(admin, {
+      companyId,
+      branchId: version.branch_id,
+      lines: payload.lines,
+    })
 
     const { data, error } = await admin.rpc("update_manufacturing_bom_structure_atomic", {
       p_company_id: companyId,
