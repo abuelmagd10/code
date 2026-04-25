@@ -23,11 +23,12 @@ const SECTION_TABLE: Record<Section, string> = {
 //   per_page = rows per page                       (default: 50, max: 200)
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { supabase, companyId } = await getManufacturingApiContext(request, "read")
-    const run = await assertMrpRunAccessible(supabase, companyId, params.id)
+    const { id } = await params
+    const run = await assertMrpRunAccessible(supabase, companyId, id)
 
     const { searchParams } = new URL(request.url)
     const rawSection = (searchParams.get("section") ?? "net") as Section

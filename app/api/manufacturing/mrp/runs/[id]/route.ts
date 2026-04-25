@@ -9,11 +9,12 @@ import {
 // Returns: run header + counts summary
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { supabase, companyId } = await getManufacturingApiContext(request, "read")
-    const run = await assertMrpRunAccessible(supabase, companyId, params.id)
+    const { id } = await params
+    const run = await assertMrpRunAccessible(supabase, companyId, id)
 
     return NextResponse.json({
       success: true,
