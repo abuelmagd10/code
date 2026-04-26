@@ -82,16 +82,21 @@ export function BomListPage() {
     [branches]
   )
 
+  // Show all products — but only "manufactured" type can own a BOM.
+  // We validate the type on submit to give clear feedback without hiding options.
   const ownerProductOptions = useMemo(
     () =>
       products.filter(
         (product) =>
           product.item_type === "product" &&
-          // Only "manufactured" products can own a BOM (API enforces this — filter early in UI)
-          product.product_type === "manufactured" &&
           (!createForm.branch_id || !product.branch_id || product.branch_id === createForm.branch_id)
       ),
     [products, createForm.branch_id]
+  )
+
+  const selectedProduct = useMemo(
+    () => products.find((p) => p.id === createForm.product_id) || null,
+    [products, createForm.product_id]
   )
 
   const loadLookups = useCallback(async () => {
@@ -177,11 +182,21 @@ export function BomListPage() {
   }
 
   const handleCreate = async () => {
-    if (!createForm.branch_id || !createForm.product_id || !createForm.bom_code.trim() || !createForm.bom_name.trim()) {
+    if (!createForm.product_id || !createForm.bom_code.trim() || !createForm.bom_name.trim()) {
       toast({
         variant: "destructive",
         title: "البيانات الأساسية غير مكتملة",
-        description: "الفرع والمنتج والكود والاسم مطلوبة قبل إنشاء BOM.",
+        description: "المنتج والكود والاسم مطلوبة قبل إنشاء BOM.",
+      })
+      return
+    }
+
+    // Validate product type before sending to API
+    if (selectedProduct && selectedProduct.product_type !== "manufactured") {
+      toast({
+        variant: "destructive",
+        title: "المنتج غير مؤهل لإنشاء BOM",
+        description: `المنتج المختار من نوع "${selectedProduct.product_type || 'غير محدد'}" — يجب أن يكون نوعه "manufactured" حتى يكون مالكاً لهيكل BOM. يمكنك تغيير نوع المنتج من صفحة المنتجات.`,
       })
       return
     }
@@ -533,13 +548,32 @@ export function BomListPage() {
                     <SelectValue placeholder="اختر المنتج" />
                   </SelectTrigger>
                   <SelectContent>
-                    {ownerProductOptions.map((product) => (
-                      <SelectItem key={product.id} value={product.id}>
-                        {buildProductLabel(product)}
-                      </SelectItem>
-                    ))}
+                    {ownerProductOptions.length === 0 ? (
+                      <div className="py-3 px-2 text-sm text-muted-foreground text-center">
+                        لا توجد منتجات متاحة للفرع المختار
+                      </div>
+                    ) : (
+                      ownerProductOptions.map((product) => (
+                        <SelectItem key={product.id} value={product.id}>
+                          <span className="flex items-center gap-2">
+                            {buildProductLabel(product)}
+                            {product.product_type === "manufactured" && (
+                              <Badge variant="default" className="text-xs py-0 px-1">مؤهل</Badge>
+                            )}
+                          </span>
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
+                {selectedProduct && selectedProduct.product_type !== "manufactured" && (
+                  <p className="text-xs text-destructive">
+                    ⚠️ هذا المنتج من نوع "{selectedProduct.product_type || 'غير محدد'}" — يجب تغيير نوعه إلى "manufactured" من صفحة المنتجات أولاً.
+                  </p>
+                )}
+                {selectedProduct?.product_type === "manufactured" && (
+                  <p className="text-xs text-emerald-600">✓ منتج مؤهل لإنشاء BOM</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>كود الهيكل</Label>
