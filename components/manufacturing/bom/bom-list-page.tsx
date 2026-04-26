@@ -125,7 +125,7 @@ export function BomListPage() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تحميل بيانات BOM المرجعية",
+        title: "تعذّر تحميل البيانات المرجعية",
         description: error?.message || "حدث خطأ أثناء تحميل الفروع والمنتجات",
       })
     } finally {
@@ -141,7 +141,7 @@ export function BomListPage() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تحميل هياكل BOM",
+        title: "تعذّر تحميل هياكل المواد",
         description: error?.message || "حدث خطأ أثناء تحميل القائمة",
       })
       setBoms([])
@@ -185,7 +185,7 @@ export function BomListPage() {
       toast({
         variant: "destructive",
         title: "البيانات الأساسية غير مكتملة",
-        description: "المنتج والكود والاسم مطلوبة قبل إنشاء BOM.",
+        description: "يجب تحديد المنتج وكود الهيكل واسمه قبل الإنشاء.",
       })
       return
     }
@@ -214,7 +214,7 @@ export function BomListPage() {
       })
 
       toast({
-        title: "تم إنشاء BOM بنجاح",
+        title: "تم إنشاء هيكل المواد بنجاح",
         description: `${created.bom_code} جاهزة الآن لإدارة النسخ والهيكل.`,
       })
 
@@ -224,7 +224,7 @@ export function BomListPage() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر إنشاء BOM",
+        title: "تعذّر إنشاء هيكل المواد",
         description: error?.message || "حدث خطأ أثناء إنشاء السجل",
       })
     } finally {
@@ -599,7 +599,7 @@ export function BomListPage() {
                 <Input
                   value={createForm.bom_name}
                   onChange={(event) => setCreateForm((current) => ({ ...current, bom_name: event.target.value }))}
-                  placeholder="Finished Goods Production BOM"
+                  placeholder="مثال: هيكل إنتاج المنتجات النهائية"
                 />
               </div>
               <div className="space-y-2">

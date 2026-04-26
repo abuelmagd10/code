@@ -82,7 +82,7 @@ export function RoutingListPage() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تحميل Routing list",
+        title: "تعذّر تحميل مسارات التشغيل",
         description: error?.message || "حدث خطأ أثناء تحميل القائمة",
       })
       setRoutings([])
@@ -111,7 +111,7 @@ export function RoutingListPage() {
       toast({
         variant: "destructive",
         title: "البيانات الأساسية غير مكتملة",
-        description: "product_id وrouting_code وrouting_name مطلوبة قبل الإنشاء.",
+        description: "يجب تحديد المنتج وكود المسار واسمه قبل الإنشاء.",
       })
       return
     }
@@ -128,7 +128,7 @@ export function RoutingListPage() {
       })
 
       toast({
-        title: "تم إنشاء Routing",
+        title: "تم إنشاء مسار التشغيل",
         description: `${created.routing_code} جاهزة الآن لإدارة النسخ والعمليات.`,
       })
 
@@ -139,7 +139,7 @@ export function RoutingListPage() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر إنشاء Routing",
+        title: "تعذّر إنشاء مسار التشغيل",
         description: error?.message || "حدث خطأ أثناء الإنشاء",
       })
     } finally {
@@ -419,15 +419,15 @@ export function RoutingListPage() {
                 <Input
                   value={createForm.branch_id || ""}
                   onChange={(event) => setCreateForm((current) => ({ ...current, branch_id: event.target.value }))}
-                  placeholder="اختياري إذا كان الفرع يحسم من العضوية"
+                  placeholder="اختياري — اتركه فارغًا لاستخدام فرعك الحالي"
                 />
               </div>
               <div className="space-y-2">
-                <Label>معرف المنتج المالك</Label>
+                <Label>المنتج المراد تصنيعه</Label>
                 <Input
                   value={createForm.product_id}
                   onChange={(event) => setCreateForm((current) => ({ ...current, product_id: event.target.value }))}
-                  placeholder="UUID لمنتج manufactured"
+                  placeholder="انسخ ID المنتج المصنّع من صفحة المنتجات"
                 />
               </div>
               <div className="space-y-2">
@@ -443,7 +443,7 @@ export function RoutingListPage() {
                 <Input
                   value={createForm.routing_name}
                   onChange={(event) => setCreateForm((current) => ({ ...current, routing_name: event.target.value }))}
-                  placeholder="Finished Goods Primary Route"
+                  placeholder="مثال: مسار تشغيل المنتج النهائي"
                 />
               </div>
               <div className="space-y-2">
@@ -466,8 +466,8 @@ export function RoutingListPage() {
               </div>
               <div className="flex items-center justify-between rounded-xl border px-4 py-3">
                 <div className="space-y-1">
-                  <div className="font-medium text-slate-900">تفعيل Routing</div>
-                  <div className="text-sm text-slate-500">يمكن تعطيل الـ header لاحقًا من صفحة التفاصيل.</div>
+                  <div className="font-medium text-slate-900">تفعيل مسار التشغيل</div>
+                  <div className="text-sm text-slate-500">يمكن تعطيله لاحقًا من صفحة التفاصيل.</div>
                 </div>
                 <Switch
                   checked={createForm.is_active}
