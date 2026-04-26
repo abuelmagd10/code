@@ -196,7 +196,11 @@ export function BomListPage() {
       toast({
         variant: "destructive",
         title: "المنتج غير مؤهل لإنشاء BOM",
-        description: `المنتج المختار من نوع "${selectedProduct.product_type || 'غير محدد'}" — يجب أن يكون نوعه "manufactured" حتى يكون مالكاً لهيكل BOM. يمكنك تغيير نوع المنتج من صفحة المنتجات.`,
+        description: `المنتج "${selectedProduct.sku || selectedProduct.id}" تصنيفه الحالي: "${
+          selectedProduct.product_type === 'purchased' ? 'مشتريات' :
+          selectedProduct.product_type === 'raw_material' ? 'مادة خام' :
+          selectedProduct.product_type || 'غير محدد'
+        }" — لإنشاء BOM يجب أن يكون تصنيفه "تصنيعي". افتح صفحة المنتجات، اضغط على أيقونة التعديل للمنتج، وغيّر حقل "التصنيف التفصيلي" إلى تصنيعي.`,
       })
       return
     }
@@ -567,8 +571,16 @@ export function BomListPage() {
                   </SelectContent>
                 </Select>
                 {selectedProduct && selectedProduct.product_type !== "manufactured" && (
-                  <p className="text-xs text-destructive">
-                    ⚠️ هذا المنتج من نوع "{selectedProduct.product_type || 'غير محدد'}" — يجب تغيير نوعه إلى "manufactured" من صفحة المنتجات أولاً.
+                  <p className="text-xs text-destructive leading-relaxed">
+                    ⚠️ تصنيف هذا المنتج الحالي: &quot;{
+                      selectedProduct.product_type === 'purchased' ? 'مشتريات' :
+                      selectedProduct.product_type === 'raw_material' ? 'مادة خام' :
+                      selectedProduct.product_type || 'غير محدد'
+                    }&quot; — لإنشاء BOM يجب أن يكون تصنيفه <strong>تصنيعي</strong>.
+                    <br />
+                    <span className="text-muted-foreground">
+                      انتقل إلى صفحة المنتجات ← اضغط أيقونة التعديل ✏️ للمنتج ← غيّر &quot;التصنيف التفصيلي&quot; إلى تصنيعي.
+                    </span>
                   </p>
                 )}
                 {selectedProduct?.product_type === "manufactured" && (

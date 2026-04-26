@@ -43,6 +43,8 @@ interface Product {
   display_cost_price?: number
   display_currency?: string
   item_type: 'product' | 'service'
+  /** تصنيف تفصيلي: manufactured | raw_material | purchased | service */
+  product_type?: 'manufactured' | 'raw_material' | 'purchased' | 'service' | null
   income_account_id?: string | null
   expense_account_id?: string | null
   cost_center?: string | null
@@ -116,6 +118,8 @@ export default function ProductsPage() {
     quantity_on_hand: 0,
     reorder_level: 0,
     item_type: "product" as 'product' | 'service',
+    /** النوع التفصيلي للمنتج — يحدد أهليته للتصنيع والـ BOM */
+    product_type: "purchased" as 'manufactured' | 'raw_material' | 'purchased' | 'service',
     income_account_id: "",
     expense_account_id: "",
     cost_center: "",
@@ -600,6 +604,7 @@ export default function ProductsPage() {
       quantity_on_hand: 0,
       reorder_level: 0,
       item_type: "product",
+      product_type: "purchased",
       income_account_id: "",
       expense_account_id: "",
       cost_center: "",
@@ -624,6 +629,8 @@ export default function ProductsPage() {
       branch_id: product.branch_id || "",
       warehouse_id: product.warehouse_id || "",
       tax_code_id: product.tax_code_id || "",
+      // تحميل product_type الحالي للمنتج — يسمح للمستخدم بتعديله
+      product_type: (product.product_type as any) || (product.item_type === 'service' ? 'service' : 'purchased'),
     }
 
     // للأدوار العادية: فرض القيم من بيانات المستخدم (لضمان عدم التلاعب)
@@ -1070,6 +1077,64 @@ export default function ProductsPage() {
                           </Button>
                         </div>
                       </div>
+
+                      {/* ✦ التصنيف التفصيلي — يظهر فقط للمنتجات (ليس الخدمات) */}
+                      {formData.item_type === 'product' && (
+                        <div className="space-y-2">
+                          <Label>
+                            {appLang === 'en' ? 'Product Classification' : 'التصنيف التفصيلي'}
+                            <span className="mr-1 text-xs text-muted-foreground font-normal">
+                              {appLang === 'en' ? '(determines manufacturing eligibility)' : '(يحدد الأهلية للتصنيع)'}
+                            </span>
+                          </Label>
+                          <div className="grid grid-cols-3 gap-2">
+                            <Button
+                              type="button"
+                              variant={formData.product_type === 'manufactured' ? 'default' : 'outline'}
+                              className={`flex-1 flex-col h-auto py-2 gap-1 text-xs ${formData.product_type === 'manufactured' ? 'ring-2 ring-primary ring-offset-1' : ''}`}
+                              onClick={() => setFormData({ ...formData, product_type: 'manufactured' })}
+                              title={appLang === 'en' ? 'Can own BOM and Routing in Manufacturing module' : 'يمكنه امتلاك هيكل BOM وخط تصنيع'}
+                            >
+                              <Sparkles className="w-4 h-4" />
+                              {appLang === 'en' ? 'Manufactured' : 'تصنيعي'}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant={formData.product_type === 'raw_material' ? 'default' : 'outline'}
+                              className="flex-1 flex-col h-auto py-2 gap-1 text-xs"
+                              onClick={() => setFormData({ ...formData, product_type: 'raw_material' })}
+                              title={appLang === 'en' ? 'Used as input component in BOM structures' : 'يُستخدم مكوّناً في هياكل BOM'}
+                            >
+                              <Package className="w-4 h-4" />
+                              {appLang === 'en' ? 'Raw Material' : 'مادة خام'}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant={formData.product_type === 'purchased' ? 'default' : 'outline'}
+                              className="flex-1 flex-col h-auto py-2 gap-1 text-xs"
+                              onClick={() => setFormData({ ...formData, product_type: 'purchased' })}
+                              title={appLang === 'en' ? 'Standard purchased item' : 'صنف شراء عادي'}
+                            >
+                              <Wrench className="w-4 h-4" />
+                              {appLang === 'en' ? 'Purchased' : 'مشتريات'}
+                            </Button>
+                          </div>
+                          {formData.product_type === 'manufactured' && (
+                            <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                              ✓ {appLang === 'en'
+                                ? 'This product can own a Bill of Materials (BOM) and Routing in Manufacturing.'
+                                : 'هذا المنتج مؤهل لامتلاك هيكل مواد (BOM) وخط تصنيع في مديول التصنيع.'}
+                            </p>
+                          )}
+                          {formData.product_type === 'raw_material' && (
+                            <p className="text-xs text-blue-600 dark:text-blue-400">
+                              ℹ️ {appLang === 'en'
+                                ? 'Raw materials appear as input components inside BOM structures.'
+                                : 'تظهر المواد الخام كمدخلات ومكونات داخل هياكل BOM.'}
+                            </p>
+                          )}
+                        </div>
+                      )}
 
                       {/* Basic Info */}
                       <div className="grid grid-cols-2 gap-3">
