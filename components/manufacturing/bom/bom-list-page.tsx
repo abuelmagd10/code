@@ -82,13 +82,12 @@ export function BomListPage() {
     [branches]
   )
 
-  // Show all products — but only "manufactured" type can own a BOM.
-  // We validate the type on submit to give clear feedback without hiding options.
+  // Only "manufactured" products can own a BOM — filter strictly here to prevent UX confusion.
   const ownerProductOptions = useMemo(
     () =>
       products.filter(
         (product) =>
-          product.item_type === "product" &&
+          product.product_type === "manufactured" &&
           (!createForm.branch_id || !product.branch_id || product.branch_id === createForm.branch_id)
       ),
     [products, createForm.branch_id]
