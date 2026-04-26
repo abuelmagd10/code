@@ -290,11 +290,17 @@ export function resolveScopedBranchId(member: CompanyMembership, requestedBranch
     return member.branchId
   }
 
-  if (!requestedBranchId) {
-    throw new ManufacturingApiError(400, "branch_id is required")
+  // For owners/admins/managers: use provided branch_id, or fall back to
+  // their default branch assignment (member.branchId). Both are valid scopes.
+  const resolved = requestedBranchId || member.branchId || null
+  if (!resolved) {
+    throw new ManufacturingApiError(
+      400,
+      "branch_id is required — no branch was provided and your account has no default branch assigned"
+    )
   }
 
-  return requestedBranchId
+  return resolved
 }
 
 export async function assertManufacturableProduct(

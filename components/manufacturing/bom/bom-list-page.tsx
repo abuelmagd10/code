@@ -87,6 +87,8 @@ export function BomListPage() {
       products.filter(
         (product) =>
           product.item_type === "product" &&
+          // Only "manufactured" products can own a BOM (API enforces this — filter early in UI)
+          product.product_type === "manufactured" &&
           (!createForm.branch_id || !product.branch_id || product.branch_id === createForm.branch_id)
       ),
     [products, createForm.branch_id]
