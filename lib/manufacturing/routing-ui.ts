@@ -190,10 +190,15 @@ export async function fetchRoutingList(filters: RoutingListFilters = {}) {
 }
 
 export async function createRouting(payload: RoutingCreatePayload) {
+  // Normalize empty branch_id to null so the API can validate it properly.
+  const normalizedPayload = {
+    ...payload,
+    branch_id: payload.branch_id || null,
+  }
   const response = await fetch("/api/manufacturing/routings", {
     method: "POST",
     headers: jsonHeaders(),
-    body: JSON.stringify(payload),
+    body: JSON.stringify(normalizedPayload),
   })
 
   const parsed = await parseApiResponse<RoutingDetail>(response)

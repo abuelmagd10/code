@@ -298,10 +298,16 @@ export async function fetchBomList(filters: BomListFilters = {}) {
 }
 
 export async function createBom(payload: BomCreatePayload) {
+  // Normalize empty branch_id to null so the API can validate it properly.
+  // An empty string is falsy but is not null, which confuses resolveScopedBranchId.
+  const normalizedPayload = {
+    ...payload,
+    branch_id: payload.branch_id || null,
+  }
   const response = await fetch("/api/manufacturing/boms", {
     method: "POST",
     headers: jsonHeaders(),
-    body: JSON.stringify(payload),
+    body: JSON.stringify(normalizedPayload),
   })
 
   const parsed = await parseApiResponse<BomDetail>(response)

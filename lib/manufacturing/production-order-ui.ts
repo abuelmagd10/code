@@ -669,10 +669,15 @@ export async function fetchProductionOrderList(filters: ProductionOrderListFilte
 }
 
 export async function createProductionOrder(payload: ProductionOrderCreatePayload) {
+  // Normalize empty branch_id to null so the API can validate it properly.
+  const normalizedPayload = {
+    ...payload,
+    branch_id: payload.branch_id || null,
+  }
   const response = await fetch("/api/manufacturing/production-orders", {
     method: "POST",
     headers: jsonHeaders(),
-    body: JSON.stringify(payload),
+    body: JSON.stringify(normalizedPayload),
   })
 
   const parsed = await parseApiResponse<ProductionOrderSnapshot>(response)
