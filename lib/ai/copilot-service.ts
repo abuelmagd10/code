@@ -626,6 +626,12 @@ function buildDomainRule(context: AICopilotContext) {
     if (context.domain === "inventory") {
       return "في المخزون: أي استفسار عن الإخراج أو الإرجاع يجب قراءته مع حالة الاعتماد وحالة الحركة المرتبطة."
     }
+    if (context.domain === "fixed_assets") {
+      return "في الأصول الثابتة: القيمة الدفترية الحالية تعتمد على التكلفة الأصلية مطروحًا منها مجمع الإهلاك — الاستبعاد أو التعديل يحتاج مراجعة الفترة المحاسبية والصلاحيات."
+    }
+    if (context.domain === "hr") {
+      return "في الموارد البشرية: مسير الرواتب لا يُصرف إلا بعد اعتماده، وأي تغيير على بيانات الموظف يؤثر على حسابات الفترة التالية."
+    }
   } else {
     if (isPurchasePageKey(pageKey)) {
       return "In the purchase cycle, the correct reading starts with current document status, then receipt or confirmation, and then payables or supplier settlement."
@@ -641,6 +647,12 @@ function buildDomainRule(context: AICopilotContext) {
     }
     if (context.domain === "inventory") {
       return "For inventory, dispatch and return questions must be read together with approval state and linked movement status."
+    }
+    if (context.domain === "fixed_assets") {
+      return "For fixed assets, the current book value depends on original cost minus accumulated depreciation — disposal or adjustment requires reviewing the accounting period and permissions."
+    }
+    if (context.domain === "hr") {
+      return "For HR, payroll is only paid after approval, and any change to employee data affects calculations for the next period."
     }
   }
 
@@ -964,6 +976,215 @@ function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
         cycleEn: [
           "Customer -> estimate or sales order -> invoice -> collection -> open balance or return.",
         ],
+      }
+    case "sales_returns":
+    case "sales_return_requests":
+    case "sent_invoice_returns":
+      return {
+        contentsAr: [
+          "طلب المرتجع: العميل والفاتورة الأصلية والأصناف المُرجَعة والكميات والسبب.",
+          "حالة الطلب الحالية: بانتظار الإدارة، بانتظار المخزن، مكتمل، أو مرفوض.",
+          "أثر المرتجع على المخزون بعد اعتماد المخزن، وعلى ذمم العميل بعد الإغلاق.",
+          "هل تمّ إصدار إشعار دائن للعميل أم لا.",
+        ],
+        contentsEn: [
+          "Return request: customer, original invoice, returned items, quantities, and reason.",
+          "Current request status: pending management, pending warehouse, completed, or rejected.",
+          "Impact on stock after warehouse approval, and on customer receivables after closure.",
+          "Whether a customer credit note was issued.",
+        ],
+        workflowAr: [
+          "ابدأ بقراءة حالة الطلب الحالية: هل ما زال في مرحلة الإدارة أم انتقل للمخزن؟",
+          "تحقق من الأصناف والكميات المُرجَعة ومطابقتها بالفاتورة الأصلية.",
+          "تابع اعتماد المخزن — فقط بعد الاعتماد يتحرك المخزون فعليًا.",
+          "بعد اكتمال المرتجع، راجع أثره على رصيد العميل أو إشعار الدائن المُصدَر.",
+        ],
+        workflowEn: [
+          "Start by reading the current request status: is it still at management or has it moved to warehouse?",
+          "Verify the returned items and quantities match the original invoice.",
+          "Track warehouse approval — stock only moves physically after this step.",
+          "After the return completes, review its effect on the customer balance or the issued credit note.",
+        ],
+        tipsAr: [
+          "المرتجع لا يؤثر على المخزون أو الذمم مباشرة — يحتاج إتمام سلسلة الاعتماد أولاً.",
+          "المرتجع الجزئي يخفّض رصيد العميل بنسبة ما أُعيد فقط، وليس الفاتورة كلها.",
+          "في حال الرفض، لا يحدث أثر مخزني أو مالي.",
+        ],
+        tipsEn: [
+          "A return does not affect stock or receivables directly — the full approval chain must complete first.",
+          "A partial return reduces the customer balance only for what was returned, not the whole invoice.",
+          "If rejected, no inventory or financial effect occurs.",
+        ],
+        approvalsAr: [
+          "الاعتماد الإداري (المستوى الأول) يأتي قبل اعتماد المخزن.",
+          "المخزن لا يرى الطلب إلا بعد تجاوزه المرحلة الإدارية.",
+          "الإغلاق النهائي يتم فقط بعد تأكيد استلام المخزن للأصناف فعليًا.",
+        ],
+        approvalsEn: [
+          "Management approval (level 1) comes before warehouse approval.",
+          "Warehouse does not see the request until it passes the management stage.",
+          "Final closure only happens after the warehouse physically confirms receipt of the items.",
+        ],
+        cycleAr: [
+          "طلب مرتجع → اعتماد إداري → اعتماد مخزن → أثر مخزني + إشعار دائن عميل.",
+        ],
+        cycleEn: [
+          "Return request → management approval → warehouse approval → stock impact + customer credit note.",
+        ],
+      }
+    case "customer_credits":
+      return {
+        contentsAr: [
+          "إشعارات دائن العميل وقيمتها والفاتورة أو المرتجع المرتبط بها.",
+          "هل تم تطبيق الإشعار على رصيد العميل أم ما زال مفتوحًا.",
+          "الرصيد المتبقي من الإشعار بعد أي تطبيق جزئي.",
+        ],
+        contentsEn: [
+          "Customer credit notes, their value, and the invoice or return linked to them.",
+          "Whether the credit has been applied to the customer balance or remains open.",
+          "The remaining balance after any partial application.",
+        ],
+        workflowAr: [
+          "راجع سبب إشعار الدائن: هل هو ناتج عن مرتجع أم تسوية أم خصم يدوي؟",
+          "تحقق من هل تم تطبيقه على فاتورة أو رصيد مفتوح.",
+          "اربطه بالرصيد الكلي للعميل لتعرف الأثر الفعلي.",
+        ],
+        workflowEn: [
+          "Review the reason for the credit note: is it from a return, settlement, or manual discount?",
+          "Check whether it has been applied against an invoice or open balance.",
+          "Connect it to the customer's total balance to understand the real effect.",
+        ],
+        tipsAr: [
+          "إشعار الدائن لا يُلغي الفاتورة — بل يخفّض الرصيد المستحق من العميل.",
+          "إشعار غير مطبّق لا يزال يمثّل حقًا للعميل يجب متابعته.",
+        ],
+        tipsEn: [
+          "A credit note does not cancel the invoice — it reduces the customer's outstanding balance.",
+          "An unapplied credit still represents a customer right that needs follow-up.",
+        ],
+        approvalsAr: ["تطبيق الإشعار أو تعديله يعتمد على صلاحياتك وحالة المستندات المرتبطة."],
+        approvalsEn: ["Applying or adjusting the credit depends on your permissions and linked-document state."],
+        cycleAr: ["مرتجع أو تسوية → إشعار دائن عميل → تطبيق على رصيد أو فاتورة → إغلاق."],
+        cycleEn: ["Return or settlement → customer credit note → apply to balance or invoice → close."],
+      }
+    case "customer_debit_notes":
+      return {
+        contentsAr: [
+          "إشعارات مدين العميل وقيمتها والمستند أو السبب المرتبط بها.",
+          "أثر الإشعار على رصيد العميل — يزيد ما يستحق منه.",
+          "حالة الإشعار وما إذا كان مرتبطًا بعملية بيع أم تعديل يدوي.",
+        ],
+        contentsEn: [
+          "Customer debit notes, their value, and the linked document or reason.",
+          "The effect on the customer balance — increases what the customer owes.",
+          "Status and whether it is linked to a sales transaction or a manual adjustment.",
+        ],
+        workflowAr: [
+          "راجع سبب إشعار المدين: هل هو تعديل سعر، أو رسوم إضافية، أو فارق حساب؟",
+          "تحقق من ارتباطه بالفاتورة أو العملية الأصلية.",
+          "راقب أثره على رصيد العميل وما إذا كان يحتاج توضيحًا للعميل.",
+        ],
+        workflowEn: [
+          "Review the reason for the debit note: is it a price adjustment, additional charge, or calculation difference?",
+          "Verify its link to the original invoice or transaction.",
+          "Monitor its effect on the customer balance and whether it needs explanation to the customer.",
+        ],
+        tipsAr: [
+          "إشعار المدين يزيد ذمة العميل — تأكد من وجود مستند داعم قبل الإصدار.",
+        ],
+        tipsEn: [
+          "A debit note increases the customer's liability — ensure a supporting document exists before issuing.",
+        ],
+        approvalsAr: ["إصدار أو تعديل إشعار المدين يخضع للصلاحيات وسياسة الاعتماد."],
+        approvalsEn: ["Issuing or editing a debit note is governed by permissions and the approval policy."],
+        cycleAr: ["سبب التعديل → إشعار مدين عميل → زيادة رصيد الذمة → تحصيل."],
+        cycleEn: ["Adjustment reason → customer debit note → increase receivable balance → collection."],
+      }
+    case "fixed_assets":
+    case "asset_categories":
+    case "fixed_assets_reports":
+      return {
+        contentsAr: [
+          "بيانات الأصل الثابت: الاسم، التكلفة الأصلية، تاريخ الاقتناء، والحسابات المرتبطة.",
+          "حالة الأصل: نشط، مكتمل الإهلاك، أو مستبعد.",
+          "جدول الإهلاك: الطريقة، المبلغ الدوري، ومجمع الإهلاك حتى الآن.",
+          "الربط بين الأصل وقيود الإضافة والإهلاك والاستبعاد.",
+        ],
+        contentsEn: [
+          "Fixed asset details: name, original cost, acquisition date, and linked accounts.",
+          "Asset status: active, fully depreciated, or disposed.",
+          "Depreciation schedule: method, periodic amount, and accumulated depreciation so far.",
+          "The link between the asset and addition, depreciation, and disposal entries.",
+        ],
+        workflowAr: [
+          "أضف بيانات الأصل الأساسية: الاسم، التكلفة، تاريخ الاقتناء، والفئة.",
+          "راجع حسابات الأصل ومجمع الإهلاك ومصروف الإهلاك الدوري.",
+          "تابع الإهلاك الدوري — ينتج عن قيد محاسبي تلقائي حسب الطريقة المختارة.",
+          "عند نهاية العمر الإنتاجي أو البيع، نفّذ عملية الاستبعاد بعد مراجعة القيمة الدفترية.",
+        ],
+        workflowEn: [
+          "Add asset basics: name, cost, acquisition date, and category.",
+          "Review the asset account, accumulated depreciation account, and periodic depreciation expense.",
+          "Track periodic depreciation — it produces an automatic journal entry per the chosen method.",
+          "At end-of-life or sale, execute disposal after reviewing the current book value.",
+        ],
+        tipsAr: [
+          "الإهلاك يعتمد على التكلفة والعمر الإنتاجي والطريقة المحاسبية، وليس على الاسم فقط.",
+          "القيمة الدفترية = التكلفة − مجمع الإهلاك؛ هي ما يظهر في الميزانية.",
+          "الأصل المكتمل الإهلاك لا يزال مسجلًا حتى لو تم استبعاده فعليًا من الاستخدام.",
+        ],
+        tipsEn: [
+          "Depreciation depends on cost, useful life, and accounting method — not just the asset name.",
+          "Book value = cost − accumulated depreciation; this is what appears on the balance sheet.",
+          "A fully depreciated asset remains on record even if physically retired from use.",
+        ],
+        approvalsAr: [
+          "إضافة أو تعديل أو استبعاد الأصل يخضع للصلاحيات وحالة الفترة المحاسبية.",
+          "الاستبعاد يُنشئ قيدًا محاسبيًا لا يمكن عكسه بسهولة بعد الترحيل.",
+        ],
+        approvalsEn: [
+          "Adding, modifying, or disposing of an asset depends on permissions and accounting-period state.",
+          "Disposal creates an accounting entry that cannot easily be reversed after posting.",
+        ],
+        cycleAr: [
+          "إضافة أصل → إعداد إهلاك → تشغيل → إهلاك دوري → استبعاد أو بيع عند الحاجة.",
+        ],
+        cycleEn: [
+          "Add asset → set up depreciation → in-service → periodic depreciation → disposal or sale when needed.",
+        ],
+      }
+    case "attendance":
+      return {
+        contentsAr: [
+          "سجلات حضور وانصراف الموظفين مع التواريخ والأوقات.",
+          "الغيابات والتأخيرات وتأثيرها على حسابات الراتب.",
+          "الفترة أو الشهر المرتبط بهذه السجلات.",
+        ],
+        contentsEn: [
+          "Employee attendance and departure records with dates and times.",
+          "Absences and tardiness and their effect on salary calculations.",
+          "The period or month these records are linked to.",
+        ],
+        workflowAr: [
+          "راجع سجلات الحضور للفترة المطلوبة.",
+          "تحقق من الغيابات والتأخيرات وتأثيرها على الاستقطاعات.",
+          "تأكد من اكتمال السجلات قبل معالجة مسير الرواتب لنفس الفترة.",
+        ],
+        workflowEn: [
+          "Review attendance records for the required period.",
+          "Verify absences and tardiness and their deduction impact.",
+          "Ensure records are complete before processing the payroll run for the same period.",
+        ],
+        tipsAr: [
+          "غياب غير مدخَل يعني أن الراتب سيحسب كأن الموظف حاضر — تأكد من اكتمال البيانات.",
+        ],
+        tipsEn: [
+          "An unrecorded absence means salary will be calculated as if the employee was present — verify data completeness.",
+        ],
+        approvalsAr: ["تعديل سجلات الحضور يخضع للصلاحيات وقد يؤثر على مسير رواتب مرتبط."],
+        approvalsEn: ["Editing attendance records requires permissions and may affect a linked payroll run."],
+        cycleAr: ["سجل حضور → اعتماد الفترة → مدخل في مسير الرواتب → أثر على الراتب الصافي."],
+        cycleEn: ["Attendance record → period approval → input to payroll run → effect on net salary."],
       }
     case "purchase_orders":
       return {
@@ -2004,6 +2225,42 @@ function buildNextActions(
         confidenceScore: 90,
       })
       break
+    case "fixed_assets":
+      actions.push({
+        title:
+          language === "ar"
+            ? "مراجعة حالة الأصول والإهلاك"
+            : "Review asset status and depreciation",
+        summary:
+          language === "ar"
+            ? "ابدأ بفهم التكلفة الأصلية والقيمة الدفترية الحالية ثم راجع جدول الإهلاك وحالة الأصل قبل أي تعديل أو استبعاد."
+            : "Start by understanding the original cost and current book value, then review the depreciation schedule and asset status before any adjustment or disposal.",
+        prompt:
+          language === "ar"
+            ? "ما القيمة الدفترية للأصل الحالي وما الخطوة التالية؟"
+            : "What is the current asset book value and what is the next step?",
+        severity: "info",
+        confidenceScore: 87,
+      })
+      break
+    case "hr":
+      actions.push({
+        title:
+          language === "ar"
+            ? "مراجعة مسير الرواتب وبيانات الموظفين"
+            : "Review payroll run and employee records",
+        summary:
+          language === "ar"
+            ? "ابدأ بالتحقق من اكتمال بيانات الموظف والحضور قبل معالجة مسير الرواتب، ثم تابع حالة الاعتماد والصرف."
+            : "Start by verifying employee data and attendance completeness before processing the payroll run, then track approval and payment status.",
+        prompt:
+          language === "ar"
+            ? "كيف أتحقق من صحة بيانات الراتب قبل الاعتماد؟"
+            : "How do I verify salary data correctness before approval?",
+        severity: "info",
+        confidenceScore: 88,
+      })
+      break
     default:
       actions.push({
         title:
@@ -2246,6 +2503,81 @@ function buildPredictedActions(context: AICopilotContext): AIPredictedAction[] {
       }
       break
     }
+    case "fixed_assets": {
+      const fullyDep = readMetricCount(context, ["أصول مكتملة الإهلاك", "Fully depreciated assets"])
+      const totalAssets = readMetricCount(context, ["إجمالي الأصول", "Total assets"])
+      if (fullyDep > 0) {
+        predictions.push({
+          title:
+            language === "ar"
+              ? "المتوقع التالي: مراجعة الأصول مكتملة الإهلاك"
+              : "Predicted next step: review fully depreciated assets",
+          summary:
+            language === "ar"
+              ? "يوجد أصول أكملت إهلاكها — الخطوة التالية عادةً مراجعة قرار الاستمرار في الاستخدام أو الاستبعاد."
+              : "Some assets have completed depreciation — the next step is usually reviewing whether to continue using or dispose of them.",
+          prompt:
+            language === "ar"
+              ? "ما الأصول مكتملة الإهلاك وما الإجراء الصحيح معها؟"
+              : "Which assets are fully depreciated and what is the correct action?",
+          confidenceScore: 88,
+        })
+      } else if (totalAssets > 0) {
+        predictions.push({
+          title:
+            language === "ar"
+              ? "المتوقع التالي: مراجعة جدول الإهلاك"
+              : "Predicted next step: review depreciation schedule",
+          summary:
+            language === "ar"
+              ? "مراجعة جدول الإهلاك الدوري تضمن دقة القيمة الدفترية وصحة القيود المحاسبية."
+              : "Reviewing the periodic depreciation schedule ensures accurate book values and correct journal entries.",
+          prompt:
+            language === "ar"
+              ? "كيف أتحقق من صحة الإهلاك الدوري للأصول؟"
+              : "How do I verify the periodic depreciation accuracy for assets?",
+          confidenceScore: 80,
+        })
+      }
+      break
+    }
+    case "hr": {
+      const pendingRuns = readMetricCount(context, ["مسيرات معلقة", "Pending payroll runs"])
+      if (pendingRuns > 0) {
+        predictions.push({
+          title:
+            language === "ar"
+              ? "المتوقع التالي: اعتماد مسير الرواتب"
+              : "Predicted next step: approve payroll run",
+          summary:
+            language === "ar"
+              ? "يوجد مسيرات رواتب بانتظار الاعتماد — هذا هو المسار التشغيلي التالي."
+              : "There are payroll runs awaiting approval — this is the next operational path.",
+          prompt:
+            language === "ar"
+              ? "ما مسيرات الرواتب التي تنتظر الاعتماد وما الخطوات؟"
+              : "Which payroll runs are pending approval and what are the steps?",
+          confidenceScore: 92,
+        })
+      } else {
+        predictions.push({
+          title:
+            language === "ar"
+              ? "المتوقع التالي: مراجعة بيانات الموظفين"
+              : "Predicted next step: review employee records",
+          summary:
+            language === "ar"
+              ? "لا توجد مسيرات معلقة — الخطوة المحتملة هي مراجعة بيانات الموظفين أو إعداد مسير جديد."
+              : "No pending payroll runs — the likely step is reviewing employee records or preparing a new run.",
+          prompt:
+            language === "ar"
+              ? "كيف أبدأ في إعداد مسير رواتب جديد؟"
+              : "How do I start preparing a new payroll run?",
+          confidenceScore: 75,
+        })
+      }
+      break
+    }
     default:
       predictions.push({
         title:
@@ -2357,7 +2689,56 @@ function buildQuickPrompts(
           : "Explain the sales cycle and approvals related to this page.",
       category: "workflow",
     })
+  } else if (context.domain === "returns") {
+    prompts.push({
+      label:
+        language === "ar"
+          ? "اشرح لي مراحل اعتماد المرتجع"
+          : "Explain the return approval stages",
+      prompt:
+        language === "ar"
+          ? "ما مراحل اعتماد طلب المرتجع من البداية حتى الإغلاق النهائي؟"
+          : "What are the return request approval stages from start to final closure?",
+      category: "workflow",
+    })
+  } else if (context.domain === "receivables") {
+    prompts.push({
+      label:
+        language === "ar"
+          ? "كيف يُحسب رصيد العميل؟"
+          : "How is the customer balance calculated?",
+      prompt:
+        language === "ar"
+          ? "كيف يتم حساب رصيد العميل المفتوح وما الذي يؤثر عليه؟"
+          : "How is the open customer balance calculated and what affects it?",
+      category: "analytics",
+    })
+  } else if (context.domain === "fixed_assets") {
+    prompts.push({
+      label:
+        language === "ar"
+          ? "اشرح لي دورة الأصل الثابت"
+          : "Explain the fixed asset lifecycle",
+      prompt:
+        language === "ar"
+          ? "اشرح لي دورة حياة الأصل الثابت من الإضافة وحتى الاستبعاد أو البيع"
+          : "Explain the fixed asset lifecycle from addition through disposal or sale.",
+      category: "workflow",
+    })
+  } else if (context.domain === "hr") {
+    prompts.push({
+      label:
+        language === "ar"
+          ? "اشرح لي خطوات مسير الرواتب"
+          : "Explain the payroll run steps",
+      prompt:
+        language === "ar"
+          ? "ما خطوات إعداد واعتماد وصرف مسير الرواتب؟"
+          : "What are the steps for preparing, approving, and paying a payroll run?",
+      category: "workflow",
+    })
   }
+
 
   if (context.liveContext.metrics.length > 0) {
     prompts.push({

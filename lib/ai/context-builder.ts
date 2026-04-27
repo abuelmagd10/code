@@ -199,14 +199,15 @@ function inferDomainFromPageKey(pageKey?: string | null): AIDomain {
       "purchase_returns",
       "vendor_credits",
       "suppliers",
-      "fixed_assets",
-      "fixed_assets_reports",
-      "payroll",
     ].includes(key)
   ) {
     return "accounting"
   }
-  if (["employees", "attendance", "instant_payouts", "shareholders"].includes(key)) return "support"
+  if (["fixed_assets", "asset_categories", "fixed_assets_reports"].includes(key)) {
+    return "fixed_assets"
+  }
+  if (["employees", "attendance", "payroll", "instant_payouts", "hr"].includes(key)) return "hr"
+  if (["shareholders"].includes(key)) return "support"
   if (["settings", "branches", "cost_centers"].includes(key)) return "governance"
   if (
     [
@@ -372,6 +373,10 @@ async function loadLiveContext(
         return await loadGovernanceContext(supabase, scope, language)
       case "manufacturing":
         return await loadManufacturingContext(supabase, scope, language)
+      case "fixed_assets":
+        return await loadFixedAssetsContext(supabase, scope, language)
+      case "hr":
+        return await loadHRContext(supabase, scope, language)
       default:
         return await loadSupportContext(supabase, scope, language)
     }
@@ -880,6 +885,128 @@ async function loadSupportContext(
       language === "ar"
         ? "اسأل بسياق الصفحة الحالية أو اسم العملية لتحصل على إجابة أدق."
         : "Ask with the current page or workflow name for a more precise answer.",
+    ],
+  }
+}
+
+// ─── Fixed Assets Context ─────────────────────────────────────────────────────
+async function loadFixedAssetsContext(
+  supabase: SupabaseClient,
+  scope: AIContextScope,
+  language: "ar" | "en"
+): Promise<AILiveContext> {
+  const [totalAssets, activeAssets, assetCategories, fullyDepreciated] = await Promise.all([
+    countCompanyRows(supabase, "fixed_assets", scope),
+    countCompanyRows(supabase, "fixed_assets", scope, {
+      mutate: (query) => query.eq("status", "active"),
+    }),
+    countCompanyRows(supabase, "asset_categories", scope),
+    countCompanyRows(supabase, "fixed_assets", scope, {
+      mutate: (query) => query.eq("status", "fully_depreciated"),
+    }),
+  ])
+
+  const alerts: string[] = []
+  if (fullyDepreciated > 0) {
+    alerts.push(
+      language === "ar"
+        ? `يوجد ${fullyDepreciated} أصل مكتمل الإهلاك — يُستحسن مراجعة قرار الاستبعاد أو الاستمرار.`
+        : `${fullyDepreciated} assets are fully depreciated — review whether to dispose of or continue using them.`
+    )
+  }
+
+  const pageKey = String(scope.pageKey || "").toLowerCase()
+  const summary =
+    pageKey === "asset_categories"
+      ? language === "ar"
+        ? "تصنيفات الأصول تحدد طريقة الإهلاك والسياسة المحاسبية لكل مجموعة من الأصول الثابتة."
+        : "Asset categories define the depreciation method and accounting policy for each group of fixed assets."
+      : pageKey === "fixed_assets_reports"
+      ? language === "ar"
+        ? "تقارير الأصول الثابتة تعرض ملخص الأصول وقيمها الدفترية وحالة الإهلاك عبر الفترات."
+        : "Fixed asset reports show a summary of assets, their book values, and depreciation state across periods."
+      : language === "ar"
+        ? "الأصول الثابتة تُسجَّل بتكلفتها الأصلية ثم تُهلَّك على مدار عمرها الإنتاجي وفق سياسة الشركة."
+        : "Fixed assets are recorded at cost and depreciated over their useful life according to company policy."
+
+  return {
+    domain: "fixed_assets",
+    summary,
+    metrics: [
+      metric(language, "إجمالي الأصول", "Total assets", totalAssets),
+      metric(language, "أصول نشطة", "Active assets", activeAssets),
+      metric(language, "تصنيفات الأصول", "Asset categories", assetCategories),
+      metric(language, "أصول مكتملة الإهلاك", "Fully depreciated assets", fullyDepreciated),
+    ],
+    alerts,
+    suggestions: [
+      language === "ar"
+        ? "إذا كان سؤالك عن الإهلاك، اذكر الأصل أو الفئة وسأشرح طريقة الحساب والأثر المحاسبي."
+        : "If your question is about depreciation, mention the asset or category and I will explain the calculation and accounting impact.",
+      language === "ar"
+        ? "الاستبعاد أو البيع يحتاج مراجعة القيمة الدفترية الحالية ومقارنتها بسعر التصرف."
+        : "Disposal or sale requires reviewing the current book value and comparing it with the disposal price.",
+    ],
+  }
+}
+
+// ─── HR / Payroll Context ─────────────────────────────────────────────────────
+async function loadHRContext(
+  supabase: SupabaseClient,
+  scope: AIContextScope,
+  language: "ar" | "en"
+): Promise<AILiveContext> {
+  const [totalEmployees, activeEmployees, payrollRuns, pendingPayroll] = await Promise.all([
+    countCompanyRows(supabase, "employees", scope),
+    countCompanyRows(supabase, "employees", scope, {
+      mutate: (query) => query.eq("status", "active"),
+    }),
+    countCompanyRows(supabase, "payroll_runs", scope),
+    countCompanyRows(supabase, "payroll_runs", scope, {
+      mutate: (query) => query.in("status", ["draft", "pending_approval"]),
+    }),
+  ])
+
+  const alerts: string[] = []
+  if (pendingPayroll > 0) {
+    alerts.push(
+      language === "ar"
+        ? `يوجد ${pendingPayroll} مسير رواتب ما زال بانتظار الاعتماد أو الصرف.`
+        : `${pendingPayroll} payroll run(s) are still pending approval or payment.`
+    )
+  }
+
+  const pageKey = String(scope.pageKey || "").toLowerCase()
+  const summary =
+    pageKey === "payroll" || pageKey === "instant_payouts"
+      ? language === "ar"
+        ? "مسير الرواتب يحسب صافي الراتب لكل موظف بعد تطبيق البدلات والاستقطاعات، ثم يمر باعتماد قبل الصرف."
+        : "The payroll run calculates each employee's net salary after allowances and deductions, then passes through approval before payment."
+      : pageKey === "attendance"
+      ? language === "ar"
+        ? "سجل الحضور والانصراف يؤثر مباشرة على حسابات الراتب والاستقطاعات المرتبطة."
+        : "Attendance records directly affect salary calculations and related deductions."
+      : language === "ar"
+        ? "بيانات الموظفين تشمل الراتب الأساسي والبدلات والدور الوظيفي وتاريخ الانضمام، وهي مدخلات مسير الرواتب."
+        : "Employee records include base salary, allowances, job role, and start date — all of which are inputs for the payroll run."
+
+  return {
+    domain: "hr",
+    summary,
+    metrics: [
+      metric(language, "إجمالي الموظفين", "Total employees", totalEmployees),
+      metric(language, "موظفون نشطون", "Active employees", activeEmployees),
+      metric(language, "مسيرات رواتب", "Payroll runs", payrollRuns),
+      metric(language, "مسيرات معلقة", "Pending payroll runs", pendingPayroll),
+    ],
+    alerts,
+    suggestions: [
+      language === "ar"
+        ? "إذا كان السؤال عن الراتب، اذكر اسم الموظف أو الفترة وسأشرح تفاصيل الحساب خطوة بخطوة."
+        : "If the question is about salary, mention the employee name or period and I will explain the calculation step by step.",
+      language === "ar"
+        ? "راجع حالة مسير الرواتب (مسودة/معتمد/مصروف) قبل تفسير أي أرقام راتب."
+        : "Review the payroll run status (draft/approved/paid) before interpreting any salary figures.",
     ],
   }
 }
