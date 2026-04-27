@@ -11,6 +11,7 @@ type QuestionBankModule =
   | "hr"
   | "governance"
   | "analytics"
+  | "manufacturing"
   | "advanced"
 
 interface QuestionBankEntry {
@@ -95,6 +96,18 @@ export const ERP_COPILOT_QUESTION_BANK: Record<QuestionBankModule, QuestionBankE
     entry("هل هناك خطأ في البيانات الحالية؟", "Is there an error in the current data?", "compliance"),
     entry("كيف أحسن الأداء في هذا القسم؟", "How can I improve performance in this section?", "analytics"),
   ],
+  manufacturing: [
+    entry("ما وظيفة قائمة المواد (BOM) وكيف أستخدمها؟", "What is the BOM and how do I use it?", "workflow"),
+    entry("ما الفرق بين قائمة المواد ومسار التصنيع؟", "What is the difference between BOM and routing?", "workflow"),
+    entry("كيف أنشئ أمر إنتاج جديد؟", "How do I create a new production order?", "workflow"),
+    entry("كيف أتحقق من توفر المواد قبل بدء الإنتاج؟", "How do I check material availability before starting production?", "workflow"),
+    entry("ما معنى حالة 'مسودة' في أمر الإنتاج؟", "What does 'draft' status mean in a production order?", "workflow"),
+    entry("متى يمكنني صرف المواد لأمر الإنتاج؟", "When can I issue materials against a production order?", "governance"),
+    entry("ما الفرق بين الكمية المطلوبة والكمية المنتجة الفعلية؟", "What is the difference between required and actual produced quantity?", "analytics"),
+    entry("كيف تُضاف الكمية المنتجة للمخزون؟", "How is produced quantity added to stock?", "workflow"),
+    entry("لماذا لا يمكنني إلغاء أمر الإنتاج؟", "Why can I not cancel the production order?", "governance"),
+    entry("ما معنى معاينة التفجير في قائمة المواد؟", "What does the BOM explosion preview mean?", "workflow"),
+  ],
 }
 
 export function buildERPQuestionBankPrompts(params: {
@@ -150,6 +163,8 @@ function resolveQuestionBankModules(
     modules.push("customers")
   } else if (isInventoryPage(pageKey) || domain === "inventory") {
     modules.push("inventory")
+  } else if (isManufacturingPage(pageKey) || domain === "manufacturing") {
+    modules.push("manufacturing")
   } else if (isFixedAssetsPage(pageKey)) {
     modules.push("fixedAssets")
   } else if (isHRPage(pageKey)) {
@@ -238,6 +253,17 @@ function isHRPage(pageKey: string) {
 
 function isGovernancePage(pageKey: string) {
   return ["settings", "branches", "cost_centers", "users", "permissions"].includes(pageKey)
+}
+
+function isManufacturingPage(pageKey: string) {
+  return [
+    "bom",
+    "bom_detail",
+    "routing",
+    "routing_detail",
+    "production_orders",
+    "production_order_detail",
+  ].includes(pageKey)
 }
 
 function isAnalyticsPage(pageKey: string) {

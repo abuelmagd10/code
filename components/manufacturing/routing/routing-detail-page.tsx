@@ -112,13 +112,13 @@ const EMPTY_CREATE_VERSION_FORM: RoutingVersionCreatePayload = {
 function getRoutingVersionLockMessage(status: RoutingVersionStatus) {
   switch (status) {
     case "active":
-      return "هذه النسخة نشطة وتشغيلية. حقول النسخة والعمليات للقراءة فقط حتى يتم إيقافها أو أرشفتها."
+      return "هذه النسخة مفعّلة وتُستخدم حالياً في التصنيع. لا يمكن تعديلها إلا بعد إيقافها أو أرشفتها."
     case "inactive":
-      return "هذه النسخة غير نشطة لكنها مقفلة للتحرير. يمكنك تفعيلها أو أرشفتها."
+      return "هذه النسخة موقوفة. يمكنك إعادة تفعيلها أو أرشفتها نهائياً."
     case "archived":
-      return "هذه النسخة مؤرشفة بالكامل ولا تقبل أي تعديل."
+      return "هذه النسخة مؤرشفة ولا تقبل أي تعديل."
     default:
-      return "هذه النسخة في حالة draft ويمكن تعديل header والعمليات."
+      return "هذه النسخة قيد الإعداد ويمكن تعديل بياناتها ومراحلها."
   }
 }
 
@@ -236,7 +236,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تحميل Routing detail",
+        title: "تعذر تحميل مسار التصنيع",
         description: error?.message || "حدث خطأ أثناء تحميل السجل",
       })
       setRouting(null)
@@ -256,7 +256,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تحميل نسخة Routing",
+        title: "تعذر تحميل بيانات النسخة",
         description: error?.message || "حدث خطأ أثناء تحميل النسخة المحددة",
       })
       resetVersionState()
@@ -288,7 +288,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       toast({
         variant: "destructive",
         title: "البيانات الأساسية مطلوبة",
-        description: "routing_code وrouting_name مطلوبان قبل الحفظ.",
+        description: "كود مسار التشغيل واسمه مطلوبان قبل الحفظ.",
       })
       return
     }
@@ -303,15 +303,15 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       })
 
       toast({
-        title: "تم حفظ Routing header",
-        description: "تم تحديث بيانات الـ header بنجاح.",
+        title: "تم حفظ بيانات مسار التصنيع",
+        description: "تم تحديث بيانات مسار التشغيل بنجاح.",
       })
 
       await refreshWorkspace(selectedVersionId)
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حفظ الـ header",
+        title: "تعذر حفظ بيانات مسار التصنيع",
         description: error?.message || "حدث خطأ أثناء الحفظ",
       })
       await refreshWorkspace(selectedVersionId)
@@ -327,15 +327,15 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       setRunningAction("delete-routing")
       await deleteRouting(routing.id)
       toast({
-        title: "تم حذف Routing",
-        description: "تم حذف السجل بنجاح.",
+        title: "تم حذف مسار التشغيل",
+        description: "تم حذف مسار التشغيل وجميع نسخه بنجاح.",
       })
       router.push("/manufacturing/routings")
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حذف Routing",
-        description: error?.message || "الحذف مرفوض بسبب النسخ الحالية أو الصلاحيات.",
+        title: "تعذر حذف مسار التشغيل",
+        description: error?.message || "لا يمكن الحذف لوجود نسخ مفعّلة أو لعدم كفاية الصلاحيات.",
       })
       setRunningAction(null)
       await refreshWorkspace(selectedVersionId)
@@ -386,8 +386,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       })
 
       toast({
-        title: "تم حفظ نسخة Routing",
-        description: "تم تحديث version header بنجاح.",
+        title: "تم حفظ بيانات النسخة",
+        description: "تم تحديث بيانات هذه النسخة بنجاح.",
       })
 
       await refreshWorkspace(selectedVersionId)
@@ -450,8 +450,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       setSavingOperations(true)
       await updateRoutingOperations(selectedVersionId, sanitizedOperations)
       toast({
-        title: "تم حفظ العمليات",
-        description: "أصبحت العمليات متزامنة مع قاعدة البيانات.",
+        title: "تم حفظ مراحل التصنيع",
+        description: "تم تحديث مراحل التصنيع وحفظها بنجاح.",
       })
       await refreshWorkspace(selectedVersionId)
     } catch (error: any) {
@@ -541,29 +541,29 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
         }
       case "delete-version":
         return {
-          title: "حذف النسخة الحالية",
-          description: `سيتم حذف v${selectedVersion?.version_no} نهائيًا إذا كانت ما زالت Draft.`,
+          title: "حذف هذه النسخة",
+          description: `سيتم حذف النسخة ${selectedVersion?.version_no} نهائياً. الحذف متاح فقط قبل تفعيل النسخة.`,
           actionLabel: "حذف النسخة",
           actionClassName: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         }
       case "activate":
         return {
-          title: "تفعيل النسخة الحالية",
-          description: `سيتم جعل v${selectedVersion?.version_no} النسخة التشغيلية Active، وقد يتم إلغاء تفعيل أي نسخة نشطة سابقة داخل نفس الـ routing.`,
+          title: "تفعيل هذه النسخة للتصنيع",
+          description: `سيتم تفعيل النسخة ${selectedVersion?.version_no} لتصبح النسخة التشغيلية الحالية. إذا كانت هناك نسخة أخرى مفعّلة، سيتم إيقافها تلقائياً.`,
           actionLabel: "تفعيل النسخة",
           actionClassName: "",
         }
       case "deactivate":
         return {
-          title: "إيقاف النسخة الحالية",
-          description: `سيتم تحويل v${selectedVersion?.version_no} إلى غير نشطة دون تعديل العمليات أو البيانات الأساسية.`,
+          title: "إيقاف هذه النسخة",
+          description: `سيتم إيقاف النسخة ${selectedVersion?.version_no} دون حذف أي بيانات. يمكن إعادة تفعيلها لاحقاً.`,
           actionLabel: "إيقاف النسخة",
           actionClassName: "",
         }
       case "archive":
         return {
-          title: "أرشفة النسخة الحالية",
-          description: `سيتم قفل v${selectedVersion?.version_no} نهائيًا وجعلها مؤرشفة وللقراءة فقط.`,
+          title: "أرشفة هذه النسخة نهائياً",
+          description: `سيتم قفل النسخة ${selectedVersion?.version_no} نهائياً ولن تتمكن من تعديلها بعد ذلك.`,
           actionLabel: "أرشفة النسخة",
           actionClassName: "bg-slate-900 text-white hover:bg-slate-800",
         }
@@ -585,7 +585,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
             <ERPPageHeader
           title={routing ? `${routing.routing_code} — ${routing.routing_name}` : "تفاصيل مسار التصنيع"}
-          description="هذه الشاشة تدير الـ header والنسخ والعمليات والتفعيل/الإيقاف/الأرشفة. جميع الأوامر الحساسة تمر عبر B6 RPCs مع reload كامل بعد كل command."
+          description="إدارة بيانات مسار التصنيع، نسخه، ومراحل التصنيع المرتبطة به."
           variant="detail"
           backHref="/manufacturing/routings"
           backLabel="العودة للقائمة"
@@ -643,7 +643,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                   <div className="grid gap-4 md:grid-cols-3">
                     <Card className="border-cyan-200 bg-cyan-50/80">
                       <CardContent className="p-4">
-                        <div className="text-sm text-slate-500">المنتج المالك</div>
+                        <div className="text-sm text-slate-500">المنتج المصنّع</div>
                         <div className="mt-1 text-base font-semibold text-slate-900">{buildProductLabel(ownerProduct)}</div>
                         {ownerProduct?.product_type ? (
                           <Badge variant="outline" className="mt-2">{ownerProduct.product_type}</Badge>
@@ -663,9 +663,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                     </Card>
                     <Card className="border-slate-200 bg-slate-50/80">
                       <CardContent className="p-4">
-                        <div className="text-sm text-slate-500">الفرع / النسخ</div>
-                        <div className="mt-1 font-mono text-xs text-slate-700">{routing.branch_id}</div>
-                        <div className="mt-2 text-base font-semibold text-slate-900">{routing.versions.length} نسخة</div>
+                        <div className="text-sm text-slate-500">عدد النسخ</div>
+                        <div className="mt-1 text-base font-semibold text-slate-900">{routing.versions.length} نسخة</div>
                       </CardContent>
                     </Card>
                   </div>
@@ -673,8 +672,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                   <div className="grid gap-6 xl:grid-cols-[280px,minmax(0,1fr)]">
                     <Card className="h-fit">
                       <CardHeader>
-                        <CardTitle className="text-base">إدارة النسخ</CardTitle>
-                        <CardDescription>اختر النسخة الحالية أو أنشئ نسخة جديدة من نفس الـ routing.</CardDescription>
+                        <CardTitle className="text-base">النسخ</CardTitle>
+                        <CardDescription>اختر النسخة التي تريد مراجعتها أو تعديلها. كل نسخة تحتوي على مراحل تصنيع مستقلة.</CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-3">
                         {routing.versions.length === 0 ? (

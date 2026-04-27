@@ -314,7 +314,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تحميل تفاصيل BOM",
+        title: "تعذر تحميل تفاصيل هيكل المواد",
         description: error?.message || "حدث خطأ أثناء تحميل السجل",
       })
       setBom(null)
@@ -334,7 +334,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تحميل نسخة BOM",
+        title: "تعذر تحميل بيانات النسخة",
         description: error?.message || "حدث خطأ أثناء تحميل النسخة المحددة",
       })
       resetVersionState()
@@ -370,7 +370,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       toast({
         variant: "destructive",
         title: "البيانات الأساسية مطلوبة",
-        description: "الكود والاسم مطلوبان قبل حفظ BOM.",
+        description: "كود هيكل المواد واسمه مطلوبان قبل الحفظ.",
       })
       return
     }
@@ -385,15 +385,15 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       })
 
       toast({
-        title: "تم حفظ BOM header",
-        description: "تم تحديث بيانات السجل الرئيسية بنجاح.",
+        title: "تم حفظ بيانات هيكل المواد",
+        description: "تم تحديث البيانات الرئيسية بنجاح.",
       })
 
       await refreshWorkspace(selectedVersionId)
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حفظ BOM",
+        title: "تعذر حفظ بيانات هيكل المواد",
         description: error?.message || "حدث خطأ أثناء الحفظ",
       })
       await refreshWorkspace(selectedVersionId)
@@ -409,15 +409,15 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       setRunningAction("delete-bom")
       await deleteBom(bom.id)
       toast({
-        title: "تم حذف BOM",
-        description: "تم حذف السجل بنجاح.",
+        title: "تم حذف هيكل المواد",
+        description: "تم حذف هيكل المواد وجميع نسخه بنجاح.",
       })
       router.push("/manufacturing/boms")
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حذف BOM",
-        description: error?.message || "الحذف مرفوض بسبب قيود النسخ أو الصلاحيات.",
+        title: "تعذر حذف هيكل المواد",
+        description: error?.message || "لا يمكن الحذف لوجود نسخ معتمدة أو لعدم كفاية الصلاحيات.",
       })
       setRunningAction(null)
       await refreshWorkspace(selectedVersionId)
@@ -448,7 +448,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       toast({
         variant: "destructive",
         title: "تعذر إنشاء النسخة",
-        description: error?.message || "حدث خطأ أثناء إنشاء BOM version",
+        description: error?.message || "حدث خطأ أثناء إنشاء نسخة هيكل المواد",
       })
     } finally {
       setRunningAction(null)
@@ -477,8 +477,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حفظ النسخة",
-        description: error?.message || "حدث خطأ أثناء حفظ header",
+        title: "تعذر حفظ بيانات النسخة",
+        description: error?.message || "حدث خطأ أثناء الحفظ",
       })
       await refreshWorkspace(selectedVersionId)
     } finally {
@@ -675,11 +675,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     switch (confirmAction) {
       case "delete-bom":
         return {
-          title: "حذف BOM",
+          title: "حذف هيكل المواد",
           description: bom
-            ? `سيتم حذف ${bom.bom_code} إذا كانت شروط الحذف متحققة. هذا الإجراء لا يمكن التراجع عنه.`
-            : "سيتم حذف BOM الحالية إذا كانت شروط الحذف متحققة.",
-          actionLabel: "حذف BOM",
+            ? `سيتم حذف ${bom.bom_code} نهائياً إذا كانت الشروط متحققة. هذا الإجراء لا يمكن التراجع عنه.`
+            : "سيتم حذف هيكل المواد إذا كانت شروط الحذف متحققة.",
+          actionLabel: "حذف هيكل المواد",
           actionClassName: "bg-red-600 hover:bg-red-700",
         }
       case "delete-version":
@@ -702,11 +702,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
         }
       case "set-default":
         return {
-          title: "تعيين النسخة الافتراضية",
+          title: "تعيين هذه النسخة كنسخة رئيسية",
           description: selectedVersion
-            ? `سيتم تعيين النسخة v${selectedVersion.version_no} كنسخة BOM الافتراضية لهذا المنتج.`
-            : "سيتم تعيين النسخة الحالية كنسخة افتراضية.",
-          actionLabel: "تعيين كافتراضية",
+            ? `سيتم تعيين النسخة ${selectedVersion.version_no} كنسخة الإنتاج الرئيسية لهذا المنتج.`
+            : "سيتم تعيين النسخة الحالية كنسخة رئيسية.",
+          actionLabel: "تعيين كنسخة رئيسية",
           actionClassName: "",
         }
       default:
@@ -737,7 +737,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
         "approve",
         () => approveBomVersion(selectedVersionId),
         "تم اعتماد النسخة",
-        "النسخة الآن Approved وجاهزة للتعيين الافتراضي أو الاستخدام الزمني."
+        "تم اعتماد هذه النسخة وأصبحت جاهزة للتفعيل والاستخدام في أوامر الإنتاج."
       )
       return
     }
@@ -747,7 +747,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
         "set-default",
         () => setDefaultBomVersion(selectedVersionId),
         "تم تعيين النسخة الافتراضية",
-        "أصبحت هذه النسخة هي الـ default operational version."
+        "أصبحت هذه النسخة هي النسخة الرئيسية المستخدمة في الإنتاج تلقائياً."
       )
     }
   }
@@ -759,15 +759,15 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
           <CompanyHeader />
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
             <ERPPageHeader
-          title={loadingBom ? "جاري تحميل BOM..." : bom ? `${bom.bom_code} — ${bom.bom_name}` : "BOM غير متاحة"}
-          description="هذه الصفحة هي workspace كاملة لإدارة BOM header والنسخ والهيكل وعمليات الاعتماد والـ explosion preview، وكل عملية حساسة فيها تمر حصريًا عبر B6 APIs الذرّية."
+          title={loadingBom ? "جاري تحميل هيكل المواد..." : bom ? `${bom.bom_code} — ${bom.bom_name}` : "هيكل المواد غير متاح"}
+          description="إدارة بيانات هيكل المواد، نسخه، ومكوناته. جميع عمليات الاعتماد والتفعيل مؤمّنة ومسجّلة."
           variant="detail"
           backHref="/manufacturing/boms"
           backLabel="العودة للقائمة"
           extra={
             <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
               <Factory className="h-3.5 w-3.5" />
-              BOM Engine
+              مديول التصنيع
             </div>
           }
           actions={
@@ -789,7 +789,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
           {loadingBom && !bom ? (
                 <div className="flex min-h-[280px] items-center justify-center text-slate-500">
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  جاري تحميل BOM workspace...
+                  جاري تحميل بيانات هيكل المواد...
                 </div>
               ) : !bom ? (
                 <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
@@ -806,9 +806,9 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                   <div className="grid gap-4 xl:grid-cols-[320px,minmax(0,1fr)]">
                     <Card className="border-slate-200 bg-white/90">
                       <CardHeader className="border-b pb-4">
-                        <CardTitle className="text-lg">نسخ BOM</CardTitle>
+                        <CardTitle className="text-lg">نسخ هيكل المواد</CardTitle>
                         <CardDescription>
-                          اختر النسخة التي تريد مراجعتها أو تعديلها. كل تبديل يعيد تحميل snapshot جديدة من الـ API.
+                          اختر النسخة التي تريد مراجعتها أو تعديلها. كل نسخة تحتوي على مكونات وبيانات إنتاج مستقلة.
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-3 p-4">
@@ -857,7 +857,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                           محرر هيكل المواد
                         </TabsTrigger>
                         <TabsTrigger value="preview" disabled={!selectedVersionId}>
-                          معاينة التفجير
+                          تحليل مكونات الإنتاج
                         </TabsTrigger>
                       </TabsList>
 
@@ -870,13 +870,13 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 رأس قائمة المواد
                               </CardTitle>
                               <CardDescription>
-                                owner product و branch و usage للقراءة فقط. التعديل هنا يقتصر على الكود والاسم والوصف والحالة.
+                                المنتج المصنّع والفرع ونوع الاستخدام للقراءة فقط. يمكن تعديل الكود والاسم والوصف والحالة.
                               </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
                               <div className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
-                                  <Label>كود BOM</Label>
+                                  <Label>كود هيكل المواد</Label>
                                   <Input
                                     value={headerForm.bom_code}
                                     onChange={(event) => setHeaderForm((current) => ({ ...current, bom_code: event.target.value }))}
@@ -884,7 +884,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   />
                                 </div>
                                 <div className="space-y-2">
-                                  <Label>اسم BOM</Label>
+                                  <Label>اسم هيكل المواد</Label>
                                   <Input
                                     value={headerForm.bom_name}
                                     onChange={(event) => setHeaderForm((current) => ({ ...current, bom_name: event.target.value }))}

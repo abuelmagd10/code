@@ -6,6 +6,7 @@ export const AI_DOMAINS = [
   "returns",
   "pricing",
   "governance",
+  "manufacturing",
   "support",
   "dashboard",
 ] as const

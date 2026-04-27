@@ -1306,6 +1306,295 @@ function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
           "Reports explain outcomes but do not replace execution or approval pages.",
         ],
       }
+    // ─── Manufacturing ───────────────────────────────────────────────────
+    case "bom":
+      return {
+        contentsAr: [
+          "قائمة بكل قوائم المواد (BOMs) المدرجة لمنتجات التصنيع.",
+          "حالة كل قائمة: نشطة أم في مرحلة الإعداد.",
+          "المنتج المرتبط بكل قائمة ومسار التصنيع المقترن بها.",
+        ],
+        contentsEn: [
+          "A list of all Bills of Materials (BOMs) registered for manufactured products.",
+          "Status of each BOM: active or still being set up.",
+          "The product linked to each BOM and its associated routing.",
+        ],
+        workflowAr: [
+          "ابحث عن قائمة المواد الخاصة بالمنتج الذي تريد تصنيعه.",
+          "افحص حالة القائمة — لا يمكن استخدامها في أمر إنتاج إلا إذا كانت نشطة.",
+          "إذا لم تجد القائمة، أنشئ واحدة وأضف المكونات والكميات.",
+          "بعد الإنشاء، افعّل القائمة وربطها بمسار التصنيع المناسب.",
+        ],
+        workflowEn: [
+          "Find the BOM for the product you want to manufacture.",
+          "Check its status — it must be active before it can be used in a production order.",
+          "If not found, create one and add the required components and quantities.",
+          "After creation, activate the BOM and link it to the correct routing.",
+        ],
+        tipsAr: [
+          "قائمة المواد تحدد مدخلات الإنتاج بالكامل؛ أي خطأ فيها ينعكس على كل أوامر الإنتاج المرتبطة بها.",
+          "يمكن وجود أكثر من قائمة مواد لنفس المنتج (نسخ مختلفة)، لكن نسخة واحدة فقط تكون نشطة.",
+        ],
+        tipsEn: [
+          "The BOM defines all production inputs; any error in it will be reflected in every linked production order.",
+          "Multiple BOMs can exist for the same product (different versions), but only one version is active.",
+        ],
+        approvalsAr: [
+          "تفعيل القائمة أو تعديلها يخضع لصلاحياتك والسياسة التشغيلية.",
+          "قائمة مواد مرتبطة بأوامر إنتاج جارية لا يمكن حذفها إلا بعد إنهاء تلك الأوامر.",
+        ],
+        approvalsEn: [
+          "Activating or editing a BOM depends on your permissions and operational policy.",
+          "A BOM linked to in-progress production orders cannot be deleted until those orders are closed.",
+        ],
+        cycleAr: [
+          "إنشاء قائمة مواد -> إضافة المكونات والكميات -> تفعيل القائمة -> ربط بمسار التصنيع -> استخدامها في أمر الإنتاج.",
+        ],
+        cycleEn: [
+          "Create BOM -> add components and quantities -> activate BOM -> link to routing -> use in production order.",
+        ],
+      }
+    case "bom_detail":
+      return {
+        contentsAr: [
+          "بيانات قائمة المواد: اسم المنتج المصنّع والوحدة والكمية الناتجة.",
+          "بنود القائمة: كل مكوّن أو مادة خام، كميتها، ووحدتها.",
+          "مسار التصنيع المرتبط بهذه القائمة إن كان محدداً.",
+          "حالة القائمة: هل هي نشطة وجاهزة للإنتاج أم لا.",
+        ],
+        contentsEn: [
+          "BOM details: the finished product name, unit, and output quantity.",
+          "BOM lines: each component or raw material, its quantity, and unit.",
+          "The linked routing if one is assigned.",
+          "BOM status: whether it is active and ready for production.",
+        ],
+        workflowAr: [
+          "راجع المنتج والكمية الناتجة في رأس القائمة.",
+          "افحص كل مكوّن: اسمه، الكمية المطلوبة لإنتاج وحدة واحدة.",
+          "تحقق من ارتباط القائمة بمسار التصنيع الصحيح.",
+          "تأكد أن الحالة 'نشطة' قبل استخدام القائمة في أي أمر إنتاج.",
+        ],
+        workflowEn: [
+          "Review the finished product and output quantity in the BOM header.",
+          "Inspect each component: its name and the quantity needed to produce one unit.",
+          "Verify the BOM is linked to the correct routing.",
+          "Confirm the status is 'active' before using the BOM in a production order.",
+        ],
+        tipsAr: [
+          "الكميات في قائمة المواد تُحسب لكل وحدة من الناتج — عند الإنتاج تُضرب في عدد الوحدات المطلوب إنتاجها.",
+          "مراجعة معاينة التفجير (البنود المطوّلة) تساعدك على رؤية الاحتياجات الكاملة قبل الإنتاج.",
+        ],
+        tipsEn: [
+          "Quantities in the BOM are per output unit — during production they are multiplied by the required quantity.",
+          "Reviewing the explosion preview (expanded lines) helps you see the full requirements before starting production.",
+        ],
+        approvalsAr: [
+          "تعديل قائمة مواد نشطة أو مرتبطة بأوامر إنتاج جارية يتطلب صلاحية خاصة.",
+        ],
+        approvalsEn: [
+          "Editing an active BOM or one linked to in-progress production orders requires special permission.",
+        ],
+        cycleAr: [
+          "قائمة مواد -> مسار تصنيع -> أمر إنتاج -> صرف مواد -> إنتاج نهائي.",
+        ],
+        cycleEn: [
+          "BOM -> routing -> production order -> material issue -> finished goods.",
+        ],
+      }
+    case "routing":
+      return {
+        contentsAr: [
+          "قائمة بكل مسارات التصنيع (Routings) المعرّفة في النظام.",
+          "اسم كل مسار والمنتج أو العملية الإنتاجية التي يغطيها.",
+          "حالة المسار وعدد العمليات (Operations) فيه.",
+        ],
+        contentsEn: [
+          "A list of all defined routings in the system.",
+          "Each routing name and the product or production process it covers.",
+          "Routing status and number of operations it contains.",
+        ],
+        workflowAr: [
+          "ابحث عن مسار التصنيع الخاص بالمنتج أو العملية التي تريد إعدادها.",
+          "افحص العمليات داخل المسار وتأكد من ترتيبها الصحيح.",
+          "إذا لم يوجد مسار، أنشئ واحداً وأضف العمليات مرتبة.",
+          "اربط المسار بقائمة المواد المناسبة قبل استخدامه في أوامر الإنتاج.",
+        ],
+        workflowEn: [
+          "Find the routing for the product or process you want to configure.",
+          "Inspect the operations inside the routing and verify their correct order.",
+          "If no routing exists, create one and add the operations in sequence.",
+          "Link the routing to the appropriate BOM before using it in production orders.",
+        ],
+        tipsAr: [
+          "مسار التصنيع هو البنية التشغيلية للإنتاج — بدونه لا يمكن تتبع التقدم خطوة بخطوة.",
+          "يمكنك ربط أكثر من قائمة مواد بنفس مسار التصنيع إذا كانت العمليات مشتركة.",
+        ],
+        tipsEn: [
+          "The routing is the operational backbone of production — without it, step-by-step progress cannot be tracked.",
+          "Multiple BOMs can share the same routing if the operations are common.",
+        ],
+        approvalsAr: [
+          "تعديل مسار مرتبط بأوامر إنتاج نشطة يتطلب مراجعة الأثر على الأوامر الجارية.",
+        ],
+        approvalsEn: [
+          "Editing a routing linked to active production orders requires reviewing the impact on in-progress orders.",
+        ],
+        cycleAr: [
+          "تعريف المسار -> إضافة العمليات بالترتيب -> ربطه بقائمة المواد -> استخدامه في أمر الإنتاج.",
+        ],
+        cycleEn: [
+          "Define routing -> add operations in sequence -> link to BOM -> use in production order.",
+        ],
+      }
+    case "routing_detail":
+      return {
+        contentsAr: [
+          "اسم مسار التصنيع والمنتج أو العملية التي يغطيها.",
+          "قائمة العمليات (Operations) مرتبة: اسم كل عملية، المحطة أو مركز العمل، ووقتها المتوقع.",
+          "حالة المسار وما إذا كان نشطاً وجاهزاً للاستخدام.",
+        ],
+        contentsEn: [
+          "Routing name and the product or process it covers.",
+          "Ordered list of operations: each operation name, work center or station, and expected time.",
+          "Routing status and whether it is active and ready for use.",
+        ],
+        workflowAr: [
+          "راجع اسم المسار والمنتج المرتبط به في رأس الصفحة.",
+          "افحص العمليات بالترتيب: من أولى العمليات حتى آخرها.",
+          "تأكد من تحديد محطة العمل أو مركز التصنيع لكل عملية.",
+          "راجع الأوقات المقدّرة لكل عملية لتخطيط الطاقة الإنتاجية.",
+        ],
+        workflowEn: [
+          "Review the routing name and its linked product in the page header.",
+          "Inspect the operations in order: from the first to the last step.",
+          "Verify that each operation has a work center or production station assigned.",
+          "Review the estimated times for each operation to plan production capacity.",
+        ],
+        tipsAr: [
+          "الترتيب في عمليات المسار حاكم — تغيير ترتيب عملية يؤثر على جدولة الإنتاج كلها.",
+          "وقت كل عملية يُستخدم لاحقًا في تقدير تكلفة الإنتاج وجدولة الطاقة.",
+        ],
+        tipsEn: [
+          "Operation order in the routing is critical — changing the order of an operation affects the entire production schedule.",
+          "Each operation's time is later used for production cost estimation and capacity scheduling.",
+        ],
+        approvalsAr: [
+          "إضافة أو حذف عملية من مسار نشط يستلزم مراجعة أثرها على الأوامر الجارية.",
+        ],
+        approvalsEn: [
+          "Adding or removing an operation from an active routing requires reviewing the impact on current orders.",
+        ],
+        cycleAr: [
+          "مسار التصنيع -> عمليات مرتبة -> ربط بقائمة المواد -> جدولة وتنفيذ أوامر الإنتاج.",
+        ],
+        cycleEn: [
+          "Routing -> ordered operations -> link to BOM -> scheduling and executing production orders.",
+        ],
+      }
+    case "production_orders":
+      return {
+        contentsAr: [
+          "قائمة بكل أوامر الإنتاج: المنتج، الكمية المطلوبة، التاريخ المتوقع، والحالة.",
+          "حالة كل أمر: مسودة، مؤكد، صادر، قيد التنفيذ، أو مكتمل.",
+          "المواد المطلوبة والمواد المصروفة فعلياً لكل أمر.",
+          "مسار التصنيع وقائمة المواد المرتبطة بكل أمر.",
+        ],
+        contentsEn: [
+          "A list of all production orders: product, required quantity, expected date, and status.",
+          "Each order status: draft, confirmed, released, in-progress, or completed.",
+          "Required materials and materials actually issued for each order.",
+          "The BOM and routing linked to each order.",
+        ],
+        workflowAr: [
+          "ابحث عن أمر الإنتاج الذي تريد متابعته أو ابدأ بإنشاء أمر جديد.",
+          "تحقق من الحالة: هل هو مسودة ينتظر التأكيد؟ أم صادر وبدأ التنفيذ؟",
+          "راجع المواد المطلوبة وتأكد من توفرها في المخزن قبل بدء الإنتاج.",
+          "تابع تقدم العمليات داخل الأمر خطوة بخطوة حسب مسار التصنيع.",
+          "عند الانتهاء، أكمل الأمر وسجّل الكمية المنتجة الفعلية.",
+        ],
+        workflowEn: [
+          "Find the production order you want to follow up on, or start by creating a new one.",
+          "Check the status: is it a draft waiting for confirmation? Or released and already started?",
+          "Review the required materials and verify their availability in stock before starting.",
+          "Track the operation progress inside the order step by step per the routing.",
+          "When finished, complete the order and record the actual quantity produced.",
+        ],
+        tipsAr: [
+          "حالة 'مسودة' تعني أن الأمر لم يُصدر بعد ولا يمكن صرف مواد منه.",
+          "حالة 'صادر' أو 'قيد التنفيذ' تعني أن الإنتاج بدأ فعلاً وصرف المواد مسموح.",
+          "راجع المواد المتاحة في المخزون قبل إصدار الأمر لتجنب توقف الإنتاج.",
+        ],
+        tipsEn: [
+          "'Draft' status means the order has not been released yet and no materials can be issued.",
+          "'Released' or 'In-progress' means production has actually started and material issuance is allowed.",
+          "Check material availability in stock before releasing the order to avoid production stoppages.",
+        ],
+        approvalsAr: [
+          "تأكيد وإصدار أمر الإنتاج قد يتطلب اعتماداً إدارياً حسب سياسة الشركة.",
+          "إلغاء أمر قيد التنفيذ يستلزم مراجعة أثره على المواد المصروفة والمخزون.",
+        ],
+        approvalsEn: [
+          "Confirming and releasing a production order may require management approval depending on company policy.",
+          "Cancelling an in-progress order requires reviewing its impact on issued materials and stock.",
+        ],
+        cycleAr: [
+          "مسودة أمر إنتاج -> تأكيد -> إصدار -> تنفيذ عمليات -> صرف مواد -> إنتاج مكتمل -> إضافة للمخزون.",
+        ],
+        cycleEn: [
+          "Production order draft -> confirm -> release -> execute operations -> issue materials -> completed -> add to stock.",
+        ],
+      }
+    case "production_order_detail":
+      return {
+        contentsAr: [
+          "بيانات أمر الإنتاج: المنتج، الكمية المطلوبة، تاريخ البدء المتوقع والانتهاء، والحالة.",
+          "قائمة المواد المطلوبة لهذا الأمر ومقارنتها بالمصروف الفعلي.",
+          "عمليات التصنيع المرتبطة بهذا الأمر وحالة كل منها.",
+          "سجل الكميات المنتجة وما تم إضافته للمخزون.",
+        ],
+        contentsEn: [
+          "Production order details: product, required quantity, expected start and end dates, and status.",
+          "List of materials required for this order and how they compare to what was actually issued.",
+          "Manufacturing operations linked to this order and the status of each one.",
+          "Record of quantities produced and what was added to stock.",
+        ],
+        workflowAr: [
+          "ابدأ بقراءة رأس أمر الإنتاج: المنتج، الكمية، والحالة.",
+          "راجع المواد المطلوبة مقابل المتاح في المخزون — وجود نقص يعني التوقف.",
+          "تابع العمليات الإنتاجية وسجّل ما اكتمل منها.",
+          "عند الانتهاء من الإنتاج، أكمل الأمر وسجّل الكمية الفعلية المنتجة.",
+          "الكمية المنتجة تُضاف تلقائياً للمخزون عند إكمال الأمر.",
+        ],
+        workflowEn: [
+          "Start by reading the production order header: product, quantity, and status.",
+          "Review required materials against what is available in stock — any shortage means a stoppage.",
+          "Track the production operations and record each completed step.",
+          "When production is done, complete the order and record the actual quantity produced.",
+          "Produced quantity is automatically added to stock when the order is completed.",
+        ],
+        tipsAr: [
+          "الفرق بين الكمية المطلوبة والكمية المنتجة الفعلية هو ما تُبنى عليه كفاءة الإنتاج.",
+          "إذا صُرفت مواد أكثر مما تتطلبه القائمة، يظهر فارق في بطاقة المواد.",
+        ],
+        tipsEn: [
+          "The difference between required and actually produced quantities is the basis for production efficiency.",
+          "If more materials were issued than the BOM requires, a variance will appear on the material card.",
+        ],
+        approvalsAr: [
+          "إكمال أمر الإنتاج أو إلغاؤه يعتمد على صلاحياتك وحالة الأمر.",
+          "الكميات المصروفة لا يمكن عكسها بسهولة بعد إكمال الأمر.",
+        ],
+        approvalsEn: [
+          "Completing or cancelling a production order depends on your permissions and the order status.",
+          "Issued quantities cannot easily be reversed after the order is completed.",
+        ],
+        cycleAr: [
+          "أمر إنتاج -> صرف مواد -> تنفيذ عمليات -> كمية منتجة -> مخزون منتج نهائي.",
+        ],
+        cycleEn: [
+          "Production order -> material issue -> execute operations -> produced quantity -> finished goods stock.",
+        ],
+      }
     default:
       if (context.domain === "sales") {
         return {
@@ -1697,6 +1986,24 @@ function buildNextActions(
         confidenceScore: 87,
       })
       break
+    case "manufacturing":
+      actions.push({
+        title:
+          language === "ar"
+            ? "مراجعة حالة الإنتاج وقائمة المواد"
+            : "Review production status and BOM",
+        summary:
+          language === "ar"
+            ? "ابدأ بتأكيد قائمة المواد ومسار التصنيع ثم افحص توفر المواد في المخزون قبل إصدار أمر الإنتاج."
+            : "Start by verifying the BOM and routing, then check material availability in stock before releasing the production order.",
+        prompt:
+          language === "ar"
+            ? "ما الخطوة التالية في دورة التصنيع الحالية؟"
+            : "What is the next step in the current manufacturing cycle?",
+        severity: "info",
+        confidenceScore: 90,
+      })
+      break
     default:
       actions.push({
         title:
@@ -1901,6 +2208,44 @@ function buildPredictedActions(context: AICopilotContext): AIPredictedAction[] {
         })
       }
       break
+    case "manufacturing": {
+      const openOrders = readMetricCount(context, ["أوامر إنتاج مفتوحة", "Open production orders"])
+      const inProgress = readMetricCount(context, ["أوامر قيد التنفيذ", "In-progress orders"])
+      if (openOrders > 0 || inProgress > 0) {
+        predictions.push({
+          title:
+            language === "ar"
+              ? "المتوقع التالي: متابعة أوامر الإنتاج"
+              : "Predicted next step: follow up on production orders",
+          summary:
+            language === "ar"
+              ? "توجد أوامر إنتاج مفتوحة أو قيد التنفيذ تحتاج متابعة وتأكيداً من توفر المواد."
+              : "There are open or in-progress production orders that need follow-up and material availability confirmation.",
+          prompt:
+            language === "ar"
+              ? "ما أوامر الإنتاج المفتوحة التي تحتاج متابعة؟"
+              : "Which production orders need follow-up now?",
+          confidenceScore: 90,
+        })
+      } else {
+        predictions.push({
+          title:
+            language === "ar"
+              ? "المتوقع التالي: مراجعة قوائم المواد"
+              : "Predicted next step: review BOMs",
+          summary:
+            language === "ar"
+              ? "لا توجد أوامر مفتوحة حالياً — الخطوة المحتملة هي مراجعة قوائم المواد أو إنشاء أمر جديد."
+              : "No open orders currently. The likely next step is reviewing BOMs or creating a new production order.",
+          prompt:
+            language === "ar"
+              ? "كيف أنشئ أمر إنتاج جديد خطوة بخطوة؟"
+              : "How do I create a new production order step by step?",
+          confidenceScore: 78,
+        })
+      }
+      break
+    }
     default:
       predictions.push({
         title:
@@ -1986,6 +2331,18 @@ function buildQuickPrompts(
         language === "ar"
           ? "اشرح لي دورة الشراء والاعتمادات المرتبطة بهذه الصفحة"
           : "Explain the purchase cycle and approvals related to this page.",
+      category: "workflow",
+    })
+  } else if (context.domain === "manufacturing") {
+    prompts.push({
+      label:
+        language === "ar"
+          ? "اشرح لي دورة التصنيع في هذه الصفحة"
+          : "Explain the manufacturing cycle on this page",
+      prompt:
+        language === "ar"
+          ? "اشرح لي دورة التصنيع وخطوات العمل المرتبطة بهذه الصفحة"
+          : "Explain the manufacturing cycle and workflow steps related to this page.",
       category: "workflow",
     })
   } else if (context.domain === "sales") {
@@ -2353,6 +2710,8 @@ function buildDomainCapabilityLine(context: AICopilotContext) {
         return "داخل المخزون أساعدك على فهم أثر الحركات المعلقة، النواقص، والارتباط بالفواتير والمرتجعات."
       case "accounting":
         return "داخل المحاسبة أوضح الأثر المحاسبي، القيود، والذمم المرتبطة بالعملية."
+      case "manufacturing":
+        return "داخل التصنيع أشرح لك قائمة المواد (BOM)، مسار التصنيع، حالة أمر الإنتاج، ومتطلبات المواد من الخامة حتى المنتج النهائي."
       case "governance":
         return "داخل الحوكمة أوضح من يستطيع ماذا، وما هي حدود الدور والفرع والمخزن."
       default:
@@ -2382,6 +2741,8 @@ function buildDomainCapabilityLine(context: AICopilotContext) {
       return "Inside inventory, I can help you understand pending movements, shortages, and links to invoices and returns."
     case "accounting":
       return "Inside accounting, I can explain accounting impact, journal behavior, and receivable implications."
+    case "manufacturing":
+      return "Inside manufacturing, I can explain the BOM, routing, production order status, material requirements, and the manufacturing cycle from raw material to finished goods."
     case "governance":
       return "Inside governance, I can clarify who can do what and how role, branch, and warehouse scope apply."
     default:

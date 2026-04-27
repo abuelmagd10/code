@@ -208,6 +208,18 @@ function inferDomainFromPageKey(pageKey?: string | null): AIDomain {
   }
   if (["employees", "attendance", "instant_payouts", "shareholders"].includes(key)) return "support"
   if (["settings", "branches", "cost_centers"].includes(key)) return "governance"
+  if (
+    [
+      "bom",
+      "bom_detail",
+      "routing",
+      "routing_detail",
+      "production_orders",
+      "production_order_detail",
+    ].includes(key)
+  ) {
+    return "manufacturing"
+  }
 
   return "support"
 }
@@ -261,6 +273,12 @@ function mapPageKeyToResource(pageKey?: string | null): string | null {
     settings: "settings",
     branches: "branches",
     cost_centers: "cost_centers",
+    bom: "bom",
+    bom_detail: "bom",
+    routing: "routing",
+    routing_detail: "routing",
+    production_orders: "production_orders",
+    production_order_detail: "production_orders",
   }
 
   return map[key] || key
@@ -352,6 +370,8 @@ async function loadLiveContext(
         return await loadDashboardContext(supabase, scope, language)
       case "governance":
         return await loadGovernanceContext(supabase, scope, language)
+      case "manufacturing":
+        return await loadManufacturingContext(supabase, scope, language)
       default:
         return await loadSupportContext(supabase, scope, language)
     }
@@ -761,6 +781,79 @@ async function loadGovernanceContext(
       language === "ar"
         ? "لأي سؤال عن من يعتمد ماذا، اذكر العملية وسأشرح التسلسل دون تجاوز الحوكمة."
         : "For any question about who approves what, mention the workflow and I will explain the sequence without bypassing governance.",
+    ],
+  }
+}
+
+async function loadManufacturingContext(
+  supabase: SupabaseClient,
+  scope: AIContextScope,
+  language: "ar" | "en"
+): Promise<AILiveContext> {
+  const pageKey = String(scope.pageKey || "").toLowerCase()
+
+  const [totalBoms, activeBoms, totalRoutings, openOrders, inProgressOrders] = await Promise.all([
+    countCompanyRows(supabase, "boms", scope),
+    countCompanyRows(supabase, "boms", scope, {
+      mutate: (query) => query.eq("status", "active"),
+    }),
+    countCompanyRows(supabase, "routings", scope),
+    countCompanyRows(supabase, "production_orders", scope, {
+      mutate: (query) => query.in("status", ["draft", "confirmed", "released"]),
+    }),
+    countCompanyRows(supabase, "production_orders", scope, {
+      mutate: (query) => query.eq("status", "in_progress"),
+    }),
+  ])
+
+  const alerts: string[] = []
+  if (openOrders > 0) {
+    alerts.push(
+      language === "ar"
+        ? `يوجد ${openOrders} أوامر إنتاج مفتوحة أو معلقة تحتاج متابعة.`
+        : `${openOrders} production orders are open or pending and need follow-up.`
+    )
+  }
+
+  const summaryByPage: Record<string, Record<"ar" | "en", string>> = {
+    bom: {
+      ar: "قائمة المواد (BOM) تحدد كل مدخلات تصنيع المنتج: الخامات والمكونات والكميات. بدونها لا يمكن إصدار أمر إنتاج.",
+      en: "The Bill of Materials (BOM) defines every input needed to manufacture a product: raw materials, components, and quantities. Without it, no production order can be issued.",
+    },
+    routing: {
+      ar: "مسار التصنيع (Routing) يحدد تسلسل العمليات: ماذا يحدث أولاً، وأين، وكم يستغرق. هو خريطة الإنتاج التشغيلية.",
+      en: "The Routing defines the sequence of operations: what happens first, where, and how long it takes. It is the operational production map.",
+    },
+    production_orders: {
+      ar: "أوامر الإنتاج هي الأوامر الرسمية لبدء التصنيع الفعلي. يعكس كل أمر حجم الكمية المطلوبة وحالة التقدم والمواد المصروفة.",
+      en: "Production orders are the formal instructions to start actual manufacturing. Each order reflects the required quantity, progress state, and materials consumed.",
+    },
+  }
+
+  const domainKey = pageKey.startsWith("bom")
+    ? "bom"
+    : pageKey.startsWith("routing")
+    ? "routing"
+    : "production_orders"
+
+  return {
+    domain: "manufacturing",
+    summary: summaryByPage[domainKey]?.[language] ?? summaryByPage["production_orders"][language],
+    metrics: [
+      metric(language, "قوائم مواد إجمالية", "Total BOMs", totalBoms),
+      metric(language, "قوائم مواد نشطة", "Active BOMs", activeBoms),
+      metric(language, "مسارات التصنيع", "Routings", totalRoutings),
+      metric(language, "أوامر إنتاج مفتوحة", "Open production orders", openOrders),
+      metric(language, "أوامر قيد التنفيذ", "In-progress orders", inProgressOrders),
+    ],
+    alerts,
+    suggestions: [
+      language === "ar"
+        ? "ابدأ دائمًا بمراجعة قائمة المواد (BOM) ومسار التصنيع قبل إصدار أمر الإنتاج."
+        : "Always review the BOM and routing before issuing a production order.",
+      language === "ar"
+        ? "إذا كان سؤالك عن أمر إنتاج محدد، اذكر رقمه أو المنتج المصنّع للحصول على شرح أدق."
+        : "If your question is about a specific production order, mention its number or product for a more precise answer.",
     ],
   }
 }

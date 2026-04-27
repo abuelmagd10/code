@@ -368,7 +368,7 @@ export function RoutingListPage() {
                               </div>
                             </TableCell>
                             <TableCell className="align-top text-sm text-slate-600">
-                              <span className="font-mono text-xs">{routing.branch_id}</span>
+                              <span className="text-slate-400">—</span>
                             </TableCell>
                             <TableCell className="align-top">
                               <Badge variant="outline">
@@ -427,7 +427,7 @@ export function RoutingListPage() {
                 <Input
                   value={createForm.product_id}
                   onChange={(event) => setCreateForm((current) => ({ ...current, product_id: event.target.value }))}
-                  placeholder="انسخ ID المنتج المصنّع من صفحة المنتجات"
+                  placeholder="أدخل كود أو رقم المنتج المراد تصنيعه"
                 />
               </div>
               <div className="space-y-2">

@@ -377,9 +377,6 @@ export function ProductionOrderListPage() {
                               <Badge variant={getProductionOrderStatusVariant(order.status)}>
                                 {getProductionOrderStatusLabel(order.status, appLang)}
                               </Badge>
-                              <div className="text-xs text-slate-500">
-                                {copy.detail.branchId}: <span className="font-mono">{order.branch_id}</span>
-                              </div>
                             </div>
                           </TableCell>
                           <TableCell className="align-top text-sm text-slate-700">

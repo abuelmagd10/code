@@ -263,7 +263,7 @@ const COPY = {
       createValidationDescription:
         "يجب تحديد: المنتج، هيكل المواد، نسخة الهيكل، مسار التشغيل، نسخة المسار، والكمية المخططة قبل الإنشاء.",
       createSuccessTitle: "تم إنشاء أمر الإنتاج",
-      createSuccessDescription: (orderNo: string) => `تم إنشاء الأمر ${orderNo} مع لقطة أولية للعمليات.`,
+      createSuccessDescription: (orderNo: string) => `تم إنشاء الأمر ${orderNo} وهو جاهز لمراجعة البيانات وبدء التنفيذ.`,
       createErrorTitle: "تعذر إنشاء أمر الإنتاج",
       createErrorDescription: "حدث خطأ أثناء الإنشاء",
       fields: {
@@ -284,7 +284,7 @@ const COPY = {
       },
     },
     detail: {
-      pill: "لقطة التنفيذ",
+      pill: "مديول التصنيع",
       title: "تفاصيل أمر الإنتاج",
       description:
         "تُحدَّث هذه الصفحة تلقائيًا بعد كل أمر تنفيذي. البيانات المعروضة هي المصدر الوحيد للحقيقة.",
@@ -350,7 +350,7 @@ const COPY = {
       saveErrorTitle: "تعذر حفظ البيانات",
       saveErrorDescription: "حدث خطأ أثناء حفظ بيانات الأمر",
       regenerateSuccessTitle: "تمت إعادة توليد العمليات",
-      regenerateSuccessDescription: "تم تحديث المراجع وإعادة بناء لقطة العمليات ضمن عملية واحدة.",
+      regenerateSuccessDescription: "تم تحديث المراجع وإعادة بناء مراحل التصنيع بنجاح.",
       regenerateErrorTitle: "تعذر إعادة توليد العمليات",
       regenerateErrorDescription: "حدث خطأ أثناء تنفيذ الأمر",
       releaseSuccessTitle: "تم إصدار الأمر",
