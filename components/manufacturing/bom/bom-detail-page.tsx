@@ -1197,14 +1197,14 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           onClick={() => removeLine(lineIndex)}
                                           disabled={!structureEditable || !canUpdate}
                                         >
-                                          حذف Line
+                                          حذف هذا المكوّن
                                         </Button>
                                       </div>
                                     </CardHeader>
                                     <CardContent className="space-y-4">
                                       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                                         <div className="space-y-2">
-                                          <Label>رقم السطر</Label>
+                                          <Label>الترتيب</Label>
                                           <Input
                                             type="number"
                                             min="1"
@@ -1214,7 +1214,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           />
                                         </div>
                                         <div className="space-y-2">
-                                          <Label>نوع السطر</Label>
+                                          <Label>نوع الإضافة</Label>
                                           <select
                                             className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
                                             value={line.line_type}
@@ -1229,7 +1229,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           </select>
                                         </div>
                                         <div className="space-y-2 xl:col-span-2">
-                                          <Label>المكوّن / المنتج الناتج</Label>
+                                          <Label>المادة / المنتج</Label>
                                           <select
                                             className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
                                             value={line.component_product_id}
@@ -1248,7 +1248,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
 
                                       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                                         <div className="space-y-2">
-                                          <Label>الكمية لكل وحدة</Label>
+                                          <Label>الكمية اللازمة لتصنيع وحدة واحدة</Label>
                                           <Input
                                             type="number"
                                             min="0.0001"
@@ -1271,7 +1271,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           />
                                         </div>
                                         <div className="space-y-2">
-                                          <Label>وحدة الصرف</Label>
+                                          <Label>وحدة القياس عند الصرف للمصنع</Label>
                                           <Input
                                             value={line.issue_uom || ""}
                                             onChange={(event) => updateLine(lineIndex, { issue_uom: event.target.value })}
@@ -1285,8 +1285,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             disabled={!structureEditable || !canUpdate}
                                           />
                                           <div className="space-y-1">
-                                            <div className="font-medium text-slate-900">سطر اختياري</div>
-                                            <div className="text-xs text-slate-500">توضيح بصري فقط. الحماية النهائية تبقى في DB.</div>
+                                            <div className="font-medium text-slate-900">هذه المادة غير إلزامية</div>
+                                            <div className="text-xs text-slate-500">يمكن إتمام التصنيع بدونها إذا لم تتوفر في المخزن.</div>
                                           </div>
                                         </div>
                                       </div>
@@ -1307,7 +1307,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           <div>
                                             <div className="text-sm font-semibold text-slate-900">المواد البديلة</div>
                                             <div className="text-xs text-slate-500">
-                                              allowed only for component lines. DB سيمنع أي حالة غير صالحة حتى لو حاولت الواجهة إرسالها.
+                                               في حال نقص هذه المادة من المخزن، يستخدم النظام إحدى هذه البدائل تلقائياً.
                                             </div>
                                           </div>
                                           <Button

@@ -907,7 +907,6 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                                         </TableCell>
                                         <TableCell className="align-top text-sm text-slate-700">
                                           <div>{buildWorkCenterLabel(operation.work_center, appLang)}</div>
-                                          <div className="text-xs text-slate-500">{operation.work_center_id}</div>
                                           {operation.quality_checkpoint_required ? (
                                             <Badge variant="outline" className="mt-2">
                                               {copy.common.qualityCheckpoint}
