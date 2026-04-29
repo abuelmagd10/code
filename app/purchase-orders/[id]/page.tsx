@@ -777,13 +777,13 @@ export default function PurchaseOrderDetailPage() {
                   <ShoppingCart className="h-5 w-5 sm:h-6 sm:w-6 flex-shrink-0" />
                   {po.po_number || (appLang === 'en' ? 'Purchase Order' : 'أمر الشراء')}
                 </h1>
-                <div className="mt-1">{getStatusBadge(actualStatus)}</div>
+                <div className="mt-1" data-ai-help="purchase_orders.detail_status">{getStatusBadge(actualStatus)}</div>
               </div>
             </div>
             <div className="flex gap-2 flex-wrap">
               {/* Print Button */}
               {permUpdate && (
-                <Button variant="outline" onClick={handlePrint} className="dark:border-gray-600 dark:text-gray-300">
+                <Button variant="outline" onClick={handlePrint} className="dark:border-gray-600 dark:text-gray-300" data-ai-help="purchase_orders.print_button">
                   <Printer className="h-4 w-4 mr-2" />
                   <span suppressHydrationWarning>{appLang === 'en' ? 'Print' : 'طباعة'}</span>
                 </Button>
@@ -794,7 +794,7 @@ export default function PurchaseOrderDetailPage() {
                 (userContext?.role === 'admin' || userContext?.role === 'owner' || userContext?.role === 'general_manager') && 
                 (po.status === 'approved' || po.status === 'partially_received' || po.status === 'received' || po.status === 'partially_billed') && (
                 <Link href={`/bills/new?from_po=${poId}`}>
-                  <Button className="bg-green-600 hover:bg-green-700 text-white">
+                  <Button className="bg-green-600 hover:bg-green-700 text-white" data-ai-help="purchase_orders.create_bill_button">
                     <Plus className="h-4 w-4 mr-1" />
                     {appLang === 'en' ? 'Create Bill' : 'إنشاء فاتورة'}
                   </Button>
@@ -806,7 +806,7 @@ export default function PurchaseOrderDetailPage() {
                 ((userContext?.role === 'admin' || userContext?.role === 'owner' || userContext?.role === 'general_manager') ||
                 (po.status === 'rejected')) && (
                 <Link href={`/purchase-orders/${poId}/edit`}>
-                  <Button variant="outline">
+                  <Button variant="outline" data-ai-help="purchase_orders.edit_button">
                     <Pencil className="h-4 w-4 ml-1" />
                     {appLang === 'en' ? 'Edit' : 'تعديل'}
                   </Button>
@@ -815,14 +815,14 @@ export default function PurchaseOrderDetailPage() {
               )}
               {/* 🔐 ERP Access Control: زر الإرسال - فقط للمسؤولين والمدراء */}
               {po.status === "draft" && canSendOrder && (
-                <Button onClick={() => changeStatus("sent_to_vendor")} variant="outline" disabled={isSending}>
+                <Button onClick={() => changeStatus("sent_to_vendor")} variant="outline" disabled={isSending} data-ai-help="purchase_orders.mark_sent_button">
                   {isSending ? <Loader2 className="h-4 w-4 ml-1 animate-spin" /> : po.suppliers?.email ? <Mail className="h-4 w-4 ml-1" /> : <Send className="h-4 w-4 ml-1" />}
                   {appLang === 'en' ? 'Mark as Sent' : 'تحديد كمرسل'}
                 </Button>
               )}
               {/* 🔐 ERP Access Control: زر الاستلام - للموظف الذي أنشأ الطلب أو المسؤولين */}
               {po.status === "sent_to_vendor" && canReceiveOrder && (
-                <Button onClick={() => changeStatus("received")} className="bg-blue-600 hover:bg-blue-700" disabled={isSending}>
+                <Button onClick={() => changeStatus("received")} className="bg-blue-600 hover:bg-blue-700" disabled={isSending} data-ai-help="purchase_orders.receive_items_button">
                   <Package className="h-4 w-4 ml-1" />
                   {appLang === 'en' ? 'Receive Items' : 'استلام البضاعة'}
                 </Button>
@@ -830,11 +830,11 @@ export default function PurchaseOrderDetailPage() {
               {/* 🔐 ERP Access Control: Approval actions */}
               {po.status === "pending_approval" && (userContext?.role === 'admin' || userContext?.role === 'owner' || userContext?.role === 'general_manager') && (
                 <>
-                  <Button onClick={handleApprovePO} className="bg-green-600 hover:bg-green-700 text-white" disabled={isSending}>
+                  <Button onClick={handleApprovePO} className="bg-green-600 hover:bg-green-700 text-white" disabled={isSending} data-ai-help="purchase_orders.approve_button">
                     <CheckCircle className="h-4 w-4 mr-1" />
                     {appLang === 'en' ? 'Approve' : 'اعتماد'}
                   </Button>
-                  <Button onClick={() => setIsRejectDialogOpen(true)} variant="destructive" disabled={isSending}>
+                  <Button onClick={() => setIsRejectDialogOpen(true)} variant="destructive" disabled={isSending} data-ai-help="purchase_orders.reject_button">
                     <Ban className="h-4 w-4 mr-1" />
                     {appLang === 'en' ? 'Reject' : 'رفض'}
                   </Button>
@@ -845,7 +845,7 @@ export default function PurchaseOrderDetailPage() {
 
           <div ref={printContentRef} className="space-y-6">
             {/* Summary Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 no-print">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 no-print" data-ai-help="purchase_orders.summary_cards">
               <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
@@ -894,7 +894,7 @@ export default function PurchaseOrderDetailPage() {
 
             {/* Order Info & Supplier */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-              <Card className="dark:bg-gray-800 dark:border-gray-700">
+              <Card className="dark:bg-gray-800 dark:border-gray-700" data-ai-help="purchase_orders.order_information">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base dark:text-white flex items-center gap-2">
                     <ShoppingCart className="h-4 w-4" />
@@ -939,7 +939,7 @@ export default function PurchaseOrderDetailPage() {
                 </CardContent>
               </Card>
 
-              <Card className="dark:bg-gray-800 dark:border-gray-700">
+              <Card className="dark:bg-gray-800 dark:border-gray-700" data-ai-help="purchase_orders.supplier">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base dark:text-white">{appLang === 'en' ? 'Supplier' : 'المورد'}</CardTitle>
                 </CardHeader>
@@ -988,7 +988,7 @@ export default function PurchaseOrderDetailPage() {
                   </TabsList>
                 </div>
 
-                <TabsContent value="items" className="p-4 m-0">
+                <TabsContent value="items" className="p-4 m-0" data-ai-help="purchase_orders.items_tab">
                   <div className="overflow-auto">
                     <table className="w-full text-sm">
                       <thead>
@@ -1031,7 +1031,7 @@ export default function PurchaseOrderDetailPage() {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="bills" className="p-4 m-0">
+                <TabsContent value="bills" className="p-4 m-0" data-ai-help="purchase_orders.linked_bills_tab">
                   {linkedBills.length === 0 ? (
                     <div className="text-center py-8">
                       <FileText className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
@@ -1067,7 +1067,7 @@ export default function PurchaseOrderDetailPage() {
                   )}
                 </TabsContent>
 
-                <TabsContent value="payments" className="p-4 m-0">
+                <TabsContent value="payments" className="p-4 m-0" data-ai-help="purchase_orders.payments_tab">
                   {linkedPayments.length === 0 ? (
                     <div className="text-center py-8">
                       <CreditCard className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
@@ -1104,7 +1104,7 @@ export default function PurchaseOrderDetailPage() {
                   )}
                 </TabsContent>
 
-                <TabsContent value="returns" className="p-4 m-0">
+                <TabsContent value="returns" className="p-4 m-0" data-ai-help="purchase_orders.returns_tab">
                   {linkedReturns.length === 0 ? (
                     <div className="text-center py-8">
                       <RotateCcw className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
@@ -1151,6 +1151,7 @@ export default function PurchaseOrderDetailPage() {
             <div className="space-y-2">
               <Label>{appLang === 'en' ? 'Reason for Rejection' : 'سبب الرفض'} *</Label>
               <Textarea
+                data-ai-help="purchase_orders.rejection_reason"
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
                 placeholder={appLang === 'en' ? 'Enter the reason for rejecting this order...' : 'أدخل سبب رفض هذا الأمر...'}
@@ -1162,7 +1163,7 @@ export default function PurchaseOrderDetailPage() {
             <Button variant="outline" onClick={() => setIsRejectDialogOpen(false)} disabled={isSending}>
               {appLang === 'en' ? 'Cancel' : 'إلغاء'}
             </Button>
-            <Button variant="destructive" onClick={handleRejectPO} disabled={isSending || !rejectionReason.trim()}>
+            <Button variant="destructive" onClick={handleRejectPO} disabled={isSending || !rejectionReason.trim()} data-ai-help="purchase_orders.confirm_rejection_button">
               {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
               {appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض'}
             </Button>

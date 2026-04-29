@@ -4,6 +4,7 @@ import {
   type AICopilotContext,
 } from "@/lib/ai/context-builder"
 import { getERPQuestionBankPhrases } from "@/lib/ai/question-bank"
+import { buildResponseStyleInstructions } from "@/lib/ai/response-style-standard"
 
 export type AIProviderName = "ollama" | "openai" | "fallback"
 
@@ -659,14 +660,13 @@ function buildProviderPrompt(request: AIProviderReplyRequest) {
         ? "- لا توجد خطوة متوقعة واضحة حالياً."
         : "- No clear predicted next step is currently available."
 
-  const guideBlock = limitText(
-    buildGuideContextBlock(context.guide, context.language),
-    1600
-  )
+  const guideBlock = limitText(buildGuideContextBlock(context.guide, context.language), 1600)
+  const uiHelpBlock = limitText(context.uiHelpContextBlock, 1600)
   const liveSummary = limitText(context.liveContext.summary, 700)
   const governanceSummary = limitText(context.governanceSummary, 900)
   const referenceAnswer = limitText(fallbackAnswer, 1800)
   const normalizedUserMessage = limitText(userMessage, 900)
+  const styleInstructions = buildResponseStyleInstructions(context.language, "full")
 
   if (context.language === "ar") {
     return [
@@ -674,10 +674,11 @@ function buildProviderPrompt(request: AIProviderReplyRequest) {
       "يجب أن تبقى كل الإجابات للقراءة فقط.",
       "ممنوع تماماً أن تدعي أنك نفذت أي عملية أو اعتمدت أو عدلت أي بيانات.",
       "يجب أن تعتمد فقط على السياق التالي، وألا تختلق أي بيانات غير موجودة.",
+      `معيار أسلوب الرد:\n${styleInstructions}`,
       "إذا كان السؤال اجتماعياً أو تحية، رد بشكل طبيعي ومهني ثم اشرح باختصار كيف يمكنك المساعدة داخل الصفحة الحالية.",
       "إذا كان السؤال عن الصلاحيات، ركز على ما يمكن للمستخدم فعله وفق الدور والصلاحيات الحالية.",
       "إذا كان السؤال عن الخطوات، استخدم دليل الصفحة أولاً ثم اربطه بالبيانات الحية والحوكمة.",
-      "أجب بالعربية الواضحة والمنظمة، وتجنب تكرار نفس القالب إذا لم يكن مناسبًا.",
+      "أجب بالعربية الطبيعية الواضحة، وتجنب تكرار نفس القالب إذا لم يكن مناسبًا.",
       "اجعل الإجابة مختصرة نسبيًا ومباشرة، ولا تتجاوز ما يحتاجه المستخدم.",
       `السياق الحي:\n${liveSummary}`,
       `الحوكمة الحالية:\n${governanceSummary}`,
@@ -686,10 +687,13 @@ function buildProviderPrompt(request: AIProviderReplyRequest) {
       `إجراءات مقترحة:\n${nextActionsBlock}`,
       `الخطوة التالية المتوقعة:\n${predictedBlock}`,
       `دليل الصفحة:\n${guideBlock}`,
+      uiHelpBlock
+        ? `مساعدة الحقول والأزرار والحالات:\n${uiHelpBlock}`
+        : "لا توجد مساعدة تفصيلية لعناصر الصفحة الحالية بعد.",
       history ? `آخر المحادثة:\n${history}` : "لا توجد محادثة سابقة مهمة.",
       `السؤال الحالي:\n${normalizedUserMessage}`,
       `إجابة مرجعية محلية منضبطة يمكنك تحسين صياغتها دون الخروج عن مضمونها:\n${referenceAnswer}`,
-      "أجب الآن بإجابة مفيدة، طبيعية، ومختصرة نسبيًا، مع الحفاظ على الدقة والحوكمة.",
+      "أجب الآن بإجابة مفيدة، طبيعية، ومختصرة نسبيًا، مع الحفاظ على الدقة والحوكمة وخلاصة سهلة عند الحاجة.",
     ].join("\n\n")
   }
 
@@ -698,6 +702,7 @@ function buildProviderPrompt(request: AIProviderReplyRequest) {
     "All answers must remain read-only.",
     "Never claim that you executed, approved, posted, or modified any real data.",
     "Use only the grounded ERP context below and do not invent data.",
+    `Response style standard:\n${styleInstructions}`,
     "If the question is social or a greeting, answer naturally and then explain briefly how you can help on the current page.",
     "If the question is about permissions, focus on what the current role and permissions allow.",
     "If the question is about workflow, use the page guide first and then connect it to live ERP context and governance.",
@@ -710,10 +715,13 @@ function buildProviderPrompt(request: AIProviderReplyRequest) {
     `Suggested actions:\n${nextActionsBlock}`,
     `Predicted next step:\n${predictedBlock}`,
     `Page guide:\n${guideBlock}`,
+    uiHelpBlock
+      ? `Field, button, and status help:\n${uiHelpBlock}`
+      : "No detailed element-level help is available for this page yet.",
     history ? `Recent conversation:\n${history}` : "No important previous conversation.",
     `Current question:\n${normalizedUserMessage}`,
     `Grounded local reference answer you may refine without changing its meaning:\n${referenceAnswer}`,
-    "Respond now with a useful, natural, and relatively concise answer while preserving accuracy and governance.",
+    "Respond now with a useful, natural, and relatively concise answer while preserving accuracy, governance, and an easy summary when helpful.",
   ].join("\n\n")
 }
 
@@ -743,33 +751,39 @@ function buildCompactProviderPrompt(request: AIProviderReplyRequest) {
   const referenceAnswer = limitText(fallbackAnswer, 1200)
   const governanceSummary = limitText(context.governanceSummary, 420)
   const normalizedUserMessage = limitText(userMessage, 600)
+  const styleInstructions = buildResponseStyleInstructions(context.language, "compact")
+  const uiHelpBlock = limitText(context.uiHelpContextBlock, 700)
 
   if (context.language === "ar") {
     return [
       "أنت مساعد ERP محلي داخل طبقة حوكمة صارمة.",
       "الرد للقراءة فقط ولا تدعِ تنفيذ أي إجراء.",
+      `معيار أسلوب الرد المختصر:\n${styleInstructions}`,
       "أجب بالعربية الطبيعية في فقرة أو فقرتين قصيرتين أو نقاط قليلة جدًا.",
       `الصفحة الحالية: ${guideTitle}`,
       `الحوكمة: ${governanceSummary}`,
       `أهم المؤشرات:\n${topMetrics}`,
       `أهم التنبيهات:\n${topInsights}`,
+      uiHelpBlock ? `مساعدة عناصر الصفحة:\n${uiHelpBlock}` : "",
       `السؤال:\n${normalizedUserMessage}`,
       `إجابة مرجعية منضبطة:\n${referenceAnswer}`,
-      "أعد صياغة الإجابة بشكل أوضح وأقصر وأكثر طبيعية دون اختلاق أي بيانات جديدة.",
+      "أعد صياغة الإجابة بشكل أوضح وأقصر وأكثر طبيعية للمستخدم النهائي دون اختلاق أي بيانات جديدة.",
     ].join("\n\n")
   }
 
   return [
     "You are a local ERP copilot operating under strict governance.",
     "Remain read-only and never claim execution of any real action.",
+    `Compact response style standard:\n${styleInstructions}`,
     "Answer in one or two short paragraphs or a very small bullet list.",
     `Current page: ${guideTitle}`,
     `Governance: ${governanceSummary}`,
     `Top metrics:\n${topMetrics}`,
     `Top alerts:\n${topInsights}`,
+    uiHelpBlock ? `Page element help:\n${uiHelpBlock}` : "",
     `Question:\n${normalizedUserMessage}`,
     `Grounded reference answer:\n${referenceAnswer}`,
-    "Rewrite the answer to be clearer, shorter, and more natural without inventing any new data.",
+    "Rewrite the answer to be clearer, shorter, and more natural for an end user without inventing any new data.",
   ].join("\n\n")
 }
 

@@ -1,18 +1,7 @@
 import type { AIDomain, AIPromptCategory, AIQuickPrompt } from "@/lib/ai/contracts"
+import { getPageKeyEntry, type AIQuestionBankModule } from "@/lib/ai/page-key-registry"
 
-type QuestionBankModule =
-  | "global"
-  | "sales"
-  | "customers"
-  | "procurement"
-  | "inventory"
-  | "accounting"
-  | "fixedAssets"
-  | "hr"
-  | "governance"
-  | "analytics"
-  | "manufacturing"
-  | "advanced"
+type QuestionBankModule = AIQuestionBankModule
 
 interface QuestionBankEntry {
   labelAr: string
@@ -155,7 +144,10 @@ function resolveQuestionBankModules(
 
   if (includeGlobal) modules.push("global")
 
-  if (isProcurementPage(pageKey)) {
+  const registryModule = getPageKeyEntry(pageKey)?.questionBankModule
+  if (registryModule && registryModule !== "global" && registryModule !== "advanced") {
+    modules.push(registryModule)
+  } else if (isProcurementPage(pageKey)) {
     modules.push("procurement")
   } else if (isSalesPage(pageKey) || domain === "sales" || domain === "returns") {
     modules.push("sales")
@@ -257,12 +249,12 @@ function isGovernancePage(pageKey: string) {
 
 function isManufacturingPage(pageKey: string) {
   return [
-    "bom",
-    "bom_detail",
-    "routing",
-    "routing_detail",
-    "production_orders",
-    "production_order_detail",
+    "manufacturing_boms",
+    "manufacturing_bom_detail",
+    "manufacturing_routings",
+    "manufacturing_routing_detail",
+    "manufacturing_production_orders",
+    "manufacturing_production_order_detail",
   ].includes(pageKey)
 }
 

@@ -2195,12 +2195,12 @@ export default function InvoiceDetailPage() {
                 })()}
 
                 {/* Print Button */}
-                <Button onClick={handlePrint} variant="outline" size="sm">
+                <Button onClick={handlePrint} variant="outline" size="sm" data-ai-help="invoices.print_button">
                   {appLang === 'en' ? 'Print' : 'طباعة'}
                 </Button>
 
                 {/* Download PDF Button */}
-                <Button onClick={handleDownloadPDF} variant="outline" size="sm">
+                <Button onClick={handleDownloadPDF} variant="outline" size="sm" data-ai-help="invoices.download_pdf_button">
                   {appLang === 'en' ? 'Download PDF' : 'تنزيل PDF'}
                 </Button>
               </div>
@@ -2240,7 +2240,7 @@ export default function InvoiceDetailPage() {
               {/* معلومات الفاتورة والعميل */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 print:gap-4">
                 {/* معلومات العميل */}
-                <div className="md:col-span-2 bg-gray-50 dark:bg-slate-800 rounded-lg p-4 print:bg-gray-100 print:p-3">
+                <div className="md:col-span-2 bg-gray-50 dark:bg-slate-800 rounded-lg p-4 print:bg-gray-100 print:p-3" data-ai-help="invoices.detail_customer_snapshot">
                   <h3 className="font-semibold mb-3 text-gray-700 dark:text-gray-300 print:text-gray-800 border-b pb-2">{appLang === 'en' ? 'Bill To:' : 'فاتورة إلى:'}</h3>
                   <div className="space-y-2">
                     {/* 📸 استخدام Snapshot إذا كان موجوداً، وإلا استخدام البيانات الحية */}
@@ -2298,7 +2298,7 @@ export default function InvoiceDetailPage() {
                 </div>
 
                 {/* تفاصيل الفاتورة */}
-                <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-4 print:bg-gray-100 print:p-3">
+                <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-4 print:bg-gray-100 print:p-3" data-ai-help="invoices.detail_status">
                   <table className="w-full text-sm">
                     <tbody>
                       <tr>
@@ -2316,7 +2316,7 @@ export default function InvoiceDetailPage() {
                       <tr>
                         <td className="py-1 font-medium text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang === 'en' ? 'Status:' : 'الحالة:'}</td>
                         <td className="py-1 text-right">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${invoice.status === 'paid' ? 'bg-green-100 text-green-800 print:bg-green-50' :
+                          <span data-ai-help="invoices.detail_status" className={`px-2 py-0.5 rounded text-xs font-medium ${invoice.status === 'paid' ? 'bg-green-100 text-green-800 print:bg-green-50' :
                             invoice.status === 'sent' ? 'bg-blue-100 text-blue-800 print:bg-blue-50' :
                               invoice.status === 'overdue' ? 'bg-red-100 text-red-800 print:bg-red-50' :
                                 invoice.status === 'cancelled' ? 'bg-red-100 text-red-800 print:bg-red-50' :
@@ -2855,7 +2855,7 @@ export default function InvoiceDetailPage() {
 
             {/* ======= بانر رصيد العميل الدائن من customer_credit_ledger ======= */}
             {ledgerCreditBalance > 0.009 && ['sent', 'partially_paid'].includes(invoice.status) && canSeeCreditRefundButton && (
-              <div className={`print:hidden rounded-xl border-2 border-emerald-300 dark:border-emerald-700 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3`}>
+              <div data-ai-help="invoices.apply_credit_button" className={`print:hidden rounded-xl border-2 border-emerald-300 dark:border-emerald-700 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3`}>
                 <div className="flex items-center gap-3">
                   <div className="p-2.5 bg-emerald-100 dark:bg-emerald-900/40 rounded-xl flex-shrink-0">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
@@ -2872,6 +2872,7 @@ export default function InvoiceDetailPage() {
                 </div>
                 <div className="flex gap-2 flex-shrink-0">
                   <button
+                    data-ai-help="invoices.apply_credit_button"
                     onClick={() => {
                       const remaining = Math.max(0, invoice.total_amount - invoice.paid_amount)
                       setCreditApplyAmount(String(Math.min(ledgerCreditBalance, remaining).toFixed(2)))
@@ -2910,6 +2911,7 @@ export default function InvoiceDetailPage() {
                     <div className="relative">
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">{currencySymbol}</span>
                       <input
+                        data-ai-help="invoices.credit_apply_amount"
                         type="number" min="0.01" step="0.01"
                         value={creditApplyAmount}
                         onChange={e => setCreditApplyAmount(e.target.value)}
@@ -2928,6 +2930,7 @@ export default function InvoiceDetailPage() {
                       {appLang === 'en' ? 'Cancel' : 'إلغاء'}
                     </button>
                     <button
+                      data-ai-help="invoices.apply_credit_button"
                       onClick={async () => {
                         if (!creditApplyAmount || Number(creditApplyAmount) <= 0) return
                         setApplyingCredit(true)
@@ -2962,7 +2965,7 @@ export default function InvoiceDetailPage() {
 
             {/* جدول المدفوعات */}
             {permPayView && (
-              <Card className="dark:bg-slate-900 dark:border-slate-800">
+              <Card className="dark:bg-slate-900 dark:border-slate-800" data-ai-help="invoices.payments_table">
                 <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <DollarSign className="h-5 w-5 text-green-600" />
@@ -3027,7 +3030,7 @@ export default function InvoiceDetailPage() {
             )}
 
             {/* جدول المرتجعات */}
-            <Card className="dark:bg-slate-900 dark:border-slate-800">
+            <Card className="dark:bg-slate-900 dark:border-slate-800" data-ai-help="invoices.returns_table">
               <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <RotateCcw className="h-5 w-5 text-orange-600" />
@@ -3108,13 +3111,13 @@ export default function InvoiceDetailPage() {
               <>
                 {/* ✅ زر تحديد كمرسلة يظهر للفواتير draft أو invoiced (المحولة من أمر بيع) */}
                 {(invoice.status === "draft" || invoice.status === "invoiced") && permUpdate ? (
-                  <Button onClick={() => handleChangeStatus("sent")} className="bg-blue-600 hover:bg-blue-700" disabled={changingStatus || isPending}>
+                  <Button onClick={() => handleChangeStatus("sent")} className="bg-blue-600 hover:bg-blue-700" disabled={changingStatus || isPending} data-ai-help="invoices.mark_sent_button">
                     {changingStatus || isPending ? (appLang === 'en' ? 'Updating...' : 'جاري التحديث...') : (appLang === 'en' ? 'Mark as Sent' : 'تحديد كمرسلة')}
                   </Button>
                 ) : null}
                 {/* 🔒 زر الدفع يظهر فقط للفواتير المنفذة (sent/partially_paid) - ليس للمسودات */}
                 {netRemainingAmount > 0 && permPayWrite && invoice.status !== "draft" && invoice.status !== "invoiced" && invoice.status !== "cancelled" ? (
-                  <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => {
+                  <Button className="bg-indigo-600 hover:bg-indigo-700" data-ai-help="invoices.record_payment_button" onClick={() => {
                     setPaymentAmount(netRemainingAmount)
                     setShowPayment(true)
                   }}>
@@ -3146,6 +3149,7 @@ export default function InvoiceDetailPage() {
                   <Button
                     variant="outline"
                     className="border-orange-500 text-orange-600 hover:bg-orange-50"
+                    data-ai-help="invoices.partial_return_button"
                     onClick={() => openReturnDialog('partial')}
                   >
                     {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
@@ -3154,6 +3158,7 @@ export default function InvoiceDetailPage() {
                 <Button
                   variant="outline"
                   className="border-red-500 text-red-600 hover:bg-red-50"
+                  data-ai-help="invoices.full_return_button"
                   onClick={() => openReturnDialog('full')}
                 >
                   {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
@@ -3165,6 +3170,7 @@ export default function InvoiceDetailPage() {
               <Button
                 variant="outline"
                 className="border-green-500 text-green-600 hover:bg-green-50"
+                data-ai-help="invoices.refund_customer_credit_button"
                 onClick={() => {
                   setRefundAmount(customerCreditAmount)
                   setRefundDate(new Date().toISOString().slice(0, 10))
@@ -3185,7 +3191,7 @@ export default function InvoiceDetailPage() {
                 <DialogTitle>{appLang === 'en' ? `Record payment for invoice #${invoice.invoice_number}` : `تسجيل دفعة للفاتورة #${invoice.invoice_number}`}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
-                <div className="space-y-2">
+                <div className="space-y-2" data-ai-help="invoices.payment_amount">
                   <Label>{appLang === 'en' ? 'Amount' : 'المبلغ'}</Label>
                   <NumericInput
                     value={paymentAmount}
@@ -3195,7 +3201,7 @@ export default function InvoiceDetailPage() {
                     decimalPlaces={2}
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2" data-ai-help="invoices.payment_account">
                   <Label>{appLang === 'en' ? 'Payment Date' : 'تاريخ الدفع'}</Label>
                   <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
                 </div>
@@ -3226,6 +3232,7 @@ export default function InvoiceDetailPage() {
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowPayment(false)} disabled={savingPayment}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
                 <Button
+                  data-ai-help="invoices.save_payment_button"
                   onClick={() => recordInvoicePayment(paymentAmount, paymentDate, paymentMethod, paymentRef)}
                   disabled={savingPayment || paymentAmount <= 0 || !paymentAccountId}
                 >

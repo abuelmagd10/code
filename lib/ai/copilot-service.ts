@@ -11,6 +11,7 @@ import type {
 import type { AICopilotContext } from "@/lib/ai/context-builder"
 import { generateAIProviderReply } from "@/lib/ai/provider-layer"
 import { buildERPQuestionBankPrompts } from "@/lib/ai/question-bank"
+import { buildEasySummary } from "@/lib/ai/response-style-standard"
 
 export interface CopilotChatMessage {
   role: "user" | "assistant"
@@ -42,6 +43,8 @@ interface IntentAnalysis {
   askSalesCycle: boolean
   askPurchaseCycle: boolean
 }
+
+type CopilotUIHelpItem = AICopilotContext["uiHelp"][number]
 
 const LOCAL_COPILOT_MODEL = "local-erp-copilot-v2"
 
@@ -151,6 +154,7 @@ function buildLocalAnswerSections(params: {
     buildLead(context, intents, userMessage),
     buildCapabilitiesSection(context, intents),
     buildPageContentsSection(context, intents),
+    buildUIElementHelpSection(context, intents, userMessage),
     buildBusinessCycleSection(context, intents),
     buildDashboardCardMeaningSection(context, intents, userMessage),
     buildLiveSummarySection(context, intents, interactivePayload),
@@ -160,7 +164,72 @@ function buildLocalAnswerSections(params: {
     buildPredictionSection(context, intents, interactivePayload),
     buildActionGuardSection(context, intents),
     buildNextStepsSection(context, intents, interactivePayload),
+    buildLocalEasySummarySection(context, intents, interactivePayload),
   ].filter(Boolean)
+}
+
+function buildLocalEasySummarySection(
+  context: AICopilotContext,
+  intents: IntentAnalysis,
+  payload: AICopilotInteractivePayload
+) {
+  if (intents.askGreeting && isPureGreetingIntent(intents)) {
+    return ""
+  }
+
+  if (context.language === "ar") {
+    if (intents.askAction) {
+      return buildEasySummary(
+        "ar",
+        "راجع الحالة والصلاحية أولًا، ثم استخدم زر الصفحة المناسب إذا كانت الخطوة مسموحة لك."
+      )
+    }
+    if (intents.askGovernance) {
+      return buildEasySummary(
+        "ar",
+        "ابدأ بما تسمح به صلاحيتك الحالية، واطلب الاعتماد من المسؤول إذا كانت الخطوة خارج صلاحيتك."
+      )
+    }
+    if (intents.askWorkflow || intents.askPageContents || intents.askDefinition) {
+      return buildEasySummary(
+        "ar",
+        "افهم الهدف العملي أولًا، راجع البيانات المطلوبة، ثم انتقل للخطوة التالية داخل الصفحة."
+      )
+    }
+    if (payload.nextActions.length > 0) {
+      return buildEasySummary("ar", payload.nextActions[0].summary)
+    }
+    return buildEasySummary(
+      "ar",
+      "أنا أشرح لك المعنى والخطوة التالية، لكن التنفيذ الفعلي يبقى من أزرار الصفحة وصلاحياتك داخل النظام."
+    )
+  }
+
+  if (intents.askAction) {
+    return buildEasySummary(
+      "en",
+      "Check the current status and your permission first, then use the relevant page button if the step is allowed."
+    )
+  }
+  if (intents.askGovernance) {
+    return buildEasySummary(
+      "en",
+      "Start with what your current permission allows, and ask the responsible approver when the step is outside your access."
+    )
+  }
+  if (intents.askWorkflow || intents.askPageContents || intents.askDefinition) {
+    return buildEasySummary(
+      "en",
+      "Understand the practical purpose first, review the required information, then move to the next step on the page."
+    )
+  }
+  if (payload.nextActions.length > 0) {
+    return buildEasySummary("en", payload.nextActions[0].summary)
+  }
+  return buildEasySummary(
+    "en",
+    "I explain the meaning and next step, but real execution stays in the page controls and your ERP permissions."
+  )
 }
 
 function analyzeIntent(message: string, language: "ar" | "en"): IntentAnalysis {
@@ -464,6 +533,135 @@ function buildPageContentsSection(
   return [header, rows].join("\n")
 }
 
+function buildUIElementHelpSection(
+  context: AICopilotContext,
+  intents: IntentAnalysis,
+  userMessage: string
+) {
+  const helpItems = context.uiHelp || []
+  if (helpItems.length === 0) return ""
+
+  const normalized = normalizeIntentText(userMessage)
+  const asksAboutElement =
+    intents.askDefinition ||
+    intents.askAction ||
+    intents.askPageContents ||
+    includesAny(
+      normalized,
+      context.language === "ar"
+        ? ["حقل", "زر", "حاله", "رساله", "معني", "المقصود", "اضغط", "ضغط"]
+        : ["field", "button", "status", "message", "meaning", "what happens", "click"]
+    )
+
+  if (!asksAboutElement) return ""
+
+  const matchedItem = findUIHelpItemForMessage(helpItems, userMessage, context.language)
+  if (matchedItem) {
+    return formatUIHelpItem(matchedItem, context.language)
+  }
+
+  if (!intents.askPageContents) return ""
+
+  const shownItems = helpItems
+    .filter((item) => item.kind === "field" || item.kind === "button" || item.kind === "status")
+    .slice(0, 7)
+
+  if (shownItems.length === 0) return ""
+
+  const header =
+    context.language === "ar"
+      ? "عناصر مهمة يمكنني شرحها داخل هذه الصفحة:"
+      : "Important page elements I can explain here:"
+  const rows = shownItems
+    .map((item) => `- ${localizeUIHelp(item.label, context.language)}: ${localizeUIHelp(item.summary, context.language)}`)
+    .join("\n")
+
+  return [header, rows].join("\n")
+}
+
+function findUIHelpItemForMessage(
+  items: CopilotUIHelpItem[],
+  userMessage: string,
+  language: "ar" | "en"
+) {
+  const normalizedMessage = normalizeIntentText(userMessage)
+  if (!normalizedMessage) return null
+
+  return (
+    items.find((item) => {
+      const candidates = [
+        item.label[language],
+        item.label.ar,
+        item.label.en,
+        ...(item.aliases || []),
+      ]
+
+      return candidates.some((candidate) => {
+        const normalizedCandidate = normalizeIntentText(candidate)
+        return (
+          normalizedCandidate.length >= 2 &&
+          (normalizedMessage.includes(normalizedCandidate) ||
+            normalizedCandidate.includes(normalizedMessage))
+        )
+      })
+    }) || null
+  )
+}
+
+function formatUIHelpItem(item: CopilotUIHelpItem, language: "ar" | "en") {
+  const label = localizeUIHelp(item.label, language)
+  const kindLabel = formatUIHelpKind(item.kind, language)
+  const commonMistakes =
+    item.commonMistakes && item.commonMistakes.length > 0
+      ? [
+          language === "ar" ? "أخطاء شائعة:" : "Common mistakes:",
+          ...item.commonMistakes.slice(0, 2).map((mistake) => `- ${localizeUIHelp(mistake, language)}`),
+        ].join("\n")
+      : ""
+
+  const lines =
+    language === "ar"
+      ? [
+          `شرح ${kindLabel}: ${label}`,
+          `ما فائدته؟ ${localizeUIHelp(item.purpose, language)}`,
+          item.whyItExists ? `لماذا هو موجود؟ ${localizeUIHelp(item.whyItExists, language)}` : "",
+          item.whenToUse ? `متى تستخدمه؟ ${localizeUIHelp(item.whenToUse, language)}` : "",
+          item.whatToCheck ? `ما الذي تراجعه؟ ${localizeUIHelp(item.whatToCheck, language)}` : "",
+          item.afterAction ? `ماذا يحدث بعده؟ ${localizeUIHelp(item.afterAction, language)}` : "",
+          item.example ? `مثال مبسط: ${localizeUIHelp(item.example, language)}` : "",
+          commonMistakes,
+          `خلاصة سهلة: ${localizeUIHelp(item.summary, language)}`,
+        ]
+      : [
+          `${kindLabel} help: ${label}`,
+          `What it does: ${localizeUIHelp(item.purpose, language)}`,
+          item.whyItExists ? `Why it exists: ${localizeUIHelp(item.whyItExists, language)}` : "",
+          item.whenToUse ? `When to use it: ${localizeUIHelp(item.whenToUse, language)}` : "",
+          item.whatToCheck ? `What to check: ${localizeUIHelp(item.whatToCheck, language)}` : "",
+          item.afterAction ? `What happens next: ${localizeUIHelp(item.afterAction, language)}` : "",
+          item.example ? `Simple example: ${localizeUIHelp(item.example, language)}` : "",
+          commonMistakes,
+          `Easy summary: ${localizeUIHelp(item.summary, language)}`,
+        ]
+
+  return lines.filter(Boolean).join("\n")
+}
+
+function localizeUIHelp(text: { ar: string; en: string }, language: "ar" | "en") {
+  return text[language] || text.ar || text.en
+}
+
+function formatUIHelpKind(kind: CopilotUIHelpItem["kind"], language: "ar" | "en") {
+  const labels: Record<CopilotUIHelpItem["kind"], { ar: string; en: string }> = {
+    field: { ar: "الحقل", en: "Field" },
+    button: { ar: "الزر", en: "Button" },
+    status: { ar: "الحالة", en: "Status" },
+    message: { ar: "الرسالة", en: "Message" },
+  }
+
+  return labels[kind][language]
+}
+
 function buildBusinessCycleSection(
   context: AICopilotContext,
   intents: IntentAnalysis
@@ -575,19 +773,21 @@ function buildGovernanceSection(
   }
 
   const permission = context.permissionSnapshot
+  const resourceLabel = formatUserFacingResourceName(permission.resource, context.language)
+  const roleLabel = formatUserFacingRole(context.scope.role, context.language)
   const capabilityLine =
     context.language === "ar"
       ? [
-          `صلاحياتك الحالية على ${permission.resource || "هذه الصفحة"}:`,
-          `- الدور: ${context.scope.role || "غير محدد"}`,
+          `صلاحياتك الحالية على ${resourceLabel}:`,
+          `- الدور: ${roleLabel}`,
           `- القراءة: ${boolAr(permission.canRead)}`,
           `- الكتابة: ${boolAr(permission.canWrite)}`,
           `- التحديث: ${boolAr(permission.canUpdate)}`,
           `- الحذف: ${boolAr(permission.canDelete)}`,
         ].join("\n")
       : [
-          `Your current permissions on ${permission.resource || "this page"}:`,
-          `- Role: ${context.scope.role || "unknown"}`,
+          `Your current permissions on ${resourceLabel}:`,
+          `- Role: ${roleLabel}`,
           `- Read: ${boolEn(permission.canRead)}`,
           `- Write: ${boolEn(permission.canWrite)}`,
           `- Update: ${boolEn(permission.canUpdate)}`,
@@ -794,7 +994,19 @@ function isFixedAssetsPageKey(pageKey: string) {
 }
 
 function isHRPageKey(pageKey: string) {
-  return ["hr", "employees", "attendance", "payroll", "instant_payouts"].includes(pageKey)
+  return [
+    "hr",
+    "employees",
+    "attendance",
+    "attendance_daily",
+    "attendance_devices",
+    "attendance_reports",
+    "attendance_settings",
+    "attendance_shifts",
+    "attendance_anomalies",
+    "payroll",
+    "instant_payouts",
+  ].includes(pageKey)
 }
 
 function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
@@ -1528,7 +1740,7 @@ function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
         ],
       }
     // ─── Manufacturing ───────────────────────────────────────────────────
-    case "bom":
+    case "manufacturing_boms":
       return {
         contentsAr: [
           "قائمة بكل قوائم المواد (BOMs) المدرجة لمنتجات التصنيع.",
@@ -1575,7 +1787,7 @@ function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
           "Create BOM -> add components and quantities -> activate BOM -> link to routing -> use in production order.",
         ],
       }
-    case "bom_detail":
+    case "manufacturing_bom_detail":
       return {
         contentsAr: [
           "بيانات قائمة المواد: اسم المنتج المصنّع والوحدة والكمية الناتجة.",
@@ -1622,7 +1834,7 @@ function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
           "BOM -> routing -> production order -> material issue -> finished goods.",
         ],
       }
-    case "routing":
+    case "manufacturing_routings":
       return {
         contentsAr: [
           "قائمة بكل مسارات التصنيع (Routings) المعرّفة في النظام.",
@@ -1667,7 +1879,7 @@ function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
           "Define routing -> add operations in sequence -> link to BOM -> use in production order.",
         ],
       }
-    case "routing_detail":
+    case "manufacturing_routing_detail":
       return {
         contentsAr: [
           "اسم مسار التصنيع والمنتج أو العملية التي يغطيها.",
@@ -1712,7 +1924,7 @@ function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
           "Routing -> ordered operations -> link to BOM -> scheduling and executing production orders.",
         ],
       }
-    case "production_orders":
+    case "manufacturing_production_orders":
       return {
         contentsAr: [
           "قائمة بكل أوامر الإنتاج: المنتج، الكمية المطلوبة، التاريخ المتوقع، والحالة.",
@@ -1765,7 +1977,7 @@ function getPagePlaybook(context: AICopilotContext): PagePlaybook | null {
           "Production order draft -> confirm -> release -> execute operations -> issue materials -> completed -> add to stock.",
         ],
       }
-    case "production_order_detail":
+    case "manufacturing_production_order_detail":
       return {
         contentsAr: [
           "بيانات أمر الإنتاج: المنتج، الكمية المطلوبة، تاريخ البدء المتوقع والانتهاء، والحالة.",
@@ -1976,12 +2188,20 @@ function buildFallbackResult(
           context.guide?.description ||
             "يمكنني ما زلت شرح الصفحة الحالية وإعطاؤك خطوات تشغيل عامة داخل النظام.",
           `سؤالك: ${userMessage}`,
+          buildEasySummary(
+            "ar",
+            "أستطيع توجيهك وشرح الخطوة التالية، لكنني لا أنفذ أي حفظ أو اعتماد أو تعديل من داخل المساعد."
+          ),
         ].join("\n\n")
       : [
           "I am currently using a safe local fallback because the available local context for this question is limited.",
           context.guide?.description ||
             "I can still explain the current page and provide general operating guidance inside the ERP.",
           `Your question: ${userMessage}`,
+          buildEasySummary(
+            "en",
+            "I can guide you and explain the next step, but I do not save, approve, or change anything from inside the copilot."
+          ),
         ].join("\n\n")
 
   return {
@@ -2958,16 +3178,16 @@ function buildDashboardCardMeaningArabic(card: DashboardCardDefinition) {
   switch (card.key) {
     case "cogs_expenses":
       return [
-        'هذا الكارت يجمع بندين ماليين من دفتر الأستاذ العام (GL):',
-        '- تكلفة البضاعة المباعة (COGS): وهي تكلفة المنتجات التي تم بيعها فعليًا.',
+        'هذا الكارت يجمع بندين ماليين من السجل المالي المعتمد:',
+        '- تكلفة البضاعة المباعة: وهي تكلفة المنتجات التي تم بيعها فعليًا.',
         '- المصروفات التشغيلية: مثل الإيجار والرواتب والتسويق والمرافق والمصروفات الإدارية ونحوها.',
         'إذن قيمة الكارت = تكلفة البضاعة المباعة + المصروفات التشغيلية، وليست المشتريات فقط.',
-        'إذا ظهر داخل الكارت سطر صغير مثل `COGS: ...` فهو يوضح جزء تكلفة البضاعة داخل الإجمالي.',
+        'إذا ظهر داخل الكارت سطر صغير لتكلفة البضاعة، فهو يوضح هذا الجزء داخل الإجمالي.',
         'هذا الكارت يساعدك على قراءة ما يستهلك الربح قبل الوصول إلى صافي الربح.',
       ].join("\n")
     case "revenue":
       return [
-        'كارت "الإيرادات" يعرض الإيراد المعترف به محاسبيًا من دفتر الأستاذ العام (GL).',
+        'كارت "الإيرادات" يعرض الإيراد المعتمد محاسبيًا في السجل المالي.',
         'هو لا يعتمد فقط على عدد الفواتير، بل على القيود المرحّلة التي سجلت الإيراد فعليًا.',
         'عمليًا: هذا الرقم يمثل ما دخل ضمن إيرادات الشركة في الفترة الحالية.',
       ].join("\n")
@@ -2981,7 +3201,7 @@ function buildDashboardCardMeaningArabic(card: DashboardCardDefinition) {
       return [
         'كارت "عدد الفواتير" هو عدّاد تشغيلي، وليس رقمًا ماليًا.',
         'يعرض عدد الفواتير المرتبطة بالفترة أو السياق الحالي، ليس قيمتها المالية.',
-        'تستخدمه لمعرفة حجم النشاط، بينما الإيرادات والربح تأتي من كروت GL الأخرى.',
+        'تستخدمه لمعرفة حجم النشاط، بينما الإيرادات والربح تأتي من كروت الأرقام المالية.',
       ].join("\n")
     case "receivables":
       return [
@@ -3014,30 +3234,30 @@ function buildDashboardCardMeaningEnglish(card: DashboardCardDefinition) {
   switch (card.key) {
     case "cogs_expenses":
       return [
-        'This card combines two GL-based amounts:',
-        '- Cost of goods sold (COGS): the actual cost of products that were sold.',
+        'This card combines two financial amounts from the approved accounting records:',
+        '- Cost of goods sold: the actual cost of products that were sold.',
         '- Operating expenses: such as rent, payroll, marketing, utilities, and administrative expenses.',
-        'So the card value = COGS + operating expenses. It is not just purchases.',
-        'If you see a small `COGS: ...` line inside the card, it is showing the COGS portion within the total.',
+        'So the card value = cost of goods sold + operating expenses. It is not just purchases.',
+        'If you see a small cost-of-goods line inside the card, it is showing that portion within the total.',
         'This card helps you understand what is consuming profit before net profit is calculated.',
       ].join("\n")
     case "revenue":
       return [
-        'The "Revenue" card shows revenue recognized in the general ledger.',
-        'It is not based only on invoice count, but on posted accounting entries that actually recognized revenue.',
+        'The "Revenue" card shows revenue recognized in the approved accounting records.',
+        'It is not based only on invoice count, but on approved accounting entries that actually recognized revenue.',
         'In practice, it represents what was booked as company revenue in the selected period.',
       ].join("\n")
     case "net_profit":
       return [
-        'The "Net Profit" card shows the final profit after subtracting COGS and operating expenses from revenue.',
-        'In simple terms: net profit = revenue - COGS - operating expenses.',
+        'The "Net Profit" card shows the final profit after subtracting cost of goods sold and operating expenses from revenue.',
+        'In simple terms: net profit = revenue - cost of goods sold - operating expenses.',
         'A positive value means profit, while a negative value means loss for the selected period.',
       ].join("\n")
     case "invoices_count":
       return [
         'The "Invoices Count" card is an operational counter, not a financial amount.',
         'It shows how many invoices exist in the current period or scope, not their monetary value.',
-        'Use it to read activity volume, while revenue and profit come from the GL-based cards.',
+        'Use it to read activity volume, while revenue and profit come from the financial amount cards.',
       ].join("\n")
     case "receivables":
       return [
@@ -3137,4 +3357,78 @@ function boolAr(value: boolean) {
 
 function boolEn(value: boolean) {
   return value ? "allowed" : "not allowed"
+}
+
+function formatUserFacingResourceName(resource: string | null, language: "ar" | "en") {
+  const key = String(resource || "").toLowerCase()
+  const labels: Record<string, { ar: string; en: string }> = {
+    dashboard: { ar: "لوحة التحكم", en: "the dashboard" },
+    reports: { ar: "التقارير", en: "reports" },
+    invoices: { ar: "فواتير المبيعات", en: "sales invoices" },
+    sales_orders: { ar: "طلبات المبيعات", en: "sales orders" },
+    sales_returns: { ar: "مرتجعات المبيعات", en: "sales returns" },
+    sales_return_requests: { ar: "طلبات مرتجعات المبيعات", en: "sales return requests" },
+    customer_credits: { ar: "أرصدة العملاء الدائنة", en: "customer credits" },
+    customer_debit_notes: { ar: "مذكرات خصم العملاء", en: "customer debit notes" },
+    customers: { ar: "العملاء", en: "customers" },
+    bills: { ar: "فواتير الموردين", en: "supplier bills" },
+    purchase_orders: { ar: "أوامر الشراء", en: "purchase orders" },
+    purchase_returns: { ar: "مرتجعات المشتريات", en: "purchase returns" },
+    vendor_credits: { ar: "أرصدة الموردين", en: "vendor credits" },
+    suppliers: { ar: "الموردين", en: "suppliers" },
+    inventory: { ar: "المخزون", en: "inventory" },
+    inventory_transfers: { ar: "تحويلات المخزون", en: "inventory transfers" },
+    inventory_goods_receipt: { ar: "استلام مشتريات المخزون", en: "inventory goods receipt" },
+    dispatch_approvals: { ar: "اعتمادات التسليم", en: "dispatch approvals" },
+    third_party_inventory: { ar: "مخزون الطرف الثالث", en: "third-party inventory" },
+    write_offs: { ar: "إهلاك أو شطب المخزون", en: "inventory write-offs" },
+    products: { ar: "المنتجات", en: "products" },
+    payments: { ar: "المدفوعات والمقبوضات", en: "payments and receipts" },
+    banking: { ar: "الأعمال البنكية", en: "banking" },
+    expenses: { ar: "المصروفات", en: "expenses" },
+    journal_entries: { ar: "القيود اليومية", en: "journal entries" },
+    chart_of_accounts: { ar: "دليل الحسابات", en: "the chart of accounts" },
+    accounting_periods: { ar: "الفترات المحاسبية", en: "accounting periods" },
+    fixed_assets: { ar: "الأصول الثابتة", en: "fixed assets" },
+    asset_categories: { ar: "تصنيفات الأصول", en: "asset categories" },
+    fixed_assets_reports: { ar: "تقارير الأصول الثابتة", en: "fixed asset reports" },
+    payroll: { ar: "الرواتب", en: "payroll" },
+    employees: { ar: "الموظفين", en: "employees" },
+    attendance: { ar: "الحضور والانصراف", en: "attendance" },
+    manufacturing_boms: { ar: "التصنيع", en: "manufacturing" },
+    settings: { ar: "الإعدادات", en: "settings" },
+    users: { ar: "المستخدمين", en: "users" },
+    taxes: { ar: "الضرائب", en: "tax settings" },
+    exchange_rates: { ar: "أسعار الصرف", en: "exchange rates" },
+    shipping: { ar: "الشحن", en: "shipping" },
+    audit_log: { ar: "سجل المراجعة", en: "audit log" },
+    backup: { ar: "النسخ الاحتياطي", en: "backup" },
+    orders_rules: { ar: "قواعد الطلبات", en: "order rules" },
+    branches: { ar: "الفروع", en: "branches" },
+    warehouses: { ar: "المخازن", en: "warehouses" },
+    cost_centers: { ar: "مراكز التكلفة", en: "cost centers" },
+  }
+
+  const fallback =
+    language === "ar"
+      ? "هذه الصفحة"
+      : "this page"
+
+  return labels[key]?.[language] || fallback
+}
+
+function formatUserFacingRole(role: string | null | undefined, language: "ar" | "en") {
+  const key = String(role || "").toLowerCase()
+  const labels: Record<string, { ar: string; en: string }> = {
+    owner: { ar: "مالك", en: "Owner" },
+    admin: { ar: "مسؤول النظام", en: "Admin" },
+    general_manager: { ar: "مدير عام", en: "General manager" },
+    manager: { ar: "مدير", en: "Manager" },
+    accountant: { ar: "محاسب", en: "Accountant" },
+    sales: { ar: "مبيعات", en: "Sales" },
+    warehouse_manager: { ar: "مسؤول مخزن", en: "Warehouse manager" },
+    staff: { ar: "موظف", en: "Staff" },
+  }
+
+  return labels[key]?.[language] || (language === "ar" ? "غير محدد" : "unknown")
 }

@@ -1143,7 +1143,7 @@ export default function BillViewPage() {
                       {appLang === 'en' ? `Bill #${bill.bill_number}` : `فاتورة #${bill.bill_number}`}
                     </h1>
                     {/* شارة الحالة */}
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${bill.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                    <span data-ai-help="bills.detail_status" className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${bill.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                       bill.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
                         bill.status === 'sent' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
                           bill.status === 'draft' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' :
@@ -1167,7 +1167,7 @@ export default function BillViewPage() {
                     </span>
                     {/* ✅ شارة حالة الاستلام */}
                     {bill.receipt_status && (
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${bill.receipt_status === 'received' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
+                      <span data-ai-help="bills.receipt_status" className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${bill.receipt_status === 'received' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
                         bill.receipt_status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
                           bill.receipt_status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
                             'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
@@ -1179,7 +1179,7 @@ export default function BillViewPage() {
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1" data-ai-help="bills.supplier">
                     {appLang === 'en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}
                   </p>
                   {/* 🔴 عرض سبب الرفض الإداري */}
@@ -1249,6 +1249,7 @@ export default function BillViewPage() {
                     disabled={posting}
                     size="sm"
                     className="bg-blue-600 hover:bg-blue-700 text-white"
+                    data-ai-help="bills.submit_for_receipt_button"
                   >
                     <Package className="w-4 h-4 sm:mr-1" />
                     <span className="hidden sm:inline">
@@ -1297,6 +1298,7 @@ export default function BillViewPage() {
                     disabled={posting}
                     size="sm"
                     className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    data-ai-help="bills.approve_button"
                   >
                     <CheckCircle className="w-4 h-4 sm:mr-1" />
                     <span className="hidden sm:inline">
@@ -1313,6 +1315,7 @@ export default function BillViewPage() {
                     size="sm"
                     variant="outline"
                     className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400"
+                    data-ai-help="bills.reject_button"
                   >
                     <AlertCircle className="w-4 h-4 sm:mr-1" />
                     <span className="hidden sm:inline">
@@ -1328,6 +1331,7 @@ export default function BillViewPage() {
                     disabled={posting}
                     size="sm"
                     className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    data-ai-help="bills.approve_receipt_button"
                   >
                     <CheckCircle className="w-4 h-4 sm:mr-1" />
                     <span className="hidden sm:inline">
@@ -1344,6 +1348,7 @@ export default function BillViewPage() {
                     size="sm"
                     variant="outline"
                     className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400"
+                    data-ai-help="bills.reject_receipt_button"
                   >
                     <AlertCircle className="w-4 h-4 sm:mr-1" />
                     <span className="hidden sm:inline">
@@ -1369,13 +1374,13 @@ export default function BillViewPage() {
                         const canPartialReturn = returnableItems.length > 1 || (returnableItems.length === 1 && returnableItems[0].quantity > 1);
 
                         return canPartialReturn && (
-                          <Button variant="outline" size="sm" onClick={() => openReturnDialog('partial')} className="text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400">
+                          <Button variant="outline" size="sm" onClick={() => openReturnDialog('partial')} className="text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400" data-ai-help="bills.partial_return_button">
                             <RotateCcw className="w-4 h-4 sm:mr-1" />
                             <span className="hidden sm:inline">{appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}</span>
                           </Button>
                         );
                       })()}
-                      <Button variant="outline" size="sm" onClick={() => openReturnDialog('full')} className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400">
+                      <Button variant="outline" size="sm" onClick={() => openReturnDialog('full')} className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400" data-ai-help="bills.full_return_button">
                         <RotateCcw className="w-4 h-4 sm:mr-1" />
                         <span className="hidden sm:inline">{appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}</span>
                       </Button>
@@ -1386,11 +1391,11 @@ export default function BillViewPage() {
                 <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />
 
                 {/* أزرار الطباعة والتنزيل */}
-                <Button variant="outline" size="sm" onClick={handlePrint}>
+                <Button variant="outline" size="sm" onClick={handlePrint} data-ai-help="bills.print_button">
                   <Printer className="w-4 h-4 sm:mr-1" />
                   <span className="hidden sm:inline">{appLang === 'en' ? 'Print' : 'طباعة'}</span>
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleDownloadPDF}>
+                <Button variant="outline" size="sm" onClick={handleDownloadPDF} data-ai-help="bills.download_pdf_button">
                   <FileDown className="w-4 h-4 sm:mr-1" />
                   <span className="hidden sm:inline">{appLang === 'en' ? 'PDF' : 'PDF'}</span>
                 </Button>
@@ -1434,7 +1439,7 @@ export default function BillViewPage() {
               </CardHeader>
               <CardContent className="space-y-4 p-4 sm:p-6">
                 {/* معلومات الفاتورة الأساسية */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg text-sm" data-ai-help="bills.bill_information">
                   <div className="flex flex-col">
                     <span className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Bill Date' : 'تاريخ الفاتورة'}</span>
                     <span className="font-medium">{new Date(bill.bill_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</span>
@@ -1454,7 +1459,7 @@ export default function BillViewPage() {
                 </div>
 
                 {/* جدول البنود - عرض سطح المكتب */}
-                <div className="hidden md:block overflow-x-auto border rounded-lg">
+                <div className="hidden md:block overflow-x-auto border rounded-lg" data-ai-help="bills.items">
                   <table className="min-w-full text-sm">
                     <thead className="bg-gray-50 dark:bg-slate-800">
                       <tr>
@@ -1504,7 +1509,7 @@ export default function BillViewPage() {
                 </div>
 
                 {/* جدول البنود - عرض الموبايل (بطاقات) */}
-                <div className="md:hidden space-y-3">
+                <div className="md:hidden space-y-3" data-ai-help="bills.items">
                   {items.map((it) => {
                     const returnedQty = Number(it.returned_quantity || 0)
                     const effectiveQty = it.quantity - returnedQty
@@ -1543,7 +1548,7 @@ export default function BillViewPage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Card>
+                  <Card data-ai-help="bills.financial_summary">
                     <CardHeader>
                       <CardTitle className="text-base">{appLang === 'en' ? 'Summary' : 'ملخص'}</CardTitle>
                     </CardHeader>
@@ -1593,7 +1598,7 @@ export default function BillViewPage() {
 
                   {/* ✅ عرض حالة الاستلام وسبب الرفض */}
                   {bill.receipt_status && (
-                    <Card>
+                    <Card data-ai-help="bills.receipt_status">
                       <CardHeader>
                         <CardTitle className="text-base">{appLang === 'en' ? 'Goods Receipt Status' : 'حالة اعتماد الاستلام'}</CardTitle>
                       </CardHeader>
@@ -1631,7 +1636,7 @@ export default function BillViewPage() {
                     </Card>
                   )}
 
-                  <Card>
+                  <Card data-ai-help="bills.financial_summary">
                     <CardHeader>
                       <CardTitle className="text-base">{appLang === 'en' ? 'Discount' : 'الخصم'}</CardTitle>
                     </CardHeader>
@@ -1662,7 +1667,7 @@ export default function BillViewPage() {
                       </div>
                       {bill.status !== 'draft' && bill.status !== 'voided' && bill.status !== 'paid' && (
                         <div>
-                          <Link href={`/payments?bill_id=${bill.id}`} className="text-blue-600 hover:underline">{appLang === 'en' ? 'Record/Pay' : 'سجل/ادفع'}</Link>
+                          <Link href={`/payments?bill_id=${bill.id}`} className="text-blue-600 hover:underline" data-ai-help="bills.add_payment_button">{appLang === 'en' ? 'Record/Pay' : 'سجل/ادفع'}</Link>
                         </div>
                       )}
 
@@ -1798,7 +1803,7 @@ export default function BillViewPage() {
             {/* ==================== قسم العمليات على الفاتورة ==================== */}
             <div className="print:hidden space-y-4 mt-6">
               {/* بطاقات الإجماليات */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-ai-help="bills.financial_summary">
                 {/* إجمالي الفاتورة */}
                 <Card className="p-4 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
                   <div className="flex items-center gap-3">
@@ -1872,7 +1877,7 @@ export default function BillViewPage() {
 
               {/* جدول المدفوعات */}
               {permPayView && (
-                <Card className="dark:bg-slate-900 dark:border-slate-800">
+                <Card className="dark:bg-slate-900 dark:border-slate-800" data-ai-help="bills.payments_table">
                   <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <DollarSign className="h-5 w-5 text-green-600" />
@@ -1880,7 +1885,7 @@ export default function BillViewPage() {
                       <span className="bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 text-xs px-2 py-0.5 rounded-full">{paymentsDetail.length}</span>
                     </div>
                     {bill.status !== 'draft' && bill.status !== 'voided' && bill.status !== 'paid' && (
-                      <Link href={`/payments?bill_id=${bill.id}`} className="text-sm text-blue-600 hover:underline">{appLang === 'en' ? 'Add Payment' : 'إضافة دفعة'}</Link>
+                      <Link href={`/payments?bill_id=${bill.id}`} className="text-sm text-blue-600 hover:underline" data-ai-help="bills.add_payment_button">{appLang === 'en' ? 'Add Payment' : 'إضافة دفعة'}</Link>
                     )}
                   </div>
                   <div className="p-4">
@@ -1940,7 +1945,7 @@ export default function BillViewPage() {
               )}
 
               {/* جدول المرتجعات من vendor_credits */}
-              <Card className="dark:bg-slate-900 dark:border-slate-800">
+              <Card className="dark:bg-slate-900 dark:border-slate-800" data-ai-help="bills.returns_table">
                 <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <RotateCcw className="h-5 w-5 text-orange-600" />
@@ -2082,6 +2087,7 @@ export default function BillViewPage() {
                 {appLang === 'en' ? 'Rejection Reason' : 'سبب الرفض'} *
               </Label>
               <Textarea
+                data-ai-help="bills.rejection_reason"
                 value={receiptRejectionReason}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReceiptRejectionReason(e.target.value)}
                 placeholder={appLang === 'en' ? 'Enter rejection reason...' : 'أدخل سبب الرفض...'}
@@ -2100,6 +2106,7 @@ export default function BillViewPage() {
               variant="destructive"
               onClick={handleRejectReceipt}
               disabled={posting || !receiptRejectionReason.trim()}
+              data-ai-help="bills.confirm_rejection_button"
             >
               {posting ? "..." : (appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض')}
             </Button>
@@ -2119,7 +2126,7 @@ export default function BillViewPage() {
           </DialogHeader>
           <div className="space-y-4">
             {/* Bill Financial Summary */}
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm space-y-2">
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm space-y-2" data-ai-help="bills.financial_summary">
               <div className="flex justify-between items-center">
                 <div>
                   <span className="font-semibold text-lg">{appLang === 'en' ? 'Bill' : 'الفاتورة'}: {bill?.bill_number}</span>
@@ -2155,7 +2162,7 @@ export default function BillViewPage() {
             </div>
 
             {/* Items to return */}
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" data-ai-help="bills.return_quantity">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-gray-600 dark:text-gray-400 border-b">
@@ -2206,7 +2213,7 @@ export default function BillViewPage() {
             {/* Currency selector + Refund Method + Refund Account */}
             {returnBillData.paymentStatus !== 'unpaid' ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
+                <div className="space-y-2" data-ai-help="bills.return_method">
                   <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
                   <Select value={returnCurrency} onValueChange={setReturnCurrency}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -2272,6 +2279,7 @@ export default function BillViewPage() {
             <div className="space-y-2">
               <Label>{appLang === 'en' ? 'Notes' : 'ملاحظات'}</Label>
               <Input
+                data-ai-help="bills.return_notes"
                 value={returnNotes}
                 onChange={(e) => setReturnNotes(e.target.value)}
                 placeholder={appLang === 'en' ? 'Optional notes for return' : 'ملاحظات اختيارية للمرتجع'}
@@ -2357,6 +2365,7 @@ export default function BillViewPage() {
               onClick={processPurchaseReturn}
               disabled={returnProcessing || returnTotal <= 0}
               className="bg-orange-600 hover:bg-orange-700"
+              data-ai-help="bills.submit_return_button"
             >
               {returnProcessing ? '...' : (appLang === 'en' ? 'Submit for Approval' : 'إرسال للاعتماد')}
             </Button>
@@ -2386,6 +2395,7 @@ export default function BillViewPage() {
               </Label>
               <textarea
                 id="rejection-reason"
+                data-ai-help="bills.rejection_reason"
                 className="w-full mt-1 p-2 border rounded-md dark:bg-slate-800 dark:border-slate-700 min-h-[100px]"
                 placeholder={appLang === 'en' ? 'Enter the reason for rejection...' : 'أدخل سبب الرفض...'}
                 value={rejectionReason}
@@ -2406,6 +2416,7 @@ export default function BillViewPage() {
             </Button>
             <Button
               variant="destructive"
+              data-ai-help="bills.confirm_rejection_button"
               onClick={async () => {
                 if (!bill || !rejectionReason.trim()) return
                 try {

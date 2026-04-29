@@ -1058,7 +1058,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                     {transfer.transfer_number}
-                    {getStatusBadge(transfer.status)}
+                    <span data-ai-help="inventory_transfers.detail_status">{getStatusBadge(transfer.status)}</span>
                   </h1>
                   <p className="text-gray-500 dark:text-gray-400 flex items-center gap-2 mt-1">
                     <Calendar className="w-4 h-4" />
@@ -1072,11 +1072,11 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                 {/* 🔐 أزرار الاعتماد/الرفض - للإدارة فقط في حالة pending_approval */}
                 {canApproveOrReject && (
                   <>
-                    <Button onClick={handleApproveTransfer} disabled={isProcessing} className="gap-2 bg-green-600 hover:bg-green-700">
+                    <Button onClick={handleApproveTransfer} disabled={isProcessing} className="gap-2 bg-green-600 hover:bg-green-700" data-ai-help="inventory_transfers.approve_button">
                       <ShieldCheck className="w-4 h-4" />
                       {appLang === 'en' ? 'Approve' : 'اعتماد'}
                     </Button>
-                    <Button variant="destructive" onClick={() => setShowRejectDialog(true)} disabled={isProcessing} className="gap-2">
+                    <Button variant="destructive" onClick={() => setShowRejectDialog(true)} disabled={isProcessing} className="gap-2" data-ai-help="inventory_transfers.reject_button">
                       <ShieldX className="w-4 h-4" />
                       {appLang === 'en' ? 'Reject' : 'رفض'}
                     </Button>
@@ -1086,7 +1086,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                 {/* 🔐 زر التعديل - للمحاسب فقط في حالة draft أو rejected */}
                 {canAccountantEdit && (
                   <Link href={`/inventory-transfers/${transfer.id}/edit`}>
-                    <Button variant="outline" disabled={isProcessing} className="gap-2">
+                    <Button variant="outline" disabled={isProcessing} className="gap-2" data-ai-help="inventory_transfers.edit_button">
                       <Edit className="w-4 h-4" />
                       {appLang === 'en' ? 'Edit' : 'تعديل'}
                     </Button>
@@ -1095,7 +1095,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
                 {/* 🔐 زر إعادة الإرسال - للمحاسب فقط في حالة draft أو rejected */}
                 {canAccountantResubmit && (
-                  <Button onClick={handleResubmitTransfer} disabled={isProcessing} className="gap-2 bg-amber-600 hover:bg-amber-700">
+                  <Button onClick={handleResubmitTransfer} disabled={isProcessing} className="gap-2 bg-amber-600 hover:bg-amber-700" data-ai-help="inventory_transfers.resubmit_button">
                     <Send className="w-4 h-4" />
                     {appLang === 'en' ? 'Resubmit for Approval' : 'إعادة إرسال للاعتماد'}
                   </Button>
@@ -1103,7 +1103,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
                 {/* بدء النقل - فقط في حالة pending */}
                 {transfer.status === 'pending' && canManage && (
-                  <Button onClick={handleStartTransfer} disabled={isProcessing} className="gap-2 bg-blue-600 hover:bg-blue-700">
+                  <Button onClick={handleStartTransfer} disabled={isProcessing} className="gap-2 bg-blue-600 hover:bg-blue-700" data-ai-help="inventory_transfers.start_button">
                     <Send className="w-4 h-4" />
                     {appLang === 'en' ? 'Start Transfer' : 'بدء النقل'}
                   </Button>
@@ -1119,7 +1119,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
                 {/* 🔒 إلغاء النقل - فقط في حالة in_transit وللمستخدم الذي أنشأ الطلب */}
                 {transfer.status === 'in_transit' && transfer.created_by === userId && (
-                  <Button variant="destructive" onClick={handleCancel} disabled={isProcessing} className="gap-2">
+                  <Button variant="destructive" onClick={handleCancel} disabled={isProcessing} className="gap-2" data-ai-help="inventory_transfers.cancel_button">
                     <X className="w-4 h-4" />
                     {appLang === 'en' ? 'Cancel Transfer' : 'إلغاء النقل'}
                   </Button>
@@ -1129,7 +1129,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                 {/* ❌ مسؤول المخزن المصدر لا يمكنه الاستلام */}
                 {/* ✅ فقط مسؤول المخزن الوجهة */}
                 {((transfer.status === 'in_transit' || transfer.status === 'sent') && canReceive) && (
-                  <Button onClick={handleReceive} disabled={isProcessing} className="gap-2 bg-green-600 hover:bg-green-700">
+                  <Button onClick={handleReceive} disabled={isProcessing} className="gap-2 bg-green-600 hover:bg-green-700" data-ai-help="inventory_transfers.receive_button">
                     <PackageCheck className="w-4 h-4" />
                     {appLang === 'en' ? 'Confirm Receipt' : 'اعتماد الاستلام'}
                   </Button>
@@ -1140,7 +1140,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
           {/* 🔐 رسالة الحالة الخاصة */}
           {transfer.status === 'pending_approval' && (
-            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4" data-ai-help="inventory_transfers.pending_approval_message">
               <div className="flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
                 <div>
@@ -1158,7 +1158,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
           )}
 
           {transfer.status === 'draft' && (
-            <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+            <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4" data-ai-help="inventory_transfers.rejected_message">
               <div className="flex items-start gap-3">
                 <Edit className="w-5 h-5 text-gray-600 dark:text-gray-400 mt-0.5" />
                 <div>
@@ -1182,7 +1182,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
           {/* Warehouse Info */}
           <div className="grid md:grid-cols-2 gap-4">
-            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm" data-ai-help="inventory_transfers.source_warehouse">
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-2">
                   <Warehouse className="w-4 h-4" />
@@ -1191,7 +1191,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                 <CardTitle className="text-lg">{(transfer.source_warehouses as any)?.name || '-'}</CardTitle>
               </CardHeader>
             </Card>
-            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm border-r-4 border-r-green-500">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm border-r-4 border-r-green-500" data-ai-help="inventory_transfers.destination_warehouse">
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-2">
                   <Warehouse className="w-4 h-4 text-green-500" />
@@ -1203,7 +1203,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
           </div>
 
           {/* Products Table */}
-          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm" data-ai-help="inventory_transfers.items_table">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Package className="w-5 h-5 text-indigo-500" />
@@ -1217,9 +1217,9 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                   <tr>
                     <th className="px-4 py-3 text-right">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
                     <th className="px-4 py-3 text-center">{appLang === 'en' ? 'SKU' : 'الكود'}</th>
-                    <th className="px-4 py-3 text-center">{appLang === 'en' ? 'Requested' : 'المطلوب'}</th>
-                    <th className="px-4 py-3 text-center">{appLang === 'en' ? 'Sent' : 'المرسل'}</th>
-                    <th className="px-4 py-3 text-center">{appLang === 'en' ? 'Received' : 'المستلم'}</th>
+                    <th className="px-4 py-3 text-center" data-ai-help="inventory_transfers.requested_quantity">{appLang === 'en' ? 'Requested' : 'المطلوب'}</th>
+                    <th className="px-4 py-3 text-center" data-ai-help="inventory_transfers.sent_quantity">{appLang === 'en' ? 'Sent' : 'المرسل'}</th>
+                    <th className="px-4 py-3 text-center" data-ai-help="inventory_transfers.received_quantity">{appLang === 'en' ? 'Received' : 'المستلم'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
@@ -1227,12 +1227,13 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                     <tr key={item.id}>
                       <td className="px-4 py-3 font-medium">{(item.products as any)?.name || '-'}</td>
                       <td className="px-4 py-3 text-center text-gray-500">{(item.products as any)?.sku || '-'}</td>
-                      <td className="px-4 py-3 text-center">{item.quantity_requested}</td>
-                      <td className="px-4 py-3 text-center">{item.quantity_sent || '-'}</td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-4 py-3 text-center" data-ai-help="inventory_transfers.requested_quantity">{item.quantity_requested}</td>
+                      <td className="px-4 py-3 text-center" data-ai-help="inventory_transfers.sent_quantity">{item.quantity_sent || '-'}</td>
+                      <td className="px-4 py-3 text-center" data-ai-help="inventory_transfers.received_quantity">
                         {((transfer.status === 'in_transit' || transfer.status === 'sent') && canReceive) ? (
                           canEditReceivedQuantity ? (
                             <Input
+                              data-ai-help="inventory_transfers.received_quantity"
                               type="number"
                               className="w-20 mx-auto text-center"
                               value={receivedQuantities[item.id] || 0}
@@ -1294,6 +1295,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
               </Label>
               <Textarea
                 id="rejection-reason"
+                data-ai-help="inventory_transfers.rejection_reason"
                 placeholder={appLang === 'en' ? 'Enter the reason for rejection...' : 'أدخل سبب الرفض...'}
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
@@ -1310,6 +1312,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
             </Button>
             <Button
               variant="destructive"
+              data-ai-help="inventory_transfers.confirm_rejection_button"
               onClick={async () => {
                 if (!rejectionReason.trim()) {
                   toast({

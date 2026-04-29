@@ -240,7 +240,7 @@ export default function ProductAvailabilityPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-            <div className="space-y-2">
+            <div className="space-y-2" data-ai-help="product_availability.product">
               <Label>{isAr ? "المنتج" : "Product"}</Label>
               <ProductSearchSelect
                 products={products}
@@ -269,6 +269,7 @@ export default function ProductAvailabilityPage() {
               onClick={searchAvailability}
               disabled={!selectedProductId || isSearching}
               className="w-full"
+              data-ai-help="product_availability.search_button"
             >
               {isSearching ? (
                 <>
@@ -286,7 +287,7 @@ export default function ProductAvailabilityPage() {
           </Card>
 
           {availabilityData.length > 0 && (
-            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm" data-ai-help="product_availability.results">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Package className="h-5 w-5" />
@@ -326,22 +327,22 @@ export default function ProductAvailabilityPage() {
                       return (
                         <TableRow key={`${item.branch_id}-${item.warehouse_id}-${index}`}>
                           <TableCell className={isAr ? "text-right" : "text-left"}>
-                            <div className="font-medium">{item.branch_name}</div>
+                            <div className="font-medium" data-ai-help="product_availability.branch">{item.branch_name}</div>
                           </TableCell>
                           <TableCell className={isAr ? "text-right" : "text-left"}>
-                            <div>{item.warehouse_name}</div>
+                            <div data-ai-help="product_availability.warehouse">{item.warehouse_name}</div>
                           </TableCell>
                           <TableCell className={isAr ? "text-right" : "text-left"}>
-                            <div className="text-sm text-muted-foreground">
+                            <div className="text-sm text-muted-foreground" data-ai-help="product_availability.cost_center">
                               {item.cost_center_name || (isAr ? "غير محدد" : "Not specified")}
                             </div>
                           </TableCell>
                           <TableCell className={isAr ? "text-right" : "text-left"}>
-                            <div className={`font-semibold ${hasStock ? "text-green-600 dark:text-green-400" : "text-gray-500"}`}>
+                            <div className={`font-semibold ${hasStock ? "text-green-600 dark:text-green-400" : "text-gray-500"}`} data-ai-help="product_availability.available_quantity">
                               {item.available_quantity.toLocaleString()}
                             </div>
                           </TableCell>
-                          <TableCell className={isAr ? "text-right" : "text-left"}>
+                          <TableCell className={isAr ? "text-right" : "text-left"} data-ai-help="product_availability.availability_status">
                             {hasStock ? (
                               <Badge variant="default" className="bg-green-500 hover:bg-green-600">
                                 <CheckCircle2 className="mr-1 h-3 w-3" />
@@ -362,7 +363,7 @@ export default function ProductAvailabilityPage() {
               </div>
 
               {/* ملخص سريع */}
-              <div className="mt-4 p-4 bg-muted rounded-lg">
+              <div className="mt-4 p-4 bg-muted rounded-lg" data-ai-help="product_availability.total_available">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">
@@ -387,7 +388,7 @@ export default function ProductAvailabilityPage() {
         )}
 
           {availabilityData.length === 0 && !isSearching && selectedProductId && (
-            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm" data-ai-help="product_availability.no_stock_message">
               <CardContent className="py-8 text-center">
                 <AlertCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="text-muted-foreground">

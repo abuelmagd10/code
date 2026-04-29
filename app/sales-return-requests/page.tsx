@@ -259,7 +259,7 @@ export default function SalesReturnRequestsPage() {
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Workflow ثنائي المرحلة: اعتماد الإدارة ثم اعتماد المخزن ثم التنفيذ النهائي</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3" data-ai-help="sales_return_requests.status_filter">
                 <Select value={filterStatus} onValueChange={setFilterStatus}>
                   <SelectTrigger className="w-[220px]">
                     <SelectValue placeholder="فلتر الحالة" />
@@ -274,7 +274,7 @@ export default function SalesReturnRequestsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-ai-help="sales_return_requests.summary_cards">
             <Card className="border-0 shadow-sm bg-yellow-50 dark:bg-yellow-900/20">
               <CardContent className="p-4 text-center">
                 <p className="text-3xl font-bold text-yellow-700 dark:text-yellow-300">{groupedCounts.pending_level_1 || 0}</p>
@@ -301,7 +301,7 @@ export default function SalesReturnRequestsPage() {
             </Card>
           </div>
 
-          <Card className="border-0 shadow-sm bg-white dark:bg-slate-900">
+          <Card className="border-0 shadow-sm bg-white dark:bg-slate-900" data-ai-help="sales_return_requests.requests_table">
             <CardHeader>
               <CardTitle className="text-lg">
                 {requests.length === 0 ? "لا توجد طلبات" : `${requests.length} طلب`}
@@ -360,6 +360,7 @@ export default function SalesReturnRequestsPage() {
                                   <Button
                                     size="sm"
                                     className="bg-green-600 hover:bg-green-700 text-white h-8 px-3 text-xs"
+                                    data-ai-help="sales_return_requests.management_approve_button"
                                     onClick={() => { setSelectedRequest(req); setActionType("approve") }}
                                   >
                                     <CheckCircle className="w-3 h-3 ml-1" /> اعتماد الإدارة
@@ -368,6 +369,7 @@ export default function SalesReturnRequestsPage() {
                                     size="sm"
                                     variant="outline"
                                     className="border-red-300 text-red-600 hover:bg-red-50 h-8 px-3 text-xs"
+                                    data-ai-help="sales_return_requests.management_reject_button"
                                     onClick={() => { setSelectedRequest(req); setActionType("reject") }}
                                   >
                                     <XCircle className="w-3 h-3 ml-1" /> رفض
@@ -378,6 +380,7 @@ export default function SalesReturnRequestsPage() {
                                   <Button
                                     size="sm"
                                     className="bg-green-600 hover:bg-green-700 text-white h-8 px-3 text-xs"
+                                    data-ai-help="sales_return_requests.warehouse_approve_button"
                                     onClick={() => { setSelectedRequest(req); setActionType("warehouse-approve") }}
                                   >
                                     <CheckCircle className="w-3 h-3 ml-1" /> اعتماد المخزن
@@ -386,6 +389,7 @@ export default function SalesReturnRequestsPage() {
                                     size="sm"
                                     variant="outline"
                                     className="border-red-300 text-red-600 hover:bg-red-50 h-8 px-3 text-xs"
+                                    data-ai-help="sales_return_requests.warehouse_reject_button"
                                     onClick={() => { setSelectedRequest(req); setActionType("warehouse-reject") }}
                                   >
                                     <XCircle className="w-3 h-3 ml-1" /> رفض
@@ -444,6 +448,7 @@ export default function SalesReturnRequestsPage() {
                     سبب الرفض <span className="text-red-500">*</span>
                   </label>
                   <Textarea
+                    data-ai-help="sales_return_requests.rejection_reason"
                     value={rejectionReason}
                     onChange={(e) => setRejectionReason(e.target.value)}
                     placeholder="يرجى كتابة سبب الرفض بوضوح..."
@@ -475,6 +480,7 @@ export default function SalesReturnRequestsPage() {
               onClick={handleAction}
               disabled={processing || ((actionType === "reject" || actionType === "warehouse-reject") && rejectionReason.trim().length < 5)}
               className={(actionType === "approve" || actionType === "warehouse-approve") ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}
+              data-ai-help="sales_return_requests.confirm_action_button"
             >
               {processing ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : null}
               {(actionType === "approve" || actionType === "warehouse-approve") ? "تأكيد" : "تأكيد الرفض"}

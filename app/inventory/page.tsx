@@ -750,7 +750,7 @@ export default function InventoryPage() {
                     - Admin / General Manager: يمكنه اختيار أي فرع
                     - Employee / Accountant / Store Manager: يظهر فرعه فقط (حقل قراءة فقط) */}
                 {userContext && (
-                  <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="flex items-center gap-2 sm:gap-3" data-ai-help="inventory.branch_filter">
                     <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                       <Building2 className="w-4 h-4" />
                       <span className="hidden sm:inline">{appLang === 'en' ? 'Branch:' : 'الفرع:'}</span>
@@ -793,7 +793,7 @@ export default function InventoryPage() {
 
                 {/* 🔐 Warehouse Selector - للمستخدمين العاديين: disabled، للـ Admin: enabled */}
                 {filteredWarehouses.length > 0 && (
-                  <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="flex items-center gap-2 sm:gap-3" data-ai-help="inventory.warehouse_filter">
                     <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                       <Warehouse className="w-4 h-4" />
                       <span className="hidden sm:inline">{appLang === 'en' ? 'Warehouse:' : 'المخزن:'}</span>
@@ -838,8 +838,8 @@ export default function InventoryPage() {
           </div>
 
           {/* بطاقات الإحصائيات */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" data-ai-help="inventory.summary_cards">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow" data-ai-help="inventory.available_stock">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -855,7 +855,7 @@ export default function InventoryPage() {
               </CardContent>
             </Card>
 
-            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow" data-ai-help="inventory.total_purchased">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -873,7 +873,7 @@ export default function InventoryPage() {
               </CardContent>
             </Card>
 
-            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow" data-ai-help="inventory.total_sold">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -907,7 +907,7 @@ export default function InventoryPage() {
           </div>
 
           {/* جدول حالة المخزون */}
-          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm" data-ai-help="inventory.stock_table">
             <CardHeader className="border-b border-gray-100 dark:border-slate-800">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -955,55 +955,55 @@ export default function InventoryPage() {
                             <span>{appLang === 'en' ? 'Product Name' : 'اسم المنتج'}</span>
                           </div>
                         </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.total_purchased">
                           <div className="flex items-center gap-2 justify-center">
                             <Truck className="w-4 h-4 text-emerald-600" />
                             <span>{appLang === 'en' ? 'Total Purchased' : 'إجمالي المشتريات'}</span>
                           </div>
                         </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.total_sold">
                           <div className="flex items-center gap-2 justify-center">
                             <ShoppingCart className="w-4 h-4 text-orange-600" />
                             <span>{appLang === 'en' ? 'Total Sold' : 'إجمالي المبيعات'}</span>
                           </div>
                         </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.sales_returns">
                           <div className="flex items-center gap-2 justify-center">
                             <RefreshCcw className="w-4 h-4 text-purple-600" />
                             <span>{appLang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'}</span>
                           </div>
                         </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.purchase_returns">
                           <div className="flex items-center gap-2 justify-center">
                             <RefreshCcw className="w-4 h-4 text-cyan-600" />
                             <span>{appLang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'}</span>
                           </div>
                         </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.write_offs">
                           <div className="flex items-center gap-2 justify-center">
                             <AlertCircle className="w-4 h-4 text-red-600" />
                             <span>{appLang === 'en' ? 'Write-offs' : 'الهالك'}</span>
                           </div>
                         </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.incoming_transfers">
                           <div className="flex items-center gap-2 justify-center">
                             <ArrowDown className="w-4 h-4 text-green-600" />
                             <span>{appLang === 'en' ? 'Incoming Transfers' : 'النقل الواردة'}</span>
                           </div>
                         </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.outgoing_transfers">
                           <div className="flex items-center gap-2 justify-center">
                             <ArrowUp className="w-4 h-4 text-blue-600" />
                             <span>{appLang === 'en' ? 'Outgoing Transfers' : 'النقل الصادرة'}</span>
                           </div>
                         </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.available_stock">
                           <div className="flex items-center gap-2 justify-center">
                             <BarChart3 className="w-4 h-4 text-blue-600" />
                             <span>{appLang === 'en' ? 'Available Stock' : 'المخزون المتاح'}</span>
                           </div>
                         </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.stock_status">
                           <div className="flex items-center gap-2 justify-center">
                             <span>{appLang === 'en' ? 'Status' : 'الحالة'}</span>
                           </div>
@@ -1052,7 +1052,7 @@ export default function InventoryPage() {
                             </td>
 
                             {/* إجمالي المشتريات */}
-                            <td className="px-4 py-4 text-center">
+                            <td className="px-4 py-4 text-center" data-ai-help="inventory.total_purchased">
                               <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
                                 <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                                 <span className="font-bold text-emerald-700 dark:text-emerald-300 text-base">
@@ -1062,7 +1062,7 @@ export default function InventoryPage() {
                             </td>
 
                             {/* إجمالي المبيعات */}
-                            <td className="px-4 py-4 text-center">
+                            <td className="px-4 py-4 text-center" data-ai-help="inventory.total_sold">
                               <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
                                 <TrendingDown className="w-4 h-4 text-orange-600 dark:text-orange-400" />
                                 <span className="font-bold text-orange-700 dark:text-orange-300 text-base">
@@ -1072,7 +1072,7 @@ export default function InventoryPage() {
                             </td>
 
                             {/* مرتجعات المبيعات */}
-                            <td className="px-4 py-4 text-center">
+                            <td className="px-4 py-4 text-center" data-ai-help="inventory.sales_returns">
                               <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${saleReturn > 0
                                 ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800'
                                 : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
@@ -1085,7 +1085,7 @@ export default function InventoryPage() {
                             </td>
 
                             {/* مرتجعات المشتريات */}
-                            <td className="px-4 py-4 text-center">
+                            <td className="px-4 py-4 text-center" data-ai-help="inventory.purchase_returns">
                               <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${purchaseReturn > 0
                                 ? 'bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800'
                                 : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
@@ -1098,7 +1098,7 @@ export default function InventoryPage() {
                             </td>
 
                             {/* الهالك */}
-                            <td className="px-4 py-4 text-center">
+                            <td className="px-4 py-4 text-center" data-ai-help="inventory.write_offs">
                               <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${writeOff > 0
                                 ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
                                 : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
@@ -1111,7 +1111,7 @@ export default function InventoryPage() {
                             </td>
 
                             {/* ✅ النقل الواردة (Incoming Transfers) */}
-                            <td className="px-4 py-4 text-center">
+                            <td className="px-4 py-4 text-center" data-ai-help="inventory.incoming_transfers">
                               {(() => {
                                 const incoming = incomingTransfers[product.id] || []
                                 const totalIncoming = incoming.reduce((sum, t) => sum + t.quantity, 0)
@@ -1149,7 +1149,7 @@ export default function InventoryPage() {
                             </td>
 
                             {/* ✅ النقل الصادرة (Outgoing Transfers) */}
-                            <td className="px-4 py-4 text-center">
+                            <td className="px-4 py-4 text-center" data-ai-help="inventory.outgoing_transfers">
                               {(() => {
                                 const outgoing = outgoingTransfers[product.id] || []
                                 const totalOutgoing = outgoing.reduce((sum, t) => sum + t.quantity, 0)
@@ -1187,7 +1187,7 @@ export default function InventoryPage() {
                             </td>
 
                             {/* المخزون المتاح */}
-                            <td className="px-4 py-4 text-center">
+                            <td className="px-4 py-4 text-center" data-ai-help="inventory.available_stock">
                               <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-lg ${isOutOfStock
                                 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-700'
                                 : isLowStock
@@ -1199,7 +1199,7 @@ export default function InventoryPage() {
                             </td>
 
                             {/* الحالة */}
-                            <td className="px-4 py-4 text-center">
+                            <td className="px-4 py-4 text-center" data-ai-help="inventory.stock_status">
                               {isOutOfStock ? (
                                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
                                   <AlertCircle className="w-4 h-4" />
@@ -1229,7 +1229,7 @@ export default function InventoryPage() {
                             {appLang === 'en' ? 'Total' : 'الإجمالي'} ({displayedProducts.length} {appLang === 'en' ? 'products' : 'منتج'})
                           </span>
                         </td>
-                        <td className="px-4 py-4 text-center">
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.total_purchased">
                           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-200 dark:bg-emerald-800 border border-emerald-400 dark:border-emerald-600">
                             <TrendingUp className="w-5 h-5 text-emerald-700 dark:text-emerald-300" />
                             <span className="font-bold text-emerald-800 dark:text-emerald-200 text-lg">
@@ -1237,7 +1237,7 @@ export default function InventoryPage() {
                             </span>
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-center">
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.total_sold">
                           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-200 dark:bg-orange-800 border border-orange-400 dark:border-orange-600">
                             <TrendingDown className="w-5 h-5 text-orange-700 dark:text-orange-300" />
                             <span className="font-bold text-orange-800 dark:text-orange-200 text-lg">
@@ -1245,7 +1245,7 @@ export default function InventoryPage() {
                             </span>
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-center">
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.sales_returns">
                           <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${Object.values(saleReturnTotals).reduce((a, b) => a + b, 0) > 0
                             ? 'bg-purple-200 dark:bg-purple-800 border border-purple-400 dark:border-purple-600'
                             : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
@@ -1256,7 +1256,7 @@ export default function InventoryPage() {
                             </span>
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-center">
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.purchase_returns">
                           <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${Object.values(purchaseReturnTotals).reduce((a, b) => a + b, 0) > 0
                             ? 'bg-cyan-200 dark:bg-cyan-800 border border-cyan-400 dark:border-cyan-600'
                             : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
@@ -1267,7 +1267,7 @@ export default function InventoryPage() {
                             </span>
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-center">
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.write_offs">
                           <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${Object.values(writeOffTotals).reduce((a, b) => a + b, 0) > 0
                             ? 'bg-red-200 dark:bg-red-800 border border-red-400 dark:border-red-600'
                             : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
@@ -1279,7 +1279,7 @@ export default function InventoryPage() {
                           </div>
                         </td>
                         {/* ✅ إجمالي النقل الواردة (Incoming Transfers) */}
-                        <td className="px-4 py-4 text-center">
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.incoming_transfers">
                           {(() => {
                             const totalIncoming = displayedProducts.reduce((sum, p) => {
                               const incoming = incomingTransfers[p.id] || []
@@ -1300,7 +1300,7 @@ export default function InventoryPage() {
                           })()}
                         </td>
                         {/* ✅ إجمالي النقل الصادرة (Outgoing Transfers) */}
-                        <td className="px-4 py-4 text-center">
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.outgoing_transfers">
                           {(() => {
                             const totalOutgoing = displayedProducts.reduce((sum, p) => {
                               const outgoing = outgoingTransfers[p.id] || []
@@ -1320,7 +1320,7 @@ export default function InventoryPage() {
                             )
                           })()}
                         </td>
-                        <td className="px-4 py-4 text-center">
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.available_stock">
                           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-200 dark:bg-blue-800 border border-blue-400 dark:border-blue-600">
                             <BarChart3 className="w-5 h-5 text-blue-700 dark:text-blue-300" />
                             <span className="font-bold text-blue-800 dark:text-blue-200 text-lg">
@@ -1328,7 +1328,7 @@ export default function InventoryPage() {
                             </span>
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-center">
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.stock_status">
                           <div className="flex items-center justify-center gap-3">
                             {lowStockCount > 0 && (
                               <Badge variant="destructive" className="gap-1 px-2 py-1">
@@ -1351,7 +1351,7 @@ export default function InventoryPage() {
           </Card>
 
           {/* قسم حركات المخزون */}
-          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm" data-ai-help="inventory.movements_table">
             <CardHeader className="border-b border-gray-100 dark:border-slate-800">
               <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-3">
@@ -1362,7 +1362,7 @@ export default function InventoryPage() {
                 </div>
 
                 {/* شريط الفلاتر */}
-                <div className="flex flex-wrap items-center gap-3 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl">
+                <div className="flex flex-wrap items-center gap-3 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl" data-ai-help="inventory.movement_filters">
                   <div className="flex items-center gap-2">
                     <Filter className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                     <span className="text-sm text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Filters:' : 'الفلاتر:'}</span>
@@ -1371,6 +1371,7 @@ export default function InventoryPage() {
                   {/* فلتر النوع */}
                   <select
                     value={movementFilter}
+                    data-ai-help="inventory.movement_type"
                     onChange={(e) => {
                       const val = e.target.value
                       startTransition(() => {
@@ -1387,6 +1388,7 @@ export default function InventoryPage() {
                   {/* فلتر المنتج */}
                   <select
                     value={movementProductId}
+                    data-ai-help="inventory.movement_filters"
                     onChange={(e) => {
                       const val = e.target.value
                       startTransition(() => {
@@ -1405,6 +1407,7 @@ export default function InventoryPage() {
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                     <Input
+                      data-ai-help="inventory.movement_filters"
                       type="date"
                       value={fromDate}
                       onChange={(e) => {
@@ -1415,6 +1418,7 @@ export default function InventoryPage() {
                     />
                     <span className="text-gray-400 dark:text-gray-500">-</span>
                     <Input
+                      data-ai-help="inventory.movement_filters"
                       type="date"
                       value={toDate}
                       onChange={(e) => {
@@ -1444,7 +1448,7 @@ export default function InventoryPage() {
                     const totalOut = filtered.reduce((acc, t) => acc + (Number(t.quantity_change || 0) < 0 ? Math.abs(Number(t.quantity_change)) : 0), 0)
                     const netChange = totalIn - totalOut
                     return (
-                      <div className={`flex flex-wrap items-center gap-2 ${isPending ? 'opacity-50' : ''}`}>
+                      <div className={`flex flex-wrap items-center gap-2 ${isPending ? 'opacity-50' : ''}`} data-ai-help="inventory.movement_totals">
                         {isPending && <RefreshCcw className="w-4 h-4 animate-spin text-blue-500" />}
                         <Badge variant="outline" className="gap-1 px-3 py-1.5">
                           <Package className="w-3 h-3" />
@@ -1523,6 +1527,7 @@ export default function InventoryPage() {
                               <div className="flex items-center gap-2 mt-1">
                                 <Badge variant="outline" className="text-xs font-mono">{transaction.products?.sku}</Badge>
                                 <Badge
+                                  data-ai-help="inventory.movement_type"
                                   variant="secondary"
                                   className={`text-xs ${transType.startsWith('purchase') ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
                                     transType.startsWith('sale') ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
@@ -1557,7 +1562,7 @@ export default function InventoryPage() {
                             </div>
                           </div>
                           <div className="text-left">
-                            <p className={`text-lg font-bold ${isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            <p className={`text-lg font-bold ${isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} data-ai-help="inventory.movement_quantity">
                               {isPositive ? '+' : ''}{transaction.quantity_change}
                             </p>
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">

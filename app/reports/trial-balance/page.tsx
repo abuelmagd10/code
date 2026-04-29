@@ -226,12 +226,13 @@ export default function TrialBalancePage() {
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900 w-full sm:w-40"
+                data-ai-help="trial_balance.report_date"
               />
-              <Button variant="outline" onClick={handlePrint}>
+              <Button variant="outline" onClick={handlePrint} data-ai-help="trial_balance.print_button">
                 <Download className="w-4 h-4 mr-2" />
                 {(hydrated && appLang === 'en') ? 'Print' : 'طباعة'}
               </Button>
-              <Button variant="outline" onClick={handleExportCsv}>
+              <Button variant="outline" onClick={handleExportCsv} data-ai-help="trial_balance.export_csv_button">
                 <Download className="w-4 h-4 mr-2" />
                 {(hydrated && appLang === 'en') ? 'Export CSV' : 'تصدير CSV'}
               </Button>
@@ -262,6 +263,7 @@ export default function TrialBalancePage() {
                       onClick={() => loadAccounts(endDate)}
                       variant="outline"
                       className="mt-3 border-red-300 text-red-700 hover:bg-red-50"
+                      data-ai-help="trial_balance.retry_button"
                     >
                       {(hydrated && appLang === 'en') ? 'Try Again' : 'حاول مرة أخرى'}
                     </Button>
@@ -280,7 +282,7 @@ export default function TrialBalancePage() {
               <CardContent className="pt-6 space-y-6">
                 {/* تحذير إذا كان الميزان غير متوازن */}
                 {!isBalanced && (
-                  <div className="mb-4 rounded border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950 p-4">
+                  <div className="mb-4 rounded border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950 p-4" data-ai-help="trial_balance.warning_message">
                     <div className="flex items-center gap-3">
                       <div className="text-red-600 dark:text-red-400 text-2xl">⚠️</div>
                       <div>
@@ -299,7 +301,7 @@ export default function TrialBalancePage() {
                     </div>
                   </div>
                 )}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" data-ai-help="trial_balance.charts">
                   <Card>
                     <CardContent>
                       <ResponsiveContainer width="100%" height={260}>
@@ -334,33 +336,33 @@ export default function TrialBalancePage() {
                     </CardContent>
                   </Card>
                 </div>
-                <div className="overflow-x-auto" ref={printRef}>
+                <div className="overflow-x-auto" ref={printRef} data-ai-help="trial_balance.accounts_table">
                   <table className="min-w-[560px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Code' : 'الرمز'}</th>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Account Name' : 'اسم الحساب'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? `Opening Debit (${currencySymbol})` : `مدين افتتاحي (${currencySymbol})`}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? `Opening Credit (${currencySymbol})` : `دائن افتتاحي (${currencySymbol})`}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? `Period Debit (${currencySymbol})` : `مدين الفترة (${currencySymbol})`}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? `Period Credit (${currencySymbol})` : `دائن الفترة (${currencySymbol})`}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? `Closing Balance (${currencySymbol})` : `الرصيد الختامي (${currencySymbol})`}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning data-ai-help="trial_balance.opening_balance">{(hydrated && appLang === 'en') ? `Opening Debit (${currencySymbol})` : `مدين افتتاحي (${currencySymbol})`}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning data-ai-help="trial_balance.opening_balance">{(hydrated && appLang === 'en') ? `Opening Credit (${currencySymbol})` : `دائن افتتاحي (${currencySymbol})`}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning data-ai-help="trial_balance.period_movement">{(hydrated && appLang === 'en') ? `Period Debit (${currencySymbol})` : `مدين الفترة (${currencySymbol})`}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning data-ai-help="trial_balance.period_movement">{(hydrated && appLang === 'en') ? `Period Credit (${currencySymbol})` : `دائن الفترة (${currencySymbol})`}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning data-ai-help="trial_balance.closing_balance">{(hydrated && appLang === 'en') ? `Closing Balance (${currencySymbol})` : `الرصيد الختامي (${currencySymbol})`}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {accounts.map((account, idx) => (
-                        <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
+                        <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900" data-ai-help="trial_balance.account_row">
                           <td className="px-4 py-3 font-mono text-gray-500">{account.account_code}</td>
                           <td className="px-4 py-3">
                             <Link href={`/journal-entries?account_id=${encodeURIComponent(account.account_id)}&to=${encodeURIComponent(endDate)}`} className="hover:text-teal-600">
                               {account.account_name}
                             </Link>
                           </td>
-                          <td className="px-4 py-3 text-blue-600 dark:text-blue-400">{numberFmt.format(account.opening_debit)}</td>
-                          <td className="px-4 py-3 text-red-600 dark:text-red-400">{numberFmt.format(account.opening_credit)}</td>
-                          <td className="px-4 py-3 text-blue-600 dark:text-blue-400">{numberFmt.format(account.period_debit)}</td>
-                          <td className="px-4 py-3 text-red-600 dark:text-red-400">{numberFmt.format(account.period_credit)}</td>
-                          <td className={`px-4 py-3 font-semibold ${account.closing_credit > 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                          <td className="px-4 py-3 text-blue-600 dark:text-blue-400" data-ai-help="trial_balance.opening_balance">{numberFmt.format(account.opening_debit)}</td>
+                          <td className="px-4 py-3 text-red-600 dark:text-red-400" data-ai-help="trial_balance.opening_balance">{numberFmt.format(account.opening_credit)}</td>
+                          <td className="px-4 py-3 text-blue-600 dark:text-blue-400" data-ai-help="trial_balance.period_movement">{numberFmt.format(account.period_debit)}</td>
+                          <td className="px-4 py-3 text-red-600 dark:text-red-400" data-ai-help="trial_balance.period_movement">{numberFmt.format(account.period_credit)}</td>
+                          <td className={`px-4 py-3 font-semibold ${account.closing_credit > 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`} data-ai-help="trial_balance.closing_balance">
                             {account.closing_debit > 0
                               ? `${numberFmt.format(account.closing_debit)} (Dr)`
                               : account.closing_credit > 0
@@ -373,11 +375,11 @@ export default function TrialBalancePage() {
                     <tfoot>
                       <tr className="font-bold bg-gray-100 dark:bg-slate-800 text-lg">
                         <td className="px-4 py-4" colSpan={2} suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total' : 'الإجمالي'}</td>
-                        <td className="px-4 py-4 text-blue-700 dark:text-blue-300">{numberFmt.format(data?.balances.opening.total_debit || 0)}</td>
-                        <td className="px-4 py-4 text-red-700 dark:text-red-300">{numberFmt.format(data?.balances.opening.total_credit || 0)}</td>
-                        <td className="px-4 py-4 text-blue-700 dark:text-blue-300">{numberFmt.format(data?.balances.period.total_debit || 0)}</td>
-                        <td className="px-4 py-4 text-red-700 dark:text-red-300">{numberFmt.format(data?.balances.period.total_credit || 0)}</td>
-                        <td className={`px-4 py-4 ${isBalanced ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                        <td className="px-4 py-4 text-blue-700 dark:text-blue-300" data-ai-help="trial_balance.debit_total">{numberFmt.format(data?.balances.opening.total_debit || 0)}</td>
+                        <td className="px-4 py-4 text-red-700 dark:text-red-300" data-ai-help="trial_balance.credit_total">{numberFmt.format(data?.balances.opening.total_credit || 0)}</td>
+                        <td className="px-4 py-4 text-blue-700 dark:text-blue-300" data-ai-help="trial_balance.debit_total">{numberFmt.format(data?.balances.period.total_debit || 0)}</td>
+                        <td className="px-4 py-4 text-red-700 dark:text-red-300" data-ai-help="trial_balance.credit_total">{numberFmt.format(data?.balances.period.total_credit || 0)}</td>
+                        <td className={`px-4 py-4 ${isBalanced ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`} data-ai-help={isBalanced ? "trial_balance.report_status" : "trial_balance.difference"}>
                           {isBalanced
                             ? `✓ ${(hydrated && appLang === 'en') ? 'Balanced' : 'متوازن'}`
                             : `✗ ${(hydrated && appLang === 'en') ? 'Unbalanced' : 'غير متوازن'} (${numberFmt.format(data?.balances.closing.difference || 0)})`}

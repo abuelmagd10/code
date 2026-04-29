@@ -561,23 +561,24 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                 onClick={() => setRegenerateOpen(true)}
                 disabled={!regenerateEnabled || busy}
                 className="gap-2"
+                data-ai-help="manufacturing_production_order_detail.regenerate_button"
               >
                 <RotateCcw className="h-4 w-4" />
                 {copy.detail.regenerate}
               </Button>
-              <Button onClick={() => setReleaseConfirmOpen(true)} disabled={!releaseEnabled || busy} className="gap-2">
+              <Button onClick={() => setReleaseConfirmOpen(true)} disabled={!releaseEnabled || busy} className="gap-2" data-ai-help="manufacturing_production_order_detail.release_button">
                 <Send className="h-4 w-4" />
                 {copy.detail.release}
               </Button>
-              <Button onClick={() => setStartConfirmOpen(true)} disabled={!startEnabled || busy} className="gap-2">
+              <Button onClick={() => setStartConfirmOpen(true)} disabled={!startEnabled || busy} className="gap-2" data-ai-help="manufacturing_production_order_detail.start_button">
                 <PlayCircle className="h-4 w-4" />
                 {copy.detail.start}
               </Button>
-              <Button onClick={() => setCompleteOpen(true)} disabled={!completeEnabled || busy} className="gap-2">
+              <Button onClick={() => setCompleteOpen(true)} disabled={!completeEnabled || busy} className="gap-2" data-ai-help="manufacturing_production_order_detail.complete_button">
                 <CheckCircle2 className="h-4 w-4" />
                 {copy.detail.complete}
               </Button>
-              <Button variant="destructive" onClick={() => setCancelOpen(true)} disabled={!cancelEnabled || busy} className="gap-2">
+              <Button variant="destructive" onClick={() => setCancelOpen(true)} disabled={!cancelEnabled || busy} className="gap-2" data-ai-help="manufacturing_production_order_detail.cancel_button">
                 <XCircle className="h-4 w-4" />
                 {copy.detail.cancel}
               </Button>
@@ -606,20 +607,20 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
               ) : (
                 <>
                   <div className="grid gap-4 md:grid-cols-3">
-                    <Card className="border-cyan-200 bg-cyan-50/80">
+                    <Card className="border-cyan-200 bg-cyan-50/80" data-ai-help="manufacturing_production_order_detail.finished_product">
                       <CardContent className="space-y-2 p-4">
                         <div className="text-sm text-slate-600">{copy.detail.ownerProduct}</div>
                         <div className="font-medium text-slate-900">{buildProductLabel(snapshot.product || order.product, appLang)}</div>
                         <div className="text-xs text-slate-500">{order.product_id}</div>
                       </CardContent>
                     </Card>
-                    <Card className="border-indigo-200 bg-indigo-50/80">
+                    <Card className="border-indigo-200 bg-indigo-50/80" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
                       <CardContent className="space-y-2 p-4">
                         <div className="text-sm text-slate-600">{copy.detail.sourceRefs}</div>
-                        <div className="font-medium text-slate-900">
+                        <div className="font-medium text-slate-900" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
                           {buildBomLabel(snapshot.bom || order.bom, snapshot.bom_version || order.bom_version, appLang)}
                         </div>
-                        <div className="font-medium text-slate-900">
+                        <div className="font-medium text-slate-900" data-ai-help="manufacturing_production_order_detail.routing">
                           {buildRoutingLabel(
                             snapshot.routing || order.routing,
                             snapshot.routing_version || order.routing_version,
@@ -628,7 +629,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                         </div>
                       </CardContent>
                     </Card>
-                    <Card className="border-emerald-200 bg-emerald-50/80">
+                    <Card className="border-emerald-200 bg-emerald-50/80" data-ai-help="manufacturing_production_order_detail.status">
                       <CardContent className="space-y-2 p-4">
                         <div className="text-sm text-slate-600">{copy.detail.snapshotCount}</div>
                         <div className="text-2xl font-semibold text-slate-900">{snapshot.operations.length}</div>
@@ -659,19 +660,19 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                         <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                           <div className="space-y-1">
                             <div className="text-xs uppercase tracking-wide text-slate-500">{copy.detail.status}</div>
-                            <Badge variant={getProductionOrderStatusVariant(order.status)}>
+                            <Badge variant={getProductionOrderStatusVariant(order.status)} data-ai-help="manufacturing_production_order_detail.status">
                               {getProductionOrderStatusLabel(order.status, appLang)}
                             </Badge>
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-1" data-ai-help="manufacturing_production_order_detail.status">
                             <div className="text-xs uppercase tracking-wide text-slate-500">{copy.detail.plannedQty}</div>
                             <div className="font-medium text-slate-900">{formatQuantity(order.planned_quantity, appLang)}</div>
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-1" data-ai-help="manufacturing_production_order_detail.planned_quantity">
                             <div className="text-xs uppercase tracking-wide text-slate-500">{copy.detail.completedQty}</div>
                             <div className="font-medium text-slate-900">{formatQuantity(order.completed_quantity, appLang)}</div>
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-1" data-ai-help="manufacturing_production_order_detail.completed_quantity">
                             <div className="text-xs uppercase tracking-wide text-slate-500">{copy.detail.branchId}</div>
                             <div className="font-mono text-sm text-slate-700">{order.branch_id}</div>
                           </div>
@@ -684,11 +685,11 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                           <CardDescription>{copy.detail.draftSectionDescription}</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600" data-ai-help="manufacturing_production_order_detail.frozen_snapshot_message">
                             {lockMessage}
                           </div>
                           <div className="grid gap-4 md:grid-cols-2">
-                            <div className="space-y-2">
+                            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
                               <Label>{copy.list.fields.bomId}</Label>
                               <Input
                                 value={headerForm.bom_id}
@@ -696,7 +697,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                                 disabled={!headerEditable}
                               />
                             </div>
-                            <div className="space-y-2">
+                            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
                               <Label>{copy.list.fields.bomVersionId}</Label>
                               <Input
                                 value={headerForm.bom_version_id}
@@ -706,7 +707,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                                 disabled={!headerEditable}
                               />
                             </div>
-                            <div className="space-y-2">
+                            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.issue_warehouse">
                               <Label>{copy.detail.issueWarehouseId}</Label>
                               <Input
                                 value={headerForm.issue_warehouse_id}
@@ -716,7 +717,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                                 disabled={!headerEditable}
                               />
                             </div>
-                            <div className="space-y-2">
+                            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.receipt_warehouse">
                               <Label>{copy.detail.receiptWarehouseId}</Label>
                               <Input
                                 value={headerForm.receipt_warehouse_id}
@@ -781,23 +782,23 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                           <CardDescription>{copy.detail.sourceSectionDescription}</CardDescription>
                         </CardHeader>
                         <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                          <div className="space-y-1">
+                          <div className="space-y-1" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
                             <div className="text-xs uppercase tracking-wide text-slate-500">{copy.list.fields.bomId}</div>
                             <div className="font-mono text-sm text-slate-700">{order.bom_id}</div>
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-1" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
                             <div className="text-xs uppercase tracking-wide text-slate-500">{copy.list.fields.bomVersionId}</div>
                             <div className="font-mono text-sm text-slate-700">{order.bom_version_id}</div>
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-1" data-ai-help="manufacturing_production_order_detail.routing">
                             <div className="text-xs uppercase tracking-wide text-slate-500">{copy.list.fields.routingId}</div>
                             <div className="font-mono text-sm text-slate-700">{order.routing_id}</div>
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-1" data-ai-help="manufacturing_production_order_detail.routing">
                             <div className="text-xs uppercase tracking-wide text-slate-500">{copy.list.fields.routingVersionId}</div>
                             <div className="font-mono text-sm text-slate-700">{order.routing_version_id}</div>
                           </div>
-                          <div className="space-y-1 xl:col-span-2">
+                          <div className="space-y-1 xl:col-span-2" data-ai-help="manufacturing_production_order_detail.routing">
                             <div className="text-xs uppercase tracking-wide text-slate-500">{copy.common.bomRouting}</div>
                             <div className="space-y-1 text-sm text-slate-700">
                               <div>{buildBomLabel(snapshot.bom || order.bom, snapshot.bom_version || order.bom_version, appLang)}</div>
@@ -858,7 +859,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                           <CardDescription>{copy.detail.operationsSectionDescription}</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600" data-ai-help="manufacturing_production_order_detail.frozen_snapshot_message">
                             {lockMessage}
                             <div className="mt-1 text-xs text-slate-500">{copy.common.partialProgress}</div>
                           </div>
@@ -872,14 +873,14 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                               </div>
                             </div>
                           ) : (
-                            <div className="rounded-2xl border bg-white">
+                            <div className="rounded-2xl border bg-white" data-ai-help="manufacturing_production_order_detail.operations_table">
                               <Table>
                                 <TableHeader>
                                   <TableRow>
-                                    <TableHead>{copy.detail.tableOperation}</TableHead>
+                                    <TableHead data-ai-help="manufacturing_production_order_detail.operations_table">{copy.detail.tableOperation}</TableHead>
                                     <TableHead>{copy.detail.tableWorkCenter}</TableHead>
-                                    <TableHead>{copy.detail.tableStatus}</TableHead>
-                                    <TableHead>{copy.detail.tableQuantity}</TableHead>
+                                    <TableHead data-ai-help="manufacturing_production_order_detail.operation_status">{copy.detail.tableStatus}</TableHead>
+                                    <TableHead data-ai-help="manufacturing_production_order_detail.operation_quantity">{copy.detail.tableQuantity}</TableHead>
                                     <TableHead>{copy.detail.tableTiming}</TableHead>
                                     <TableHead>{copy.detail.tableAction}</TableHead>
                                   </TableRow>
@@ -890,7 +891,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
 
                                     return (
                                       <TableRow key={operation.id}>
-                                        <TableCell className="align-top">
+                                        <TableCell className="align-top" data-ai-help="manufacturing_production_order_detail.operations_table">
                                           <div className="space-y-1">
                                             <div className="font-medium text-slate-900">
                                               #{operation.operation_no} / {operation.operation_code}
@@ -913,12 +914,12 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                                             </Badge>
                                           ) : null}
                                         </TableCell>
-                                        <TableCell className="align-top">
+                                        <TableCell className="align-top" data-ai-help="manufacturing_production_order_detail.operation_status">
                                           <Badge variant={getProductionOrderOperationStatusVariant(operation.status)}>
                                             {getProductionOrderOperationStatusLabel(operation.status, appLang)}
                                           </Badge>
                                         </TableCell>
-                                        <TableCell className="align-top">
+                                        <TableCell className="align-top" data-ai-help="manufacturing_production_order_detail.operation_quantity">
                                           <div className="space-y-1 text-sm text-slate-700">
                                             <div>
                                               {copy.detail.plannedQty}: {formatQuantity(operation.planned_quantity, appLang)}
@@ -946,6 +947,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                                             className="gap-2"
                                             disabled={!progressAllowed || busy}
                                             onClick={() => openProgressDialog(operation)}
+                                            data-ai-help="manufacturing_production_order_detail.progress_button"
                                           >
                                             <TimerReset className="h-4 w-4" />
                                             {copy.detail.progress}
@@ -973,14 +975,14 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
             <CardDescription>{copy.detail.dialogs.regenerateDescription}</CardDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
+            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
               <Label>{copy.list.fields.bomId}</Label>
               <Input
                 value={regenerateForm.bom_id}
                 onChange={(event) => setRegenerateForm((current) => ({ ...current, bom_id: event.target.value }))}
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
               <Label>{copy.list.fields.bomVersionId}</Label>
               <Input
                 value={regenerateForm.bom_version_id}
@@ -989,14 +991,14 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                 }
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.routing">
               <Label>{copy.list.fields.routingId}</Label>
               <Input
                 value={regenerateForm.routing_id}
                 onChange={(event) => setRegenerateForm((current) => ({ ...current, routing_id: event.target.value }))}
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.routing">
               <Label>{copy.list.fields.routingVersionId}</Label>
               <Input
                 value={regenerateForm.routing_version_id}
@@ -1005,7 +1007,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                 }
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.planned_quantity">
               <Label>{copy.list.fields.plannedQuantity}</Label>
               <Input
                 type="number"
@@ -1017,14 +1019,14 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                 }
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.issue_warehouse">
               <Label>{copy.detail.orderUom}</Label>
               <Input
                 value={regenerateForm.order_uom}
                 onChange={(event) => setRegenerateForm((current) => ({ ...current, order_uom: event.target.value }))}
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.receipt_warehouse">
               <Label>{copy.detail.issueWarehouseId}</Label>
               <Input
                 value={regenerateForm.issue_warehouse_id}
@@ -1075,7 +1077,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
             <Button variant="outline" onClick={() => setRegenerateOpen(false)} disabled={runningAction === "regenerate"}>
               {copy.common.cancel}
             </Button>
-            <Button onClick={handleRegenerate} disabled={runningAction === "regenerate"}>
+            <Button onClick={handleRegenerate} disabled={runningAction === "regenerate"} data-ai-help="manufacturing_production_order_detail.regenerate_button">
               {runningAction === "regenerate" ? copy.common.loadingAction : copy.detail.regenerate}
             </Button>
           </DialogFooter>
@@ -1089,7 +1091,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
             <CardDescription>{copy.detail.dialogs.completeDescription}</CardDescription>
           </DialogHeader>
           <div className="grid gap-4">
-            <div className="space-y-2">
+            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.completed_quantity">
               <Label>{copy.detail.completedQty}</Label>
               <Input
                 type="number"
@@ -1114,7 +1116,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
             <Button variant="outline" onClick={() => setCompleteOpen(false)} disabled={runningAction === "complete"}>
               {copy.common.cancel}
             </Button>
-            <Button onClick={handleComplete} disabled={runningAction === "complete"}>
+            <Button onClick={handleComplete} disabled={runningAction === "complete"} data-ai-help="manufacturing_production_order_detail.complete_button">
               {runningAction === "complete" ? copy.common.loadingAction : copy.detail.complete}
             </Button>
           </DialogFooter>
@@ -1128,7 +1130,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
             <CardDescription>{copy.detail.dialogs.cancelDescription}</CardDescription>
           </DialogHeader>
           <div className="grid gap-4">
-            <div className="space-y-2">
+            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.cancellation_reason">
               <Label>{copy.detail.cancellationReason}</Label>
               <Textarea
                 value={cancelForm.cancellation_reason}
@@ -1151,7 +1153,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
             <Button variant="outline" onClick={() => setCancelOpen(false)} disabled={runningAction === "cancel"}>
               {copy.common.cancel}
             </Button>
-            <Button variant="destructive" onClick={handleCancel} disabled={runningAction === "cancel"}>
+            <Button variant="destructive" onClick={handleCancel} disabled={runningAction === "cancel"} data-ai-help="manufacturing_production_order_detail.cancel_button">
               {runningAction === "cancel" ? copy.common.loadingAction : copy.detail.cancel}
             </Button>
           </DialogFooter>
@@ -1165,7 +1167,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
             <CardDescription>{copy.detail.dialogs.progressDescription}</CardDescription>
           </DialogHeader>
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
+            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.operation_status">
               <Label>{copy.detail.tableStatus}</Label>
               <Select
                 value={progressForm.status}
@@ -1188,7 +1190,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.operation_quantity">
               <Label>{copy.detail.completedQty}</Label>
               <Input
                 type="number"
@@ -1240,7 +1242,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
             >
               {copy.common.cancel}
             </Button>
-            <Button onClick={handleProgressSave} disabled={runningAction === "progress"}>
+            <Button onClick={handleProgressSave} disabled={runningAction === "progress"} data-ai-help="manufacturing_production_order_detail.progress_button">
               {runningAction === "progress" ? copy.common.loadingAction : copy.detail.progress}
             </Button>
           </DialogFooter>
@@ -1255,7 +1257,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={runningAction === "release"}>{copy.common.cancel}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleRelease} disabled={runningAction === "release"}>
+            <AlertDialogAction onClick={handleRelease} disabled={runningAction === "release"} data-ai-help="manufacturing_production_order_detail.release_button">
               {runningAction === "release" ? copy.common.loadingAction : copy.detail.release}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -1270,7 +1272,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={runningAction === "start"}>{copy.common.cancel}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleStart} disabled={runningAction === "start"}>
+            <AlertDialogAction onClick={handleStart} disabled={runningAction === "start"} data-ai-help="manufacturing_production_order_detail.start_button">
               {runningAction === "start" ? copy.common.loadingAction : copy.detail.start}
             </AlertDialogAction>
           </AlertDialogFooter>

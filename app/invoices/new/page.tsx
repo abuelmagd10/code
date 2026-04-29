@@ -983,7 +983,7 @@ export default function NewInvoicePage() {
                 </p>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
+                <div className="space-y-2" data-ai-help="invoices.sales_order">
                   <Label htmlFor="sales_order" className="flex items-center gap-1" suppressHydrationWarning>
                     {(hydrated && appLang === 'en') ? 'Sales Order' : 'أمر البيع'} <span className="text-red-500">*</span>
                   </Label>
@@ -1038,7 +1038,7 @@ export default function NewInvoicePage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
+                  <div className="space-y-2" data-ai-help="invoices.customer">
                     <Label htmlFor="customer" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Customer' : 'العميل'}</Label>
                     <CustomerSearchSelect
                       customers={customers}
@@ -1052,6 +1052,7 @@ export default function NewInvoicePage() {
                         type="button"
                         variant="outline"
                         size="sm"
+                        data-ai-help="invoices.new_customer_button"
                         onClick={() => setIsCustDialogOpen(true)}
                         disabled={!permWriteCustomers}
                         title={!permWriteCustomers ? (appLang === 'en' ? 'No permission to add customers' : 'لا توجد صلاحية لإضافة عملاء') : ''}
@@ -1244,7 +1245,7 @@ export default function NewInvoicePage() {
                     </Dialog>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2" data-ai-help="invoices.issue_date">
                     <Label htmlFor="invoice_date" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Issue date' : 'تاريخ الفاتورة'}</Label>
                     <Input
                       id="invoice_date"
@@ -1259,7 +1260,7 @@ export default function NewInvoicePage() {
                     />
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2" data-ai-help="invoices.due_date">
                     <Label htmlFor="due_date" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Due date' : 'تاريخ الاستحقاق'}</Label>
                     <Input
                       id="due_date"
@@ -1340,7 +1341,7 @@ export default function NewInvoicePage() {
                 </div>
 
                 {/* Branch, Cost Center, and Warehouse Selection */}
-                <div className="pt-4 border-t">
+                <div className="pt-4 border-t" data-ai-help="invoices.branch_context">
                   <BranchCostCenterSelector
                     branchId={branchId}
                     costCenterId={costCenterId}
@@ -1356,7 +1357,7 @@ export default function NewInvoicePage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card data-ai-help="invoices.items">
               <CardHeader>
                 <CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Invoice Items' : 'عناصر الفاتورة'}</CardTitle>
               </CardHeader>
@@ -1374,7 +1375,7 @@ export default function NewInvoicePage() {
                     />
                     <Label htmlFor="taxInclusive" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Prices include tax' : 'الأسعار شاملة الضريبة'}</Label>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2" data-ai-help="invoices.discount">
                     <Label htmlFor="invoiceDiscount" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Invoice discount' : 'خصم الفاتورة'}</Label>
                     <NumericInput
                       id="invoiceDiscount"
@@ -1620,7 +1621,7 @@ export default function NewInvoicePage() {
                   </>
                 )}
                 <div className="mt-4">
-                  <Button type="button" variant="outline" size="sm" onClick={addInvoiceItem}>
+                  <Button type="button" variant="outline" size="sm" data-ai-help="invoices.add_item_button" onClick={addInvoiceItem}>
                     <Plus className="w-4 h-4 mr-2" />
                     {appLang === 'en' ? 'Add Item' : 'إضافة عنصر'}
                   </Button>
@@ -1644,7 +1645,7 @@ export default function NewInvoicePage() {
                       </Label>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
+                      <div className="space-y-2" data-ai-help="invoices.shipping_provider">
                         <Label suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
                           {appLang === 'en' ? 'Select Shipping Company' : 'اختر شركة الشحن'}
                         </Label>
@@ -1789,7 +1790,7 @@ export default function NewInvoicePage() {
             </Card>
 
             <div className="flex gap-3">
-              <Button type="submit" disabled={isSaving}>
+              <Button type="submit" data-ai-help="invoices.create_invoice_button" disabled={isSaving}>
                 {isSaving ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Create Invoice' : 'إنشاء الفاتورة')}
               </Button>
               <Button type="button" variant="outline" onClick={() => router.back()}>

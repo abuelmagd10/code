@@ -468,7 +468,7 @@ export default function PurchaseReturnsPage() {
     // Phase 1: Waiting for admin approval
     if (wfStatus === 'pending_admin_approval') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300" data-ai-help="purchase_returns.status.pending_admin">
           <Clock className="w-3 h-3" />
           {appLang === 'en' ? 'Pending Admin' : 'بانتظار الإدارة'}
         </span>
@@ -477,7 +477,7 @@ export default function PurchaseReturnsPage() {
     // Phase 2: Admin approved, waiting for warehouse
     if (wfStatus === 'pending_warehouse') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" data-ai-help="purchase_returns.status.pending_warehouse">
           <Clock className="w-3 h-3" />
           {appLang === 'en' ? 'Pending Warehouse' : 'بانتظار المخزن'}
         </span>
@@ -486,7 +486,7 @@ export default function PurchaseReturnsPage() {
     // Warehouse rejected
     if (wfStatus === 'warehouse_rejected') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300" data-ai-help="purchase_returns.status.rejected">
           <XCircle className="w-3 h-3" />
           {appLang === 'en' ? 'Warehouse Rejected' : 'مرفوض من المخزن'}
         </span>
@@ -495,7 +495,7 @@ export default function PurchaseReturnsPage() {
     // Legacy: pending_approval
     if (status === 'pending_approval' || wfStatus === 'pending_approval') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300" data-ai-help="purchase_returns.status.pending_admin">
           <Clock className="w-3 h-3" />
           {isMultiAlloc
             ? `0/${allocations.length} ${appLang === 'en' ? 'warehouses' : 'مخازن'}`
@@ -513,7 +513,7 @@ export default function PurchaseReturnsPage() {
     }
     if (status === 'rejected') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" data-ai-help="purchase_returns.status.rejected">
           <XCircle className="w-3 h-3" />
           {appLang === 'en' ? 'Rejected' : 'مرفوض'}
         </span>
@@ -529,7 +529,7 @@ export default function PurchaseReturnsPage() {
     }
     if (status === 'partially_returned') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300" data-ai-help="purchase_returns.status.returned">
           <RotateCcw className="w-3 h-3" />
           {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئياً'}
         </span>
@@ -537,7 +537,7 @@ export default function PurchaseReturnsPage() {
     }
     if (status === 'returned') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" data-ai-help="purchase_returns.status.returned">
           <CheckCircle2 className="w-3 h-3" />
           {appLang === 'en' ? 'Returned' : 'مرتجع'}
         </span>
@@ -545,7 +545,7 @@ export default function PurchaseReturnsPage() {
     }
     if (status === 'closed') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" data-ai-help="purchase_returns.status.closed">
           <Ban className="w-3 h-3" />
           {appLang === 'en' ? 'Closed' : 'مغلق'}
         </span>
@@ -554,7 +554,7 @@ export default function PurchaseReturnsPage() {
     if (wfStatus === 'partial_approval') {
       const confirmedCount = allocations.filter(a => a.workflow_status === 'confirmed').length
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" data-ai-help="purchase_returns.status.pending_warehouse">
           <Clock className="w-3 h-3" />
           {confirmedCount}/{allocations.length} {appLang === 'en' ? 'warehouses' : 'مخازن'}
         </span>
@@ -562,7 +562,7 @@ export default function PurchaseReturnsPage() {
     }
     if (wfStatus === 'confirmed') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" data-ai-help="purchase_returns.status.returned">
           <CheckCircle2 className="w-3 h-3" />
           {isMultiAlloc
             ? `${allocations.length}/${allocations.length} ${appLang === 'en' ? 'warehouses' : 'مخازن'}`
@@ -779,6 +779,7 @@ export default function PurchaseReturnsPage() {
                     onClick={() => handleApprovePR(pr)}
                     disabled={isApproving}
                     title={appLang === 'en' ? 'Admin Approve Return' : 'اعتماد المرتجع إدارياً'}
+                    data-ai-help="purchase_returns.admin_approve_button"
                   >
                     <CheckCircle2 className="w-3 h-3 mr-1" />
                     {appLang === 'en' ? 'Approve' : 'اعتماد'}
@@ -790,6 +791,7 @@ export default function PurchaseReturnsPage() {
                     onClick={() => { setPrToReject(pr); setIsRejectDialogOpen(true) }}
                     disabled={isApproving}
                     title={appLang === 'en' ? 'Admin Reject Return' : 'رفض المرتجع إدارياً'}
+                    data-ai-help="purchase_returns.admin_reject_button"
                   >
                     <XCircle className="w-3 h-3 mr-1" />
                     {appLang === 'en' ? 'Reject' : 'رفض'}
@@ -806,6 +808,7 @@ export default function PurchaseReturnsPage() {
                     onClick={() => confirmDelivery(pr)}
                     disabled={confirmingId === pr.id}
                     title={appLang === 'en' ? 'Confirm Delivery to Supplier' : 'اعتماد تسليم البضاعة للمورد'}
+                    data-ai-help="purchase_returns.warehouse_confirm_button"
                   >
                     {confirmingId === pr.id ? (
                       <span className="animate-spin">⏳</span>
@@ -823,6 +826,7 @@ export default function PurchaseReturnsPage() {
                     onClick={() => { setPrToWarehouseReject(pr); setIsWarehouseRejectDialogOpen(true) }}
                     disabled={isWarehouseRejecting}
                     title={appLang === 'en' ? 'Warehouse Reject' : 'رفض من المخزن'}
+                    data-ai-help="purchase_returns.warehouse_reject_button"
                   >
                     <XCircle className="w-3 h-3 mr-1" />
                     {appLang === 'en' ? 'Reject' : 'رفض'}
@@ -838,6 +842,7 @@ export default function PurchaseReturnsPage() {
                   onClick={() => confirmDelivery(pr)}
                   disabled={confirmingId === pr.id}
                   title={appLang === 'en' ? 'Confirm (no warehouse manager assigned)' : 'اعتماد (لا يوجد مسؤول مخزن)'}
+                  data-ai-help="purchase_returns.warehouse_confirm_button"
                 >
                   {confirmingId === pr.id ? (
                     <span className="animate-spin">⏳</span>
@@ -861,6 +866,7 @@ export default function PurchaseReturnsPage() {
                   className="bg-teal-600 hover:bg-teal-700 text-white text-xs h-7 px-2"
                   onClick={() => { setPrToRefund(pr); setIsRefundDialogOpen(true) }}
                   title={appLang === 'en' ? 'Record Refund Received' : 'تسجيل استلام الاسترداد'}
+                  data-ai-help="purchase_returns.supplier_refund_button"
                 >
                   <RotateCcw className="w-3 h-3 mr-1" />
                   {appLang === 'en' ? 'Refund' : 'استرداد'}
@@ -875,6 +881,7 @@ export default function PurchaseReturnsPage() {
                   className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-7 px-2"
                   onClick={() => router.push(`/purchase-returns/new?edit=${pr.id}`)}
                   title={appLang === 'en' ? 'Edit & Resubmit for Approval' : 'تعديل وإعادة إرسال للاعتماد'}
+                  data-ai-help="purchase_returns.edit_resubmit_button"
                 >
                   <Pencil className="w-3 h-3 mr-1" />
                   {appLang === 'en' ? 'Edit & Resubmit' : 'تعديل وإعادة إرسال'}
@@ -888,6 +895,7 @@ export default function PurchaseReturnsPage() {
                 className="h-7"
                 onClick={() => router.push(`/purchase-returns/${pr.id}`)}
                 title={appLang === 'en' ? 'View Return Details' : 'عرض تفاصيل المرتجع'}
+                data-ai-help="purchase_returns.view_details_button"
               >
                 <Eye className="w-3.5 h-3.5" />
               </Button>
@@ -899,6 +907,7 @@ export default function PurchaseReturnsPage() {
                   className="h-7"
                   onClick={() => router.push(`/bills/${pr.bills?.id}`)}
                   title={appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}
+                  data-ai-help="purchase_returns.view_bill_button"
                 >
                   <Eye className="w-3.5 h-3.5" />
                 </Button>
@@ -916,6 +925,7 @@ export default function PurchaseReturnsPage() {
                     onClick={() => confirmAllocation(pr, alloc)}
                     disabled={confirmingAllocationId === alloc.id}
                     title={`${appLang === 'en' ? 'Confirm' : 'اعتماد'}: ${(alloc.warehouses as any)?.name || ''}`}
+                    data-ai-help="purchase_returns.warehouse_confirm_button"
                   >
                     {confirmingAllocationId === alloc.id ? (
                       <span className="animate-spin">⏳</span>
@@ -947,6 +957,7 @@ export default function PurchaseReturnsPage() {
                         className="bg-amber-600 hover:bg-amber-700 text-white text-[10px] h-6 px-1.5"
                         onClick={() => confirmAllocation(pr, alloc)}
                         disabled={confirmingAllocationId === alloc.id}
+                        data-ai-help="purchase_returns.warehouse_confirm_button"
                         title={appLang === 'en'
                           ? `Confirm (no warehouse manager): ${(alloc.warehouses as any)?.name || ''}`
                           : `اعتماد (لا يوجد مسؤول مخزن): ${(alloc.warehouses as any)?.name || ''}`
@@ -1036,7 +1047,7 @@ export default function PurchaseReturnsPage() {
                   )}
                 </div>
               </div>
-              <Button onClick={() => router.push("/purchase-returns/new")} className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4">
+              <Button onClick={() => router.push("/purchase-returns/new")} className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4" data-ai-help="purchase_returns.new_return_button">
                 <Plus className="w-4 h-4 ml-1 sm:ml-2" />
                 {appLang === 'en' ? 'New Return' : 'مرتجع جديد'}
               </Button>
@@ -1045,7 +1056,7 @@ export default function PurchaseReturnsPage() {
 
           {/* بانر الاعتماد لمسؤول المخزن */}
           {isStoreManager && myPendingCount > 0 && (
-            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-4">
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-4" data-ai-help="purchase_returns.pending_approval_banner">
               <div className="flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
                 <div>
@@ -1073,6 +1084,7 @@ export default function PurchaseReturnsPage() {
               <div className="flex items-center gap-2">
                 <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                 <Input
+                  data-ai-help="purchase_returns.search"
                   placeholder={appLang === 'en' ? 'Search returns...' : 'البحث في المرتجعات...'}
                   value={searchTerm}
                   onChange={(e) => {
@@ -1086,7 +1098,7 @@ export default function PurchaseReturnsPage() {
           </Card>
 
           {/* Returns List */}
-          <Card>
+          <Card data-ai-help="purchase_returns.returns_table">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>{appLang === 'en' ? 'Returns List' : 'قائمة المرتجعات'}</CardTitle>
@@ -1125,7 +1137,7 @@ export default function PurchaseReturnsPage() {
       <Dialog open={isRefundDialogOpen} onOpenChange={(open) => { setIsRefundDialogOpen(open); if (!open) { setPrToRefund(null); setRefundNotes('') } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-teal-700 dark:text-teal-400">
+            <DialogTitle className="text-teal-700 dark:text-teal-400" data-ai-help="purchase_returns.supplier_refund_dialog">
               {appLang === 'en' ? '💰 Record Supplier Refund' : '💰 تسجيل استلام الاسترداد من المورد'}
             </DialogTitle>
           </DialogHeader>
@@ -1153,6 +1165,7 @@ export default function PurchaseReturnsPage() {
             <div className="space-y-1">
               <Label>{appLang === 'en' ? 'Notes (optional)' : 'ملاحظات (اختياري)'}</Label>
               <Textarea
+                data-ai-help="purchase_returns.supplier_refund_dialog"
                 value={refundNotes}
                 onChange={(e) => setRefundNotes(e.target.value)}
                 placeholder={appLang === 'en' ? 'e.g. Cash received at main office, Ref: TRX-12345' : 'مثال: تم استلام المبلغ نقداً في المكتب الرئيسي، المرجع: TRX-12345'}
@@ -1168,6 +1181,7 @@ export default function PurchaseReturnsPage() {
               className="bg-teal-600 hover:bg-teal-700 text-white"
               onClick={handleRecordRefund}
               disabled={isRecordingRefund}
+              data-ai-help="purchase_returns.supplier_refund_button"
             >
               {isRecordingRefund ? '...' : (appLang === 'en' ? 'Confirm Refund Received' : 'تأكيد استلام الاسترداد')}
             </Button>
@@ -1192,6 +1206,7 @@ export default function PurchaseReturnsPage() {
               </p>
             )}
             <Textarea
+              data-ai-help="purchase_returns.rejection_reason"
               placeholder={appLang === 'en' ? 'Enter rejection reason (required)…' : 'أدخل سبب الرفض الإداري (إلزامي)…'}
               value={rejectionReason}
               onChange={(e) => setRejectionReason(e.target.value)}
@@ -1207,6 +1222,7 @@ export default function PurchaseReturnsPage() {
               className="bg-red-600 hover:bg-red-700 text-white"
               onClick={handleRejectPR}
               disabled={isApproving || !rejectionReason.trim()}
+              data-ai-help="purchase_returns.confirm_rejection_button"
             >
               {isApproving ? '⏳' : (appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض')}
             </Button>
@@ -1236,6 +1252,7 @@ export default function PurchaseReturnsPage() {
                 : '⚠️ الرفض سيُشعر المنشئ للتعديل وإعادة الإرسال. ستبدأ دورة الاعتماد من جديد.'}
             </p>
             <Textarea
+              data-ai-help="purchase_returns.rejection_reason"
               placeholder={appLang === 'en' ? 'Enter warehouse rejection reason (required)…' : 'أدخل سبب رفض المخزن (إلزامي)…'}
               value={warehouseRejectionReason}
               onChange={(e) => setWarehouseRejectionReason(e.target.value)}
@@ -1251,6 +1268,7 @@ export default function PurchaseReturnsPage() {
               className="bg-rose-600 hover:bg-rose-700 text-white"
               onClick={handleWarehouseReject}
               disabled={isWarehouseRejecting || !warehouseRejectionReason.trim()}
+              data-ai-help="purchase_returns.confirm_rejection_button"
             >
               {isWarehouseRejecting ? '⏳' : (appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض')}
             </Button>

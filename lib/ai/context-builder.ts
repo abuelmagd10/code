@@ -2,6 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import type { AIContextScope, AIDomain } from "@/lib/ai/contracts"
 import type { AISettings, PageGuide } from "@/lib/page-guides"
 import { fetchAISettings, fetchPageGuide } from "@/lib/page-guides"
+import {
+  buildFieldHelpContextBlock,
+  getFieldHelpForPage,
+  type AIFieldHelpItem,
+} from "@/lib/ai/field-help-registry"
+import { getPageKeyEntry } from "@/lib/ai/page-key-registry"
 
 export interface AIPermissionSnapshot {
   resource: string | null
@@ -36,6 +42,8 @@ export interface AICopilotContext {
   governanceSummary: string
   permissionSnapshot: AIPermissionSnapshot
   liveContext: AILiveContext
+  uiHelp: AIFieldHelpItem[]
+  uiHelpContextBlock: string
 }
 
 export interface BuildAICopilotContextParams {
@@ -77,6 +85,8 @@ export async function buildAICopilotContext(
 
   const domain = inferDomainFromPageKey(pageKey)
   const pageResource = mapPageKeyToResource(pageKey)
+  const uiHelp = getFieldHelpForPage(pageKey)
+  const uiHelpContextBlock = buildFieldHelpContextBlock(pageKey, language)
 
   const [settings, guide, permissionSnapshot, liveContext] = await Promise.all([
     fetchAISettings(supabase, companyId),
@@ -95,17 +105,21 @@ export async function buildAICopilotContext(
     governanceSummary: buildGovernanceSummary(scope, permissionSnapshot, language),
     permissionSnapshot,
     liveContext,
+    uiHelp,
+    uiHelpContextBlock,
   }
 }
 
 export function buildGuideContextBlock(
   guide: PageGuide | null,
-  language: "ar" | "en"
+  language: "ar" | "en",
+  uiHelpContextBlock = ""
 ): string {
   if (!guide) {
-    return language === "ar"
+    const fallback = language === "ar"
       ? "لا يوجد دليل صفحة محدد متاح لهذه الصفحة حالياً."
       : "No page-specific guide is available for this page yet."
+    return [fallback, uiHelpContextBlock].filter(Boolean).join("\n\n")
   }
 
   const steps =
@@ -148,11 +162,14 @@ export function buildGuideContextBlock(
     `${language === "ar" ? "الخطوات" : "Steps"}:\n${steps}`,
     `${language === "ar" ? "النصائح" : "Tips"}:\n${tips}`,
     `${language === "ar" ? "النمط المحاسبي" : "Accounting pattern"}:\n${accountingPattern}`,
-  ].join("\n\n")
+    uiHelpContextBlock,
+  ].filter(Boolean).join("\n\n")
 }
 
 function inferDomainFromPageKey(pageKey?: string | null): AIDomain {
   const key = String(pageKey || "").toLowerCase()
+  const entry = getPageKeyEntry(key)
+  if (entry) return entry.domain
 
   if (!key || key === "dashboard" || key === "reports") return "dashboard"
   if (["invoices", "sales_orders", "estimates", "customer_debit_notes"].includes(key)) {
@@ -211,12 +228,12 @@ function inferDomainFromPageKey(pageKey?: string | null): AIDomain {
   if (["settings", "branches", "cost_centers"].includes(key)) return "governance"
   if (
     [
-      "bom",
-      "bom_detail",
-      "routing",
-      "routing_detail",
-      "production_orders",
-      "production_order_detail",
+      "manufacturing_boms",
+      "manufacturing_bom_detail",
+      "manufacturing_routings",
+      "manufacturing_routing_detail",
+      "manufacturing_production_orders",
+      "manufacturing_production_order_detail",
     ].includes(key)
   ) {
     return "manufacturing"
@@ -228,6 +245,8 @@ function inferDomainFromPageKey(pageKey?: string | null): AIDomain {
 function mapPageKeyToResource(pageKey?: string | null): string | null {
   const key = String(pageKey || "").toLowerCase()
   if (!key) return null
+  const entry = getPageKeyEntry(key)
+  if (entry) return entry.resource
 
   const map: Record<string, string> = {
     dashboard: "dashboard",
@@ -274,12 +293,12 @@ function mapPageKeyToResource(pageKey?: string | null): string | null {
     settings: "settings",
     branches: "branches",
     cost_centers: "cost_centers",
-    bom: "bom",
-    bom_detail: "bom",
-    routing: "routing",
-    routing_detail: "routing",
-    production_orders: "production_orders",
-    production_order_detail: "production_orders",
+    manufacturing_boms: "manufacturing_boms",
+    manufacturing_bom_detail: "manufacturing_boms",
+    manufacturing_routings: "manufacturing_boms",
+    manufacturing_routing_detail: "manufacturing_boms",
+    manufacturing_production_orders: "manufacturing_boms",
+    manufacturing_production_order_detail: "manufacturing_boms",
   }
 
   return map[key] || key
@@ -798,15 +817,15 @@ async function loadManufacturingContext(
   const pageKey = String(scope.pageKey || "").toLowerCase()
 
   const [totalBoms, activeBoms, totalRoutings, openOrders, inProgressOrders] = await Promise.all([
-    countCompanyRows(supabase, "boms", scope),
-    countCompanyRows(supabase, "boms", scope, {
+    countCompanyRows(supabase, "manufacturing_boms", scope),
+    countCompanyRows(supabase, "manufacturing_boms", scope, {
       mutate: (query) => query.eq("status", "active"),
     }),
-    countCompanyRows(supabase, "routings", scope),
-    countCompanyRows(supabase, "production_orders", scope, {
+    countCompanyRows(supabase, "manufacturing_routings", scope),
+    countCompanyRows(supabase, "manufacturing_production_orders", scope, {
       mutate: (query) => query.in("status", ["draft", "confirmed", "released"]),
     }),
-    countCompanyRows(supabase, "production_orders", scope, {
+    countCompanyRows(supabase, "manufacturing_production_orders", scope, {
       mutate: (query) => query.eq("status", "in_progress"),
     }),
   ])
@@ -821,29 +840,31 @@ async function loadManufacturingContext(
   }
 
   const summaryByPage: Record<string, Record<"ar" | "en", string>> = {
-    bom: {
+    manufacturing_boms: {
       ar: "قائمة المواد (BOM) تحدد كل مدخلات تصنيع المنتج: الخامات والمكونات والكميات. بدونها لا يمكن إصدار أمر إنتاج.",
       en: "The Bill of Materials (BOM) defines every input needed to manufacture a product: raw materials, components, and quantities. Without it, no production order can be issued.",
     },
-    routing: {
+    manufacturing_routings: {
       ar: "مسار التصنيع (Routing) يحدد تسلسل العمليات: ماذا يحدث أولاً، وأين، وكم يستغرق. هو خريطة الإنتاج التشغيلية.",
       en: "The Routing defines the sequence of operations: what happens first, where, and how long it takes. It is the operational production map.",
     },
-    production_orders: {
+    manufacturing_production_orders: {
       ar: "أوامر الإنتاج هي الأوامر الرسمية لبدء التصنيع الفعلي. يعكس كل أمر حجم الكمية المطلوبة وحالة التقدم والمواد المصروفة.",
       en: "Production orders are the formal instructions to start actual manufacturing. Each order reflects the required quantity, progress state, and materials consumed.",
     },
   }
 
   const domainKey = pageKey.startsWith("bom")
-    ? "bom"
-    : pageKey.startsWith("routing")
-    ? "routing"
-    : "production_orders"
+    ? "manufacturing_boms"
+    : pageKey.startsWith("manufacturing_bom")
+    ? "manufacturing_boms"
+    : pageKey.startsWith("routing") || pageKey.startsWith("manufacturing_routing")
+    ? "manufacturing_routings"
+    : "manufacturing_production_orders"
 
   return {
     domain: "manufacturing",
-    summary: summaryByPage[domainKey]?.[language] ?? summaryByPage["production_orders"][language],
+    summary: summaryByPage[domainKey]?.[language] ?? summaryByPage["manufacturing_production_orders"][language],
     metrics: [
       metric(language, "قوائم مواد إجمالية", "Total BOMs", totalBoms),
       metric(language, "قوائم مواد نشطة", "Active BOMs", activeBoms),

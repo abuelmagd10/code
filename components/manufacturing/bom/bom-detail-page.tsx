@@ -776,7 +776,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                 <RefreshCw className={`h-4 w-4 ${(loadingBom || loadingVersion) ? "animate-spin" : ""}`} />
                 تحديث السجل
               </Button>
-              <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite || !bom} className="gap-2">
+              <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite || !bom} className="gap-2" data-ai-help="manufacturing_bom_detail.create_version_button">
                 <CopyPlus className="h-4 w-4" />
                 إنشاء نسخة
               </Button>
@@ -804,7 +804,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
               ) : (
                 <>
                   <div className="grid gap-4 xl:grid-cols-[320px,minmax(0,1fr)]">
-                    <Card className="border-slate-200 bg-white/90">
+                    <Card className="border-slate-200 bg-white/90" data-ai-help="manufacturing_bom_detail.version_selector">
                       <CardHeader className="border-b pb-4">
                         <CardTitle className="text-lg">نسخ هيكل المواد</CardTitle>
                         <CardDescription>
@@ -822,6 +822,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                               key={version.id}
                               type="button"
                               onClick={() => setSelectedVersionId(version.id)}
+                              data-ai-help="manufacturing_bom_detail.version_selector"
                               className={`w-full rounded-2xl border p-4 text-right transition ${
                                 selectedVersionId === version.id
                                   ? "border-cyan-300 bg-cyan-50 shadow-sm"
@@ -832,17 +833,17 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 <div className="space-y-2">
                                   <div className="text-base font-semibold text-slate-900">v{version.version_no}</div>
                                   <div className="flex flex-wrap gap-2">
-                                    <Badge variant={getVersionStatusVariant(version.status)}>
+                                    <Badge variant={getVersionStatusVariant(version.status)} data-ai-help="manufacturing_bom_detail.version_status">
                                       {getVersionStatusLabel(version.status)}
                                     </Badge>
-                                    {version.is_default ? <Badge variant="outline">افتراضية</Badge> : null}
+                                    {version.is_default ? <Badge variant="outline" data-ai-help="manufacturing_bom_detail.default_version">افتراضية</Badge> : null}
                                   </div>
                                 </div>
                                 <div className="text-xs text-slate-500">{formatDateOnly(version.updated_at)}</div>
                               </div>
                               <div className="mt-3 space-y-1 text-xs text-slate-500">
-                                <div>سريان من: {formatDateOnly(version.effective_from)}</div>
-                                <div>سريان إلى: {formatDateOnly(version.effective_to)}</div>
+                                <div data-ai-help="manufacturing_bom_detail.effective_dates">سريان من: {formatDateOnly(version.effective_from)}</div>
+                                <div data-ai-help="manufacturing_bom_detail.effective_dates">سريان إلى: {formatDateOnly(version.effective_to)}</div>
                               </div>
                             </button>
                           ))
@@ -875,7 +876,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                             </CardHeader>
                             <CardContent className="space-y-4">
                               <div className="grid gap-4 md:grid-cols-2">
-                                <div className="space-y-2">
+                                <div className="space-y-2" data-ai-help="manufacturing_bom_detail.bom_code">
                                   <Label>كود هيكل المواد</Label>
                                   <Input
                                     value={headerForm.bom_code}
@@ -883,7 +884,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                     disabled={!canUpdate}
                                   />
                                 </div>
-                                <div className="space-y-2">
+                                <div className="space-y-2" data-ai-help="manufacturing_bom_detail.bom_name">
                                   <Label>اسم هيكل المواد</Label>
                                   <Input
                                     value={headerForm.bom_name}
@@ -905,14 +906,14 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                     {buildBranchLabel(branchMap[bom.branch_id])}
                                   </div>
                                 </div>
-                                <div className="space-y-2">
+                                <div className="space-y-2" data-ai-help="manufacturing_bom_detail.finished_product">
                                   <Label>المنتج المالك</Label>
                                   <div className="rounded-xl border bg-slate-50 px-3 py-2 text-sm text-slate-700">
                                     {buildProductLabel(ownerProduct)}
                                   </div>
                                 </div>
                               </div>
-                              <div className="space-y-2">
+                              <div className="space-y-2" data-ai-help="manufacturing_bom_detail.notes">
                                 <Label>الوصف</Label>
                                 <Textarea
                                   value={headerForm.description}
@@ -944,7 +945,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   <Button variant="outline" onClick={() => hydrateHeaderForm(bom)} disabled={savingHeader}>
                                     إعادة تعيين
                                   </Button>
-                                  <Button onClick={handleSaveHeader} disabled={!canUpdate || savingHeader} className="gap-2">
+                                  <Button onClick={handleSaveHeader} disabled={!canUpdate || savingHeader} className="gap-2" data-ai-help="manufacturing_bom_detail.bom_name">
                                     {savingHeader ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                                     حفظ البيانات
                                   </Button>
@@ -962,7 +963,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                             </CardContent>
                           </Card>
 
-                          <Card className="border-slate-200 bg-white/90">
+                          <Card className="border-slate-200 bg-white/90" data-ai-help="manufacturing_bom_detail.version_status">
                             <CardHeader>
                               <CardTitle className="flex items-center gap-2 text-lg">
                                 <ShieldCheck className="h-5 w-5 text-indigo-700" />
@@ -994,10 +995,10 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                     <div className="space-y-2">
                                       <div className="flex flex-wrap items-center gap-2">
                                         <div className="text-lg font-semibold text-slate-900">v{selectedVersion.version_no}</div>
-                                        <Badge variant={getVersionStatusVariant(selectedVersion.status)}>
+                                        <Badge variant={getVersionStatusVariant(selectedVersion.status)} data-ai-help="manufacturing_bom_detail.version_status">
                                           {getVersionStatusLabel(selectedVersion.status)}
                                         </Badge>
-                                        {selectedVersion.is_default ? <Badge variant="outline">افتراضية</Badge> : null}
+                                        {selectedVersion.is_default ? <Badge variant="outline" data-ai-help="manufacturing_bom_detail.default_version">افتراضية</Badge> : null}
                                       </div>
                                       <p className="max-w-xl text-sm leading-6 text-slate-600">
                                         {getVersionLockMessage(selectedVersion.status)}
@@ -1012,7 +1013,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   </div>
 
                                   <div className="grid gap-4 md:grid-cols-2">
-                                    <div className="space-y-2">
+                                    <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
                                       <Label>تاريخ السريان من</Label>
                                       <Input
                                         type="datetime-local"
@@ -1021,7 +1022,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                         disabled={!versionEditable || !canUpdate}
                                       />
                                     </div>
-                                    <div className="space-y-2">
+                                    <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
                                       <Label>تاريخ السريان إلى</Label>
                                       <Input
                                         type="datetime-local"
@@ -1031,7 +1032,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                       />
                                     </div>
                                   </div>
-                                  <div className="space-y-2">
+                                  <div className="space-y-2" data-ai-help="manufacturing_bom_detail.quantity_per_unit">
                                     <Label>كمية الإنتاج الأساسية</Label>
                                     <Input
                                       type="number"
@@ -1042,7 +1043,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                       disabled={!versionEditable || !canUpdate}
                                     />
                                   </div>
-                                  <div className="space-y-2">
+                                  <div className="space-y-2" data-ai-help="manufacturing_bom_detail.notes">
                                     <Label>ملخص التغيير</Label>
                                     <Textarea
                                       value={versionForm.change_summary}
@@ -1050,7 +1051,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                       disabled={!versionEditable || !canUpdate}
                                     />
                                   </div>
-                                  <div className="space-y-2">
+                                  <div className="space-y-2" data-ai-help="manufacturing_bom_detail.notes">
                                     <Label>ملاحظات</Label>
                                     <Textarea
                                       value={versionForm.notes}
@@ -1078,6 +1079,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                       }}
                                       disabled={!selectedVersionId || !canUpdate || !canSubmitVersion(selectedVersion.status) || runningAction === "submit"}
                                       className="gap-2"
+                                      data-ai-help="manufacturing_bom_detail.submit_approval_button"
                                     >
                                       {runningAction === "submit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                                       إرسال للاعتماد
@@ -1087,6 +1089,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                       onClick={() => setConfirmAction("approve")}
                                       disabled={!selectedVersionId || !canApprove || !canApproveVersion(selectedVersion.status) || runningAction === "approve"}
                                       className="gap-2"
+                                      data-ai-help="manufacturing_bom_detail.approve_button"
                                     >
                                       {runningAction === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                                       اعتماد
@@ -1096,6 +1099,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                       onClick={() => setRejectOpen(true)}
                                       disabled={!selectedVersionId || !canApprove || !canRejectVersion(selectedVersion.status) || runningAction === "reject"}
                                       className="gap-2"
+                                      data-ai-help="manufacturing_bom_detail.reject_button"
                                     >
                                       <ShieldX className="h-4 w-4" />
                                       رفض
@@ -1105,6 +1109,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                       onClick={() => setConfirmAction("set-default")}
                                       disabled={!selectedVersionId || !canUpdate || !canSetDefaultVersion(selectedVersion.status, selectedVersion.is_default) || runningAction === "set-default"}
                                       className="gap-2"
+                                      data-ai-help="manufacturing_bom_detail.set_default_button"
                                     >
                                       {runningAction === "set-default" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                                       افتراضية
@@ -1126,7 +1131,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                         </div>
                       </TabsContent>
 
-                      <TabsContent value="structure">
+                      <TabsContent value="structure" data-ai-help="manufacturing_bom_detail.components_table">
                         <Card className="border-slate-200 bg-white/90">
                           <CardHeader>
                             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1137,7 +1142,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 </CardDescription>
                               </div>
                               <div className="flex flex-wrap gap-2">
-                                <Button onClick={addLine} disabled={!structureEditable || !canUpdate}>
+                                <Button onClick={addLine} disabled={!structureEditable || !canUpdate} data-ai-help="manufacturing_bom_detail.components_table">
                                   إضافة سطر
                                 </Button>
                                 <Button
@@ -1151,6 +1156,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   onClick={handleSaveStructure}
                                   disabled={!selectedVersionId || !structureEditable || !canUpdate || savingStructure}
                                   className="gap-2"
+                                  data-ai-help="manufacturing_bom_detail.components_table"
                                 >
                                   {savingStructure ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                                   حفظ الهيكل
@@ -1182,7 +1188,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                             ) : (
                               <div className="space-y-4">
                                 {structureDraft.map((line, lineIndex) => (
-                                  <Card key={`line-${lineIndex}`} className="border-slate-200">
+                                  <Card key={`line-${lineIndex}`} className="border-slate-200" data-ai-help="manufacturing_bom_detail.components_table">
                                     <CardHeader className="pb-4">
                                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                         <div>
@@ -1228,7 +1234,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             ))}
                                           </select>
                                         </div>
-                                        <div className="space-y-2 xl:col-span-2">
+                                        <div className="space-y-2 xl:col-span-2" data-ai-help="manufacturing_bom_detail.component_product">
                                           <Label>المادة / المنتج</Label>
                                           <select
                                             className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
@@ -1247,7 +1253,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                       </div>
 
                                       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                                        <div className="space-y-2">
+                                        <div className="space-y-2" data-ai-help="manufacturing_bom_detail.quantity_per_unit">
                                           <Label>الكمية اللازمة لتصنيع وحدة واحدة</Label>
                                           <Input
                                             type="number"
@@ -1258,7 +1264,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             disabled={!structureEditable || !canUpdate}
                                           />
                                         </div>
-                                        <div className="space-y-2">
+                                        <div className="space-y-2" data-ai-help="manufacturing_bom_detail.scrap_percent">
                                           <Label>نسبة الهالك %</Label>
                                           <Input
                                             type="number"
@@ -1270,7 +1276,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             disabled={!structureEditable || !canUpdate}
                                           />
                                         </div>
-                                        <div className="space-y-2">
+                                        <div className="space-y-2" data-ai-help="manufacturing_bom_detail.issue_uom">
                                           <Label>وحدة القياس عند الصرف للمصنع</Label>
                                           <Input
                                             value={line.issue_uom || ""}
@@ -1291,7 +1297,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                         </div>
                                       </div>
 
-                                      <div className="space-y-2">
+                                      <div className="space-y-2" data-ai-help="manufacturing_bom_detail.notes">
                                         <Label>ملاحظات</Label>
                                         <Textarea
                                           value={line.notes || ""}
@@ -1302,7 +1308,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
 
                                       <Separator />
 
-                                      <div className="space-y-3">
+                                      <div className="space-y-3" data-ai-help="manufacturing_bom_detail.substitutes">
                                         <div className="flex flex-wrap items-center justify-between gap-3">
                                           <div>
                                             <div className="text-sm font-semibold text-slate-900">المواد البديلة</div>
@@ -1315,6 +1321,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             size="sm"
                                             onClick={() => addSubstitute(lineIndex)}
                                             disabled={!structureEditable || !canUpdate || line.line_type !== "component"}
+                                            data-ai-help="manufacturing_bom_detail.substitutes"
                                           >
                                             إضافة بديل
                                           </Button>
@@ -1329,7 +1336,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             {line.substitutes.map((substitute, substituteIndex) => (
                                               <div key={`sub-${lineIndex}-${substituteIndex}`} className="rounded-xl border bg-slate-50 p-4">
                                                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                                                  <div className="space-y-2 xl:col-span-2">
+                                                  <div className="space-y-2 xl:col-span-2" data-ai-help="manufacturing_bom_detail.substitutes">
                                                     <Label>المنتج البديل</Label>
                                                     <select
                                                       className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
@@ -1345,7 +1352,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                                       ))}
                                                     </select>
                                                   </div>
-                                                  <div className="space-y-2">
+                                                  <div className="space-y-2" data-ai-help="manufacturing_bom_detail.quantity_per_unit">
                                                     <Label>الكمية</Label>
                                                     <Input
                                                       type="number"
@@ -1356,7 +1363,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                                       disabled={!structureEditable || !canUpdate}
                                                     />
                                                   </div>
-                                                  <div className="space-y-2">
+                                                  <div className="space-y-2" data-ai-help="manufacturing_bom_detail.substitutes">
                                                     <Label>الأولوية</Label>
                                                     <Input
                                                       type="number"
@@ -1369,7 +1376,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                                   </div>
                                                 </div>
                                                 <div className="mt-4 grid gap-4 md:grid-cols-2">
-                                                  <div className="space-y-2">
+                                                  <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
                                                     <Label>ساري من</Label>
                                                     <Input
                                                       type="datetime-local"
@@ -1378,7 +1385,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                                       disabled={!structureEditable || !canUpdate}
                                                     />
                                                   </div>
-                                                  <div className="space-y-2">
+                                                  <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
                                                     <Label>ساري حتى</Label>
                                                     <Input
                                                       type="datetime-local"
@@ -1420,7 +1427,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                         </Card>
                       </TabsContent>
 
-                      <TabsContent value="preview">
+                      <TabsContent value="preview" data-ai-help="manufacturing_bom_detail.preview_results">
                         <Card className="border-slate-200 bg-white/90">
                           <CardHeader>
                             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1430,7 +1437,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   معاينة قراءة فقط، single-level فقط، ولا تقوم بأي حجز أو استهلاك أو اتخاذ قرار stock.
                                 </CardDescription>
                               </div>
-                              <Button onClick={handleRunPreview} disabled={!selectedVersionId || previewLoading} className="gap-2">
+                              <Button onClick={handleRunPreview} disabled={!selectedVersionId || previewLoading} className="gap-2" data-ai-help="manufacturing_bom_detail.explosion_preview_button">
                                 {previewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSearch className="h-4 w-4" />}
                                 تشغيل المعاينة
                               </Button>
@@ -1438,7 +1445,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                           </CardHeader>
                           <CardContent className="space-y-6">
                             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                              <div className="space-y-2">
+                              <div className="space-y-2" data-ai-help="manufacturing_bom_detail.preview_quantity">
                                 <Label>كمية الإدخال</Label>
                                 <Input
                                   type="number"
@@ -1448,7 +1455,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   onChange={(event) => setPreviewForm((current) => ({ ...current, input_quantity: Number(event.target.value || 1) }))}
                                 />
                               </div>
-                              <div className="space-y-2">
+                              <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
                                 <Label>بتاريخ</Label>
                                 <Input
                                   type="datetime-local"
@@ -1456,7 +1463,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   onChange={(event) => setPreviewForm((current) => ({ ...current, as_of_date: event.target.value }))}
                                 />
                               </div>
-                              <div className="space-y-2">
+                              <div className="space-y-2" data-ai-help="manufacturing_bom_detail.substitutes">
                                 <Label>استراتيجية البدائل</Label>
                                 <Select
                                   value={previewForm.substitute_strategy || "primary_only"}
@@ -1545,7 +1552,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   </Card>
                                 </div>
 
-                                <Card>
+                                <Card data-ai-help="manufacturing_bom_detail.preview_results">
                                   <CardHeader>
                                     <CardTitle className="text-base">المكونات المطلوبة</CardTitle>
                                   </CardHeader>
@@ -1554,11 +1561,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                       <TableHeader>
                                         <TableRow>
                                           <TableHead>السطر</TableHead>
-                                          <TableHead>المكوّن</TableHead>
-                                          <TableHead>الكمية المطلوبة</TableHead>
-                                          <TableHead>الكمية الإجمالية</TableHead>
-                                          <TableHead>الهالك %</TableHead>
-                                          <TableHead>البدائل</TableHead>
+                                          <TableHead data-ai-help="manufacturing_bom_detail.component_product">المكوّن</TableHead>
+                                          <TableHead data-ai-help="manufacturing_bom_detail.quantity_per_unit">الكمية المطلوبة</TableHead>
+                                          <TableHead data-ai-help="manufacturing_bom_detail.quantity_per_unit">الكمية الإجمالية</TableHead>
+                                          <TableHead data-ai-help="manufacturing_bom_detail.scrap_percent">الهالك %</TableHead>
+                                          <TableHead data-ai-help="manufacturing_bom_detail.substitutes">البدائل</TableHead>
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
@@ -1687,7 +1694,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
               <DialogTitle>إنشاء BOM Version جديدة</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-2 md:grid-cols-2">
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_bom_detail.create_version_button">
                 <Label>استنساخ من نسخة (اختياري)</Label>
                 <Select
                   value={createVersionForm.clone_from_version_id || "none"}
@@ -1706,7 +1713,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
                 <Label>ساري من</Label>
                 <Input
                   type="datetime-local"
@@ -1714,7 +1721,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, effective_from: localDateTimeInputToIso(event.target.value) }))}
                 />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
                 <Label>ساري حتى</Label>
                 <Input
                   type="datetime-local"
@@ -1722,7 +1729,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, effective_to: localDateTimeInputToIso(event.target.value) }))}
                 />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2" data-ai-help="manufacturing_bom_detail.quantity_per_unit">
                 <Label>كمية الإنتاج الأساسية</Label>
                 <Input
                   type="number"
@@ -1732,14 +1739,14 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, base_output_qty: Number(event.target.value || 1) }))}
                 />
               </div>
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_bom_detail.notes">
                 <Label>ملخص التغيير</Label>
                 <Textarea
                   value={typeof createVersionForm.change_summary === "string" ? createVersionForm.change_summary : ""}
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
                 />
               </div>
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_bom_detail.notes">
                 <Label>ملاحظات</Label>
                 <Textarea
                   value={typeof createVersionForm.notes === "string" ? createVersionForm.notes : ""}
@@ -1751,7 +1758,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
               <Button variant="outline" onClick={() => setCreateVersionOpen(false)}>
                 إلغاء
               </Button>
-              <Button onClick={handleCreateVersion} disabled={runningAction === "create-version"}>
+              <Button onClick={handleCreateVersion} disabled={runningAction === "create-version"} data-ai-help="manufacturing_bom_detail.create_version_button">
                 {runningAction === "create-version" ? "جاري الإنشاء..." : "إنشاء النسخة"}
               </Button>
             </DialogFooter>
@@ -1763,7 +1770,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
             <DialogHeader>
               <DialogTitle>رفض النسخة الحالية</DialogTitle>
             </DialogHeader>
-            <div className="space-y-2 py-2">
+            <div className="space-y-2 py-2" data-ai-help="manufacturing_bom_detail.reject_button">
               <Label>سبب الرفض</Label>
               <Textarea
                 value={rejectionReason}
@@ -1775,7 +1782,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
               <Button variant="outline" onClick={() => setRejectOpen(false)}>
                 إلغاء
               </Button>
-              <Button variant="destructive" onClick={handleReject} disabled={runningAction === "reject"}>
+              <Button variant="destructive" onClick={handleReject} disabled={runningAction === "reject"} data-ai-help="manufacturing_bom_detail.reject_button">
                 {runningAction === "reject" ? "جاري الرفض..." : "رفض النسخة"}
               </Button>
             </DialogFooter>
@@ -1796,6 +1803,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                 }}
                 disabled={Boolean(runningAction)}
                 className={confirmDialogMeta?.actionClassName}
+                data-ai-help={confirmAction === "approve" ? "manufacturing_bom_detail.approve_button" : confirmAction === "set-default" ? "manufacturing_bom_detail.set_default_button" : "manufacturing_bom_detail.version_status"}
               >
                 {runningAction === "delete-bom" || runningAction === "delete-version" || runningAction === "approve" || runningAction === "set-default"
                   ? "جاري التنفيذ..."

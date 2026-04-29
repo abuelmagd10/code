@@ -1064,16 +1064,16 @@ function ChartOfAccountsPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="w-full sm:w-40 border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900" />
-                <Button variant="outline" onClick={() => quickAdd("bank")}>
+                <input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="w-full sm:w-40 border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900" data-ai-help="chart_of_accounts.as_of_date" />
+                <Button variant="outline" onClick={() => quickAdd("bank")} data-ai-help="chart_of_accounts.quick_bank_button">
                   <Banknote className="w-4 h-4 mr-2" /> {(hydrated && appLang === 'en') ? 'Quick bank account' : 'حساب بنكي سريع'}
                 </Button>
-                <Button variant="outline" onClick={() => quickAdd("cash")}>
+                <Button variant="outline" onClick={() => quickAdd("cash")} data-ai-help="chart_of_accounts.quick_cash_button">
                   <Wallet className="w-4 h-4 mr-2" /> {(hydrated && appLang === 'en') ? 'Quick company cash' : 'خزينة الشركة سريعة'}
                 </Button>
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                   {permWrite ? (<DialogTrigger asChild>
-                    <Button onClick={async () => {
+                    <Button data-ai-help="chart_of_accounts.new_account_button" onClick={async () => {
                       try {
                         setEditingId(null)
                         setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0, branch_id: "", cost_center_id: "", normal_balance: "debit" })
@@ -1106,15 +1106,15 @@ function ChartOfAccountsPage() {
                       <DialogDescription suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Please fill the fields to add a new account.' : 'يرجى ملء الحقول لإضافة حساب جديد.'}</DialogDescription>
                     </DialogHeader>
                     <form onSubmit={handleSubmit} className="space-y-4">
-                      <div className="space-y-2">
+                      <div className="space-y-2" data-ai-help="chart_of_accounts.account_code">
                         <Label htmlFor="account_code">{appLang === 'en' ? 'Account Code' : 'رمز الحساب'}</Label>
                         <Input id="account_code" value={formData.account_code} onChange={(e) => setFormData({ ...formData, account_code: e.target.value })} required />
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-2" data-ai-help="chart_of_accounts.account_name">
                         <Label htmlFor="account_name">{appLang === 'en' ? 'Account Name' : 'اسم الحساب'}</Label>
                         <Input id="account_name" value={formData.account_name} onChange={(e) => setFormData({ ...formData, account_name: e.target.value })} required />
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-2" data-ai-help="chart_of_accounts.account_type">
                         <Label htmlFor="account_type">{appLang === 'en' ? 'Account Type' : 'نوع الحساب'}</Label>
                         <select id="account_type" value={formData.account_type} onChange={(e) => {
                           const newType = e.target.value
@@ -1125,7 +1125,7 @@ function ChartOfAccountsPage() {
                           {ACCOUNT_TYPES.map((type) => (<option key={type.value} value={type.value}>{type.label}</option>))}
                         </select>
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-2" data-ai-help="chart_of_accounts.parent_account">
                         <Label htmlFor="parent_id">{appLang === 'en' ? 'Parent Account (optional)' : 'الحساب الأب (اختياري)'} </Label>
                         <select id="parent_id" value={formData.parent_id} onChange={(e) => {
                           const newParentId = e.target.value
@@ -1136,7 +1136,7 @@ function ChartOfAccountsPage() {
                           {accounts.map((a) => (<option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>))}
                         </select>
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-4" data-ai-help="chart_of_accounts.subtype">
                         <div className="space-y-2">
                           <Label htmlFor="is_bank">{appLang === 'en' ? 'Bank Account' : 'حساب بنكي'}</Label>
                           <input id="is_bank" type="checkbox" checked={formData.is_bank} onChange={(e) => setFormData({ ...formData, is_bank: e.target.checked, sub_type: e.target.checked ? "bank" : formData.sub_type === "bank" ? "" : formData.sub_type })} />
@@ -1200,7 +1200,7 @@ function ChartOfAccountsPage() {
                         <Label htmlFor="description">{appLang === 'en' ? 'Description' : 'الوصف'}</Label>
                         <Input id="description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-2" data-ai-help="chart_of_accounts.opening_balance">
                         <Label htmlFor="opening_balance">{appLang === 'en' ? 'Opening Balance' : 'الرصيد الافتتاحي'}</Label>
                         <NumericInput
                           id="opening_balance"
@@ -1219,7 +1219,7 @@ function ChartOfAccountsPage() {
                           <p className="text-sm text-red-500">{formErrors.opening_balance}</p>
                         )}
                       </div>
-                      <Button type="submit" className="w-full">{editingId ? (appLang === 'en' ? 'Update' : 'تحديث') : (appLang === 'en' ? 'Add' : 'إضافة')}</Button>
+                      <Button type="submit" className="w-full" data-ai-help={editingId ? "chart_of_accounts.edit_button" : "chart_of_accounts.new_account_button"}>{editingId ? (appLang === 'en' ? 'Update' : 'تحديث') : (appLang === 'en' ? 'Add' : 'إضافة')}</Button>
                     </form>
                   </DialogContent>
                 </Dialog>
@@ -1230,7 +1230,7 @@ function ChartOfAccountsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card>
               <CardContent className="pt-6">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2" data-ai-help="chart_of_accounts.search">
                   <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                   <Input
                     placeholder="البحث عن حساب..."
@@ -1253,6 +1253,7 @@ function ChartOfAccountsPage() {
                     startTransition(() => setFilterType(val))
                   }}
                   className="w-full px-3 py-2 border rounded-lg"
+                  data-ai-help="chart_of_accounts.type_filter"
                 >
                   <option value="all" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'All types' : 'جميع الأنواع'}</option>
                   {['asset', 'liability', 'equity', 'income', 'expense'].map((t) => (<option key={t} value={t}>{typeLabel(t)}</option>))}
@@ -1262,8 +1263,8 @@ function ChartOfAccountsPage() {
             <Card>
               <CardContent className="pt-6 flex items-center justify-between">
                 <div className="text-sm text-gray-700 dark:text-gray-300" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Hierarchical View' : 'عرض هرمي'}</div>
-                <div className="flex items-center gap-2"><span className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Show tree' : 'عرض الشجرة'}</span><Switch checked={showHierarchy} onCheckedChange={setShowHierarchy} /></div>
-                <div className="flex items-center gap-2 mt-4"><span className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Show groups only' : 'عرض المجموعات فقط'}</span><Switch checked={showGroupsOnly} onCheckedChange={setShowGroupsOnly} /></div>
+                <div className="flex items-center gap-2" data-ai-help="chart_of_accounts.hierarchy_toggle"><span className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Show tree' : 'عرض الشجرة'}</span><Switch checked={showHierarchy} onCheckedChange={setShowHierarchy} /></div>
+                <div className="flex items-center gap-2 mt-4" data-ai-help="chart_of_accounts.groups_only_toggle"><span className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Show groups only' : 'عرض المجموعات فقط'}</span><Switch checked={showGroupsOnly} onCheckedChange={setShowGroupsOnly} /></div>
               </CardContent>
             </Card>
           </div>
@@ -1280,7 +1281,7 @@ function ChartOfAccountsPage() {
             })}
           </div>
 
-          <Card>
+          <Card data-ai-help="chart_of_accounts.accounts_table">
             <CardHeader><CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Accounts' : 'الحسابات'}</CardTitle></CardHeader>
             <CardContent>
               {isLoading ? (
@@ -1295,15 +1296,15 @@ function ChartOfAccountsPage() {
                     const renderTree = (parentId: string | null, lvl: number): React.ReactNode => {
                       const children = filteredAccounts.filter((a) => (a.parent_id ?? null) === parentId)
                       return children.map((acc) => (
-                        <div key={acc.id} className="border-b py-2" style={{ paddingLeft: lvl * 16 }}>
+                        <div key={acc.id} className="border-b py-2" style={{ paddingLeft: lvl * 16 }} data-ai-help="chart_of_accounts.accounts_table">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <span className="font-medium">{acc.account_code}</span>
-                              <span>{acc.account_name}</span>
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(deriveType(acc))}`}>{typeLabel(deriveType(acc))}</span>
+                              <span className="font-medium" data-ai-help="chart_of_accounts.account_code">{acc.account_code}</span>
+                              <span data-ai-help="chart_of_accounts.account_name">{acc.account_name}</span>
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(deriveType(acc))}`} data-ai-help="chart_of_accounts.account_type">{typeLabel(deriveType(acc))}</span>
                               {accounts.some((a) => (a.parent_id ?? null) === acc.id) ? (<span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200">مجموعة</span>) : null}
                               {!accounts.some((a) => (a.parent_id ?? null) === acc.id) && getSubtypeLabel(acc.sub_type) ? (
-                                <span className={`px-2 py-1 rounded text-xs font-medium ${getSubtypeColor(acc.sub_type)}`}>{subTypeLabel(acc.sub_type)}</span>
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${getSubtypeColor(acc.sub_type)}`} data-ai-help="chart_of_accounts.subtype">{subTypeLabel(acc.sub_type)}</span>
                               ) : null}
                               {/* Branch and Cost Center badges for bank/cash accounts */}
                               {(acc.sub_type === 'bank' || acc.sub_type === 'cash') && acc.branch_id && (
@@ -1321,9 +1322,9 @@ function ChartOfAccountsPage() {
                               <span className="text-xs text-gray-500 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Level:' : 'مستوى:'} {acc.level ?? 1}</span>
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-sm text-gray-600 dark:text-gray-400">{accounts.some((a) => (a.parent_id ?? null) === acc.id) ? sumGroup(acc.id).toFixed(2) : (Number.isFinite(currentById[acc.id]) ? (currentById[acc.id]).toFixed(2) : acc.opening_balance.toFixed(2))}</span>
-                              {permUpdate ? (<Button variant="outline" size="sm" onClick={() => handleEdit(acc)}><Edit2 className="w-4 h-4" /></Button>) : null}
-                              {permDelete ? (<Button variant="outline" size="sm" onClick={() => requestDelete(acc.id)} className="text-red-600 hover:text-red-700" disabled={accounts.some((a) => (a.parent_id ?? null) === acc.id)}><Trash2 className="w-4 h-4" /></Button>) : null}
+                              <span className="text-sm text-gray-600 dark:text-gray-400" data-ai-help="chart_of_accounts.current_balance">{accounts.some((a) => (a.parent_id ?? null) === acc.id) ? sumGroup(acc.id).toFixed(2) : (Number.isFinite(currentById[acc.id]) ? (currentById[acc.id]).toFixed(2) : acc.opening_balance.toFixed(2))}</span>
+                              {permUpdate ? (<Button variant="outline" size="sm" onClick={() => handleEdit(acc)} data-ai-help="chart_of_accounts.edit_button"><Edit2 className="w-4 h-4" /></Button>) : null}
+                              {permDelete ? (<Button variant="outline" size="sm" onClick={() => requestDelete(acc.id)} className="text-red-600 hover:text-red-700" disabled={accounts.some((a) => (a.parent_id ?? null) === acc.id)} data-ai-help="chart_of_accounts.delete_button"><Trash2 className="w-4 h-4" /></Button>) : null}
                             </div>
                           </div>
                           <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">{acc.description}</div>
@@ -1339,13 +1340,13 @@ function ChartOfAccountsPage() {
                   <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Code' : 'الرمز'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Name' : 'الاسم'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Type' : 'النوع'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Category' : 'الفئة'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Nature' : 'صفة'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Opening Balance' : 'الرصيد الافتتاحي'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Current Balance' : 'الرصيد الحالي'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning data-ai-help="chart_of_accounts.account_code">{(hydrated && appLang === 'en') ? 'Code' : 'الرمز'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning data-ai-help="chart_of_accounts.account_name">{(hydrated && appLang === 'en') ? 'Name' : 'الاسم'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning data-ai-help="chart_of_accounts.account_type">{(hydrated && appLang === 'en') ? 'Type' : 'النوع'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning data-ai-help="chart_of_accounts.subtype">{(hydrated && appLang === 'en') ? 'Category' : 'الفئة'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning data-ai-help="chart_of_accounts.account_nature">{(hydrated && appLang === 'en') ? 'Nature' : 'صفة'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning data-ai-help="chart_of_accounts.opening_balance">{(hydrated && appLang === 'en') ? 'Opening Balance' : 'الرصيد الافتتاحي'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning data-ai-help="chart_of_accounts.current_balance">{(hydrated && appLang === 'en') ? 'Current Balance' : 'الرصيد الحالي'}</th>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Description' : 'الوصف'}</th>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
@@ -1353,22 +1354,22 @@ function ChartOfAccountsPage() {
                     <tbody>
                       {filteredAccounts.map((account) => (
                         <tr key={account.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                          <td className="px-4 py-3 font-medium">{account.account_code}</td>
-                          <td className="px-4 py-3">{account.account_name}</td>
-                          <td className="px-4 py-3"><span className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(deriveType(account))}`}>{typeLabel(deriveType(account))}</span></td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 font-medium" data-ai-help="chart_of_accounts.account_code">{account.account_code}</td>
+                          <td className="px-4 py-3" data-ai-help="chart_of_accounts.account_name">{account.account_name}</td>
+                          <td className="px-4 py-3" data-ai-help="chart_of_accounts.account_type"><span className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(deriveType(account))}`}>{typeLabel(deriveType(account))}</span></td>
+                          <td className="px-4 py-3" data-ai-help="chart_of_accounts.subtype">
                             {!accounts.some((a) => (a.parent_id ?? null) === account.id) && subTypeLabel(account.sub_type) ? (
                               <span className={`px-2 py-1 rounded text-xs font-medium ${getSubtypeColor(account.sub_type)}`}>{subTypeLabel(account.sub_type)}</span>
                             ) : (<span className="text-xs text-gray-500 dark:text-gray-400">-</span>)}
                           </td>
-                          <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? (<span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Group' : 'مجموعة'}</span>) : (<span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Posting' : 'تفصيلي'}</span>)}</td>
-                          <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? "-" : account.opening_balance.toFixed(2)}</td>
-                          <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? sumGroup(account.id).toFixed(2) : (Number.isFinite(currentById[account.id]) ? (currentById[account.id]).toFixed(2) : account.opening_balance.toFixed(2))}</td>
+                          <td className="px-4 py-3" data-ai-help="chart_of_accounts.account_nature">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? (<span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Group' : 'مجموعة'}</span>) : (<span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Posting' : 'تفصيلي'}</span>)}</td>
+                          <td className="px-4 py-3" data-ai-help="chart_of_accounts.opening_balance">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? "-" : account.opening_balance.toFixed(2)}</td>
+                          <td className="px-4 py-3" data-ai-help="chart_of_accounts.current_balance">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? sumGroup(account.id).toFixed(2) : (Number.isFinite(currentById[account.id]) ? (currentById[account.id]).toFixed(2) : account.opening_balance.toFixed(2))}</td>
                           <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{account.description}</td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2 flex-wrap">
-                              {permUpdate ? (<Button variant="outline" size="sm" onClick={() => handleEdit(account)}><Edit2 className="w-4 h-4" /></Button>) : null}
-                              {permDelete ? (<Button variant="outline" size="sm" onClick={() => requestDelete(account.id)} className="text-red-600 hover:text-red-700" disabled={accounts.some((a) => (a.parent_id ?? null) === account.id)}><Trash2 className="w-4 h-4" /></Button>) : null}
+                              {permUpdate ? (<Button variant="outline" size="sm" onClick={() => handleEdit(account)} data-ai-help="chart_of_accounts.edit_button"><Edit2 className="w-4 h-4" /></Button>) : null}
+                              {permDelete ? (<Button variant="outline" size="sm" onClick={() => requestDelete(account.id)} className="text-red-600 hover:text-red-700" disabled={accounts.some((a) => (a.parent_id ?? null) === account.id)} data-ai-help="chart_of_accounts.delete_button"><Trash2 className="w-4 h-4" /></Button>) : null}
                             </div>
                           </td>
                         </tr>

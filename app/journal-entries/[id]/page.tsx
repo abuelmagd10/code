@@ -356,22 +356,22 @@ export default function JournalEntryDetailPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-xl font-semibold">{appLang === 'en' ? 'Journal Entry' : 'قيد اليومية'}</h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Date:' : 'التاريخ:'} {entry.entry_date?.slice(0, 10)}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400" data-ai-help="journal.entry_date">{appLang === 'en' ? 'Date:' : 'التاريخ:'} {entry.entry_date?.slice(0, 10)}</p>
                 {entry.companies?.name && (
                   <p className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Company:' : 'الشركة:'} {entry.companies.name}</p>
                 )}
                 {entry.description && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Description:' : 'الوصف:'} {entry.description}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400" data-ai-help="journal.description">{appLang === 'en' ? 'Description:' : 'الوصف:'} {entry.description}</p>
                 )}
                 {entry.reference_type && entry.reference_id && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                  <p className="text-sm text-gray-600 dark:text-gray-400" data-ai-help="journal.source_document">
                     {appLang === 'en' ? 'Reference:' : 'مرجع:'} {entry.reference_type} — {entry.reference_id}
                   </p>
                 )}
 
                 {/* Branch and Cost Center Selection (Edit Mode) */}
                 {isEditing && (
-                  <div className="mt-4 pt-4 border-t">
+                  <div className="mt-4 pt-4 border-t" data-ai-help="journal.branch_cost_center">
                     <BranchCostCenterSelector
                       branchId={branchId}
                       costCenterId={costCenterId}
@@ -394,7 +394,7 @@ export default function JournalEntryDetailPage() {
 
                 {/* 🆕 شارة توضح حالة القيد */}
                 {isDocumentLinked && (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs" data-ai-help="journal.source_document_message">
                     <Lock className="w-3.5 h-3.5" />
                     <span>{appLang === 'en' ? 'Document-linked' : 'مرتبط بمستند'}</span>
                   </div>
@@ -405,6 +405,7 @@ export default function JournalEntryDetailPage() {
                     variant="outline"
                     onClick={() => isEditing ? setIsEditing(false) : handleStartEdit()}
                     disabled={isPosting}
+                    data-ai-help="journal.edit_button"
                   >
                     {isEditing ? (appLang === 'en' ? 'Cancel Edit' : 'إلغاء التعديل') : (appLang === 'en' ? 'Edit' : 'تعديل')}
                   </Button>
@@ -412,7 +413,7 @@ export default function JournalEntryDetailPage() {
 
                 {/* 🆕 رسالة للمستخدم غير المالك */}
                 {entry && isDocumentLinked && !isUserOwner && (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs" data-ai-help="journal.source_document_message">
                     <FileText className="w-3.5 h-3.5" />
                     <span>{appLang === 'en' ? 'Edit from source document' : 'التعديل من المستند الأصلي'}</span>
                   </div>
@@ -420,7 +421,7 @@ export default function JournalEntryDetailPage() {
 
                 {/* 🔒 رسالة للقيود المُرحَّلة (posted) */}
                 {entry && entry.status === 'posted' && isUserOwner && !PROTECTED_REFERENCE_TYPES.includes(entry.reference_type || '') && (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs" data-ai-help="journal.detail_status">
                     <Lock className="w-3.5 h-3.5" />
                     <span>{appLang === 'en' ? 'Posted: Create a reversal entry to correct' : 'مُرحَّل: أنشئ قيداً عكسياً للتصحيح'}</span>
                   </div>
@@ -428,28 +429,28 @@ export default function JournalEntryDetailPage() {
 
                 {/* 🔒 رسالة للقيود المحمية (مرتبطة بفواتير/مدفوعات) */}
                 {entry && entry.reference_type && PROTECTED_REFERENCE_TYPES.includes(entry.reference_type) && isUserOwner && (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs" data-ai-help="journal.detail_status">
                     <Lock className="w-3.5 h-3.5" />
                     <span>{appLang === 'en' ? 'Protected: Edit source document' : 'محمي: عدّل المستند الأصلي'}</span>
                   </div>
                 )}
 
                 {isEditing && (
-                  <Button onClick={handleRequestSave} disabled={isPosting}>
+                  <Button onClick={handleRequestSave} disabled={isPosting} data-ai-help="journal.save_button">
                     {isPosting ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save Entry' : 'حفظ القيد')}
                   </Button>
                 )}
               </div>
             </div>
 
-            <div className="border rounded">
+            <div className="border rounded" data-ai-help="journal.lines_table">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                    <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Account' : 'الحساب'}</th>
-                    <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Description' : 'الوصف'}</th>
-                    <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Debit' : 'مدين'}</th>
-                    <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Credit' : 'دائن'}</th>
+                    <th className="px-4 py-2 text-right" data-ai-help="journal.account">{appLang === 'en' ? 'Account' : 'الحساب'}</th>
+                    <th className="px-4 py-2 text-right" data-ai-help="journal.line_description">{appLang === 'en' ? 'Description' : 'الوصف'}</th>
+                    <th className="px-4 py-2 text-right" data-ai-help="journal.debit_amount">{appLang === 'en' ? 'Debit' : 'مدين'}</th>
+                    <th className="px-4 py-2 text-right" data-ai-help="journal.credit_amount">{appLang === 'en' ? 'Credit' : 'دائن'}</th>
                     {isEditing && <th className="px-4 py-2" />}
                   </tr>
                 </thead>
@@ -464,6 +465,7 @@ export default function JournalEntryDetailPage() {
                               className="px-3 py-1.5 rounded bg-blue-600 text-white disabled:opacity-50"
                               disabled={isPosting}
                               onClick={handleGenerateLines}
+                              data-ai-help="journal.generate_lines_button"
                             >
                               {isPosting ? (appLang === 'en' ? 'Generating...' : 'جاري الإنشاء...') : (appLang === 'en' ? 'Generate lines automatically' : 'إنشاء بنود القيد تلقائيًا')}
                             </button>
@@ -474,33 +476,33 @@ export default function JournalEntryDetailPage() {
                   ) : (!isEditing ? (
                     (lines || []).map((ln) => (
                       <tr key={ln.id} className="border-b">
-                        <td className="px-4 py-2">
+                        <td className="px-4 py-2" data-ai-help="journal.account">
                           {ln.chart_of_accounts?.account_code ? `${ln.chart_of_accounts.account_code} — ` : ""}
                           {ln.chart_of_accounts?.account_name || ln.account_id}
                         </td>
-                        <td className="px-4 py-2">{ln.description || ""}</td>
-                        <td className="px-4 py-2">{Number(ln.debit_amount || 0).toFixed(2)}</td>
-                        <td className="px-4 py-2">{Number(ln.credit_amount || 0).toFixed(2)}</td>
+                        <td className="px-4 py-2" data-ai-help="journal.line_description">{ln.description || ""}</td>
+                        <td className="px-4 py-2" data-ai-help="journal.debit_amount">{Number(ln.debit_amount || 0).toFixed(2)}</td>
+                        <td className="px-4 py-2" data-ai-help="journal.credit_amount">{Number(ln.credit_amount || 0).toFixed(2)}</td>
                       </tr>
                     ))
                   ) : (
                     editLines.map((ln, idx) => (
                       <tr key={idx} className="border-b">
                         <td className="px-4 py-2">
-                          <select className="w-full border rounded p-2" value={ln.account_id} onChange={(e) => updateLine(idx, { account_id: e.target.value })}>
+                          <select className="w-full border rounded p-2" value={ln.account_id} onChange={(e) => updateLine(idx, { account_id: e.target.value })} data-ai-help="journal.account">
                             {accounts.map((a) => (
                               <option key={a.id} value={a.id}>{a.code ? `${a.code} — ` : ""}{a.name}</option>
                             ))}
                           </select>
                         </td>
                         <td className="px-4 py-2">
-                          <Input value={ln.description} onChange={(e) => updateLine(idx, { description: e.target.value })} />
+                          <Input value={ln.description} onChange={(e) => updateLine(idx, { description: e.target.value })} data-ai-help="journal.line_description" />
                         </td>
                         <td className="px-4 py-2">
-                          <Input type="number" step="0.01" value={ln.debit_amount} onChange={(e) => updateLine(idx, { debit_amount: Number(e.target.value || 0) })} />
+                          <Input type="number" step="0.01" value={ln.debit_amount} onChange={(e) => updateLine(idx, { debit_amount: Number(e.target.value || 0) })} data-ai-help="journal.debit_amount" />
                         </td>
                         <td className="px-4 py-2">
-                          <Input type="number" step="0.01" value={ln.credit_amount} onChange={(e) => updateLine(idx, { credit_amount: Number(e.target.value || 0) })} />
+                          <Input type="number" step="0.01" value={ln.credit_amount} onChange={(e) => updateLine(idx, { credit_amount: Number(e.target.value || 0) })} data-ai-help="journal.credit_amount" />
                         </td>
                         <td className="px-4 py-2 text-center">
                           <Button variant="outline" onClick={() => removeLine(idx)}>حذف</Button>
@@ -510,7 +512,7 @@ export default function JournalEntryDetailPage() {
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t">
+                  <tr className="border-t" data-ai-help="journal.totals">
                     <td className="px-4 py-2 font-medium" colSpan={2}>
                       {appLang === 'en' ? 'Totals' : 'الإجماليات'}
                     </td>
@@ -518,7 +520,7 @@ export default function JournalEntryDetailPage() {
                     <td className="px-4 py-2 font-medium">{totals.credit.toFixed(2)}</td>
                     {isEditing && (
                       <td className="px-4 py-2 text-right">
-                        <Button variant="outline" onClick={addLine}>{appLang === 'en' ? 'Add Line' : 'إضافة سطر'}</Button>
+                        <Button variant="outline" onClick={addLine} data-ai-help="journal.lines_table">{appLang === 'en' ? 'Add Line' : 'إضافة سطر'}</Button>
                       </td>
                     )}
                   </tr>
@@ -527,11 +529,11 @@ export default function JournalEntryDetailPage() {
             </div>
             {isEditing && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
+                <div data-ai-help="journal.entry_date">
                   <Label>{appLang === 'en' ? 'Entry Date' : 'تاريخ القيد'}</Label>
                   <Input type="date" value={editHeaderDate} onChange={(e) => setEditHeaderDate(e.target.value)} />
                 </div>
-                <div>
+                <div data-ai-help="journal.description">
                   <Label>{appLang === 'en' ? 'Description' : 'الوصف'}</Label>
                   <Input value={editHeaderDesc} onChange={(e) => setEditHeaderDesc(e.target.value)} />
                 </div>
@@ -540,7 +542,7 @@ export default function JournalEntryDetailPage() {
 
             {/* 🆕 تحذير للقيود المرتبطة بمستند */}
             {isDocumentLinked && !isEditing && (
-              <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800" data-ai-help="journal.source_document_message">
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
                   <div>
@@ -581,7 +583,7 @@ export default function JournalEntryDetailPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              <div className="space-y-2">
+              <div className="space-y-2" data-ai-help="journal.edit_reason">
                 <Label>{appLang === 'en' ? 'Reason for Edit' : 'سبب التعديل'}</Label>
                 <Textarea
                   value={editReason}
@@ -603,6 +605,7 @@ export default function JournalEntryDetailPage() {
               <Button
                 onClick={() => handleSave(editReason)}
                 disabled={!editReason.trim() || isPosting}
+                data-ai-help="journal.save_button"
               >
                 {isPosting ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save with Reason' : 'حفظ مع السبب')}
               </Button>

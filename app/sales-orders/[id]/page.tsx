@@ -418,18 +418,18 @@ export default function SalesOrderDetailPage() {
                   <ShoppingCart className="h-5 w-5 sm:h-6 sm:w-6 flex-shrink-0" />
                   {order?.so_number || (appLang === 'en' ? 'Sales Order' : 'أمر البيع')}
                 </h1>
-                {order && <div className="mt-1">{getStatusBadge(order.status)}</div>}
+                {order && <div className="mt-1" data-ai-help="sales_orders.detail_status">{getStatusBadge(order.status)}</div>}
               </div>
             </div>
             {permUpdate && (
               <div className="flex gap-2 flex-shrink-0">
-                <Button variant="outline" onClick={handlePrint} className="dark:border-gray-600 dark:text-gray-300">
+                <Button variant="outline" onClick={handlePrint} className="dark:border-gray-600 dark:text-gray-300" data-ai-help="sales_orders.print_button">
                   <Printer className="h-4 w-4 mr-2" />
                   <span suppressHydrationWarning>{appLang === 'en' ? 'Print' : 'طباعة'}</span>
                 </Button>
                 {order?.status === 'draft' && (
                   <Link href={`/sales-orders/${orderId}/edit`}>
-                    <Button className="bg-blue-600 hover:bg-blue-700 text-white">
+                    <Button className="bg-blue-600 hover:bg-blue-700 text-white" data-ai-help="sales_orders.edit_button">
                       <Pencil className="h-4 w-4 mr-2" />
                       <span suppressHydrationWarning>{appLang === 'en' ? 'Edit' : 'تعديل'}</span>
                     </Button>
@@ -446,7 +446,7 @@ export default function SalesOrderDetailPage() {
           ) : order ? (
             <div className="space-y-6" ref={printContentRef}>
               {/* Summary Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 no-print">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 no-print" data-ai-help="sales_orders.summary_cards">
                 <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
@@ -515,7 +515,7 @@ export default function SalesOrderDetailPage() {
 
               {/* Order Info & Customer */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                <Card className="dark:bg-gray-800 dark:border-gray-700">
+                <Card className="dark:bg-gray-800 dark:border-gray-700" data-ai-help="sales_orders.order_information">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base dark:text-white flex items-center gap-2">
                       <ShoppingCart className="h-4 w-4" />
@@ -554,7 +554,7 @@ export default function SalesOrderDetailPage() {
                   </CardContent>
                 </Card>
 
-                <Card className="dark:bg-gray-800 dark:border-gray-700">
+                <Card className="dark:bg-gray-800 dark:border-gray-700" data-ai-help="sales_orders.customer">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base dark:text-white">{appLang === 'en' ? 'Customer' : 'العميل'}</CardTitle>
                   </CardHeader>
@@ -612,7 +612,7 @@ export default function SalesOrderDetailPage() {
                   </div>
 
                   {/* Items Tab */}
-                  <TabsContent value="items" className="p-4 m-0">
+                  <TabsContent value="items" className="p-4 m-0" data-ai-help="sales_orders.items_tab">
                     <div className="overflow-auto">
                       <table className="w-full text-sm">
                         <thead>
@@ -648,7 +648,7 @@ export default function SalesOrderDetailPage() {
                   </TabsContent>
 
                   {/* Invoices Tab */}
-                  <TabsContent value="invoices" className="p-4 m-0">
+                  <TabsContent value="invoices" className="p-4 m-0" data-ai-help="sales_orders.linked_invoices_tab">
                     {linkedInvoices.length === 0 ? (
                       <div className="text-center py-8">
                         <Receipt className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
@@ -718,7 +718,7 @@ export default function SalesOrderDetailPage() {
                   </TabsContent>
 
                   {/* Payments Tab */}
-                  <TabsContent value="payments" className="p-4 m-0">
+                  <TabsContent value="payments" className="p-4 m-0" data-ai-help="sales_orders.payments_tab">
                     {!permReadPayments ? (
                       <div className="text-center py-8">
                         <AlertCircle className="h-12 w-12 mx-auto text-yellow-400 mb-3" />
@@ -767,7 +767,7 @@ export default function SalesOrderDetailPage() {
                   </TabsContent>
 
                   {/* Returns Tab */}
-                  <TabsContent value="returns" className="p-4 m-0">
+                  <TabsContent value="returns" className="p-4 m-0" data-ai-help="sales_orders.returns_tab">
                     {linkedReturns.length === 0 ? (
                       <div className="text-center py-8">
                         <RotateCcw className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
