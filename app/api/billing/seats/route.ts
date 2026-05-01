@@ -109,7 +109,11 @@ export async function POST(req: NextRequest) {
     if (!intentionRes.ok) {
       const errData = await intentionRes.json()
       console.error("[billing/seats] Paymob intention error:", JSON.stringify(errData))
-      return internalError("فشل في إنشاء طلب الدفع", "paymob_intention_failed")
+      // DEBUG: expose Paymob error temporarily
+      return internalError(
+        `Paymob: ${JSON.stringify(errData)}`,
+        "paymob_intention_failed"
+      )
     }
 
     const intention = await intentionRes.json()

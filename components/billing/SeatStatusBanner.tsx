@@ -30,8 +30,8 @@ export default function SeatStatusBanner({ companyId, onAddSeat, className = '' 
     try {
       const res = await fetch('/api/billing/seats')
       const data = await res.json()
-      if (res.ok && data?.data) {
-        setStatus(data.data)
+      if (res.ok && data && typeof data === 'object' && 'can_invite' in data) {
+        setStatus(data)
       } else {
         setError(data?.error || 'تعذر جلب حالة المقاعد')
       }
