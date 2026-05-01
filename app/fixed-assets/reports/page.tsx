@@ -310,7 +310,7 @@ export default function FixedAssetsReportsPage() {
               {appLang === 'en' ? 'Comprehensive reports for fixed assets management' : 'تقارير شاملة لإدارة الأصول الثابتة'}
             </p>
           </div>
-          <Button onClick={exportToCSV} className="bg-green-600 hover:bg-green-700">
+          <Button onClick={exportToCSV} className="bg-green-600 hover:bg-green-700" data-ai-help="fixed_assets_reports.export_csv_button">
             <Download className="w-4 h-4 mr-2" />
             {appLang === 'en' ? 'Export CSV' : 'تصدير CSV'}
           </Button>
@@ -320,7 +320,7 @@ export default function FixedAssetsReportsPage() {
         <Card className="mb-6 dark:bg-slate-900">
           <CardContent className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
+              <div data-ai-help="fixed_assets_reports.report_type">
                 <label className="text-sm font-medium mb-2 block">{appLang === 'en' ? 'Report Type' : 'نوع التقرير'}</label>
                 <Select value={reportType} onValueChange={setReportType}>
                   <SelectTrigger>
@@ -343,7 +343,7 @@ export default function FixedAssetsReportsPage() {
 
               {(reportType.includes('assets') || reportType === 'monthly_depreciation' || reportType === 'asset_value_before_after' || reportType === 'remaining_useful_life' || reportType === 'assets_revaluation') && (
                 <>
-                  <div>
+                  <div data-ai-help="fixed_assets_reports.status_filter">
                     <label className="text-sm font-medium mb-2 block">{appLang === 'en' ? 'Status Filter' : 'فلتر الحالة'}</label>
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger>
@@ -360,7 +360,7 @@ export default function FixedAssetsReportsPage() {
                     </Select>
                   </div>
 
-                  <div>
+                  <div data-ai-help="fixed_assets_reports.branch_filter">
                     <label className="text-sm font-medium mb-2 block">{appLang === 'en' ? 'Branch Filter' : 'فلتر الفرع'}</label>
                     <Select value={branchFilter} onValueChange={setBranchFilter}>
                       <SelectTrigger>
@@ -376,7 +376,7 @@ export default function FixedAssetsReportsPage() {
               )}
 
               {reportType === 'annual_depreciation_schedule' && (
-                <div>
+                <div data-ai-help="fixed_assets_reports.year">
                   <label className="text-sm font-medium mb-2 block">{appLang === 'en' ? 'Year' : 'السنة'}</label>
                   <input
                     type="number"
@@ -402,7 +402,7 @@ export default function FixedAssetsReportsPage() {
           </CardHeader>
           <CardContent>
             {(reportType === 'assets_list' || reportType === 'assets_by_branch' || reportType === 'assets_by_category') && (
-              <Table>
+              <Table data-ai-help="fixed_assets_reports.assets_list">
                 <TableHeader>
                   <TableRow>
                     <TableHead>{appLang === 'en' ? 'Asset Code' : 'كود الأصل'}</TableHead>
@@ -411,7 +411,7 @@ export default function FixedAssetsReportsPage() {
                     <TableHead>{appLang === 'en' ? 'Branch' : 'الفرع'}</TableHead>
                     <TableHead>{appLang === 'en' ? 'Purchase Cost' : 'قيمة الشراء'}</TableHead>
                     <TableHead>{appLang === 'en' ? 'Accumulated Dep' : 'مجمع الإهلاك'}</TableHead>
-                    <TableHead>{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</TableHead>
+                    <TableHead data-ai-help="fixed_assets_reports.book_value">{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</TableHead>
                     <TableHead>{appLang === 'en' ? 'Status' : 'الحالة'}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -424,7 +424,7 @@ export default function FixedAssetsReportsPage() {
                       <TableCell>{asset.branch_name}</TableCell>
                       <TableCell>{formatNumber(asset.purchase_cost)}</TableCell>
                       <TableCell>{formatNumber(asset.accumulated_depreciation)}</TableCell>
-                      <TableCell className="font-bold">{formatNumber(asset.book_value)}</TableCell>
+                      <TableCell className="font-bold" data-ai-help="fixed_assets_reports.book_value">{formatNumber(asset.book_value)}</TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs ${
                           asset.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
@@ -444,7 +444,7 @@ export default function FixedAssetsReportsPage() {
                   ))}
                   {assets.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-gray-500">
+                      <TableCell colSpan={8} className="text-center text-gray-500" data-ai-help="fixed_assets_reports.no_data_message">
                         {appLang === 'en' ? 'No assets found' : 'لا توجد أصول'}
                       </TableCell>
                     </TableRow>
@@ -454,7 +454,7 @@ export default function FixedAssetsReportsPage() {
             )}
 
             {(reportType === 'depreciation_schedule' || reportType === 'depreciation_by_period') && (
-              <Table>
+              <Table data-ai-help="fixed_assets_reports.depreciation_schedule">
                 <TableHeader>
                   <TableRow>
                     <TableHead>{appLang === 'en' ? 'Asset Name' : 'اسم الأصل'}</TableHead>
@@ -462,7 +462,7 @@ export default function FixedAssetsReportsPage() {
                     <TableHead>{appLang === 'en' ? 'Date' : 'التاريخ'}</TableHead>
                     <TableHead>{appLang === 'en' ? 'Depreciation Amount' : 'قيمة الإهلاك'}</TableHead>
                     <TableHead>{appLang === 'en' ? 'Accumulated Dep' : 'مجمع الإهلاك'}</TableHead>
-                    <TableHead>{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</TableHead>
+                    <TableHead data-ai-help="fixed_assets_reports.book_value">{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</TableHead>
                     <TableHead>{appLang === 'en' ? 'Status' : 'الحالة'}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -474,7 +474,7 @@ export default function FixedAssetsReportsPage() {
                       <TableCell>{new Date(item.period_date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}</TableCell>
                       <TableCell>{formatNumber(item.depreciation_amount)}</TableCell>
                       <TableCell>{formatNumber(item.accumulated_depreciation)}</TableCell>
-                      <TableCell className="font-bold">{formatNumber(item.book_value)}</TableCell>
+                      <TableCell className="font-bold" data-ai-help="fixed_assets_reports.book_value">{formatNumber(item.book_value)}</TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs ${
                           item.status === 'posted' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
@@ -491,7 +491,7 @@ export default function FixedAssetsReportsPage() {
                   ))}
                   {depreciationData.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-gray-500">
+                      <TableCell colSpan={7} className="text-center text-gray-500" data-ai-help="fixed_assets_reports.no_data_message">
                         {appLang === 'en' ? 'No depreciation data found' : 'لا توجد بيانات إهلاك'}
                       </TableCell>
                     </TableRow>
@@ -502,24 +502,32 @@ export default function FixedAssetsReportsPage() {
 
             {/* Enhanced Reports */}
             {['monthly_depreciation', 'asset_value_before_after', 'remaining_useful_life', 'assets_revaluation', 'annual_depreciation_schedule'].includes(reportType) && (
-              <Table>
+              <Table
+                data-ai-help={
+                  reportType === 'monthly_depreciation' ? "fixed_assets_reports.monthly_depreciation" :
+                  reportType === 'asset_value_before_after' ? "fixed_assets_reports.value_before_after" :
+                  reportType === 'remaining_useful_life' ? "fixed_assets_reports.remaining_useful_life" :
+                  reportType === 'annual_depreciation_schedule' ? "fixed_assets_reports.depreciation_schedule" :
+                  "fixed_assets_reports.book_value"
+                }
+              >
                 <TableHeader>
                   <TableRow>
                     {reportType === 'monthly_depreciation' && (
                       <>
                         <TableHead>{appLang === 'en' ? 'Asset Code' : 'كود الأصل'}</TableHead>
                         <TableHead>{appLang === 'en' ? 'Name' : 'الاسم'}</TableHead>
-                        <TableHead>{appLang === 'en' ? 'Monthly Depreciation' : 'الإهلاك الشهري'}</TableHead>
+                        <TableHead data-ai-help="fixed_assets_reports.monthly_depreciation">{appLang === 'en' ? 'Monthly Depreciation' : 'الإهلاك الشهري'}</TableHead>
                         <TableHead>{appLang === 'en' ? 'Depreciation %' : 'نسبة الإهلاك %'}</TableHead>
-                        <TableHead>{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</TableHead>
+                        <TableHead data-ai-help="fixed_assets_reports.book_value">{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</TableHead>
                       </>
                     )}
                     {reportType === 'asset_value_before_after' && (
                       <>
                         <TableHead>{appLang === 'en' ? 'Asset Code' : 'كود الأصل'}</TableHead>
                         <TableHead>{appLang === 'en' ? 'Name' : 'الاسم'}</TableHead>
-                        <TableHead>{appLang === 'en' ? 'Value Before' : 'القيمة قبل الإهلاك'}</TableHead>
-                        <TableHead>{appLang === 'en' ? 'Value After' : 'القيمة بعد الإهلاك'}</TableHead>
+                        <TableHead data-ai-help="fixed_assets_reports.value_before_after">{appLang === 'en' ? 'Value Before' : 'القيمة قبل الإهلاك'}</TableHead>
+                        <TableHead data-ai-help="fixed_assets_reports.value_before_after">{appLang === 'en' ? 'Value After' : 'القيمة بعد الإهلاك'}</TableHead>
                         <TableHead>{appLang === 'en' ? 'Depreciation %' : 'نسبة الإهلاك %'}</TableHead>
                       </>
                     )}
@@ -528,8 +536,8 @@ export default function FixedAssetsReportsPage() {
                         <TableHead>{appLang === 'en' ? 'Asset Code' : 'كود الأصل'}</TableHead>
                         <TableHead>{appLang === 'en' ? 'Name' : 'الاسم'}</TableHead>
                         <TableHead>{appLang === 'en' ? 'Elapsed Months' : 'الأشهر المنقضية'}</TableHead>
-                        <TableHead>{appLang === 'en' ? 'Remaining Months' : 'الأشهر المتبقية'}</TableHead>
-                        <TableHead>{appLang === 'en' ? 'Remaining %' : 'النسبة المتبقية %'}</TableHead>
+                        <TableHead data-ai-help="fixed_assets_reports.remaining_useful_life">{appLang === 'en' ? 'Remaining Months' : 'الأشهر المتبقية'}</TableHead>
+                        <TableHead data-ai-help="fixed_assets_reports.remaining_useful_life">{appLang === 'en' ? 'Remaining %' : 'النسبة المتبقية %'}</TableHead>
                       </>
                     )}
                     {reportType === 'assets_revaluation' && (
@@ -561,23 +569,23 @@ export default function FixedAssetsReportsPage() {
                       <TableCell>{item.asset_name}</TableCell>
                       {reportType === 'monthly_depreciation' && (
                         <>
-                          <TableCell>{formatNumber(item.monthly_depreciation)}</TableCell>
+                          <TableCell data-ai-help="fixed_assets_reports.monthly_depreciation">{formatNumber(item.monthly_depreciation)}</TableCell>
                           <TableCell>{formatNumber(item.depreciation_percentage)}%</TableCell>
-                          <TableCell>{formatNumber(item.book_value)}</TableCell>
+                          <TableCell data-ai-help="fixed_assets_reports.book_value">{formatNumber(item.book_value)}</TableCell>
                         </>
                       )}
                       {reportType === 'asset_value_before_after' && (
                         <>
-                          <TableCell>{formatNumber(item.value_before_depreciation)}</TableCell>
-                          <TableCell>{formatNumber(item.value_after_depreciation)}</TableCell>
+                          <TableCell data-ai-help="fixed_assets_reports.value_before_after">{formatNumber(item.value_before_depreciation)}</TableCell>
+                          <TableCell data-ai-help="fixed_assets_reports.value_before_after">{formatNumber(item.value_after_depreciation)}</TableCell>
                           <TableCell>{formatNumber(item.depreciation_percentage)}%</TableCell>
                         </>
                       )}
                       {reportType === 'remaining_useful_life' && (
                         <>
                           <TableCell>{item.elapsed_months}</TableCell>
-                          <TableCell>{item.remaining_months}</TableCell>
-                          <TableCell>{formatNumber(item.remaining_percentage)}%</TableCell>
+                          <TableCell data-ai-help="fixed_assets_reports.remaining_useful_life">{item.remaining_months}</TableCell>
+                          <TableCell data-ai-help="fixed_assets_reports.remaining_useful_life">{formatNumber(item.remaining_percentage)}%</TableCell>
                         </>
                       )}
                       {reportType === 'assets_revaluation' && (
@@ -604,7 +612,7 @@ export default function FixedAssetsReportsPage() {
                   ))}
                   {enhancedReportData.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-gray-500">
+                      <TableCell colSpan={6} className="text-center text-gray-500" data-ai-help="fixed_assets_reports.no_data_message">
                         {appLang === 'en' ? 'No data found' : 'لا توجد بيانات'}
                       </TableCell>
                     </TableRow>

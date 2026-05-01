@@ -46,6 +46,18 @@ describe("AI page key registry", () => {
     expect(getGuideKeyForPageKey("trial_balance")).toBe("trial_balance")
   })
 
+  it("keeps first Fixed Assets rollout routes mapped to existing page keys", () => {
+    expect(getPageKeyFromRegistry("/fixed-assets")).toBe("fixed_assets")
+    expect(getPageKeyFromRegistry("/fixed-assets/new")).toBe("fixed_assets")
+    expect(getPageKeyFromRegistry("/fixed-assets/123")).toBe("fixed_assets")
+    expect(getPageKeyFromRegistry("/fixed-assets/reports")).toBe("fixed_assets_reports")
+    expect(getPageKeyFromRegistry("/fixed-assets/categories")).toBe("asset_categories")
+
+    expect(getPageKeyEntry("fixed_assets")?.domain).toBe("fixed_assets")
+    expect(getPageKeyEntry("fixed_assets")?.questionBankModule).toBe("fixedAssets")
+    expect(getGuideKeyForPageKey("fixed_assets_reports")).toBe("fixed_assets")
+  })
+
   it("has unique keys and route prefixes", () => {
     const keys = AI_PAGE_KEY_REGISTRY.map((entry) => entry.key)
     expect(new Set(keys).size).toBe(keys.length)

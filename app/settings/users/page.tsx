@@ -17,7 +17,8 @@ import { getActiveCompanyId } from "@/lib/company"
 import { usePermissions } from "@/lib/permissions-context"
 import { canAdvancedAction, type AdvancedAction } from "@/lib/authz"
 import Link from "next/link"
-import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch, Search, Copy } from "lucide-react"
+import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch, Search, Copy, CreditCard } from "lucide-react"
+import SeatStatusBanner from "@/components/billing/SeatStatusBanner"
 
 type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean; username?: string; display_name?: string; branch_id?: string; cost_center_id?: string; warehouse_id?: string }
 type Branch = { id: string; name: string; is_main: boolean }
@@ -937,44 +938,35 @@ export default function UsersSettingsPage() {
         if (!canManageTarget) { setActionError("ليست لديك صلاحية لإرسال دعوة لهذه الشركة"); return }
       } catch { }
 
-      // إنشاء الدعوة مع الفرع ومركز التكلفة والمخزن
-      const invitationData: any = {
-        company_id: targetCompanyId,
-        email: inviteEmail.trim(),
-        employee_name: inviteName.trim() || null,
-        role: inviteRole,
-        branch_id: inviteBranchId || null,
-        cost_center_id: inviteCostCenterId || null,
-        warehouse_id: inviteWarehouseId || null
+      // ✅ Always go through API — enforces seat checks server-side
+      const res = await fetch("/api/send-invite", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: inviteEmail.trim(),
+          employeeName: inviteName.trim(),
+          role: inviteRole,
+          branch_id: inviteBranchId || null,
+          cost_center_id: inviteCostCenterId || null,
+          warehouse_id: inviteWarehouseId || null,
+        }),
+      })
+      const data = await res.json()
+
+      // ✅ Handle 402: No seats available
+      if (res.status === 402) {
+        setActionError("لا توجد مقاعد متاحة. لإرسال دعوة جديدة، يرجى إضافة مقعد مدفوع إلى اشتراك الشركة.")
+        return
       }
 
-      const { data: created, error } = await supabase
-        .from("company_invitations")
-        .insert(invitationData)
-        .select("id, accept_token")
-        .single()
-      if (error) { setActionError(error.message || "تعذر إنشاء الدعوة"); return }
-      try {
-        await fetch("/api/send-invite", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            email: inviteEmail.trim(),
-            employeeName: inviteName.trim() || undefined,
-            inviteId: created.id,
-            token: created.accept_token,
-            companyId: targetCompanyId,
-            role: inviteRole,
-            branchId: inviteBranchId,
-            costCenterId: inviteCostCenterId,
-            warehouseId: inviteWarehouseId
-          }),
-        })
-      } catch { }
+      if (!res.ok) {
+        setActionError(data?.error || data?.message || "تعذر إنشاء الدعوة")
+        return
+      }
+
       setInviteEmail("")
       setInviteName("")
       setInviteRole("staff")
-      // جلب الدعوات المعلقة فقط (غير مقبولة وغير منتهية)
       const { data: cinv } = await supabase
         .from("company_invitations")
         .select("id,email,role,expires_at,branch_id,cost_center_id,warehouse_id,accept_token")
@@ -983,6 +975,8 @@ export default function UsersSettingsPage() {
         .gt("expires_at", new Date().toISOString())
       setInvites((cinv || []) as any)
       toastActionSuccess(toast, "إنشاء", "الدعوة")
+    } catch (e) {
+      setActionError((e as any)?.message || "حدث خطأ أثناء إنشاء الدعوة")
     } finally { setLoading(false) }
   }
 
@@ -1717,10 +1711,26 @@ export default function UsersSettingsPage() {
               </div>
             </CardHeader>
             <CardContent className="pt-5 space-y-4">
+              {/* ✅ Seat Status Banner */}
+              {companyId && (
+                <SeatStatusBanner
+                  companyId={companyId}
+                  onAddSeat={() => { window.location.href = "/settings/billing" }}
+                  className="mb-2"
+                />
+              )}
               {actionError && (
-                <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-sm">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  {actionError}
+                <div className="flex flex-col gap-2 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-sm">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <span>{actionError}</span>
+                  </div>
+                  {actionError.includes("مقاعد") && (
+                    <a href="/settings/billing" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 text-xs font-semibold rounded-lg transition-colors border border-red-300 w-fit">
+                      <CreditCard className="w-3.5 h-3.5" />
+                      إضافة مقعد شهري
+                    </a>
+                  )}
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">

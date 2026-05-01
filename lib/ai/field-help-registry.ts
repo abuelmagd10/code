@@ -5911,6 +5911,772 @@ export const AI_FIELD_HELP_REGISTRY = [
     },
     aliases: ["create routing version", "new routing version", "إنشاء نسخة مسار"],
   },
+  {
+    id: "fixed_assets.status",
+    pageKey: "fixed_assets",
+    kind: "status",
+    label: {
+      ar: "حالة الأصل",
+      en: "Asset status",
+    },
+    purpose: {
+      ar: "توضح المرحلة الحالية للأصل: هل هو نشط، متوقف، مباع، مستبعد، أو انتهى إهلاكه.",
+      en: "Shows the asset's current stage: active, suspended, sold, disposed, or fully depreciated.",
+    },
+    whyItExists: {
+      ar: "الحالة تساعدك تعرف هل يمكن استخدام الأصل أو تعديل إهلاكه أو استبعاده.",
+      en: "The status helps you know whether the asset can be used, depreciated, or disposed.",
+    },
+    whatToCheck: {
+      ar: "راجع الحالة قبل أي اعتماد أو ترحيل أو استبعاد حتى لا تتخذ إجراء على أصل غير مناسب.",
+      en: "Review the status before approval, posting, or disposal so you do not act on an unsuitable asset.",
+    },
+    summary: {
+      ar: "حالة الأصل تخبرك ما الإجراء المسموح أو المناسب الآن.",
+      en: "Asset status tells you which action is allowed or appropriate now.",
+    },
+    aliases: ["asset status", "status", "حالة الأصل"],
+  },
+  {
+    id: "fixed_assets.purchase_cost",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "قيمة الشراء",
+      en: "Purchase cost",
+    },
+    purpose: {
+      ar: "تمثل تكلفة اقتناء الأصل التي يبدأ منها حساب الإهلاك والقيمة الحالية.",
+      en: "Represents the cost of acquiring the asset and is the starting point for depreciation and current value.",
+    },
+    whatToCheck: {
+      ar: "تأكد أنها تشمل التكاليف التي تعتبرها الشركة جزءًا من تكلفة الأصل، حسب سياستها المحاسبية.",
+      en: "Confirm it includes the costs your company treats as part of the asset cost, based on accounting policy.",
+    },
+    summary: {
+      ar: "قيمة الشراء هي أساس حساب الإهلاك والقيمة الدفترية.",
+      en: "Purchase cost is the base for depreciation and book value.",
+    },
+    aliases: ["purchase cost", "cost", "قيمة الشراء", "تكلفة الأصل"],
+  },
+  {
+    id: "fixed_assets.accumulated_depreciation",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "مجمع الإهلاك",
+      en: "Accumulated depreciation",
+    },
+    purpose: {
+      ar: "يعرض إجمالي الإهلاك الذي تم احتسابه على الأصل منذ بدء استخدامه.",
+      en: "Shows the total depreciation calculated for the asset since it started being used.",
+    },
+    whyItExists: {
+      ar: "يساعدك على معرفة الجزء من تكلفة الأصل الذي تم تحميله على الفترات السابقة.",
+      en: "It helps you see how much of the asset cost has already been allocated to past periods.",
+    },
+    summary: {
+      ar: "مجمع الإهلاك يوضح مقدار ما تم استهلاكه محاسبيًا من الأصل.",
+      en: "Accumulated depreciation shows how much of the asset has been used financially.",
+    },
+    aliases: ["accumulated depreciation", "depreciation total", "مجمع الإهلاك"],
+  },
+  {
+    id: "fixed_assets.book_value",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "القيمة الدفترية",
+      en: "Book value",
+    },
+    purpose: {
+      ar: "توضح القيمة الحالية للأصل في الدفاتر بعد طرح الإهلاك المتراكم من تكلفة الشراء.",
+      en: "Shows the asset's current accounting value after accumulated depreciation is deducted from purchase cost.",
+    },
+    whenToUse: {
+      ar: "راجعها قبل بيع الأصل أو استبعاده أو تقييم أثره على التقارير.",
+      en: "Review it before selling, disposing, or evaluating the asset's reporting impact.",
+    },
+    example: {
+      ar: "إذا كانت تكلفة الأصل 10,000 ومجمع الإهلاك 3,000، فالقيمة الدفترية 7,000.",
+      en: "If the asset cost is 10,000 and accumulated depreciation is 3,000, the book value is 7,000.",
+    },
+    summary: {
+      ar: "القيمة الدفترية هي الرقم الأهم قبل قرار البيع أو الاستبعاد.",
+      en: "Book value is the key number before a sale or disposal decision.",
+    },
+    aliases: ["book value", "current value", "القيمة الدفترية"],
+  },
+  {
+    id: "fixed_assets.useful_life",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "العمر الإنتاجي",
+      en: "Useful life",
+    },
+    purpose: {
+      ar: "يحدد عدد الفترات التي تتوقع الشركة الاستفادة من الأصل خلالها.",
+      en: "Defines how long the company expects to benefit from the asset.",
+    },
+    whatToCheck: {
+      ar: "راجع أن العمر مناسب لطبيعة الأصل وسياسة الشركة، لأن تغييره يغير قيمة الإهلاك الدوري.",
+      en: "Check that it matches the asset type and company policy because it changes periodic depreciation.",
+    },
+    summary: {
+      ar: "العمر الإنتاجي يوزع تكلفة الأصل على مدة الاستفادة منه.",
+      en: "Useful life spreads the asset cost across the period of benefit.",
+    },
+    aliases: ["useful life", "life", "العمر الإنتاجي"],
+  },
+  {
+    id: "fixed_assets.depreciation_method",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "طريقة الإهلاك",
+      en: "Depreciation method",
+    },
+    purpose: {
+      ar: "تحدد كيف سيتم توزيع تكلفة الأصل على الفترات، مثل القسط الثابت أو القسط المتناقص.",
+      en: "Defines how the asset cost is spread across periods, such as straight-line or declining balance.",
+    },
+    whyItExists: {
+      ar: "كل طريقة تعطي نمطًا مختلفًا لمصروف الإهلاك، لذلك يجب أن تعكس سياسة الشركة وطبيعة الأصل.",
+      en: "Each method creates a different depreciation pattern, so it should match company policy and asset nature.",
+    },
+    summary: {
+      ar: "طريقة الإهلاك تحدد شكل توزيع تكلفة الأصل عبر عمره.",
+      en: "The depreciation method controls how asset cost is spread over its life.",
+    },
+    aliases: ["depreciation method", "method", "طريقة الإهلاك"],
+  },
+  {
+    id: "fixed_assets.depreciation_schedule",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "جدول الإهلاك",
+      en: "Depreciation schedule",
+    },
+    purpose: {
+      ar: "يعرض فترات الإهلاك المتوقعة أو المعتمدة، وقيمة الإهلاك في كل فترة، والقيمة المتبقية بعدها.",
+      en: "Shows expected or approved depreciation periods, the depreciation amount for each period, and the value after it.",
+    },
+    whatToCheck: {
+      ar: "راجع الفترات والقيم قبل الاعتماد أو الترحيل، خصوصًا عند وجود تعديل في الأصل أو عمره.",
+      en: "Review periods and values before approval or posting, especially after changes to the asset or its life.",
+    },
+    summary: {
+      ar: "جدول الإهلاك هو خطة توزيع تكلفة الأصل على الفترات.",
+      en: "The depreciation schedule is the plan for spreading asset cost across periods.",
+    },
+    aliases: ["depreciation schedule", "schedule", "جدول الإهلاك"],
+  },
+  {
+    id: "fixed_assets.depreciation_period_status",
+    pageKey: "fixed_assets",
+    kind: "status",
+    label: {
+      ar: "حالة فترة الإهلاك",
+      en: "Depreciation period status",
+    },
+    purpose: {
+      ar: "توضح هل فترة الإهلاك ما زالت معلقة، تم اعتمادها، تم ترحيلها للتقارير، أو تم إلغاؤها.",
+      en: "Shows whether a depreciation period is pending, approved, posted to reports, or cancelled.",
+    },
+    afterAction: {
+      ar: "بعد الاعتماد يمكن ترحيل الفترة إذا كانت الصلاحيات والفترة المحاسبية تسمح بذلك.",
+      en: "After approval, the period can be posted if permissions and the accounting period allow it.",
+    },
+    summary: {
+      ar: "حالة الفترة توضح أين وصل الإهلاك قبل ظهوره النهائي في التقارير.",
+      en: "The period status shows how far depreciation has progressed before final reporting.",
+    },
+    aliases: ["period status", "depreciation status", "حالة فترة الإهلاك"],
+  },
+  {
+    id: "fixed_assets.approve_depreciation_button",
+    pageKey: "fixed_assets",
+    kind: "button",
+    label: {
+      ar: "زر اعتماد الإهلاك",
+      en: "Approve depreciation button",
+    },
+    purpose: {
+      ar: "يعتمد فترات الإهلاك المعلقة بعد مراجعتها، حتى تصبح جاهزة للترحيل.",
+      en: "Approves pending depreciation periods after review so they become ready for posting.",
+    },
+    whatToCheck: {
+      ar: "راجع قيمة الإهلاك والفترة والقيمة الدفترية قبل الاعتماد.",
+      en: "Review the depreciation amount, period, and book value before approval.",
+    },
+    afterAction: {
+      ar: "بعد الاعتماد لن تكون الفترة مجرد مسودة متابعة، بل تصبح جاهزة للخطوة المالية التالية.",
+      en: "After approval, the period is no longer just a draft for review; it is ready for the next financial step.",
+    },
+    summary: {
+      ar: "اعتماد الإهلاك يعني أن القيم تمت مراجعتها وجاهزة للترحيل.",
+      en: "Approving depreciation means the values were reviewed and are ready for posting.",
+    },
+    aliases: ["approve depreciation", "approve", "اعتماد الإهلاك"],
+  },
+  {
+    id: "fixed_assets.post_depreciation_button",
+    pageKey: "fixed_assets",
+    kind: "button",
+    label: {
+      ar: "زر ترحيل الإهلاك",
+      en: "Post depreciation button",
+    },
+    purpose: {
+      ar: "يثبت الإهلاك المعتمد في الأثر المالي والتقارير حسب صلاحياتك والفترة المتاحة.",
+      en: "Confirms approved depreciation in financial impact and reports based on your permissions and open period.",
+    },
+    whatToCheck: {
+      ar: "تأكد أن الفترات المعتمدة صحيحة وأنك لا ترحل إهلاكًا لفترة غير مقصودة.",
+      en: "Make sure the approved periods are correct and that you are not posting depreciation for the wrong period.",
+    },
+    afterAction: {
+      ar: "بعد الترحيل تظهر قيمة الإهلاك ضمن متابعة الأصل والتقارير المالية المناسبة.",
+      en: "After posting, depreciation appears in asset follow-up and relevant financial reports.",
+    },
+    summary: {
+      ar: "الترحيل هو خطوة تثبيت الإهلاك ماليًا بعد الاعتماد.",
+      en: "Posting is the step that financially confirms depreciation after approval.",
+    },
+    aliases: ["post depreciation", "post", "ترحيل الإهلاك"],
+  },
+  {
+    id: "fixed_assets.add_capital_button",
+    pageKey: "fixed_assets",
+    kind: "button",
+    label: {
+      ar: "زر إضافة رأسمالية",
+      en: "Add capital button",
+    },
+    purpose: {
+      ar: "يسجل تكلفة إضافية على الأصل عندما يتم تحسينه أو رفع قدرته بدل اعتبارها مصروفًا عاديًا.",
+      en: "Adds extra cost to the asset when it is improved or upgraded instead of treating the cost as a normal expense.",
+    },
+    whenToUse: {
+      ar: "استخدمه عند إضافة قيمة تزيد منفعة الأصل أو عمره، وليس للصيانة اليومية البسيطة.",
+      en: "Use it when a cost increases asset benefit or life, not for simple routine maintenance.",
+    },
+    summary: {
+      ar: "الإضافة الرأسمالية تزيد قيمة الأصل وتؤثر على الإهلاك لاحقًا.",
+      en: "A capital addition increases asset value and affects later depreciation.",
+    },
+    aliases: ["add capital", "capital addition", "إضافة رأسمالية"],
+  },
+  {
+    id: "fixed_assets.dispose_button",
+    pageKey: "fixed_assets",
+    kind: "button",
+    label: {
+      ar: "زر استبعاد الأصل",
+      en: "Dispose asset button",
+    },
+    purpose: {
+      ar: "يسجل خروج الأصل من الاستخدام بسبب بيع أو تلف أو عدم حاجة الشركة له.",
+      en: "Records that the asset is leaving use because it was sold, damaged, or no longer needed.",
+    },
+    whatToCheck: {
+      ar: "راجع القيمة الدفترية وسبب الاستبعاد وأي مبلغ بيع قبل تأكيد الإجراء.",
+      en: "Review book value, disposal reason, and any sale amount before confirming.",
+    },
+    afterAction: {
+      ar: "بعد الاستبعاد تتغير حالة الأصل ويتوقف التعامل معه كأصل نشط.",
+      en: "After disposal, the asset status changes and it is no longer treated as active.",
+    },
+    summary: {
+      ar: "استبعاد الأصل ينهي استخدامه التشغيلي ويجب مراجعته بعناية.",
+      en: "Disposing an asset ends its operational use and should be reviewed carefully.",
+    },
+    aliases: ["dispose", "disposal", "استبعاد الأصل"],
+  },
+  {
+    id: "fixed_assets.asset_history",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "سجل الأصل",
+      en: "Asset history",
+    },
+    purpose: {
+      ar: "يعرض الحركات المهمة التي حدثت على الأصل مثل إضافة قيمة أو إهلاك أو استبعاد.",
+      en: "Shows important asset events such as added value, depreciation, or disposal.",
+    },
+    summary: {
+      ar: "السجل يساعدك تفهم كيف وصلت قيمة الأصل وحالته لما هي عليه الآن.",
+      en: "History helps you understand how the asset value and status reached their current state.",
+    },
+    aliases: ["asset history", "history", "سجل الأصل"],
+  },
+  {
+    id: "fixed_assets.category",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "فئة الأصل",
+      en: "Asset category",
+    },
+    purpose: {
+      ar: "تصنف الأصل ضمن مجموعة مثل معدات أو سيارات أو أجهزة، وغالبًا تحدد إعدادات الإهلاك الافتراضية.",
+      en: "Classifies the asset into a group such as equipment, vehicles, or devices, and often sets default depreciation settings.",
+    },
+    whatToCheck: {
+      ar: "اختر الفئة الأقرب لطبيعة الأصل حتى تكون التقارير والإهلاك أكثر دقة.",
+      en: "Choose the category closest to the asset nature so reports and depreciation are more accurate.",
+    },
+    summary: {
+      ar: "فئة الأصل تجعل الإعدادات والتقارير منظمة منذ البداية.",
+      en: "Asset category keeps setup and reports organized from the start.",
+    },
+    aliases: ["asset category", "category", "فئة الأصل"],
+  },
+  {
+    id: "fixed_assets.asset_code",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "كود الأصل",
+      en: "Asset code",
+    },
+    purpose: {
+      ar: "يعطي الأصل رقمًا أو رمزًا يسهل البحث عنه وتمييزه عن أصول مشابهة.",
+      en: "Gives the asset a number or code that makes it easier to find and distinguish from similar assets.",
+    },
+    summary: {
+      ar: "الكود يساعد على تتبع الأصل بسرعة.",
+      en: "The code helps track the asset quickly.",
+    },
+    aliases: ["asset code", "code", "كود الأصل"],
+  },
+  {
+    id: "fixed_assets.asset_name",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "اسم الأصل",
+      en: "Asset name",
+    },
+    purpose: {
+      ar: "يوضح الأصل المقصود بلغة مفهومة للفريق، مثل سيارة توصيل أو جهاز تعبئة.",
+      en: "Describes the asset in a way the team understands, such as delivery car or packing machine.",
+    },
+    whatToCheck: {
+      ar: "اكتب اسمًا واضحًا يميز الأصل عن غيره، خصوصًا عند وجود أصول متشابهة.",
+      en: "Use a clear name that distinguishes the asset, especially when similar assets exist.",
+    },
+    summary: {
+      ar: "اسم الأصل الجيد يسهل المتابعة والبحث.",
+      en: "A good asset name makes follow-up and search easier.",
+    },
+    aliases: ["asset name", "name", "اسم الأصل"],
+  },
+  {
+    id: "fixed_assets.purchase_date",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "تاريخ الشراء",
+      en: "Purchase date",
+    },
+    purpose: {
+      ar: "يوضح متى تم اقتناء الأصل، ويساعد على قراءة عمره وتاريخه.",
+      en: "Shows when the asset was acquired and helps read its age and history.",
+    },
+    summary: {
+      ar: "تاريخ الشراء يربط الأصل بفترة اقتنائه.",
+      en: "Purchase date connects the asset to its acquisition period.",
+    },
+    aliases: ["purchase date", "date", "تاريخ الشراء"],
+  },
+  {
+    id: "fixed_assets.depreciation_start_date",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "تاريخ بدء الإهلاك",
+      en: "Depreciation start date",
+    },
+    purpose: {
+      ar: "يحدد متى يبدأ تحميل تكلفة الأصل على الفترات، وقد يختلف عن تاريخ الشراء إذا لم يبدأ استخدام الأصل فورًا.",
+      en: "Defines when the asset cost starts being allocated to periods, which may differ from purchase date if use starts later.",
+    },
+    whatToCheck: {
+      ar: "تأكد أن التاريخ يعكس بداية استخدام الأصل فعليًا حسب سياسة الشركة.",
+      en: "Make sure the date reflects when the asset actually starts being used according to company policy.",
+    },
+    summary: {
+      ar: "هذا التاريخ يحدد أول فترة يبدأ فيها الإهلاك.",
+      en: "This date sets the first period where depreciation begins.",
+    },
+    aliases: ["depreciation start", "start date", "تاريخ بدء الإهلاك"],
+  },
+  {
+    id: "fixed_assets.salvage_value",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "القيمة المتبقية",
+      en: "Salvage value",
+    },
+    purpose: {
+      ar: "تمثل القيمة المتوقعة للأصل في نهاية عمره الإنتاجي، إن كانت الشركة تتوقع قيمة متبقية.",
+      en: "Represents the expected value of the asset at the end of its useful life, if the company expects one.",
+    },
+    summary: {
+      ar: "القيمة المتبقية تقلل الجزء الذي سيتم إهلاكه من تكلفة الأصل.",
+      en: "Salvage value reduces the portion of asset cost that will be depreciated.",
+    },
+    aliases: ["salvage value", "residual value", "القيمة المتبقية"],
+  },
+  {
+    id: "fixed_assets.asset_account",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "حساب الأصل",
+      en: "Asset account",
+    },
+    purpose: {
+      ar: "يحدد الحساب المالي الذي تظهر فيه قيمة الأصل ضمن التقارير.",
+      en: "Defines the financial account where the asset value appears in reports.",
+    },
+    whatToCheck: {
+      ar: "اختر حسابًا مناسبًا لنوع الأصل، مثل معدات أو سيارات أو مبانٍ.",
+      en: "Choose an account that matches the asset type, such as equipment, vehicles, or buildings.",
+    },
+    summary: {
+      ar: "حساب الأصل يحدد أين ستظهر قيمة الأصل ماليًا.",
+      en: "The asset account determines where the asset value appears financially.",
+    },
+    aliases: ["asset account", "حساب الأصل"],
+  },
+  {
+    id: "fixed_assets.accumulated_depreciation_account",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "حساب مجمع الإهلاك",
+      en: "Accumulated depreciation account",
+    },
+    purpose: {
+      ar: "يحدد الحساب الذي يتجمع فيه الإهلاك المحتسب على الأصل عبر الفترات.",
+      en: "Defines the account where depreciation calculated for the asset accumulates over periods.",
+    },
+    summary: {
+      ar: "هذا الحساب يوضح مقدار الإهلاك المتراكم على الأصل.",
+      en: "This account shows the depreciation accumulated against the asset.",
+    },
+    aliases: ["accumulated depreciation account", "حساب مجمع الإهلاك"],
+  },
+  {
+    id: "fixed_assets.depreciation_expense_account",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "حساب مصروف الإهلاك",
+      en: "Depreciation expense account",
+    },
+    purpose: {
+      ar: "يحدد الحساب الذي يظهر فيه مصروف الإهلاك لكل فترة.",
+      en: "Defines the account where periodic depreciation expense appears.",
+    },
+    summary: {
+      ar: "حساب مصروف الإهلاك يوضح أثر استخدام الأصل على أرباح الفترة.",
+      en: "The depreciation expense account shows the period impact of using the asset.",
+    },
+    aliases: ["depreciation expense account", "حساب مصروف الإهلاك"],
+  },
+  {
+    id: "fixed_assets.branch",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "الفرع",
+      en: "Branch",
+    },
+    purpose: {
+      ar: "يربط الأصل بالفرع الذي يستخدمه أو يتحمل مسؤوليته في التقارير.",
+      en: "Connects the asset to the branch that uses it or carries responsibility for it in reports.",
+    },
+    summary: {
+      ar: "الفرع يساعد على توزيع الأصول والتقارير حسب مكان الاستخدام.",
+      en: "Branch helps separate assets and reports by place of use.",
+    },
+    aliases: ["branch", "الفرع"],
+  },
+  {
+    id: "fixed_assets.cost_center",
+    pageKey: "fixed_assets",
+    kind: "field",
+    label: {
+      ar: "مركز التكلفة",
+      en: "Cost center",
+    },
+    purpose: {
+      ar: "يربط الأصل بفريق أو نشاط معين حتى يظهر أثره المالي في التحليل الداخلي.",
+      en: "Links the asset to a team or activity so its financial impact appears in internal analysis.",
+    },
+    summary: {
+      ar: "مركز التكلفة يساعد على معرفة من يستفيد من الأصل أو يتحمل أثره.",
+      en: "Cost center helps show who benefits from the asset or carries its impact.",
+    },
+    aliases: ["cost center", "مركز التكلفة"],
+  },
+  {
+    id: "fixed_assets.create_asset_button",
+    pageKey: "fixed_assets",
+    kind: "button",
+    label: {
+      ar: "زر إنشاء الأصل",
+      en: "Create asset button",
+    },
+    purpose: {
+      ar: "يحفظ بيانات الأصل ويبدأ ملف متابعته داخل النظام.",
+      en: "Saves the asset details and starts its follow-up profile in the system.",
+    },
+    whatToCheck: {
+      ar: "راجع الفئة والتكلفة والتواريخ والحسابات قبل الإنشاء، لأنها تؤثر على الإهلاك والتقارير.",
+      en: "Review category, cost, dates, and accounts before creating because they affect depreciation and reports.",
+    },
+    afterAction: {
+      ar: "بعد الإنشاء ستنتقل عادة إلى صفحة الأصل لمتابعة الإهلاك والحالة.",
+      en: "After creation, you usually move to the asset page to follow depreciation and status.",
+    },
+    summary: {
+      ar: "إنشاء الأصل يثبت بياناته الأساسية لبدء المتابعة.",
+      en: "Creating the asset confirms its base data for follow-up.",
+    },
+    aliases: ["create asset", "save asset", "إنشاء الأصل"],
+  },
+  {
+    id: "fixed_assets_reports.report_type",
+    pageKey: "fixed_assets_reports",
+    kind: "field",
+    label: {
+      ar: "نوع التقرير",
+      en: "Report type",
+    },
+    purpose: {
+      ar: "يحدد زاوية القراءة التي تريدها: قائمة أصول، إهلاك، قيمة قبل وبعد، أو عمر متبقٍ.",
+      en: "Sets the view you want: asset list, depreciation, before-and-after value, or remaining life.",
+    },
+    summary: {
+      ar: "ابدأ باختيار نوع التقرير المناسب للسؤال الذي تريد إجابته.",
+      en: "Start by choosing the report type that matches the question you want answered.",
+    },
+    aliases: ["report type", "نوع التقرير"],
+  },
+  {
+    id: "fixed_assets_reports.status_filter",
+    pageKey: "fixed_assets_reports",
+    kind: "field",
+    label: {
+      ar: "فلتر الحالة",
+      en: "Status filter",
+    },
+    purpose: {
+      ar: "يعرض الأصول حسب حالتها مثل نشط، مباع، مستبعد، أو مهلك بالكامل.",
+      en: "Shows assets by status such as active, sold, disposed, or fully depreciated.",
+    },
+    summary: {
+      ar: "فلتر الحالة يساعدك تركز على مجموعة أصول محددة.",
+      en: "The status filter helps you focus on a specific group of assets.",
+    },
+    aliases: ["status filter", "فلتر الحالة"],
+  },
+  {
+    id: "fixed_assets_reports.branch_filter",
+    pageKey: "fixed_assets_reports",
+    kind: "field",
+    label: {
+      ar: "فلتر الفرع",
+      en: "Branch filter",
+    },
+    purpose: {
+      ar: "يقصر التقرير على أصول فرع معين عند الحاجة لمراجعة موقع أو مسؤولية محددة.",
+      en: "Limits the report to assets of a specific branch when you need to review a location or responsibility.",
+    },
+    summary: {
+      ar: "فلتر الفرع يجعل التقرير مناسبًا لموقع محدد.",
+      en: "The branch filter makes the report specific to one location.",
+    },
+    aliases: ["branch filter", "فلتر الفرع"],
+  },
+  {
+    id: "fixed_assets_reports.year",
+    pageKey: "fixed_assets_reports",
+    kind: "field",
+    label: {
+      ar: "السنة",
+      en: "Year",
+    },
+    purpose: {
+      ar: "تحدد السنة التي تريد قراءة الإهلاك أو التقرير السنوي عنها.",
+      en: "Sets the year you want to read depreciation or the annual report for.",
+    },
+    summary: {
+      ar: "السنة تضبط التقرير على فترة مالية واضحة.",
+      en: "The year keeps the report tied to a clear financial period.",
+    },
+    aliases: ["year", "السنة"],
+  },
+  {
+    id: "fixed_assets_reports.assets_list",
+    pageKey: "fixed_assets_reports",
+    kind: "field",
+    label: {
+      ar: "قائمة الأصول",
+      en: "Assets list",
+    },
+    purpose: {
+      ar: "تعرض الأصول مع التكلفة ومجمع الإهلاك والقيمة الدفترية والحالة.",
+      en: "Shows assets with cost, accumulated depreciation, book value, and status.",
+    },
+    summary: {
+      ar: "قائمة الأصول تعطيك صورة عامة عن ممتلكات الشركة الثابتة.",
+      en: "The assets list gives an overview of company fixed assets.",
+    },
+    aliases: ["assets list", "قائمة الأصول"],
+  },
+  {
+    id: "fixed_assets_reports.depreciation_schedule",
+    pageKey: "fixed_assets_reports",
+    kind: "field",
+    label: {
+      ar: "تقرير جدول الإهلاك",
+      en: "Depreciation schedule report",
+    },
+    purpose: {
+      ar: "يعرض فترات الإهلاك لكل أصل والقيمة المحتسبة في كل فترة.",
+      en: "Shows depreciation periods for each asset and the amount calculated in each period.",
+    },
+    summary: {
+      ar: "هذا التقرير يساعدك تراجع الإهلاك فترة بفترة.",
+      en: "This report helps you review depreciation period by period.",
+    },
+    aliases: ["depreciation schedule report", "جدول الإهلاك"],
+  },
+  {
+    id: "fixed_assets_reports.monthly_depreciation",
+    pageKey: "fixed_assets_reports",
+    kind: "field",
+    label: {
+      ar: "الإهلاك الشهري",
+      en: "Monthly depreciation",
+    },
+    purpose: {
+      ar: "يوضح مقدار الإهلاك المتوقع أو المحتسب شهريًا للأصل.",
+      en: "Shows the expected or calculated monthly depreciation for the asset.",
+    },
+    summary: {
+      ar: "الإهلاك الشهري يوضح أثر الأصل على كل شهر.",
+      en: "Monthly depreciation shows the asset's impact on each month.",
+    },
+    aliases: ["monthly depreciation", "الإهلاك الشهري"],
+  },
+  {
+    id: "fixed_assets_reports.value_before_after",
+    pageKey: "fixed_assets_reports",
+    kind: "field",
+    label: {
+      ar: "القيمة قبل وبعد الإهلاك",
+      en: "Value before and after depreciation",
+    },
+    purpose: {
+      ar: "يقارن قيمة الأصل قبل احتساب الإهلاك وبعده حتى ترى أثر الإهلاك بوضوح.",
+      en: "Compares asset value before and after depreciation so you can see the impact clearly.",
+    },
+    summary: {
+      ar: "هذه القراءة توضح كيف ينخفض رقم الأصل بسبب الإهلاك.",
+      en: "This view shows how the asset value changes because of depreciation.",
+    },
+    aliases: ["value before after", "before after", "القيمة قبل وبعد"],
+  },
+  {
+    id: "fixed_assets_reports.remaining_useful_life",
+    pageKey: "fixed_assets_reports",
+    kind: "field",
+    label: {
+      ar: "العمر المتبقي",
+      en: "Remaining useful life",
+    },
+    purpose: {
+      ar: "يوضح كم بقي من عمر الأصل المتوقع قبل انتهاء الإهلاك أو الحاجة للمراجعة.",
+      en: "Shows how much expected life remains before depreciation ends or review is needed.",
+    },
+    summary: {
+      ar: "العمر المتبقي يساعد على التخطيط للاستبدال أو الاستمرار في الاستخدام.",
+      en: "Remaining life helps plan replacement or continued use.",
+    },
+    aliases: ["remaining useful life", "remaining life", "العمر المتبقي"],
+  },
+  {
+    id: "fixed_assets_reports.book_value",
+    pageKey: "fixed_assets_reports",
+    kind: "field",
+    label: {
+      ar: "القيمة الدفترية في التقرير",
+      en: "Book value in report",
+    },
+    purpose: {
+      ar: "تعرض القيمة الحالية للأصل داخل التقرير بعد احتساب الإهلاك.",
+      en: "Shows the asset's current value in the report after depreciation is considered.",
+    },
+    summary: {
+      ar: "القيمة الدفترية في التقرير تساعدك تقرأ أثر الأصل ماليًا.",
+      en: "Book value in the report helps you read the asset's financial impact.",
+    },
+    aliases: ["book value report", "book value", "القيمة الدفترية"],
+  },
+  {
+    id: "fixed_assets_reports.export_csv_button",
+    pageKey: "fixed_assets_reports",
+    kind: "button",
+    label: {
+      ar: "زر تصدير CSV",
+      en: "Export CSV button",
+    },
+    purpose: {
+      ar: "ينزل التقرير الحالي في ملف يمكن فتحه في برامج الجداول لمراجعته أو مشاركته.",
+      en: "Downloads the current report into a file that can be opened in spreadsheet tools for review or sharing.",
+    },
+    whatToCheck: {
+      ar: "تأكد من نوع التقرير والفلاتر قبل التصدير حتى يكون الملف مناسبًا لما تريد مشاركته.",
+      en: "Check the report type and filters before exporting so the file matches what you want to share.",
+    },
+    summary: {
+      ar: "التصدير يحول نتيجة التقرير الحالية إلى ملف للمراجعة خارج النظام.",
+      en: "Export turns the current report result into a file for review outside the system.",
+    },
+    aliases: ["export csv", "download report", "تصدير"],
+  },
+  {
+    id: "fixed_assets_reports.no_data_message",
+    pageKey: "fixed_assets_reports",
+    kind: "message",
+    label: {
+      ar: "رسالة لا توجد بيانات",
+      en: "No data message",
+    },
+    purpose: {
+      ar: "تظهر عندما لا يجد التقرير أصولًا أو فترات إهلاك تطابق الاختيارات الحالية.",
+      en: "Appears when the report cannot find assets or depreciation periods matching the current selections.",
+    },
+    whatToCheck: {
+      ar: "راجع نوع التقرير والفلاتر والسنة، أو تأكد من وجود أصول مسجلة.",
+      en: "Review the report type, filters, and year, or confirm that assets exist.",
+    },
+    summary: {
+      ar: "هذه الرسالة غالبًا تعني أن نطاق البحث ضيق أو لا توجد بيانات بعد.",
+      en: "This message usually means the search scope is narrow or there is no data yet.",
+    },
+    aliases: ["no data", "empty report", "لا توجد بيانات"],
+  },
 ] as const satisfies readonly AIFieldHelpItem[]
 
 export function getFieldHelpForPage(

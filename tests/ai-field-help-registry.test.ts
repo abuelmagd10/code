@@ -119,6 +119,24 @@ describe("AI field help registry", () => {
     expect(routingHelp.some((item) => item.kind === "status")).toBe(true)
   })
 
+  it("provides focused Fixed Assets rollout help for asset lifecycle and reports", () => {
+    const assetHelp = getFieldHelpForPage("fixed_assets")
+    const reportsHelp = getFieldHelpForPage("fixed_assets_reports")
+
+    expect(assetHelp.some((item) => item.id === "fixed_assets.status")).toBe(true)
+    expect(assetHelp.some((item) => item.id === "fixed_assets.book_value")).toBe(true)
+    expect(assetHelp.some((item) => item.id === "fixed_assets.depreciation_schedule")).toBe(true)
+    expect(assetHelp.some((item) => item.id === "fixed_assets.approve_depreciation_button")).toBe(true)
+    expect(assetHelp.some((item) => item.id === "fixed_assets.post_depreciation_button")).toBe(true)
+    expect(assetHelp.some((item) => item.id === "fixed_assets.create_asset_button")).toBe(true)
+    expect(assetHelp.some((item) => item.kind === "status")).toBe(true)
+
+    expect(reportsHelp.some((item) => item.id === "fixed_assets_reports.report_type")).toBe(true)
+    expect(reportsHelp.some((item) => item.id === "fixed_assets_reports.remaining_useful_life")).toBe(true)
+    expect(reportsHelp.some((item) => item.id === "fixed_assets_reports.export_csv_button")).toBe(true)
+    expect(reportsHelp.some((item) => item.kind === "message")).toBe(true)
+  })
+
   it("builds user-facing context without raw internal terms", () => {
     const arabicBlock = buildFieldHelpContextBlock("invoices", "ar")
     const englishBlock = buildFieldHelpContextBlock("invoices", "en")
@@ -144,6 +162,8 @@ describe("AI field help registry", () => {
       "manufacturing_production_order_detail",
       "manufacturing_bom_detail",
       "manufacturing_routing_detail",
+      "fixed_assets",
+      "fixed_assets_reports",
     ]) {
       const blocks = [
         buildFieldHelpContextBlock(pageKey, "ar", 80),
@@ -151,12 +171,12 @@ describe("AI field help registry", () => {
       ]
 
       for (const block of blocks) {
-        expect(block).not.toMatch(/\b(branch_id|warehouse_id|supplier_id|approval_status|transaction_type|quantity_change|journal_entry_lines|account_id|reference_id|normal_balance|debit_amount|credit_amount|bom_id|bom_version_id|routing_id|routing_version_id|issue_warehouse_id|receipt_warehouse_id|endpoint|record|status=posted|status=draft|FIFO|GL|AP)\b/i)
+        expect(block).not.toMatch(/\b(branch_id|warehouse_id|supplier_id|approval_status|transaction_type|quantity_change|journal_entry_lines|account_id|reference_id|normal_balance|debit_amount|credit_amount|bom_id|bom_version_id|routing_id|routing_version_id|issue_warehouse_id|receipt_warehouse_id|asset_id|category_id|depreciation_schedules|endpoint|record|status=posted|status=draft|FIFO|GL|AP)\b/i)
       }
     }
   })
 
-  it("keeps Sales, Purchasing, Inventory, Accounting, and Manufacturing data-ai-help attributes backed by registry items", () => {
+  it("keeps Sales, Purchasing, Inventory, Accounting, Manufacturing, and Fixed Assets data-ai-help attributes backed by registry items", () => {
     const rolloutPages = [
       "app/invoices/new/page.tsx",
       "app/invoices/[id]/page.tsx",
@@ -174,6 +194,9 @@ describe("AI field help registry", () => {
       "components/manufacturing/production-order/production-order-detail-page.tsx",
       "components/manufacturing/bom/bom-detail-page.tsx",
       "components/manufacturing/routing/routing-detail-page.tsx",
+      "app/fixed-assets/[id]/page.tsx",
+      "app/fixed-assets/new/page.tsx",
+      "app/fixed-assets/reports/page.tsx",
     ]
 
     const helpIds = rolloutPages.flatMap((pagePath) => {

@@ -567,11 +567,11 @@ export default function FixedAssetDetailsPage() {
                   {/* Operations Menu */}
                   {(userRole === 'owner' || userRole === 'admin') && asset.status === 'active' && (
                     <>
-                      <Button variant="secondary" onClick={() => setAddCapitalOpen(true)}>
+                      <Button variant="secondary" onClick={() => setAddCapitalOpen(true)} data-ai-help="fixed_assets.add_capital_button">
                         <DollarSign className="w-4 h-4 mr-2" />
                         {appLang === 'en' ? 'Add Capital' : 'إضافة رأسمالية'}
                       </Button>
-                      <Button variant="destructive" onClick={() => setDisposeOpen(true)}>
+                      <Button variant="destructive" onClick={() => setDisposeOpen(true)} data-ai-help="fixed_assets.dispose_button">
                         <X className="w-4 h-4 mr-2" />
                         {appLang === 'en' ? 'Dispose' : 'استبعاد'}
                       </Button>
@@ -579,13 +579,13 @@ export default function FixedAssetDetailsPage() {
                   )}
 
                   {hasPendingSchedules && permApproveDepreciation && (
-                    <Button onClick={handleApproveSchedules} className="bg-blue-600 hover:bg-blue-700">
+                    <Button onClick={handleApproveSchedules} className="bg-blue-600 hover:bg-blue-700" data-ai-help="fixed_assets.approve_depreciation_button">
                       <CheckCircle className="w-4 h-4 mr-2" />
                       {appLang === 'en' ? 'Approve' : 'اعتماد'}
                     </Button>
                   )}
                   {hasApprovedSchedules && permPostDepreciation && (
-                    <Button onClick={handlePostDepreciation} className="bg-green-600 hover:bg-green-700">
+                    <Button onClick={handlePostDepreciation} className="bg-green-600 hover:bg-green-700" data-ai-help="fixed_assets.post_depreciation_button">
                       <Play className="w-4 h-4 mr-2" />
                       {appLang === 'en' ? 'Post' : 'ترحيل'}
                     </Button>
@@ -596,7 +596,7 @@ export default function FixedAssetDetailsPage() {
 
             {/* Asset Overview Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <Card className="p-4 dark:bg-slate-900">
+              <Card className="p-4 dark:bg-slate-900" data-ai-help="fixed_assets.purchase_cost">
                 <div className="flex items-center gap-3">
                   <DollarSign className="h-8 w-8 text-green-600 dark:text-green-400" />
                   <div>
@@ -605,7 +605,7 @@ export default function FixedAssetDetailsPage() {
                   </div>
                 </div>
               </Card>
-              <Card className="p-4 dark:bg-slate-900">
+              <Card className="p-4 dark:bg-slate-900" data-ai-help="fixed_assets.accumulated_depreciation">
                 <div className="flex items-center gap-3">
                   <TrendingDown className="h-8 w-8 text-red-600 dark:text-red-400" />
                   <div>
@@ -614,7 +614,7 @@ export default function FixedAssetDetailsPage() {
                   </div>
                 </div>
               </Card>
-              <Card className="p-4 dark:bg-slate-900">
+              <Card className="p-4 dark:bg-slate-900" data-ai-help="fixed_assets.book_value">
                 <div className="flex items-center gap-3">
                   <Calculator className="h-8 w-8 text-purple-600 dark:text-purple-400" />
                   <div>
@@ -623,7 +623,7 @@ export default function FixedAssetDetailsPage() {
                   </div>
                 </div>
               </Card>
-              <Card className="p-4 dark:bg-slate-900">
+              <Card className="p-4 dark:bg-slate-900" data-ai-help="fixed_assets.status">
                 <div className="flex items-center gap-3">
                   <Badge className={statusColors[asset.status] || statusColors.draft}>
                     {appLang === 'en' ? asset.status : {
@@ -645,16 +645,16 @@ export default function FixedAssetDetailsPage() {
               <Card className="dark:bg-slate-900">
                 <CardHeader><CardTitle>{appLang === 'en' ? 'Details' : 'التفاصيل'}</CardTitle></CardHeader>
                 <CardContent className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-500">{appLang === 'en' ? 'Life' : 'العمر'}:</span><span>{asset.useful_life_months} m</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">{appLang === 'en' ? 'Date' : 'تاريخ'}:</span><span>{new Date(asset.purchase_date).toLocaleDateString()}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">{appLang === 'en' ? 'Method' : 'الطريقة'}:</span><span>{asset.depreciation_method}</span></div>
+                  <div className="flex justify-between" data-ai-help="fixed_assets.useful_life"><span className="text-gray-500">{appLang === 'en' ? 'Life' : 'العمر'}:</span><span>{asset.useful_life_months} m</span></div>
+                  <div className="flex justify-between" data-ai-help="fixed_assets.purchase_date"><span className="text-gray-500">{appLang === 'en' ? 'Date' : 'تاريخ'}:</span><span>{new Date(asset.purchase_date).toLocaleDateString()}</span></div>
+                  <div className="flex justify-between" data-ai-help="fixed_assets.depreciation_method"><span className="text-gray-500">{appLang === 'en' ? 'Method' : 'الطريقة'}:</span><span>{asset.depreciation_method}</span></div>
                 </CardContent>
               </Card>
               <Card className="dark:bg-slate-900">
                 <CardHeader><CardTitle>{appLang === 'en' ? 'Location' : 'الموقع'}</CardTitle></CardHeader>
                 <CardContent className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-500">{appLang === 'en' ? 'Branch' : 'الفرع'}:</span><span>{asset.branches?.name}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">{appLang === 'en' ? 'Center' : 'المركز'}:</span><span>{asset.cost_centers?.cost_center_name}</span></div>
+                  <div className="flex justify-between" data-ai-help="fixed_assets.branch"><span className="text-gray-500">{appLang === 'en' ? 'Branch' : 'الفرع'}:</span><span>{asset.branches?.name}</span></div>
+                  <div className="flex justify-between" data-ai-help="fixed_assets.cost_center"><span className="text-gray-500">{appLang === 'en' ? 'Center' : 'المركز'}:</span><span>{asset.cost_centers?.cost_center_name}</span></div>
                 </CardContent>
               </Card>
             </div>
@@ -664,19 +664,21 @@ export default function FixedAssetDetailsPage() {
               <button
                 className={`pb-2 px-4 ${activeTab === 'schedule' ? 'border-b-2 border-blue-500 text-blue-600 font-bold' : 'text-gray-500'}`}
                 onClick={() => setActiveTab('schedule')}
+                data-ai-help="fixed_assets.depreciation_schedule"
               >
                 {appLang === 'en' ? 'Depreciation Schedule' : 'جدول الإهلاك'}
               </button>
               <button
                 className={`pb-2 px-4 ${activeTab === 'history' ? 'border-b-2 border-blue-500 text-blue-600 font-bold' : 'text-gray-500'}`}
                 onClick={() => setActiveTab('history')}
+                data-ai-help="fixed_assets.asset_history"
               >
                 {appLang === 'en' ? 'History' : 'السجل'}
               </button>
             </div>
 
             {activeTab === 'schedule' ? (
-              <Card className="dark:bg-slate-900">
+              <Card className="dark:bg-slate-900" data-ai-help="fixed_assets.depreciation_schedule">
                 <CardContent className="p-0 sm:p-4">
                   <Table>
                     <TableHeader>
@@ -684,9 +686,9 @@ export default function FixedAssetDetailsPage() {
                         <TableHead>#</TableHead>
                         <TableHead>{appLang === 'en' ? 'Date' : 'التاريخ'}</TableHead>
                         <TableHead>{appLang === 'en' ? 'Amount' : 'المبلغ'}</TableHead>
-                        <TableHead>{appLang === 'en' ? 'Accumulated' : 'المجمع'}</TableHead>
-                        <TableHead>{appLang === 'en' ? 'Book Value' : 'الدفترية'}</TableHead>
-                        <TableHead>{appLang === 'en' ? 'Status' : 'الحالة'}</TableHead>
+                        <TableHead data-ai-help="fixed_assets.accumulated_depreciation">{appLang === 'en' ? 'Accumulated' : 'المجمع'}</TableHead>
+                        <TableHead data-ai-help="fixed_assets.book_value">{appLang === 'en' ? 'Book Value' : 'الدفترية'}</TableHead>
+                        <TableHead data-ai-help="fixed_assets.depreciation_period_status">{appLang === 'en' ? 'Status' : 'الحالة'}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -695,9 +697,9 @@ export default function FixedAssetDetailsPage() {
                           <TableCell>{s.period_number}</TableCell>
                           <TableCell>{new Date(s.period_date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}</TableCell>
                           <TableCell>{formatNumber(s.depreciation_amount)}</TableCell>
-                          <TableCell>{formatNumber(s.accumulated_depreciation)}</TableCell>
-                          <TableCell>{formatNumber(s.book_value)}</TableCell>
-                          <TableCell>
+                          <TableCell data-ai-help="fixed_assets.accumulated_depreciation">{formatNumber(s.accumulated_depreciation)}</TableCell>
+                          <TableCell data-ai-help="fixed_assets.book_value">{formatNumber(s.book_value)}</TableCell>
+                          <TableCell data-ai-help="fixed_assets.depreciation_period_status">
                             <Badge className={scheduleStatusColors[s.status]}>{s.status}</Badge>
                           </TableCell>
                         </TableRow>
@@ -707,7 +709,9 @@ export default function FixedAssetDetailsPage() {
                 </CardContent>
               </Card>
             ) : (
-              <AssetHistory transactions={transactions} lang={appLang} />
+              <div data-ai-help="fixed_assets.asset_history">
+                <AssetHistory transactions={transactions} lang={appLang} />
+              </div>
             )}
 
           </div>

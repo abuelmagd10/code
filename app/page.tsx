@@ -60,39 +60,57 @@ const ERPWebsite = () => {
   const features = [
     { 
       icon: <DollarSign className="w-8 h-8" />, 
-      title: 'محاسبة احترافية',
-      desc: 'نظام محاسبي متكامل مع القيود التلقائية والتقارير المالية',
+      title: 'نظام مالي ومحاسبي متكامل',
+      desc: 'قيود يومية، شجرة حسابات، مراكز تكلفة، إدارة الأصول الثابتة، وإغلاق مالي سنوي شامل.',
       gradient: 'from-blue-500 to-cyan-500'
     },
     { 
-      icon: <Package className="w-8 h-8" />, 
-      title: 'إدارة المخزون',
-      desc: 'تتبع المخزون في الوقت الفعلي مع تنبيهات ذكية',
+      icon: <ShoppingCart className="w-8 h-8" />, 
+      title: 'دورة المبيعات والمشتريات',
+      desc: 'فواتير، عروض أسعار، أوامر بيع وشراء، مع إدارة متكاملة للمرتجعات وإشعارات الخصم والإضافة.',
       gradient: 'from-purple-500 to-pink-500'
     },
     { 
-      icon: <FileText className="w-8 h-8" />, 
-      title: 'الفواتير والتقارير',
-      desc: 'إنشاء فواتير احترافية وتقارير تحليلية شاملة',
+      icon: <Package className="w-8 h-8" />, 
+      title: 'إدارة المخزون والتصنيع',
+      desc: 'تتبع المستودعات، التحويلات المخزنية، ودورة تصنيع متكاملة مع تحديث الكميات في الوقت الفعلي.',
       gradient: 'from-orange-500 to-red-500'
     },
     { 
-      icon: <Users className="w-8 h-8" />, 
-      title: 'إدارة العملاء',
-      desc: 'قاعدة بيانات متكاملة للعملاء والموردين',
+      icon: <PieChart className="w-8 h-8" />, 
+      title: 'إدارة حقوق الملكية والشركاء',
+      desc: 'تتبع حصص الشركاء، المسحوبات الشخصية، إضافات رأس المال، وتوزيع الأرباح بدقة.',
       gradient: 'from-green-500 to-emerald-500'
     },
     { 
-      icon: <PieChart className="w-8 h-8" />, 
-      title: 'تحليلات متقدمة',
-      desc: 'رؤى عميقة وذكاء اصطناعي لدعم القرارات',
+      icon: <Users className="w-8 h-8" />, 
+      title: 'الموارد البشرية والرواتب',
+      desc: 'إدارة شاملة لشؤون الموظفين، الحضور والانصراف، حساب الرواتب آلياً، والبدلات.',
       gradient: 'from-indigo-500 to-purple-500'
     },
     { 
       icon: <Shield className="w-8 h-8" />, 
-      title: 'أمان عالي المستوى',
-      desc: 'تشفير متقدم وصلاحيات محكمة لحماية بياناتك',
+      title: 'حوكمة وصلاحيات صارمة',
+      desc: 'نظام اعتمادات (Governance) يمنع التلاعب، مع تقارير متقدمة لتتبع كافة الحركات في النظام.',
       gradient: 'from-red-500 to-pink-500'
+    },
+    { 
+      icon: <Zap className="w-8 h-8" />, 
+      title: 'مساعد الذكاء الاصطناعي (AI Copilot)',
+      desc: 'مساعد ذكي مدمج يجيب على استفساراتك ويقدم تحليلات وتوصيات استراتيجية في كل أقسام النظام.',
+      gradient: 'from-yellow-400 to-orange-500'
+    },
+    { 
+      icon: <Home className="w-8 h-8" />, 
+      title: 'إدارة الفروع المتعددة',
+      desc: 'إدارة متكاملة لعدة فروع وشركات فرعية من منصة واحدة مع مزامنة لحظية للبيانات والأرصدة.',
+      gradient: 'from-teal-400 to-emerald-600'
+    },
+    { 
+      icon: <TrendingUp className="w-8 h-8" />, 
+      title: 'لوحات تحكم وتحليلات ذكية',
+      desc: 'مؤشرات أداء (KPIs) تفاعلية ورسوم بيانية دقيقة توفر لك رؤية شاملة وتساعدك على اتخاذ قرارات سريعة.',
+      gradient: 'from-fuchsia-500 to-rose-500'
     },
   ];
 
@@ -123,7 +141,7 @@ const ERPWebsite = () => {
     },
     {
       q: 'كم يكلف إضافة مستخدمين إضافيين؟',
-      a: 'كل مستخدم إضافي يكلف 5 دولار شهرياً فقط. المستخدم الأول دائماً مجاني، وتدفع فقط مقابل المستخدمين الإضافيين الذين تحتاجهم.'
+      a: 'كل مستخدم إضافي يكلف 10 دولار شهرياً فقط. المستخدم الأول دائماً مجاني، وتدفع فقط مقابل المستخدمين الإضافيين الذين تحتاجهم.'
     },
     {
       q: 'هل يمكنني استيراد بياناتي من نظام آخر؟',
@@ -383,7 +401,7 @@ const ERPWebsite = () => {
             <h2 className="text-4xl md:text-5xl font-bold mb-4">
               ابدأ مجاناً، ادفع عند الحاجة فقط
             </h2>
-            <p className="text-xl text-gray-400">مستخدم واحد مجاني إلى الأبد، مستخدمين إضافيين بـ $5 شهرياً</p>
+            <p className="text-xl text-gray-400">مستخدم واحد مجاني إلى الأبد، مستخدمين إضافيين بـ $10 شهرياً</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto mb-16">
@@ -422,13 +440,13 @@ const ERPWebsite = () => {
               <div className="text-center mb-6">
                 <h3 className="text-2xl font-bold mb-2">مستخدمين إضافيين</h3>
                 <div className="flex items-baseline justify-center gap-2">
-                  <span className="text-6xl font-bold">$5</span>
+                  <span className="text-6xl font-bold">$10</span>
                   <span className="text-gray-400">/مستخدم/شهر</span>
                 </div>
                 <p className="text-sm text-gray-400 mt-2">لكل مستخدم إضافي</p>
               </div>
               <ul className="space-y-4 mb-8">
-                {['المستخدم الأول مجاني', '$5 لكل مستخدم إضافي', 'جميع الميزات لكل مستخدم', 'صلاحيات متقدمة', 'إدارة الفرق', 'دعم أولوية'].map((item, idx) => (
+                {['المستخدم الأول مجاني', '$10 لكل مستخدم إضافي', 'جميع الميزات لكل مستخدم', 'صلاحيات متقدمة', 'إدارة الفرق', 'دعم أولوية'].map((item, idx) => (
                   <li key={idx} className="flex items-center gap-3">
                     <CheckCircle className="w-5 h-5 text-blue-400 flex-shrink-0" />
                     <span>{item}</span>
@@ -448,9 +466,9 @@ const ERPWebsite = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
               {[
                 { users: 'مستخدم واحد', cost: '$0' },
-                { users: 'مستخدمين (1+1)', cost: '$5' },
-                { users: '4 مستخدمين (1+3)', cost: '$15' },
-                { users: '10 مستخدمين (1+9)', cost: '$45' }
+                { users: 'مستخدمين (1+1)', cost: '$10' },
+                { users: '4 مستخدمين (1+3)', cost: '$30' },
+                { users: '10 مستخدمين (1+9)', cost: '$90' }
               ].map((example, idx) => (
                 <div key={idx} className="text-center p-6 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-all">
                   <div className="text-3xl font-bold text-blue-400 mb-2">{example.cost}</div>

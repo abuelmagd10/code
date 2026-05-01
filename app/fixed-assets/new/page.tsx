@@ -243,7 +243,7 @@ export default function NewFixedAssetPage() {
                     <CardTitle>{appLang === 'en' ? 'Basic Information' : 'المعلومات الأساسية'}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div>
+                    <div data-ai-help="fixed_assets.category">
                       <Label htmlFor="category_id">{appLang === 'en' ? 'Category' : 'الفئة'} *</Label>
                       <Select value={formData.category_id} onValueChange={handleCategoryChange}>
                         <SelectTrigger>
@@ -259,7 +259,7 @@ export default function NewFixedAssetPage() {
                       </Select>
                     </div>
 
-                    <div>
+                    <div data-ai-help="fixed_assets.asset_code">
                       <Label htmlFor="asset_code">{appLang === 'en' ? 'Asset Code' : 'كود الأصل'}</Label>
                       <Input
                         id="asset_code"
@@ -269,7 +269,7 @@ export default function NewFixedAssetPage() {
                       />
                     </div>
 
-                    <div>
+                    <div data-ai-help="fixed_assets.asset_name">
                       <Label htmlFor="name">{appLang === 'en' ? 'Asset Name' : 'اسم الأصل'} *</Label>
                       <Input
                         id="name"
@@ -306,7 +306,7 @@ export default function NewFixedAssetPage() {
                     <CardTitle>{appLang === 'en' ? 'Financial Information' : 'المعلومات المالية'}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div>
+                    <div data-ai-help="fixed_assets.purchase_date">
                       <Label htmlFor="purchase_date">{appLang === 'en' ? 'Purchase Date' : 'تاريخ الشراء'} *</Label>
                       <Input
                         id="purchase_date"
@@ -317,7 +317,7 @@ export default function NewFixedAssetPage() {
                       />
                     </div>
 
-                    <div>
+                    <div data-ai-help="fixed_assets.depreciation_start_date">
                       <Label htmlFor="depreciation_start_date">{appLang === 'en' ? 'Depreciation Start Date' : 'تاريخ بدء الإهلاك'} *</Label>
                       <Input
                         id="depreciation_start_date"
@@ -328,7 +328,7 @@ export default function NewFixedAssetPage() {
                       />
                     </div>
 
-                    <div>
+                    <div data-ai-help="fixed_assets.purchase_cost">
                       <Label htmlFor="purchase_cost">{appLang === 'en' ? 'Purchase Cost' : 'قيمة الشراء'} *</Label>
                       <NumericInput
                         id="purchase_cost"
@@ -339,7 +339,7 @@ export default function NewFixedAssetPage() {
                       />
                     </div>
 
-                    <div>
+                    <div data-ai-help="fixed_assets.salvage_value">
                       <Label htmlFor="salvage_value">{appLang === 'en' ? 'Salvage Value' : 'القيمة المتبقية'}</Label>
                       <NumericInput
                         id="salvage_value"
@@ -350,7 +350,7 @@ export default function NewFixedAssetPage() {
                       />
                     </div>
 
-                    <div>
+                    <div data-ai-help="fixed_assets.useful_life">
                       <Label htmlFor="useful_life_months">{appLang === 'en' ? 'Useful Life (Months)' : 'العمر الإنتاجي (بالأشهر)'} *</Label>
                       <NumericInput
                         id="useful_life_months"
@@ -359,7 +359,7 @@ export default function NewFixedAssetPage() {
                       />
                     </div>
 
-                    <div>
+                    <div data-ai-help="fixed_assets.depreciation_method">
                       <Label htmlFor="depreciation_method">{appLang === 'en' ? 'Depreciation Method' : 'طريقة الإهلاك'} *</Label>
                       <Select value={formData.depreciation_method} onValueChange={(value) => setFormData(prev => ({ ...prev, depreciation_method: value }))}>
                         <SelectTrigger>
@@ -397,7 +397,7 @@ export default function NewFixedAssetPage() {
                     <CardTitle>{appLang === 'en' ? 'Accounting' : 'المحاسبة'}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div>
+                    <div data-ai-help="fixed_assets.asset_account">
                       <Label htmlFor="asset_account_id">{appLang === 'en' ? 'Asset Account' : 'حساب الأصل'} *</Label>
                       <Select value={formData.asset_account_id} onValueChange={(value) => setFormData(prev => ({ ...prev, asset_account_id: value }))}>
                         <SelectTrigger>
@@ -413,7 +413,7 @@ export default function NewFixedAssetPage() {
                       </Select>
                     </div>
 
-                    <div>
+                    <div data-ai-help="fixed_assets.accumulated_depreciation_account">
                       <Label htmlFor="accumulated_depreciation_account_id">{appLang === 'en' ? 'Accumulated Depreciation Account' : 'حساب مجمع الإهلاك'} *</Label>
                       <Select value={formData.accumulated_depreciation_account_id} onValueChange={(value) => setFormData(prev => ({ ...prev, accumulated_depreciation_account_id: value }))}>
                         <SelectTrigger>
@@ -429,7 +429,7 @@ export default function NewFixedAssetPage() {
                       </Select>
                     </div>
 
-                    <div>
+                    <div data-ai-help="fixed_assets.depreciation_expense_account">
                       <Label htmlFor="depreciation_expense_account_id">{appLang === 'en' ? 'Depreciation Expense Account' : 'حساب مصروف الإهلاك'} *</Label>
                       <Select value={formData.depreciation_expense_account_id} onValueChange={(value) => setFormData(prev => ({ ...prev, depreciation_expense_account_id: value }))}>
                         <SelectTrigger>
@@ -453,7 +453,7 @@ export default function NewFixedAssetPage() {
                     <CardTitle>{appLang === 'en' ? 'Organization' : 'التنظيم'}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div>
+                    <div data-ai-help="fixed_assets.branch">
                       <Label htmlFor="branch_id">{appLang === 'en' ? 'Branch' : 'الفرع'}</Label>
                       <Select value={formData.branch_id} onValueChange={(value) => setFormData(prev => ({ ...prev, branch_id: value }))}>
                         <SelectTrigger>
@@ -469,7 +469,7 @@ export default function NewFixedAssetPage() {
                       </Select>
                     </div>
 
-                    <div>
+                    <div data-ai-help="fixed_assets.cost_center">
                       <Label htmlFor="cost_center_id">{appLang === 'en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
                       <Select value={formData.cost_center_id} onValueChange={(value) => setFormData(prev => ({ ...prev, cost_center_id: value }))}>
                         <SelectTrigger>
@@ -494,7 +494,7 @@ export default function NewFixedAssetPage() {
                   <Button type="button" variant="outline" onClick={() => router.back()}>
                     {appLang === 'en' ? 'Cancel' : 'إلغاء'}
                   </Button>
-                  <Button type="submit" disabled={isLoading} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
+                  <Button type="submit" disabled={isLoading} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800" data-ai-help="fixed_assets.create_asset_button">
                     <Save className="w-4 h-4 mr-2" />
                     {isLoading ? (appLang === 'en' ? 'Creating...' : 'جاري الإنشاء...') : (appLang === 'en' ? 'Create Asset' : 'إنشاء الأصل')}
                   </Button>
