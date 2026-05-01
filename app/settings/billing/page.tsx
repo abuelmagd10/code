@@ -80,7 +80,7 @@ export default function BillingPage() {
         setError(data?.error || 'تعذر جلب بيانات الاشتراك')
         return
       }
-      setStatus(data.data)
+      setStatus(data)
     } catch {
       setError('خطأ في الاتصال بالخادم')
     } finally {
@@ -94,8 +94,8 @@ export default function BillingPage() {
     try {
       const res = await fetch('/api/billing/transactions')
       const data = await res.json()
-      if (res.ok && Array.isArray(data.data)) {
-        setTransactions(data.data)
+      if (res.ok && Array.isArray(data)) {
+        setTransactions(data)
       }
     } catch { /* transactions are optional — don't block UI */ }
     finally { setTxnLoading(false) }
@@ -123,8 +123,8 @@ export default function BillingPage() {
         return
       }
       // Redirect to Paymob checkout
-      if (data.data?.checkout_url) {
-        window.location.href = data.data.checkout_url
+      if (data?.checkout_url) {
+        window.location.href = data.checkout_url
       } else {
         setCheckoutError('لم يتم استلام رابط الدفع من بوابة الدفع')
       }
