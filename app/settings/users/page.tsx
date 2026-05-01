@@ -1702,12 +1702,20 @@ export default function UsersSettingsPage() {
                     <p className="text-xs text-gray-500 mt-1">إرسال دعوات للانضمام للشركة</p>
                   </div>
                 </div>
-                {invites.length > 0 && (
-                  <Badge variant="outline" className="gap-1 bg-amber-50 text-amber-700 border-amber-200">
-                    <Mail className="w-3 h-3" />
-                    {invites.length} دعوة معلقة
-                  </Badge>
-                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {invites.length > 0 && (
+                    <Badge variant="outline" className="gap-1 bg-amber-50 text-amber-700 border-amber-200">
+                      <Mail className="w-3 h-3" />
+                      {invites.length} دعوة معلقة
+                    </Badge>
+                  )}
+                  <Link href="/settings/billing">
+                    <Button variant="outline" size="sm" className="gap-1.5 text-violet-600 border-violet-200 hover:bg-violet-50 dark:text-violet-400 dark:border-violet-800 dark:hover:bg-violet-900/20">
+                      <CreditCard className="w-3.5 h-3.5" />
+                      إدارة الاشتراك
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="pt-5 space-y-4">
