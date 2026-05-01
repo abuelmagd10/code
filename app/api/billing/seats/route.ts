@@ -45,8 +45,13 @@ export async function POST(req: NextRequest) {
     const PAYMOB_PUBLIC_KEY = process.env.PAYMOB_PUBLIC_KEY!
     const PAYMOB_INTEGRATION_ID = process.env.PAYMOB_INTEGRATION_ID!
 
-    if (!PAYMOB_SECRET_KEY || !PAYMOB_PUBLIC_KEY) {
-      return internalError("مزود الدفع غير مهيأ", "paymob_not_configured")
+    if (!PAYMOB_SECRET_KEY || !PAYMOB_PUBLIC_KEY || !PAYMOB_INTEGRATION_ID) {
+      console.error("[billing/seats] Missing Paymob env vars:", {
+        hasSecretKey: !!PAYMOB_SECRET_KEY,
+        hasPublicKey: !!PAYMOB_PUBLIC_KEY,
+        hasIntegrationId: !!PAYMOB_INTEGRATION_ID,
+      })
+      return internalError("مزود الدفع غير مهيأ — يرجى التواصل مع الدعم", "paymob_not_configured")
     }
 
     // Get user email and name from Supabase
