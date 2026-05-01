@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
     const PAYMOB_SECRET_KEY = process.env.PAYMOB_SECRET_KEY!
     const PAYMOB_PUBLIC_KEY = process.env.PAYMOB_PUBLIC_KEY!
     const PAYMOB_INTEGRATION_ID = process.env.PAYMOB_INTEGRATION_ID!
+    const PAYMOB_INTEGRATION_ID_2 = process.env.PAYMOB_INTEGRATION_ID_2 // optional second integration
 
     if (!PAYMOB_SECRET_KEY || !PAYMOB_PUBLIC_KEY || !PAYMOB_INTEGRATION_ID) {
       console.error("[billing/seats] Missing Paymob env vars:", {
@@ -52,6 +53,12 @@ export async function POST(req: NextRequest) {
         hasIntegrationId: !!PAYMOB_INTEGRATION_ID,
       })
       return internalError("مزود الدفع غير مهيأ — يرجى التواصل مع الدعم", "paymob_not_configured")
+    }
+
+    // Build list of payment methods (primary + optional secondary)
+    const paymentMethods: number[] = [parseInt(PAYMOB_INTEGRATION_ID)]
+    if (PAYMOB_INTEGRATION_ID_2 && !isNaN(parseInt(PAYMOB_INTEGRATION_ID_2))) {
+      paymentMethods.push(parseInt(PAYMOB_INTEGRATION_ID_2))
     }
 
     // Get user email and name from Supabase
@@ -80,7 +87,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         amount: amountCents,
         currency: "EGP",
-        payment_methods: [parseInt(PAYMOB_INTEGRATION_ID)],
+        payment_methods: paymentMethods,
         items: [{
           name: `${seats} مقعد إضافي - ${companyName}`,
           amount: amountCents,
