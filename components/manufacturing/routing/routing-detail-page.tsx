@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -1240,11 +1241,28 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
             <div className="grid gap-4 py-2 md:grid-cols-2">
               <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_routing_detail.create_version_button">
                 <Label>استنساخ من نسخة</Label>
-                <Input
-                  value={createVersionForm.clone_from_version_id || ""}
-                  onChange={(event) => setCreateVersionForm((current) => ({ ...current, clone_from_version_id: event.target.value.trim() || null }))}
-                  placeholder="اختياري: UUID لنسخة موجودة لاستنساخ العمليات منها"
-                />
+                <Select
+                  value={createVersionForm.clone_from_version_id || "none"}
+                  onValueChange={(value) =>
+                    setCreateVersionForm((current) => ({
+                      ...current,
+                      clone_from_version_id: value === "none" ? null : value,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="ابدأ من نسخة فارغة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">بدون استنساخ</SelectItem>
+                    {(routing?.versions || []).map((version) => (
+                      <SelectItem key={version.id} value={version.id}>
+                        v{version.version_no} · {getRoutingVersionStatusLabel(version.status)}
+                        {version.updated_at ? ` · ${formatDateTime(version.updated_at)}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label>تاريخ السريان من</Label>
