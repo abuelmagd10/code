@@ -12,6 +12,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  ManufacturingProductSelector,
+  BomSelector,
+  BomVersionSelector,
+  RoutingSelector,
+  RoutingVersionSelector,
+  WarehouseSelector,
+} from "@/components/manufacturing/manufacturing-selectors"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -445,71 +453,105 @@ export function ProductionOrderListPage() {
           </DialogHeader>
 
           <div className="grid gap-4 sm:grid-cols-2">
+            {/* ── 1. المنتج المراد تصنيعه ── */}
             <div className="space-y-2 sm:col-span-2">
-              <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm leading-6 text-amber-900">
-                {copy.common.idOnlyHint}
-                <div className="mt-1 text-xs text-amber-700">{copy.list.fields.branchHint}</div>
-              </div>
+              <Label className="text-sm font-semibold">
+                {appLang === "ar" ? "١. المنتج المراد تصنيعه" : "1. Product to Manufacture"}
+              </Label>
+              <ManufacturingProductSelector
+                value={createForm.product_id}
+                onChange={(id) =>
+                  setCreateForm((c) => ({
+                    ...c,
+                    product_id: id,
+                    bom_id: "",
+                    bom_version_id: "",
+                    routing_id: "",
+                    routing_version_id: "",
+                  }))
+                }
+                productType="manufactured"
+                placeholder={appLang === "ar" ? "اختر المنتج النهائي المراد تصنيعه" : "Select finished product"}
+              />
             </div>
 
+            {/* ── 2. قائمة المواد ── */}
             <div className="space-y-2">
-              <Label>{copy.list.fields.branchId}</Label>
-              <Input
-                value={createForm.branch_id || ""}
-                onChange={(event) => setCreateForm((current) => ({ ...current, branch_id: event.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{copy.list.fields.productId}</Label>
-              <Input
-                value={createForm.product_id}
-                onChange={(event) => setCreateForm((current) => ({ ...current, product_id: event.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{copy.list.fields.bomId}</Label>
-              <Input
+              <Label className="text-sm font-semibold">
+                {appLang === "ar" ? "٢. قائمة المواد (الوصفة)" : "2. Bill of Materials"}
+              </Label>
+              <BomSelector
                 value={createForm.bom_id}
-                onChange={(event) => setCreateForm((current) => ({ ...current, bom_id: event.target.value }))}
+                onChange={(id) =>
+                  setCreateForm((c) => ({ ...c, bom_id: id, bom_version_id: "" }))
+                }
+                productId={createForm.product_id}
+                placeholder={appLang === "ar" ? "اختر قائمة المواد" : "Select BOM"}
               />
             </div>
+
+            {/* ── 3. إصدار قائمة المواد ── */}
             <div className="space-y-2">
-              <Label>{copy.list.fields.bomVersionId}</Label>
-              <Input
+              <Label className="text-sm font-semibold">
+                {appLang === "ar" ? "٣. إصدار قائمة المواد" : "3. BOM Version"}
+              </Label>
+              <BomVersionSelector
                 value={createForm.bom_version_id}
-                onChange={(event) => setCreateForm((current) => ({ ...current, bom_version_id: event.target.value }))}
+                onChange={(id) => setCreateForm((c) => ({ ...c, bom_version_id: id }))}
+                bomId={createForm.bom_id}
+                placeholder={appLang === "ar" ? "اختر الإصدار المعتمد" : "Select approved version"}
               />
             </div>
+
+            {/* ── 4. مسار التصنيع ── */}
             <div className="space-y-2">
-              <Label>{copy.list.fields.routingId}</Label>
-              <Input
+              <Label className="text-sm font-semibold">
+                {appLang === "ar" ? "٤. مسار التصنيع" : "4. Routing"}
+              </Label>
+              <RoutingSelector
                 value={createForm.routing_id}
-                onChange={(event) => setCreateForm((current) => ({ ...current, routing_id: event.target.value }))}
+                onChange={(id) =>
+                  setCreateForm((c) => ({ ...c, routing_id: id, routing_version_id: "" }))
+                }
+                productId={createForm.product_id}
+                placeholder={appLang === "ar" ? "اختر مسار التصنيع" : "Select routing"}
               />
             </div>
+
+            {/* ── 5. إصدار مسار التصنيع ── */}
             <div className="space-y-2">
-              <Label>{copy.list.fields.routingVersionId}</Label>
-              <Input
+              <Label className="text-sm font-semibold">
+                {appLang === "ar" ? "٥. إصدار المسار" : "5. Routing Version"}
+              </Label>
+              <RoutingVersionSelector
                 value={createForm.routing_version_id}
-                onChange={(event) => setCreateForm((current) => ({ ...current, routing_version_id: event.target.value }))}
+                onChange={(id) => setCreateForm((c) => ({ ...c, routing_version_id: id }))}
+                routingId={createForm.routing_id}
+                placeholder={appLang === "ar" ? "اختر إصدار المسار" : "Select routing version"}
               />
             </div>
+
+            {/* ── 6. مستودع الصرف ── */}
             <div className="space-y-2">
-              <Label>{copy.list.fields.issueWarehouseId}</Label>
-              <Input
+              <Label className="text-sm font-semibold">
+                {appLang === "ar" ? "٦. مستودع الصرف (المواد الخام)" : "6. Issue Warehouse (Raw Materials)"}
+              </Label>
+              <WarehouseSelector
                 value={createForm.issue_warehouse_id || ""}
-                onChange={(event) =>
-                  setCreateForm((current) => ({ ...current, issue_warehouse_id: event.target.value }))
-                }
+                onChange={(id) => setCreateForm((c) => ({ ...c, issue_warehouse_id: id }))}
+                placeholder={appLang === "ar" ? "مستودع سحب المواد الخام" : "Raw materials warehouse"}
               />
             </div>
+
+            {/* ── 7. مستودع الاستلام ── */}
             <div className="space-y-2">
-              <Label>{copy.list.fields.receiptWarehouseId}</Label>
-              <Input
+              <Label className="text-sm font-semibold">
+                {appLang === "ar" ? "٧. مستودع الاستلام (المنتج النهائي)" : "7. Receipt Warehouse (Finished Goods)"}
+              </Label>
+              <WarehouseSelector
                 value={createForm.receipt_warehouse_id || ""}
-                onChange={(event) =>
-                  setCreateForm((current) => ({ ...current, receipt_warehouse_id: event.target.value }))
-                }
+                onChange={(id) => setCreateForm((c) => ({ ...c, receipt_warehouse_id: id }))}
+                placeholder={appLang === "ar" ? "مستودع إضافة المنتج النهائي" : "Finished goods warehouse"}
               />
             </div>
             <div className="space-y-2">

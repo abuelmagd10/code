@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ManufacturingProductSelector } from "@/components/manufacturing/manufacturing-selectors"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
@@ -441,13 +442,17 @@ export function RoutingListPage() {
                   placeholder="اختياري — اتركه فارغًا لاستخدام فرعك الحالي"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>المنتج المراد تصنيعه</Label>
-                <Input
+              <div className="space-y-2 sm:col-span-2">
+                <Label className="text-sm font-semibold">المنتج المراد تصنيعه</Label>
+                <ManufacturingProductSelector
                   value={createForm.product_id}
-                  onChange={(event) => setCreateForm((current) => ({ ...current, product_id: event.target.value }))}
-                  placeholder="أدخل كود أو رقم المنتج المراد تصنيعه"
+                  onChange={(id) => setCreateForm((c) => ({ ...c, product_id: id }))}
+                  productType="manufactured"
+                  placeholder="اختر المنتج النهائي الذي سيُنتج بهذا المسار"
                 />
+                <p className="text-xs text-muted-foreground">
+                  اختر من قائمة المنتجات المصنّعة المسجّلة في النظام
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>كود مسار التشغيل</Label>
