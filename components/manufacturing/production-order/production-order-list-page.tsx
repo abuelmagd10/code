@@ -37,6 +37,7 @@ import {
   getTextDirection,
   readAppLanguage,
 } from "@/lib/manufacturing/production-order-ui"
+import { ManufacturingGuide } from "@/components/manufacturing/manufacturing-guide"
 
 const EMPTY_CREATE_FORM: ProductionOrderCreatePayload = {
   branch_id: "",
@@ -212,6 +213,23 @@ export function ProductionOrderListPage() {
       <div dir={getTextDirection(appLang)} className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
           <CompanyHeader />
+
+          {/* ── دليل دورة التصنيع ── */}
+          <ManufacturingGuide
+            currentStep="production_order"
+            completedSteps={["products", "bom", "bom_version", "approve"]}
+            lang={appLang === "ar" ? "ar" : "en"}
+            pageInfo={{
+              titleAr: "أوامر الإنتاج — ابدأ التصنيع",
+              titleEn: "Production Orders — Start Manufacturing",
+              descAr: "أمر الإنتاج هو الطلب الرسمي لتصنيع كمية محددة من منتج معين. بعد إصداره، يصرف النظام المواد من المخزن ويضيف المنتج النهائي بعد الانتهاء.",
+              descEn: "A production order is the formal request to manufacture a specific quantity. After release, the system issues raw materials and receives finished goods.",
+              whenAr: "عندما يطلب العميل كمية من منتج معين. تأكد أن قائمة المواد معتمدة قبل إنشاء أمر الإنتاج.",
+              whenEn: "When a customer orders a product that needs to be manufactured. Ensure the BOM is approved before creating the order.",
+              nextStepId: "material_issue",
+            }}
+          />
+
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
             <ERPPageHeader
               title={copy.list.title}

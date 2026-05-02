@@ -26,6 +26,13 @@ import {
   CheckCircle,
   RefreshCw,
   Factory,
+  ClipboardList,
+  Layers,
+  GitMerge,
+  Cpu,
+  PackageCheck,
+  PackagePlus,
+  XSquare,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -171,8 +178,14 @@ export function Sidebar() {
     if (href.includes('/inventory/product-availability')) return 'product_availability'
     if (href.includes('/inventory')) return 'inventory'
     if (href.includes('/manufacturing/boms')) return 'manufacturing_boms'
+    if (href.includes('/manufacturing/bom-versions')) return 'manufacturing_boms'
     if (href.includes('/manufacturing/routings')) return 'manufacturing_boms'
+    if (href.includes('/manufacturing/work-centers')) return 'manufacturing_boms'
+    if (href.includes('/manufacturing/mrp')) return 'manufacturing_boms'
     if (href.includes('/manufacturing/production-orders')) return 'manufacturing_boms'
+    if (href.includes('/manufacturing/material-issue')) return 'manufacturing_boms'
+    if (href.includes('/manufacturing/product-receive')) return 'manufacturing_boms'
+    if (href.includes('/manufacturing/close-production-order')) return 'manufacturing_boms'
     // الموارد البشرية
     if (href.includes('/hr/employees')) return 'employees'
     if (href.includes('/hr/attendance')) return 'attendance'
@@ -252,17 +265,16 @@ export function Sidebar() {
   const GroupAccordion = ({ group, q }: any) => {
     const pathname = usePathname()
 
-    // فلترة العناصر المسموح بها
+    // فلترة العناصر المسموح بها (الفواصل تمر دائماً)
     const allowedItems = Array.isArray(group.items)
-      ? group.items.filter((it: any) => isItemAllowed(it.href))
+      ? group.items.filter((it: any) => it.href === '#' || isItemAllowed(it.href))
       : []
 
-    // إخفاء المجموعة بالكامل إذا لم يكن هناك عناصر مسموح بها
-    if (allowedItems.length === 0) {
-      return null
-    }
+    // إخفاء المجموعة إذا لم يكن هناك عناصر حقيقية (غير فاصلة)
+    const realItems = allowedItems.filter((it: any) => it.href !== '#')
+    if (realItems.length === 0) return null
 
-    const isAnyActive = allowedItems.some((it: any) => {
+    const isAnyActive = realItems.some((it: any) => {
       const href = it.href.split('?')[0]
       return pathname === href || pathname.startsWith(href + '/')
     })
@@ -283,7 +295,17 @@ export function Sidebar() {
         </button>
         {open && (
           <div className="space-y-0.5 sm:space-y-1">
-            {allowedItems.map((it: any) => {
+            {allowedItems.map((it: any, idx: number) => {
+              // Section divider items
+              if (it.href === '#') {
+                return (
+                  <div key={`divider-${idx}`} className="px-5 sm:px-6 pt-2 pb-0.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                      {it.label}
+                    </span>
+                  </div>
+                )
+              }
               const Icon = it.icon
               const isActive = (() => { const h = it.href.split('?')[0]; return pathname === h || pathname.startsWith(h + '/') })()
               return (
@@ -1008,10 +1030,22 @@ export function Sidebar() {
                   ]
                 },
                 {
-                  key: 'manufacturing', icon: Factory, label: (lang === 'en' ? 'Manufacturing' : 'التصنيع'), items: [
-                    { label: (lang === 'en' ? 'Bill of Materials' : 'هياكل المواد'), href: `/manufacturing/boms${q}`, icon: Factory },
-                    { label: (lang === 'en' ? 'Routings' : 'مسارات التشغيل'), href: `/manufacturing/routings${q}`, icon: Factory },
-                    { label: (lang === 'en' ? 'Production Orders' : 'أوامر الإنتاج'), href: `/manufacturing/production-orders${q}`, icon: Factory },
+                  key: 'manufacturing', icon: Factory, label: (lang === 'en' ? '🏭 Manufacturing' : '🏭 التصنيع'), items: [
+                    // ── التهيئة الهندسية ──
+                    { label: (lang === 'en' ? 'Engineering Setup' : 'التهيئة الهندسية'), href: `#`, icon: Factory },
+                    { label: (lang === 'en' ? 'Bills of Materials' : 'قوائم المواد'), href: `/manufacturing/boms${q}`, icon: Layers },
+                    { label: (lang === 'en' ? 'BOM Versions' : 'إصدارات قوائم المواد'), href: `/manufacturing/bom-versions${q}`, icon: GitMerge },
+                    { label: (lang === 'en' ? 'Routings' : 'مسارات التصنيع'), href: `/manufacturing/routings${q}`, icon: GitMerge },
+                    { label: (lang === 'en' ? 'Work Centers' : 'مراكز العمل'), href: `/manufacturing/work-centers${q}`, icon: Cpu },
+                    // ── التخطيط والإصدار ──
+                    { label: (lang === 'en' ? 'Planning & Release' : 'التخطيط والإصدار'), href: `#`, icon: Factory },
+                    { label: (lang === 'en' ? 'Material Requirements Planning' : 'تخطيط متطلبات المواد'), href: `/manufacturing/mrp${q}`, icon: BarChart3 },
+                    { label: (lang === 'en' ? 'Production Orders' : 'أوامر الإنتاج'), href: `/manufacturing/production-orders${q}`, icon: ClipboardList },
+                    // ── التنفيذ ──
+                    { label: (lang === 'en' ? 'Execution' : 'التنفيذ'), href: `#`, icon: Factory },
+                    { label: (lang === 'en' ? 'Issue Materials' : 'صرف المواد'), href: `/manufacturing/material-issue${q}`, icon: PackagePlus },
+                    { label: (lang === 'en' ? 'Receive Finished Product' : 'استلام المنتج النهائي'), href: `/manufacturing/product-receive${q}`, icon: PackageCheck },
+                    { label: (lang === 'en' ? 'Close Production Order' : 'إغلاق أمر الإنتاج'), href: `/manufacturing/close-production-order${q}`, icon: XSquare },
                   ]
                 },
                 {

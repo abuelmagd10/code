@@ -37,6 +37,8 @@ import {
   getVersionStatusVariant,
 } from "@/lib/manufacturing/bom-ui"
 
+import { ManufacturingGuide } from "@/components/manufacturing/manufacturing-guide"
+
 const EMPTY_CREATE_FORM: BomCreatePayload = {
   branch_id: "",
   product_id: "",
@@ -185,7 +187,7 @@ export function BomListPage() {
       toast({
         variant: "destructive",
         title: "البيانات الأساسية غير مكتملة",
-        description: "يجب تحديد المنتج وكود الهيكل واسمه قبل الإنشاء.",
+        description: "يجب تحديد المنتج وكود قائمة المواد واسمها قبل الإنشاء.",
       })
       return
     }
@@ -194,12 +196,12 @@ export function BomListPage() {
     if (selectedProduct && selectedProduct.product_type !== "manufactured") {
       toast({
         variant: "destructive",
-        title: "المنتج غير مؤهل لإنشاء BOM",
+        title: "المنتج غير مؤهل لإنشاء قائمة مواد",
         description: `المنتج "${selectedProduct.sku || selectedProduct.id}" تصنيفه الحالي: "${
           selectedProduct.product_type === 'purchased' ? 'مشتريات' :
           selectedProduct.product_type === 'raw_material' ? 'مادة خام' :
           selectedProduct.product_type || 'غير محدد'
-        }" — لإنشاء BOM يجب أن يكون تصنيفه "تصنيعي". افتح صفحة المنتجات، اضغط على أيقونة التعديل للمنتج، وغيّر حقل "التصنيف التفصيلي" إلى تصنيعي.`,
+        }" — لإنشاء قائمة مواد يجب أن يكون تصنيفه "تصنيعي". افتح صفحة المنتجات، اضغط على أيقونة التعديل للمنتج، وغيّر حقل "التصنيف التفصيلي" إلى تصنيعي.`,
       })
       return
     }
@@ -214,8 +216,8 @@ export function BomListPage() {
       })
 
       toast({
-        title: "تم إنشاء هيكل المواد بنجاح",
-        description: `${created.bom_code} جاهزة الآن لإدارة النسخ والهيكل.`,
+        title: "✅ تم إنشاء قائمة المواد بنجاح",
+        description: `"${created.bom_code}" جاهزة — أضف الآن إصداراً وحدد مكونات التصنيع.`,
       })
 
       setCreateOpen(false)
@@ -250,10 +252,25 @@ export function BomListPage() {
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
           <CompanyHeader />
+
+          {/* ── دليل دورة التصنيع ── */}
+          <ManufacturingGuide
+            currentStep="bom"
+            pageInfo={{
+              titleAr: "قوائم المواد — وصفة التصنيع",
+              titleEn: "Bills of Materials — The Recipe",
+              descAr: "قائمة المواد هي الوصفة التي تحدد مكونات كل منتج تصنيعي. قبل أن تبدأ أي إنتاج، يجب أن يعرف النظام: ماذا يحتوي المنتج وبأي كميات.",
+              descEn: "A Bill of Materials is the recipe that defines what components go into each manufactured product.",
+              whenAr: "استخدم هذه الصفحة عند إضافة منتج تصنيعي جديد تريد النظام أن يعرف مكوناته. كل منتج تصنيعي يحتاج قائمة مواد واحدة على الأقل.",
+              whenEn: "Use this page when adding a new manufactured product and defining its components.",
+              nextStepId: "bom_version",
+            }}
+          />
+
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
             <ERPPageHeader
-              title="هياكل المواد (BOM)"
-              description="إدارة هياكل المنتجات، النسخ، والاعتماد"
+              title="قوائم المواد (وصفات التصنيع)"
+              description="كل منتج تصنيعي يحتاج قائمة مواد تحدد مكوناته — هذه هي الخطوة الثانية في دورة التصنيع"
               variant="list"
               extra={
                 <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
@@ -274,7 +291,7 @@ export function BomListPage() {
                   </Button>
                   <Button onClick={handleOpenCreate} disabled={!canWrite || lookupsLoading} className="gap-2">
                     <Plus className="h-4 w-4" />
-                    إنشاء هيكل جديد
+                    إنشاء قائمة مواد جديدة
                   </Button>
                 </>
               }
@@ -514,7 +531,10 @@ export function BomListPage() {
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>إنشاء هيكل مواد جديد (BOM)</DialogTitle>
+              <DialogTitle>إنشاء قائمة مواد جديدة</DialogTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                قائمة المواد هي "وصفة" منتجك — حدد المنتج النهائي أولاً، ثم ستضيف مكوناته في الخطوة التالية.
+              </p>
             </DialogHeader>
             <div className="grid gap-4 py-2 md:grid-cols-2">
               <div className="space-y-2">
@@ -548,7 +568,7 @@ export function BomListPage() {
                   onValueChange={(value) => setCreateForm((current) => ({ ...current, product_id: value }))}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="اختر المنتج" />
+                    <SelectValue placeholder="اختر المنتج النهائي" />
                   </SelectTrigger>
                   <SelectContent>
                     {ownerProductOptions.length === 0 ? (
@@ -571,11 +591,11 @@ export function BomListPage() {
                 </Select>
                 {selectedProduct && selectedProduct.product_type !== "manufactured" && (
                   <p className="text-xs text-destructive leading-relaxed">
-                    ⚠️ تصنيف هذا المنتج الحالي: &quot;{
+                    ⚠️ هذا المنتج نوعه: &quot;{
                       selectedProduct.product_type === 'purchased' ? 'مشتريات' :
                       selectedProduct.product_type === 'raw_material' ? 'مادة خام' :
                       selectedProduct.product_type || 'غير محدد'
-                    }&quot; — لإنشاء BOM يجب أن يكون تصنيفه <strong>تصنيعي</strong>.
+                    }&quot; — لإنشاء قائمة مواد يجب أن يكون نوعه <strong>تصنيعي</strong>.
                     <br />
                     <span className="text-muted-foreground">
                       انتقل إلى صفحة المنتجات ← اضغط أيقونة التعديل ✏️ للمنتج ← غيّر &quot;التصنيف التفصيلي&quot; إلى تصنيعي.
@@ -644,7 +664,7 @@ export function BomListPage() {
                 إلغاء
               </Button>
               <Button onClick={handleCreate} disabled={creating || lookupsLoading}>
-                {creating ? "جاري الإنشاء..." : "إنشاء الهيكل"}
+                {creating ? "جاري الإنشاء..." : "إنشاء قائمة المواد"}
               </Button>
             </DialogFooter>
           </DialogContent>

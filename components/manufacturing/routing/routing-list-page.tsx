@@ -31,6 +31,7 @@ import {
   getRoutingVersionStatusLabel,
   getRoutingVersionStatusVariant,
 } from "@/lib/manufacturing/routing-ui"
+import { ManufacturingGuide } from "@/components/manufacturing/manufacturing-guide"
 
 const EMPTY_CREATE_FORM: RoutingCreatePayload = {
   branch_id: "",
@@ -162,10 +163,25 @@ export function RoutingListPage() {
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
           <CompanyHeader />
+
+          {/* ── دليل دورة التصنيع ── */}
+          <ManufacturingGuide
+            currentStep="bom"
+            pageInfo={{
+              titleAr: "مسارات التصنيع — تسلسل العمليات",
+              titleEn: "Routings — Operation Sequence",
+              descAr: "مسار التصنيع يحدد تسلسل العمليات المطلوبة لتحويل المواد الخام إلى منتج نهائي. مثلاً: خلط ← تشكيل ← تحزين — كل عملية لها وقت ومركز عمل محدد.",
+              descEn: "A routing defines the sequence of operations needed to convert raw materials into a finished product.",
+              whenAr: "استخدم هذه الصفحة عند تعريف خطوات التصنيع لمنتج معين. يستخدم المسار لاحقاً في أمر الإنتاج لتتبع وقت كل مرحلة.",
+              whenEn: "Use this page when defining manufacturing steps for a product. The routing is later referenced in production orders to track each stage.",
+              nextStepId: "production_order",
+            }}
+          />
+
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
             <ERPPageHeader
-              title="مسارات التشغيل"
-              description="إدارة مسارات التشغيل، النسخ، والعمليات"
+              title="مسارات التصنيع (خطوات العمل)"
+              description="حدد تسلسل العمليات اللازمة لتحويل المواد الخام إلى منتج نهائي"
               variant="list"
               extra={
                 <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
@@ -181,7 +197,7 @@ export function RoutingListPage() {
                   </Button>
                   <Button onClick={() => setCreateOpen(true)} disabled={!canWrite} className="gap-2">
                     <Plus className="h-4 w-4" />
-                    إنشاء مسار تشغيلي جديد
+                    إنشاء مسار تصنيع جديد
                   </Button>
                 </>
               }
@@ -411,7 +427,10 @@ export function RoutingListPage() {
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>إنشاء مسار تشغيلي جديد</DialogTitle>
+              <DialogTitle>إنشاء مسار تصنيع جديد</DialogTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                مسار التصنيع يحدد خطوات العمل بالتسلسل لتحويل المواد إلى منتج. حدد العمليات ووقتها بعد الإنشاء.
+              </p>
             </DialogHeader>
             <div className="grid gap-4 py-2 md:grid-cols-2">
               <div className="space-y-2">
