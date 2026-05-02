@@ -41,6 +41,11 @@ export async function GET(req: NextRequest) {
       // إذا كان المستخدم owner/admin/manager، لا نطبق فلتر الفرع (يرى جميع المنتجات)
     }
 
+    const productType = req.nextUrl.searchParams.get("product_type")
+    if (productType) {
+      query = query.eq("product_type", productType)
+    }
+
     const { data, error: dbError } = await query.order("name")
 
     if (dbError) {

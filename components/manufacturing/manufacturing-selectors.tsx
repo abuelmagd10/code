@@ -261,7 +261,7 @@ export function BomSelector({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[320px] p-0" align="start">
-        <Command>
+        <Command shouldFilter={false}>
           <CommandList>
             {loading ? (
               <div className="flex items-center justify-center py-6 gap-2 text-sm text-muted-foreground">
@@ -367,7 +367,7 @@ export function BomVersionSelector({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[300px] p-0" align="start">
-        <Command>
+        <Command shouldFilter={false}>
           <CommandList>
             {loading ? (
               <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin" /></div>
@@ -456,7 +456,7 @@ export function RoutingSelector({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[320px] p-0" align="start">
-        <Command>
+        <Command shouldFilter={false}>
           <CommandList>
             {loading ? (
               <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin" /></div>
@@ -547,7 +547,7 @@ export function RoutingVersionSelector({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[300px] p-0" align="start">
-        <Command>
+        <Command shouldFilter={false}>
           <CommandList>
             {loading ? (
               <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin" /></div>
@@ -645,7 +645,7 @@ export function WarehouseSelector({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[300px] p-0" align="start">
-        <Command>
+        <Command shouldFilter={false}>
           <CommandList>
             {loading ? (
               <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin" /></div>
