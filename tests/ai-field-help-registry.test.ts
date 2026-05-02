@@ -137,6 +137,28 @@ describe("AI field help registry", () => {
     expect(reportsHelp.some((item) => item.kind === "message")).toBe(true)
   })
 
+  it("provides focused HR rollout help for employees, attendance, and payroll", () => {
+    const employeesHelp = getFieldHelpForPage("employees")
+    const attendanceHelp = getFieldHelpForPage("attendance_daily")
+    const payrollHelp = getFieldHelpForPage("payroll")
+
+    expect(employeesHelp.some((item) => item.id === "employees.full_name")).toBe(true)
+    expect(employeesHelp.some((item) => item.id === "employees.base_salary")).toBe(true)
+    expect(employeesHelp.some((item) => item.id === "employees.add_button")).toBe(true)
+    expect(employeesHelp.some((item) => item.kind === "message")).toBe(true)
+
+    expect(attendanceHelp.some((item) => item.id === "attendance_daily.date_range")).toBe(true)
+    expect(attendanceHelp.some((item) => item.id === "attendance_daily.status_late")).toBe(true)
+    expect(attendanceHelp.some((item) => item.id === "attendance_daily.record_button")).toBe(true)
+    expect(attendanceHelp.some((item) => item.kind === "status")).toBe(true)
+
+    expect(payrollHelp.some((item) => item.id === "payroll.run_button")).toBe(true)
+    expect(payrollHelp.some((item) => item.id === "payroll.pay_salaries_button")).toBe(true)
+    expect(payrollHelp.some((item) => item.id === "payroll.net_salary")).toBe(true)
+    expect(payrollHelp.some((item) => item.id === "payroll.paid_salaries_table")).toBe(true)
+    expect(payrollHelp.some((item) => item.kind === "message")).toBe(true)
+  })
+
   it("builds user-facing context without raw internal terms", () => {
     const arabicBlock = buildFieldHelpContextBlock("invoices", "ar")
     const englishBlock = buildFieldHelpContextBlock("invoices", "en")
@@ -164,6 +186,9 @@ describe("AI field help registry", () => {
       "manufacturing_routing_detail",
       "fixed_assets",
       "fixed_assets_reports",
+      "employees",
+      "attendance_daily",
+      "payroll",
     ]) {
       const blocks = [
         buildFieldHelpContextBlock(pageKey, "ar", 80),
@@ -171,12 +196,12 @@ describe("AI field help registry", () => {
       ]
 
       for (const block of blocks) {
-        expect(block).not.toMatch(/\b(branch_id|warehouse_id|supplier_id|approval_status|transaction_type|quantity_change|journal_entry_lines|account_id|reference_id|normal_balance|debit_amount|credit_amount|bom_id|bom_version_id|routing_id|routing_version_id|issue_warehouse_id|receipt_warehouse_id|asset_id|category_id|depreciation_schedules|endpoint|record|status=posted|status=draft|FIFO|GL|AP)\b/i)
+        expect(block).not.toMatch(/\b(branch_id|warehouse_id|supplier_id|approval_status|transaction_type|quantity_change|journal_entry_lines|account_id|reference_id|normal_balance|debit_amount|credit_amount|bom_id|bom_version_id|routing_id|routing_version_id|issue_warehouse_id|receipt_warehouse_id|asset_id|category_id|depreciation_schedules|employee_id|payroll_run_id|base_salary|net_salary|endpoint|record|status=paid|status=posted|status=draft|FIFO|GL|AP)\b/i)
       }
     }
   })
 
-  it("keeps Sales, Purchasing, Inventory, Accounting, Manufacturing, and Fixed Assets data-ai-help attributes backed by registry items", () => {
+  it("keeps Sales, Purchasing, Inventory, Accounting, Manufacturing, Fixed Assets, and HR data-ai-help attributes backed by registry items", () => {
     const rolloutPages = [
       "app/invoices/new/page.tsx",
       "app/invoices/[id]/page.tsx",
@@ -197,6 +222,9 @@ describe("AI field help registry", () => {
       "app/fixed-assets/[id]/page.tsx",
       "app/fixed-assets/new/page.tsx",
       "app/fixed-assets/reports/page.tsx",
+      "app/hr/employees/page.tsx",
+      "app/hr/attendance/daily/page.tsx",
+      "app/hr/payroll/page.tsx",
     ]
 
     const helpIds = rolloutPages.flatMap((pagePath) => {

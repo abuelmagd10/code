@@ -263,7 +263,7 @@ export default function AttendancePage() {
           className="mb-4"
         >
           <div className="flex flex-wrap gap-3 items-end">
-            <div className="w-full sm:w-auto">
+            <div className="w-full sm:w-auto" data-ai-help="attendance_daily.date_range">
               <Label className="text-xs mb-1.5 block">{t('From Date', 'من تاريخ')}</Label>
               <Input
                 type="date"
@@ -272,7 +272,7 @@ export default function AttendancePage() {
                 className="w-full sm:w-[150px] h-9"
               />
             </div>
-            <div className="w-full sm:w-auto">
+            <div className="w-full sm:w-auto" data-ai-help="attendance_daily.date_range">
               <Label className="text-xs mb-1.5 block">{t('To Date', 'إلى تاريخ')}</Label>
               <Input
                 type="date"
@@ -281,7 +281,7 @@ export default function AttendancePage() {
                 className="w-full sm:w-[150px] h-9"
               />
             </div>
-            <div className="w-full sm:w-[200px]">
+            <div className="w-full sm:w-[200px]" data-ai-help="attendance_daily.employee_filter">
               <Label className="text-xs mb-1.5 block">{t('Employee', 'الموظف')}</Label>
               <select
                 className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -297,6 +297,7 @@ export default function AttendancePage() {
               size="sm"
               className="h-9 gap-2"
               onClick={() => { companyId && loadAttendance(companyId) }}
+              data-ai-help="attendance_daily.refresh_button"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               {t('Refresh', 'تحديث')}
@@ -305,7 +306,7 @@ export default function AttendancePage() {
         </FilterContainer>
 
         {/* Data Table */}
-        <Card>
+        <Card data-ai-help="attendance_daily.table">
           <CardContent className="p-0">
             {dataLoading ? (
               <div className="p-8 text-center text-gray-500">{t('Loading...', 'جاري التحميل...')}</div>
@@ -332,7 +333,7 @@ export default function AttendancePage() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
+            <div className="grid gap-2" data-ai-help="attendance_daily.record_employee">
               <Label>{t('Employee', 'الموظف')}</Label>
               <Select
                 value={recordForm.employeeId}
@@ -349,7 +350,7 @@ export default function AttendancePage() {
               </Select>
             </div>
 
-            <div className="grid gap-2">
+            <div className="grid gap-2" data-ai-help="attendance_daily.record_date">
               <Label>{t('Date', 'التاريخ')}</Label>
               <Input
                 type="date"
@@ -358,7 +359,7 @@ export default function AttendancePage() {
               />
             </div>
 
-            <div className="grid gap-2">
+            <div className="grid gap-2" data-ai-help="attendance_daily.status">
               <Label>{t('Status', 'الحالة')}</Label>
               <Select
                 value={recordForm.status}
@@ -368,19 +369,19 @@ export default function AttendancePage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="present">{t('Present', 'حضور')}</SelectItem>
-                  <SelectItem value="absent">{t('Absent', 'غياب')}</SelectItem>
-                  <SelectItem value="leave">{t('Leave', 'إجازة')}</SelectItem>
-                  <SelectItem value="sick">{t('Sick', 'مرضية')}</SelectItem>
-                  <SelectItem value="late">{t('Late', 'تأخير')}</SelectItem>
-                  <SelectItem value="early_leave">{t('Early Leave', 'انصراف مبكر')}</SelectItem>
+                  <SelectItem value="present" data-ai-help="attendance_daily.status_present">{t('Present', 'حضور')}</SelectItem>
+                  <SelectItem value="absent" data-ai-help="attendance_daily.status_absent">{t('Absent', 'غياب')}</SelectItem>
+                  <SelectItem value="leave" data-ai-help="attendance_daily.status_leave">{t('Leave', 'إجازة')}</SelectItem>
+                  <SelectItem value="sick" data-ai-help="attendance_daily.status_sick">{t('Sick', 'مرضية')}</SelectItem>
+                  <SelectItem value="late" data-ai-help="attendance_daily.status_late">{t('Late', 'تأخير')}</SelectItem>
+                  <SelectItem value="early_leave" data-ai-help="attendance_daily.status_early_leave">{t('Early Leave', 'انصراف مبكر')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>{t('Cancel', 'إلغاء')}</Button>
-            <Button disabled={loading} onClick={recordAttendance}>{t('Record', 'تسجيل')}</Button>
+            <Button disabled={loading} onClick={recordAttendance} data-ai-help="attendance_daily.record_button">{t('Record', 'تسجيل')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

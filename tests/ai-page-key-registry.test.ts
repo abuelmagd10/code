@@ -58,6 +58,18 @@ describe("AI page key registry", () => {
     expect(getGuideKeyForPageKey("fixed_assets_reports")).toBe("fixed_assets")
   })
 
+  it("keeps first HR rollout routes mapped to existing page keys", () => {
+    expect(getPageKeyFromRegistry("/hr")).toBe("employees")
+    expect(getPageKeyFromRegistry("/hr/employees")).toBe("employees")
+    expect(getPageKeyFromRegistry("/hr/attendance/daily")).toBe("attendance_daily")
+    expect(getPageKeyFromRegistry("/hr/payroll")).toBe("payroll")
+
+    expect(getPageKeyEntry("employees")?.domain).toBe("hr")
+    expect(getPageKeyEntry("attendance_daily")?.questionBankModule).toBe("hr")
+    expect(getPageKeyEntry("payroll")?.resource).toBe("payroll")
+    expect(getGuideKeyForPageKey("attendance_daily")).toBe("employees")
+  })
+
   it("has unique keys and route prefixes", () => {
     const keys = AI_PAGE_KEY_REGISTRY.map((entry) => entry.key)
     expect(new Set(keys).size).toBe(keys.length)

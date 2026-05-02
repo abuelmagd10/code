@@ -97,44 +97,44 @@ export default function EmployeesPage() {
           <Card>
             <CardHeader><CardTitle>{t('Add Employee', 'إضافة موظف')}</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div><Label>{t('Full Name', 'الاسم الكامل')}</Label><Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></div>
-              <div><Label>{t('Email', 'البريد')}</Label><Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-              <div><Label>{t('Phone', 'الهاتف')}</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
-              <div><Label>{t('Job Title', 'الوظيفة')}</Label><Input value={form.job_title} onChange={(e) => setForm({ ...form, job_title: e.target.value })} /></div>
-              <div><Label>{t('Department', 'القسم')}</Label><Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
-              <div><Label>{t('Joined Date', 'تاريخ التعيين')}</Label><Input type="date" value={form.joined_date} onChange={(e) => setForm({ ...form, joined_date: e.target.value })} /></div>
-              <div><Label>{t('Base Salary', 'الراتب الأساسي')}</Label><Input type="number" value={form.base_salary} onChange={(e) => setForm({ ...form, base_salary: Number(e.target.value) })} /></div>
-              <div className="md:col-span-3"><Button disabled={loading} onClick={addEmployee}>{t('Add', 'إضافة')}</Button></div>
+              <div data-ai-help="employees.full_name"><Label>{t('Full Name', 'الاسم الكامل')}</Label><Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></div>
+              <div data-ai-help="employees.contact_info"><Label>{t('Email', 'البريد')}</Label><Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+              <div data-ai-help="employees.contact_info"><Label>{t('Phone', 'الهاتف')}</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
+              <div data-ai-help="employees.job_title"><Label>{t('Job Title', 'الوظيفة')}</Label><Input value={form.job_title} onChange={(e) => setForm({ ...form, job_title: e.target.value })} /></div>
+              <div data-ai-help="employees.department"><Label>{t('Department', 'القسم')}</Label><Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
+              <div data-ai-help="employees.joined_date"><Label>{t('Joined Date', 'تاريخ التعيين')}</Label><Input type="date" value={form.joined_date} onChange={(e) => setForm({ ...form, joined_date: e.target.value })} /></div>
+              <div data-ai-help="employees.base_salary"><Label>{t('Base Salary', 'الراتب الأساسي')}</Label><Input type="number" value={form.base_salary} onChange={(e) => setForm({ ...form, base_salary: Number(e.target.value) })} /></div>
+              <div className="md:col-span-3"><Button disabled={loading} onClick={addEmployee} data-ai-help="employees.add_button">{t('Add', 'إضافة')}</Button></div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card data-ai-help="employees.list">
             <CardHeader><CardTitle>{t('Employees List', 'قائمة الموظفين')}</CardTitle></CardHeader>
             <CardContent>
-              {employees.length === 0 ? (<p className="text-gray-600 dark:text-gray-400">{t('No employees yet.', 'لا يوجد موظفون بعد.')}</p>) : (
+              {employees.length === 0 ? (<p className="text-gray-600 dark:text-gray-400" data-ai-help="employees.no_employees_message">{t('No employees yet.', 'لا يوجد موظفون بعد.')}</p>) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="border-b"><tr><th className="p-2 text-right">{t('Name', 'الاسم')}</th><th className="p-2 text-right">{t('Email', 'البريد')}</th><th className="p-2 text-right">{t('Phone', 'الهاتف')}</th><th className="p-2 text-right">{t('Job Title', 'الوظيفة')}</th><th className="p-2 text-right">{t('Department', 'القسم')}</th><th className="p-2 text-right">{t('Joined Date', 'تاريخ التعيين')}</th><th className="p-2 text-right">{t('Salary', 'الراتب')}</th><th className="p-2 text-right">{t('Actions', 'الإجراءات')}</th></tr></thead>
+                    <thead className="border-b"><tr><th className="p-2 text-right" data-ai-help="employees.full_name">{t('Name', 'الاسم')}</th><th className="p-2 text-right" data-ai-help="employees.contact_info">{t('Email', 'البريد')}</th><th className="p-2 text-right" data-ai-help="employees.contact_info">{t('Phone', 'الهاتف')}</th><th className="p-2 text-right" data-ai-help="employees.job_title">{t('Job Title', 'الوظيفة')}</th><th className="p-2 text-right" data-ai-help="employees.department">{t('Department', 'القسم')}</th><th className="p-2 text-right" data-ai-help="employees.joined_date">{t('Joined Date', 'تاريخ التعيين')}</th><th className="p-2 text-right" data-ai-help="employees.base_salary">{t('Salary', 'الراتب')}</th><th className="p-2 text-right">{t('Actions', 'الإجراءات')}</th></tr></thead>
                     <tbody>
                       {employees.map((e) => (
                         <tr key={e.id} className="border-b">
-                          <td className="p-2">{editingId === e.id ? (<Input value={editForm.full_name} onChange={(ev) => setEditForm({ ...editForm, full_name: ev.target.value })} />) : e.full_name}</td>
-                          <td className="p-2">{editingId === e.id ? (<Input value={editForm.email || ''} onChange={(ev) => setEditForm({ ...editForm, email: ev.target.value })} />) : e.email}</td>
-                          <td className="p-2">{editingId === e.id ? (<Input value={editForm.phone || ''} onChange={(ev) => setEditForm({ ...editForm, phone: ev.target.value })} />) : e.phone}</td>
-                          <td className="p-2">{editingId === e.id ? (<Input value={editForm.job_title || ''} onChange={(ev) => setEditForm({ ...editForm, job_title: ev.target.value })} />) : e.job_title}</td>
-                          <td className="p-2">{editingId === e.id ? (<Input value={editForm.department || ''} onChange={(ev) => setEditForm({ ...editForm, department: ev.target.value })} />) : e.department}</td>
-                          <td className="p-2">{editingId === e.id ? (<Input type="date" value={editForm.joined_date || ''} onChange={(ev) => setEditForm({ ...editForm, joined_date: ev.target.value })} />) : e.joined_date}</td>
-                          <td className="p-2">{editingId === e.id ? (<Input type="number" value={editForm.base_salary} onChange={(ev) => setEditForm({ ...editForm, base_salary: Number(ev.target.value) })} />) : Number(e.base_salary || 0).toFixed(2)}</td>
+                          <td className="p-2" data-ai-help="employees.full_name">{editingId === e.id ? (<Input value={editForm.full_name} onChange={(ev) => setEditForm({ ...editForm, full_name: ev.target.value })} />) : e.full_name}</td>
+                          <td className="p-2" data-ai-help="employees.contact_info">{editingId === e.id ? (<Input value={editForm.email || ''} onChange={(ev) => setEditForm({ ...editForm, email: ev.target.value })} />) : e.email}</td>
+                          <td className="p-2" data-ai-help="employees.contact_info">{editingId === e.id ? (<Input value={editForm.phone || ''} onChange={(ev) => setEditForm({ ...editForm, phone: ev.target.value })} />) : e.phone}</td>
+                          <td className="p-2" data-ai-help="employees.job_title">{editingId === e.id ? (<Input value={editForm.job_title || ''} onChange={(ev) => setEditForm({ ...editForm, job_title: ev.target.value })} />) : e.job_title}</td>
+                          <td className="p-2" data-ai-help="employees.department">{editingId === e.id ? (<Input value={editForm.department || ''} onChange={(ev) => setEditForm({ ...editForm, department: ev.target.value })} />) : e.department}</td>
+                          <td className="p-2" data-ai-help="employees.joined_date">{editingId === e.id ? (<Input type="date" value={editForm.joined_date || ''} onChange={(ev) => setEditForm({ ...editForm, joined_date: ev.target.value })} />) : e.joined_date}</td>
+                          <td className="p-2" data-ai-help="employees.base_salary">{editingId === e.id ? (<Input type="number" value={editForm.base_salary} onChange={(ev) => setEditForm({ ...editForm, base_salary: Number(ev.target.value) })} />) : Number(e.base_salary || 0).toFixed(2)}</td>
                           <td className="p-2">
                             {editingId === e.id ? (
                               <div className="flex gap-2">
-                                <Button size="sm" onClick={saveEdit} disabled={loading}>{t('Save', 'حفظ')}</Button>
+                                <Button size="sm" onClick={saveEdit} disabled={loading} data-ai-help="employees.save_button">{t('Save', 'حفظ')}</Button>
                                 <Button size="sm" variant="outline" onClick={cancelEdit} disabled={loading}>{t('Cancel', 'إلغاء')}</Button>
                               </div>
                             ) : (
                               <div className="flex gap-2">
-                                <Button size="sm" variant="outline" onClick={() => startEdit(e)} disabled={loading}>{t('Edit', 'تعديل')}</Button>
-                                <Button size="sm" variant="destructive" onClick={() => deleteEmployee(String(e.id))} disabled={loading}>{t('Delete', 'حذف')}</Button>
+                                <Button size="sm" variant="outline" onClick={() => startEdit(e)} disabled={loading} data-ai-help="employees.edit_button">{t('Edit', 'تعديل')}</Button>
+                                <Button size="sm" variant="destructive" onClick={() => deleteEmployee(String(e.id))} disabled={loading} data-ai-help="employees.delete_button">{t('Delete', 'حذف')}</Button>
                               </div>
                             )}
                           </td>

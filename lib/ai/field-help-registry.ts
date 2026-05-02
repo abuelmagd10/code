@@ -6677,6 +6677,938 @@ export const AI_FIELD_HELP_REGISTRY = [
     },
     aliases: ["no data", "empty report", "لا توجد بيانات"],
   },
+  {
+    id: "employees.full_name",
+    pageKey: "employees",
+    kind: "field",
+    label: {
+      ar: "الاسم الكامل",
+      en: "Full name",
+    },
+    purpose: {
+      ar: "يحدد اسم الموظف كما سيظهر في سجلات الموظفين والحضور والمرتبات.",
+      en: "Identifies the employee as they will appear in employee records, attendance, and payroll.",
+    },
+    whatToCheck: {
+      ar: "اكتب الاسم بشكل واضح حتى لا يختلط مع موظف آخر في التقارير أو مسير الرواتب.",
+      en: "Enter a clear name so it is not confused with another employee in reports or payroll.",
+    },
+    summary: {
+      ar: "الاسم الكامل هو أساس التعرف على الموظف في كل صفحات HR.",
+      en: "The full name is the base for recognizing the employee across HR pages.",
+    },
+    aliases: ["employee name", "full name", "الاسم الكامل", "اسم الموظف"],
+  },
+  {
+    id: "employees.contact_info",
+    pageKey: "employees",
+    kind: "field",
+    label: {
+      ar: "البريد والهاتف",
+      en: "Email and phone",
+    },
+    purpose: {
+      ar: "يحفظ بيانات التواصل الأساسية مع الموظف عند الحاجة للمتابعة أو الإشعارات.",
+      en: "Stores the employee's basic contact details for follow-up or notifications when needed.",
+    },
+    summary: {
+      ar: "بيانات التواصل تساعد الإدارة على الوصول للموظف بسرعة.",
+      en: "Contact details help management reach the employee quickly.",
+    },
+    aliases: ["email", "phone", "contact", "البريد", "الهاتف"],
+  },
+  {
+    id: "employees.job_title",
+    pageKey: "employees",
+    kind: "field",
+    label: {
+      ar: "الوظيفة",
+      en: "Job title",
+    },
+    purpose: {
+      ar: "يوضح دور الموظف داخل الشركة، مثل محاسب أو مندوب مبيعات أو عامل إنتاج.",
+      en: "Shows the employee's role in the company, such as accountant, sales representative, or production worker.",
+    },
+    summary: {
+      ar: "الوظيفة تساعد على فهم مسؤولية الموظف وتنظيم التقارير.",
+      en: "Job title helps explain the employee's responsibility and organize reports.",
+    },
+    aliases: ["job title", "role", "الوظيفة"],
+  },
+  {
+    id: "employees.department",
+    pageKey: "employees",
+    kind: "field",
+    label: {
+      ar: "القسم",
+      en: "Department",
+    },
+    purpose: {
+      ar: "يربط الموظف بالقسم أو الفريق الذي يعمل معه داخل الشركة.",
+      en: "Connects the employee to the department or team they work with.",
+    },
+    summary: {
+      ar: "القسم يجعل متابعة الموظفين حسب الفرق أسهل.",
+      en: "Department makes it easier to follow employees by team.",
+    },
+    aliases: ["department", "team", "القسم"],
+  },
+  {
+    id: "employees.joined_date",
+    pageKey: "employees",
+    kind: "field",
+    label: {
+      ar: "تاريخ التعيين",
+      en: "Joined date",
+    },
+    purpose: {
+      ar: "يوضح متى بدأ الموظف العمل، وقد يفيد في حساب الأقدمية أو مراجعة بيانات الرواتب.",
+      en: "Shows when the employee started work and can help with tenure or payroll review.",
+    },
+    summary: {
+      ar: "تاريخ التعيين يحدد بداية علاقة الموظف بالشركة.",
+      en: "Joined date marks the start of the employee's relationship with the company.",
+    },
+    aliases: ["joined date", "start date", "تاريخ التعيين"],
+  },
+  {
+    id: "employees.base_salary",
+    pageKey: "employees",
+    kind: "field",
+    label: {
+      ar: "الراتب الأساسي",
+      en: "Base salary",
+    },
+    purpose: {
+      ar: "يمثل الراتب الثابت الذي يبدأ منه حساب المرتب قبل إضافة البدلات أو خصم الاستقطاعات.",
+      en: "Represents the fixed salary used before adding allowances or subtracting deductions.",
+    },
+    whatToCheck: {
+      ar: "راجعه جيدًا لأنه يدخل مباشرة في حساب صافي راتب الموظف.",
+      en: "Review it carefully because it directly affects the employee's final salary.",
+    },
+    summary: {
+      ar: "الراتب الأساسي هو نقطة بداية حساب المرتبات.",
+      en: "Base salary is the starting point for payroll calculation.",
+    },
+    aliases: ["base salary", "salary", "الراتب الأساسي"],
+  },
+  {
+    id: "employees.list",
+    pageKey: "employees",
+    kind: "field",
+    label: {
+      ar: "قائمة الموظفين",
+      en: "Employees list",
+    },
+    purpose: {
+      ar: "تعرض الموظفين المسجلين وبياناتهم الأساسية لمراجعتها أو تعديلها.",
+      en: "Shows registered employees and their key details for review or editing.",
+    },
+    summary: {
+      ar: "القائمة هي المكان الرئيسي لمراجعة بيانات الموظفين.",
+      en: "The list is the main place to review employee data.",
+    },
+    aliases: ["employees list", "list", "قائمة الموظفين"],
+  },
+  {
+    id: "employees.add_button",
+    pageKey: "employees",
+    kind: "button",
+    label: {
+      ar: "زر إضافة موظف",
+      en: "Add employee button",
+    },
+    purpose: {
+      ar: "يحفظ موظفًا جديدًا حتى يظهر في الحضور والمرتبات وباقي صفحات HR.",
+      en: "Saves a new employee so they appear in attendance, payroll, and other HR pages.",
+    },
+    whatToCheck: {
+      ar: "تأكد من الاسم والراتب الأساسي وتاريخ التعيين قبل الإضافة.",
+      en: "Check the name, base salary, and joined date before adding.",
+    },
+    afterAction: {
+      ar: "بعد الإضافة سيظهر الموظف في قائمة الموظفين ويمكن استخدامه في الحضور والمرتبات.",
+      en: "After adding, the employee appears in the list and can be used in attendance and payroll.",
+    },
+    summary: {
+      ar: "إضافة الموظف تفتح له ملفًا داخل HR.",
+      en: "Adding the employee creates their HR profile.",
+    },
+    aliases: ["add employee", "add", "إضافة موظف"],
+  },
+  {
+    id: "employees.edit_button",
+    pageKey: "employees",
+    kind: "button",
+    label: {
+      ar: "زر تعديل بيانات الموظف",
+      en: "Edit employee button",
+    },
+    purpose: {
+      ar: "يفتح بيانات الموظف للتعديل عندما تحتاج تصحيح وظيفة أو راتب أو بيانات تواصل.",
+      en: "Opens employee details for editing when a job, salary, or contact detail needs correction.",
+    },
+    summary: {
+      ar: "استخدم التعديل لتصحيح بيانات الموظف قبل أن تؤثر على المتابعة أو الرواتب.",
+      en: "Use edit to correct employee data before it affects follow-up or payroll.",
+    },
+    aliases: ["edit employee", "edit", "تعديل الموظف"],
+  },
+  {
+    id: "employees.save_button",
+    pageKey: "employees",
+    kind: "button",
+    label: {
+      ar: "زر حفظ بيانات الموظف",
+      en: "Save employee button",
+    },
+    purpose: {
+      ar: "يثبت التعديلات التي أجريتها على بيانات الموظف.",
+      en: "Confirms the changes you made to the employee details.",
+    },
+    afterAction: {
+      ar: "بعد الحفظ ستظهر البيانات الجديدة في قائمة الموظفين وفي الصفحات المرتبطة بها.",
+      en: "After saving, the new details appear in the employee list and related pages.",
+    },
+    summary: {
+      ar: "الحفظ يثبت التعديل داخل ملف الموظف.",
+      en: "Saving confirms the update in the employee profile.",
+    },
+    aliases: ["save employee", "save", "حفظ الموظف"],
+  },
+  {
+    id: "employees.delete_button",
+    pageKey: "employees",
+    kind: "button",
+    label: {
+      ar: "زر حذف موظف",
+      en: "Delete employee button",
+    },
+    purpose: {
+      ar: "يحذف الموظف من القائمة عندما لا يجب أن يبقى ضمن سجلات HR الحالية.",
+      en: "Removes the employee from the list when they should no longer remain in current HR records.",
+    },
+    whatToCheck: {
+      ar: "راجع أثر الحذف على الحضور والمرتبات السابقة قبل التأكيد.",
+      en: "Review the impact on attendance and previous payroll before confirming.",
+    },
+    summary: {
+      ar: "الحذف إجراء حساس ويجب استخدامه فقط عند التأكد.",
+      en: "Deletion is sensitive and should only be used when confirmed.",
+    },
+    aliases: ["delete employee", "delete", "حذف موظف"],
+  },
+  {
+    id: "employees.no_employees_message",
+    pageKey: "employees",
+    kind: "message",
+    label: {
+      ar: "رسالة لا يوجد موظفون",
+      en: "No employees message",
+    },
+    purpose: {
+      ar: "تظهر عندما لا توجد بيانات موظفين مسجلة بعد.",
+      en: "Appears when no employee data has been registered yet.",
+    },
+    summary: {
+      ar: "ابدأ بإضافة موظف حتى تعمل الحضور والمرتبات بشكل صحيح.",
+      en: "Start by adding an employee so attendance and payroll can work correctly.",
+    },
+    aliases: ["no employees", "empty employees", "لا يوجد موظفون"],
+  },
+  {
+    id: "attendance_daily.date_range",
+    pageKey: "attendance_daily",
+    kind: "field",
+    label: {
+      ar: "من تاريخ / إلى تاريخ",
+      en: "From date / To date",
+    },
+    purpose: {
+      ar: "يحدد الفترة التي تريد مراجعة سجلات الحضور خلالها.",
+      en: "Sets the period you want to review attendance records for.",
+    },
+    summary: {
+      ar: "الفترة تساعدك تركز على أيام محددة بدل عرض كل السجلات.",
+      en: "The date range helps you focus on specific days instead of all records.",
+    },
+    aliases: ["date range", "from date", "to date", "من تاريخ", "إلى تاريخ"],
+  },
+  {
+    id: "attendance_daily.employee_filter",
+    pageKey: "attendance_daily",
+    kind: "field",
+    label: {
+      ar: "فلتر الموظف",
+      en: "Employee filter",
+    },
+    purpose: {
+      ar: "يعرض حضور موظف محدد أو كل الموظفين حسب ما تحتاج مراجعته.",
+      en: "Shows attendance for one employee or all employees depending on what you need to review.",
+    },
+    summary: {
+      ar: "فلتر الموظف يجعل مراجعة الحضور أسرع وأكثر تركيزًا.",
+      en: "The employee filter makes attendance review faster and more focused.",
+    },
+    aliases: ["employee filter", "employee", "فلتر الموظف"],
+  },
+  {
+    id: "attendance_daily.table",
+    pageKey: "attendance_daily",
+    kind: "field",
+    label: {
+      ar: "جدول الحضور",
+      en: "Attendance table",
+    },
+    purpose: {
+      ar: "يعرض سجلات الحضور حسب الفترة والموظف، مثل اليوم والحالة وأي دقائق تأخير.",
+      en: "Shows attendance records by period and employee, such as day, status, and any late minutes.",
+    },
+    summary: {
+      ar: "جدول الحضور هو المكان الرئيسي لمراجعة الالتزام اليومي.",
+      en: "The attendance table is the main place to review daily attendance.",
+    },
+    aliases: ["attendance table", "records", "جدول الحضور"],
+  },
+  {
+    id: "attendance_daily.status",
+    pageKey: "attendance_daily",
+    kind: "status",
+    label: {
+      ar: "حالة الحضور",
+      en: "Attendance status",
+    },
+    purpose: {
+      ar: "توضح حالة الموظف في اليوم المحدد: حضور، غياب، إجازة، مرضية، تأخير، أو انصراف مبكر.",
+      en: "Shows the employee's state for the selected day: present, absent, leave, sick, late, or early leave.",
+    },
+    summary: {
+      ar: "حالة الحضور تشرح ماذا حدث في يوم العمل.",
+      en: "Attendance status explains what happened on the workday.",
+    },
+    aliases: ["attendance status", "status", "حالة الحضور"],
+  },
+  {
+    id: "attendance_daily.record_button",
+    pageKey: "attendance_daily",
+    kind: "button",
+    label: {
+      ar: "زر تسجيل حضور",
+      en: "Add attendance entry button",
+    },
+    purpose: {
+      ar: "يفتح نافذة لإضافة سجل حضور أو غياب أو تأخير لموظف في يوم محدد.",
+      en: "Opens a dialog to add a present, absent, late, or other attendance entry for an employee on a specific day.",
+    },
+    summary: {
+      ar: "استخدمه لإضافة سجل حضور يدوي عند الحاجة.",
+      en: "Use it to manually add an attendance entry when needed.",
+    },
+    aliases: ["record attendance", "تسجيل حضور"],
+  },
+  {
+    id: "attendance_daily.record_employee",
+    pageKey: "attendance_daily",
+    kind: "field",
+    label: {
+      ar: "الموظف في سجل الحضور",
+      en: "Employee in attendance entry",
+    },
+    purpose: {
+      ar: "يحدد الموظف الذي سيتم تسجيل حالته في ذلك اليوم.",
+      en: "Identifies the employee whose daily status will be recorded.",
+    },
+    whatToCheck: {
+      ar: "تأكد من اختيار الموظف الصحيح قبل التسجيل حتى لا ينتقل الحضور لشخص آخر.",
+      en: "Make sure the correct employee is selected before recording so attendance is not assigned to someone else.",
+    },
+    summary: {
+      ar: "اختيار الموظف الصحيح هو أساس سجل الحضور.",
+      en: "Choosing the correct employee is the base of the attendance entry.",
+    },
+    aliases: ["attendance employee", "employee", "الموظف"],
+  },
+  {
+    id: "attendance_daily.record_date",
+    pageKey: "attendance_daily",
+    kind: "field",
+    label: {
+      ar: "تاريخ الحضور",
+      en: "Attendance date",
+    },
+    purpose: {
+      ar: "يحدد اليوم الذي سيتم تسجيل الحضور أو الغياب أو التأخير له.",
+      en: "Sets the day for the attendance, absence, or late entry.",
+    },
+    summary: {
+      ar: "تاريخ الحضور يربط الحالة باليوم الصحيح.",
+      en: "Attendance date connects the status to the correct day.",
+    },
+    aliases: ["attendance date", "date", "تاريخ الحضور"],
+  },
+  {
+    id: "attendance_daily.status_present",
+    pageKey: "attendance_daily",
+    kind: "status",
+    label: {
+      ar: "حضور",
+      en: "Present",
+    },
+    purpose: {
+      ar: "تعني أن الموظف حضر للعمل في اليوم المحدد.",
+      en: "Means the employee attended work on the selected day.",
+    },
+    summary: {
+      ar: "حضور يعني أن اليوم محسوب كحضور عادي.",
+      en: "Present means the day is counted as normal attendance.",
+    },
+    aliases: ["present", "حضور"],
+  },
+  {
+    id: "attendance_daily.status_absent",
+    pageKey: "attendance_daily",
+    kind: "status",
+    label: {
+      ar: "غياب",
+      en: "Absent",
+    },
+    purpose: {
+      ar: "تعني أن الموظف لم يحضر في اليوم المحدد.",
+      en: "Means the employee did not attend on the selected day.",
+    },
+    summary: {
+      ar: "غياب قد يؤثر على المتابعة أو الراتب حسب سياسة الشركة.",
+      en: "Absence may affect follow-up or salary depending on company policy.",
+    },
+    aliases: ["absent", "absence", "غياب"],
+  },
+  {
+    id: "attendance_daily.status_leave",
+    pageKey: "attendance_daily",
+    kind: "status",
+    label: {
+      ar: "إجازة",
+      en: "Leave",
+    },
+    purpose: {
+      ar: "تعني أن عدم حضور الموظف مرتبط بإجازة معروفة أو مسموح بها.",
+      en: "Means the employee's absence is related to known or allowed leave.",
+    },
+    summary: {
+      ar: "الإجازة تفرق بين الغياب غير المخطط والراحة المعتمدة.",
+      en: "Leave separates unplanned absence from approved time off.",
+    },
+    aliases: ["leave", "إجازة"],
+  },
+  {
+    id: "attendance_daily.status_sick",
+    pageKey: "attendance_daily",
+    kind: "status",
+    label: {
+      ar: "مرضية",
+      en: "Sick",
+    },
+    purpose: {
+      ar: "تعني أن حالة اليوم مرتبطة بمرض أو عذر صحي.",
+      en: "Means the day status is related to illness or a medical reason.",
+    },
+    summary: {
+      ar: "الحالة المرضية تساعد على تمييز العذر الصحي في سجلات الحضور.",
+      en: "Sick status helps distinguish medical reasons in attendance records.",
+    },
+    aliases: ["sick", "sick leave", "مرضية"],
+  },
+  {
+    id: "attendance_daily.status_late",
+    pageKey: "attendance_daily",
+    kind: "status",
+    label: {
+      ar: "تأخير",
+      en: "Late",
+    },
+    purpose: {
+      ar: "تعني أن الموظف حضر بعد وقت البداية المتوقع.",
+      en: "Means the employee arrived after the expected start time.",
+    },
+    summary: {
+      ar: "التأخير يساعد الإدارة على متابعة الالتزام بمواعيد العمل.",
+      en: "Late status helps management follow work-time commitment.",
+    },
+    aliases: ["late", "delay", "تأخير"],
+  },
+  {
+    id: "attendance_daily.status_early_leave",
+    pageKey: "attendance_daily",
+    kind: "status",
+    label: {
+      ar: "انصراف مبكر",
+      en: "Early leave",
+    },
+    purpose: {
+      ar: "تعني أن الموظف غادر قبل نهاية وقت العمل المتوقع.",
+      en: "Means the employee left before the expected end of work.",
+    },
+    summary: {
+      ar: "الانصراف المبكر يوضح أن اليوم لم يكتمل بنفس شكل الحضور العادي.",
+      en: "Early leave shows the day did not finish like normal attendance.",
+    },
+    aliases: ["early leave", "انصراف مبكر"],
+  },
+  {
+    id: "attendance_daily.refresh_button",
+    pageKey: "attendance_daily",
+    kind: "button",
+    label: {
+      ar: "زر تحديث الحضور",
+      en: "Refresh attendance button",
+    },
+    purpose: {
+      ar: "يعيد تحميل سجلات الحضور حسب الفلاتر الحالية.",
+      en: "Reloads attendance records using the current filters.",
+    },
+    summary: {
+      ar: "التحديث يعرض أحدث بيانات متاحة للحضور.",
+      en: "Refresh shows the latest available attendance data.",
+    },
+    aliases: ["refresh", "reload", "تحديث"],
+  },
+  {
+    id: "attendance_daily.export_csv_button",
+    pageKey: "attendance_daily",
+    kind: "button",
+    label: {
+      ar: "زر تصدير CSV",
+      en: "Export CSV button",
+    },
+    purpose: {
+      ar: "ينزل سجلات الحضور الحالية في ملف يمكن مراجعته أو مشاركته.",
+      en: "Downloads the current attendance records into a file for review or sharing.",
+    },
+    whatToCheck: {
+      ar: "راجع الفترة والموظف قبل التصدير حتى يكون الملف مناسبًا لما تريد.",
+      en: "Check the period and employee before exporting so the file matches what you need.",
+    },
+    summary: {
+      ar: "التصدير يحول نتيجة الحضور الحالية إلى ملف خارجي.",
+      en: "Export turns the current attendance result into an external file.",
+    },
+    aliases: ["export csv", "attendance export", "تصدير"],
+  },
+  {
+    id: "attendance_daily.no_records_message",
+    pageKey: "attendance_daily",
+    kind: "message",
+    label: {
+      ar: "رسالة لا توجد سجلات حضور",
+      en: "No attendance records message",
+    },
+    purpose: {
+      ar: "تظهر عندما لا توجد سجلات تطابق الفترة أو الموظف المختار.",
+      en: "Appears when no records match the selected period or employee.",
+    },
+    whatToCheck: {
+      ar: "راجع الفلاتر أو سجّل حضورًا جديدًا إذا لم تكن هناك بيانات بعد.",
+      en: "Review the filters or add attendance if no data exists yet.",
+    },
+    summary: {
+      ar: "الرسالة غالبًا تعني أن الفترة أو الفلتر لا يحتوي بيانات.",
+      en: "The message usually means the period or filter has no data.",
+    },
+    aliases: ["no attendance", "empty attendance", "لا توجد سجلات"],
+  },
+  {
+    id: "payroll.period",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "السنة والشهر",
+      en: "Year and month",
+    },
+    purpose: {
+      ar: "يحددان فترة الرواتب التي تريد حسابها أو مراجعتها أو صرفها.",
+      en: "Set the payroll period you want to calculate, review, or pay.",
+    },
+    summary: {
+      ar: "الفترة تحدد أي شهر سيتم حساب المرتبات له.",
+      en: "The period defines which month payroll belongs to.",
+    },
+    aliases: ["payroll period", "year", "month", "السنة", "الشهر"],
+  },
+  {
+    id: "payroll.payment_account",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "حساب الدفع",
+      en: "Payment account",
+    },
+    purpose: {
+      ar: "يحدد الحساب الذي ستخرج منه مبالغ صرف المرتبات، مثل النقدية أو البنك.",
+      en: "Defines the account salaries will be paid from, such as cash or bank.",
+    },
+    whatToCheck: {
+      ar: "تأكد من اختيار الحساب الصحيح قبل صرف المرتبات.",
+      en: "Make sure the correct account is selected before paying salaries.",
+    },
+    summary: {
+      ar: "حساب الدفع يحدد مصدر صرف المرتبات.",
+      en: "The payment account defines where salary payments come from.",
+    },
+    aliases: ["payment account", "cash bank", "حساب الدفع"],
+  },
+  {
+    id: "payroll.payment_date",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "تاريخ الصرف",
+      en: "Payment date",
+    },
+    purpose: {
+      ar: "يحدد التاريخ الذي سيتم تسجيل صرف المرتبات عليه.",
+      en: "Sets the date used for the salary payment entry.",
+    },
+    summary: {
+      ar: "تاريخ الصرف يضع عملية دفع الرواتب في الفترة الصحيحة.",
+      en: "Payment date places salary payment in the correct period.",
+    },
+    aliases: ["payment date", "pay date", "تاريخ الصرف"],
+  },
+  {
+    id: "payroll.run_button",
+    pageKey: "payroll",
+    kind: "button",
+    label: {
+      ar: "زر تشغيل المرتبات",
+      en: "Run payroll button",
+    },
+    purpose: {
+      ar: "يحسب رواتب الموظفين للفترة المختارة بناءً على الراتب الأساسي والتعديلات.",
+      en: "Calculates employee salaries for the selected period based on base salary and adjustments.",
+    },
+    whatToCheck: {
+      ar: "راجع السنة والشهر والتعديلات قبل التشغيل.",
+      en: "Review the year, month, and adjustments before running.",
+    },
+    afterAction: {
+      ar: "بعد التشغيل تظهر قسائم المرتبات وصافي راتب كل موظف للمراجعة.",
+      en: "After running, payslips and each employee's final salary appear for review.",
+    },
+    summary: {
+      ar: "تشغيل المرتبات يحسب الأرقام ولا يعني بالضرورة أن الرواتب صُرفت.",
+      en: "Running payroll calculates the figures; it does not necessarily mean salaries were paid.",
+    },
+    aliases: ["run payroll", "run", "تشغيل المرتبات"],
+  },
+  {
+    id: "payroll.pay_salaries_button",
+    pageKey: "payroll",
+    kind: "button",
+    label: {
+      ar: "زر صرف المرتبات",
+      en: "Pay salaries button",
+    },
+    purpose: {
+      ar: "يسجل عملية دفع الرواتب من حساب الدفع المختار للفترة الحالية.",
+      en: "Records salary payment from the selected payment account for the current period.",
+    },
+    whatToCheck: {
+      ar: "تأكد من صافي الرواتب وحساب الدفع وتاريخ الصرف قبل الضغط.",
+      en: "Confirm final salaries, payment account, and payment date before pressing it.",
+    },
+    afterAction: {
+      ar: "بعد الصرف ستظهر العملية في جدول المرتبات المصروفة.",
+      en: "After payment, the transaction appears in the paid salaries table.",
+    },
+    summary: {
+      ar: "صرف المرتبات هو خطوة الدفع الفعلية بعد مراجعة الحساب.",
+      en: "Paying salaries is the actual payment step after review.",
+    },
+    aliases: ["pay salaries", "salary payment", "صرف المرتبات"],
+  },
+  {
+    id: "payroll.adjustments_table",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "التعديلات لكل موظف",
+      en: "Adjustments per employee",
+    },
+    purpose: {
+      ar: "يسمح بإضافة أو خصم مبالغ خاصة بكل موظف قبل حساب المرتبات.",
+      en: "Allows adding or subtracting employee-specific amounts before payroll calculation.",
+    },
+    summary: {
+      ar: "التعديلات تجعل الراتب يعكس بدلات وخصومات الفترة.",
+      en: "Adjustments make salary reflect the period's allowances and deductions.",
+    },
+    aliases: ["adjustments", "allowances deductions", "التعديلات"],
+  },
+  {
+    id: "payroll.allowances",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "البدلات",
+      en: "Allowances",
+    },
+    purpose: {
+      ar: "مبالغ تضاف على راتب الموظف مثل بدل مواصلات أو بدل طبيعة عمل.",
+      en: "Amounts added to an employee's salary, such as transport or job-related allowances.",
+    },
+    summary: {
+      ar: "البدلات تزيد صافي الراتب.",
+      en: "Allowances increase the final salary.",
+    },
+    aliases: ["allowances", "بدلات"],
+  },
+  {
+    id: "payroll.deductions",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "الخصومات",
+      en: "Deductions",
+    },
+    purpose: {
+      ar: "مبالغ تخصم من راتب الموظف حسب سياسة الشركة أو أحداث الفترة.",
+      en: "Amounts subtracted from an employee's salary based on company policy or period events.",
+    },
+    summary: {
+      ar: "الخصومات تقلل صافي الراتب.",
+      en: "Deductions reduce the final salary.",
+    },
+    aliases: ["deductions", "خصومات"],
+  },
+  {
+    id: "payroll.bonuses",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "المكافآت",
+      en: "Bonuses",
+    },
+    purpose: {
+      ar: "مبالغ إضافية تمنح للموظف فوق الراتب الأساسي خلال الفترة.",
+      en: "Extra amounts granted to the employee above base salary during the period.",
+    },
+    summary: {
+      ar: "المكافآت تزيد استحقاق الموظف في الفترة.",
+      en: "Bonuses increase the employee's period entitlement.",
+    },
+    aliases: ["bonuses", "bonus", "مكافآت", "بونص"],
+  },
+  {
+    id: "payroll.advances",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "السلف",
+      en: "Advances",
+    },
+    purpose: {
+      ar: "مبالغ تم صرفها للموظف مسبقًا ويتم خصمها من مرتب الفترة.",
+      en: "Amounts previously paid to the employee and deducted from the period salary.",
+    },
+    summary: {
+      ar: "السلف تقلل المبلغ الذي سيُصرف الآن.",
+      en: "Advances reduce the amount paid now.",
+    },
+    aliases: ["advances", "salary advance", "سلف"],
+  },
+  {
+    id: "payroll.insurance",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "التأمينات",
+      en: "Insurance",
+    },
+    purpose: {
+      ar: "تمثل مبالغ التأمينات أو الاستقطاعات المشابهة التي تؤثر على صافي الراتب.",
+      en: "Represents insurance or similar withholdings that affect final salary.",
+    },
+    summary: {
+      ar: "التأمينات جزء من الاستقطاعات التي يجب مراجعتها قبل الصرف.",
+      en: "Insurance is part of withholdings that should be reviewed before payment.",
+    },
+    aliases: ["insurance", "تأمينات"],
+  },
+  {
+    id: "payroll.base_salary",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "الراتب الأساسي في قسيمة الراتب",
+      en: "Base salary in payslip",
+    },
+    purpose: {
+      ar: "يعرض الراتب الثابت للموظف قبل إضافة البدلات والمكافآت وخصم الاستقطاعات.",
+      en: "Shows the employee's fixed salary before allowances, bonuses, and deductions.",
+    },
+    summary: {
+      ar: "الراتب الأساسي هو بداية قراءة قسيمة الراتب.",
+      en: "Base salary is the starting point for reading a payslip.",
+    },
+    aliases: ["base salary", "salary", "الراتب الأساسي"],
+  },
+  {
+    id: "payroll.net_salary",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "صافي الراتب",
+      en: "Final salary",
+    },
+    purpose: {
+      ar: "يعرض المبلغ النهائي المستحق للموظف بعد كل الإضافات والخصومات.",
+      en: "Shows the final amount due to the employee after all additions and deductions.",
+    },
+    example: {
+      ar: "إذا كان الراتب الأساسي 5,000 والبدلات 500 والخصومات 200، فالصافي 5,300.",
+      en: "If base salary is 5,000, allowances are 500, and deductions are 200, the final salary is 5,300.",
+    },
+    summary: {
+      ar: "صافي الراتب هو الرقم الذي يهم قبل الصرف.",
+      en: "Final salary is the key number before payment.",
+    },
+    aliases: ["net salary", "final salary", "صافي الراتب"],
+  },
+  {
+    id: "payroll.payslips_table",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "قسائم المرتبات",
+      en: "Payslips",
+    },
+    purpose: {
+      ar: "تعرض نتيجة حساب الراتب لكل موظف وتفاصيل الإضافات والخصومات والصافي.",
+      en: "Shows the payroll calculation result for each employee with additions, deductions, and final amount.",
+    },
+    summary: {
+      ar: "قسائم المرتبات هي نتيجة التشغيل التي يجب مراجعتها قبل الصرف.",
+      en: "Payslips are the run result that should be reviewed before payment.",
+    },
+    aliases: ["payslips", "salary slips", "قسائم المرتبات"],
+  },
+  {
+    id: "payroll.attach_bonuses_button",
+    pageKey: "payroll",
+    kind: "button",
+    label: {
+      ar: "زر ربط البونصات بالمرتبات",
+      en: "Attach bonuses to payroll button",
+    },
+    purpose: {
+      ar: "ينقل البونصات المعلقة إلى قسائم المرتبات للفترة الحالية بعد تشغيل المرتبات.",
+      en: "Moves pending bonuses into the current period payslips after payroll is run.",
+    },
+    summary: {
+      ar: "ربط البونصات يضيف المكافآت المستحقة إلى قسائم المرتبات.",
+      en: "Attaching bonuses adds eligible rewards to payslips.",
+    },
+    aliases: ["attach bonuses", "bonuses payroll", "ربط البونصات"],
+  },
+  {
+    id: "payroll.attach_commissions_button",
+    pageKey: "payroll",
+    kind: "button",
+    label: {
+      ar: "زر ربط العمولات بالمرتبات",
+      en: "Attach commissions to payroll button",
+    },
+    purpose: {
+      ar: "يربط العمولات الجاهزة بقسائم المرتبات حتى تظهر ضمن مستحقات الموظفين.",
+      en: "Links ready commissions to payslips so they appear in employee entitlements.",
+    },
+    summary: {
+      ar: "ربط العمولات يجعلها جزءًا من قراءة راتب الفترة.",
+      en: "Attaching commissions makes them part of the period payroll view.",
+    },
+    aliases: ["attach commissions", "commissions payroll", "ربط العمولات"],
+  },
+  {
+    id: "payroll.paid_salaries_table",
+    pageKey: "payroll",
+    kind: "field",
+    label: {
+      ar: "جدول المرتبات المصروفة",
+      en: "Paid salaries table",
+    },
+    purpose: {
+      ar: "يعرض عمليات صرف المرتبات التي تم تسجيلها لهذه الفترة، مع التاريخ والحساب والمبلغ.",
+      en: "Shows salary payment transactions recorded for this period, with date, account, and amount.",
+    },
+    summary: {
+      ar: "جدول الصرف يوضح ما تم دفعه فعليًا.",
+      en: "The payment table shows what was actually paid.",
+    },
+    aliases: ["paid salaries", "payments table", "المرتبات المصروفة"],
+  },
+  {
+    id: "payroll.print_button",
+    pageKey: "payroll",
+    kind: "button",
+    label: {
+      ar: "زر الطباعة",
+      en: "Print button",
+    },
+    purpose: {
+      ar: "يطبع بيانات المرتبات الحالية للمراجعة أو الحفظ الورقي.",
+      en: "Prints the current payroll data for review or paper filing.",
+    },
+    summary: {
+      ar: "الطباعة تفيد عند مشاركة مسير الرواتب أو أرشفته.",
+      en: "Printing helps share or archive the payroll run.",
+    },
+    aliases: ["print", "طباعة"],
+  },
+  {
+    id: "payroll.no_payslips_message",
+    pageKey: "payroll",
+    kind: "message",
+    label: {
+      ar: "رسالة لا توجد قسائم مرتبات",
+      en: "No payslips message",
+    },
+    purpose: {
+      ar: "تظهر عندما لا توجد نتيجة تشغيل مرتبات للفترة المختارة.",
+      en: "Appears when no payroll calculation result exists for the selected period.",
+    },
+    whatToCheck: {
+      ar: "راجع السنة والشهر أو شغّل المرتبات إذا لم يتم حسابها بعد.",
+      en: "Check the year and month or run payroll if it has not been calculated yet.",
+    },
+    summary: {
+      ar: "هذه الرسالة تعني غالبًا أن المرتبات لم تُحسب لهذه الفترة.",
+      en: "This message usually means payroll has not been calculated for this period.",
+    },
+    aliases: ["no payslips", "لا توجد قسائم"],
+  },
+  {
+    id: "payroll.no_payments_message",
+    pageKey: "payroll",
+    kind: "message",
+    label: {
+      ar: "رسالة لا توجد عمليات صرف",
+      en: "No payments message",
+    },
+    purpose: {
+      ar: "تظهر عندما لا توجد عمليات صرف مرتبات مسجلة للفترة الحالية.",
+      en: "Appears when no salary payment transactions are recorded for the current period.",
+    },
+    whatToCheck: {
+      ar: "راجع هل تم صرف المرتبات بالفعل، وهل الفترة المختارة صحيحة.",
+      en: "Check whether salaries were actually paid and whether the selected period is correct.",
+    },
+    summary: {
+      ar: "هذه الرسالة تعني أن الحساب موجود لكن الصرف لم يظهر بعد لهذه الفترة.",
+      en: "This message means the payroll may exist, but payment has not appeared for this period.",
+    },
+    aliases: ["no payments", "لا توجد عمليات صرف"],
+  },
 ] as const satisfies readonly AIFieldHelpItem[]
 
 export function getFieldHelpForPage(

@@ -319,7 +319,7 @@ export default function PayrollPage() {
             </div>
             <div className="flex gap-2">
               <PayrollSettingsDialog companyId={companyId} appLang={appLang} />
-              <Button variant="outline" onClick={handlePrint} className="no-print">
+              <Button variant="outline" onClick={handlePrint} className="no-print" data-ai-help="payroll.print_button">
                 <Printer className="h-4 w-4 mr-2" />
                 {t('Print', 'طباعة')}
               </Button>
@@ -330,32 +330,32 @@ export default function PayrollPage() {
             <Card className="no-print">
               <CardHeader><CardTitle>{t('Run Payroll', 'تشغيل المرتبات')}</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div><Label>{t('Year', 'السنة')}</Label><Input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} /></div>
-                <div>
+                <div data-ai-help="payroll.period"><Label>{t('Year', 'السنة')}</Label><Input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} /></div>
+                <div data-ai-help="payroll.period">
                   <Label>{t('Month', 'الشهر')}</Label>
                   <select className="w-full px-3 py-2 border rounded" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
                     {monthNames.map((name, i) => (<option key={i + 1} value={i + 1}>{name}</option>))}
                   </select>
                 </div>
-                <div><Label>{t('Payment Account (Cash/Bank)', 'حساب الدفع (نقد/بنك)')}</Label>
+                <div data-ai-help="payroll.payment_account"><Label>{t('Payment Account (Cash/Bank)', 'حساب الدفع (نقد/بنك)')}</Label>
                   <select className="w-full px-3 py-2 border rounded" value={paymentAccountId} onChange={(e) => setPaymentAccountId(e.target.value)}>
                     <option value="">{t('Select Account', 'اختر حساب')}</option>
                     {paymentAccounts.map((a) => (<option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>))}
                   </select>
                 </div>
-                <div className="md:col-span-1"><Button disabled={loading} onClick={runPayroll}>{t('Run', 'تشغيل')}</Button></div>
-                <div>
+                <div className="md:col-span-1"><Button disabled={loading} onClick={runPayroll} data-ai-help="payroll.run_button">{t('Run', 'تشغيل')}</Button></div>
+                <div data-ai-help="payroll.payment_date">
                   <Label>{t('Payment Date', 'تاريخ الصرف')}</Label>
                   <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
                 </div>
-                <div className="md:col-span-1"><Button disabled={loading || !paymentAccountId} variant="secondary" onClick={payPayroll}>{t('Pay Salaries', 'صرف المرتبات')}</Button></div>
+                <div className="md:col-span-1"><Button disabled={loading || !paymentAccountId} variant="secondary" onClick={payPayroll} data-ai-help="payroll.pay_salaries_button">{t('Pay Salaries', 'صرف المرتبات')}</Button></div>
                 {result ? (
                   <div className="md:col-span-4 text-sm text-gray-700 dark:text-gray-300">{t('Total Records', 'إجمالي السجلات')}: {result?.count || 0}</div>
                 ) : null}
               </CardContent>
             </Card>
 
-            <Card className="no-print">
+            <Card className="no-print" data-ai-help="payroll.adjustments_table">
               <CardHeader><CardTitle>{t('Adjustments (Allowances/Deductions) per Employee', 'التعديلات (بدلات/خصومات) لكل موظف')}</CardTitle></CardHeader>
               <CardContent>
                 {employees.length === 0 ? (<p className="text-gray-600 dark:text-gray-400">{t('No employees.', 'لا يوجد موظفون.')}</p>) : (
@@ -364,11 +364,11 @@ export default function PayrollPage() {
                       <thead className="border-b">
                         <tr>
                           <th className="p-2 text-right">{t('Employee', 'الموظف')}</th>
-                          <th className="p-2 text-right">{t('Allowances', 'بدلات')}</th>
-                          <th className="p-2 text-right">{t('Deductions', 'خصومات')}</th>
-                          <th className="p-2 text-right">{t('Bonuses', 'مكافآت')}</th>
-                          <th className="p-2 text-right">{t('Advances', 'سلف')}</th>
-                          <th className="p-2 text-right">{t('Insurance', 'تأمينات')}</th>
+                          <th className="p-2 text-right" data-ai-help="payroll.allowances">{t('Allowances', 'بدلات')}</th>
+                          <th className="p-2 text-right" data-ai-help="payroll.deductions">{t('Deductions', 'خصومات')}</th>
+                          <th className="p-2 text-right" data-ai-help="payroll.bonuses">{t('Bonuses', 'مكافآت')}</th>
+                          <th className="p-2 text-right" data-ai-help="payroll.advances">{t('Advances', 'سلف')}</th>
+                          <th className="p-2 text-right" data-ai-help="payroll.insurance">{t('Insurance', 'تأمينات')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -377,11 +377,11 @@ export default function PayrollPage() {
                           return (
                             <tr key={e.id} className="border-b">
                               <td className="p-2">{e.full_name}</td>
-                              <td className="p-2"><Input type="number" value={v.allowances} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, allowances: Number(ev.target.value) } })} /></td>
-                              <td className="p-2"><Input type="number" value={v.deductions} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, deductions: Number(ev.target.value) } })} /></td>
-                              <td className="p-2"><Input type="number" value={v.bonuses} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, bonuses: Number(ev.target.value) } })} /></td>
-                              <td className="p-2"><Input type="number" value={v.advances} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, advances: Number(ev.target.value) } })} /></td>
-                              <td className="p-2"><Input type="number" value={v.insurance} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, insurance: Number(ev.target.value) } })} /></td>
+                              <td className="p-2" data-ai-help="payroll.allowances"><Input type="number" value={v.allowances} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, allowances: Number(ev.target.value) } })} /></td>
+                              <td className="p-2" data-ai-help="payroll.deductions"><Input type="number" value={v.deductions} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, deductions: Number(ev.target.value) } })} /></td>
+                              <td className="p-2" data-ai-help="payroll.bonuses"><Input type="number" value={v.bonuses} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, bonuses: Number(ev.target.value) } })} /></td>
+                              <td className="p-2" data-ai-help="payroll.advances"><Input type="number" value={v.advances} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, advances: Number(ev.target.value) } })} /></td>
+                              <td className="p-2" data-ai-help="payroll.insurance"><Input type="number" value={v.insurance} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, insurance: Number(ev.target.value) } })} /></td>
                             </tr>
                           )
                         })}
@@ -397,7 +397,7 @@ export default function PayrollPage() {
               <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 no-print">
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="text-green-700 dark:text-green-300">{t('Pending Sales Bonuses', 'بونصات المبيعات المعلقة')}</CardTitle>
-                  <Button onClick={attachBonusesToPayroll} disabled={attachingBonuses || !result?.run_id} className="bg-green-600 hover:bg-green-700">
+                  <Button onClick={attachBonusesToPayroll} disabled={attachingBonuses || !result?.run_id} className="bg-green-600 hover:bg-green-700" data-ai-help="payroll.attach_bonuses_button">
                     {attachingBonuses ? t('Attaching...', 'جاري الربط...') : t('Attach to Payroll', 'ربط بالمرتبات')}
                   </Button>
                 </CardHeader>
@@ -474,6 +474,7 @@ export default function PayrollPage() {
                                 className="bg-blue-600 hover:bg-blue-700 text-white"
                                 onClick={() => attachCommissionRun(run.id)}
                                 disabled={attachingCommissionRun === run.id || !result?.run_id}
+                                data-ai-help="payroll.attach_commissions_button"
                               >
                                 {attachingCommissionRun === run.id ? t('Attaching...', 'جاري الربط...') : t('Attach to Payroll', 'ربط بالمرتبات')}
                               </Button>
@@ -487,27 +488,27 @@ export default function PayrollPage() {
               </Card>
             )}
 
-            <Card>
+            <Card data-ai-help="payroll.payslips_table">
               <CardHeader><CardTitle>{t('Run Results', 'نتائج التشغيل')}</CardTitle></CardHeader>
               <CardContent>
                 {payslips.length === 0 ? (
-                  <p className="text-gray-600 dark:text-gray-400">{t('No payslips for this period.', 'لا توجد قسائم مرتبات لهذه الفترة.')}</p>
+                  <p className="text-gray-600 dark:text-gray-400" data-ai-help="payroll.no_payslips_message">{t('No payslips for this period.', 'لا توجد قسائم مرتبات لهذه الفترة.')}</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="border-b">
                         <tr>
                           <th className="p-2 text-right">{t('Employee', 'الموظف')}</th>
-                          <th className="p-2 text-right">{t('Base', 'أساسي')}</th>
-                          <th className="p-2 text-right">{t('Allowances', 'بدلات')}</th>
-                          <th className="p-2 text-right">{t('Bonuses', 'مكافآت')}</th>
+                          <th className="p-2 text-right" data-ai-help="payroll.base_salary">{t('Base', 'أساسي')}</th>
+                          <th className="p-2 text-right" data-ai-help="payroll.allowances">{t('Allowances', 'بدلات')}</th>
+                          <th className="p-2 text-right" data-ai-help="payroll.bonuses">{t('Bonuses', 'مكافآت')}</th>
                           <th className="p-2 text-right text-green-600">{t('Sales Bonus', 'بونص مبيعات')}</th>
                           <th className="p-2 text-right text-blue-600">{t('Commission', 'عمولات')}</th>
-                          <th className="p-2 text-right text-orange-600">{t('Comm. Advance', 'سلف عمولات')}</th>
-                          <th className="p-2 text-right">{t('Advances', 'سلف')}</th>
-                          <th className="p-2 text-right">{t('Insurance', 'تأمينات')}</th>
-                          <th className="p-2 text-right">{t('Deductions', 'خصومات')}</th>
-                          <th className="p-2 text-right">{t('Net', 'الصافي')}</th>
+                          <th className="p-2 text-right text-orange-600" data-ai-help="payroll.advances">{t('Comm. Advance', 'سلف عمولات')}</th>
+                          <th className="p-2 text-right" data-ai-help="payroll.advances">{t('Advances', 'سلف')}</th>
+                          <th className="p-2 text-right" data-ai-help="payroll.insurance">{t('Insurance', 'تأمينات')}</th>
+                          <th className="p-2 text-right" data-ai-help="payroll.deductions">{t('Deductions', 'خصومات')}</th>
+                          <th className="p-2 text-right" data-ai-help="payroll.net_salary">{t('Net', 'الصافي')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -516,16 +517,16 @@ export default function PayrollPage() {
                           return (
                             <tr key={`${p.employee_id}`} className="border-b">
                               <td className="p-2">{emp?.full_name || p.employee_id}</td>
-                              <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.base_salary} onChange={(ev) => setEditSlip({ ...editSlip, base_salary: Number(ev.target.value) })} />) : Number(p.base_salary || 0).toFixed(2)}</td>
-                              <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.allowances} onChange={(ev) => setEditSlip({ ...editSlip, allowances: Number(ev.target.value) })} />) : Number(p.allowances || 0).toFixed(2)}</td>
-                              <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.bonuses} onChange={(ev) => setEditSlip({ ...editSlip, bonuses: Number(ev.target.value) })} />) : Number(p.bonuses || 0).toFixed(2)}</td>
+                              <td className="p-2" data-ai-help="payroll.base_salary">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.base_salary} onChange={(ev) => setEditSlip({ ...editSlip, base_salary: Number(ev.target.value) })} />) : Number(p.base_salary || 0).toFixed(2)}</td>
+                              <td className="p-2" data-ai-help="payroll.allowances">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.allowances} onChange={(ev) => setEditSlip({ ...editSlip, allowances: Number(ev.target.value) })} />) : Number(p.allowances || 0).toFixed(2)}</td>
+                              <td className="p-2" data-ai-help="payroll.bonuses">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.bonuses} onChange={(ev) => setEditSlip({ ...editSlip, bonuses: Number(ev.target.value) })} />) : Number(p.bonuses || 0).toFixed(2)}</td>
                               <td className="p-2 text-green-600">{Number(p.sales_bonus || 0).toFixed(2)}</td>
                               <td className="p-2 text-blue-600 font-semibold">{Number(p.commission || 0).toFixed(2)}</td>
                               <td className="p-2 text-orange-600">{Number(p.commission_advance_deducted || 0).toFixed(2)}</td>
-                              <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.advances} onChange={(ev) => setEditSlip({ ...editSlip, advances: Number(ev.target.value) })} />) : Number(p.advances || 0).toFixed(2)}</td>
-                              <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.insurance} onChange={(ev) => setEditSlip({ ...editSlip, insurance: Number(ev.target.value) })} />) : Number(p.insurance || 0).toFixed(2)}</td>
-                              <td className="p-2">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.deductions} onChange={(ev) => setEditSlip({ ...editSlip, deductions: Number(ev.target.value) })} />) : Number(p.deductions || 0).toFixed(2)}</td>
-                              <td className="p-2 font-semibold">{Number(p.net_salary || 0).toFixed(2)}</td>
+                              <td className="p-2" data-ai-help="payroll.advances">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.advances} onChange={(ev) => setEditSlip({ ...editSlip, advances: Number(ev.target.value) })} />) : Number(p.advances || 0).toFixed(2)}</td>
+                              <td className="p-2" data-ai-help="payroll.insurance">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.insurance} onChange={(ev) => setEditSlip({ ...editSlip, insurance: Number(ev.target.value) })} />) : Number(p.insurance || 0).toFixed(2)}</td>
+                              <td className="p-2" data-ai-help="payroll.deductions">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.deductions} onChange={(ev) => setEditSlip({ ...editSlip, deductions: Number(ev.target.value) })} />) : Number(p.deductions || 0).toFixed(2)}</td>
+                              <td className="p-2 font-semibold" data-ai-help="payroll.net_salary">{Number(p.net_salary || 0).toFixed(2)}</td>
                               <td className="p-2 no-print">
                                 {editingSlipEmp === String(p.employee_id) ? (
                                   <div className="flex gap-2">
@@ -564,11 +565,11 @@ export default function PayrollPage() {
               </CardContent>
             </Card>
 
-            <Card className="no-print">
+            <Card className="no-print" data-ai-help="payroll.paid_salaries_table">
               <CardHeader><CardTitle>{t('Paid Salaries', 'صرف المرتبات المصروفة')}</CardTitle></CardHeader>
               <CardContent>
                 {payments.length === 0 ? (
-                  <p className="text-gray-600 dark:text-gray-400">{t('No payments for this period.', 'لا توجد عمليات صرف لهذه الفترة.')}</p>
+                  <p className="text-gray-600 dark:text-gray-400" data-ai-help="payroll.no_payments_message">{t('No payments for this period.', 'لا توجد عمليات صرف لهذه الفترة.')}</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
