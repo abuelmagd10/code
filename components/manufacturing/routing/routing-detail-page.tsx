@@ -177,6 +177,15 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
     activeSnapshot?.version || routing?.versions.find((version) => version.id === selectedVersionId) || null
   const versionEditable = selectedVersion ? isRoutingVersionHeaderEditable(selectedVersion.status) : false
   const operationsEditable = selectedVersion ? isRoutingVersionStructureEditable(selectedVersion.status) : false
+  const selectedVersionOperationCount =
+    activeSnapshot && selectedVersion && activeSnapshot.version.id === selectedVersion.id
+      ? activeSnapshot.operations.length
+      : null
+  const activationRequiresSavedOperation = selectedVersion
+    ? canActivateRoutingVersion(selectedVersion.status) &&
+      selectedVersionOperationCount !== null &&
+      selectedVersionOperationCount <= 0
+    : false
   const ownerProduct = activeSnapshot?.product || routing?.product || null
   const canDeleteRoutingRecord = Boolean(routing) && Boolean(routing?.versions.every((version) => version.status === "draft"))
 
@@ -550,7 +559,9 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       case "activate":
         return {
           title: "تفعيل هذه النسخة للتصنيع",
-          description: `سيتم تفعيل النسخة ${selectedVersion?.version_no} لتصبح النسخة التشغيلية الحالية. إذا كانت هناك نسخة أخرى مفعّلة، سيتم إيقافها تلقائياً.`,
+          description: activationRequiresSavedOperation
+            ? "لا يمكن تفعيل هذه النسخة قبل إضافة عملية واحدة على الأقل وحفظها."
+            : `سيتم تفعيل النسخة ${selectedVersion?.version_no} لتصبح النسخة التشغيلية الحالية. إذا كانت هناك نسخة أخرى مفعّلة، سيتم إيقافها تلقائياً.`,
           actionLabel: "تفعيل النسخة",
           actionClassName: "",
         }
@@ -571,7 +582,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       default:
         return null
     }
-  }, [confirmAction, selectedVersion])
+  }, [activationRequiresSavedOperation, confirmAction, selectedVersion])
 
   const handleAddOperation = () => {
     const nextOperationNo = Math.max(0, ...operationsDraft.map((operation) => Number(operation.operation_no) || 0)) + 10
@@ -740,7 +751,13 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                   <Button
                                     variant="outline"
                                     onClick={() => setConfirmAction("activate")}
-                                    disabled={!canUpdate || !canActivateRoutingVersion(selectedVersion.status) || Boolean(runningAction)}
+                                    disabled={
+                                      !canUpdate ||
+                                      !canActivateRoutingVersion(selectedVersion.status) ||
+                                      loadingVersion ||
+                                      activationRequiresSavedOperation ||
+                                      Boolean(runningAction)
+                                    }
                                     className="gap-2"
                                     data-ai-help="manufacturing_routing_detail.activate_button"
                                   >
@@ -1323,7 +1340,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 onClick={() => {
                   void handleConfirmAction()
                 }}
-                disabled={Boolean(runningAction)}
+                disabled={Boolean(runningAction) || (confirmAction === "activate" && activationRequiresSavedOperation)}
                 className={confirmDialogMeta?.actionClassName}
                 data-ai-help={confirmAction === "activate" ? "manufacturing_routing_detail.activate_button" : confirmAction === "deactivate" ? "manufacturing_routing_detail.deactivate_button" : confirmAction === "archive" ? "manufacturing_routing_detail.archive_button" : "manufacturing_routing_detail.version_status"}
               >
