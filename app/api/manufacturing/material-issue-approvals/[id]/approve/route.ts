@@ -85,18 +85,19 @@ export async function POST(
       .eq("id", approval.production_order_id)
       .eq("company_id", companyId)
 
-    // ── 4. إشعار لمقدم الطلب
+    // ── 4. إشعار لمقدم الطلب بالموافقة
     try {
       await createNotification({
         companyId,
         referenceType: "manufacturing_material_issue_approval",
         referenceId: id,
         title: "✅ تمت الموافقة على صرف المواد",
-        message: `تمت الموافقة على طلب صرف المواد — الأمر جاهز للتنفيذ`,
+        message: `تمت الموافقة على طلب صرف المواد — أمر الإنتاج بدأ تلقائياً`,
         createdBy: user.id,
         assignedToUser: approval.requested_by,
         priority: "high",
-        category: "inventory",
+        severity: "info",
+        category: "approvals",
         eventKey: `mmia_approved_${id}`,
       })
     } catch { /* الإشعار غير حرج */ }

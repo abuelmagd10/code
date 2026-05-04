@@ -75,7 +75,7 @@ export async function POST(
       .eq("id", approval.production_order_id)
       .eq("company_id", companyId)
 
-    // ── 3. إشعار لمقدم الطلب
+    // ── 3. إشعار لمقدم الطلب بالرفض
     try {
       await createNotification({
         companyId,
@@ -86,7 +86,8 @@ export async function POST(
         createdBy: user.id,
         assignedToUser: approval.requested_by,
         priority: "high",
-        category: "inventory",
+        severity: "error",
+        category: "approvals",
         eventKey: `mmia_rejected_${id}`,
       })
     } catch { /* الإشعار غير حرج */ }

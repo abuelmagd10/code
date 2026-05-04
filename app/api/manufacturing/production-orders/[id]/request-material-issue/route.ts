@@ -70,25 +70,37 @@ export async function POST(
 
     if (updateError) throw updateError
 
-    // ── إرسال إشعار لمسؤول المخزن التابع للفرع
-    try {
-      await createNotification({
-        companyId,
-        referenceType: "manufacturing_material_issue_approval",
-        referenceId: approval.id,
-        title: "طلب اعتماد صرف مواد خام",
-        message: `طلب صرف مواد للأمر ${existing.order_no} — يتطلب موافقتك`,
-        createdBy: user.id,
-        branchId: existing.branch_id ?? undefined,
-        warehouseId: existing.issue_warehouse_id ?? undefined,
-        assignedToRole: "manager",
-        priority: "high",
-        category: "inventory",
-        eventKey: `mmia_request_${approval.id}`,
-      })
-    } catch {
-      // الإشعار غير حرج — الطلب تم إنشاؤه بنجاح
+    // ── إرسال إشعار لكلٍّ من مسؤول المخزن (warehouse_manager) والمدير (manager) ──
+    // نُرسل إشعارَين منفصلَين لضمان وصول الطلب للدور الصحيح في كل منشأة
+    const notificationPayload = {
+      companyId,
+      referenceType: "manufacturing_material_issue_approval",
+      referenceId: approval.id,
+      title: "🏭 طلب اعتماد صرف مواد خام",
+      message: `طلب صرف مواد للأمر ${existing.order_no} — يتطلب موافقتك قبل بدء الإنتاج`,
+      createdBy: user.id,
+      branchId: existing.branch_id ?? undefined,
+      warehouseId: existing.issue_warehouse_id ?? undefined,
+      priority: "high" as const,
+      severity: "warning" as const,
+      category: "approvals" as const,
     }
+    try {
+      // إشعار لمسؤول المخزن (الدور الأكثر تخصصاً)
+      await createNotification({
+        ...notificationPayload,
+        assignedToRole: "warehouse_manager",
+        eventKey: `mmia_request_wm_${approval.id}`,
+      })
+    } catch { /* الإشعار غير حرج */ }
+    try {
+      // إشعار للمدير (دور احتياطي في حال لم يوجد warehouse_manager)
+      await createNotification({
+        ...notificationPayload,
+        assignedToRole: "manager",
+        eventKey: `mmia_request_mgr_${approval.id}`,
+      })
+    } catch { /* الإشعار غير حرج */ }
 
     asyncAuditLog({
       companyId,

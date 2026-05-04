@@ -29,11 +29,8 @@ import {
   ClipboardList,
   Layers,
   GitMerge,
-  Cpu,
   PackageCheck,
   PackagePlus,
-  ShieldCheck,
-  XSquare,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -1032,22 +1029,15 @@ export function Sidebar() {
                 },
                 {
                   key: 'manufacturing', icon: Factory, label: (lang === 'en' ? '🏭 Manufacturing' : '🏭 التصنيع'), items: [
-                    // ── التهيئة الهندسية ──
-                    { label: (lang === 'en' ? 'Engineering Setup' : 'التهيئة الهندسية'), href: `#`, icon: Factory },
+                    // ── الهندسة والإعداد ──
+                    { label: (lang === 'en' ? 'Engineering Setup' : 'الهندسة والإعداد'), href: `#`, icon: Factory },
                     { label: (lang === 'en' ? 'Bills of Materials' : 'قوائم المواد'), href: `/manufacturing/boms${q}`, icon: Layers },
-                    { label: (lang === 'en' ? 'BOM Versions' : 'إصدارات قوائم المواد'), href: `/manufacturing/bom-versions${q}`, icon: GitMerge },
                     { label: (lang === 'en' ? 'Routings' : 'مسارات التصنيع'), href: `/manufacturing/routings${q}`, icon: GitMerge },
-                    { label: (lang === 'en' ? 'Work Centers' : 'مراكز العمل'), href: `/manufacturing/work-centers${q}`, icon: Cpu },
-                    // ── التخطيط والإصدار ──
-                    { label: (lang === 'en' ? 'Planning & Release' : 'التخطيط والإصدار'), href: `#`, icon: Factory },
-                    { label: (lang === 'en' ? 'Material Requirements Planning' : 'تخطيط متطلبات المواد'), href: `/manufacturing/mrp${q}`, icon: BarChart3 },
+                    // ── التخطيط والتنفيذ ──
+                    { label: (lang === 'en' ? 'Planning & Execution' : 'التخطيط والتنفيذ'), href: `#`, icon: Factory },
                     { label: (lang === 'en' ? 'Production Orders' : 'أوامر الإنتاج'), href: `/manufacturing/production-orders${q}`, icon: ClipboardList },
-                    // ── التنفيذ ──
-                    { label: (lang === 'en' ? 'Execution' : 'التنفيذ'), href: `#`, icon: Factory },
                     { label: (lang === 'en' ? 'Issue Materials' : 'صرف المواد'), href: `/manufacturing/material-issue${q}`, icon: PackagePlus },
-                    { label: (lang === 'en' ? 'Issue Approvals' : 'اعتمادات الصرف'), href: `/inventory/dispatch-approvals${q}`, icon: ShieldCheck },
                     { label: (lang === 'en' ? 'Receive Finished Product' : 'استلام المنتج النهائي'), href: `/manufacturing/product-receive${q}`, icon: PackageCheck },
-                    { label: (lang === 'en' ? 'Close Production Order' : 'إغلاق أمر الإنتاج'), href: `/manufacturing/close-production-order${q}`, icon: XSquare },
                   ]
                 },
                 {
