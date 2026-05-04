@@ -435,9 +435,10 @@ BEGIN
       RAISE EXCEPTION 'Issue warehouse not found for production order validation. warehouse_id=%', p_issue_warehouse_id;
     END IF;
 
-    IF v_issue_company_id IS DISTINCT FROM p_company_id OR v_issue_branch_id IS DISTINCT FROM p_branch_id THEN
-      RAISE EXCEPTION 'Issue warehouse must belong to the same company/branch as the production order. warehouse_id=%, company_id=%, branch_id=%',
-        p_issue_warehouse_id, p_company_id, p_branch_id;
+    -- التحقق من الشركة فقط (السماح بمستودعات من فروع مختلفة داخل نفس الشركة)
+    IF v_issue_company_id IS DISTINCT FROM p_company_id THEN
+      RAISE EXCEPTION 'Issue warehouse must belong to the same company as the production order. warehouse_id=%, company_id=%',
+        p_issue_warehouse_id, p_company_id;
     END IF;
   END IF;
 
@@ -451,9 +452,10 @@ BEGIN
       RAISE EXCEPTION 'Receipt warehouse not found for production order validation. warehouse_id=%', p_receipt_warehouse_id;
     END IF;
 
-    IF v_receipt_company_id IS DISTINCT FROM p_company_id OR v_receipt_branch_id IS DISTINCT FROM p_branch_id THEN
-      RAISE EXCEPTION 'Receipt warehouse must belong to the same company/branch as the production order. warehouse_id=%, company_id=%, branch_id=%',
-        p_receipt_warehouse_id, p_company_id, p_branch_id;
+    -- التحقق من الشركة فقط (السماح بمستودعات من فروع مختلفة داخل نفس الشركة)
+    IF v_receipt_company_id IS DISTINCT FROM p_company_id THEN
+      RAISE EXCEPTION 'Receipt warehouse must belong to the same company as the production order. warehouse_id=%, company_id=%',
+        p_receipt_warehouse_id, p_company_id;
     END IF;
   END IF;
 END;
