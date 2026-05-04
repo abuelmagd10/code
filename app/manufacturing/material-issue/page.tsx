@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowUpRight, PackagePlus, PlayCircle, RefreshCw } from "lucide-react"
+import { ArrowUpRight, CheckCircle2, Clock, PackagePlus, RefreshCw, Send, XCircle } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import { CompanyHeader } from "@/components/company-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,7 +20,6 @@ import {
   getProductionOrderStatusVariant,
   getTextDirection,
   readAppLanguage,
-  startProductionOrder,
 } from "@/lib/manufacturing/production-order-ui"
 
 export default function MaterialIssuePage() {
@@ -29,7 +28,9 @@ export default function MaterialIssuePage() {
   const [lang, setLang] = useState<AppLang>("ar")
   const [orders, setOrders] = useState<ProductionOrderListItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [startingId, setStartingId] = useState<string | null>(null)
+  const [requestingId, setRequestingId] = useState<string | null>(null)
+  // approval_status per orderId (fetched once on load)
+  const [approvalStatus, setApprovalStatus] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const handler = () => setLang(readAppLanguage())
@@ -44,6 +45,14 @@ export default function MaterialIssuePage() {
       setLoading(true)
       const result = await fetchProductionOrderList({ status: "released" })
       setOrders(result.items)
+      // جلب حالات الاعتماد لهذه الأوامر
+      const statusMap: Record<string, string> = {}
+      result.items.forEach((o) => {
+        // material_issue_approval_status قد يكون في البيانات
+        const s = (o as any).material_issue_approval_status
+        if (s) statusMap[o.id] = s
+      })
+      setApprovalStatus(statusMap)
     } catch {
       setOrders([])
     } finally {
@@ -53,23 +62,31 @@ export default function MaterialIssuePage() {
 
   useEffect(() => { loadOrders() }, [loadOrders])
 
-  const handleStart = async (orderId: string, orderNo: string) => {
+  const handleRequestApproval = async (orderId: string, orderNo: string) => {
     try {
-      setStartingId(orderId)
-      await startProductionOrder(orderId)
+      setRequestingId(orderId)
+      const res = await fetch(`/api/manufacturing/production-orders/${orderId}/request-material-issue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || "خطأ غير معروف")
       toast({
-        title: lang === "ar" ? "تم بدء التنفيذ" : "Production Started",
-        description: lang === "ar" ? `تم بدء تنفيذ أمر الإنتاج ${orderNo}` : `Production order ${orderNo} has been started`,
+        title: lang === "ar" ? "✅ تم إرسال الطلب" : "✅ Request Sent",
+        description: lang === "ar"
+          ? `تم إرسال طلب اعتماد صرف المواد للأمر ${orderNo} — بانتظار موافقة مسؤول المخزن`
+          : `Material issue approval request sent for order ${orderNo} — awaiting warehouse manager approval`,
       })
       await loadOrders()
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: lang === "ar" ? "خطأ" : "Error",
-        description: error?.message || (lang === "ar" ? "فشل بدء التنفيذ" : "Failed to start production"),
+        description: error?.message || (lang === "ar" ? "فشل إرسال الطلب" : "Failed to send request"),
       })
     } finally {
-      setStartingId(null)
+      setRequestingId(null)
     }
   }
 
@@ -134,8 +151,8 @@ export default function MaterialIssuePage() {
               <CardTitle className="text-base">{lang === "ar" ? "أوامر الإنتاج المُصدرة" : "Released Production Orders"}</CardTitle>
               <CardDescription>
                 {lang === "ar"
-                  ? "اضغط 'بدء التنفيذ' لصرف المواد وبدء الإنتاج، أو 'عرض' للتفاصيل الكاملة"
-                  : "Click 'Start Production' to issue materials and begin, or 'View' for full details"}
+                  ? "اضغط 'طلب اعتماد الصرف' لإرسال طلب لمسؤول المخزن — عند الموافقة يبدأ تنفيذ الأمر تلقائياً"
+                  : "Click 'Request Issue Approval' to send a request to the warehouse manager — approval automatically starts the order"}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -145,7 +162,8 @@ export default function MaterialIssuePage() {
                     <TableHead>{lang === "ar" ? "رقم الأمر" : "Order No"}</TableHead>
                     <TableHead>{lang === "ar" ? "المنتج" : "Product"}</TableHead>
                     <TableHead>{lang === "ar" ? "الكمية المخططة" : "Planned Qty"}</TableHead>
-                    <TableHead>{lang === "ar" ? "الحالة" : "Status"}</TableHead>
+                    <TableHead>{lang === "ar" ? "حالة الأمر" : "Order Status"}</TableHead>
+                    <TableHead>{lang === "ar" ? "حالة الاعتماد" : "Approval"}</TableHead>
                     <TableHead>{lang === "ar" ? "الإجراء" : "Action"}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -153,14 +171,14 @@ export default function MaterialIssuePage() {
                   {loading ? (
                     Array.from({ length: 3 }).map((_, i) => (
                       <TableRow key={i}>
-                        {Array.from({ length: 5 }).map((_, j) => (
+                        {Array.from({ length: 6 }).map((_, j) => (
                           <TableCell key={j}><div className="h-4 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" /></TableCell>
                         ))}
                       </TableRow>
                     ))
                   ) : orders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-12 text-center">
+                      <TableCell colSpan={6} className="py-12 text-center">
                         <div className="flex flex-col items-center gap-3 text-slate-500">
                           <PackagePlus className="h-10 w-10 text-slate-300" />
                           <div className="font-medium">{lang === "ar" ? "لا توجد أوامر جاهزة للصرف" : "No orders ready to issue"}</div>
@@ -173,42 +191,65 @@ export default function MaterialIssuePage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    orders.map((order) => (
-                      <TableRow key={order.id}>
-                        <TableCell className="font-medium">{order.order_no}</TableCell>
-                        <TableCell className="text-sm text-slate-700">{buildProductLabel(order.product, lang)}</TableCell>
-                        <TableCell>{formatQuantity(order.planned_quantity, lang)}</TableCell>
-                        <TableCell>
-                          <Badge variant={getProductionOrderStatusVariant(order.status)}>
-                            {getProductionOrderStatusLabel(order.status, lang)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              className="gap-1 bg-orange-600 hover:bg-orange-700 text-white"
-                              disabled={startingId === order.id}
-                              onClick={() => handleStart(order.id, order.order_no)}
-                            >
-                              <PlayCircle className="h-3.5 w-3.5" />
-                              {startingId === order.id
-                                ? (lang === "ar" ? "جاري..." : "Starting...")
-                                : (lang === "ar" ? "بدء التنفيذ" : "Start")}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="gap-1"
-                              onClick={() => router.push(`/manufacturing/production-orders/${order.id}`)}
-                            >
-                              <ArrowUpRight className="h-3.5 w-3.5" />
-                              {lang === "ar" ? "عرض" : "View"}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    orders.map((order) => {
+                      const apvStatus = approvalStatus[order.id] || (order as any).material_issue_approval_status || "none"
+                      const isPending = apvStatus === "pending"
+                      const isRejected = apvStatus === "rejected"
+                      return (
+                        <TableRow key={order.id}>
+                          <TableCell className="font-medium">{order.order_no}</TableCell>
+                          <TableCell className="text-sm text-slate-700">{buildProductLabel(order.product, lang)}</TableCell>
+                          <TableCell>{formatQuantity(order.planned_quantity, lang)}</TableCell>
+                          <TableCell>
+                            <Badge variant={getProductionOrderStatusVariant(order.status)}>
+                              {getProductionOrderStatusLabel(order.status, lang)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {isPending && (
+                              <Badge variant="outline" className="gap-1 text-amber-700 border-amber-300 bg-amber-50">
+                                <Clock className="h-3 w-3" />{lang === "ar" ? "بانتظار الاعتماد" : "Pending Approval"}
+                              </Badge>
+                            )}
+                            {isRejected && (
+                              <Badge variant="outline" className="gap-1 text-red-700 border-red-300 bg-red-50">
+                                <XCircle className="h-3 w-3" />{lang === "ar" ? "مرفوض" : "Rejected"}
+                              </Badge>
+                            )}
+                            {!isPending && !isRejected && (
+                              <Badge variant="outline" className="text-slate-500">{lang === "ar" ? "لم يُطلب" : "Not Requested"}</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {!isPending && (
+                                <Button
+                                  size="sm"
+                                  className="gap-1 bg-orange-600 hover:bg-orange-700 text-white"
+                                  disabled={requestingId === order.id}
+                                  onClick={() => handleRequestApproval(order.id, order.order_no)}
+                                >
+                                  <Send className="h-3.5 w-3.5" />
+                                  {requestingId === order.id
+                                    ? (lang === "ar" ? "جاري..." : "Sending...")
+                                    : isRejected
+                                      ? (lang === "ar" ? "إعادة الطلب" : "Re-request")
+                                      : (lang === "ar" ? "طلب اعتماد الصرف" : "Request Approval")}
+                                </Button>
+                              )}
+                              {isPending && (
+                                <Button size="sm" variant="outline" className="gap-1 text-amber-600 border-amber-300" onClick={() => router.push("/manufacturing/material-issue-approvals")}>
+                                  <CheckCircle2 className="h-3.5 w-3.5" />{lang === "ar" ? "لوحة الاعتمادات" : "Approvals Board"}
+                                </Button>
+                              )}
+                              <Button size="sm" variant="outline" className="gap-1" onClick={() => router.push(`/manufacturing/production-orders/${order.id}`)}>
+                                <ArrowUpRight className="h-3.5 w-3.5" />{lang === "ar" ? "عرض" : "View"}
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
                   )}
                 </TableBody>
               </Table>

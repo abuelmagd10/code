@@ -32,6 +32,7 @@ import {
   Cpu,
   PackageCheck,
   PackagePlus,
+  ShieldCheck,
   XSquare,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -183,6 +184,7 @@ export function Sidebar() {
     if (href.includes('/manufacturing/work-centers')) return 'manufacturing_boms'
     if (href.includes('/manufacturing/mrp')) return 'manufacturing_boms'
     if (href.includes('/manufacturing/production-orders')) return 'manufacturing_boms'
+    if (href.includes('/manufacturing/material-issue-approvals')) return 'manufacturing_boms'
     if (href.includes('/manufacturing/material-issue')) return 'manufacturing_boms'
     if (href.includes('/manufacturing/product-receive')) return 'manufacturing_boms'
     if (href.includes('/manufacturing/close-production-order')) return 'manufacturing_boms'
@@ -1044,6 +1046,7 @@ export function Sidebar() {
                     // ── التنفيذ ──
                     { label: (lang === 'en' ? 'Execution' : 'التنفيذ'), href: `#`, icon: Factory },
                     { label: (lang === 'en' ? 'Issue Materials' : 'صرف المواد'), href: `/manufacturing/material-issue${q}`, icon: PackagePlus },
+                    { label: (lang === 'en' ? 'Issue Approvals' : 'اعتمادات الصرف'), href: `/manufacturing/material-issue-approvals${q}`, icon: ShieldCheck },
                     { label: (lang === 'en' ? 'Receive Finished Product' : 'استلام المنتج النهائي'), href: `/manufacturing/product-receive${q}`, icon: PackageCheck },
                     { label: (lang === 'en' ? 'Close Production Order' : 'إغلاق أمر الإنتاج'), href: `/manufacturing/close-production-order${q}`, icon: XSquare },
                   ]
