@@ -698,7 +698,10 @@ export function WarehouseSelector({
   const [loading, setLoading] = useState(false)
   const fetchedRef = useRef(false)
 
-  useEffect(() => { fetchedRef.current = false }, [branchId])
+  useEffect(() => {
+    fetchedRef.current = false
+    setWarehouses([])
+  }, [branchId])
 
   const loadWarehouses = useCallback(async () => {
     if (loading) return
@@ -717,15 +720,20 @@ export function WarehouseSelector({
   }, [branchId, loading])
 
   useEffect(() => {
-    if (open && !fetchedRef.current) {
+    // تحميل فوري إذا كانت هناك قيمة محددة مسبقاً (لإظهار الاسم بدون فتح القائمة)
+    // أو عند فتح القائمة إذا لم تُحمَّل بعد
+    if ((open || !!value) && !fetchedRef.current) {
       fetchedRef.current = true
       loadWarehouses()
     }
-  }, [open, loadWarehouses])
+  }, [open, value, loadWarehouses])
 
   const selected = warehouses.find((w) => w.id === value) ?? null
+  // عرض الاسم فقط — الكود يظهر بداخل القائمة كنص ثانوي
   const triggerLabel = value
-    ? selected ? `${selected.code ? `[${selected.code}] ` : ""}${selected.name || value}` : value.slice(0, 8) + "…"
+    ? selected
+      ? selected.name || selected.code || value.slice(0, 8) + "…"
+      : value.slice(0, 8) + "…"
     : placeholder
 
   return (
