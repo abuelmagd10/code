@@ -31,22 +31,25 @@ export async function GET(request: NextRequest) {
       .from("warehouses")
       .select("*")
     
-    // 3️⃣ تطبيق فلاتر الحوكمة (إلزامي) - فقط company_id و branch_id (لا warehouse_id لأننا نجلب المخازن نفسها)
+    // 3️⃣ تطبيق فلاتر الحوكمة حسب الدور
     query = query.eq('company_id', governance.companyId)
 
-    // ✅ إذا طُلب branch_id محدد في URL (مثلاً من WarehouseSelector) → نطبقه فوراً بأولوية
-    const requestedBranchId = new URL(request.url).searchParams.get("branch_id")
-    if (requestedBranchId) {
-      // التحقق من أن الفرع المطلوب ضمن الفروع المسموح بها (أو أن المستخدم owner لا قيود عليه)
-      if (governance.branchIds.length === 0 || governance.branchIds.includes(requestedBranchId)) {
+    // الأدوار العليا: ترى جميع مستودعات الشركة بلا قيود
+    const HIGH_LEVEL_ROLES = ['admin', 'super_admin', 'gm', 'owner', 'general_manager', 'generalmanager', 'superadmin']
+    const isHighLevelRole = HIGH_LEVEL_ROLES.includes((governance.role || '').toLowerCase())
+
+    if (isHighLevelRole) {
+      // ✅ الأدوار العليا → جميع المستودعات (لا فلتر فرع)
+    } else {
+      // الأدوار العادية → فقط مستودعات فرعه/فروعه
+      const requestedBranchId = new URL(request.url).searchParams.get("branch_id")
+      if (requestedBranchId && governance.branchIds.includes(requestedBranchId)) {
+        // فرع محدد في URL وهو ضمن صلاحياته
         query = query.eq('branch_id', requestedBranchId)
-      } else {
-        // الفرع المطلوب خارج نطاق صلاحيات المستخدم → نطبق فلتر الحوكمة الاعتيادي
+      } else if (governance.branchIds.length > 0) {
+        // فلتر الحوكمة الاعتيادي
         query = query.in('branch_id', governance.branchIds)
       }
-    } else if (governance.branchIds.length > 0) {
-      // ✅ استخدام .in() للسماح بالمخازن المرتبطة بأي من الفروع المسموح بها
-      query = query.in('branch_id', governance.branchIds)
     }
     
     // ✅ لا نطبق فلتر warehouse_id لأننا نجلب المخازن نفسها
