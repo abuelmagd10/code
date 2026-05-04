@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowUpRight, CheckCircle2, Clock, PackagePlus, RefreshCw, Send, XCircle } from "lucide-react"
+import { ArrowUpRight, CheckCircle2, Clock, ExternalLink, PackagePlus, RefreshCw, Send, XCircle } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import { CompanyHeader } from "@/components/company-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -238,8 +238,8 @@ export default function MaterialIssuePage() {
                                 </Button>
                               )}
                               {isPending && (
-                                <Button size="sm" variant="outline" className="gap-1 text-amber-600 border-amber-300" onClick={() => router.push("/manufacturing/material-issue-approvals")}>
-                                  <CheckCircle2 className="h-3.5 w-3.5" />{lang === "ar" ? "لوحة الاعتمادات" : "Approvals Board"}
+                                <Button size="sm" variant="outline" className="gap-1 text-amber-600 border-amber-300" onClick={() => router.push("/inventory/dispatch-approvals")}>
+                                  <ExternalLink className="h-3.5 w-3.5" />{lang === "ar" ? "صفحة الاعتمادات" : "Approvals Page"}
                                 </Button>
                               )}
                               <Button size="sm" variant="outline" className="gap-1" onClick={() => router.push(`/manufacturing/production-orders/${order.id}`)}>

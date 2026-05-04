@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { useToast } from "@/hooks/use-toast"
@@ -12,9 +12,10 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { CompanyHeader } from "@/components/company-header"
-import { Package, Check, X, Box, Info, Search } from "lucide-react"
+import { Package, Check, X, Box, Info, Search, Factory, FileText } from "lucide-react"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import {
   Dialog,
@@ -29,6 +30,7 @@ import { FilterContainer } from "@/components/ui/filter-container"
 import { LoadingState } from "@/components/ui/loading-state"
 import { EmptyState } from "@/components/ui/empty-state"
 
+// ─── Sales Invoice approval ───────────────────────────────────────────────────
 interface DispatchInvoice {
   id: string
   invoice_number: string
@@ -41,21 +43,56 @@ interface DispatchInvoice {
   items_count: number
 }
 
+// ─── Manufacturing material-issue approval ────────────────────────────────────
+interface ManufacturingApproval {
+  id: string
+  status: string
+  requested_at: string
+  rejection_reason?: string
+  notes?: string
+  warehouse?: { id: string; name: string }
+  branch?: { id: string; name: string }
+  production_order?: {
+    id: string
+    order_no: string
+    status: string
+    planned_quantity: number
+    order_uom: string
+    product?: { id: string; name: string; name_en: string; sku: string }
+  }
+}
+
+// ─── Unified row (discriminated union) ───────────────────────────────────────
+type ApprovalType = "sales" | "manufacturing"
+interface UnifiedRow {
+  _type: ApprovalType
+  id: string
+  reference: string        // invoice_number OR order_no
+  date: string
+  party: string            // customer name OR product name
+  warehouse: string
+  extra: string            // shipping provider OR branch
+  raw: DispatchInvoice | ManufacturingApproval
+}
+
+type TypeFilter = "all" | "sales" | "manufacturing"
+
 export default function DispatchApprovalsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
 
-  const [invoices, setInvoices] = useState<DispatchInvoice[]>([])
+  const [rows, setRows] = useState<UnifiedRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
-  
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
+
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState<"approve" | "reject">("approve")
-  const [selectedInvoice, setSelectedInvoice] = useState<DispatchInvoice | null>(null)
+  const [selectedRow, setSelectedRow] = useState<UnifiedRow | null>(null)
   const [notes, setNotes] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
-  
+
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [hydrated, setHydrated] = useState(false)
 
@@ -65,7 +102,6 @@ export default function DispatchApprovalsPage() {
       const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
       setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
     } catch { }
-
     const handler = () => {
       try {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
@@ -76,18 +112,14 @@ export default function DispatchApprovalsPage() {
     return () => window.removeEventListener('app_language_changed', handler)
   }, [])
 
-  useEffect(() => {
-    loadPendingInvoices()
-  }, [])
-
-  const loadPendingInvoices = async () => {
+  const loadAll = useCallback(async () => {
     try {
       setIsLoading(true)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      // Fetch invoices where status ('sent' or 'paid') and warehouse_status = 'pending'
-      const { data, error } = await supabase
+      // ── 1. فواتير المبيعات ──────────────────────────────────────────────────
+      const { data: invData, error: invError } = await supabase
         .from('invoices')
         .select(`
           id, invoice_number, invoice_date, total_amount, warehouse_status,
@@ -99,159 +131,183 @@ export default function DispatchApprovalsPage() {
         .in('status', ['sent', 'paid'])
         .order('invoice_date', { ascending: false })
 
-      if (error) throw error
+      if (invError) throw invError
 
-      // Get items count
-      const invoiceIds = data?.map((i: any) => i.id) || []
+      const invoiceIds = (invData || []).map((i: any) => i.id)
       let itemsCounts: Record<string, number> = {}
-      
       if (invoiceIds.length > 0) {
         const { data: items } = await supabase
           .from('invoice_items')
-          .select('invoice_id, quantity')
+          .select('invoice_id')
           .in('invoice_id', invoiceIds)
-          
         items?.forEach((item: any) => {
           itemsCounts[item.invoice_id] = (itemsCounts[item.invoice_id] || 0) + 1
         })
       }
 
-      // We need to fetch warehouse names separately if we want since it relates through sales_orders
-      // But for simplicity let's map the basic data first.
-      
-      const formatted = (data || []).map((inv: any) => ({
-        id: inv.id,
-        invoice_number: inv.invoice_number,
-        invoice_date: inv.invoice_date,
-        customer: inv.customers,
-        shipping_provider: inv.shipping_providers,
-        total_amount: inv.total_amount,
-        warehouse_status: inv.warehouse_status,
-        items_count: itemsCounts[inv.id] || 0,
-      }))
-
-      setInvoices(formatted)
-    } catch (error: any) {
-      console.error("Error loading pending dispatches:", error)
-      toast({
-        title: "خطأ",
-        description: "تعذر تحميل فواتير الاعتماد.",
-        variant: "destructive"
+      const salesRows: UnifiedRow[] = (invData || []).map((inv: any) => {
+        const raw: DispatchInvoice = {
+          id: inv.id,
+          invoice_number: inv.invoice_number,
+          invoice_date: inv.invoice_date,
+          customer: inv.customers,
+          shipping_provider: inv.shipping_providers,
+          total_amount: inv.total_amount,
+          warehouse_status: inv.warehouse_status,
+          items_count: itemsCounts[inv.id] || 0,
+        }
+        return {
+          _type: "sales",
+          id: inv.id,
+          reference: inv.invoice_number,
+          date: inv.invoice_date,
+          party: inv.customers?.name || "-",
+          warehouse: "-",
+          extra: inv.shipping_providers?.provider_name || "-",
+          raw,
+        }
       })
+
+      // ── 2. اعتمادات صرف مواد التصنيع ───────────────────────────────────────
+      const mfgRes = await fetch("/api/manufacturing/material-issue-approvals?status=pending")
+      let mfgRows: UnifiedRow[] = []
+      if (mfgRes.ok) {
+        const mfgJson = await mfgRes.json()
+        mfgRows = ((mfgJson.data || []) as ManufacturingApproval[]).map((apv) => ({
+          _type: "manufacturing" as ApprovalType,
+          id: apv.id,
+          reference: apv.production_order?.order_no || apv.id,
+          date: apv.requested_at,
+          party: appLang === 'en'
+            ? (apv.production_order?.product?.name_en || apv.production_order?.product?.name || "-")
+            : (apv.production_order?.product?.name || apv.production_order?.product?.name_en || "-"),
+          warehouse: apv.warehouse?.name || "-",
+          extra: apv.branch?.name || "-",
+          raw: apv,
+        }))
+      }
+
+      setRows([...salesRows, ...mfgRows])
+    } catch (error: any) {
+      console.error("Error loading approvals:", error)
+      toast({ title: appLang === 'en' ? "Error" : "خطأ", description: appLang === 'en' ? "Could not load approvals." : "تعذر تحميل طلبات الاعتماد.", variant: "destructive" })
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [supabase, appLang]) // eslint-disable-line
 
-  const handleActionClick = (invoice: DispatchInvoice, mode: "approve" | "reject") => {
-    setSelectedInvoice(invoice)
+  useEffect(() => { loadAll() }, [loadAll])
+
+  const handleActionClick = (row: UnifiedRow, mode: "approve" | "reject") => {
+    setSelectedRow(row)
     setModalMode(mode)
     setNotes("")
     setIsModalOpen(true)
   }
 
   const handleConfirmAction = async () => {
-    if (!selectedInvoice) return
-
+    if (!selectedRow) return
     try {
-      setActionLoading(selectedInvoice.id)
-      
-      const endpoint = modalMode === "approve" 
-        ? `/api/invoices/${selectedInvoice.id}/warehouse-approve`
-        : `/api/invoices/${selectedInvoice.id}/warehouse-reject`
+      setActionLoading(selectedRow.id)
+
+      let endpoint: string
+      if (selectedRow._type === "sales") {
+        endpoint = modalMode === "approve"
+          ? `/api/invoices/${selectedRow.id}/warehouse-approve`
+          : `/api/invoices/${selectedRow.id}/warehouse-reject`
+      } else {
+        endpoint = `/api/manufacturing/material-issue-approvals/${selectedRow.id}/${modalMode}`
+      }
 
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes })
+        body: JSON.stringify(modalMode === "reject" ? { rejection_reason: notes } : { notes }),
       })
 
       const result = await response.json()
+      if (!result.success) throw new Error(result.error || (appLang === 'en' ? "Unknown error" : "حدث خطأ غير معروف"))
 
-      if (!result.success) {
-        throw new Error(result.error || "حدث خطأ غير معروف")
-      }
-
-      toast({
-        title: "تم بنجاح",
-        description: result.message,
-      })
-
+      toast({ title: appLang === 'en' ? "Done" : "تم بنجاح", description: result.message })
       setIsModalOpen(false)
-      loadPendingInvoices() // Refresh the list
+      loadAll()
     } catch (error: any) {
-      console.error(`Error confirming ${modalMode}:`, error)
-      toast({
-        title: "خطأ",
-        description: error.message,
-        variant: "destructive"
-      })
+      toast({ title: appLang === 'en' ? "Error" : "خطأ", description: error.message, variant: "destructive" })
     } finally {
       setActionLoading(null)
     }
   }
 
-  const columns: DataTableColumn<DispatchInvoice>[] = [
+  const columns: DataTableColumn<UnifiedRow>[] = [
     {
-      header: appLang === 'en' ? "Invoice #" : "رقم الفاتورة",
-      key: "invoice_number",
-      format: (_: any, inv: DispatchInvoice) => (
-        <div className="font-medium text-blue-600 dark:text-blue-400">
-          {inv.invoice_number}
-        </div>
+      header: appLang === 'en' ? "Type" : "النوع",
+      key: "_type",
+      format: (_: any, row: UnifiedRow) => (
+        row._type === "sales" ? (
+          <Badge variant="outline" className="gap-1 text-blue-700 border-blue-300 bg-blue-50 whitespace-nowrap">
+            <FileText className="w-3 h-3" />{appLang === 'en' ? "Sales Invoice" : "فاتورة مبيعات"}
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="gap-1 text-orange-700 border-orange-300 bg-orange-50 whitespace-nowrap">
+            <Factory className="w-3 h-3" />{appLang === 'en' ? "Mfg. Issue" : "صرف تصنيع"}
+          </Badge>
+        )
+      )
+    },
+    {
+      header: appLang === 'en' ? "Reference #" : "الرقم المرجعي",
+      key: "reference",
+      format: (_: any, row: UnifiedRow) => (
+        <div className="font-medium text-blue-600 dark:text-blue-400">{row.reference}</div>
       )
     },
     {
       header: appLang === 'en' ? "Date" : "التاريخ",
-      key: "invoice_date",
-      format: (_: any, inv: DispatchInvoice) => (
-        <div>{new Date(inv.invoice_date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}</div>
+      key: "date",
+      format: (_: any, row: UnifiedRow) => (
+        <div>{new Date(row.date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}</div>
       )
     },
     {
-      header: appLang === 'en' ? "Customer" : "العميل",
-      key: "customer.name",
-      format: (_: any, inv: DispatchInvoice) => (
-        <div>{inv.customer?.name || "-"}</div>
-      )
+      header: appLang === 'en' ? "Customer / Product" : "العميل / المنتج",
+      key: "party",
+      format: (_: any, row: UnifiedRow) => <div>{row.party}</div>
     },
     {
-      header: appLang === 'en' ? "Shipping Provider" : "شركة الشحن",
-      key: "shipping_provider.provider_name",
-      format: (_: any, inv: DispatchInvoice) => (
-        <div>{inv.shipping_provider?.provider_name || "-"}</div>
-      )
-    },
-    {
-      header: appLang === 'en' ? "Items" : "عدد الأصناف",
-      key: "items_count",
-      format: (_: any, inv: DispatchInvoice) => (
+      header: appLang === 'en' ? "Warehouse" : "المستودع",
+      key: "warehouse",
+      format: (_: any, row: UnifiedRow) => (
         <div className="flex items-center text-gray-500">
           <Box className={`w-4 h-4 ${appLang === 'en' ? 'mr-2' : 'ml-2'}`} />
-          {inv.items_count} {appLang === 'en' ? "items" : "أصناف"}
+          {row.warehouse}
         </div>
       )
     },
     {
+      header: appLang === 'en' ? "Shipping / Branch" : "شركة الشحن / الفرع",
+      key: "extra",
+      format: (_: any, row: UnifiedRow) => <div>{row.extra}</div>
+    },
+    {
       header: appLang === 'en' ? "Action" : "إجراء",
       key: "action",
-      format: (_: any, inv: DispatchInvoice) => (
+      format: (_: any, row: UnifiedRow) => (
         <div className="flex gap-2">
-          <Button 
-            size="sm" 
-            variant="outline" 
+          <Button
+            size="sm"
+            variant="outline"
             className="text-green-600 hover:text-green-700 hover:bg-green-50"
-            onClick={() => handleActionClick(inv, "approve")}
-            disabled={actionLoading === inv.id}
+            onClick={() => handleActionClick(row, "approve")}
+            disabled={actionLoading === row.id}
           >
             <Check className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Approve" : "اعتماد"}
           </Button>
-          <Button 
-            size="sm" 
-            variant="outline" 
+          <Button
+            size="sm"
+            variant="outline"
             className="text-red-600 hover:text-red-700 hover:bg-red-50"
-            onClick={() => handleActionClick(inv, "reject")}
-            disabled={actionLoading === inv.id}
+            onClick={() => handleActionClick(row, "reject")}
+            disabled={actionLoading === row.id}
           >
             <X className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Reject" : "رفض"}
           </Button>
@@ -260,9 +316,14 @@ export default function DispatchApprovalsPage() {
     }
   ]
 
-  const filteredInvoices = invoices.filter(inv => 
-    !searchQuery || inv.invoice_number.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const filteredRows = rows.filter(row => {
+    if (typeFilter !== "all" && row._type !== typeFilter) return false
+    if (searchQuery && !row.reference.toLowerCase().includes(searchQuery.toLowerCase()) && !row.party.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    return true
+  })
+
+  const salesCount = rows.filter(r => r._type === "sales").length
+  const mfgCount = rows.filter(r => r._type === "manufacturing").length
 
   if (!hydrated) return null
 
@@ -272,124 +333,181 @@ export default function DispatchApprovalsPage() {
         <CompanyHeader />
 
         <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6 mb-6">
-          <ERPPageHeader 
+          <ERPPageHeader
             title={appLang === 'en' ? 'Dispatch Approvals' : 'اعتمادات إخراج المخزون'}
-            description={appLang === 'en' ? 'Review & manage unfulfilled posted sales orders' : 'إدارة ومراجعة طلبات إخراج البضاعة للفواتير المُرحلة'}
+            description={appLang === 'en'
+              ? 'Review & manage pending dispatch requests — sales invoices and manufacturing material issues'
+              : 'إدارة ومراجعة طلبات الاعتماد المعلقة — فواتير المبيعات وصرف مواد التصنيع'}
             lang={appLang}
           />
         </div>
 
         <Card className="dark:bg-slate-900 dark:border-slate-800">
           <CardHeader>
-            <CardTitle>{appLang === 'en' ? 'Pending Dispatches' : 'طلبات قيد الانتظار'}</CardTitle>
-            <CardDescription>
-              {appLang === 'en' 
-                ? 'Posted invoices waiting for warehouse dispatch' 
-                : 'الفواتير التي تم ترحيلها محاسبياً وتنتظر اعتماد المخزن للتسليم'}
-            </CardDescription>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle>{appLang === 'en' ? 'Pending Approvals' : 'طلبات قيد الانتظار'}</CardTitle>
+                <CardDescription className="mt-1">
+                  {appLang === 'en'
+                    ? 'All pending warehouse approvals — sales and manufacturing'
+                    : 'جميع طلبات الاعتماد المعلقة — المبيعات والتصنيع'}
+                </CardDescription>
+              </div>
+              {/* ── فلتر النوع ── */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {(["all", "sales", "manufacturing"] as TypeFilter[]).map((t) => {
+                  const label = {
+                    all: appLang === 'en' ? `All (${rows.length})` : `الكل (${rows.length})`,
+                    sales: appLang === 'en' ? `Sales (${salesCount})` : `مبيعات (${salesCount})`,
+                    manufacturing: appLang === 'en' ? `Mfg. Issue (${mfgCount})` : `صرف تصنيع (${mfgCount})`,
+                  }[t]
+                  return (
+                    <Button
+                      key={t}
+                      size="sm"
+                      variant={typeFilter === t ? "default" : "outline"}
+                      onClick={() => setTypeFilter(t)}
+                      className="h-8 text-xs"
+                    >
+                      {t === "sales" && <FileText className="w-3 h-3 mr-1 rtl:mr-0 rtl:ml-1" />}
+                      {t === "manufacturing" && <Factory className="w-3 h-3 mr-1 rtl:mr-0 rtl:ml-1" />}
+                      {label}
+                    </Button>
+                  )
+                })}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-          <FilterContainer
-            title={appLang === 'en' ? "Search & Filters" : "البحث والفلاتر"}
-            activeCount={searchQuery ? 1 : 0}
-            onClear={() => setSearchQuery("")}
-          >
-            <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={appLang === 'en' ? "Search by invoice #..." : "البحث برقم الفاتورة..."}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className={appLang === 'ar' ? 'pr-10' : 'pl-10'}
-              />
-            </div>
-          </FilterContainer>
-
-          {isLoading ? (
-            <LoadingState 
-              message={appLang === 'en' ? "Loading pending dispatches..." : "جاري تحميل الطلبات..."}
-            />
-          ) : filteredInvoices.length === 0 ? (
-            <EmptyState
-              icon={Package}
-              title={searchQuery ? (appLang === 'en' ? "No Invoices Found" : "لا توجد نتائج بحث") : (appLang === 'en' ? "No Pending Dispatches" : "لا توجد طلبات معلقة")}
-              description={searchQuery 
-                ? (appLang === 'en' ? "No invoices matched your search." : "لم يتم العثور على فواتير تطابق بحثك.")
-                : (appLang === 'en' ? "All posted invoices have been dispatched!" : "جميع الفواتير المرحلة قد تم اعتماد تسليمها بنجاح!")
-              }
-              action={searchQuery ? {
-                label: appLang === 'en' ? "Clear Search" : "مسح البحث",
-                onClick: () => setSearchQuery("")
-              } : undefined}
-            />
-          ) : (
-            <DataTable 
-              columns={columns}
-              data={filteredInvoices}
-              keyField="id"
-            />
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Approve/Reject Modal */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {modalMode === "approve" ? "اعتماد إخراج البضاعة" : "رفض إخراج البضاعة"}
-            </DialogTitle>
-            <DialogDescription>
-              الفاتورة رقم: <span className="font-bold">{selectedInvoice?.invoice_number}</span>
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-4 space-y-4">
-            {modalMode === "approve" ? (
-              <div className="flex items-center p-3 text-sm text-green-800 border border-green-300 rounded-lg bg-green-50 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
-                <Info className="flex-shrink-0 inline w-4 h-4 mr-3 rtl:mr-0 rtl:ml-3" />
-                <span className="sr-only">Info</span>
-                <div>
-                  عند الاعتماد، سيتم خصم الكميات من المخزن ونقلها إلى ذمة شركة الشحن بشكل تلقائي.
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center p-3 text-sm text-red-800 border border-red-300 rounded-lg bg-red-50 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800">
-                <Info className="flex-shrink-0 inline w-4 h-4 mr-3 rtl:mr-0 rtl:ml-3" />
-                <span className="sr-only">Info</span>
-                <div>
-                  عند الرفض، سيتم إيقاف تسليم البضاعة ولن يؤثر ذلك على أرصدة المخازن حتى تتم المراجعة.
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                ملاحظات {modalMode === "reject" && <span className="text-red-500">*</span>}
-              </label>
-              <Input 
-                placeholder={modalMode === "approve" ? "ملاحظات إضافية (اختياري)..." : "سبب الرفض (مطلوب)..."}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setIsModalOpen(false)}>
-              إلغاء
-            </Button>
-            <Button 
-              variant={modalMode === "approve" ? "default" : "destructive"}
-              onClick={handleConfirmAction}
-              disabled={actionLoading !== null || (modalMode === "reject" && !notes.trim())}
-              className={modalMode === "approve" ? "bg-green-600 hover:bg-green-700" : ""}
+            <FilterContainer
+              title={appLang === 'en' ? "Search & Filters" : "البحث والفلاتر"}
+              activeCount={(searchQuery ? 1 : 0) + (typeFilter !== "all" ? 1 : 0)}
+              onClear={() => { setSearchQuery(""); setTypeFilter("all") }}
             >
-              {actionLoading !== null ? "جاري المعالجة..." : "تأكيد"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={appLang === 'en' ? "Search by reference # or party..." : "البحث بالرقم المرجعي أو الاسم..."}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className={appLang === 'ar' ? 'pr-10' : 'pl-10'}
+                />
+              </div>
+            </FilterContainer>
+
+            {isLoading ? (
+              <LoadingState
+                message={appLang === 'en' ? "Loading pending approvals..." : "جاري تحميل الطلبات..."}
+              />
+            ) : filteredRows.length === 0 ? (
+              <EmptyState
+                icon={Package}
+                title={searchQuery || typeFilter !== "all"
+                  ? (appLang === 'en' ? "No Results" : "لا توجد نتائج")
+                  : (appLang === 'en' ? "No Pending Approvals" : "لا توجد طلبات معلقة")}
+                description={searchQuery || typeFilter !== "all"
+                  ? (appLang === 'en' ? "No items matched your filters." : "لا توجد عناصر تطابق الفلاتر المحددة.")
+                  : (appLang === 'en' ? "All approvals have been processed!" : "جميع طلبات الاعتماد قد تمت معالجتها بنجاح!")}
+                action={(searchQuery || typeFilter !== "all") ? {
+                  label: appLang === 'en' ? "Clear Filters" : "مسح الفلاتر",
+                  onClick: () => { setSearchQuery(""); setTypeFilter("all") }
+                } : undefined}
+              />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={filteredRows}
+                keyField="id"
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Approve/Reject Modal ── */}
+        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {selectedRow?._type === "manufacturing"
+                  ? (modalMode === "approve"
+                    ? (appLang === 'en' ? "Approve Material Issue" : "اعتماد صرف مواد التصنيع")
+                    : (appLang === 'en' ? "Reject Material Issue" : "رفض صرف مواد التصنيع"))
+                  : (modalMode === "approve"
+                    ? (appLang === 'en' ? "Approve Dispatch" : "اعتماد إخراج البضاعة")
+                    : (appLang === 'en' ? "Reject Dispatch" : "رفض إخراج البضاعة"))
+                }
+              </DialogTitle>
+              <DialogDescription>
+                {appLang === 'en' ? "Reference: " : "الرقم المرجعي: "}
+                <span className="font-bold">{selectedRow?.reference}</span>
+                {selectedRow?._type === "manufacturing" && (
+                  <Badge variant="outline" className="mr-2 rtl:mr-0 rtl:ml-2 gap-1 text-orange-700 border-orange-300 bg-orange-50">
+                    <Factory className="w-3 h-3" />{appLang === 'en' ? "Manufacturing" : "تصنيع"}
+                  </Badge>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-4 space-y-4">
+              {modalMode === "approve" ? (
+                <div className="flex items-start p-3 text-sm text-green-800 border border-green-300 rounded-lg bg-green-50 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
+                  <Info className="flex-shrink-0 w-4 h-4 mr-3 rtl:mr-0 rtl:ml-3 mt-0.5" />
+                  <div>
+                    {selectedRow?._type === "manufacturing"
+                      ? (appLang === 'en'
+                        ? "Approving will automatically start the production order and issue materials from the warehouse."
+                        : "عند الاعتماد، سيبدأ أمر الإنتاج تلقائياً وتُصرف المواد من المستودع.")
+                      : (appLang === 'en'
+                        ? "Approving will deduct quantities from stock and transfer them to the shipping provider."
+                        : "عند الاعتماد، سيتم خصم الكميات من المخزن ونقلها إلى ذمة شركة الشحن بشكل تلقائي.")}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start p-3 text-sm text-red-800 border border-red-300 rounded-lg bg-red-50 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800">
+                  <Info className="flex-shrink-0 w-4 h-4 mr-3 rtl:mr-0 rtl:ml-3 mt-0.5" />
+                  <div>
+                    {selectedRow?._type === "manufacturing"
+                      ? (appLang === 'en'
+                        ? "Rejecting will notify the requester with the reason. The order can be re-submitted after review."
+                        : "عند الرفض، سيتم إشعار مقدم الطلب بالسبب، ويمكن إعادة تقديم الطلب بعد المراجعة.")
+                      : (appLang === 'en'
+                        ? "Rejecting will halt delivery. Stock balances will not be affected until reviewed."
+                        : "عند الرفض، سيتم إيقاف تسليم البضاعة ولن يؤثر ذلك على أرصدة المخازن حتى تتم المراجعة.")}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  {appLang === 'en' ? "Notes" : "ملاحظات"}{modalMode === "reject" && <span className="text-red-500"> *</span>}
+                </label>
+                <Input
+                  placeholder={modalMode === "approve"
+                    ? (appLang === 'en' ? "Additional notes (optional)..." : "ملاحظات إضافية (اختياري)...")
+                    : (appLang === 'en' ? "Rejection reason (required)..." : "سبب الرفض (مطلوب)...")}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" onClick={() => setIsModalOpen(false)}>
+                {appLang === 'en' ? "Cancel" : "إلغاء"}
+              </Button>
+              <Button
+                variant={modalMode === "approve" ? "default" : "destructive"}
+                onClick={handleConfirmAction}
+                disabled={actionLoading !== null || (modalMode === "reject" && !notes.trim())}
+                className={modalMode === "approve" ? "bg-green-600 hover:bg-green-700" : ""}
+              >
+                {actionLoading !== null
+                  ? (appLang === 'en' ? "Processing..." : "جاري المعالجة...")
+                  : (appLang === 'en' ? "Confirm" : "تأكيد")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   )
