@@ -228,7 +228,8 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
 
   const headerEditable = Boolean(order && canUpdate && canEditProductionOrderHeader(order.status))
   const regenerateEnabled = Boolean(order && canUpdate && canRegenerateProductionOrder(order.status))
-  const releaseEnabled = Boolean(order && canUpdate && canReleaseProductionOrder(order.status))
+  const hasOperations = Boolean(snapshot && snapshot.operations.length > 0)
+  const releaseEnabled = Boolean(order && canUpdate && canReleaseProductionOrder(order.status) && hasOperations)
   const startEnabled = Boolean(order && canUpdate && canStartProductionOrder(order.status))
   const completeEnabled = Boolean(order && canUpdate && canCompleteProductionOrder(order.status))
   const cancelEnabled = Boolean(order && canUpdate && canCancelProductionOrder(order.status))
@@ -584,7 +585,19 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                 <RotateCcw className="h-4 w-4" />
                 {copy.detail.regenerate}
               </Button>
-              <Button onClick={() => setReleaseConfirmOpen(true)} disabled={!releaseEnabled || busy} className="gap-2" data-ai-help="manufacturing_production_order_detail.release_button">
+              <Button
+                onClick={() => {
+                  if (!hasOperations && order?.status === "draft") {
+                    toast({ variant: "destructive", title: copy.detail.releaseErrorTitle, description: copy.detail.noOperationsReleaseBlocked })
+                    return
+                  }
+                  setReleaseConfirmOpen(true)
+                }}
+                disabled={!releaseEnabled || busy}
+                className="gap-2"
+                title={!hasOperations ? copy.detail.noOperationsReleaseBlocked : undefined}
+                data-ai-help="manufacturing_production_order_detail.release_button"
+              >
                 <Send className="h-4 w-4" />
                 {copy.detail.release}
               </Button>
@@ -903,11 +916,23 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                           </div>
 
                           {snapshot.operations.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed px-6 py-14 text-center">
-                              <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-center">
-                                <Wrench className="h-10 w-10 text-slate-300" />
-                                <div className="text-lg font-medium text-slate-800">{copy.detail.noOperationsTitle}</div>
-                                <p className="text-sm leading-6 text-slate-500">{copy.detail.noOperationsDescription}</p>
+                            <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/60 px-6 py-14 text-center dark:border-amber-700 dark:bg-amber-950/20">
+                              <div className="mx-auto flex max-w-md flex-col items-center gap-4 text-center">
+                                <Wrench className="h-10 w-10 text-amber-400" />
+                                <div className="text-lg font-semibold text-amber-800 dark:text-amber-300">{copy.detail.noOperationsTitle}</div>
+                                <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">{copy.detail.noOperationsDescription}</p>
+                                {regenerateEnabled && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="mt-2 gap-2 border-amber-400 text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-400"
+                                    onClick={() => setRegenerateOpen(true)}
+                                    disabled={busy}
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                    {copy.detail.regenerate}
+                                  </Button>
+                                )}
                               </div>
                             </div>
                           ) : (
