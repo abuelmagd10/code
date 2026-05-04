@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowUpRight, Factory, Package2, PlayCircle, Plus, RefreshCw } from "lucide-react"
+import { ArrowUpRight, ChevronDown, ChevronUp, Factory, Package2, PlayCircle, Plus, RefreshCw, Zap } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import { CompanyHeader } from "@/components/company-header"
 import { ERPPageHeader } from "@/components/erp-page-header"
@@ -90,6 +90,8 @@ export function ProductionOrderListPage() {
     q: "",
   })
   const [createForm, setCreateForm] = useState<ProductionOrderCreatePayload>(EMPTY_CREATE_FORM)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [autoCascading, setAutoCascading] = useState(false)
 
   useEffect(() => {
     const handler = () => setAppLang(readAppLanguage())
@@ -151,8 +153,56 @@ export function ProductionOrderListPage() {
 
   const handleOpenCreate = () => {
     setCreateForm(EMPTY_CREATE_FORM)
+    setShowAdvanced(false)
     setCreateOpen(true)
   }
+
+  // ── Auto-cascade: عند اختيار منتج → حمّل BOM الوحيد والمسار الوحيد تلقائياً
+  useEffect(() => {
+    const productId = createForm.product_id
+    if (!productId || !createOpen) return
+
+    let cancelled = false
+    setAutoCascading(true)
+
+    const fetchAndCascade = async () => {
+      try {
+        const [bomsRes, routingsRes] = await Promise.all([
+          fetch(`/api/manufacturing/boms?product_id=${productId}&is_active=true`),
+          fetch(`/api/manufacturing/routings?product_id=${productId}&is_active=true`),
+        ])
+        const bomsData = await bomsRes.json()
+        const routingsData = await routingsRes.json()
+        if (cancelled) return
+
+        const boms: { id: string }[] = Array.isArray(bomsData?.data) ? bomsData.data : []
+        const routings: { id: string }[] = Array.isArray(routingsData?.data) ? routingsData.data : []
+
+        setCreateForm((c) => {
+          // Auto-select BOM only if exactly one exists and none is selected
+          const newBomId = boms.length === 1 && !c.bom_id ? boms[0].id : c.bom_id
+          // Auto-select Routing only if exactly one exists and none is selected
+          const newRoutingId = routings.length === 1 && !c.routing_id ? routings[0].id : c.routing_id
+          const changed = newBomId !== c.bom_id || newRoutingId !== c.routing_id
+          if (!changed) return c
+          return {
+            ...c,
+            bom_id: newBomId,
+            bom_version_id: newBomId !== c.bom_id ? "" : c.bom_version_id,
+            routing_id: newRoutingId,
+            routing_version_id: newRoutingId !== c.routing_id ? "" : c.routing_version_id,
+          }
+        })
+      } catch {
+        // silent — user can still select manually
+      } finally {
+        if (!cancelled) setAutoCascading(false)
+      }
+    }
+    fetchAndCascade()
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createForm.product_id, createOpen])
 
   const handleCreate = async () => {
     if (
@@ -453,11 +503,19 @@ export function ProductionOrderListPage() {
             <CardDescription>{copy.list.createDialogDescription}</CardDescription>
           </DialogHeader>
 
+          {/* ── Auto-cascade indicator ── */}
+          {autoCascading && (
+            <div className="flex items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm text-cyan-700 dark:border-cyan-800 dark:bg-cyan-950/30 dark:text-cyan-400">
+              <Zap className="h-4 w-4 animate-pulse" />
+              {appLang === "ar" ? "جاري تحميل قائمة المواد والمسارات تلقائياً..." : "Auto-loading BOMs and routings..."}
+            </div>
+          )}
+
+          {/* ── الحقول الإلزامية ── */}
           <div className="grid gap-4 sm:grid-cols-2">
-            {/* ── 1. المنتج المراد تصنيعه ── */}
             <div className="space-y-2 sm:col-span-2">
               <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "١. المنتج المراد تصنيعه" : "1. Product to Manufacture"}
+                {appLang === "ar" ? "١. المنتج المراد تصنيعه" : "1. Product to Manufacture"} <span className="text-red-500">*</span>
               </Label>
               <ManufacturingProductSelector
                 value={createForm.product_id}
@@ -476,25 +534,21 @@ export function ProductionOrderListPage() {
               />
             </div>
 
-            {/* ── 2. قائمة المواد ── */}
             <div className="space-y-2">
               <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "٢. قائمة المواد (الوصفة)" : "2. Bill of Materials"}
+                {appLang === "ar" ? "٢. قائمة المواد" : "2. Bill of Materials"} <span className="text-red-500">*</span>
               </Label>
               <BomSelector
                 value={createForm.bom_id}
-                onChange={(id) =>
-                  setCreateForm((c) => ({ ...c, bom_id: id, bom_version_id: "" }))
-                }
+                onChange={(id) => setCreateForm((c) => ({ ...c, bom_id: id, bom_version_id: "" }))}
                 productId={createForm.product_id}
                 placeholder={appLang === "ar" ? "اختر قائمة المواد" : "Select BOM"}
               />
             </div>
 
-            {/* ── 3. إصدار قائمة المواد ── */}
             <div className="space-y-2">
               <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "٣. إصدار قائمة المواد" : "3. BOM Version"}
+                {appLang === "ar" ? "٣. إصدار قائمة المواد" : "3. BOM Version"} <span className="text-red-500">*</span>
               </Label>
               <BomVersionSelector
                 value={createForm.bom_version_id}
@@ -504,25 +558,21 @@ export function ProductionOrderListPage() {
               />
             </div>
 
-            {/* ── 4. مسار التصنيع ── */}
             <div className="space-y-2">
               <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "٤. مسار التصنيع" : "4. Routing"}
+                {appLang === "ar" ? "٤. مسار التصنيع" : "4. Routing"} <span className="text-red-500">*</span>
               </Label>
               <RoutingSelector
                 value={createForm.routing_id}
-                onChange={(id) =>
-                  setCreateForm((c) => ({ ...c, routing_id: id, routing_version_id: "" }))
-                }
+                onChange={(id) => setCreateForm((c) => ({ ...c, routing_id: id, routing_version_id: "" }))}
                 productId={createForm.product_id}
                 placeholder={appLang === "ar" ? "اختر مسار التصنيع" : "Select routing"}
               />
             </div>
 
-            {/* ── 5. إصدار مسار التصنيع ── */}
             <div className="space-y-2">
               <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "٥. إصدار المسار" : "5. Routing Version"}
+                {appLang === "ar" ? "٥. إصدار المسار" : "5. Routing Version"} <span className="text-red-500">*</span>
               </Label>
               <RoutingVersionSelector
                 value={createForm.routing_version_id}
@@ -532,79 +582,82 @@ export function ProductionOrderListPage() {
               />
             </div>
 
-            {/* ── 6. مستودع الصرف ── */}
-            <div className="space-y-2">
+            <div className="space-y-2 sm:col-span-2">
               <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "٦. مستودع الصرف (المواد الخام)" : "6. Issue Warehouse (Raw Materials)"}
+                {copy.list.fields.plannedQuantity} <span className="text-red-500">*</span>
               </Label>
-              <WarehouseSelector
-                value={createForm.issue_warehouse_id || ""}
-                onChange={(id) => setCreateForm((c) => ({ ...c, issue_warehouse_id: id }))}
-                placeholder={appLang === "ar" ? "مستودع سحب المواد الخام" : "Raw materials warehouse"}
-              />
-            </div>
-
-            {/* ── 7. مستودع الاستلام ── */}
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "٧. مستودع الاستلام (المنتج النهائي)" : "7. Receipt Warehouse (Finished Goods)"}
-              </Label>
-              <WarehouseSelector
-                value={createForm.receipt_warehouse_id || ""}
-                onChange={(id) => setCreateForm((c) => ({ ...c, receipt_warehouse_id: id }))}
-                placeholder={appLang === "ar" ? "مستودع إضافة المنتج النهائي" : "Finished goods warehouse"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{copy.list.fields.plannedQuantity}</Label>
               <Input
                 type="number"
                 min="0"
                 step="0.0001"
                 value={String(createForm.planned_quantity)}
-                onChange={(event) =>
-                  setCreateForm((current) => ({
-                    ...current,
-                    planned_quantity: Number(event.target.value || 0),
-                  }))
-                }
+                onChange={(event) => setCreateForm((current) => ({ ...current, planned_quantity: Number(event.target.value || 0) }))}
               />
             </div>
-            <div className="space-y-2">
-              <Label>{copy.list.fields.orderUom}</Label>
-              <Input
-                value={createForm.order_uom || ""}
-                onChange={(event) => setCreateForm((current) => ({ ...current, order_uom: event.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{copy.list.fields.plannedStartAt}</Label>
-              <Input
-                type="datetime-local"
-                value={createForm.planned_start_at || ""}
-                onChange={(event) =>
-                  setCreateForm((current) => ({ ...current, planned_start_at: event.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{copy.list.fields.plannedEndAt}</Label>
-              <Input
-                type="datetime-local"
-                value={createForm.planned_end_at || ""}
-                onChange={(event) =>
-                  setCreateForm((current) => ({ ...current, planned_end_at: event.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>{copy.list.fields.notes}</Label>
-              <Textarea
-                value={createForm.notes || ""}
-                onChange={(event) => setCreateForm((current) => ({ ...current, notes: event.target.value }))}
-                rows={4}
-              />
-            </div>
+          </div>
+
+          {/* ── الإعدادات المتقدمة (قابلة للطي) ── */}
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 transition-colors"
+              onClick={() => setShowAdvanced((v) => !v)}
+            >
+              <span className="flex items-center gap-2">
+                {showAdvanced
+                  ? <ChevronUp className="h-4 w-4" />
+                  : <ChevronDown className="h-4 w-4" />}
+                {appLang === "ar" ? "إعدادات متقدمة (المستودعات، التواريخ، الملاحظات)" : "Advanced Settings (Warehouses, Dates, Notes)"}
+              </span>
+              {(createForm.issue_warehouse_id || createForm.receipt_warehouse_id || createForm.planned_start_at || createForm.planned_end_at || createForm.notes) && (
+                <Badge variant="secondary" className="text-xs">{appLang === "ar" ? "تم التعبئة" : "Filled"}</Badge>
+              )}
+            </button>
+
+            {showAdvanced && (
+              <div className="grid gap-4 sm:grid-cols-2 border-t border-slate-200 dark:border-slate-700 px-4 py-4">
+                <div className="space-y-2">
+                  <Label>{appLang === "ar" ? "مستودع الصرف (المواد الخام)" : "Issue Warehouse (Raw Materials)"}</Label>
+                  <WarehouseSelector
+                    value={createForm.issue_warehouse_id || ""}
+                    onChange={(id) => setCreateForm((c) => ({ ...c, issue_warehouse_id: id }))}
+                    placeholder={appLang === "ar" ? "مستودع سحب المواد الخام" : "Raw materials warehouse"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{appLang === "ar" ? "مستودع الاستلام (المنتج النهائي)" : "Receipt Warehouse (Finished Goods)"}</Label>
+                  <WarehouseSelector
+                    value={createForm.receipt_warehouse_id || ""}
+                    onChange={(id) => setCreateForm((c) => ({ ...c, receipt_warehouse_id: id }))}
+                    placeholder={appLang === "ar" ? "مستودع إضافة المنتج النهائي" : "Finished goods warehouse"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{copy.list.fields.plannedStartAt}</Label>
+                  <Input
+                    type="datetime-local"
+                    value={createForm.planned_start_at || ""}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, planned_start_at: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{copy.list.fields.plannedEndAt}</Label>
+                  <Input
+                    type="datetime-local"
+                    value={createForm.planned_end_at || ""}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, planned_end_at: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>{copy.list.fields.notes}</Label>
+                  <Textarea
+                    value={createForm.notes || ""}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, notes: event.target.value }))}
+                    rows={3}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="gap-2">
