@@ -515,6 +515,21 @@ export function ProductionOrderListPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
               <Label className="text-sm font-semibold">
+                {appLang === "ar" ? "٠. الفرع" : "0. Branch"}
+              </Label>
+              <BranchSelector
+                value={createForm.branch_id || ""}
+                onChange={(branchId) => setCreateForm((c) => ({
+                  ...c,
+                  branch_id: branchId,
+                  issue_warehouse_id: "",
+                  receipt_warehouse_id: "",
+                }))}
+                placeholder={appLang === "ar" ? "اختر الفرع (اختياري)" : "Select branch (optional)"}
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label className="text-sm font-semibold">
                 {appLang === "ar" ? "١. المنتج المراد تصنيعه" : "1. Product to Manufacture"} <span className="text-red-500">*</span>
               </Label>
               <ManufacturingProductSelector
@@ -622,6 +637,7 @@ export function ProductionOrderListPage() {
                     value={createForm.issue_warehouse_id || ""}
                     onChange={(id) => setCreateForm((c) => ({ ...c, issue_warehouse_id: id }))}
                     placeholder={appLang === "ar" ? "مستودع سحب المواد الخام" : "Raw materials warehouse"}
+                    branchId={createForm.branch_id || undefined}
                   />
                 </div>
                 <div className="space-y-2">
@@ -630,6 +646,7 @@ export function ProductionOrderListPage() {
                     value={createForm.receipt_warehouse_id || ""}
                     onChange={(id) => setCreateForm((c) => ({ ...c, receipt_warehouse_id: id }))}
                     placeholder={appLang === "ar" ? "مستودع إضافة المنتج النهائي" : "Finished goods warehouse"}
+                    branchId={createForm.branch_id || undefined}
                   />
                 </div>
                 <div className="space-y-2">

@@ -33,9 +33,18 @@ export async function GET(request: NextRequest) {
     
     // 3️⃣ تطبيق فلاتر الحوكمة (إلزامي) - فقط company_id و branch_id (لا warehouse_id لأننا نجلب المخازن نفسها)
     query = query.eq('company_id', governance.companyId)
-    
-    // تطبيق فلتر branch_id فقط إذا كان موجوداً
-    if (governance.branchIds.length > 0) {
+
+    // ✅ إذا طُلب branch_id محدد في URL (مثلاً من WarehouseSelector) → نطبقه فوراً بأولوية
+    const requestedBranchId = new URL(request.url).searchParams.get("branch_id")
+    if (requestedBranchId) {
+      // التحقق من أن الفرع المطلوب ضمن الفروع المسموح بها (أو أن المستخدم owner لا قيود عليه)
+      if (governance.branchIds.length === 0 || governance.branchIds.includes(requestedBranchId)) {
+        query = query.eq('branch_id', requestedBranchId)
+      } else {
+        // الفرع المطلوب خارج نطاق صلاحيات المستخدم → نطبق فلتر الحوكمة الاعتيادي
+        query = query.in('branch_id', governance.branchIds)
+      }
+    } else if (governance.branchIds.length > 0) {
       // ✅ استخدام .in() للسماح بالمخازن المرتبطة بأي من الفروع المسموح بها
       query = query.in('branch_id', governance.branchIds)
     }
