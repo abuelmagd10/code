@@ -52,16 +52,12 @@ export async function POST(
       )
     }
 
-    // إكمال أمر الإنتاج (complete_manufacturing_production_order_atomic)
-    const { error: completeError } = await admin.rpc("complete_manufacturing_production_order_atomic", {
-      p_company_id: companyId,
-      p_production_order_id: approval.production_order_id,
-      p_completed_by: user.id,
-      p_completed_quantity: approval.proposed_quantity,
-      p_completed_at: null,
-    })
-
-    if (completeError) throw completeError
+    // تحديث حالة الاعتماد في أمر الإنتاج أولاً (قبل الإكمال الذرّي، لأن الإكمال يحول الأمر لحالة terminal)
+    await admin
+      .from("manufacturing_production_orders")
+      .update({ product_receive_approval_status: "approved" })
+      .eq("id", approval.production_order_id)
+      .eq("company_id", companyId)
 
     // تحديث سجل الاعتماد
     await admin
@@ -74,12 +70,16 @@ export async function POST(
       })
       .eq("id", id)
 
-    // تحديث حالة الاعتماد في أمر الإنتاج
-    await admin
-      .from("manufacturing_production_orders")
-      .update({ product_receive_approval_status: "approved" })
-      .eq("id", approval.production_order_id)
-      .eq("company_id", companyId)
+    // إكمال أمر الإنتاج ذرّياً (يغيّر الحالة لـ completed — لذلك يجب أن يكون آخراً)
+    const { error: completeError } = await admin.rpc("complete_manufacturing_production_order_atomic", {
+      p_company_id: companyId,
+      p_production_order_id: approval.production_order_id,
+      p_completed_by: user.id,
+      p_completed_quantity: approval.proposed_quantity,
+      p_completed_at: null,
+    })
+
+    if (completeError) throw completeError
 
     // إشعار لمقدم الطلب
     try {

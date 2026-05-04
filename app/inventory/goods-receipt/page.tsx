@@ -981,6 +981,14 @@ export default function GoodsReceiptPage() {
     }
   }, [])
 
+  // تحميل العداد فور فتح الصفحة (لإظهار الأرقام في الأزرار حتى قبل التبديل للتبويب)
+  useEffect(() => {
+    if (!userContextLoading && userContext) {
+      loadMfgApprovals()
+    }
+  }, [userContextLoading, userContext, loadMfgApprovals])
+
+  // إعادة التحميل عند التبديل لتبويب التصنيع
   useEffect(() => {
     if (receiptType === "manufacturing" && activeTab === "pending") {
       loadMfgApprovals()
