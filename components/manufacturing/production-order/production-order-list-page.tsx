@@ -19,6 +19,7 @@ import {
   RoutingSelector,
   RoutingVersionSelector,
   WarehouseSelector,
+  BranchSelector,
 } from "@/components/manufacturing/manufacturing-selectors"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
@@ -284,18 +285,18 @@ export function ProductionOrderListPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>{copy.list.branchId}</Label>
-                  <Input
+                  <BranchSelector
                     value={filterForm.branchId || ""}
-                    onChange={(event) => setFilterForm((current) => ({ ...current, branchId: event.target.value }))}
-                    placeholder={copy.common.noValue}
+                    onChange={(branchId) => setFilterForm((current) => ({ ...current, branchId }))}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>{copy.list.productId}</Label>
-                  <Input
+                  <ManufacturingProductSelector
                     value={filterForm.productId || ""}
-                    onChange={(event) => setFilterForm((current) => ({ ...current, productId: event.target.value }))}
-                    placeholder={copy.common.noValue}
+                    onChange={(productId) => setFilterForm((current) => ({ ...current, productId }))}
+                    productType="manufactured"
+                    placeholder="اختر المنتج..."
                   />
                 </div>
                 <div className="space-y-2">

@@ -42,6 +42,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { useAccess } from "@/lib/access-context"
 import {
+  BomSelector,
+  BomVersionSelector,
+  RoutingSelector,
+  RoutingVersionSelector,
+  WarehouseSelector,
+} from "@/components/manufacturing/manufacturing-selectors"
+import {
   type AppLang,
   type ProductionOrderOperation,
   PRODUCTION_ORDER_PROGRESS_STATUSES,
@@ -183,6 +190,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
 
   const [appLang, setAppLang] = useState<AppLang>("ar")
   const [snapshot, setSnapshot] = useState<ProductionOrderSnapshot | null>(null)
+  const [branchName, setBranchName] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [savingHeader, setSavingHeader] = useState(false)
   const [runningAction, setRunningAction] = useState<string | null>(null)
@@ -284,6 +292,16 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
     if (!canRead) return
     loadSnapshot()
   }, [canRead, loadSnapshot])
+
+  // جلب اسم الفرع عند تحميل الطلب
+  useEffect(() => {
+    const branchId = order?.branch_id
+    if (!branchId) { setBranchName(null); return }
+    fetch(`/api/branches/${branchId}`)
+      .then((r) => r.json())
+      .then((data) => setBranchName(data?.branch?.name || null))
+      .catch(() => setBranchName(null))
+  }, [order?.branch_id])
 
   const handleSaveHeader = async () => {
     if (!order) return
@@ -674,7 +692,11 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                           </div>
                           <div className="space-y-1" data-ai-help="manufacturing_production_order_detail.completed_quantity">
                             <div className="text-xs uppercase tracking-wide text-slate-500">{copy.detail.branchId}</div>
-                            <div className="font-mono text-sm text-slate-700">{order.branch_id}</div>
+                            <div className="text-sm text-slate-900 font-medium">
+                              {branchName || (
+                                <span className="font-mono text-slate-500">{order.branch_id.slice(0, 8)}…</span>
+                              )}
+                            </div>
                           </div>
                         </CardContent>
                       </Card>
@@ -691,49 +713,65 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                           <div className="grid gap-4 md:grid-cols-2">
                             <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
                               <Label>{copy.list.fields.bomId}</Label>
-                              <Input
+                              <BomSelector
                                 value={headerForm.bom_id}
-                                onChange={(event) => setHeaderForm((current) => ({ ...current, bom_id: event.target.value }))}
+                                onChange={(bomId) =>
+                                  setHeaderForm((current) => ({ ...current, bom_id: bomId, bom_version_id: "" }))
+                                }
+                                productId={order?.product_id}
                                 disabled={!headerEditable}
                               />
                             </div>
                             <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
                               <Label>{copy.list.fields.bomVersionId}</Label>
-                              <Input
+                              <BomVersionSelector
                                 value={headerForm.bom_version_id}
-                                onChange={(event) =>
-                                  setHeaderForm((current) => ({ ...current, bom_version_id: event.target.value }))
+                                onChange={(versionId) =>
+                                  setHeaderForm((current) => ({ ...current, bom_version_id: versionId }))
                                 }
+                                bomId={headerForm.bom_id}
                                 disabled={!headerEditable}
                               />
                             </div>
                             <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.issue_warehouse">
                               <Label>{copy.detail.issueWarehouseId}</Label>
-                              <Input
+                              <WarehouseSelector
                                 value={headerForm.issue_warehouse_id}
-                                onChange={(event) =>
-                                  setHeaderForm((current) => ({ ...current, issue_warehouse_id: event.target.value }))
+                                onChange={(warehouseId) =>
+                                  setHeaderForm((current) => ({ ...current, issue_warehouse_id: warehouseId }))
                                 }
+                                branchId={order?.branch_id}
                                 disabled={!headerEditable}
                               />
                             </div>
                             <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.receipt_warehouse">
                               <Label>{copy.detail.receiptWarehouseId}</Label>
-                              <Input
+                              <WarehouseSelector
                                 value={headerForm.receipt_warehouse_id}
-                                onChange={(event) =>
-                                  setHeaderForm((current) => ({ ...current, receipt_warehouse_id: event.target.value }))
+                                onChange={(warehouseId) =>
+                                  setHeaderForm((current) => ({ ...current, receipt_warehouse_id: warehouseId }))
                                 }
+                                branchId={order?.branch_id}
                                 disabled={!headerEditable}
                               />
                             </div>
                             <div className="space-y-2">
                               <Label>{copy.detail.orderUom}</Label>
-                              <Input
-                                value={headerForm.order_uom}
-                                onChange={(event) => setHeaderForm((current) => ({ ...current, order_uom: event.target.value }))}
+                              <Select
+                                value={headerForm.order_uom || "__none__"}
+                                onValueChange={(v) => setHeaderForm((current) => ({ ...current, order_uom: v === "__none__" ? "" : v }))}
                                 disabled={!headerEditable}
-                              />
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="اختر الوحدة..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">—</SelectItem>
+                                  {["قطعة", "كيلوغرام", "غرام", "لتر", "مل", "متر", "سنتيمتر", "علبة", "كرتون", "دستة", "piece", "kg", "g", "liter", "ml", "meter", "box", "carton"].map((u) => (
+                                    <SelectItem key={u} value={u}>{u}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                             <div className="space-y-2">
                               <Label>{copy.detail.plannedStartAt}</Label>
@@ -977,34 +1015,42 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
               <Label>{copy.list.fields.bomId}</Label>
-              <Input
+              <BomSelector
                 value={regenerateForm.bom_id}
-                onChange={(event) => setRegenerateForm((current) => ({ ...current, bom_id: event.target.value }))}
+                onChange={(bomId) =>
+                  setRegenerateForm((current) => ({ ...current, bom_id: bomId, bom_version_id: "" }))
+                }
+                productId={order?.product_id}
               />
             </div>
             <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
               <Label>{copy.list.fields.bomVersionId}</Label>
-              <Input
+              <BomVersionSelector
                 value={regenerateForm.bom_version_id}
-                onChange={(event) =>
-                  setRegenerateForm((current) => ({ ...current, bom_version_id: event.target.value }))
+                onChange={(versionId) =>
+                  setRegenerateForm((current) => ({ ...current, bom_version_id: versionId }))
                 }
+                bomId={regenerateForm.bom_id}
               />
             </div>
             <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.routing">
               <Label>{copy.list.fields.routingId}</Label>
-              <Input
+              <RoutingSelector
                 value={regenerateForm.routing_id}
-                onChange={(event) => setRegenerateForm((current) => ({ ...current, routing_id: event.target.value }))}
+                onChange={(routingId) =>
+                  setRegenerateForm((current) => ({ ...current, routing_id: routingId, routing_version_id: "" }))
+                }
+                productId={order?.product_id}
               />
             </div>
             <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.routing">
               <Label>{copy.list.fields.routingVersionId}</Label>
-              <Input
+              <RoutingVersionSelector
                 value={regenerateForm.routing_version_id}
-                onChange={(event) =>
-                  setRegenerateForm((current) => ({ ...current, routing_version_id: event.target.value }))
+                onChange={(versionId) =>
+                  setRegenerateForm((current) => ({ ...current, routing_version_id: versionId }))
                 }
+                routingId={regenerateForm.routing_id}
               />
             </div>
             <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.planned_quantity">
@@ -1021,27 +1067,39 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
             </div>
             <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.issue_warehouse">
               <Label>{copy.detail.orderUom}</Label>
-              <Input
-                value={regenerateForm.order_uom}
-                onChange={(event) => setRegenerateForm((current) => ({ ...current, order_uom: event.target.value }))}
-              />
+              <Select
+                value={regenerateForm.order_uom || "__none__"}
+                onValueChange={(v) => setRegenerateForm((current) => ({ ...current, order_uom: v === "__none__" ? "" : v }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="اختر الوحدة..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">—</SelectItem>
+                  {["قطعة", "كيلوغرام", "غرام", "لتر", "مل", "متر", "سنتيمتر", "علبة", "كرتون", "دستة", "piece", "kg", "g", "liter", "ml", "meter", "box", "carton"].map((u) => (
+                    <SelectItem key={u} value={u}>{u}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.receipt_warehouse">
               <Label>{copy.detail.issueWarehouseId}</Label>
-              <Input
+              <WarehouseSelector
                 value={regenerateForm.issue_warehouse_id}
-                onChange={(event) =>
-                  setRegenerateForm((current) => ({ ...current, issue_warehouse_id: event.target.value }))
+                onChange={(warehouseId) =>
+                  setRegenerateForm((current) => ({ ...current, issue_warehouse_id: warehouseId }))
                 }
+                branchId={order?.branch_id}
               />
             </div>
             <div className="space-y-2">
               <Label>{copy.detail.receiptWarehouseId}</Label>
-              <Input
+              <WarehouseSelector
                 value={regenerateForm.receipt_warehouse_id}
-                onChange={(event) =>
-                  setRegenerateForm((current) => ({ ...current, receipt_warehouse_id: event.target.value }))
+                onChange={(warehouseId) =>
+                  setRegenerateForm((current) => ({ ...current, receipt_warehouse_id: warehouseId }))
                 }
+                branchId={order?.branch_id}
               />
             </div>
             <div className="space-y-2">

@@ -573,6 +573,103 @@ export function RoutingVersionSelector({
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Branch Selector
+// ─────────────────────────────────────────────────────────────────
+interface BranchOption {
+  id: string
+  name?: string | null
+  code?: string | null
+}
+
+interface BranchSelectorProps {
+  value: string
+  onChange: (branchId: string) => void
+  placeholder?: string
+  disabled?: boolean
+}
+
+export function BranchSelector({
+  value,
+  onChange,
+  placeholder = "اختر الفرع...",
+  disabled = false,
+}: BranchSelectorProps) {
+  const [open, setOpen] = useState(false)
+  const [branches, setBranches] = useState<BranchOption[]>([])
+  const [loading, setLoading] = useState(false)
+  const fetchedRef = useRef(false)
+
+  const loadBranches = useCallback(async () => {
+    if (loading) return
+    setLoading(true)
+    try {
+      const r = await fetch(`/api/branches`)
+      const data = await r.json()
+      setBranches(Array.isArray(data?.branches) ? data.branches : [])
+    } catch {
+      setBranches([])
+    } finally {
+      setLoading(false)
+    }
+  }, [loading])
+
+  useEffect(() => {
+    if (open && !fetchedRef.current) {
+      fetchedRef.current = true
+      loadBranches()
+    }
+  }, [open, loadBranches])
+
+  const selected = branches.find((b) => b.id === value) ?? null
+  const triggerLabel = value
+    ? selected ? `${selected.code ? `[${selected.code}] ` : ""}${selected.name || value}` : value.slice(0, 8) + "…"
+    : placeholder
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          disabled={disabled}
+          className={cn("w-full justify-between font-normal text-start", !value && "text-muted-foreground")}
+        >
+          <span className="truncate">{triggerLabel}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[300px] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandList>
+            {loading ? (
+              <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin" /></div>
+            ) : branches.length === 0 ? (
+              <div className="py-4 px-3 text-sm text-center text-muted-foreground">لا توجد فروع</div>
+            ) : (
+              <CommandGroup>
+                <CommandItem key="__all__" value="" onSelect={() => { onChange(""); setOpen(false) }}>
+                  <Check className={cn("mr-2 h-4 w-4", !value ? "opacity-100" : "opacity-0")} />
+                  <span className="text-sm text-muted-foreground">الكل</span>
+                </CommandItem>
+                {branches.map((b) => (
+                  <CommandItem key={b.id} value={b.id} onSelect={() => { onChange(b.id === value ? "" : b.id); setOpen(false) }}>
+                    <Check className={cn("mr-2 h-4 w-4", value === b.id ? "opacity-100" : "opacity-0")} />
+                    <div className="flex flex-col">
+                      <span className="font-medium text-sm">{b.name || b.id}</span>
+                      {b.code && <span className="text-xs text-muted-foreground">{b.code}</span>}
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Warehouse Selector (generic)
 // ─────────────────────────────────────────────────────────────────
 interface WarehouseOption {
