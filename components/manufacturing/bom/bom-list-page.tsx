@@ -36,7 +36,7 @@ import {
   getVersionStatusLabel,
   getVersionStatusVariant,
 } from "@/lib/manufacturing/bom-ui"
-
+import { readAppLanguage, getTextDirection, type AppLang } from "@/lib/manufacturing/manufacturing-ui"
 import { ManufacturingGuide } from "@/components/manufacturing/manufacturing-guide"
 
 const EMPTY_CREATE_FORM: BomCreatePayload = {
@@ -57,6 +57,7 @@ export function BomListPage() {
   const canRead = accessReady ? canAction("manufacturing_boms", "read") : false
   const canWrite = accessReady ? canAction("manufacturing_boms", "write") : false
 
+  const [lang, setLang] = useState<AppLang>("ar")
   const [boms, setBoms] = useState<BomListItem[]>([])
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
@@ -78,6 +79,15 @@ export function BomListPage() {
     q: "",
   })
   const [createForm, setCreateForm] = useState<BomCreatePayload>(EMPTY_CREATE_FORM)
+
+  // ── Language ──
+  useEffect(() => {
+    const handler = () => setLang(readAppLanguage())
+    handler()
+    window.addEventListener("app_language_changed", handler)
+    window.addEventListener("storage", (e) => { if (e.key === "app_language") handler() })
+    return () => window.removeEventListener("app_language_changed", handler)
+  }, [])
 
   const branchMap = useMemo(
     () => Object.fromEntries(branches.map((branch) => [branch.id, branch])),
@@ -127,13 +137,13 @@ export function BomListPage() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذّر تحميل البيانات المرجعية",
-        description: error?.message || "حدث خطأ أثناء تحميل الفروع والمنتجات",
+        title: lang === "en" ? "Failed to load reference data" : "تعذّر تحميل البيانات المرجعية",
+        description: error?.message || (lang === "en" ? "Error loading branches and products" : "حدث خطأ أثناء تحميل الفروع والمنتجات"),
       })
     } finally {
       setLookupsLoading(false)
     }
-  }, [toast])
+  }, [toast, lang])
 
   const loadBoms = useCallback(async (filters: BomListFilters) => {
     try {
@@ -143,14 +153,14 @@ export function BomListPage() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذّر تحميل هياكل المواد",
-        description: error?.message || "حدث خطأ أثناء تحميل القائمة",
+        title: lang === "en" ? "Failed to load BOMs" : "تعذّر تحميل قوائم المواد",
+        description: error?.message || (lang === "en" ? "Error loading list" : "حدث خطأ أثناء تحميل القائمة"),
       })
       setBoms([])
     } finally {
       setLoading(false)
     }
-  }, [toast])
+  }, [toast, lang])
 
   useEffect(() => {
     loadLookups()
@@ -186,8 +196,10 @@ export function BomListPage() {
     if (!createForm.product_id || !createForm.bom_code.trim() || !createForm.bom_name.trim()) {
       toast({
         variant: "destructive",
-        title: "البيانات الأساسية غير مكتملة",
-        description: "يجب تحديد المنتج وكود قائمة المواد واسمها قبل الإنشاء.",
+        title: lang === "en" ? "Missing required fields" : "البيانات الأساسية غير مكتملة",
+        description: lang === "en"
+          ? "Product, BOM code and name are required."
+          : "يجب تحديد المنتج ورمز قائمة المواد واسمها قبل الإنشاء.",
       })
       return
     }
@@ -196,12 +208,10 @@ export function BomListPage() {
     if (selectedProduct && selectedProduct.product_type !== "manufactured") {
       toast({
         variant: "destructive",
-        title: "المنتج غير مؤهل لإنشاء قائمة مواد",
-        description: `المنتج "${selectedProduct.sku || selectedProduct.id}" تصنيفه الحالي: "${
-          selectedProduct.product_type === 'purchased' ? 'مشتريات' :
-          selectedProduct.product_type === 'raw_material' ? 'مادة خام' :
-          selectedProduct.product_type || 'غير محدد'
-        }" — لإنشاء قائمة مواد يجب أن يكون تصنيفه "تصنيعي". افتح صفحة المنتجات، اضغط على أيقونة التعديل للمنتج، وغيّر حقل "التصنيف التفصيلي" إلى تصنيعي.`,
+        title: lang === "en" ? "Product not eligible for BOM" : "المنتج غير مؤهل لإنشاء قائمة مواد",
+        description: lang === "en"
+          ? `Product type must be "Manufactured". Change it from the Products page.`
+          : `يجب أن يكون نوع المنتج "تصنيعي" — غيّر ذلك من صفحة المنتجات.`,
       })
       return
     }
@@ -216,8 +226,10 @@ export function BomListPage() {
       })
 
       toast({
-        title: "✅ تم إنشاء قائمة المواد بنجاح",
-        description: `"${created.bom_code}" جاهزة — أضف الآن إصداراً وحدد مكونات التصنيع.`,
+        title: lang === "en" ? "✅ BOM created successfully" : "✅ تم إنشاء قائمة المواد بنجاح",
+        description: lang === "en"
+          ? `"${created.bom_code}" is ready — now add a version and define components.`
+          : `"${created.bom_code}" جاهزة — أضف الآن إصداراً وحدد مكونات التصنيع.`,
       })
 
       setCreateOpen(false)
@@ -226,8 +238,8 @@ export function BomListPage() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذّر إنشاء هيكل المواد",
-        description: error?.message || "حدث خطأ أثناء إنشاء السجل",
+        title: lang === "en" ? "Failed to create BOM" : "تعذّر إنشاء قائمة المواد",
+        description: error?.message || (lang === "en" ? "An error occurred" : "حدث خطأ أثناء إنشاء السجل"),
       })
     } finally {
       setCreating(false)
@@ -249,7 +261,7 @@ export function BomListPage() {
 
   return (
     <PageGuard resource="manufacturing_boms">
-      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+      <div dir={getTextDirection(lang)} className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
           <CompanyHeader />
 
@@ -258,24 +270,26 @@ export function BomListPage() {
             currentStep="bom"
             pageInfo={{
               titleAr: "قوائم المواد — وصفة التصنيع",
-              titleEn: "Bills of Materials — The Recipe",
+              titleEn: "Bills of Materials — The Manufacturing Recipe",
               descAr: "قائمة المواد هي الوصفة التي تحدد مكونات كل منتج تصنيعي. قبل أن تبدأ أي إنتاج، يجب أن يعرف النظام: ماذا يحتوي المنتج وبأي كميات.",
-              descEn: "A Bill of Materials is the recipe that defines what components go into each manufactured product.",
+              descEn: "A Bill of Materials is the recipe that defines what components go into each manufactured product — and in what quantities.",
               whenAr: "استخدم هذه الصفحة عند إضافة منتج تصنيعي جديد تريد النظام أن يعرف مكوناته. كل منتج تصنيعي يحتاج قائمة مواد واحدة على الأقل.",
-              whenEn: "Use this page when adding a new manufactured product and defining its components.",
+              whenEn: "Use this page when adding a new manufactured product and defining its raw material components.",
               nextStepId: "bom_version",
             }}
           />
 
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
             <ERPPageHeader
-              title="قوائم المواد (وصفات التصنيع)"
-              description="كل منتج تصنيعي يحتاج قائمة مواد تحدد مكوناته — هذه هي الخطوة الثانية في دورة التصنيع"
+              title={lang === "en" ? "Bills of Materials (BOM)" : "قوائم المواد (وصفات التصنيع)"}
+              description={lang === "en"
+                ? "Each manufactured product needs a BOM to define its components."
+                : "كل منتج تصنيعي يحتاج قائمة مواد تحدد مكوناته — ابدأ بإنشاء قائمة وأضف لها الإصدار والمكونات"}
               variant="list"
               extra={
                 <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
                   <Factory className="h-3.5 w-3.5" />
-                  مديول التصنيع
+                  {lang === "en" ? "Manufacturing" : "التصنيع"}
                 </div>
               }
               actions={
@@ -287,11 +301,11 @@ export function BomListPage() {
                     className="gap-2"
                   >
                     <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                    تحديث
+                    {lang === "en" ? "Refresh" : "تحديث"}
                   </Button>
                   <Button onClick={handleOpenCreate} disabled={!canWrite || lookupsLoading} className="gap-2">
                     <Plus className="h-4 w-4" />
-                    إنشاء قائمة مواد جديدة
+                    {lang === "en" ? "New BOM" : "قائمة مواد جديدة"}
                   </Button>
                 </>
               }
@@ -299,7 +313,7 @@ export function BomListPage() {
           </div>
 
         <FilterContainer
-          title="الفلاتر"
+          title={lang === "en" ? "Filters" : "الفلاتر"}
           activeCount={activeFilterCount}
           onClear={() => {
             setFilterForm({ branchId: "", bomUsage: "all", isActive: "all", q: "" })
@@ -309,28 +323,28 @@ export function BomListPage() {
         >
           <div className="grid gap-3 lg:grid-cols-[2fr,1fr,1fr,1fr,auto]">
                 <div className="space-y-2">
-                  <Label>بحث سريع</Label>
+                  <Label>{lang === "en" ? "Quick Search" : "بحث سريع"}</Label>
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <Input
                       value={filterForm.q || ""}
                       onChange={(event) => setFilterForm((current) => ({ ...current, q: event.target.value }))}
-                      placeholder="ابحث بالكود أو الاسم"
+                      placeholder={lang === "en" ? "Search by code or name" : "ابحث بالرمز أو الاسم"}
                       className="pl-9"
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>الفرع</Label>
+                  <Label>{lang === "en" ? "Branch" : "الفرع"}</Label>
                   <Select
                     value={filterForm.branchId || "all"}
                     onValueChange={(value) => setFilterForm((current) => ({ ...current, branchId: value === "all" ? "" : value }))}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="كل الفروع" />
+                      <SelectValue placeholder={lang === "en" ? "All branches" : "كل الفروع"} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">كل الفروع</SelectItem>
+                      <SelectItem value="all">{lang === "en" ? "All branches" : "كل الفروع"}</SelectItem>
                       {branches.map((branch) => (
                         <SelectItem key={branch.id} value={branch.id}>
                           {buildBranchLabel(branch)}
@@ -340,44 +354,44 @@ export function BomListPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>نوع الهيكل</Label>
+                  <Label>{lang === "en" ? "Usage Type" : "نوع الاستخدام"}</Label>
                   <Select
                     value={filterForm.bomUsage || "all"}
                     onValueChange={(value) => setFilterForm((current) => ({ ...current, bomUsage: value as BomListFilters["bomUsage"] }))}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="الكل" />
+                      <SelectValue placeholder={lang === "en" ? "All" : "الكل"} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">الكل</SelectItem>
+                      <SelectItem value="all">{lang === "en" ? "All" : "الكل"}</SelectItem>
                       {BOM_USAGE_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
-                          {option.labelAr}
+                          {lang === "en" ? option.label : option.labelAr}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>الحالة</Label>
+                  <Label>{lang === "en" ? "Status" : "الحالة"}</Label>
                   <Select
                     value={filterForm.isActive || "all"}
                     onValueChange={(value) => setFilterForm((current) => ({ ...current, isActive: value as BomListFilters["isActive"] }))}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="الكل" />
+                      <SelectValue placeholder={lang === "en" ? "All" : "الكل"} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">الكل</SelectItem>
-                      <SelectItem value="true">نشط</SelectItem>
-                      <SelectItem value="false">غير نشط</SelectItem>
+                      <SelectItem value="all">{lang === "en" ? "All" : "الكل"}</SelectItem>
+                      <SelectItem value="true">{lang === "en" ? "Active" : "نشط"}</SelectItem>
+                      <SelectItem value="false">{lang === "en" ? "Inactive" : "غير نشط"}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="flex items-end">
                   <Button onClick={handleApplyFilters} className="w-full gap-2">
                     <Search className="h-4 w-4" />
-                    تطبيق
+                    {lang === "en" ? "Apply" : "تطبيق"}
                   </Button>
                 </div>
           </div>
@@ -390,7 +404,7 @@ export function BomListPage() {
                 <Factory className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
               </div>
               <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">إجمالي الهياكل المعروضة</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{lang === "en" ? "Total BOMs" : "إجمالي قوائم المواد"}</p>
                 <p className="text-xl font-bold text-gray-900 dark:text-white">{boms.length}</p>
               </div>
             </div>
@@ -401,7 +415,7 @@ export function BomListPage() {
                 <Layers3 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
               </div>
               <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">إجمالي النسخ المرتبطة</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{lang === "en" ? "Total Versions" : "إجمالي الإصدارات"}</p>
                 <p className="text-xl font-bold text-gray-900 dark:text-white">
                   {boms.reduce((sum, bom) => sum + bom.versions.length, 0)}
                 </p>
@@ -414,7 +428,7 @@ export function BomListPage() {
                 <Package2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               </div>
               <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">الهياكل النشطة حاليًا</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{lang === "en" ? "Active BOMs" : "قوائم المواد النشطة"}</p>
                 <p className="text-xl font-bold text-gray-900 dark:text-white">
                   {boms.filter((bom) => bom.is_active).length}
                 </p>
@@ -427,13 +441,13 @@ export function BomListPage() {
           <Table>
             <TableHeader>
                     <TableRow>
-                      <TableHead>الكود / الاسم</TableHead>
-                      <TableHead>المنتج</TableHead>
-                      <TableHead>الفرع</TableHead>
-                      <TableHead>الاستخدام</TableHead>
-                      <TableHead>النسخة البارزة</TableHead>
-                      <TableHead>آخر تحديث</TableHead>
-                      <TableHead className="text-left">إجراء</TableHead>
+                      <TableHead>{lang === "en" ? "Code / Name" : "الرمز / الاسم"}</TableHead>
+                      <TableHead>{lang === "en" ? "Manufactured Product" : "المنتج المصنَّع"}</TableHead>
+                      <TableHead>{lang === "en" ? "Branch" : "الفرع"}</TableHead>
+                      <TableHead>{lang === "en" ? "Usage" : "الاستخدام"}</TableHead>
+                      <TableHead>{lang === "en" ? "Latest Version" : "أحدث إصدار"}</TableHead>
+                      <TableHead>{lang === "en" ? "Last Updated" : "آخر تحديث"}</TableHead>
+                      <TableHead className="text-left">{lang === "en" ? "Action" : "إجراء"}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -441,7 +455,7 @@ export function BomListPage() {
                       Array.from({ length: 4 }).map((_, index) => (
                         <TableRow key={`loading-${index}`}>
                           <TableCell colSpan={7} className="py-6 text-center text-slate-500">
-                            جاري تحميل بيانات الهياكل...
+                            {lang === "en" ? "Loading BOMs..." : "جاري تحميل قوائم المواد..."}
                           </TableCell>
                         </TableRow>
                       ))
@@ -450,9 +464,11 @@ export function BomListPage() {
                         <TableCell colSpan={7} className="py-12 text-center">
                           <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-center">
                             <Factory className="h-10 w-10 text-slate-300" />
-                            <div className="text-lg font-medium text-slate-800">لا توجد هياكل مطابقة</div>
+                            <div className="text-lg font-medium text-slate-800">{lang === "en" ? "No BOMs found" : "لا توجد قوائم مواد مطابقة"}</div>
                             <p className="text-sm leading-6 text-slate-500">
-                              يمكنك تعديل الفلاتر الحالية أو إنشاء هيكل جديد من الزر أعلى الصفحة.
+                              {lang === "en"
+                                ? "Adjust filters or create a new BOM using the button above."
+                                : "يمكنك تعديل الفلاتر الحالية أو إنشاء قائمة جديدة من الزر أعلى الصفحة."}
                             </p>
                           </div>
                         </TableCell>
@@ -470,9 +486,9 @@ export function BomListPage() {
                                 <div className="text-sm text-slate-600">{bom.bom_name}</div>
                                 <div className="flex flex-wrap gap-2 pt-1">
                                   <Badge variant={bom.is_active ? "default" : "outline"}>
-                                    {bom.is_active ? "نشط" : "غير نشط"}
+                                    {bom.is_active ? (lang === "en" ? "Active" : "نشط") : (lang === "en" ? "Inactive" : "غير نشط")}
                                   </Badge>
-                                  <Badge variant="outline">{bom.versions.length} نسخة</Badge>
+                                  <Badge variant="outline">{bom.versions.length} {lang === "en" ? "ver." : "إصدار"}</Badge>
                                 </div>
                               </div>
                             </TableCell>
@@ -500,11 +516,11 @@ export function BomListPage() {
                                     <Badge variant={getVersionStatusVariant(featuredVersion.status)}>
                                       {getVersionStatusLabel(featuredVersion.status)}
                                     </Badge>
-                                    {featuredVersion.is_default ? <Badge variant="outline">افتراضية</Badge> : null}
+                                    {featuredVersion.is_default ? <Badge variant="outline">{lang === "en" ? "Default" : "افتراضي"}</Badge> : null}
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-sm text-slate-400">لا توجد نسخ بعد</span>
+                                <span className="text-sm text-slate-400">{lang === "en" ? "No versions yet" : "لا توجد إصدارات بعد"}</span>
                               )}
                             </TableCell>
                             <TableCell className="align-top text-sm text-slate-600">
@@ -516,7 +532,7 @@ export function BomListPage() {
                                 className="gap-2"
                                 onClick={() => router.push(`/manufacturing/boms/${bom.id}`)}
                               >
-                                فتح
+                                {lang === "en" ? "Open" : "فتح"}
                                 <ArrowUpRight className="h-4 w-4" />
                               </Button>
                             </TableCell>
@@ -531,14 +547,16 @@ export function BomListPage() {
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>إنشاء قائمة مواد جديدة</DialogTitle>
+              <DialogTitle>{lang === "en" ? "New Bill of Materials" : "إنشاء قائمة مواد جديدة"}</DialogTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                قائمة المواد هي "وصفة" منتجك — حدد المنتج النهائي أولاً، ثم ستضيف مكوناته في الخطوة التالية.
+                {lang === "en"
+                  ? "A BOM is your product's \"recipe\" — select the finished product, then add its raw material components in the next step."
+                  : "قائمة المواد هي \"وصفة\" منتجك — حدد المنتج النهائي أولاً، ثم ستضيف مكوناته في الخطوة التالية."}
               </p>
             </DialogHeader>
             <div className="grid gap-4 py-2 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>الفرع</Label>
+                <Label>{lang === "en" ? "Branch" : "الفرع"}</Label>
                 <Select
                   value={createForm.branch_id || ""}
                   onValueChange={(value) =>
@@ -562,28 +580,23 @@ export function BomListPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>المنتج المالك</Label>
+                <Label>{lang === "en" ? "Manufactured Product" : "المنتج المصنَّع"}</Label>
                 <Select
                   value={createForm.product_id || ""}
                   onValueChange={(value) => setCreateForm((current) => ({ ...current, product_id: value }))}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="اختر المنتج النهائي" />
+                    <SelectValue placeholder={lang === "en" ? "Select finished product" : "اختر المنتج النهائي"} />
                   </SelectTrigger>
                   <SelectContent>
                     {ownerProductOptions.length === 0 ? (
                       <div className="py-3 px-2 text-sm text-muted-foreground text-center">
-                        لا توجد منتجات متاحة للفرع المختار
+                        {lang === "en" ? "No products available for this branch" : "لا توجد منتجات متاحة للفرع المختار"}
                       </div>
                     ) : (
                       ownerProductOptions.map((product) => (
                         <SelectItem key={product.id} value={product.id}>
-                          <span className="flex items-center gap-2">
-                            {buildProductLabel(product)}
-                            {product.product_type === "manufactured" && (
-                              <Badge variant="default" className="text-xs py-0 px-1">مؤهل</Badge>
-                            )}
-                          </span>
+                          {buildProductLabel(product)}
                         </SelectItem>
                       ))
                     )}
@@ -591,23 +604,17 @@ export function BomListPage() {
                 </Select>
                 {selectedProduct && selectedProduct.product_type !== "manufactured" && (
                   <p className="text-xs text-destructive leading-relaxed">
-                    ⚠️ هذا المنتج نوعه: &quot;{
-                      selectedProduct.product_type === 'purchased' ? 'مشتريات' :
-                      selectedProduct.product_type === 'raw_material' ? 'مادة خام' :
-                      selectedProduct.product_type || 'غير محدد'
-                    }&quot; — لإنشاء قائمة مواد يجب أن يكون نوعه <strong>تصنيعي</strong>.
-                    <br />
-                    <span className="text-muted-foreground">
-                      انتقل إلى صفحة المنتجات ← اضغط أيقونة التعديل ✏️ للمنتج ← غيّر &quot;التصنيف التفصيلي&quot; إلى تصنيعي.
-                    </span>
+                    ⚠️ {lang === "en"
+                      ? `Product type must be "Manufactured". Change it from the Products page.`
+                      : `يجب أن يكون نوع المنتج "تصنيعي" — غيّر ذلك من صفحة المنتجات.`}
                   </p>
                 )}
                 {selectedProduct?.product_type === "manufactured" && (
-                  <p className="text-xs text-emerald-600">✓ منتج مؤهل لإنشاء BOM</p>
+                  <p className="text-xs text-emerald-600">✓ {lang === "en" ? "Eligible for BOM" : "منتج مؤهل لقائمة المواد"}</p>
                 )}
               </div>
               <div className="space-y-2">
-                <Label>كود الهيكل</Label>
+                <Label>{lang === "en" ? "BOM Code" : "رمز قائمة المواد"}</Label>
                 <Input
                   value={createForm.bom_code}
                   onChange={(event) => setCreateForm((current) => ({ ...current, bom_code: event.target.value }))}
@@ -615,15 +622,15 @@ export function BomListPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>اسم الهيكل</Label>
+                <Label>{lang === "en" ? "BOM Name" : "اسم قائمة المواد"}</Label>
                 <Input
                   value={createForm.bom_name}
                   onChange={(event) => setCreateForm((current) => ({ ...current, bom_name: event.target.value }))}
-                  placeholder="مثال: هيكل إنتاج المنتجات النهائية"
+                  placeholder={lang === "en" ? "e.g. Finished Product BOM" : "مثال: وصفة تصنيع المنتج النهائي"}
                 />
               </div>
               <div className="space-y-2">
-                <Label>الاستخدام</Label>
+                <Label>{lang === "en" ? "Usage Type" : "نوع الاستخدام"}</Label>
                 <Select
                   value={createForm.bom_usage}
                   onValueChange={(value) => setCreateForm((current) => ({ ...current, bom_usage: value as BomCreatePayload["bom_usage"] }))}
@@ -634,7 +641,7 @@ export function BomListPage() {
                   <SelectContent>
                     {BOM_USAGE_OPTIONS.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
-                        {option.labelAr}
+                        {lang === "en" ? option.label : option.labelAr}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -642,8 +649,8 @@ export function BomListPage() {
               </div>
               <div className="flex items-center justify-between rounded-xl border px-4 py-3">
                 <div className="space-y-1">
-                  <div className="font-medium text-slate-900">تفعيل الهيكل</div>
-                  <div className="text-sm text-slate-500">يمكن تعطيل السجل لاحقًا من صفحة التفاصيل.</div>
+                  <div className="font-medium text-slate-900">{lang === "en" ? "Active" : "تفعيل قائمة المواد"}</div>
+                  <div className="text-sm text-slate-500">{lang === "en" ? "Can be deactivated later from details." : "يمكن تعطيل السجل لاحقًا من صفحة التفاصيل."}</div>
                 </div>
                 <Switch
                   checked={createForm.is_active}
@@ -651,20 +658,20 @@ export function BomListPage() {
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label>الوصف</Label>
+                <Label>{lang === "en" ? "Description (optional)" : "الوصف (اختياري)"}</Label>
                 <Textarea
                   value={createForm.description || ""}
                   onChange={(event) => setCreateForm((current) => ({ ...current, description: event.target.value }))}
-                  placeholder="ملاحظات عامة عن الغرض من هذا الهيكل أو طريقة استخدامه."
+                  placeholder={lang === "en" ? "General notes about this BOM..." : "ملاحظات عامة عن الغرض من هذه القائمة أو طريقة استخدامها."}
                 />
               </div>
             </div>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setCreateOpen(false)}>
-                إلغاء
+                {lang === "en" ? "Cancel" : "إلغاء"}
               </Button>
               <Button onClick={handleCreate} disabled={creating || lookupsLoading}>
-                {creating ? "جاري الإنشاء..." : "إنشاء قائمة المواد"}
+                {creating ? (lang === "en" ? "Creating..." : "جاري الإنشاء...") : (lang === "en" ? "Create BOM" : "إنشاء قائمة المواد")}
               </Button>
             </DialogFooter>
           </DialogContent>

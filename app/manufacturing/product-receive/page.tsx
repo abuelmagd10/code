@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowUpRight, CheckCircle2, PackageCheck, RefreshCw } from "lucide-react"
+import { ArrowUpRight, Clock, PackageCheck, RefreshCw, SendHorizontal, XCircle } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import { CompanyHeader } from "@/components/company-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,13 +11,13 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
 import {
   type AppLang,
   type ProductionOrderListItem,
   buildProductLabel,
-  completeProductionOrder,
   fetchProductionOrderList,
   formatQuantity,
   getProductionOrderStatusLabel,
@@ -32,9 +32,10 @@ export default function ProductReceivePage() {
   const [lang, setLang] = useState<AppLang>("ar")
   const [orders, setOrders] = useState<ProductionOrderListItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [completeDialogOrder, setCompleteDialogOrder] = useState<ProductionOrderListItem | null>(null)
-  const [completedQty, setCompletedQty] = useState<number>(0)
-  const [completing, setCompleting] = useState(false)
+  const [requestDialogOrder, setRequestDialogOrder] = useState<ProductionOrderListItem | null>(null)
+  const [requestedQty, setRequestedQty] = useState<number>(0)
+  const [requestNotes, setRequestNotes] = useState("")
+  const [requesting, setRequesting] = useState(false)
 
   useEffect(() => {
     const handler = () => setLang(readAppLanguage())
@@ -58,33 +59,50 @@ export default function ProductReceivePage() {
 
   useEffect(() => { loadOrders() }, [loadOrders])
 
-  const openCompleteDialog = (order: ProductionOrderListItem) => {
-    setCompleteDialogOrder(order)
-    setCompletedQty(Number(order.planned_quantity) || 0)
+  const openRequestDialog = (order: ProductionOrderListItem) => {
+    setRequestDialogOrder(order)
+    setRequestedQty(Number(order.planned_quantity) || 0)
+    setRequestNotes("")
   }
 
-  const handleComplete = async () => {
-    if (!completeDialogOrder) return
+  const handleRequestApproval = async () => {
+    if (!requestDialogOrder) return
     try {
-      setCompleting(true)
-      await completeProductionOrder(completeDialogOrder.id, { completed_quantity: completedQty })
+      setRequesting(true)
+      const response = await fetch(
+        `/api/manufacturing/production-orders/${encodeURIComponent(requestDialogOrder.id)}/request-product-receive`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ proposed_quantity: requestedQty, notes: requestNotes || null }),
+        }
+      )
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.error)
       toast({
-        title: lang === "ar" ? "تم إكمال الأمر" : "Order Completed",
+        title: lang === "ar" ? "✅ تم إرسال طلب الاعتماد" : "✅ Approval Request Sent",
         description: lang === "ar"
-          ? `تم استلام ${completedQty} وحدة من ${buildProductLabel(completeDialogOrder.product, lang)}`
-          : `Received ${completedQty} units of ${buildProductLabel(completeDialogOrder.product, lang)}`,
+          ? "تم إرسال طلب اعتماد الاستلام لمسؤول المخزن للمراجعة"
+          : "Receipt approval request sent to the warehouse manager for review",
       })
-      setCompleteDialogOrder(null)
+      setRequestDialogOrder(null)
       await loadOrders()
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: lang === "ar" ? "خطأ" : "Error",
-        description: error?.message || (lang === "ar" ? "فشل إكمال الأمر" : "Failed to complete order"),
+        description: error?.message || (lang === "ar" ? "فشل إرسال طلب الاعتماد" : "Failed to send approval request"),
       })
     } finally {
-      setCompleting(false)
+      setRequesting(false)
     }
+  }
+
+  const getReceiveApprovalBadge = (order: ProductionOrderListItem) => {
+    const status = order.product_receive_approval_status
+    if (status === "pending") return <Badge variant="outline" className="gap-1 text-amber-700 border-amber-300 bg-amber-50"><Clock className="h-3 w-3" />{lang === "ar" ? "بانتظار الاعتماد" : "Pending Approval"}</Badge>
+    if (status === "rejected") return <Badge variant="outline" className="gap-1 text-red-700 border-red-300 bg-red-50"><XCircle className="h-3 w-3" />{lang === "ar" ? "مرفوض" : "Rejected"}</Badge>
+    return null
   }
 
   return (
@@ -105,15 +123,21 @@ export default function ProductReceivePage() {
                 </h1>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   {lang === "ar"
-                    ? "أوامر الإنتاج قيد التنفيذ والجاهزة للإكمال والاستلام"
-                    : "In-progress orders ready to complete and receive"}
+                    ? "أوامر الإنتاج قيد التنفيذ — اطلب اعتماد الاستلام من مسؤول المخزن"
+                    : "In-progress orders — request receipt approval from warehouse manager"}
                 </p>
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={loadOrders} disabled={loading} className="gap-2">
-              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              {lang === "ar" ? "تحديث" : "Refresh"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => router.push("/inventory/goods-receipt")} className="gap-2 text-emerald-700 border-emerald-300">
+                <PackageCheck className="h-4 w-4" />
+                {lang === "ar" ? "اعتمادات الاستلام" : "Receipt Approvals"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={loadOrders} disabled={loading} className="gap-2">
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                {lang === "ar" ? "تحديث" : "Refresh"}
+              </Button>
+            </div>
           </div>
 
           {/* Stats */}
@@ -148,8 +172,8 @@ export default function ProductReceivePage() {
               <CardTitle className="text-base">{lang === "ar" ? "أوامر الإنتاج قيد التنفيذ" : "In-Progress Production Orders"}</CardTitle>
               <CardDescription>
                 {lang === "ar"
-                  ? "اضغط 'إكمال واستلام' لإدخال الكمية المصنّعة وإضافة المنتج للمستودع"
-                  : "Click 'Complete & Receive' to enter the manufactured quantity and add to warehouse"}
+                  ? "اضغط 'طلب اعتماد الاستلام' لإرسال طلب لمسؤول المخزن — سيتم إضافة المنتج للمستودع بعد الموافقة"
+                  : "Click 'Request Receipt Approval' to send to warehouse manager — product added to warehouse after approval"}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -198,15 +222,24 @@ export default function ProductReceivePage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                              onClick={() => openCompleteDialog(order)}
-                            >
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              {lang === "ar" ? "إكمال واستلام" : "Complete & Receive"}
-                            </Button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {getReceiveApprovalBadge(order)}
+                            {order.product_receive_approval_status === "pending" ? (
+                              <span className="text-xs text-amber-600 font-medium">
+                                {lang === "ar" ? "في انتظار موافقة مسؤول المخزن" : "Awaiting warehouse manager approval"}
+                              </span>
+                            ) : (
+                              <Button
+                                size="sm"
+                                className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                onClick={() => openRequestDialog(order)}
+                              >
+                                <SendHorizontal className="h-3.5 w-3.5" />
+                                {order.product_receive_approval_status === "rejected"
+                                  ? (lang === "ar" ? "إعادة طلب الاعتماد" : "Re-request Approval")
+                                  : (lang === "ar" ? "طلب اعتماد الاستلام" : "Request Receipt Approval")}
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"
@@ -226,45 +259,58 @@ export default function ProductReceivePage() {
             </CardContent>
           </Card>
 
-          {/* Complete Dialog */}
-          <Dialog open={!!completeDialogOrder} onOpenChange={(open) => { if (!open) setCompleteDialogOrder(null) }}>
+          {/* Request Approval Dialog */}
+          <Dialog open={!!requestDialogOrder} onOpenChange={(open) => { if (!open) setRequestDialogOrder(null) }}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>{lang === "ar" ? "إكمال الأمر واستلام المنتج" : "Complete Order & Receive Product"}</DialogTitle>
+                <DialogTitle>{lang === "ar" ? "طلب اعتماد استلام المنتج" : "Request Receipt Approval"}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-lg text-sm text-emerald-800 dark:text-emerald-300">
-                  {completeDialogOrder && buildProductLabel(completeDialogOrder.product, lang)}
-                  {" · "}
-                  <span className="font-medium">{completeDialogOrder?.order_no}</span>
+                  <p className="font-medium">{requestDialogOrder && buildProductLabel(requestDialogOrder.product, lang)}</p>
+                  <p className="text-xs mt-0.5 opacity-75">{requestDialogOrder?.order_no}</p>
                 </div>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {lang === "ar"
+                    ? "سيتم إرسال طلب اعتماد لمسؤول المخزن. بعد الموافقة، سيُضاف المنتج تلقائياً للمستودع."
+                    : "An approval request will be sent to the warehouse manager. After approval, the product will be automatically added to the warehouse."}
+                </p>
                 <div className="space-y-2">
-                  <Label>{lang === "ar" ? "الكمية المصنّعة فعلياً" : "Actual Manufactured Quantity"}</Label>
+                  <Label>{lang === "ar" ? "الكمية المراد استلامها" : "Quantity to Receive"}</Label>
                   <Input
                     type="number"
                     min={0}
                     step="0.001"
-                    value={completedQty}
-                    onChange={(e) => setCompletedQty(Number(e.target.value))}
+                    value={requestedQty}
+                    onChange={(e) => setRequestedQty(Number(e.target.value))}
                   />
                   <p className="text-xs text-slate-500">
                     {lang === "ar"
-                      ? `الكمية المخططة: ${formatQuantity(completeDialogOrder?.planned_quantity, lang)}`
-                      : `Planned quantity: ${formatQuantity(completeDialogOrder?.planned_quantity, lang)}`}
+                      ? `الكمية المخططة: ${formatQuantity(requestDialogOrder?.planned_quantity, lang)}`
+                      : `Planned quantity: ${formatQuantity(requestDialogOrder?.planned_quantity, lang)}`}
                   </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>{lang === "ar" ? "ملاحظات (اختياري)" : "Notes (optional)"}</Label>
+                  <Textarea
+                    value={requestNotes}
+                    onChange={(e) => setRequestNotes(e.target.value)}
+                    placeholder={lang === "ar" ? "ملاحظات للمسؤول..." : "Notes for the approver..."}
+                    rows={2}
+                  />
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setCompleteDialogOrder(null)} disabled={completing}>
+                <Button variant="outline" onClick={() => setRequestDialogOrder(null)} disabled={requesting}>
                   {lang === "ar" ? "إلغاء" : "Cancel"}
                 </Button>
                 <Button
                   className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-                  onClick={handleComplete}
-                  disabled={completing || completedQty <= 0}
+                  onClick={handleRequestApproval}
+                  disabled={requesting || requestedQty <= 0}
                 >
-                  <CheckCircle2 className="h-4 w-4" />
-                  {completing ? (lang === "ar" ? "جاري الإكمال..." : "Completing...") : (lang === "ar" ? "تأكيد الاستلام" : "Confirm Receive")}
+                  <SendHorizontal className="h-4 w-4" />
+                  {requesting ? (lang === "ar" ? "جاري الإرسال..." : "Sending...") : (lang === "ar" ? "إرسال طلب الاعتماد" : "Send Approval Request")}
                 </Button>
               </DialogFooter>
             </DialogContent>

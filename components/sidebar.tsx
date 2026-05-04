@@ -1024,7 +1024,7 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
                     { label: (lang === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
                     { label: (lang === 'en' ? 'Dispatch Approvals' : 'موافقات الإرسال'), href: `/inventory/dispatch-approvals${q}`, icon: CheckCircle },
-                    { label: (lang === 'en' ? 'Purchase Goods Receipt' : 'اعتماد استلام المشتريات'), href: `/inventory/goods-receipt${q}`, icon: CheckCircle },
+                    { label: (lang === 'en' ? 'Goods Receipt Approvals' : 'اعتماد الاستلام'), href: `/inventory/goods-receipt${q}`, icon: CheckCircle },
                   ]
                 },
                 {

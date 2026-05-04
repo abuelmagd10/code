@@ -89,6 +89,8 @@ export interface ProductionOrderListItem {
   cancelled_by?: string | null
   cancellation_reason?: string | null
   notes?: string | null
+  material_issue_approval_status?: "none" | "pending" | "approved" | "rejected" | null
+  product_receive_approval_status?: "none" | "pending" | "approved" | "rejected" | null
   created_by?: string | null
   updated_by?: string | null
   created_at?: string | null

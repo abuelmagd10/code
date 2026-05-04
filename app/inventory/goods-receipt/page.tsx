@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Package, CheckCircle, Warehouse, Building2, AlertCircle, Loader2, Eye } from "lucide-react"
+import { Package, CheckCircle, XCircle, Warehouse, Building2, AlertCircle, Loader2, Eye } from "lucide-react"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -125,6 +125,15 @@ export default function GoodsReceiptPage() {
   const pendingBillDataRef = useRef<BillForReceipt | null>(null) // ✅ تخزين بيانات الفاتورة المؤقتة لفتحها بعد تحديث الفرع/المخزن
   const selectedBranchIdRef = useRef<string | null>(null) // ✅ تتبع القيمة الحالية للفرع لتجنب stale closure
   const selectedWarehouseIdRef = useRef<string | null>(null) // ✅ تتبع القيمة الحالية للمخزن لتجنب stale closure
+
+  // ── Manufacturing receive approvals ──
+  const [receiptType, setReceiptType] = useState<"purchase" | "manufacturing">("purchase")
+  const [mfgApprovals, setMfgApprovals] = useState<any[]>([])
+  const [mfgLoading, setMfgLoading] = useState(false)
+  const [mfgActionId, setMfgActionId] = useState<string | null>(null)
+  const [mfgActionType, setMfgActionType] = useState<"approve" | "reject" | null>(null)
+  const [mfgRejectReason, setMfgRejectReason] = useState("")
+  const [mfgProcessing, setMfgProcessing] = useState(false)
 
   // ✅ تحديث refs عند تغيير selectedBranchId و selectedWarehouseId
   useEffect(() => {
@@ -958,6 +967,65 @@ export default function GoodsReceiptPage() {
     }
   }
 
+  // ── تحميل اعتمادات استلام المنتجات المصنّعة ──
+  const loadMfgApprovals = useCallback(async () => {
+    try {
+      setMfgLoading(true)
+      const response = await fetch("/api/manufacturing/product-receive-approvals?status=pending", { cache: "no-store" })
+      const result = await response.json()
+      setMfgApprovals(result.data || [])
+    } catch {
+      setMfgApprovals([])
+    } finally {
+      setMfgLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (receiptType === "manufacturing" && activeTab === "pending") {
+      loadMfgApprovals()
+    }
+  }, [receiptType, activeTab, loadMfgApprovals])
+
+  const handleMfgAction = async () => {
+    if (!mfgActionId || !mfgActionType) return
+    if (mfgActionType === "reject" && !mfgRejectReason.trim()) return
+    try {
+      setMfgProcessing(true)
+      const endpoint = `/api/manufacturing/product-receive-approvals/${encodeURIComponent(mfgActionId)}/${mfgActionType}`
+      const body = mfgActionType === "reject"
+        ? JSON.stringify({ rejection_reason: mfgRejectReason.trim() })
+        : JSON.stringify({})
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      })
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.error)
+      toast({
+        title: mfgActionType === "approve"
+          ? (appLang === "en" ? "✅ Receipt Approved" : "✅ تم اعتماد الاستلام")
+          : (appLang === "en" ? "Receipt Rejected" : "تم رفض طلب الاستلام"),
+        description: mfgActionType === "approve"
+          ? (appLang === "en" ? "Product added to warehouse automatically." : "تم إضافة المنتج للمستودع تلقائياً.")
+          : (appLang === "en" ? "Rejection sent to requester." : "تم إبلاغ مقدم الطلب بالرفض."),
+      })
+      setMfgActionId(null)
+      setMfgActionType(null)
+      setMfgRejectReason("")
+      await loadMfgApprovals()
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: appLang === "en" ? "Error" : "خطأ",
+        description: err?.message || (appLang === "en" ? "Action failed" : "فشل تنفيذ الإجراء"),
+      })
+    } finally {
+      setMfgProcessing(false)
+    }
+  }
+
   const hasBills = bills.length > 0
 
   const totalBillsAmount = useMemo(
@@ -980,12 +1048,12 @@ export default function GoodsReceiptPage() {
                 </div>
                 <div>
                   <CardTitle className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white">
-                    {appLang === "en" ? "Purchase Goods Receipt" : "اعتماد استلام فواتير المشتريات"}
+                    {appLang === "en" ? "Goods Receipt Approvals" : "اعتماد الاستلام"}
                   </CardTitle>
                   <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
                     {appLang === "en"
-                      ? "Approve inventory receipt for purchase bills after admin approval"
-                      : "اعتماد استلام المخزون لفواتير المشتريات بعد الاعتماد الإداري"}
+                      ? "Approve inventory receipt for purchase bills and manufactured products"
+                      : "اعتماد استلام المخزون لفواتير المشتريات واستلامات منتجات التصنيع"}
                   </p>
                 </div>
               </div>
@@ -1093,7 +1161,32 @@ export default function GoodsReceiptPage() {
             </CardHeader>
           </Card>
 
-          {/* Tabs */}
+          {/* Type filter — Purchase vs Manufacturing */}
+          <div className="flex items-center gap-2 mb-2">
+            <button
+              onClick={() => setReceiptType("purchase")}
+              className={`px-4 py-1.5 text-sm font-medium rounded-full border transition-colors ${
+                receiptType === "purchase"
+                  ? "bg-emerald-600 text-white border-emerald-600"
+                  : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+              }`}
+            >
+              {appLang === "en" ? `🛒 Purchases${bills.length ? ` (${bills.length})` : ""}` : `🛒 مشتريات${bills.length ? ` (${bills.length})` : ""}`}
+            </button>
+            <button
+              onClick={() => { setReceiptType("manufacturing"); setActiveTab("pending"); }}
+              className={`px-4 py-1.5 text-sm font-medium rounded-full border transition-colors ${
+                receiptType === "manufacturing"
+                  ? "bg-cyan-600 text-white border-cyan-600"
+                  : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+              }`}
+            >
+              {appLang === "en" ? `🏭 Mfg. Receipt${mfgApprovals.length ? ` (${mfgApprovals.length})` : ""}` : `🏭 استلام تصنيع${mfgApprovals.length ? ` (${mfgApprovals.length})` : ""}`}
+            </button>
+          </div>
+
+          {/* Tabs (Purchase only) */}
+          {receiptType === "purchase" && (
           <div className="flex border-b border-gray-200 dark:border-slate-800 mb-6">
             <button
               onClick={() => setActiveTab("pending")}
@@ -1116,9 +1209,10 @@ export default function GoodsReceiptPage() {
               {appLang === "en" ? "Received History" : "سجل الاستلام"}
             </button>
           </div>
+          )}
 
-          {/* Content */}
-          <Card className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800">
+          {/* Content — Purchase */}
+          {receiptType === "purchase" && <Card className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800">
             <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Package className="w-5 h-5 text-emerald-600" />
@@ -1272,7 +1366,104 @@ export default function GoodsReceiptPage() {
                 </div>
               )}
             </CardContent>
-          </Card>
+          </Card>}
+
+          {/* Content — Manufacturing Receipts */}
+          {receiptType === "manufacturing" && (
+            <Card className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Package className="w-5 h-5 text-cyan-600" />
+                  <CardTitle className="text-base sm:text-lg">
+                    {appLang === "en" ? "Manufacturing Receipts awaiting approval" : "استلامات منتجات التصنيع بانتظار الاعتماد"}
+                  </CardTitle>
+                </div>
+                {mfgApprovals.length > 0 && (
+                  <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                    {appLang === "en" ? `${mfgApprovals.length} pending` : `${mfgApprovals.length} طلب معلق`}
+                  </span>
+                )}
+              </CardHeader>
+              <CardContent>
+                {mfgLoading ? (
+                  <div className="flex items-center justify-center py-10 text-gray-500 dark:text-gray-400">
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    {appLang === "en" ? "Loading..." : "جاري التحميل..."}
+                  </div>
+                ) : mfgApprovals.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+                    <AlertCircle className="w-10 h-10 mb-3 text-gray-300 dark:text-gray-600" />
+                    <p className="text-sm">
+                      {appLang === "en"
+                        ? "No manufacturing receipts pending approval."
+                        : "لا توجد طلبات استلام منتجات تصنيع معلقة."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[700px] w-full text-sm">
+                      <thead className="bg-gray-50 dark:bg-slate-800">
+                        <tr>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Order #" : "رقم الأمر"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Product" : "المنتج"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Qty" : "الكمية"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Branch" : "الفرع"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Warehouse" : "المخزن"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Requested At" : "تاريخ الطلب"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Requested By" : "طالب الاعتماد"}</th>
+                          <th className="px-3 py-2 text-center">{appLang === "en" ? "Action" : "الإجراء"}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                        {mfgApprovals.map((req: any) => (
+                          <tr key={req.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/60">
+                            <td className="px-3 py-2 font-medium text-cyan-700 dark:text-cyan-400">
+                              {req.production_order?.order_no || req.production_order?.id?.slice(0, 8) || "-"}
+                            </td>
+                            <td className="px-3 py-2">
+                              {appLang === "en"
+                                ? (req.production_order?.product?.name_en || req.production_order?.product?.name || "-")
+                                : (req.production_order?.product?.name || req.production_order?.product?.name_en || "-")}
+                            </td>
+                            <td className="px-3 py-2">{req.proposed_quantity ?? req.production_order?.planned_quantity ?? "-"}</td>
+                            <td className="px-3 py-2">{req.branch?.name || "-"}</td>
+                            <td className="px-3 py-2">{req.warehouse?.name || "-"}</td>
+                            <td className="px-3 py-2">
+                              {req.requested_at
+                                ? new Date(req.requested_at).toLocaleDateString(appLang === "en" ? "en" : "ar")
+                                : "-"}
+                            </td>
+                            <td className="px-3 py-2">{req.requested_by?.slice(0, 8) || "-"}</td>
+                            <td className="px-3 py-2 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <Button
+                                  size="sm"
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                  onClick={() => { setMfgActionId(req.id); setMfgActionType("approve") }}
+                                >
+                                  <CheckCircle className="w-4 h-4 mr-1" />
+                                  {appLang === "en" ? "Approve" : "اعتماد"}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400"
+                                  onClick={() => { setMfgActionId(req.id); setMfgActionType("reject") }}
+                                >
+                                  <XCircle className="w-4 h-4 mr-1" />
+                                  {appLang === "en" ? "Reject" : "رفض"}
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </main>
 
@@ -1507,6 +1698,70 @@ export default function GoodsReceiptPage() {
             >
               {processing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
               {appLang === "en" ? "Confirm Rejection" : "تأكيد الرفض"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manufacturing Approve/Reject Dialog */}
+      <Dialog
+        open={!!mfgActionId}
+        onOpenChange={(open) => {
+          if (!open) { setMfgActionId(null); setMfgActionType(null); setMfgRejectReason("") }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {mfgActionType === "approve"
+                ? (appLang === "en" ? "Approve Manufacturing Receipt" : "اعتماد استلام منتج التصنيع")
+                : (appLang === "en" ? "Reject Manufacturing Receipt" : "رفض استلام منتج التصنيع")}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-3 space-y-3">
+            {mfgActionType === "approve" ? (
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                {appLang === "en"
+                  ? "Approving will mark this production order as complete and automatically add the finished product to the warehouse inventory."
+                  : "سيؤدي الاعتماد إلى إتمام أمر الإنتاج وإضافة المنتج النهائي تلقائياً إلى مخزون المستودع."}
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  {appLang === "en"
+                    ? "Please provide a reason for rejecting this manufacturing receipt."
+                    : "يرجى تحديد سبب رفض طلب استلام المنتج."}
+                </p>
+                <textarea
+                  className="w-full border border-gray-300 dark:border-slate-700 rounded-md p-2 text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-white"
+                  rows={3}
+                  value={mfgRejectReason}
+                  onChange={(e) => setMfgRejectReason(e.target.value)}
+                  placeholder={appLang === "en" ? "Reason for rejection..." : "سبب الرفض..."}
+                  required
+                />
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setMfgActionId(null); setMfgActionType(null); setMfgRejectReason("") }}
+              disabled={mfgProcessing}
+            >
+              {appLang === "en" ? "Cancel" : "إلغاء"}
+            </Button>
+            <Button
+              onClick={handleMfgAction}
+              disabled={mfgProcessing || (mfgActionType === "reject" && !mfgRejectReason.trim())}
+              className={mfgActionType === "approve"
+                ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                : "bg-red-600 hover:bg-red-700 text-white"}
+            >
+              {mfgProcessing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              {mfgActionType === "approve"
+                ? (appLang === "en" ? "Confirm Approval" : "تأكيد الاعتماد")
+                : (appLang === "en" ? "Confirm Rejection" : "تأكيد الرفض")}
             </Button>
           </DialogFooter>
         </DialogContent>
