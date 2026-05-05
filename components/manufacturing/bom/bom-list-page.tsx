@@ -38,6 +38,7 @@ import {
 } from "@/lib/manufacturing/bom-ui"
 import { readAppLanguage, getTextDirection, type AppLang } from "@/lib/manufacturing/manufacturing-ui"
 import { ManufacturingGuide } from "@/components/manufacturing/manufacturing-guide"
+import { WarehouseSelector } from "@/components/manufacturing/manufacturing-selectors"
 
 const EMPTY_CREATE_FORM: BomCreatePayload = {
   branch_id: "",
@@ -47,6 +48,7 @@ const EMPTY_CREATE_FORM: BomCreatePayload = {
   bom_usage: "production",
   description: "",
   is_active: true,
+  source_warehouse_id: null,
 }
 
 export function BomListPage() {
@@ -579,6 +581,25 @@ export function BomListPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {/* ── مخزن الصرف الافتراضي (Phase 1 Simplification) ── */}
+              <div className="space-y-2">
+                <Label>
+                  {lang === "en" ? "Default Issue Warehouse" : "مخزن صرف المواد الافتراضي"}
+                  <span className="ml-1 text-xs text-muted-foreground">({lang === "en" ? "optional" : "اختياري"})</span>
+                </Label>
+                <WarehouseSelector
+                  value={createForm.source_warehouse_id || ""}
+                  onChange={(warehouseId) => setCreateForm((current) => ({ ...current, source_warehouse_id: warehouseId || null }))}
+                  branchId={createForm.branch_id || null}
+                  placeholder={lang === "en" ? "Select source warehouse..." : "اختر مخزن الصرف..."}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {lang === "en"
+                    ? "This warehouse will be auto-filled in production orders created from this BOM."
+                    : "سيتم ملء هذا المخزن تلقائياً في أوامر الإنتاج المرتبطة بهذه القائمة."}
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <Label>{lang === "en" ? "Manufactured Product" : "المنتج المصنَّع"}</Label>
                 <Select

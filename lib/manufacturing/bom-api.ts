@@ -50,6 +50,8 @@ export const createBomSchema = z.object({
   bom_usage: z.enum(BOM_USAGE_VALUES).default("production"),
   description: nullableTrimmedString,
   is_active: z.boolean().optional().default(true),
+  // Phase 1 simplification: optional default source warehouse for material issue
+  source_warehouse_id: uuidSchema.optional().nullable(),
 })
 
 export const updateBomSchema = z.object({
@@ -57,6 +59,8 @@ export const updateBomSchema = z.object({
   bom_name: trimmedString.min(1).optional(),
   description: nullableTrimmedString.optional(),
   is_active: z.boolean().optional(),
+  // Phase 1 simplification: optional default source warehouse for material issue
+  source_warehouse_id: uuidSchema.optional().nullable(),
 }).refine((payload) => Object.keys(payload).length > 0, {
   message: "At least one field must be provided",
 })

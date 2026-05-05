@@ -109,6 +109,8 @@ export async function POST(request: NextRequest) {
         bom_usage: payload.bom_usage,
         description: payload.description ?? null,
         is_active: payload.is_active,
+        // Phase 1: source warehouse for auto-fill in production orders
+        source_warehouse_id: payload.source_warehouse_id ?? null,
         created_by: user.id,
         updated_by: user.id,
       })

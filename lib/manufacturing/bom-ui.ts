@@ -65,6 +65,8 @@ export interface BomListItem {
   bom_usage: BomUsage
   description?: string | null
   is_active: boolean
+  /** Phase 1: default source warehouse for material issue (nullable) */
+  source_warehouse_id?: string | null
   created_at?: string | null
   updated_at?: string | null
   product?: ProductOption | null
@@ -127,6 +129,8 @@ export interface BomCreatePayload {
   bom_usage: BomUsage
   description?: string | null
   is_active: boolean
+  /** Phase 1: default source warehouse for material issue */
+  source_warehouse_id?: string | null
 }
 
 export interface BomUpdatePayload {
@@ -134,6 +138,8 @@ export interface BomUpdatePayload {
   bom_name?: string
   description?: string | null
   is_active?: boolean
+  /** Phase 1: default source warehouse for material issue */
+  source_warehouse_id?: string | null
 }
 
 export interface BomVersionCreatePayload {

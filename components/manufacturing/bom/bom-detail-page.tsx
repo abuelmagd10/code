@@ -93,6 +93,7 @@ import {
   updateBomStructure,
   updateBomVersion,
 } from "@/lib/manufacturing/bom-ui"
+import { WarehouseSelector } from "@/components/manufacturing/manufacturing-selectors"
 
 interface BomDetailPageProps {
   bomId: string
@@ -103,6 +104,8 @@ interface BomHeaderFormState {
   bom_name: string
   description: string
   is_active: boolean
+  /** Phase 1: default source warehouse for material issue */
+  source_warehouse_id: string | null
 }
 
 interface BomVersionFormState {
@@ -211,6 +214,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     bom_name: "",
     description: "",
     is_active: true,
+    source_warehouse_id: null,
   })
   const [versionForm, setVersionForm] = useState<BomVersionFormState>(EMPTY_VERSION_FORM)
   const [structureDraft, setStructureDraft] = useState<BomLineDraft[]>([])
@@ -252,6 +256,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       bom_name: detail.bom_name || "",
       description: detail.description || "",
       is_active: Boolean(detail.is_active),
+      source_warehouse_id: detail.source_warehouse_id ?? null,
     })
   }, [])
 
@@ -382,6 +387,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
         bom_name: headerForm.bom_name.trim(),
         description: headerForm.description.trim() || null,
         is_active: headerForm.is_active,
+        source_warehouse_id: headerForm.source_warehouse_id || null,
       })
 
       toast({
@@ -920,6 +926,23 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   onChange={(event) => setHeaderForm((current) => ({ ...current, description: event.target.value }))}
                                   disabled={!canUpdate}
                                 />
+                              </div>
+                              {/* ── Phase 1: مخزن الصرف الافتراضي ── */}
+                              <div className="space-y-2">
+                                <Label className="flex items-center gap-1">
+                                  مخزن صرف المواد الافتراضي
+                                  <span className="text-xs font-normal text-muted-foreground">(اختياري)</span>
+                                </Label>
+                                <WarehouseSelector
+                                  value={headerForm.source_warehouse_id || ""}
+                                  onChange={(warehouseId) => setHeaderForm((current) => ({ ...current, source_warehouse_id: warehouseId || null }))}
+                                  branchId={bom?.branch_id || null}
+                                  placeholder="اختر مخزن الصرف الافتراضي..."
+                                  disabled={!canUpdate}
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                  عند تحديد مخزن هنا، سيتم ملؤه تلقائياً في حقل "مخزن الصرف" عند إنشاء أمر إنتاج مرتبط بهذه القائمة.
+                                </p>
                               </div>
                               <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-slate-50 px-4 py-3">
                                 <div className="space-y-1">
