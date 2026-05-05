@@ -52,9 +52,13 @@ export interface RoutingListItem {
   routing_usage: RoutingUsage
   description?: string | null
   is_active: boolean
+  /** Phase 2: direct link to BOM (nullable, backward compatible) */
+  bom_id?: string | null
   created_at?: string | null
   updated_at?: string | null
   product?: ProductOption | null
+  /** Phase 2: resolved BOM header for display */
+  bom?: { id: string; bom_code: string; bom_name: string; source_warehouse_id?: string | null } | null
   versions: RoutingVersionSummary[]
 }
 
@@ -97,6 +101,8 @@ export interface RoutingListFilters {
 
 export interface RoutingCreatePayload {
   branch_id?: string | null
+  /** Phase 2: if bom_id is provided, product_id is inherited from BOM */
+  bom_id?: string | null
   product_id: string
   routing_code: string
   routing_name: string
@@ -110,6 +116,8 @@ export interface RoutingUpdatePayload {
   routing_name?: string
   description?: string | null
   is_active?: boolean
+  /** Phase 2: direct BOM link (nullable to allow unlinking) */
+  bom_id?: string | null
 }
 
 export interface RoutingVersionCreatePayload {

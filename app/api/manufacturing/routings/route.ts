@@ -42,8 +42,14 @@ export async function GET(request: NextRequest) {
 
     const routingIds = (routings || []).map((routing) => routing.id)
     const productIds = Array.from(new Set((routings || []).map((routing) => routing.product_id)))
+    // Phase 2: also load linked BOM headers for display
+    const bomIds = Array.from(new Set((routings || []).map((routing) => routing.bom_id).filter(Boolean)))
 
-    const [{ data: versions, error: versionsError }, { data: products, error: productsError }] = await Promise.all([
+    const [
+      { data: versions, error: versionsError },
+      { data: products, error: productsError },
+      { data: boms, error: bomsError },
+    ] = await Promise.all([
       routingIds.length > 0
         ? supabase
             .from("manufacturing_routing_versions")
@@ -52,15 +58,17 @@ export async function GET(request: NextRequest) {
             .order("version_no", { ascending: false })
         : Promise.resolve({ data: [], error: null }),
       productIds.length > 0
-        ? supabase
-            .from("products")
-            .select("*")
-            .in("id", productIds)
+        ? supabase.from("products").select("*").in("id", productIds)
+        : Promise.resolve({ data: [], error: null }),
+      // Phase 2: load BOM names for linked routings
+      bomIds.length > 0
+        ? supabase.from("manufacturing_boms").select("id, bom_code, bom_name, source_warehouse_id").in("id", bomIds)
         : Promise.resolve({ data: [], error: null }),
     ])
 
     if (versionsError) throw versionsError
     if (productsError) throw productsError
+    if (bomsError) throw bomsError
 
     const versionsByRoutingId = (versions || []).reduce<Record<string, any[]>>((acc, version) => {
       acc[version.routing_id] ||= []
@@ -69,12 +77,14 @@ export async function GET(request: NextRequest) {
     }, {})
 
     const productsById = Object.fromEntries((products || []).map((product) => [product.id, product]))
+    const bomsById = Object.fromEntries((boms || []).map((bom) => [bom.id, bom]))
 
     return NextResponse.json({
       success: true,
       data: (routings || []).map((routing) => ({
         ...routing,
         product: productsById[routing.product_id] || null,
+        bom: routing.bom_id ? (bomsById[routing.bom_id] || null) : null,
         versions: versionsByRoutingId[routing.id] || [],
       })),
       meta: {
@@ -92,10 +102,25 @@ export async function POST(request: NextRequest) {
     const payload = await parseJsonBody(request, createRoutingSchema)
     const finalBranchId = resolveScopedBranchId(member, payload.branch_id || null)
 
+    // Phase 2: if bom_id is provided, validate BOM belongs to company and inherit product_id
+    let resolvedProductId = payload.product_id
+    if (payload.bom_id) {
+      const { data: linkedBom, error: bomError } = await supabase
+        .from("manufacturing_boms")
+        .select("id, product_id, company_id")
+        .eq("id", payload.bom_id)
+        .eq("company_id", companyId)
+        .maybeSingle()
+      if (bomError) throw bomError
+      if (!linkedBom) return NextResponse.json({ success: false, error: "BOM not found or not accessible" }, { status: 404 })
+      // Inherit product_id from BOM (takes priority to avoid mismatches)
+      resolvedProductId = linkedBom.product_id
+    }
+
     await assertManufacturableProduct(supabase, {
       companyId,
       branchId: finalBranchId,
-      productId: payload.product_id,
+      productId: resolvedProductId,
     })
 
     const { data, error } = await supabase
@@ -103,12 +128,14 @@ export async function POST(request: NextRequest) {
       .insert({
         company_id: companyId,
         branch_id: finalBranchId,
-        product_id: payload.product_id,
+        product_id: resolvedProductId,
         routing_code: payload.routing_code,
         routing_name: payload.routing_name,
         routing_usage: payload.routing_usage,
         description: payload.description ?? null,
         is_active: payload.is_active,
+        // Phase 2: store BOM link
+        bom_id: payload.bom_id ?? null,
         created_by: user.id,
         updated_by: user.id,
       })

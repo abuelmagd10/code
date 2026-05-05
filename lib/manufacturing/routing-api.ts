@@ -56,6 +56,8 @@ const nullableIsoDateTimeString = z.union([z.string(), z.null(), z.undefined()])
 
 export const createRoutingSchema = z.object({
   branch_id: uuidSchema.optional().nullable(),
+  // Phase 2: optional direct BOM link; when provided, product_id can be inferred from BOM
+  bom_id: uuidSchema.optional().nullable(),
   product_id: uuidSchema,
   routing_code: trimmedString.min(1, "routing_code is required"),
   routing_name: trimmedString.min(1, "routing_name is required"),
@@ -69,6 +71,8 @@ export const updateRoutingSchema = z.object({
   routing_name: trimmedString.min(1).optional(),
   description: nullableTrimmedString.optional(),
   is_active: z.boolean().optional(),
+  // Phase 2: allow updating/unlinking BOM
+  bom_id: uuidSchema.optional().nullable(),
 }).refine((payload) => Object.keys(payload).length > 0, {
   message: "At least one field must be provided",
 })

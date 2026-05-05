@@ -18,28 +18,34 @@ export async function GET(
     const { supabase, companyId } = await getManufacturingApiContext(request, "read")
     const routing = await assertRoutingAccessible(supabase, companyId, id)
 
-    const [{ data: versions, error: versionsError }, { data: product, error: productError }] = await Promise.all([
+    const [
+      { data: versions, error: versionsError },
+      { data: product, error: productError },
+      // Phase 2: load linked BOM for display (if any)
+      { data: linkedBom, error: linkedBomError },
+    ] = await Promise.all([
       supabase
         .from("manufacturing_routing_versions")
         .select("id, routing_id, version_no, status, effective_from, effective_to, change_summary, notes, updated_at")
         .eq("routing_id", id)
         .eq("company_id", companyId)
         .order("version_no", { ascending: false }),
-      supabase
-        .from("products")
-        .select("*")
-        .eq("id", routing.product_id)
-        .maybeSingle(),
+      supabase.from("products").select("*").eq("id", routing.product_id).maybeSingle(),
+      routing.bom_id
+        ? supabase.from("manufacturing_boms").select("id, bom_code, bom_name, source_warehouse_id").eq("id", routing.bom_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
     ])
 
     if (versionsError) throw versionsError
     if (productError) throw productError
+    if (linkedBomError) throw linkedBomError
 
     return NextResponse.json({
       success: true,
       data: {
         ...routing,
         product: product || null,
+        bom: linkedBom || null,
         versions: versions || [],
       },
     })

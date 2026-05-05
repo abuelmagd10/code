@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { BranchSelector, ManufacturingProductSelector } from "@/components/manufacturing/manufacturing-selectors"
+import { BomSelector, BranchSelector, ManufacturingProductSelector, type BomOption } from "@/components/manufacturing/manufacturing-selectors"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
@@ -37,6 +37,7 @@ import { ManufacturingGuide } from "@/components/manufacturing/manufacturing-gui
 
 const EMPTY_CREATE_FORM: RoutingCreatePayload = {
   branch_id: "",
+  bom_id: null,
   product_id: "",
   routing_code: "",
   routing_name: "",
@@ -400,8 +401,15 @@ export function RoutingListPage() {
                               </div>
                             </TableCell>
                             <TableCell className="align-top">
-                              <div className="max-w-xs whitespace-normal text-sm text-slate-700">
-                                {buildProductLabel(routing.product)}
+                              <div className="space-y-1">
+                                <div className="max-w-xs whitespace-normal text-sm text-slate-700">
+                                  {buildProductLabel(routing.product)}
+                                </div>
+                                {routing.bom && (
+                                  <Badge variant="secondary" className="text-xs font-normal">
+                                    BOM: {routing.bom.bom_name || routing.bom.bom_code}
+                                  </Badge>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell className="align-top text-sm text-slate-600">
@@ -466,6 +474,31 @@ export function RoutingListPage() {
                   placeholder={lang === "en" ? "Leave blank to use your current branch" : "اتركه فارغًا لاستخدام فرعك الحالي"}
                 />
               </div>
+              {/* ── Phase 2: BOM Selector — auto-cascades product ── */}
+              <div className="space-y-2">
+                <Label>
+                  {lang === "en" ? "Link to BOM" : "ربط بقائمة المواد"}
+                  <span className="ml-1 text-xs font-normal text-muted-foreground">({lang === "en" ? "optional" : "اختياري"})</span>
+                </Label>
+                <BomSelector
+                  value={createForm.bom_id || ""}
+                  onChange={(bomId, bom) => {
+                    setCreateForm((c) => ({
+                      ...c,
+                      bom_id: bomId || null,
+                      // Auto-cascade product from BOM
+                      product_id: bom?.product_id ? bom.product_id : c.product_id,
+                    }))
+                  }}
+                  loadAll
+                  placeholder={lang === "en" ? "Select a BOM to link (auto-fills product)..." : "اختر قائمة مواد للربط (يملأ المنتج تلقائياً)..."}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {lang === "en"
+                    ? "Selecting a BOM will auto-fill the product and enables material display in the routing."
+                    : "اختيار قائمة المواد يملأ المنتج تلقائياً ويتيح عرض المواد داخل مسار التصنيع."}
+                </p>
+              </div>
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">{lang === "en" ? "Manufactured Product" : "المنتج المراد تصنيعه"}</Label>
                 <ManufacturingProductSelector
@@ -473,9 +506,12 @@ export function RoutingListPage() {
                   onChange={(id) => setCreateForm((c) => ({ ...c, product_id: id }))}
                   productType="manufactured"
                   placeholder={lang === "en" ? "Select the finished product for this routing" : "اختر المنتج النهائي الذي سيُنتج بهذا المسار"}
+                  disabled={!!createForm.bom_id}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {lang === "en" ? "Only manufactured products are listed." : "تظهر فقط المنتجات المصنّعة المسجّلة في النظام"}
+                  {createForm.bom_id
+                    ? (lang === "en" ? "Product is inherited from the selected BOM." : "المنتج موروث من قائمة المواد المختارة.")
+                    : (lang === "en" ? "Only manufactured products are listed." : "تظهر فقط المنتجات المصنّعة المسجّلة في النظام")}
                 </p>
               </div>
               <div className="space-y-2">

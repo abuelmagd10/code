@@ -194,12 +194,15 @@ export function ManufacturingProductSelector({
 }
 
 // ─────────────────────────────────────────────────────────────────
-// BOM Selector — loads BOMs for a given product
+// BOM Selector — loads BOMs, optionally filtered by product
 // ─────────────────────────────────────────────────────────────────
-interface BomOption {
+export interface BomOption {
   id: string
   bom_code?: string | null
   bom_name?: string | null
+  /** Phase 2: exposed so callers can auto-cascade product when BOM is selected */
+  product_id?: string | null
+  source_warehouse_id?: string | null
 }
 
 interface BomSelectorProps {
@@ -208,6 +211,8 @@ interface BomSelectorProps {
   productId?: string
   placeholder?: string
   disabled?: boolean
+  /** Phase 2: when true, loads all active BOMs even without a productId */
+  loadAll?: boolean
 }
 
 export function BomSelector({
@@ -216,6 +221,7 @@ export function BomSelector({
   productId,
   placeholder = "اختر قائمة المواد...",
   disabled = false,
+  loadAll = false,
 }: BomSelectorProps) {
   const [open, setOpen] = useState(false)
   const [boms, setBoms] = useState<BomOption[]>([])
@@ -223,11 +229,12 @@ export function BomSelector({
 
   useEffect(() => {
     setBoms([])
-    if (!productId) return
+    // Load when: productId is provided OR loadAll mode is on
+    if (!productId && !loadAll) return
     setLoading(true)
 
     const params = new URLSearchParams()
-    params.set("product_id", productId)
+    if (productId) params.set("product_id", productId)
     params.set("is_active", "true")
 
     fetch(`/api/manufacturing/boms?${params}`)
@@ -238,14 +245,29 @@ export function BomSelector({
       })
       .catch(() => setBoms([]))
       .finally(() => setLoading(false))
-  }, [productId])
+  }, [productId, loadAll])
+
+  // If value is set but not in list yet, try to load it for name display
+  useEffect(() => {
+    if (!value || boms.find((b) => b.id === value)) return
+    if (!productId && !loadAll) {
+      fetch(`/api/manufacturing/boms/${value}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data?.data) setBoms((prev) => [...prev, data.data])
+        })
+        .catch(() => {})
+    }
+  }, [value, boms, productId, loadAll])
 
   const selected = boms.find((b) => b.id === value) ?? null
   const triggerLabel = value
     ? selected
-      ? `${selected.bom_code || ""} ${selected.bom_name || ""}`.trim() || value.slice(0, 8)
+      ? selected.bom_name || selected.bom_code || value.slice(0, 8)
       : value.slice(0, 8) + "…"
     : placeholder
+
+  const isDisabled = disabled || (!productId && !loadAll && !value)
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -253,7 +275,7 @@ export function BomSelector({
         <Button
           variant="outline"
           role="combobox"
-          disabled={disabled || (!productId && !value)}
+          disabled={isDisabled}
           className={cn("w-full justify-between font-normal text-start", !value && "text-muted-foreground")}
         >
           <span className="truncate">{triggerLabel}</span>
@@ -270,7 +292,7 @@ export function BomSelector({
               </div>
             ) : boms.length === 0 ? (
               <div className="py-4 px-3 text-sm text-center text-muted-foreground">
-                {productId ? "لا توجد قوائم مواد لهذا المنتج" : "اختر المنتج أولاً"}
+                {productId || loadAll ? "لا توجد قوائم مواد نشطة" : "اختر المنتج أولاً"}
               </div>
             ) : (
               <CommandGroup>
