@@ -422,16 +422,19 @@ export function BomVersionSelector({
 // ─────────────────────────────────────────────────────────────────
 // Routing Selector
 // ─────────────────────────────────────────────────────────────────
-interface RoutingOption {
+export interface RoutingOption {
   id: string
   routing_code?: string | null
   routing_name?: string | null
+  bom_id?: string | null
 }
 
 interface RoutingSelectorProps {
   value: string
   onChange: (routingId: string, routing: RoutingOption | null) => void
   productId?: string
+  /** Phase 3: when provided, filters routings linked directly to this BOM (takes priority over productId) */
+  bomId?: string
   placeholder?: string
   disabled?: boolean
 }
@@ -440,6 +443,7 @@ export function RoutingSelector({
   value,
   onChange,
   productId,
+  bomId,
   placeholder = "اختر مسار التصنيع...",
   disabled = false,
 }: RoutingSelectorProps) {
@@ -449,19 +453,40 @@ export function RoutingSelector({
 
   useEffect(() => {
     setRoutings([])
-    if (!productId) return
+    const canLoad = bomId || productId
+    if (!canLoad) return
     setLoading(true)
-    const params = new URLSearchParams({ product_id: productId, is_active: "true" })
+    // Phase 3: prefer BOM-scoped filter to surface routings directly linked to BOM
+    const params = new URLSearchParams({ is_active: "true" })
+    if (bomId) params.set("bom_id", bomId)
+    else if (productId) params.set("product_id", productId)
     fetch(`/api/manufacturing/routings?${params}`)
       .then((r) => r.json())
       .then((data) => setRoutings(Array.isArray(data?.data) ? data.data : []))
       .catch(() => setRoutings([]))
       .finally(() => setLoading(false))
-  }, [productId])
+  }, [productId, bomId])
+
+  // If value is set but not in list (e.g. BOM filter shows 0 linked), reload with productId fallback
+  useEffect(() => {
+    if (!value || routings.find((r) => r.id === value)) return
+    if (!productId) return
+    const params = new URLSearchParams({ product_id: productId, is_active: "true" })
+    fetch(`/api/manufacturing/routings?${params}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const all: RoutingOption[] = Array.isArray(data?.data) ? data.data : []
+        setRoutings((prev) => {
+          const ids = new Set(prev.map((r) => r.id))
+          return [...prev, ...all.filter((r) => !ids.has(r.id))]
+        })
+      })
+      .catch(() => {})
+  }, [value, routings, productId])
 
   const selected = routings.find((r) => r.id === value) ?? null
   const triggerLabel = value
-    ? selected ? `${selected.routing_code || ""} ${selected.routing_name || ""}`.trim() : value.slice(0, 8) + "…"
+    ? selected ? (selected.routing_name || selected.routing_code || value.slice(0, 8)) : value.slice(0, 8) + "…"
     : placeholder
 
   return (
@@ -470,7 +495,7 @@ export function RoutingSelector({
         <Button
           variant="outline"
           role="combobox"
-          disabled={disabled || (!productId && !value)}
+          disabled={disabled || (!productId && !bomId && !value)}
           className={cn("w-full justify-between font-normal text-start", !value && "text-muted-foreground")}
         >
           <span className="truncate">{triggerLabel}</span>
@@ -484,7 +509,7 @@ export function RoutingSelector({
               <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin" /></div>
             ) : routings.length === 0 ? (
               <div className="py-4 px-3 text-sm text-center text-muted-foreground">
-                {productId ? "لا توجد مسارات لهذا المنتج" : "اختر المنتج أولاً"}
+                {bomId || productId ? "لا توجد مسارات متاحة" : "اختر المنتج أو قائمة المواد أولاً"}
               </div>
             ) : (
               <CommandGroup>

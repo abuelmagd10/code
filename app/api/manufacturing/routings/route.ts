@@ -28,6 +28,8 @@ export async function GET(request: NextRequest) {
 
     if (requestedBranchId) query = query.eq("branch_id", requestedBranchId)
     if (searchParams.get("product_id")) query = query.eq("product_id", searchParams.get("product_id"))
+    // Phase 3: filter by direct BOM link
+    if (searchParams.get("bom_id")) query = query.eq("bom_id", searchParams.get("bom_id"))
     if (searchParams.get("routing_usage")) query = query.eq("routing_usage", searchParams.get("routing_usage"))
     if (searchParams.get("is_active") === "true") query = query.eq("is_active", true)
     if (searchParams.get("is_active") === "false") query = query.eq("is_active", false)

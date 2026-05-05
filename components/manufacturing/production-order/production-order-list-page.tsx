@@ -157,7 +157,7 @@ export function ProductionOrderListPage() {
     setCreateOpen(true)
   }
 
-  // ── Auto-cascade: عند اختيار منتج → حمّل BOM الوحيد والمسار الوحيد تلقائياً
+  // ── Auto-cascade Phase 3: عند اختيار منتج → حمّل BOM + Routing تلقائياً
   useEffect(() => {
     const productId = createForm.product_id
     if (!productId || !createOpen) return
@@ -175,22 +175,44 @@ export function ProductionOrderListPage() {
         const routingsData = await routingsRes.json()
         if (cancelled) return
 
-        const boms: { id: string }[] = Array.isArray(bomsData?.data) ? bomsData.data : []
-        const routings: { id: string }[] = Array.isArray(routingsData?.data) ? routingsData.data : []
+        const boms: { id: string; source_warehouse_id?: string | null }[] = Array.isArray(bomsData?.data) ? bomsData.data : []
+        const routings: { id: string; bom_id?: string | null }[] = Array.isArray(routingsData?.data) ? routingsData.data : []
 
         setCreateForm((c) => {
           // Auto-select BOM only if exactly one exists and none is selected
           const newBomId = boms.length === 1 && !c.bom_id ? boms[0].id : c.bom_id
-          // Auto-select Routing only if exactly one exists and none is selected
-          const newRoutingId = routings.length === 1 && !c.routing_id ? routings[0].id : c.routing_id
-          const changed = newBomId !== c.bom_id || newRoutingId !== c.routing_id
+          const bomChanged = newBomId !== c.bom_id
+
+          // Phase 3: if BOM changed, inherit its default issue warehouse
+          const selectedBom = boms.find((b) => b.id === newBomId)
+          const newIssueWarehouse = bomChanged && selectedBom?.source_warehouse_id && !c.issue_warehouse_id
+            ? selectedBom.source_warehouse_id
+            : c.issue_warehouse_id
+
+          // Auto-select routing: prefer one linked to selected BOM via bom_id, else if exactly one total
+          const bomLinkedRoutings = routings.filter((r) => r.bom_id === newBomId)
+          let newRoutingId = c.routing_id
+          if (!c.routing_id) {
+            if (bomLinkedRoutings.length === 1) newRoutingId = bomLinkedRoutings[0].id
+            else if (routings.length === 1) newRoutingId = routings[0].id
+          }
+          const routingChanged = newRoutingId !== c.routing_id
+
+          const changed = bomChanged || routingChanged || newIssueWarehouse !== c.issue_warehouse_id
           if (!changed) return c
+
+          // Auto-open Advanced panel if warehouse was filled
+          if (newIssueWarehouse && newIssueWarehouse !== c.issue_warehouse_id) {
+            setShowAdvanced(true)
+          }
+
           return {
             ...c,
             bom_id: newBomId,
-            bom_version_id: newBomId !== c.bom_id ? "" : c.bom_version_id,
+            bom_version_id: bomChanged ? "" : c.bom_version_id,
             routing_id: newRoutingId,
-            routing_version_id: newRoutingId !== c.routing_id ? "" : c.routing_version_id,
+            routing_version_id: routingChanged ? "" : c.routing_version_id,
+            issue_warehouse_id: newIssueWarehouse,
           }
         })
       } catch {
@@ -203,6 +225,56 @@ export function ProductionOrderListPage() {
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createForm.product_id, createOpen])
+
+  // ── Auto-cascade Phase 3: عند تغيير bom_id → اجلب مستودع الصرف والـ Routing المرتبط
+  useEffect(() => {
+    const bomId = createForm.bom_id
+    if (!bomId || !createOpen) return
+
+    let cancelled = false
+
+    const cascadeFromBom = async () => {
+      try {
+        const [bomRes, routingsRes] = await Promise.all([
+          fetch(`/api/manufacturing/boms/${bomId}`),
+          fetch(`/api/manufacturing/routings?bom_id=${bomId}&is_active=true`),
+        ])
+        const bomData = await bomRes.json()
+        const routingsData = await routingsRes.json()
+        if (cancelled) return
+
+        const bom = bomData?.data
+        const routings: { id: string }[] = Array.isArray(routingsData?.data) ? routingsData.data : []
+
+        setCreateForm((c) => {
+          if (c.bom_id !== bomId) return c // stale
+          const newIssueWarehouse = !c.issue_warehouse_id && bom?.source_warehouse_id
+            ? bom.source_warehouse_id
+            : c.issue_warehouse_id
+
+          // auto-select routing linked to this BOM if exactly one and none selected
+          const newRoutingId = routings.length === 1 && !c.routing_id ? routings[0].id : c.routing_id
+          const routingChanged = newRoutingId !== c.routing_id
+
+          if (newIssueWarehouse !== c.issue_warehouse_id || routingChanged) {
+            if (newIssueWarehouse !== c.issue_warehouse_id) setShowAdvanced(true)
+            return {
+              ...c,
+              issue_warehouse_id: newIssueWarehouse,
+              routing_id: newRoutingId,
+              routing_version_id: routingChanged ? "" : c.routing_version_id,
+            }
+          }
+          return c
+        })
+      } catch {
+        // silent
+      }
+    }
+    cascadeFromBom()
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createForm.bom_id, createOpen])
 
   const handleCreate = async () => {
     if (
@@ -555,7 +627,22 @@ export function ProductionOrderListPage() {
               </Label>
               <BomSelector
                 value={createForm.bom_id}
-                onChange={(id) => setCreateForm((c) => ({ ...c, bom_id: id, bom_version_id: "" }))}
+                onChange={(id, bom) => {
+                  setCreateForm((c) => ({
+                    ...c,
+                    bom_id: id,
+                    bom_version_id: "",
+                    // Phase 3: auto-fill issue warehouse from BOM if not yet set
+                    issue_warehouse_id: !c.issue_warehouse_id && bom?.source_warehouse_id
+                      ? bom.source_warehouse_id
+                      : c.issue_warehouse_id,
+                    // Reset routing when BOM changes so cascade can re-select
+                    routing_id: id !== c.bom_id ? "" : c.routing_id,
+                    routing_version_id: id !== c.bom_id ? "" : c.routing_version_id,
+                  }))
+                  // Auto-open advanced panel if we're about to fill the warehouse
+                  if (bom?.source_warehouse_id) setShowAdvanced(true)
+                }}
                 productId={createForm.product_id}
                 placeholder={appLang === "ar" ? "اختر قائمة المواد" : "Select BOM"}
               />
@@ -577,12 +664,21 @@ export function ProductionOrderListPage() {
               <Label className="text-sm font-semibold">
                 {appLang === "ar" ? "٤. مسار التصنيع" : "4. Routing"} <span className="text-red-500">*</span>
               </Label>
+              {/* Phase 3: prefer BOM-linked routings if BOM selected, else fallback to product routings */}
               <RoutingSelector
                 value={createForm.routing_id}
                 onChange={(id) => setCreateForm((c) => ({ ...c, routing_id: id, routing_version_id: "" }))}
-                productId={createForm.product_id}
+                bomId={createForm.bom_id || undefined}
+                productId={createForm.product_id || undefined}
                 placeholder={appLang === "ar" ? "اختر مسار التصنيع" : "Select routing"}
               />
+              {createForm.bom_id && (
+                <p className="text-xs text-muted-foreground">
+                  {appLang === "ar"
+                    ? "يظهر أولاً المسارات المرتبطة بقائمة المواد المختارة."
+                    : "Routings linked to the selected BOM are shown first."}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
