@@ -5,12 +5,16 @@ import { useRouter } from "next/navigation"
 import {
   AlertTriangle,
   CheckCircle2,
+  Clock,
   Factory,
+  PackageCheck,
+  PackagePlus,
   PlayCircle,
   RefreshCw,
   RotateCcw,
   Save,
   Send,
+  SendHorizontal,
   TimerReset,
   Trash2,
   Wrench,
@@ -207,6 +211,11 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
   const [startConfirmOpen, setStartConfirmOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [activeOperation, setActiveOperation] = useState<ProductionOrderOperation | null>(null)
+  // Phase 4 — Material Issue & Product Receive inline tabs
+  const [materialIssueRequesting, setMaterialIssueRequesting] = useState(false)
+  const [productReceiveRequesting, setProductReceiveRequesting] = useState(false)
+  const [productReceiveQty, setProductReceiveQty] = useState<number>(0)
+  const [productReceiveNotes, setProductReceiveNotes] = useState("")
 
   useEffect(() => {
     const handler = () => setAppLang(readAppLanguage())
@@ -266,6 +275,9 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
       completed_at: "",
     })
     setCancelForm(EMPTY_CANCEL_FORM)
+    // Phase 4: pre-fill receive quantity from planned
+    setProductReceiveQty(Number(nextSnapshot.order.planned_quantity) || 0)
+    setProductReceiveNotes("")
   }, [])
 
   const loadSnapshot = useCallback(async () => {
@@ -334,6 +346,49 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
       await refreshWorkspace()
     } finally {
       setSavingHeader(false)
+    }
+  }
+
+  // ── Phase 4: Material Issue — طلب اعتماد الصرف مباشرة من الأمر
+  const handleRequestMaterialIssue = async () => {
+    if (!order) return
+    try {
+      setMaterialIssueRequesting(true)
+      const res = await fetch(`/api/manufacturing/production-orders/${order.id}/request-material-issue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || "خطأ غير معروف")
+      toast({ title: copy.detail.materialIssueSendSuccess })
+      await refreshWorkspace()
+    } catch (error: any) {
+      toast({ variant: "destructive", title: copy.detail.materialIssueSendError, description: error?.message })
+    } finally {
+      setMaterialIssueRequesting(false)
+    }
+  }
+
+  // ── Phase 4: Product Receive — طلب اعتماد الاستلام مباشرة من الأمر
+  const handleRequestProductReceive = async () => {
+    if (!order) return
+    try {
+      setProductReceiveRequesting(true)
+      const res = await fetch(`/api/manufacturing/production-orders/${order.id}/request-product-receive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposed_quantity: productReceiveQty || Number(order.planned_quantity), notes: productReceiveNotes || null }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || "خطأ غير معروف")
+      toast({ title: copy.detail.productReceiveSendSuccess })
+      setProductReceiveNotes("")
+      await refreshWorkspace()
+    } catch (error: any) {
+      toast({ variant: "destructive", title: copy.detail.productReceiveSendError, description: error?.message })
+    } finally {
+      setProductReceiveRequesting(false)
     }
   }
 
@@ -677,9 +732,24 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                   </div>
 
                   <Tabs defaultValue="overview" className="gap-4">
-                    <TabsList className="w-full justify-start">
+                    <TabsList className="w-full justify-start flex-wrap h-auto">
                       <TabsTrigger value="overview">{copy.detail.tabsOverview}</TabsTrigger>
                       <TabsTrigger value="operations">{copy.detail.tabsOperations}</TabsTrigger>
+                      {/* Phase 4: inline action tabs */}
+                      <TabsTrigger value="material_issue" className="gap-1.5">
+                        <PackagePlus className="h-3.5 w-3.5" />
+                        {copy.detail.tabsMaterialIssue}
+                        {order.status === "released" && (
+                          <span className="ml-1 inline-flex h-2 w-2 rounded-full bg-orange-500 animate-pulse" />
+                        )}
+                      </TabsTrigger>
+                      <TabsTrigger value="product_receive" className="gap-1.5">
+                        <PackageCheck className="h-3.5 w-3.5" />
+                        {copy.detail.tabsProductReceive}
+                        {order.status === "in_progress" && (
+                          <span className="ml-1 inline-flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                        )}
+                      </TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="overview" className="space-y-4">
@@ -1026,6 +1096,172 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                         </CardContent>
                       </Card>
                     </TabsContent>
+
+                    {/* ── Phase 4: تبويب صرف المواد ── */}
+                    <TabsContent value="material_issue" className="space-y-4">
+                      {order.status !== "released" && order.status !== "in_progress" ? (
+                        <Card>
+                          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                            <PackagePlus className="h-10 w-10 text-slate-300" />
+                            <p className="text-sm text-slate-500">{copy.detail.materialIssueNotAvailable}</p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <PackagePlus className="h-5 w-5 text-orange-500" />
+                              {copy.detail.materialIssueTitle}
+                            </CardTitle>
+                            <CardDescription>{copy.detail.materialIssueDescription}</CardDescription>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            {/* حالة الاعتماد الحالية */}
+                            {(() => {
+                              const approvalStatus = (order as any).material_issue_approval_status
+                              if (approvalStatus === "pending") {
+                                return (
+                                  <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950/30">
+                                    <Clock className="h-5 w-5 text-amber-500 shrink-0" />
+                                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{copy.detail.materialIssuePending}</p>
+                                  </div>
+                                )
+                              }
+                              if (approvalStatus === "approved") {
+                                return (
+                                  <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-800 dark:bg-emerald-950/30">
+                                    <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                                    <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">{copy.detail.materialIssueApprovedHint}</p>
+                                  </div>
+                                )
+                              }
+                              if (approvalStatus === "rejected") {
+                                return (
+                                  <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 dark:border-red-800 dark:bg-red-950/30">
+                                    <XCircle className="h-5 w-5 text-red-500 shrink-0" />
+                                    <p className="text-sm font-medium text-red-800 dark:text-red-300">{copy.detail.materialIssueRejected}</p>
+                                  </div>
+                                )
+                              }
+                              return null
+                            })()}
+                            {/* معلومات الصرف */}
+                            <div className="rounded-xl border bg-slate-50 dark:bg-slate-800/40 p-4 space-y-2 text-sm">
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">{copy.detail.plannedQty}</span>
+                                <span className="font-medium">{formatQuantity(order.planned_quantity, appLang)}</span>
+                              </div>
+                              {order.issue_warehouse_id && (
+                                <div className="flex justify-between">
+                                  <span className="text-slate-500">{copy.detail.issueWarehouseId}</span>
+                                  <span className="font-mono text-xs text-slate-700">{order.issue_warehouse_id}</span>
+                                </div>
+                              )}
+                            </div>
+                            {/* زر الطلب */}
+                            {(order as any).material_issue_approval_status !== "pending" && (
+                              <Button
+                                className="gap-2 bg-orange-600 hover:bg-orange-700 text-white"
+                                onClick={handleRequestMaterialIssue}
+                                disabled={materialIssueRequesting || busy}
+                              >
+                                <Send className="h-4 w-4" />
+                                {materialIssueRequesting
+                                  ? copy.common.loadingAction
+                                  : (order as any).material_issue_approval_status === "rejected"
+                                    ? copy.detail.materialIssueReRequestBtn
+                                    : copy.detail.materialIssueRequestBtn}
+                              </Button>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+                    </TabsContent>
+
+                    {/* ── Phase 4: تبويب استلام المنتج ── */}
+                    <TabsContent value="product_receive" className="space-y-4">
+                      {order.status !== "in_progress" ? (
+                        <Card>
+                          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                            <PackageCheck className="h-10 w-10 text-slate-300" />
+                            <p className="text-sm text-slate-500">{copy.detail.productReceiveNotAvailable}</p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <PackageCheck className="h-5 w-5 text-emerald-500" />
+                              {copy.detail.productReceiveTitle}
+                            </CardTitle>
+                            <CardDescription>{copy.detail.productReceiveDescription}</CardDescription>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            {/* حالة الاعتماد الحالية */}
+                            {(() => {
+                              const s = order.product_receive_approval_status
+                              if (s === "pending") {
+                                return (
+                                  <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950/30">
+                                    <Clock className="h-5 w-5 text-amber-500 shrink-0" />
+                                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{copy.detail.productReceivePending}</p>
+                                  </div>
+                                )
+                              }
+                              if (s === "rejected") {
+                                return (
+                                  <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 dark:border-red-800 dark:bg-red-950/30">
+                                    <XCircle className="h-5 w-5 text-red-500 shrink-0" />
+                                    <p className="text-sm font-medium text-red-800 dark:text-red-300">{copy.detail.productReceiveRejected}</p>
+                                  </div>
+                                )
+                              }
+                              return null
+                            })()}
+                            {/* فورم الطلب */}
+                            {order.product_receive_approval_status !== "pending" && (
+                              <div className="space-y-3">
+                                <div className="space-y-1.5">
+                                  <Label>{copy.detail.productReceiveQtyLabel}</Label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step="0.001"
+                                    value={productReceiveQty}
+                                    onChange={(e) => setProductReceiveQty(Number(e.target.value))}
+                                  />
+                                  <p className="text-xs text-slate-500">
+                                    {copy.detail.plannedQty}: {formatQuantity(order.planned_quantity, appLang)}
+                                  </p>
+                                </div>
+                                <div className="space-y-1.5">
+                                  <Label>{copy.detail.productReceiveNotesLabel}</Label>
+                                  <Textarea
+                                    value={productReceiveNotes}
+                                    onChange={(e) => setProductReceiveNotes(e.target.value)}
+                                    rows={2}
+                                    placeholder={appLang === "ar" ? "ملاحظات للمسؤول..." : "Notes for the approver..."}
+                                  />
+                                </div>
+                                <Button
+                                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                  onClick={handleRequestProductReceive}
+                                  disabled={productReceiveRequesting || productReceiveQty <= 0 || busy}
+                                >
+                                  <SendHorizontal className="h-4 w-4" />
+                                  {productReceiveRequesting
+                                    ? copy.common.loadingAction
+                                    : order.product_receive_approval_status === "rejected"
+                                      ? copy.detail.productReceiveReRequestBtn
+                                      : copy.detail.productReceiveRequestBtn}
+                                </Button>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+                    </TabsContent>
+
                   </Tabs>
                 </>
               )}
