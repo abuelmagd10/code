@@ -968,9 +968,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                               <div className="mt-3 text-base font-medium text-slate-900">اختر نسخة من القائمة أعلاه</div>
                             </div>
                           )
-                        ) : (
-                          <>
-                            {structureDraft.length === 0 ? (
+                        ) : structureDraft.length === 0 ? (
                               <div className="rounded-2xl border border-dashed p-10 text-center">
                                 <div className="mx-auto flex max-w-md flex-col items-center gap-3">
                                   <Package2 className="h-8 w-8 text-slate-300" />
@@ -1223,7 +1221,6 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 ))}
                               </div>
                             )}
-                          </>
                           </CardContent>
                         </Card>
 
