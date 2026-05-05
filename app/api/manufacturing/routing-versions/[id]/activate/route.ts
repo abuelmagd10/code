@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
+import { createNotification } from "@/lib/governance-layer"
 import {
   ManufacturingApiError,
   assertRoutingVersionAccessible,
@@ -52,6 +53,24 @@ export async function POST(
       },
       reason: "Activated manufacturing routing version",
     })
+
+    // Notify manager that routing version is now active
+    try {
+      await createNotification({
+        companyId,
+        referenceType: "manufacturing_routing_version",
+        referenceId: id,
+        title: "✅ نسخة مسار التصنيع نشطة",
+        message: `نسخة مسار التصنيع رقم ${version.version_no} أصبحت نشطة ويمكن استخدامها في أوامر الإنتاج`,
+        createdBy: user.id,
+        branchId: version.branch_id ?? undefined,
+        assignedToRole: "manager",
+        priority: "normal",
+        severity: "info",
+        category: "approvals",
+        eventKey: `routing_v_activated_mgr_${id}`,
+      })
+    } catch { /* non-critical */ }
 
     return NextResponse.json({ success: true, data })
   } catch (error) {

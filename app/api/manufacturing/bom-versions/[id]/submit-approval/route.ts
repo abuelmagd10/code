@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
+import { createNotification } from "@/lib/governance-layer"
 import {
   assertBomVersionAccessible,
   getManufacturingApiContext,
@@ -35,6 +36,29 @@ export async function POST(
       newData: { status: "pending_approval", approval_request_id: data?.approval_request_id || null },
       reason: "Submitted manufacturing BOM version for approval",
     })
+
+    // Notify approvers: manager + admin + general_manager
+    const notificationBase = {
+      companyId,
+      referenceType: "manufacturing_bom_version",
+      referenceId: id,
+      title: "📋 طلب اعتماد نسخة BOM",
+      message: `نسخة BOM رقم ${version.version_no} بانتظار اعتمادك — يرجى المراجعة والاعتماد`,
+      createdBy: user.id,
+      branchId: version.branch_id ?? undefined,
+      priority: "high" as const,
+      severity: "warning" as const,
+      category: "approvals" as const,
+    }
+    try {
+      await createNotification({ ...notificationBase, assignedToRole: "manager", eventKey: `bom_v_submitted_mgr_${id}` })
+    } catch { /* non-critical */ }
+    try {
+      await createNotification({ ...notificationBase, assignedToRole: "admin", eventKey: `bom_v_submitted_admin_${id}` })
+    } catch { /* non-critical */ }
+    try {
+      await createNotification({ ...notificationBase, assignedToRole: "general_manager", eventKey: `bom_v_submitted_gm_${id}` })
+    } catch { /* non-critical */ }
 
     return NextResponse.json({ success: true, data })
   } catch (error) {

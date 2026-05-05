@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
+import { createNotification } from "@/lib/governance-layer"
 import {
   assertProductionOrderAccessible,
   completeProductionOrderSchema,
@@ -50,6 +51,26 @@ export async function POST(
       },
       reason: "Completed manufacturing production order",
     })
+
+    // Notify manager + admin that production order is complete
+    const completeBase = {
+      companyId,
+      referenceType: "manufacturing_production_order",
+      referenceId: id,
+      title: "✅ اكتمل أمر الإنتاج",
+      message: `أمر الإنتاج ${existing.order_no} اكتمل بنجاح — الكمية المنتجة: ${payload.completed_quantity}`,
+      createdBy: user.id,
+      branchId: existing.branch_id ?? undefined,
+      priority: "high" as const,
+      severity: "info" as const,
+      category: "approvals" as const,
+    }
+    try {
+      await createNotification({ ...completeBase, assignedToRole: "manager", eventKey: `po_completed_mgr_${id}` })
+    } catch { /* non-critical */ }
+    try {
+      await createNotification({ ...completeBase, assignedToRole: "admin", eventKey: `po_completed_admin_${id}` })
+    } catch { /* non-critical */ }
 
     return NextResponse.json({
       success: true,

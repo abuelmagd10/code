@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
+import { createNotification } from "@/lib/governance-layer"
 import {
   assertProductionOrderAccessible,
   getManufacturingApiContext,
@@ -42,6 +43,23 @@ export async function POST(
       newData: { status: "released" },
       reason: "Released manufacturing production order",
     })
+
+    // Notify production manager + manager that order is released and ready to start
+    const releaseBase = {
+      companyId,
+      referenceType: "manufacturing_production_order",
+      referenceId: id,
+      title: "🚀 أمر إنتاج جاهز للتنفيذ",
+      message: `أمر الإنتاج ${existing.order_no} تم إصداره وأصبح جاهزاً لبدء التصنيع`,
+      createdBy: user.id,
+      branchId: existing.branch_id ?? undefined,
+      priority: "normal" as const,
+      severity: "info" as const,
+      category: "approvals" as const,
+    }
+    try {
+      await createNotification({ ...releaseBase, assignedToRole: "manager", eventKey: `po_released_mgr_${id}` })
+    } catch { /* non-critical */ }
 
     return NextResponse.json({
       success: true,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
+import { createNotification } from "@/lib/governance-layer"
 import {
   assertProductionOrderAccessible,
   cancelProductionOrderSchema,
@@ -46,6 +47,28 @@ export async function POST(
       },
       reason: "Cancelled manufacturing production order",
     })
+
+    // Notify creator + manager that order was cancelled
+    const cancelBase = {
+      companyId,
+      referenceType: "manufacturing_production_order",
+      referenceId: id,
+      title: "🚫 تم إلغاء أمر الإنتاج",
+      message: `أمر الإنتاج ${existing.order_no} تم إلغاؤه${payload.cancellation_reason ? ` — السبب: ${payload.cancellation_reason}` : ""}`,
+      createdBy: user.id,
+      branchId: existing.branch_id ?? undefined,
+      priority: "high" as const,
+      severity: "warning" as const,
+      category: "approvals" as const,
+    }
+    if (existing.created_by && existing.created_by !== user.id) {
+      try {
+        await createNotification({ ...cancelBase, assignedToUser: existing.created_by, eventKey: `po_cancelled_creator_${id}` })
+      } catch { /* non-critical */ }
+    }
+    try {
+      await createNotification({ ...cancelBase, assignedToRole: "manager", eventKey: `po_cancelled_mgr_${id}` })
+    } catch { /* non-critical */ }
 
     return NextResponse.json({
       success: true,

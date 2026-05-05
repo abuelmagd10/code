@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
+import { createNotification } from "@/lib/governance-layer"
 import {
   assertBomVersionAccessible,
   getManufacturingApiContext,
@@ -39,6 +40,26 @@ export async function POST(
       newData: { status: "rejected", rejection_reason: payload.rejection_reason },
       reason: "Rejected manufacturing BOM version",
     })
+
+    // Notify submitter that their BOM version was rejected
+    if (version.submitted_by) {
+      try {
+        await createNotification({
+          companyId,
+          referenceType: "manufacturing_bom_version",
+          referenceId: id,
+          title: "❌ رُفضت نسخة BOM",
+          message: `رُفضت نسخة BOM رقم ${version.version_no}${payload.rejection_reason ? ` — السبب: ${payload.rejection_reason}` : ""}`,
+          createdBy: user.id,
+          branchId: version.branch_id ?? undefined,
+          assignedToUser: version.submitted_by,
+          priority: "high",
+          severity: "error",
+          category: "approvals",
+          eventKey: `bom_v_rejected_${id}`,
+        })
+      } catch { /* non-critical */ }
+    }
 
     return NextResponse.json({ success: true, data })
   } catch (error) {
