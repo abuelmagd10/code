@@ -809,394 +809,178 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                 </div>
               ) : (
                 <>
-                  <div className="grid gap-4 xl:grid-cols-[320px,minmax(0,1fr)]">
-                    <Card className="border-slate-200 bg-white/90" data-ai-help="manufacturing_bom_detail.version_selector">
-                      <CardHeader className="border-b pb-4">
-                        <CardTitle className="text-lg">نسخ هيكل المواد</CardTitle>
-                        <CardDescription>
-                          اختر النسخة التي تريد مراجعتها أو تعديلها. كل نسخة تحتوي على مكونات وبيانات إنتاج مستقلة.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3 p-4">
-                        {bom.versions.length === 0 ? (
-                          <div className="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">
-                            لا توجد نسخ بعد. أنشئ النسخة الأولى لبدء بناء الهيكل.
+                  <div className="space-y-6">
+                    {/* Quick info bar */}
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <Card className="border-cyan-200 bg-cyan-50/80">
+                        <CardContent className="p-4">
+                          <div className="mb-1 text-xs text-slate-500">المنتج المصنّع</div>
+                          <div className="text-base font-semibold text-slate-900">{buildProductLabel(ownerProduct)}</div>
+                          <div className="mt-1.5 text-xs text-slate-500">
+                            {BOM_USAGE_OPTIONS.find((o) => o.value === bom.bom_usage)?.labelAr || bom.bom_usage}
                           </div>
-                        ) : (
-                          bom.versions.map((version) => (
-                            <button
-                              key={version.id}
-                              type="button"
-                              onClick={() => setSelectedVersionId(version.id)}
-                              data-ai-help="manufacturing_bom_detail.version_selector"
-                              className={`w-full rounded-2xl border p-4 text-right transition ${
-                                selectedVersionId === version.id
-                                  ? "border-cyan-300 bg-cyan-50 shadow-sm"
-                                  : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="space-y-2">
-                                  <div className="text-base font-semibold text-slate-900">v{version.version_no}</div>
-                                  <div className="flex flex-wrap gap-2">
-                                    <Badge variant={getVersionStatusVariant(version.status)} data-ai-help="manufacturing_bom_detail.version_status">
-                                      {getVersionStatusLabel(version.status)}
-                                    </Badge>
-                                    {version.is_default ? <Badge variant="outline" data-ai-help="manufacturing_bom_detail.default_version">افتراضية</Badge> : null}
-                                  </div>
-                                </div>
-                                <div className="text-xs text-slate-500">{formatDateOnly(version.updated_at)}</div>
-                              </div>
-                              <div className="mt-3 space-y-1 text-xs text-slate-500">
-                                <div data-ai-help="manufacturing_bom_detail.effective_dates">سريان من: {formatDateOnly(version.effective_from)}</div>
-                                <div data-ai-help="manufacturing_bom_detail.effective_dates">سريان إلى: {formatDateOnly(version.effective_to)}</div>
-                              </div>
-                            </button>
-                          ))
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    <div className="space-y-4">
-
-                      <div className="space-y-4">
-                        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr),minmax(0,1fr)]">
-                          <Card className="border-slate-200 bg-white/90">
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2 text-lg">
-                                <Package2 className="h-5 w-5 text-cyan-700" />
-                                رأس قائمة المواد
-                              </CardTitle>
-                              <CardDescription>
-                                المنتج المصنّع والفرع ونوع الاستخدام للقراءة فقط. يمكن تعديل الكود والاسم والوصف والحالة.
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              <div className="grid gap-4 md:grid-cols-2">
-                                <div className="space-y-2" data-ai-help="manufacturing_bom_detail.bom_code">
-                                  <Label>كود هيكل المواد</Label>
-                                  <Input
-                                    value={headerForm.bom_code}
-                                    onChange={(event) => setHeaderForm((current) => ({ ...current, bom_code: event.target.value }))}
-                                    disabled={!canUpdate}
-                                  />
-                                </div>
-                                <div className="space-y-2" data-ai-help="manufacturing_bom_detail.bom_name">
-                                  <Label>اسم هيكل المواد</Label>
-                                  <Input
-                                    value={headerForm.bom_name}
-                                    onChange={(event) => setHeaderForm((current) => ({ ...current, bom_name: event.target.value }))}
-                                    disabled={!canUpdate}
-                                  />
-                                </div>
-                              </div>
-                              <div className="grid gap-4 md:grid-cols-3">
-                                <div className="space-y-2">
-                                  <Label>الاستخدام</Label>
-                                  <div className="rounded-xl border bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                                    {BOM_USAGE_OPTIONS.find((option) => option.value === bom.bom_usage)?.labelAr || bom.bom_usage}
-                                  </div>
-                                </div>
-                                <div className="space-y-2">
-                                  <Label>الفرع</Label>
-                                  <div className="rounded-xl border bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                                    {buildBranchLabel(branchMap[bom.branch_id])}
-                                  </div>
-                                </div>
-                                <div className="space-y-2" data-ai-help="manufacturing_bom_detail.finished_product">
-                                  <Label>المنتج المالك</Label>
-                                  <div className="rounded-xl border bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                                    {buildProductLabel(ownerProduct)}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="space-y-2" data-ai-help="manufacturing_bom_detail.notes">
-                                <Label>الوصف</Label>
-                                <Textarea
-                                  value={headerForm.description}
-                                  onChange={(event) => setHeaderForm((current) => ({ ...current, description: event.target.value }))}
-                                  disabled={!canUpdate}
-                                />
-                              </div>
-                              {/* ── Phase 1: مخزن الصرف الافتراضي ── */}
-                              <div className="space-y-2">
-                                <Label className="flex items-center gap-1">
-                                  مخزن صرف المواد الافتراضي
-                                  <span className="text-xs font-normal text-muted-foreground">(اختياري)</span>
-                                </Label>
-                                <WarehouseSelector
-                                  value={headerForm.source_warehouse_id || ""}
-                                  onChange={(warehouseId) => setHeaderForm((current) => ({ ...current, source_warehouse_id: warehouseId || null }))}
-                                  branchId={bom?.branch_id || null}
-                                  placeholder="اختر مخزن الصرف الافتراضي..."
-                                  disabled={!canUpdate}
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                  عند تحديد مخزن هنا، سيتم ملؤه تلقائياً في حقل "مخزن الصرف" عند إنشاء أمر إنتاج مرتبط بهذه القائمة.
-                                </p>
-                              </div>
-                              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-slate-50 px-4 py-3">
-                                <div className="space-y-1">
-                                  <div className="font-medium text-slate-900">نشاط BOM</div>
-                                  <div className="text-sm text-slate-500">يمكن تعطيل السجل دون فقد تاريخ النسخ أو الاعتماد.</div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <Badge variant={headerForm.is_active ? "default" : "outline"}>
-                                    {headerForm.is_active ? "نشط" : "غير نشط"}
-                                  </Badge>
-                                  <Switch
-                                    checked={headerForm.is_active}
-                                    onCheckedChange={(checked) => setHeaderForm((current) => ({ ...current, is_active: Boolean(checked) }))}
-                                    disabled={!canUpdate}
-                                  />
-                                </div>
-                              </div>
-                              <div className="flex flex-wrap items-center justify-between gap-3">
-                                <div className="text-xs text-slate-500">
-                                  آخر تحديث: {formatDateTime(bom.updated_at)}
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  <Button variant="outline" onClick={() => hydrateHeaderForm(bom)} disabled={savingHeader}>
-                                    إعادة تعيين
-                                  </Button>
-                                  <Button onClick={handleSaveHeader} disabled={!canUpdate || savingHeader} className="gap-2" data-ai-help="manufacturing_bom_detail.bom_name">
-                                    {savingHeader ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                    حفظ البيانات
-                                  </Button>
-                                  <Button
-                                    variant="destructive"
-                                    onClick={() => setConfirmAction("delete-bom")}
-                                    disabled={!canDelete || runningAction === "delete-bom"}
-                                    className="gap-2"
-                                  >
-                                    {runningAction === "delete-bom" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                                    حذف BOM
-                                  </Button>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-
-                          <Card className="border-slate-200 bg-white/90" data-ai-help="manufacturing_bom_detail.version_status">
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2 text-lg">
-                                <ShieldCheck className="h-5 w-5 text-indigo-700" />
-                                إدارة النسخة
-                              </CardTitle>
-                              <CardDescription>
-                                إدارة حالة النسخة الحالية، تعديل header الخاص بها، وتنفيذ أوامر الاعتماد والتعيين الافتراضي بشكل ذري.
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                              {loadingVersion && selectedVersionId ? (
-                                <div className="flex min-h-[220px] items-center justify-center text-slate-500">
-                                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                                  جاري تحميل النسخة المحددة...
-                                </div>
-                              ) : !selectedVersion || !versionSnapshot ? (
-                                <div className="rounded-2xl border border-dashed p-8 text-center">
-                                  <div className="mx-auto flex max-w-md flex-col items-center gap-3">
-                                    <WandSparkles className="h-8 w-8 text-slate-300" />
-                                    <div className="text-lg font-medium text-slate-900">لا توجد نسخة محددة</div>
-                                    <p className="text-sm leading-6 text-slate-500">
-                                      أنشئ نسخة جديدة أو اختر نسخة من القائمة الجانبية لبدء إدارة التفاصيل والهيكل.
-                                    </p>
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border bg-slate-50 px-4 py-3">
-                                    <div className="space-y-2">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <div className="text-lg font-semibold text-slate-900">v{selectedVersion.version_no}</div>
-                                        <Badge variant={getVersionStatusVariant(selectedVersion.status)} data-ai-help="manufacturing_bom_detail.version_status">
-                                          {getVersionStatusLabel(selectedVersion.status)}
-                                        </Badge>
-                                        {selectedVersion.is_default ? <Badge variant="outline" data-ai-help="manufacturing_bom_detail.default_version">افتراضية</Badge> : null}
-                                      </div>
-                                      <p className="max-w-xl text-sm leading-6 text-slate-600">
-                                        {getVersionLockMessage(selectedVersion.status)}
-                                      </p>
-                                    </div>
-                                    <div className="grid gap-2 text-xs text-slate-500 sm:text-sm">
-                                      <div>آخر تحديث: {formatDateTime(selectedVersion.updated_at)}</div>
-                                      <div>تاريخ الإرسال: {formatDateTime(selectedVersion.submitted_at)}</div>
-                                      <div>تاريخ الاعتماد: {formatDateTime(selectedVersion.approved_at)}</div>
-                                      <div>تاريخ الرفض: {formatDateTime(selectedVersion.rejected_at)}</div>
-                                    </div>
-                                  </div>
-
-                                  <div className="grid gap-4 md:grid-cols-2">
-                                    <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
-                                      <Label>تاريخ السريان من</Label>
-                                      <Input
-                                        type="datetime-local"
-                                        value={versionForm.effective_from}
-                                        onChange={(event) => setVersionForm((current) => ({ ...current, effective_from: event.target.value }))}
-                                        disabled={!versionEditable || !canUpdate}
-                                      />
-                                    </div>
-                                    <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
-                                      <Label>تاريخ السريان إلى</Label>
-                                      <Input
-                                        type="datetime-local"
-                                        value={versionForm.effective_to}
-                                        onChange={(event) => setVersionForm((current) => ({ ...current, effective_to: event.target.value }))}
-                                        disabled={!versionEditable || !canUpdate}
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className="space-y-2" data-ai-help="manufacturing_bom_detail.quantity_per_unit">
-                                    <Label>كمية الإنتاج الأساسية</Label>
-                                    <Input
-                                      type="number"
-                                      min="0.0001"
-                                      step="0.0001"
-                                      value={versionForm.base_output_qty}
-                                      onChange={(event) => setVersionForm((current) => ({ ...current, base_output_qty: event.target.value }))}
-                                      disabled={!versionEditable || !canUpdate}
-                                    />
-                                  </div>
-                                  <div className="space-y-2" data-ai-help="manufacturing_bom_detail.notes">
-                                    <Label>ملخص التغيير</Label>
-                                    <Textarea
-                                      value={versionForm.change_summary}
-                                      onChange={(event) => setVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
-                                      disabled={!versionEditable || !canUpdate}
-                                    />
-                                  </div>
-                                  <div className="space-y-2" data-ai-help="manufacturing_bom_detail.notes">
-                                    <Label>ملاحظات</Label>
-                                    <Textarea
-                                      value={versionForm.notes}
-                                      onChange={(event) => setVersionForm((current) => ({ ...current, notes: event.target.value }))}
-                                      disabled={!versionEditable || !canUpdate}
-                                    />
-                                  </div>
-
-                                  <Separator />
-
-                                  <div className="flex flex-wrap gap-2">
-                                    <Button
-                                      onClick={handleSaveVersionHeader}
-                                      disabled={!versionEditable || !canUpdate || savingVersionHeader}
-                                      className="gap-2"
-                                    >
-                                      {savingVersionHeader ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                      حفظ رأس النسخة
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      onClick={() => {
-                                        if (!selectedVersionId) return
-                                        void executeVersionAction("submit", () => submitBomVersion(selectedVersionId), "تم إرسال النسخة للاعتماد", "أصبحت النسخة الآن في حالة pending_approval.")
-                                      }}
-                                      disabled={!selectedVersionId || !canUpdate || !canSubmitVersion(selectedVersion.status) || runningAction === "submit"}
-                                      className="gap-2"
-                                      data-ai-help="manufacturing_bom_detail.submit_approval_button"
-                                    >
-                                      {runningAction === "submit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                                      إرسال للاعتماد
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      onClick={() => setConfirmAction("approve")}
-                                      disabled={!selectedVersionId || !canApprove || !canApproveVersion(selectedVersion.status) || runningAction === "approve"}
-                                      className="gap-2"
-                                      data-ai-help="manufacturing_bom_detail.approve_button"
-                                    >
-                                      {runningAction === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                                      اعتماد
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      onClick={() => setRejectOpen(true)}
-                                      disabled={!selectedVersionId || !canApprove || !canRejectVersion(selectedVersion.status) || runningAction === "reject"}
-                                      className="gap-2"
-                                      data-ai-help="manufacturing_bom_detail.reject_button"
-                                    >
-                                      <ShieldX className="h-4 w-4" />
-                                      رفض
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      onClick={() => setConfirmAction("set-default")}
-                                      disabled={!selectedVersionId || !canUpdate || !canSetDefaultVersion(selectedVersion.status, selectedVersion.is_default) || runningAction === "set-default"}
-                                      className="gap-2"
-                                      data-ai-help="manufacturing_bom_detail.set_default_button"
-                                    >
-                                      {runningAction === "set-default" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                                      افتراضية
-                                    </Button>
-                                    <Button
-                                      variant="destructive"
-                                      onClick={() => setConfirmAction("delete-version")}
-                                      disabled={!selectedVersionId || !canDelete || !canDeleteVersion(selectedVersion.status) || runningAction === "delete-version"}
-                                      className="gap-2"
-                                    >
-                                      {runningAction === "delete-version" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                                      حذف النسخة
-                                    </Button>
-                                  </div>
-                                </>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-indigo-200 bg-indigo-50/80">
+                        <CardContent className="p-4">
+                          <div className="mb-1 text-xs text-slate-500">الفرع</div>
+                          <div className="text-base font-semibold text-slate-900">{buildBranchLabel(branchMap[bom.branch_id])}</div>
+                          {bom.source_warehouse_id ? (
+                            <div className="mt-1.5 text-xs text-emerald-600">✓ مخزن صرف محدد</div>
+                          ) : (
+                            <div className="mt-1.5 text-xs text-slate-400">لا يوجد مخزن صرف افتراضي</div>
+                          )}
+                        </CardContent>
+                      </Card>
+                      <Card className="border-slate-200 bg-slate-50/80">
+                        <CardContent className="p-4">
+                          <div className="mb-1 text-xs text-slate-500">النسخة النشطة</div>
+                          {bom.versions.length === 0 ? (
+                            <div className="text-sm text-slate-500">لا توجد نسخ بعد</div>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Select value={selectedVersionId || ""} onValueChange={setSelectedVersionId}>
+                                <SelectTrigger className="h-8 flex-1 text-sm">
+                                  <SelectValue placeholder="اختر النسخة" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {bom.versions.map((v) => (
+                                    <SelectItem key={v.id} value={v.id}>
+                                      v{v.version_no} · {getVersionStatusLabel(v.status)}{v.is_default ? " ★" : ""}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {selectedVersion && (
+                                <Badge variant={getVersionStatusVariant(selectedVersion.status)} className="shrink-0">
+                                  {getVersionStatusLabel(selectedVersion.status)}
+                                </Badge>
                               )}
-                            </CardContent>
-                          </Card>
-                        </div>
-                      </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </div>
 
-                      <div data-ai-help="manufacturing_bom_detail.components_table">
-                        <Card className="border-slate-200 bg-white/90">
-                          <CardHeader>
-                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                              <div>
-                                <CardTitle className="text-lg">محرر هيكل المواد</CardTitle>
-                                <CardDescription>
-                                  هذه الشاشة تحفظ الهيكل كاملًا دفعة واحدة عبر endpoint ذرّي. أي حفظ هنا يعيد استبدال الـ lines والـ substitutes في نفس المعاملة.
-                                </CardDescription>
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                <Button onClick={addLine} disabled={!structureEditable || !canUpdate} data-ai-help="manufacturing_bom_detail.components_table">
-                                  إضافة سطر
+                    {/* Main content: raw materials editor */}
+                    <Card className="border-slate-200 bg-white/90" data-ai-help="manufacturing_bom_detail.components_table">
+                      <CardHeader>
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                          <div>
+                            <CardTitle className="flex items-center gap-2 text-lg">
+                              <Package2 className="h-5 w-5 text-cyan-700" />
+                              المواد الخام
+                            </CardTitle>
+                            <CardDescription>
+                              {selectedVersion
+                                ? structureEditable
+                                  ? "النسخة قابلة للتعديل — أضف المواد الخام واحفظ."
+                                  : getVersionLockMessage(selectedVersion.status)
+                                : bom.versions.length === 0
+                                ? "أنشئ النسخة الأولى لبدء إضافة المواد."
+                                : "اختر نسخة من القائمة أعلاه لعرض مكوناتها."}
+                            </CardDescription>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {bom.versions.length === 0 && (
+                              <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite} className="gap-2">
+                                <CopyPlus className="h-4 w-4" />
+                                إنشاء النسخة الأولى
+                              </Button>
+                            )}
+                            {structureEditable && canUpdate && (
+                              <>
+                                <Button variant="outline" onClick={addLine} className="gap-2" data-ai-help="manufacturing_bom_detail.components_table">
+                                  إضافة مادة
                                 </Button>
                                 <Button
                                   variant="outline"
                                   onClick={() => setStructureDraft(versionSnapshot ? bomSnapshotToDraftLines(versionSnapshot.lines) : [])}
                                   disabled={savingStructure}
                                 >
-                                  إعادة تحميل المسودة
+                                  إعادة تحميل
                                 </Button>
                                 <Button
                                   onClick={handleSaveStructure}
-                                  disabled={!selectedVersionId || !structureEditable || !canUpdate || savingStructure}
+                                  disabled={!selectedVersionId || savingStructure}
                                   className="gap-2"
                                   data-ai-help="manufacturing_bom_detail.components_table"
                                 >
                                   {savingStructure ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                  حفظ الهيكل
+                                  حفظ المواد
                                 </Button>
-                              </div>
+                              </>
+                            )}
+                            {selectedVersion && canSubmitVersion(selectedVersion.status) && (
+                              <Button
+                                variant="outline"
+                                onClick={() => {
+                                  if (!selectedVersionId) return
+                                  void executeVersionAction("submit", () => submitBomVersion(selectedVersionId), "تم إرسال النسخة للاعتماد", "أصبحت النسخة في حالة pending_approval.")
+                                }}
+                                disabled={!canUpdate || runningAction === "submit"}
+                                className="gap-2"
+                                data-ai-help="manufacturing_bom_detail.submit_approval_button"
+                              >
+                                {runningAction === "submit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                إرسال للاعتماد
+                              </Button>
+                            )}
+                            {selectedVersion && canApproveVersion(selectedVersion.status) && (
+                              <Button
+                                variant="outline"
+                                onClick={() => setConfirmAction("approve")}
+                                disabled={!canApprove || runningAction === "approve"}
+                                className="gap-2"
+                                data-ai-help="manufacturing_bom_detail.approve_button"
+                              >
+                                {runningAction === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                                اعتماد النسخة
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {bom.versions.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed p-10 text-center">
+                            <div className="mx-auto flex max-w-md flex-col items-center gap-3">
+                              <Package2 className="h-8 w-8 text-slate-300" />
+                              <div className="text-lg font-medium text-slate-900">لا توجد نسخة بعد</div>
+                              <p className="text-sm leading-6 text-slate-500">
+                                قائمة المواد تحتاج إلى نسخة لإضافة المواد الخام.
+                              </p>
+                              <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite} className="gap-2">
+                                <CopyPlus className="h-4 w-4" />
+                                إنشاء النسخة الأولى
+                              </Button>
                             </div>
-                          </CardHeader>
-                          <CardContent className="space-y-4">
-                            {selectedVersion ? (
-                              <div className={`rounded-2xl border px-4 py-3 text-sm ${
-                                structureEditable ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"
-                              }`}>
-                                {structureEditable
-                                  ? "النسخة الحالية قابلة لتعديل الهيكل. الحفظ هنا يمر عبر update structure atomic RPC."
-                                  : getVersionLockMessage(selectedVersion.status)}
-                              </div>
-                            ) : null}
-
+                          </div>
+                        ) : !selectedVersion || !versionSnapshot ? (
+                          loadingVersion ? (
+                            <div className="flex min-h-[160px] items-center justify-center text-slate-500">
+                              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                              جاري تحميل النسخة...
+                            </div>
+                          ) : (
+                            <div className="rounded-2xl border border-dashed p-8 text-center">
+                              <WandSparkles className="mx-auto h-8 w-8 text-slate-300" />
+                              <div className="mt-3 text-base font-medium text-slate-900">اختر نسخة من القائمة أعلاه</div>
+                            </div>
+                          )
+                        ) : (
+                          <>
                             {structureDraft.length === 0 ? (
                               <div className="rounded-2xl border border-dashed p-10 text-center">
                                 <div className="mx-auto flex max-w-md flex-col items-center gap-3">
                                   <Package2 className="h-8 w-8 text-slate-300" />
                                   <div className="text-lg font-medium text-slate-900">لا توجد مكونات بعد</div>
                                   <p className="text-sm leading-6 text-slate-500">
-                                    ابدأ بإضافة component line أو by/co-product ثم احفظ الهيكل بالكامل.
+                                    ابدأ بإضافة المواد الخام اللازمة لتصنيع هذا المنتج.
                                   </p>
+                                  {structureEditable && (
+                                    <Button onClick={addLine} disabled={!canUpdate}>إضافة مادة خام</Button>
+                                  )}
                                 </div>
                               </div>
                             ) : (
@@ -1206,9 +990,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                     <CardHeader className="pb-4">
                                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                         <div>
-                                          <CardTitle className="text-base">مكوّن رقم #{line.line_no}</CardTitle>
+                                          <CardTitle className="text-base">مادة خام #{line.line_no}</CardTitle>
                                           <CardDescription>
-                                            استخدم `component` للمدخلات، و`co_product/by_product` للمخرجات الإضافية.
+                                            {productMap[line.component_product_id]
+                                              ? buildProductLabel(productMap[line.component_product_id])
+                                              : "لم يُحدد المنتج بعد"}
                                           </CardDescription>
                                         </div>
                                         <Button
@@ -1217,7 +1003,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           onClick={() => removeLine(lineIndex)}
                                           disabled={!structureEditable || !canUpdate}
                                         >
-                                          حذف هذا المكوّن
+                                          حذف
                                         </Button>
                                       </div>
                                     </CardHeader>
@@ -1437,19 +1223,265 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 ))}
                               </div>
                             )}
+                          </>
                           </CardContent>
                         </Card>
-                      </div>
 
-                      <Accordion type="single" collapsible className="w-full" data-ai-help="manufacturing_bom_detail.preview_results">
-                        <AccordionItem value="preview" className="rounded-2xl border border-slate-200 bg-white/90 px-0">
-                          <AccordionTrigger className="px-6 py-4 text-base font-semibold hover:no-underline">
-                            <div className="flex items-center gap-2">
-                              <FileSearch className="h-4 w-4 text-slate-500" />
-                              تحليل مكونات الإنتاج (متقدم)
+                    {/* Advanced accordions: version management, BOM settings, production analysis */}
+                    <Accordion type="multiple" className="space-y-3">
+
+                      <AccordionItem value="version-management" className="rounded-2xl border border-slate-200 bg-white/90 px-0" data-ai-help="manufacturing_bom_detail.version_selector">
+                        <AccordionTrigger className="px-6 py-4 text-base font-semibold hover:no-underline">
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className="h-4 w-4 text-indigo-600" />
+                            إدارة النسخ والاعتماد
+                            {bom.versions.length > 0 && (
+                              <Badge variant="secondary" className="text-xs">{bom.versions.length} نسخة</Badge>
+                            )}
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-6 pb-6">
+                          <div className="space-y-4">
+                            <div className="flex flex-wrap gap-2">
+                              <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite} variant="outline" className="gap-2">
+                                <CopyPlus className="h-4 w-4" />
+                                إنشاء نسخة جديدة
+                              </Button>
                             </div>
-                          </AccordionTrigger>
-                          <AccordionContent className="px-0 pb-0">
+                            {bom.versions.length === 0 ? (
+                              <div className="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">لا توجد نسخ بعد.</div>
+                            ) : (
+                              <div className="space-y-2">
+                                {bom.versions.map((version) => (
+                                  <button
+                                    key={version.id}
+                                    type="button"
+                                    onClick={() => setSelectedVersionId(version.id)}
+                                    data-ai-help="manufacturing_bom_detail.version_selector"
+                                    className={`w-full rounded-2xl border p-4 text-right transition ${
+                                      selectedVersionId === version.id
+                                        ? "border-cyan-300 bg-cyan-50 shadow-sm"
+                                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="space-y-2">
+                                        <div className="text-base font-semibold text-slate-900">v{version.version_no}</div>
+                                        <div className="flex flex-wrap gap-2">
+                                          <Badge variant={getVersionStatusVariant(version.status)} data-ai-help="manufacturing_bom_detail.version_status">
+                                            {getVersionStatusLabel(version.status)}
+                                          </Badge>
+                                          {version.is_default ? <Badge variant="outline" data-ai-help="manufacturing_bom_detail.default_version">افتراضية</Badge> : null}
+                                        </div>
+                                      </div>
+                                      <div className="text-xs text-slate-500">{formatDateOnly(version.updated_at)}</div>
+                                    </div>
+                                    <div className="mt-3 space-y-1 text-xs text-slate-500">
+                                      <div>سريان من: {formatDateOnly(version.effective_from)}</div>
+                                      <div>سريان إلى: {formatDateOnly(version.effective_to)}</div>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {selectedVersion && versionSnapshot ? (
+                              <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4" data-ai-help="manufacturing_bom_detail.version_status">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="space-y-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <div className="text-lg font-semibold text-slate-900">v{selectedVersion.version_no}</div>
+                                      <Badge variant={getVersionStatusVariant(selectedVersion.status)} data-ai-help="manufacturing_bom_detail.version_status">
+                                        {getVersionStatusLabel(selectedVersion.status)}
+                                      </Badge>
+                                      {selectedVersion.is_default ? <Badge variant="outline" data-ai-help="manufacturing_bom_detail.default_version">افتراضية</Badge> : null}
+                                    </div>
+                                    <p className="max-w-xl text-sm leading-6 text-slate-600">{getVersionLockMessage(selectedVersion.status)}</p>
+                                  </div>
+                                  <div className="grid gap-2 text-xs text-slate-500">
+                                    <div>آخر تحديث: {formatDateTime(selectedVersion.updated_at)}</div>
+                                    <div>تاريخ الاعتماد: {formatDateTime(selectedVersion.approved_at)}</div>
+                                  </div>
+                                </div>
+                                <div className="grid gap-4 md:grid-cols-2">
+                                  <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
+                                    <Label>تاريخ السريان من</Label>
+                                    <Input type="datetime-local" value={versionForm.effective_from}
+                                      onChange={(event) => setVersionForm((current) => ({ ...current, effective_from: event.target.value }))}
+                                      disabled={!versionEditable || !canUpdate} />
+                                  </div>
+                                  <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
+                                    <Label>تاريخ السريان إلى</Label>
+                                    <Input type="datetime-local" value={versionForm.effective_to}
+                                      onChange={(event) => setVersionForm((current) => ({ ...current, effective_to: event.target.value }))}
+                                      disabled={!versionEditable || !canUpdate} />
+                                  </div>
+                                </div>
+                                <div className="space-y-2" data-ai-help="manufacturing_bom_detail.quantity_per_unit">
+                                  <Label>كمية الإنتاج الأساسية</Label>
+                                  <Input type="number" min="0.0001" step="0.0001" value={versionForm.base_output_qty}
+                                    onChange={(event) => setVersionForm((current) => ({ ...current, base_output_qty: event.target.value }))}
+                                    disabled={!versionEditable || !canUpdate} />
+                                </div>
+                                <div className="space-y-2"><Label>ملخص التغيير</Label>
+                                  <Textarea value={versionForm.change_summary}
+                                    onChange={(event) => setVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
+                                    disabled={!versionEditable || !canUpdate} />
+                                </div>
+                                <div className="space-y-2"><Label>ملاحظات</Label>
+                                  <Textarea value={versionForm.notes}
+                                    onChange={(event) => setVersionForm((current) => ({ ...current, notes: event.target.value }))}
+                                    disabled={!versionEditable || !canUpdate} />
+                                </div>
+                                <Separator />
+                                <div className="flex flex-wrap gap-2">
+                                  <Button onClick={handleSaveVersionHeader} disabled={!versionEditable || !canUpdate || savingVersionHeader} className="gap-2">
+                                    {savingVersionHeader ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                    حفظ رأس النسخة
+                                  </Button>
+                                  <Button variant="outline"
+                                    onClick={() => { if (!selectedVersionId) return; void executeVersionAction("submit", () => submitBomVersion(selectedVersionId), "تم إرسال النسخة للاعتماد", "أصبحت النسخة في حالة pending_approval.") }}
+                                    disabled={!selectedVersionId || !canUpdate || !canSubmitVersion(selectedVersion.status) || runningAction === "submit"}
+                                    className="gap-2" data-ai-help="manufacturing_bom_detail.submit_approval_button">
+                                    {runningAction === "submit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                    إرسال للاعتماد
+                                  </Button>
+                                  <Button variant="outline" onClick={() => setConfirmAction("approve")}
+                                    disabled={!selectedVersionId || !canApprove || !canApproveVersion(selectedVersion.status) || runningAction === "approve"}
+                                    className="gap-2" data-ai-help="manufacturing_bom_detail.approve_button">
+                                    {runningAction === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                                    اعتماد
+                                  </Button>
+                                  <Button variant="outline" onClick={() => setRejectOpen(true)}
+                                    disabled={!selectedVersionId || !canApprove || !canRejectVersion(selectedVersion.status) || runningAction === "reject"}
+                                    className="gap-2" data-ai-help="manufacturing_bom_detail.reject_button">
+                                    <ShieldX className="h-4 w-4" /> رفض
+                                  </Button>
+                                  <Button variant="outline" onClick={() => setConfirmAction("set-default")}
+                                    disabled={!selectedVersionId || !canUpdate || !canSetDefaultVersion(selectedVersion.status, selectedVersion.is_default) || runningAction === "set-default"}
+                                    className="gap-2" data-ai-help="manufacturing_bom_detail.set_default_button">
+                                    {runningAction === "set-default" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                                    تعيين كافتراضية
+                                  </Button>
+                                  <Button variant="destructive" onClick={() => setConfirmAction("delete-version")}
+                                    disabled={!selectedVersionId || !canDelete || !canDeleteVersion(selectedVersion.status) || runningAction === "delete-version"}
+                                    className="gap-2">
+                                    {runningAction === "delete-version" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                    حذف النسخة
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      {/* BOM settings accordion */}
+                      <AccordionItem value="bom-settings" className="rounded-2xl border border-slate-200 bg-white/90 px-0">
+                        <AccordionTrigger className="px-6 py-4 text-base font-semibold hover:no-underline">
+                          <div className="flex items-center gap-2">
+                            <Package2 className="h-4 w-4 text-cyan-600" />
+                            إعدادات قائمة المواد
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-6 pb-6">
+                          <div className="space-y-4">
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <div className="space-y-2" data-ai-help="manufacturing_bom_detail.bom_code">
+                                <Label>كود هيكل المواد</Label>
+                                <Input value={headerForm.bom_code}
+                                  onChange={(event) => setHeaderForm((current) => ({ ...current, bom_code: event.target.value }))}
+                                  disabled={!canUpdate} />
+                              </div>
+                              <div className="space-y-2" data-ai-help="manufacturing_bom_detail.bom_name">
+                                <Label>اسم هيكل المواد</Label>
+                                <Input value={headerForm.bom_name}
+                                  onChange={(event) => setHeaderForm((current) => ({ ...current, bom_name: event.target.value }))}
+                                  disabled={!canUpdate} />
+                              </div>
+                            </div>
+                            <div className="grid gap-4 md:grid-cols-3">
+                              <div className="space-y-2">
+                                <Label>الاستخدام</Label>
+                                <div className="rounded-xl border bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                                  {BOM_USAGE_OPTIONS.find((option) => option.value === bom.bom_usage)?.labelAr || bom.bom_usage}
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <Label>الفرع</Label>
+                                <div className="rounded-xl border bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                                  {buildBranchLabel(branchMap[bom.branch_id])}
+                                </div>
+                              </div>
+                              <div className="space-y-2" data-ai-help="manufacturing_bom_detail.finished_product">
+                                <Label>المنتج المالك</Label>
+                                <div className="rounded-xl border bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                                  {buildProductLabel(ownerProduct)}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="space-y-2" data-ai-help="manufacturing_bom_detail.notes">
+                              <Label>الوصف</Label>
+                              <Textarea value={headerForm.description}
+                                onChange={(event) => setHeaderForm((current) => ({ ...current, description: event.target.value }))}
+                                disabled={!canUpdate} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="flex items-center gap-1">
+                                مخزن صرف المواد الافتراضي
+                                <span className="text-xs font-normal text-muted-foreground">(اختياري)</span>
+                              </Label>
+                              <WarehouseSelector
+                                value={headerForm.source_warehouse_id || ""}
+                                onChange={(warehouseId) => setHeaderForm((current) => ({ ...current, source_warehouse_id: warehouseId || null }))}
+                                branchId={bom?.branch_id || null}
+                                placeholder="اختر مخزن الصرف الافتراضي..."
+                                disabled={!canUpdate} />
+                              <p className="text-xs text-muted-foreground">
+                                عند تحديد مخزن هنا، سيتم ملؤه تلقائياً في حقل "مخزن الصرف" عند إنشاء أمر إنتاج مرتبط بهذه القائمة.
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-slate-50 px-4 py-3">
+                              <div className="space-y-1">
+                                <div className="font-medium text-slate-900">نشاط BOM</div>
+                                <div className="text-sm text-slate-500">يمكن تعطيل السجل دون فقد تاريخ النسخ أو الاعتماد.</div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <Badge variant={headerForm.is_active ? "default" : "outline"}>
+                                  {headerForm.is_active ? "نشط" : "غير نشط"}
+                                </Badge>
+                                <Switch checked={headerForm.is_active}
+                                  onCheckedChange={(checked) => setHeaderForm((current) => ({ ...current, is_active: Boolean(checked) }))}
+                                  disabled={!canUpdate} />
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="text-xs text-slate-500">آخر تحديث: {formatDateTime(bom.updated_at)}</div>
+                              <div className="flex flex-wrap gap-2">
+                                <Button variant="outline" onClick={() => hydrateHeaderForm(bom)} disabled={savingHeader}>إعادة تعيين</Button>
+                                <Button onClick={handleSaveHeader} disabled={!canUpdate || savingHeader} className="gap-2" data-ai-help="manufacturing_bom_detail.bom_name">
+                                  {savingHeader ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                  حفظ البيانات
+                                </Button>
+                                <Button variant="destructive" onClick={() => setConfirmAction("delete-bom")}
+                                  disabled={!canDelete || runningAction === "delete-bom"} className="gap-2">
+                                  {runningAction === "delete-bom" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                  حذف BOM
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      {/* Production analysis accordion (advanced) */}
+                      <AccordionItem value="preview" className="rounded-2xl border border-slate-200 bg-white/90 px-0" data-ai-help="manufacturing_bom_detail.preview_results">
+                        <AccordionTrigger className="px-6 py-4 text-base font-semibold hover:no-underline">
+                          <div className="flex items-center gap-2">
+                            <FileSearch className="h-4 w-4 text-slate-500" />
+                            تحليل مكونات الإنتاج (متقدم)
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-0 pb-0">
                         <Card className="border-0 shadow-none bg-transparent">
                           <CardHeader>
                             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1707,7 +1739,6 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                         </AccordionItem>
                       </Accordion>
                     </div>
-                  </div>
                 </>
               )}
         </div>

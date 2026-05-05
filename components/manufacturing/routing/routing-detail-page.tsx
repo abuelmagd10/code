@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Save,
   Settings2,
+  ShieldCheck,
   Trash2,
 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
@@ -31,14 +32,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-// Tabs removed — single-page layout
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { useAccess } from "@/lib/access-context"
@@ -652,6 +654,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 </div>
               ) : (
                 <>
+                  {/* Quick info bar */}
                   <div className="grid gap-4 md:grid-cols-3">
                     <Card className="border-cyan-200 bg-cyan-50/80" data-ai-help="manufacturing_routing_detail.finished_product">
                       <CardContent className="p-4">
@@ -673,249 +676,54 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                         </Badge>
                       </CardContent>
                     </Card>
-                    <Card className="border-slate-200 bg-slate-50/80">
+                    <Card className="border-slate-200 bg-slate-50/80" data-ai-help="manufacturing_routing_detail.version_selector">
                       <CardContent className="p-4">
-                        <div className="text-sm text-slate-500">عدد النسخ</div>
-                        <div className="mt-1 text-base font-semibold text-slate-900">{routing.versions.length} نسخة</div>
+                        <div className="mb-2 text-sm text-slate-500">النسخة المحددة</div>
+                        {routing.versions.length === 0 ? (
+                          <div className="text-sm text-slate-400">لا توجد نسخ بعد</div>
+                        ) : (
+                          <Select value={selectedVersionId || ""} onValueChange={setSelectedVersionId}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="اختر نسخة..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {routing.versions.map((version) => (
+                                <SelectItem key={version.id} value={version.id}>
+                                  v{version.version_no} — {getRoutingVersionStatusLabel(version.status)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {selectedVersion && (
+                          <Badge variant={getRoutingVersionStatusVariant(selectedVersion.status)} className="mt-2">
+                            {getRoutingVersionStatusLabel(selectedVersion.status)}
+                          </Badge>
+                        )}
                       </CardContent>
                     </Card>
                   </div>
 
-                  <div className="grid gap-6 xl:grid-cols-[280px,minmax(0,1fr)]">
-                    <Card className="h-fit" data-ai-help="manufacturing_routing_detail.version_selector">
-                      <CardHeader>
-                        <CardTitle className="text-base">النسخ</CardTitle>
-                        <CardDescription>اختر النسخة التي تريد مراجعتها أو تعديلها. كل نسخة تحتوي على مراحل تصنيع مستقلة.</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {routing.versions.length === 0 ? (
-                          <div className="rounded-xl border border-dashed p-4 text-sm text-slate-500">
-                            لا توجد نسخ بعد. أنشئ أول نسخة لبدء تعريف العمليات.
+                  {/* Operations editor - main content */}
+                  <div className="space-y-6">
+                    {!selectedVersion ? (
+                      <Card>
+                        <CardContent className="py-12 text-center">
+                          <div className="mx-auto flex max-w-md flex-col items-center gap-3">
+                            <GitBranch className="h-10 w-10 text-slate-300" />
+                            <div className="text-lg font-medium text-slate-900">لا توجد نسخة محددة</div>
+                            <p className="text-sm leading-6 text-slate-500">
+                              أنشئ نسخة جديدة أو اختر نسخة من القائمة أعلاه.
+                            </p>
+                            <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite} className="gap-2">
+                              <Plus className="h-4 w-4" />
+                              إنشاء النسخة الأولى
+                            </Button>
                           </div>
-                        ) : (
-                          routing.versions.map((version) => (
-                            <button
-                              key={version.id}
-                              type="button"
-                              onClick={() => setSelectedVersionId(version.id)}
-                              data-ai-help="manufacturing_routing_detail.version_selector"
-                              className={`w-full rounded-xl border p-3 text-right transition ${
-                                version.id === selectedVersionId
-                                  ? "border-cyan-400 bg-cyan-50 shadow-sm"
-                                  : "border-slate-200 bg-white hover:border-slate-300"
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <div className="font-medium text-slate-900">v{version.version_no}</div>
-                                  <div className="mt-1 text-xs text-slate-500">{formatDateTime(version.updated_at)}</div>
-                                </div>
-                                <Badge variant={getRoutingVersionStatusVariant(version.status)} data-ai-help="manufacturing_routing_detail.version_status">
-                                  {getRoutingVersionStatusLabel(version.status)}
-                                </Badge>
-                              </div>
-                            </button>
-                          ))
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    <div className="space-y-6">
-                      {!selectedVersion ? (
-                        <Card>
-                          <CardContent className="py-12 text-center">
-                            <div className="mx-auto flex max-w-md flex-col items-center gap-3">
-                              <GitBranch className="h-10 w-10 text-slate-300" />
-                              <div className="text-lg font-medium text-slate-900">لا توجد نسخة محددة</div>
-                              <p className="text-sm leading-6 text-slate-500">
-                                أنشئ نسخة جديدة أو اختر نسخة موجودة من العمود الجانبي.
-                              </p>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ) : (
-                        <>
-                          <Card className="border-slate-200 bg-white">
-                            <CardHeader className="border-b">
-                              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                                <div className="space-y-2">
-                                  <CardTitle className="flex items-center gap-3 text-base">
-                                    <span>v{selectedVersion.version_no}</span>
-                                    <Badge variant={getRoutingVersionStatusVariant(selectedVersion.status)} data-ai-help="manufacturing_routing_detail.version_status">
-                                      {getRoutingVersionStatusLabel(selectedVersion.status)}
-                                    </Badge>
-                                  </CardTitle>
-                                  <CardDescription>{getRoutingVersionLockMessage(selectedVersion.status)}</CardDescription>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => setConfirmAction("activate")}
-                                    disabled={
-                                      !canUpdate ||
-                                      !canActivateRoutingVersion(selectedVersion.status) ||
-                                      loadingVersion ||
-                                      activationRequiresSavedOperation ||
-                                      Boolean(runningAction)
-                                    }
-                                    className="gap-2"
-                                    data-ai-help="manufacturing_routing_detail.activate_button"
-                                  >
-                                    <PlayCircle className="h-4 w-4" />
-                                    تفعيل
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => setConfirmAction("deactivate")}
-                                    disabled={!canUpdate || !canDeactivateRoutingVersion(selectedVersion.status) || Boolean(runningAction)}
-                                    className="gap-2"
-                                    data-ai-help="manufacturing_routing_detail.deactivate_button"
-                                  >
-                                    <PauseCircle className="h-4 w-4" />
-                                    إيقاف
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => setConfirmAction("archive")}
-                                    disabled={!canUpdate || !canArchiveRoutingVersion(selectedVersion.status) || Boolean(runningAction)}
-                                    className="gap-2"
-                                    data-ai-help="manufacturing_routing_detail.archive_button"
-                                  >
-                                    <Archive className="h-4 w-4" />
-                                    أرشفة
-                                  </Button>
-                                  <Button
-                                    variant="destructive"
-                                    onClick={() => setConfirmAction("delete-version")}
-                                    disabled={!canDelete || !canDeleteRoutingVersion(selectedVersion.status) || Boolean(runningAction)}
-                                    className="gap-2"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                    حذف النسخة
-                                  </Button>
-                                </div>
-                              </div>
-                            </CardHeader>
-                          </Card>
-
-                          <div className="space-y-4">
-
-                            <div className="space-y-6">
-                              <Card>
-                                <CardHeader>
-                                  <CardTitle className="text-base">بيانات مسار التصنيع</CardTitle>
-                                  <CardDescription>حقول الهوية للقراءة فقط، والحقول القابلة للتعديل تُحفظ فور الضغط على حفظ.</CardDescription>
-                                </CardHeader>
-                                <CardContent className="grid gap-4 md:grid-cols-2">
-                                  <div className="space-y-2" data-ai-help="manufacturing_routing_detail.routing_code">
-                                    <Label>كود المسار</Label>
-                                    <Input
-                                      value={headerForm.routing_code}
-                                      onChange={(event) => setHeaderForm((current) => ({ ...current, routing_code: event.target.value }))}
-                                      disabled={!canUpdate || savingHeader}
-                                    />
-                                  </div>
-                                  <div className="space-y-2" data-ai-help="manufacturing_routing_detail.routing_name">
-                                    <Label>اسم المسار</Label>
-                                    <Input
-                                      value={headerForm.routing_name}
-                                      onChange={(event) => setHeaderForm((current) => ({ ...current, routing_name: event.target.value }))}
-                                      disabled={!canUpdate || savingHeader}
-                                    />
-                                  </div>
-                                  <div className="space-y-2" data-ai-help="manufacturing_routing_detail.finished_product">
-                                    <Label>المنتج المالك</Label>
-                                    <Input value={buildProductLabel(ownerProduct)} disabled />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>معرف الفرع</Label>
-                                    <Input value={routing.branch_id} disabled className="font-mono text-xs" />
-                                  </div>
-                                  <div className="space-y-2" data-ai-help="manufacturing_routing_detail.routing_usage">
-                                    <Label>نوع الاستخدام</Label>
-                                    <Input
-                                      value={ROUTING_USAGE_OPTIONS.find((option) => option.value === routing.routing_usage)?.labelAr || routing.routing_usage}
-                                      disabled
-                                    />
-                                  </div>
-                                  <div className="flex items-center justify-between rounded-xl border px-4 py-3" data-ai-help="manufacturing_routing_detail.version_status">
-                                    <div className="space-y-1">
-                                      <div className="font-medium text-slate-900">حالة التفعيل</div>
-                                      <div className="text-sm text-slate-500">هذه الحالة خاصة بمسار التصنيع الرئيسي وليست بالنسخة.</div>
-                                    </div>
-                                    <Switch
-                                      checked={headerForm.is_active}
-                                      onCheckedChange={(checked) => setHeaderForm((current) => ({ ...current, is_active: Boolean(checked) }))}
-                                      disabled={!canUpdate || savingHeader}
-                                    />
-                                  </div>
-                                  <div className="space-y-2 md:col-span-2">
-                                    <Label>الوصف</Label>
-                                    <Textarea
-                                      value={headerForm.description}
-                                      onChange={(event) => setHeaderForm((current) => ({ ...current, description: event.target.value }))}
-                                      disabled={!canUpdate || savingHeader}
-                                    />
-                                  </div>
-                                  <div className="md:col-span-2">
-                                    <Button onClick={handleSaveHeader} disabled={!canUpdate || savingHeader} className="gap-2" data-ai-help="manufacturing_routing_detail.routing_name">
-                                      <Save className="h-4 w-4" />
-                                      {savingHeader ? "جاري الحفظ..." : "حفظ البيانات الأساسية"}
-                                    </Button>
-                                  </div>
-                                </CardContent>
-                              </Card>
-
-                              <Card>
-                                <CardHeader>
-                                  <CardTitle className="text-base">بيانات النسخة</CardTitle>
-                                  <CardDescription>هذه الحقول قابلة للتعديل فقط عندما تكون النسخة في حالة مسودة.</CardDescription>
-                                </CardHeader>
-                                <CardContent className="grid gap-4 md:grid-cols-2">
-                                  <div className="space-y-2">
-                                    <Label>تاريخ السريان من</Label>
-                                    <Input
-                                      type="datetime-local"
-                                      value={versionForm.effective_from}
-                                      onChange={(event) => setVersionForm((current) => ({ ...current, effective_from: event.target.value }))}
-                                      disabled={!canUpdate || !versionEditable || savingVersionHeader}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>تاريخ السريان إلى</Label>
-                                    <Input
-                                      type="datetime-local"
-                                      value={versionForm.effective_to}
-                                      onChange={(event) => setVersionForm((current) => ({ ...current, effective_to: event.target.value }))}
-                                      disabled={!canUpdate || !versionEditable || savingVersionHeader}
-                                    />
-                                  </div>
-                                  <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_routing_detail.instructions">
-                                    <Label>ملخص التغييرات</Label>
-                                    <Textarea
-                                      value={versionForm.change_summary}
-                                      onChange={(event) => setVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
-                                      disabled={!canUpdate || !versionEditable || savingVersionHeader}
-                                    />
-                                  </div>
-                                  <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_routing_detail.instructions">
-                                    <Label>ملاحظات</Label>
-                                    <Textarea
-                                      value={versionForm.notes}
-                                      onChange={(event) => setVersionForm((current) => ({ ...current, notes: event.target.value }))}
-                                      disabled={!canUpdate || !versionEditable || savingVersionHeader}
-                                    />
-                                  </div>
-                                  <div className="md:col-span-2">
-                                    <Button onClick={handleSaveVersionHeader} disabled={!canUpdate || !versionEditable || savingVersionHeader} className="gap-2" data-ai-help="manufacturing_routing_detail.version_status">
-                                      <Save className="h-4 w-4" />
-                                      {savingVersionHeader ? "جاري الحفظ..." : "حفظ بيانات النسخة"}
-                                    </Button>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            </div>
-
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <>
                             <div className="space-y-6" data-ai-help="manufacturing_routing_detail.operations_table">
                               <Card>
                                 <CardHeader>
@@ -1237,11 +1045,148 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                 </Card>
                               ) : null}
                             </div>
-                          </div>
-                        </>
-                      )}
+
+                            {/* Advanced accordions: version management + routing settings */}
+                            <Accordion type="multiple" className="space-y-3">
+
+                              <AccordionItem value="version-management" className="rounded-2xl border border-slate-200 bg-white/90 px-0" data-ai-help="manufacturing_routing_detail.version_selector">
+                                <AccordionTrigger className="px-6 py-4 text-base font-semibold hover:no-underline">
+                                  <div className="flex items-center gap-2">
+                                    <ShieldCheck className="h-4 w-4 text-indigo-600" />
+                                    إدارة النسخة والاعتماد
+                                  </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="px-6 pb-6">
+                                  <div className="space-y-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="space-y-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-lg font-semibold text-slate-900">v{selectedVersion.version_no}</span>
+                                          <Badge variant={getRoutingVersionStatusVariant(selectedVersion.status)} data-ai-help="manufacturing_routing_detail.version_status">
+                                            {getRoutingVersionStatusLabel(selectedVersion.status)}
+                                          </Badge>
+                                        </div>
+                                        <p className="text-sm text-slate-500">{getRoutingVersionLockMessage(selectedVersion.status)}</p>
+                                      </div>
+                                      <div className="text-xs text-slate-400">{formatDateTime(selectedVersion.updated_at)}</div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      <Button variant="outline" onClick={() => setConfirmAction("activate")}
+                                        disabled={!canUpdate || !canActivateRoutingVersion(selectedVersion.status) || loadingVersion || activationRequiresSavedOperation || Boolean(runningAction)}
+                                        className="gap-2" data-ai-help="manufacturing_routing_detail.activate_button">
+                                        <PlayCircle className="h-4 w-4" />تفعيل
+                                      </Button>
+                                      <Button variant="outline" onClick={() => setConfirmAction("deactivate")}
+                                        disabled={!canUpdate || !canDeactivateRoutingVersion(selectedVersion.status) || Boolean(runningAction)}
+                                        className="gap-2" data-ai-help="manufacturing_routing_detail.deactivate_button">
+                                        <PauseCircle className="h-4 w-4" />إيقاف
+                                      </Button>
+                                      <Button variant="outline" onClick={() => setConfirmAction("archive")}
+                                        disabled={!canUpdate || !canArchiveRoutingVersion(selectedVersion.status) || Boolean(runningAction)}
+                                        className="gap-2" data-ai-help="manufacturing_routing_detail.archive_button">
+                                        <Archive className="h-4 w-4" />أرشفة
+                                      </Button>
+                                      <Button variant="destructive" onClick={() => setConfirmAction("delete-version")}
+                                        disabled={!canDelete || !canDeleteRoutingVersion(selectedVersion.status) || Boolean(runningAction)}
+                                        className="gap-2">
+                                        <Trash2 className="h-4 w-4" />حذف النسخة
+                                      </Button>
+                                    </div>
+                                    <Separator />
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                      <div className="space-y-2">
+                                        <Label>تاريخ السريان من</Label>
+                                        <Input type="datetime-local" value={versionForm.effective_from}
+                                          onChange={(event) => setVersionForm((current) => ({ ...current, effective_from: event.target.value }))}
+                                          disabled={!canUpdate || !versionEditable || savingVersionHeader} />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label>تاريخ السريان إلى</Label>
+                                        <Input type="datetime-local" value={versionForm.effective_to}
+                                          onChange={(event) => setVersionForm((current) => ({ ...current, effective_to: event.target.value }))}
+                                          disabled={!canUpdate || !versionEditable || savingVersionHeader} />
+                                      </div>
+                                      <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_routing_detail.instructions">
+                                        <Label>ملخص التغييرات</Label>
+                                        <Textarea value={versionForm.change_summary}
+                                          onChange={(event) => setVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
+                                          disabled={!canUpdate || !versionEditable || savingVersionHeader} />
+                                      </div>
+                                      <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_routing_detail.instructions">
+                                        <Label>ملاحظات</Label>
+                                        <Textarea value={versionForm.notes}
+                                          onChange={(event) => setVersionForm((current) => ({ ...current, notes: event.target.value }))}
+                                          disabled={!canUpdate || !versionEditable || savingVersionHeader} />
+                                      </div>
+                                    </div>
+                                    <Button onClick={handleSaveVersionHeader}
+                                      disabled={!canUpdate || !versionEditable || savingVersionHeader}
+                                      className="gap-2" data-ai-help="manufacturing_routing_detail.version_status">
+                                      <Save className="h-4 w-4" />
+                                      {savingVersionHeader ? "جاري الحفظ..." : "حفظ بيانات النسخة"}
+                                    </Button>
+                                  </div>
+                                </AccordionContent>
+                              </AccordionItem>
+
+                              {/* Routing settings accordion */}
+                              <AccordionItem value="routing-settings" className="rounded-2xl border border-slate-200 bg-white/90 px-0">
+                                <AccordionTrigger className="px-6 py-4 text-base font-semibold hover:no-underline">
+                                  <div className="flex items-center gap-2">
+                                    <Settings2 className="h-4 w-4 text-cyan-600" />
+                                    إعدادات مسار التصنيع
+                                  </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="px-6 pb-6">
+                                  <div className="grid gap-4 md:grid-cols-2">
+                                    <div className="space-y-2" data-ai-help="manufacturing_routing_detail.routing_code">
+                                      <Label>كود المسار</Label>
+                                      <Input value={headerForm.routing_code}
+                                        onChange={(event) => setHeaderForm((current) => ({ ...current, routing_code: event.target.value }))}
+                                        disabled={!canUpdate || savingHeader} />
+                                    </div>
+                                    <div className="space-y-2" data-ai-help="manufacturing_routing_detail.routing_name">
+                                      <Label>اسم المسار</Label>
+                                      <Input value={headerForm.routing_name}
+                                        onChange={(event) => setHeaderForm((current) => ({ ...current, routing_name: event.target.value }))}
+                                        disabled={!canUpdate || savingHeader} />
+                                    </div>
+                                    <div className="space-y-2" data-ai-help="manufacturing_routing_detail.finished_product">
+                                      <Label>المنتج المالك</Label>
+                                      <Input value={buildProductLabel(ownerProduct)} disabled />
+                                    </div>
+                                    <div className="space-y-2" data-ai-help="manufacturing_routing_detail.routing_usage">
+                                      <Label>نوع الاستخدام</Label>
+                                      <Input value={ROUTING_USAGE_OPTIONS.find((o) => o.value === routing.routing_usage)?.labelAr || routing.routing_usage} disabled />
+                                    </div>
+                                    <div className="flex items-center justify-between rounded-xl border px-4 py-3 md:col-span-2" data-ai-help="manufacturing_routing_detail.version_status">
+                                      <div className="space-y-1">
+                                        <div className="font-medium text-slate-900">حالة التفعيل</div>
+                                        <div className="text-sm text-slate-500">خاصة بمسار التصنيع الرئيسي، وليست بالنسخة.</div>
+                                      </div>
+                                      <Switch checked={headerForm.is_active}
+                                        onCheckedChange={(checked) => setHeaderForm((current) => ({ ...current, is_active: Boolean(checked) }))}
+                                        disabled={!canUpdate || savingHeader} />
+                                    </div>
+                                    <div className="space-y-2 md:col-span-2">
+                                      <Label>الوصف</Label>
+                                      <Textarea value={headerForm.description}
+                                        onChange={(event) => setHeaderForm((current) => ({ ...current, description: event.target.value }))}
+                                        disabled={!canUpdate || savingHeader} />
+                                    </div>
+                                    <div className="md:col-span-2">
+                                      <Button onClick={handleSaveHeader} disabled={!canUpdate || savingHeader} className="gap-2" data-ai-help="manufacturing_routing_detail.routing_name">
+                                        <Save className="h-4 w-4" />
+                                        {savingHeader ? "جاري الحفظ..." : "حفظ البيانات الأساسية"}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </AccordionContent>
+                              </AccordionItem>
+                            </Accordion>
+                          </>
+                        )}
                     </div>
-                  </div>
                 </>
               )}
         </div>
