@@ -1031,6 +1031,55 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                               </option>
                                             ))}
                                           </select>
+                                          {/* Contextual hint for the selected line type */}
+                                          {line.line_type === "component" && (
+                                            <div className="flex gap-2 rounded-lg border border-blue-100 bg-blue-50 p-2.5">
+                                              <span className="mt-0.5 text-base leading-none">🔩</span>
+                                              <div>
+                                                <p className="text-xs font-semibold text-blue-800">مكوّن (مادة خام)</p>
+                                                <p className="mt-0.5 text-xs leading-5 text-blue-700">
+                                                  مادة تُستهلك بالكامل في التصنيع وتُصرف من المخزون.
+                                                </p>
+                                                <p className="mt-1 text-xs text-blue-600">
+                                                  <span className="font-medium">مثال:</span> دقيق + سكر + زيت في تصنيع البسكويت.
+                                                </p>
+                                              </div>
+                                            </div>
+                                          )}
+                                          {line.line_type === "co_product" && (
+                                            <div className="flex gap-2 rounded-lg border border-emerald-100 bg-emerald-50 p-2.5">
+                                              <span className="mt-0.5 text-base leading-none">🔀</span>
+                                              <div>
+                                                <p className="text-xs font-semibold text-emerald-800">منتج مشترك</p>
+                                                <p className="mt-0.5 text-xs leading-5 text-emerald-700">
+                                                  منتج رئيسي آخر يخرج من نفس دورة التصنيع بشكل مقصود، وله قيمة اقتصادية مماثلة.
+                                                </p>
+                                                <p className="mt-1 text-xs text-emerald-600">
+                                                  <span className="font-medium">مثال:</span> عند تكرير النفط: بنزين + ديزل + كيروسين في آنٍ واحد.
+                                                </p>
+                                                <p className="mt-1 text-xs text-emerald-600">
+                                                  <span className="font-medium">متى تستخدمه:</span> عندما تريد تسجيل مخرج رئيسي إضافي يُستلم في المخزون.
+                                                </p>
+                                              </div>
+                                            </div>
+                                          )}
+                                          {line.line_type === "by_product" && (
+                                            <div className="flex gap-2 rounded-lg border border-amber-100 bg-amber-50 p-2.5">
+                                              <span className="mt-0.5 text-base leading-none">♻️</span>
+                                              <div>
+                                                <p className="text-xs font-semibold text-amber-800">منتج ثانوي</p>
+                                                <p className="mt-0.5 text-xs leading-5 text-amber-700">
+                                                  ناتج عرضي غير مقصود يخرج أثناء التصنيع، وعادةً له قيمة اقتصادية أقل.
+                                                </p>
+                                                <p className="mt-1 text-xs text-amber-600">
+                                                  <span className="font-medium">مثال:</span> نشارة الخشب عند نشر الألواح، أو الحرارة الناتجة.
+                                                </p>
+                                                <p className="mt-1 text-xs text-amber-600">
+                                                  <span className="font-medium">متى تستخدمه:</span> عندما تريد تتبع أو بيع الناتج الثانوي بشكل منفصل.
+                                                </p>
+                                              </div>
+                                            </div>
+                                          )}
                                         </div>
                                         <div className="space-y-2 xl:col-span-2" data-ai-help="manufacturing_bom_detail.component_product">
                                           <Label>المادة / المنتج</Label>
