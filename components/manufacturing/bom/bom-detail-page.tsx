@@ -39,7 +39,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Separator } from "@/components/ui/separator"
@@ -857,18 +857,9 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                       </CardContent>
                     </Card>
 
-                    <Tabs defaultValue="overview" className="space-y-4">
-                      <TabsList className="w-full justify-start gap-1 overflow-x-auto">
-                        <TabsTrigger value="overview">نظرة عامة</TabsTrigger>
-                        <TabsTrigger value="structure" disabled={!selectedVersionId}>
-                          محرر هيكل المواد
-                        </TabsTrigger>
-                        <TabsTrigger value="preview" disabled={!selectedVersionId}>
-                          تحليل مكونات الإنتاج
-                        </TabsTrigger>
-                      </TabsList>
+                    <div className="space-y-4">
 
-                      <TabsContent value="overview" className="space-y-4">
+                      <div className="space-y-4">
                         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr),minmax(0,1fr)]">
                           <Card className="border-slate-200 bg-white/90">
                             <CardHeader>
@@ -1152,9 +1143,9 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                             </CardContent>
                           </Card>
                         </div>
-                      </TabsContent>
+                      </div>
 
-                      <TabsContent value="structure" data-ai-help="manufacturing_bom_detail.components_table">
+                      <div data-ai-help="manufacturing_bom_detail.components_table">
                         <Card className="border-slate-200 bg-white/90">
                           <CardHeader>
                             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1448,10 +1439,18 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                             )}
                           </CardContent>
                         </Card>
-                      </TabsContent>
+                      </div>
 
-                      <TabsContent value="preview" data-ai-help="manufacturing_bom_detail.preview_results">
-                        <Card className="border-slate-200 bg-white/90">
+                      <Accordion type="single" collapsible className="w-full" data-ai-help="manufacturing_bom_detail.preview_results">
+                        <AccordionItem value="preview" className="rounded-2xl border border-slate-200 bg-white/90 px-0">
+                          <AccordionTrigger className="px-6 py-4 text-base font-semibold hover:no-underline">
+                            <div className="flex items-center gap-2">
+                              <FileSearch className="h-4 w-4 text-slate-500" />
+                              تحليل مكونات الإنتاج (متقدم)
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent className="px-0 pb-0">
+                        <Card className="border-0 shadow-none bg-transparent">
                           <CardHeader>
                             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                               <div>
@@ -1704,8 +1703,10 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                             )}
                           </CardContent>
                         </Card>
-                      </TabsContent>
-                    </Tabs>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    </div>
                   </div>
                 </>
               )}

@@ -38,7 +38,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+// Tabs removed — single-page layout
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { useAccess } from "@/lib/access-context"
@@ -798,13 +798,9 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                             </CardHeader>
                           </Card>
 
-                          <Tabs defaultValue="overview" className="space-y-4">
-                            <TabsList className="grid w-full grid-cols-2">
-                              <TabsTrigger value="overview">نظرة عامة</TabsTrigger>
-                              <TabsTrigger value="operations">محرر العمليات</TabsTrigger>
-                            </TabsList>
+                          <div className="space-y-4">
 
-                            <TabsContent value="overview" className="space-y-6">
+                            <div className="space-y-6">
                               <Card>
                                 <CardHeader>
                                   <CardTitle className="text-base">بيانات مسار التصنيع</CardTitle>
@@ -918,9 +914,9 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                   </div>
                                 </CardContent>
                               </Card>
-                            </TabsContent>
+                            </div>
 
-                            <TabsContent value="operations" className="space-y-6" data-ai-help="manufacturing_routing_detail.operations_table">
+                            <div className="space-y-6" data-ai-help="manufacturing_routing_detail.operations_table">
                               <Card>
                                 <CardHeader>
                                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1240,8 +1236,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                   </CardContent>
                                 </Card>
                               ) : null}
-                            </TabsContent>
-                          </Tabs>
+                            </div>
+                          </div>
                         </>
                       )}
                     </div>
