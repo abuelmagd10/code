@@ -12,7 +12,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const { data: warehouse, error } = await supabase
       .from("warehouses")
-      .select("*, branches(id, name, branch_name), cost_centers(id, cost_center_name)")
+      .select("id, name, code, branch_id, is_main, is_active")
       .eq("id", id)
       .single()
 
