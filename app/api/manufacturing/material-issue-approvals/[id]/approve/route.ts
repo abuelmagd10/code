@@ -105,11 +105,18 @@ export async function POST(
     }
 
     // ── جلب أمر الإنتاج بشكل منفصل (مع planned_quantity و bom_version_id)
-    const { data: productionOrder } = await admin
+    const { data: productionOrder, error: poError } = await admin
       .from("manufacturing_production_orders")
       .select("id, order_no, status, branch_id, issue_warehouse_id, requested_by, planned_quantity, bom_version_id")
       .eq("id", approval.production_order_id)
       .single()
+
+    if (poError || !productionOrder) {
+      return NextResponse.json(
+        { success: false, error: "أمر الإنتاج غير موجود", debug: poError?.message },
+        { status: 404 }
+      )
+    }
 
     // ── جلب متطلبات المواد (production_order_material_requirements أولاً) ──────
     const { data: requirements, error: reqError } = await admin
@@ -173,6 +180,13 @@ export async function POST(
       uom: string
     }
     const shortages: ShortageItem[] = []
+    let checkedCount = 0
+    const debugLog: string[] = [
+      `requirements_count=${(requirements || []).length}`,
+      `materialsToCheck_count=${materialsToCheck.length}`,
+      `bom_version_id=${productionOrder?.bom_version_id ?? "null"}`,
+      `planned_quantity=${productionOrder?.planned_quantity ?? "null"}`,
+    ]
 
     for (const req of materialsToCheck) {
       if (req.is_optional) continue  // تخطى المواد الاختيارية
@@ -180,10 +194,13 @@ export async function POST(
       const warehouseId = req.warehouse_id || productionOrder?.issue_warehouse_id
       const branchId    = req.branch_id    || productionOrder?.branch_id
 
-      if (!warehouseId || !branchId || !req.product_id) continue
+      if (!warehouseId || !branchId || !req.product_id) {
+        debugLog.push(`skipped product=${req.product_id} wh=${warehouseId} br=${branchId}`)
+        continue
+      }
 
       // جلب الرصيد الحر (بعد خصم الحجوزات) من دالة Supabase
-      const { data: snapRows } = await admin
+      const { data: snapRows, error: snapError } = await admin
         .rpc("get_inventory_reservation_snapshot", {
           p_company_id:   companyId,
           p_branch_id:    branchId,
@@ -191,8 +208,18 @@ export async function POST(
           p_product_id:   req.product_id,
         })
 
+      if (snapError) {
+        // لا نسمح بالمرور إذا فشل فحص المخزون
+        return NextResponse.json(
+          { success: false, error: "تعذّر فحص رصيد المخزون", debug: snapError.message },
+          { status: 500 }
+        )
+      }
+
       const snap = Array.isArray(snapRows) ? snapRows[0] : snapRows
       const freeQty: number = Number(snap?.free_quantity ?? 0)
+      checkedCount++
+      debugLog.push(`checked product=${req.product_id} required=${req.gross_required_qty} free=${freeQty}`)
 
       if (freeQty < req.gross_required_qty) {
         shortages.push({
@@ -203,6 +230,22 @@ export async function POST(
           uom:           req.issue_uom,
         })
       }
+    }
+
+    // ── safeguard: لا تسمح بالاعتماد إذا لم يتم فحص أي مادة فعلياً ──────────
+    if (materialsToCheck.length > 0 && checkedCount === 0) {
+      return NextResponse.json(
+        { success: false, error: "تعذّر فحص أي مادة من مواد الإنتاج", debug: debugLog.join(" | ") },
+        { status: 500 }
+      )
+    }
+    // ── safeguard: لا تسمح بالاعتماد إذا لم يكن هناك أي مواد للفحص أصلاً ────
+    // (production order يجب أن يحتوى على BOM lines أو requirements)
+    if (materialsToCheck.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "أمر الإنتاج لا يحتوى على متطلبات مواد ولا BOM lines — لا يمكن الاعتماد", debug: debugLog.join(" | ") },
+        { status: 422 }
+      )
     }
 
     // ── جلب أسماء المنتجات للمواد الناقصة ────────────────────────────────
