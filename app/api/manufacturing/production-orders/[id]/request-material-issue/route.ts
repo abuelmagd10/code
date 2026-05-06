@@ -21,10 +21,10 @@ export async function POST(
     const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "update")
     const existing = await assertProductionOrderAccessible(supabase, companyId, id)
 
-    // ── التحقق من حالة الأمر: يجب أن يكون مُصدراً (released)
-    if (existing.status !== "released") {
+    // ── التحقق من حالة الأمر: يجب أن يكون مُصدراً أو قيد التنفيذ
+    if (existing.status !== "released" && existing.status !== "in_progress") {
       return NextResponse.json(
-        { success: false, error: "يجب أن يكون أمر الإنتاج في حالة 'مُصدر' لطلب اعتماد الصرف" },
+        { success: false, error: "يجب أن يكون أمر الإنتاج في حالة 'مُصدر' أو 'قيد التنفيذ' لطلب اعتماد الصرف" },
         { status: 422 }
       )
     }
