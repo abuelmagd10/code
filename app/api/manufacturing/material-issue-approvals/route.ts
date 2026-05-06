@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
           order_uom,
           issue_warehouse_id,
           branch_id,
-          product:products ( id, name, name_en, sku )
+          product:products ( id, name, sku )
         ),
         warehouse:warehouses ( id, name ),
         branch:branches ( id, name )

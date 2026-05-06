@@ -58,7 +58,7 @@ interface ManufacturingApproval {
     status: string
     planned_quantity: number
     order_uom: string
-    product?: { id: string; name: string; name_en: string; sku: string }
+    product?: { id: string; name: string; sku: string }
   }
 }
 
@@ -178,9 +178,7 @@ export default function DispatchApprovalsPage() {
           id: apv.id,
           reference: apv.production_order?.order_no || apv.id,
           date: apv.requested_at,
-          party: appLang === 'en'
-            ? (apv.production_order?.product?.name_en || apv.production_order?.product?.name || "-")
-            : (apv.production_order?.product?.name || apv.production_order?.product?.name_en || "-"),
+          party: apv.production_order?.product?.name || "-",
           warehouse: apv.warehouse?.name || "-",
           extra: apv.branch?.name || "-",
           raw: apv,
