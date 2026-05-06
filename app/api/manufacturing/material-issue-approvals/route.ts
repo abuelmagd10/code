@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/server"
-import { getActiveCompanyId } from "@/lib/company-utils"
+import { getActiveCompanyId } from "@/lib/company"
 
 const ALLOWED_ROLES = ["store_manager", "owner", "admin", "general_manager", "manager", "warehouse_manager"]
 
