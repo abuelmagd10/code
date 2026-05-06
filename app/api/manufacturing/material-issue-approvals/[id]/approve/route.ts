@@ -1,7 +1,9 @@
 /**
  * POST /api/manufacturing/material-issue-approvals/[id]/approve
- * اعتماد طلب صرف المواد — يبدأ تنفيذ أمر الإنتاج تلقائياً
- * مخصص لمسؤولي المخزن والإدارة
+ * اعتماد طلب صرف المواد مع فحص رصيد المخزون
+ *
+ * - إذا كانت المواد متوفرة → اعتماد وبدء أمر الإنتاج
+ * - إذا كانت المواد غير كافية → إشعار للأدوار العليا + محاسب الفرع + رفض
  */
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
@@ -9,9 +11,33 @@ import {
   getManufacturingApiContext,
   handleManufacturingApiError,
 } from "@/lib/manufacturing/production-order-api"
-import { createNotification } from "@/lib/governance-layer"
 
-const ALLOWED_APPROVER_ROLES = ["manager", "owner", "admin", "warehouse_manager"]
+const ALLOWED_APPROVER_ROLES = ["store_manager", "manager", "owner", "admin", "general_manager", "warehouse_manager"]
+
+/** إرسال إشعار عبر RPC مباشرةً (آمن من السيرفر) */
+async function sendNotification(admin: any, params: {
+  companyId: string; branchId: string | null; role: string | null;
+  userId?: string | null; title: string; message: string;
+  referenceId: string; referenceType: string; createdBy: string; eventKey: string;
+}) {
+  try {
+    await admin.rpc("create_notification", {
+      p_company_id: params.companyId,
+      p_branch_id: params.branchId,
+      p_assigned_to_role: params.role,
+      p_assigned_to_user: params.userId ?? null,
+      p_title: params.title,
+      p_message: params.message,
+      p_reference_id: params.referenceId,
+      p_reference_type: params.referenceType,
+      p_created_by: params.createdBy,
+      p_priority: "high",
+      p_severity: "warning",
+      p_category: "approvals",
+      p_event_key: params.eventKey,
+    })
+  } catch { /* الإشعار غير حرج */ }
+}
 
 export async function POST(
   request: NextRequest,
@@ -36,10 +62,15 @@ export async function POST(
       notes = body?.notes ?? null
     } catch { /* body فارغ */ }
 
-    // ── جلب طلب الاعتماد
-    const { data: approval, error: fetchError } = await supabase
+    // ── جلب طلب الاعتماد + أمر الإنتاج
+    const { data: approval, error: fetchError } = await admin
       .from("manufacturing_material_issue_approvals")
-      .select("*, production_order:manufacturing_production_orders(id, order_no, status, branch_id, issue_warehouse_id, requested_by:manufacturing_production_orders(*))")
+      .select(`
+        *,
+        production_order:manufacturing_production_orders (
+          id, order_no, status, branch_id, issue_warehouse_id, requested_by
+        )
+      `)
       .eq("id", id)
       .eq("company_id", companyId)
       .single()
@@ -55,52 +86,135 @@ export async function POST(
       )
     }
 
-    // ── 1. تشغيل أمر الإنتاج (start_manufacturing_production_order_atomic)
-    const { error: startError } = await admin.rpc("start_manufacturing_production_order_atomic", {
-      p_company_id: companyId,
-      p_production_order_id: approval.production_order_id,
-      p_started_by: user.id,
-      p_started_at: null,
-    })
+    const productionOrder = approval.production_order as any
 
+    // ── فحص رصيد المخزون لكل مادة خام مطلوبة ──────────────────────────────
+    const { data: requirements, error: reqError } = await admin
+      .from("production_order_material_requirements")
+      .select("id, product_id, warehouse_id, branch_id, gross_required_qty, issue_uom, is_optional")
+      .eq("production_order_id", approval.production_order_id)
+      .eq("company_id", companyId)
+
+    if (reqError) throw reqError
+
+    interface ShortageItem {
+      product_id: string
+      required_qty: number
+      available_qty: number
+      uom: string
+    }
+    const shortages: ShortageItem[] = []
+
+    for (const req of (requirements || [])) {
+      if (req.is_optional) continue  // تخطى المواد الاختيارية
+
+      const warehouseId = req.warehouse_id || productionOrder?.issue_warehouse_id
+      const branchId    = req.branch_id    || productionOrder?.branch_id
+
+      if (!warehouseId || !branchId || !req.product_id) continue
+
+      // جلب الرصيد الحر (بعد خصم الحجوزات) من دالة Supabase
+      const { data: snapRows } = await admin
+        .rpc("get_inventory_reservation_snapshot", {
+          p_company_id:  companyId,
+          p_branch_id:   branchId,
+          p_warehouse_id: warehouseId,
+          p_product_id:  req.product_id,
+        })
+
+      const snap = Array.isArray(snapRows) ? snapRows[0] : snapRows
+      const freeQty: number = Number(snap?.free_quantity ?? 0)
+
+      if (freeQty < Number(req.gross_required_qty)) {
+        shortages.push({
+          product_id:    req.product_id,
+          required_qty:  Number(req.gross_required_qty),
+          available_qty: freeQty,
+          uom:           req.issue_uom,
+        })
+      }
+    }
+
+    // ── حالة النقص في المخزون ─────────────────────────────────────────────
+    if (shortages.length > 0) {
+      const orderNo  = productionOrder?.order_no || approval.production_order_id
+      const branchId = productionOrder?.branch_id || null
+      const shortageMsg = `أمر الإنتاج ${orderNo} — نقص في ${shortages.length} مادة خام. المخزون غير كافٍ لتنفيذ الصرف.`
+
+      // إشعارات للأدوار العليا (لا يرتبطان بفرع محدد)
+      for (const role of ["owner", "admin", "general_manager"]) {
+        await sendNotification(admin, {
+          companyId, branchId: null, role,
+          title: "⚠️ نقص مخزون — طلب صرف مواد تصنيع",
+          message: shortageMsg,
+          referenceId: approval.production_order_id,
+          referenceType: "manufacturing_material_issue_approval",
+          createdBy: user.id,
+          eventKey: `mmia_shortage_${id}_${role}`,
+        })
+      }
+
+      // إشعار لمحاسب الفرع المرتبط بالمستودع
+      if (branchId) {
+        await sendNotification(admin, {
+          companyId, branchId, role: "accountant",
+          title: "⚠️ نقص مخزون — صرف مواد تصنيع",
+          message: shortageMsg,
+          referenceId: approval.production_order_id,
+          referenceType: "manufacturing_material_issue_approval",
+          createdBy: user.id,
+          eventKey: `mmia_shortage_${id}_accountant`,
+        })
+      }
+
+      return NextResponse.json({
+        success: false,
+        error: "لا توجد كميات كافية في المخزن لصرف المواد المطلوبة",
+        shortages,
+      }, { status: 422 })
+    }
+
+    // ── المخزون كافٍ → تنفيذ الاعتماد ────────────────────────────────────
+
+    // 1. تشغيل أمر الإنتاج
+    const { error: startError } = await admin.rpc("start_manufacturing_production_order_atomic", {
+      p_company_id:          companyId,
+      p_production_order_id: approval.production_order_id,
+      p_started_by:          user.id,
+      p_started_at:          null,
+    })
     if (startError) throw startError
 
-    // ── 2. تحديث سجل الاعتماد
+    // 2. تحديث سجل الاعتماد
     const { error: updateApprovalError } = await admin
       .from("manufacturing_material_issue_approvals")
       .update({
-        status: "approved",
+        status:      "approved",
         approved_by: user.id,
         approved_at: new Date().toISOString(),
-        notes: notes ?? approval.notes,
+        notes:       notes ?? approval.notes,
       })
       .eq("id", id)
-
     if (updateApprovalError) throw updateApprovalError
 
-    // ── 3. تحديث حالة الاعتماد في أمر الإنتاج
+    // 3. تحديث حالة الاعتماد في أمر الإنتاج
     await admin
       .from("manufacturing_production_orders")
       .update({ material_issue_approval_status: "approved" })
       .eq("id", approval.production_order_id)
       .eq("company_id", companyId)
 
-    // ── 4. إشعار لمقدم الطلب بالموافقة
-    try {
-      await createNotification({
-        companyId,
-        referenceType: "manufacturing_material_issue_approval",
-        referenceId: id,
-        title: "✅ تمت الموافقة على صرف المواد",
-        message: `تمت الموافقة على طلب صرف المواد — أمر الإنتاج بدأ تلقائياً`,
-        createdBy: user.id,
-        assignedToUser: approval.requested_by,
-        priority: "high",
-        severity: "info",
-        category: "approvals",
-        eventKey: `mmia_approved_${id}`,
-      })
-    } catch { /* الإشعار غير حرج */ }
+    // 4. إشعار لمقدم الطلب بالموافقة
+    await sendNotification(admin, {
+      companyId, branchId: null, role: null,
+      userId: productionOrder?.requested_by ?? approval.requested_by,
+      title:   "✅ تمت الموافقة على صرف المواد",
+      message: `تمت الموافقة على طلب صرف مواد أمر الإنتاج ${productionOrder?.order_no || ""} — يمكن البدء في صرف المواد الآن`,
+      referenceId:   approval.production_order_id,
+      referenceType: "manufacturing_material_issue_approval",
+      createdBy:     user.id,
+      eventKey:      `mmia_approved_${id}`,
+    })
 
     asyncAuditLog({
       companyId,
@@ -112,7 +226,7 @@ export async function POST(
       recordIdentifier: String(approval.production_order_id),
       oldData: { status: "pending" },
       newData: { status: "approved", approved_by: user.id },
-      reason: "Approved material issue request — production order started",
+      reason: "Approved material issue request — inventory checked OK — production order started",
     })
 
     return NextResponse.json({
