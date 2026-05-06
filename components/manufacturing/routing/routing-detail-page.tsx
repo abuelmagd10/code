@@ -443,6 +443,24 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
   const handleSaveOperations = async () => {
     if (!selectedVersionId) return
 
+    // Client-side validation before sending to API
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    for (let i = 0; i < operationsDraft.length; i++) {
+      const op = operationsDraft[i]
+      if (!op.operation_code.trim()) {
+        toast({ variant: "destructive", title: "بيانات ناقصة", description: `العملية رقم ${i + 1}: كود العملية مطلوب` })
+        return
+      }
+      if (!op.operation_name.trim()) {
+        toast({ variant: "destructive", title: "بيانات ناقصة", description: `العملية رقم ${i + 1}: اسم العملية مطلوب` })
+        return
+      }
+      if (!op.work_center_id || !uuidRegex.test(op.work_center_id)) {
+        toast({ variant: "destructive", title: "بيانات ناقصة", description: `العملية رقم ${i + 1}: يجب تحديد مركز العمل` })
+        return
+      }
+    }
+
     const sanitizedOperations = operationsDraft.map((operation) => ({
       operation_no: Number(operation.operation_no),
       operation_code: operation.operation_code.trim(),
