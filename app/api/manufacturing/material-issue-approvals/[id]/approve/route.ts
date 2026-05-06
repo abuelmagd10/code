@@ -107,7 +107,7 @@ export async function POST(
     // ── جلب أمر الإنتاج بشكل منفصل (مع planned_quantity و bom_version_id)
     const { data: productionOrder, error: poError } = await admin
       .from("manufacturing_production_orders")
-      .select("id, order_no, status, branch_id, issue_warehouse_id, requested_by, planned_quantity, bom_version_id")
+      .select("id, order_no, status, branch_id, issue_warehouse_id, planned_quantity, bom_version_id")
       .eq("id", approval.production_order_id)
       .single()
 
@@ -338,7 +338,7 @@ export async function POST(
     // 4. إشعار لمقدم الطلب بالموافقة
     await sendNotification(admin, {
       companyId, branchId: null, role: null,
-      userId: productionOrder?.requested_by ?? approval.requested_by,
+      userId: approval.requested_by,
       title:   "✅ تمت الموافقة على صرف المواد",
       message: `تمت الموافقة على طلب صرف مواد أمر الإنتاج ${productionOrder?.order_no || ""} — يمكن البدء في صرف المواد الآن`,
       referenceId:   approval.production_order_id,
