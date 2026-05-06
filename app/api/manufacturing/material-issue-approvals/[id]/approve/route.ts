@@ -7,10 +7,8 @@
  */
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
-import {
-  getManufacturingApiContext,
-  handleManufacturingApiError,
-} from "@/lib/manufacturing/production-order-api"
+import { createClient, createServiceClient } from "@/lib/supabase/server"
+import { getActiveCompanyId } from "@/lib/company"
 
 const ALLOWED_APPROVER_ROLES = ["store_manager", "manager", "owner", "admin", "general_manager", "warehouse_manager"]
 
@@ -45,15 +43,37 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const { supabase, admin, companyId, user, member } = await getManufacturingApiContext(request, "update")
 
-    // ── التحقق من صلاحية المُعتمِد
-    if (!ALLOWED_APPROVER_ROLES.includes(member.role)) {
+    // ── مصادقة المستخدم
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const companyIdParam = searchParams.get("company_id")
+    const companyId = companyIdParam || await getActiveCompanyId(supabase)
+    if (!companyId) {
+      return NextResponse.json({ success: false, error: "No active company" }, { status: 404 })
+    }
+
+    // ── التحقق من الدور
+    const { data: memberRow } = await supabase
+      .from("company_members")
+      .select("role")
+      .eq("company_id", companyId)
+      .eq("user_id", user.id)
+      .single()
+
+    if (!memberRow || !ALLOWED_APPROVER_ROLES.includes(memberRow.role)) {
       return NextResponse.json(
         { success: false, error: "غير مصرح لك بالاعتماد. مخصص لمسؤولي المخزن والإدارة فقط" },
         { status: 403 }
       )
     }
+
+    const admin = createServiceClient()
 
     // ── قراءة الملاحظات (اختياري)
     let notes: string | null = null
@@ -233,7 +253,10 @@ export async function POST(
       success: true,
       message: "تمت الموافقة على صرف المواد وتم بدء تنفيذ أمر الإنتاج",
     })
-  } catch (error) {
-    return handleManufacturingApiError(error)
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error?.message || "Internal server error" },
+      { status: 500 }
+    )
   }
 }
