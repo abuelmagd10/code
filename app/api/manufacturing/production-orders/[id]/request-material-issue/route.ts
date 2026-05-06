@@ -75,7 +75,8 @@ export async function POST(
     const notifBase = {
       p_company_id: companyId,
       p_reference_type: "manufacturing_material_issue_approval",
-      p_reference_id: approval.id,
+      // reference_id = production_order_id حتى يوجّه الإشعار لصفحة أمر الإنتاج مباشرةً
+      p_reference_id: id,
       p_title: "🏭 طلب اعتماد صرف مواد خام",
       p_message: `طلب صرف مواد للأمر ${existing.order_no} — يتطلب موافقتك قبل بدء الإنتاج`,
       p_created_by: user.id,

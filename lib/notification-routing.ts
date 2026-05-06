@@ -89,6 +89,10 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'user_warehouse_change': (id) => `/settings/users?highlight=${id}`,
   'user_role_change': (id) => `/settings/users?highlight=${id}`,
   'permission_change': (id) => `/settings/users?highlight=${id}`,
+
+  // التصنيع
+  'manufacturing_material_issue_approval': (id) => `/manufacturing/production-orders/${id}`,
+  'manufacturing_production_order': (id) => `/manufacturing/production-orders/${id}`,
 }
 
 /**
