@@ -79,7 +79,9 @@ export async function POST(
       p_title: "🏭 طلب اعتماد صرف مواد خام",
       p_message: `طلب صرف مواد للأمر ${existing.order_no} — يتطلب موافقتك قبل بدء الإنتاج`,
       p_created_by: user.id,
-      p_branch_id: existing.branch_id ?? null,
+      // branch_id = null عمداً: مسؤول المخزن قد يكون في فرع مختلف عن فرع أمر الإنتاج
+      // ووضع branch_id خاطئ يمنع وصول الإشعار بسبب فلتر get_user_notifications
+      p_branch_id: null as string | null,
       p_warehouse_id: existing.issue_warehouse_id ?? null,
       p_cost_center_id: null as string | null,
       p_assigned_to_user: null as string | null,
