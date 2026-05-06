@@ -269,8 +269,19 @@ export async function POST(
     // ── حالة النقص في المخزون ─────────────────────────────────────────────
     if (shortages.length > 0) {
       const orderNo  = productionOrder?.order_no || approval.production_order_id
-      const branchId = productionOrder?.branch_id || null
       const shortageMsg = `أمر الإنتاج ${orderNo} — نقص في ${shortages.length} مادة خام. المخزون غير كافٍ لتنفيذ الصرف.`
+
+      // استنتاج فرع المخزن (المحاسب يجب أن يُخطَر بالنقص في فرع المستودع، ليس فرع أمر الإنتاج)
+      let warehouseBranchId: string | null = null
+      if (productionOrder?.issue_warehouse_id) {
+        const { data: wh } = await admin
+          .from("warehouses")
+          .select("branch_id")
+          .eq("id", productionOrder.issue_warehouse_id)
+          .single()
+        warehouseBranchId = wh?.branch_id ?? null
+      }
+      const accountantBranchId = warehouseBranchId || productionOrder?.branch_id || null
 
       // إشعارات للأدوار العليا (لا يرتبطان بفرع محدد)
       for (const role of ["owner", "admin", "general_manager"]) {
@@ -286,9 +297,9 @@ export async function POST(
       }
 
       // إشعار لمحاسب الفرع المرتبط بالمستودع
-      if (branchId) {
+      if (accountantBranchId) {
         await sendNotification(admin, {
-          companyId, branchId, role: "accountant",
+          companyId, branchId: accountantBranchId, role: "accountant",
           title: "⚠️ نقص مخزون — صرف مواد تصنيع",
           message: shortageMsg,
           referenceId: approval.production_order_id,
