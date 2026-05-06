@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation"
 import {
   AlertTriangle,
   Archive,
+  CheckCircle2,
   Factory,
   GitBranch,
+  Info,
   Loader2,
   PauseCircle,
   PlayCircle,
@@ -15,6 +17,7 @@ import {
   Save,
   Settings2,
   ShieldCheck,
+  Timer,
   Trash2,
 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
@@ -42,6 +45,7 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useToast } from "@/hooks/use-toast"
 import { useAccess } from "@/lib/access-context"
 import {
@@ -749,7 +753,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     <div>
                                       <CardTitle className="text-base">هيكل العمليات</CardTitle>
                                       <CardDescription>
-                                        جميع التعديلات تُحفظ فقط عبر `PUT /routing-versions/[id]/operations` داخل replace transaction واحدة.
+                                        سلسلة الخطوات المرتبة التي تتحول فيها المواد الخام إلى منتج نهائي — كل خطوة لها مركز عمل وأوقات محددة.
                                       </CardDescription>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
@@ -776,6 +780,46 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                   </div>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
+                                  {/* Help banner */}
+                                  <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 dark:border-blue-900/40 dark:bg-blue-950/30">
+                                    <div className="flex gap-3">
+                                      <Info className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-500" />
+                                      <div className="space-y-2">
+                                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+                                          ما هو هيكل العمليات؟
+                                        </p>
+                                        <p className="text-sm leading-relaxed text-blue-800 dark:text-blue-300">
+                                          هو <strong>خطة العمل التفصيلية</strong> لتصنيع المنتج — يُحدد كل خطوة إنتاجية بالترتيب، ومن أين تتم، وكم تستغرق.
+                                        </p>
+                                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                                          <div className="flex items-start gap-2 rounded-lg bg-white/60 px-3 py-2 dark:bg-white/5">
+                                            <Factory className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" />
+                                            <div>
+                                              <p className="text-xs font-medium text-blue-900 dark:text-blue-200">مركز العمل</p>
+                                              <p className="text-xs text-blue-700 dark:text-blue-400">القسم أو الماكينة المسؤولة عن الخطوة</p>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-start gap-2 rounded-lg bg-white/60 px-3 py-2 dark:bg-white/5">
+                                            <Timer className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" />
+                                            <div>
+                                              <p className="text-xs font-medium text-blue-900 dark:text-blue-200">الأوقات</p>
+                                              <p className="text-xs text-blue-700 dark:text-blue-400">إعداد + تشغيل + انتظار + نقل (بالدقائق)</p>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-start gap-2 rounded-lg bg-white/60 px-3 py-2 dark:bg-white/5">
+                                            <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" />
+                                            <div>
+                                              <p className="text-xs font-medium text-blue-900 dark:text-blue-200">نقطة الجودة</p>
+                                              <p className="text-xs text-blue-700 dark:text-blue-400">فحص إلزامي قبل الانتقال للخطوة التالية</p>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <p className="text-xs text-blue-600 dark:text-blue-400">
+                                          <strong>مثال:</strong> تقطيع (10) &rarr; خياطة (20) &rarr; كي (30) &rarr; تعبئة (40)
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
                                   {loadingVersion ? (
                                     <div className="flex items-center justify-center gap-2 rounded-2xl border bg-slate-50 p-10 text-slate-500">
                                       <Loader2 className="h-5 w-5 animate-spin" />
@@ -817,7 +861,17 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                           </CardHeader>
                                           <CardContent className="grid gap-4 pt-6 md:grid-cols-2 xl:grid-cols-4">
                                             <div className="space-y-2" data-ai-help="manufacturing_routing_detail.operation_sequence">
-                                              <Label>رقم العملية</Label>
+                                              <div className="flex items-center gap-1.5">
+                                                <Label>رقم العملية</Label>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-xs">
+                                                    ترتيب العملية في تسلسل الإنتاج. يُستخدم عادةً بمضاعفات 10 (10، 20، 30...) للسماح بإدراج عمليات جديدة بينها لاحقاً دون إعادة ترقيم الكل.
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </div>
                                               <Input
                                                 type="number"
                                                 min="1"
@@ -834,7 +888,17 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2" data-ai-help="manufacturing_routing_detail.operation_code">
-                                              <Label>كود العملية</Label>
+                                              <div className="flex items-center gap-1.5">
+                                                <Label>كود العملية</Label>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-xs">
+                                                    رمز مختصر فريد يُعرّف العملية. مثال: CUT-01 للتقطيع، SEW-02 للخياطة. يُستخدم في التقارير وأوامر العمل.
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </div>
                                               <Input
                                                 value={operation.operation_code}
                                                 onChange={(event) =>
@@ -848,7 +912,17 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2 xl:col-span-2" data-ai-help="manufacturing_routing_detail.operation_name">
-                                              <Label>اسم العملية</Label>
+                                              <div className="flex items-center gap-1.5">
+                                                <Label>اسم العملية</Label>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-xs">
+                                                    الاسم الوصفي الكامل للعملية كما يظهر للعمال وفي أوامر العمل. مثال: تقطيع القماش، خياطة الأطراف، كي ومرور نهائي.
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </div>
                                               <Input
                                                 value={operation.operation_name}
                                                 onChange={(event) =>
@@ -862,7 +936,17 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2 xl:col-span-2" data-ai-help="manufacturing_routing_detail.work_center">
-                                              <Label>مركز العمل</Label>
+                                              <div className="flex items-center gap-1.5">
+                                                <Label>مركز العمل</Label>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-xs">
+                                                    القسم أو الماكينة المسؤولة عن تنفيذ هذه العملية. أدخل معرّف UUID لمركز العمل من قائمة مراكز العمل المعرّفة في النظام.
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </div>
                                               <Input
                                                 value={operation.work_center_id}
                                                 onChange={(event) =>
@@ -903,7 +987,17 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2" data-ai-help="manufacturing_routing_detail.setup_time">
-                                              <Label>وقت الإعداد (د)</Label>
+                                              <div className="flex items-center gap-1.5">
+                                                <Label>وقت الإعداد (د)</Label>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-xs">
+                                                    الوقت اللازم لتجهيز الماكينة أو مكان العمل قبل بدء الإنتاج الفعلي (ضبط الآلة، تحميل المواد...). يُحسب مرة واحدة لكل دفعة بغض النظر عن الكمية.
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </div>
                                               <Input
                                                 type="number"
                                                 min="0"
@@ -920,7 +1014,17 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2" data-ai-help="manufacturing_routing_detail.run_time">
-                                              <Label>وقت التشغيل / وحدة (د)</Label>
+                                              <div className="flex items-center gap-1.5">
+                                                <Label>وقت التشغيل / وحدة (د)</Label>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-xs">
+                                                    الوقت اللازم لإنتاج وحدة واحدة من المنتج في هذه العملية. يُضرب في الكمية الإجمالية لحساب وقت التشغيل الكلي.
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </div>
                                               <Input
                                                 type="number"
                                                 min="0"
@@ -937,7 +1041,17 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2">
-                                              <Label>وقت الانتظار (د)</Label>
+                                              <div className="flex items-center gap-1.5">
+                                                <Label>وقت الانتظار (د)</Label>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-xs">
+                                                    المدة التي تنتظرها المادة في قائمة الانتظار قبل أن يبدأ مركز العمل بمعالجتها. يرتفع في خطوط الإنتاج المزدحمة.
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </div>
                                               <Input
                                                 type="number"
                                                 min="0"
@@ -954,7 +1068,17 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2">
-                                              <Label>وقت النقل (د)</Label>
+                                              <div className="flex items-center gap-1.5">
+                                                <Label>وقت النقل (د)</Label>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-xs">
+                                                    الوقت اللازم لنقل المواد من مركز العمل الحالي إلى مركز العمل التالي بعد انتهاء هذه العملية.
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </div>
                                               <Input
                                                 type="number"
                                                 min="0"
@@ -971,7 +1095,17 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2">
-                                              <Label>وقت العمالة (د)</Label>
+                                              <div className="flex items-center gap-1.5">
+                                                <Label>وقت العمالة (د)</Label>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-xs">
+                                                    الوقت الفعلي الذي يقضيه العامل (الإنسان) في تنفيذ هذه العملية. يُستخدم لحساب تكاليف الأجور المباشرة.
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </div>
                                               <Input
                                                 type="number"
                                                 min="0"
@@ -988,7 +1122,17 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2">
-                                              <Label>وقت الآلة (د)</Label>
+                                              <div className="flex items-center gap-1.5">
+                                                <Label>وقت الآلة (د)</Label>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-xs">
+                                                    الوقت الفعلي الذي تعمل فيه الماكينة بشكل مستقل. قد يختلف عن وقت العمالة (مثلاً: الماكينة تعمل 30 دقيقة والعامل يراقبها 5 دقائق فقط).
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </div>
                                               <Input
                                                 type="number"
                                                 min="0"
@@ -1005,7 +1149,17 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               />
                                             </div>
                                             <div className="space-y-2 xl:col-span-4" data-ai-help="manufacturing_routing_detail.instructions">
-                                              <Label>تعليمات التنفيذ</Label>
+                                              <div className="flex items-center gap-1.5">
+                                                <Label>تعليمات التنفيذ</Label>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-xs">
+                                                    ملاحظات وإرشادات خاصة بتنفيذ هذه العملية — تُطبع في أوامر العمل وتظهر للعمال في خط الإنتاج. مثال: استخدم مادة لاصقة درجة B فقط.
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </div>
                                               <Textarea
                                                 value={operation.instructions || ""}
                                                 onChange={(event) =>
