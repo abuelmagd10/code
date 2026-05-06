@@ -15,7 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { CompanyHeader } from "@/components/company-header"
-import { Package, Check, X, Box, Info, Search, Factory, FileText } from "lucide-react"
+import { Package, Check, X, Box, Info, Search, Factory, FileText, AlertTriangle } from "lucide-react"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import {
   Dialog,
@@ -92,6 +92,11 @@ export default function DispatchApprovalsPage() {
   const [selectedRow, setSelectedRow] = useState<UnifiedRow | null>(null)
   const [notes, setNotes] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
+
+  // Shortage modal state
+  interface ShortageItem { product_id: string; product_name: string; required_qty: number; available_qty: number; uom: string }
+  const [shortageItems, setShortageItems] = useState<ShortageItem[]>([])
+  const [isShortageModalOpen, setIsShortageModalOpen] = useState(false)
 
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [hydrated, setHydrated] = useState(false)
@@ -208,13 +213,16 @@ export default function DispatchApprovalsPage() {
     try {
       setActionLoading(selectedRow.id)
 
+      const companyId = await getActiveCompanyId(supabase)
+
       let endpoint: string
       if (selectedRow._type === "sales") {
         endpoint = modalMode === "approve"
           ? `/api/invoices/${selectedRow.id}/warehouse-approve`
           : `/api/invoices/${selectedRow.id}/warehouse-reject`
       } else {
-        endpoint = `/api/manufacturing/material-issue-approvals/${selectedRow.id}/${modalMode}`
+        const qp = companyId ? `?company_id=${companyId}` : ""
+        endpoint = `/api/manufacturing/material-issue-approvals/${selectedRow.id}/${modalMode}${qp}`
       }
 
       const response = await fetch(endpoint, {
@@ -224,6 +232,15 @@ export default function DispatchApprovalsPage() {
       })
 
       const result = await response.json()
+
+      // ── نقص في المخزون → عرض نافذة التفاصيل
+      if (!result.success && result.shortages && result.shortages.length > 0) {
+        setShortageItems(result.shortages)
+        setIsModalOpen(false)
+        setIsShortageModalOpen(true)
+        return
+      }
+
       if (!result.success) throw new Error(result.error || (appLang === 'en' ? "Unknown error" : "حدث خطأ غير معروف"))
 
       toast({ title: appLang === 'en' ? "Done" : "تم بنجاح", description: result.message })
@@ -420,6 +437,56 @@ export default function DispatchApprovalsPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* ── Shortage Detail Modal ── */}
+        <Dialog open={isShortageModalOpen} onOpenChange={setIsShortageModalOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="w-5 h-5" />
+                {appLang === 'en' ? "Insufficient Inventory — Cannot Approve" : "مخزون غير كافٍ — لا يمكن الاعتماد"}
+              </DialogTitle>
+              <DialogDescription>
+                {appLang === 'en'
+                  ? "The following raw materials are not available in sufficient quantities. Management and the branch accountant have been notified."
+                  : "المواد الخام التالية غير متوفرة بالكميات الكافية. تم إشعار الإدارة ومحاسب الفرع تلقائياً."}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-2 space-y-2 max-h-72 overflow-y-auto">
+              {shortageItems.map((item) => (
+                <div key={item.product_id} className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
+                  <div className="font-medium text-sm text-gray-800 dark:text-gray-200">
+                    {item.product_name || item.product_id}
+                  </div>
+                  <div className="text-xs text-right rtl:text-left space-y-0.5">
+                    <div className="text-red-600 dark:text-red-400 font-semibold">
+                      {appLang === 'en' ? "Required: " : "المطلوب: "}{item.required_qty} {item.uom}
+                    </div>
+                    <div className="text-gray-500">
+                      {appLang === 'en' ? "Available: " : "المتاح: "}{item.available_qty} {item.uom}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-start p-3 text-sm text-blue-800 border border-blue-200 rounded-lg bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800">
+              <Info className="flex-shrink-0 w-4 h-4 mr-2 rtl:mr-0 rtl:ml-2 mt-0.5" />
+              <div>
+                {appLang === 'en'
+                  ? "An urgent notification has been sent to management (Owner, Admin) and the branch accountant to resolve this shortage."
+                  : "تم إرسال إشعار عاجل للإدارة (المالك، الأدمن) ومحاسب الفرع لمعالجة هذا النقص."}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsShortageModalOpen(false)}>
+                {appLang === 'en' ? "Close" : "إغلاق"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* ── Approve/Reject Modal ── */}
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>

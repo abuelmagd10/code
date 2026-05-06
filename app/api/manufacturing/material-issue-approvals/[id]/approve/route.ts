@@ -119,6 +119,7 @@ export async function POST(
 
     interface ShortageItem {
       product_id: string
+      product_name: string
       required_qty: number
       available_qty: number
       uom: string
@@ -148,10 +149,29 @@ export async function POST(
       if (freeQty < Number(req.gross_required_qty)) {
         shortages.push({
           product_id:    req.product_id,
+          product_name:  "",   // سيتم ملؤه بعد اكتمال الحلقة
           required_qty:  Number(req.gross_required_qty),
           available_qty: freeQty,
           uom:           req.issue_uom,
         })
+      }
+    }
+
+    // ── جلب أسماء المنتجات للمواد الناقصة ────────────────────────────────
+    if (shortages.length > 0) {
+      const productIds = shortages.map((s) => s.product_id)
+      const { data: products } = await admin
+        .from("products")
+        .select("id, name")
+        .in("id", productIds)
+        .eq("company_id", companyId)
+
+      const productMap: Record<string, string> = {}
+      for (const p of (products || [])) {
+        productMap[p.id] = p.name
+      }
+      for (const s of shortages) {
+        s.product_name = productMap[s.product_id] || s.product_id
       }
     }
 
