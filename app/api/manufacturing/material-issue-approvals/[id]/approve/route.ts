@@ -82,21 +82,19 @@ export async function POST(
       notes = body?.notes ?? null
     } catch { /* body فارغ */ }
 
-    // ── جلب طلب الاعتماد + أمر الإنتاج
+    // ── جلب طلب الاعتماد (بدون JOIN لتجنب أخطاء FK schema)
     const { data: approval, error: fetchError } = await admin
       .from("manufacturing_material_issue_approvals")
-      .select(`
-        *,
-        production_order:manufacturing_production_orders (
-          id, order_no, status, branch_id, issue_warehouse_id, requested_by
-        )
-      `)
+      .select("*")
       .eq("id", id)
       .eq("company_id", companyId)
       .single()
 
     if (fetchError || !approval) {
-      return NextResponse.json({ success: false, error: "طلب الاعتماد غير موجود" }, { status: 404 })
+      return NextResponse.json(
+        { success: false, error: "طلب الاعتماد غير موجود", debug: fetchError?.message },
+        { status: 404 }
+      )
     }
 
     if (approval.status !== "pending") {
@@ -106,7 +104,12 @@ export async function POST(
       )
     }
 
-    const productionOrder = approval.production_order as any
+    // ── جلب أمر الإنتاج بشكل منفصل
+    const { data: productionOrder } = await admin
+      .from("manufacturing_production_orders")
+      .select("id, order_no, status, branch_id, issue_warehouse_id, requested_by")
+      .eq("id", approval.production_order_id)
+      .single()
 
     // ── فحص رصيد المخزون لكل مادة خام مطلوبة ──────────────────────────────
     const { data: requirements, error: reqError } = await admin
