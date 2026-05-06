@@ -104,14 +104,14 @@ export async function POST(
       )
     }
 
-    // ── جلب أمر الإنتاج بشكل منفصل
+    // ── جلب أمر الإنتاج بشكل منفصل (مع planned_quantity و bom_version_id)
     const { data: productionOrder } = await admin
       .from("manufacturing_production_orders")
-      .select("id, order_no, status, branch_id, issue_warehouse_id, requested_by")
+      .select("id, order_no, status, branch_id, issue_warehouse_id, requested_by, planned_quantity, bom_version_id")
       .eq("id", approval.production_order_id)
       .single()
 
-    // ── فحص رصيد المخزون لكل مادة خام مطلوبة ──────────────────────────────
+    // ── جلب متطلبات المواد (production_order_material_requirements أولاً) ──────
     const { data: requirements, error: reqError } = await admin
       .from("production_order_material_requirements")
       .select("id, product_id, warehouse_id, branch_id, gross_required_qty, issue_uom, is_optional")
@@ -119,6 +119,51 @@ export async function POST(
       .eq("company_id", companyId)
 
     if (reqError) throw reqError
+
+    interface MaterialToCheck {
+      product_id: string
+      warehouse_id: string | null
+      branch_id: string | null
+      gross_required_qty: number
+      issue_uom: string
+      is_optional: boolean
+    }
+
+    // ── إذا كانت requirements فارغة → fallback إلى BOM lines ──────────────
+    let materialsToCheck: MaterialToCheck[] = []
+    if ((requirements || []).length > 0) {
+      materialsToCheck = (requirements || []).map((r: any) => ({
+        product_id:         r.product_id,
+        warehouse_id:       r.warehouse_id,
+        branch_id:          r.branch_id,
+        gross_required_qty: Number(r.gross_required_qty),
+        issue_uom:          r.issue_uom,
+        is_optional:        r.is_optional,
+      }))
+    } else if (productionOrder?.bom_version_id) {
+      // Fallback: احسب الكميات المطلوبة مباشرة من BOM lines
+      const { data: bomLines } = await admin
+        .from("manufacturing_bom_lines")
+        .select("component_product_id, quantity_per, scrap_percent, issue_uom, is_optional, line_type")
+        .eq("bom_version_id", productionOrder.bom_version_id)
+        .eq("company_id", companyId)
+        .neq("line_type", "byproduct")  // تجاهل المنتجات الثانوية
+
+      const plannedQty = Number(productionOrder.planned_quantity ?? 1)
+      for (const line of (bomLines || [])) {
+        const qtyPer   = Number(line.quantity_per ?? 0)
+        const scrapPct = Number(line.scrap_percent ?? 0)
+        const grossQty = qtyPer * plannedQty * (1 + scrapPct / 100)
+        materialsToCheck.push({
+          product_id:         line.component_product_id,
+          warehouse_id:       productionOrder.issue_warehouse_id,
+          branch_id:          productionOrder.branch_id,
+          gross_required_qty: grossQty,
+          issue_uom:          line.issue_uom,
+          is_optional:        line.is_optional ?? false,
+        })
+      }
+    }
 
     interface ShortageItem {
       product_id: string
@@ -129,7 +174,7 @@ export async function POST(
     }
     const shortages: ShortageItem[] = []
 
-    for (const req of (requirements || [])) {
+    for (const req of materialsToCheck) {
       if (req.is_optional) continue  // تخطى المواد الاختيارية
 
       const warehouseId = req.warehouse_id || productionOrder?.issue_warehouse_id
@@ -140,20 +185,20 @@ export async function POST(
       // جلب الرصيد الحر (بعد خصم الحجوزات) من دالة Supabase
       const { data: snapRows } = await admin
         .rpc("get_inventory_reservation_snapshot", {
-          p_company_id:  companyId,
-          p_branch_id:   branchId,
+          p_company_id:   companyId,
+          p_branch_id:    branchId,
           p_warehouse_id: warehouseId,
-          p_product_id:  req.product_id,
+          p_product_id:   req.product_id,
         })
 
       const snap = Array.isArray(snapRows) ? snapRows[0] : snapRows
       const freeQty: number = Number(snap?.free_quantity ?? 0)
 
-      if (freeQty < Number(req.gross_required_qty)) {
+      if (freeQty < req.gross_required_qty) {
         shortages.push({
           product_id:    req.product_id,
           product_name:  "",   // سيتم ملؤه بعد اكتمال الحلقة
-          required_qty:  Number(req.gross_required_qty),
+          required_qty:  req.gross_required_qty,
           available_qty: freeQty,
           uom:           req.issue_uom,
         })
