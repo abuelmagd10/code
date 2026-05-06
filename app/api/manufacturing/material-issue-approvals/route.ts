@@ -21,7 +21,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
     }
 
-    const companyId = await getActiveCompanyId(supabase)
+    const { searchParams } = new URL(request.url)
+
+    // نحاول أولاً من query param (أكثر موثوقية)، ثم من الكوكيز كـ fallback
+    const companyIdParam = searchParams.get("company_id")
+    const companyId = companyIdParam || await getActiveCompanyId(supabase)
     if (!companyId) {
       return NextResponse.json({ success: false, error: "No active company" }, { status: 404 })
     }
@@ -42,7 +46,6 @@ export async function GET(request: NextRequest) {
     }
 
     const admin = createServiceClient()
-    const { searchParams } = new URL(request.url)
 
     const status = searchParams.get("status") || "pending"
     const warehouseId = searchParams.get("warehouse_id")
