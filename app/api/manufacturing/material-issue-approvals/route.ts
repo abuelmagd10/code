@@ -1,24 +1,54 @@
 /**
  * GET /api/manufacturing/material-issue-approvals
- * قائمة طلبات اعتماد صرف المواد — لمسؤولي المخزن
+ * قائمة طلبات اعتماد صرف المواد — لمسؤولي المخزن والإدارة
  * يدعم فلترة بالحالة والمستودع والفرع
+ *
+ * الأدوار المسموح لها: store_manager, owner, admin, general_manager, manager
+ * لا يستخدم getManufacturingApiContext لأن store_manager لا يملك صلاحية manufacturing_boms
  */
 import { NextRequest, NextResponse } from "next/server"
-import {
-  getManufacturingApiContext,
-  handleManufacturingApiError,
-} from "@/lib/manufacturing/production-order-api"
+import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/server"
+import { getActiveCompanyId } from "@/lib/company-utils"
+
+const ALLOWED_ROLES = ["store_manager", "owner", "admin", "general_manager", "manager", "warehouse_manager"]
 
 export async function GET(request: NextRequest) {
   try {
-    const { supabase, companyId } = await getManufacturingApiContext(request, "read")
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
+    }
+
+    const companyId = await getActiveCompanyId(supabase)
+    if (!companyId) {
+      return NextResponse.json({ success: false, error: "No active company" }, { status: 404 })
+    }
+
+    // التحقق من الدور — يُسمح لمسؤولي المخزن والإدارة فقط
+    const { data: member } = await supabase
+      .from("company_members")
+      .select("role")
+      .eq("company_id", companyId)
+      .eq("user_id", user.id)
+      .single()
+
+    if (!member || !ALLOWED_ROLES.includes(member.role)) {
+      return NextResponse.json(
+        { success: false, error: "غير مصرح — مخصص لمسؤولي المخزن والإدارة فقط" },
+        { status: 403 }
+      )
+    }
+
+    const admin = createServiceClient()
     const { searchParams } = new URL(request.url)
 
     const status = searchParams.get("status") || "pending"
     const warehouseId = searchParams.get("warehouse_id")
     const branchId = searchParams.get("branch_id")
 
-    let query = supabase
+    let query = admin
       .from("manufacturing_material_issue_approvals")
       .select(`
         id,
@@ -68,7 +98,10 @@ export async function GET(request: NextRequest) {
       data: data || [],
       meta: { total: (data || []).length },
     })
-  } catch (error) {
-    return handleManufacturingApiError(error)
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error?.message || "Internal server error" },
+      { status: 500 }
+    )
   }
 }
