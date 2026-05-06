@@ -91,7 +91,7 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'permission_change': (id) => `/settings/users?highlight=${id}`,
 
   // التصنيع
-  'manufacturing_material_issue_approval': (id) => `/manufacturing/production-orders/${id}`,
+  'manufacturing_material_issue_approval': (_id) => `/inventory/dispatch-approvals`,
   'manufacturing_production_order': (id) => `/manufacturing/production-orders/${id}`,
 }
 
