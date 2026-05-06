@@ -195,6 +195,8 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
   const [appLang, setAppLang] = useState<AppLang>("ar")
   const [snapshot, setSnapshot] = useState<ProductionOrderSnapshot | null>(null)
   const [branchName, setBranchName] = useState<string | null>(null)
+  const [issueWarehouseName, setIssueWarehouseName] = useState<string | null>(null)
+  const [receiptWarehouseName, setReceiptWarehouseName] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [savingHeader, setSavingHeader] = useState(false)
   const [runningAction, setRunningAction] = useState<string | null>(null)
@@ -315,6 +317,25 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
       .then((data) => setBranchName(data?.branch?.name || null))
       .catch(() => setBranchName(null))
   }, [order?.branch_id])
+
+  // جلب أسماء المستودعات عند تحميل الطلب
+  useEffect(() => {
+    const wId = order?.issue_warehouse_id
+    if (!wId) { setIssueWarehouseName(null); return }
+    fetch(`/api/warehouses/${wId}`)
+      .then((r) => r.json())
+      .then((data) => setIssueWarehouseName(data?.name || null))
+      .catch(() => setIssueWarehouseName(null))
+  }, [order?.issue_warehouse_id])
+
+  useEffect(() => {
+    const wId = order?.receipt_warehouse_id
+    if (!wId) { setReceiptWarehouseName(null); return }
+    fetch(`/api/warehouses/${wId}`)
+      .then((r) => r.json())
+      .then((data) => setReceiptWarehouseName(data?.name || null))
+      .catch(() => setReceiptWarehouseName(null))
+  }, [order?.receipt_warehouse_id])
 
   const handleSaveHeader = async () => {
     if (!order) return
@@ -697,7 +718,6 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                       <CardContent className="space-y-2 p-4">
                         <div className="text-sm text-slate-600">{copy.detail.ownerProduct}</div>
                         <div className="font-medium text-slate-900">{buildProductLabel(snapshot.product || order.product, appLang)}</div>
-                        <div className="text-xs text-slate-500">{order.product_id}</div>
                       </CardContent>
                     </Card>
                     <Card className="border-indigo-200 bg-indigo-50/80" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
@@ -902,34 +922,21 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                           <CardTitle>{copy.detail.sourceSectionTitle}</CardTitle>
                           <CardDescription>{copy.detail.sourceSectionDescription}</CardDescription>
                         </CardHeader>
-                        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <CardContent className="grid gap-4 md:grid-cols-2">
                           <div className="space-y-1" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
-                            <div className="text-xs uppercase tracking-wide text-slate-500">{copy.list.fields.bomId}</div>
-                            <div className="font-mono text-sm text-slate-700">{order.bom_id}</div>
-                          </div>
-                          <div className="space-y-1" data-ai-help="manufacturing_production_order_detail.bill_of_materials">
-                            <div className="text-xs uppercase tracking-wide text-slate-500">{copy.list.fields.bomVersionId}</div>
-                            <div className="font-mono text-sm text-slate-700">{order.bom_version_id}</div>
+                            <div className="text-xs uppercase tracking-wide text-slate-500">
+                              {appLang === "ar" ? "هيكل المواد (BOM)" : "Bill of Materials"}
+                            </div>
+                            <div className="font-medium text-slate-900">
+                              {buildBomLabel(snapshot.bom, snapshot.bom_version, appLang)}
+                            </div>
                           </div>
                           <div className="space-y-1" data-ai-help="manufacturing_production_order_detail.routing">
-                            <div className="text-xs uppercase tracking-wide text-slate-500">{copy.list.fields.routingId}</div>
-                            <div className="font-mono text-sm text-slate-700">{order.routing_id}</div>
-                          </div>
-                          <div className="space-y-1" data-ai-help="manufacturing_production_order_detail.routing">
-                            <div className="text-xs uppercase tracking-wide text-slate-500">{copy.list.fields.routingVersionId}</div>
-                            <div className="font-mono text-sm text-slate-700">{order.routing_version_id}</div>
-                          </div>
-                          <div className="space-y-1 xl:col-span-2" data-ai-help="manufacturing_production_order_detail.routing">
-                            <div className="text-xs uppercase tracking-wide text-slate-500">{copy.common.bomRouting}</div>
-                            <div className="space-y-1 text-sm text-slate-700">
-                              <div>{buildBomLabel(snapshot.bom || order.bom, snapshot.bom_version || order.bom_version, appLang)}</div>
-                              <div>
-                                {buildRoutingLabel(
-                                  snapshot.routing || order.routing,
-                                  snapshot.routing_version || order.routing_version,
-                                  appLang
-                                )}
-                              </div>
+                            <div className="text-xs uppercase tracking-wide text-slate-500">
+                              {appLang === "ar" ? "مسار التصنيع" : "Routing"}
+                            </div>
+                            <div className="font-medium text-slate-900">
+                              {buildRoutingLabel(snapshot.routing, snapshot.routing_version, appLang)}
                             </div>
                           </div>
                         </CardContent>
@@ -1154,7 +1161,9 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                               {order.issue_warehouse_id && (
                                 <div className="flex justify-between">
                                   <span className="text-slate-500">{copy.detail.issueWarehouseId}</span>
-                                  <span className="font-mono text-xs text-slate-700">{order.issue_warehouse_id}</span>
+                                  <span className="text-slate-700 font-medium">
+                                    {issueWarehouseName || (appLang === "ar" ? "جاري التحميل..." : "Loading...")}
+                                  </span>
                                 </div>
                               )}
                             </div>
