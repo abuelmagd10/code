@@ -186,8 +186,8 @@ function toQueryString(filters: RoutingListFilters) {
 
 export async function fetchAllWorkCenters(): Promise<WorkCenterSummary[]> {
   const response = await fetch("/api/manufacturing/work-centers", { cache: "no-store" })
-  const parsed = await parseApiResponse<{ work_centers: WorkCenterSummary[] }>(response)
-  return parsed.work_centers || []
+  const parsed = await parseApiResponse<WorkCenterSummary[]>(response)
+  return parsed.data || []
 }
 
 export async function fetchRoutingList(filters: RoutingListFilters = {}) {

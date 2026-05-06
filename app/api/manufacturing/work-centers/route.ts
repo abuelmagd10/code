@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await query
     if (error) throw error
 
-    return NextResponse.json({ work_centers: data || [] })
+    return NextResponse.json({ success: true, data: data || [] })
   } catch (error: any) {
     return handleManufacturingApiError(error)
   }
