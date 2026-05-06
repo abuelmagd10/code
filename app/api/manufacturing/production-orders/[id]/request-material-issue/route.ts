@@ -10,7 +10,6 @@ import {
   getManufacturingApiContext,
   handleManufacturingApiError,
 } from "@/lib/manufacturing/production-order-api"
-import { createNotification } from "@/lib/governance-layer"
 
 export async function POST(
   request: NextRequest,
@@ -70,35 +69,38 @@ export async function POST(
 
     if (updateError) throw updateError
 
-    // ── إرسال إشعار لكلٍّ من مسؤول المخزن (warehouse_manager) والمدير (manager) ──
-    // نُرسل إشعارَين منفصلَين لضمان وصول الطلب للدور الصحيح في كل منشأة
-    const notificationPayload = {
-      companyId,
-      referenceType: "manufacturing_material_issue_approval",
-      referenceId: approval.id,
-      title: "🏭 طلب اعتماد صرف مواد خام",
-      message: `طلب صرف مواد للأمر ${existing.order_no} — يتطلب موافقتك قبل بدء الإنتاج`,
-      createdBy: user.id,
-      branchId: existing.branch_id ?? undefined,
-      warehouseId: existing.issue_warehouse_id ?? undefined,
-      priority: "high" as const,
-      severity: "warning" as const,
-      category: "approvals" as const,
+    // ── إرسال إشعار لمسؤول المخزن (store_manager) والمالك (owner) ──
+    // نستخدم admin client مباشرةً لأن governance-layer يستخدم browser client
+    // ويفشل في سياق API route
+    const notifBase = {
+      p_company_id: companyId,
+      p_reference_type: "manufacturing_material_issue_approval",
+      p_reference_id: approval.id,
+      p_title: "🏭 طلب اعتماد صرف مواد خام",
+      p_message: `طلب صرف مواد للأمر ${existing.order_no} — يتطلب موافقتك قبل بدء الإنتاج`,
+      p_created_by: user.id,
+      p_branch_id: existing.branch_id ?? null,
+      p_warehouse_id: existing.issue_warehouse_id ?? null,
+      p_cost_center_id: null as string | null,
+      p_assigned_to_user: null as string | null,
+      p_priority: "high",
+      p_severity: "warning",
+      p_category: "approvals",
     }
+    // إشعار لمسؤول المخزن (store_manager) — الدور الموجود فعلاً في قاعدة البيانات
     try {
-      // إشعار لمسؤول المخزن (الدور الأكثر تخصصاً)
-      await createNotification({
-        ...notificationPayload,
-        assignedToRole: "warehouse_manager",
-        eventKey: `mmia_request_wm_${approval.id}`,
+      await admin.rpc("create_notification", {
+        ...notifBase,
+        p_assigned_to_role: "store_manager",
+        p_event_key: `mmia_request_sm_${approval.id}`,
       })
     } catch { /* الإشعار غير حرج */ }
+    // إشعار للمالك (owner) — دور احتياطي لضمان وصول الطلب
     try {
-      // إشعار للمدير (دور احتياطي في حال لم يوجد warehouse_manager)
-      await createNotification({
-        ...notificationPayload,
-        assignedToRole: "manager",
-        eventKey: `mmia_request_mgr_${approval.id}`,
+      await admin.rpc("create_notification", {
+        ...notifBase,
+        p_assigned_to_role: "owner",
+        p_event_key: `mmia_request_owner_${approval.id}`,
       })
     } catch { /* الإشعار غير حرج */ }
 
