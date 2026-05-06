@@ -1,145 +1,264 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { Cpu, ArrowLeft, GitMerge, Factory, Info, BookOpen, ArrowRight } from "lucide-react"
+import { useCallback, useEffect, useState } from "react"
+import { Cpu, Loader2, Pencil, Plus, Trash2 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import { CompanyHeader } from "@/components/company-header"
-import { ManufacturingGuide } from "@/components/manufacturing/manufacturing-guide"
-import { Card } from "@/components/ui/card"
+import { ERPPageHeader } from "@/components/erp-page-header"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { WORK_CENTER_COPY, readAppLanguage, getTextDirection, type AppLang } from "@/lib/manufacturing/manufacturing-ui"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { useToast } from "@/hooks/use-toast"
+import { useAccess } from "@/lib/access-context"
+
+interface WorkCenter {
+  id: string
+  code: string
+  name: string
+  work_center_type: string
+  status: string
+  branch_id: string
+  description?: string | null
+  capacity_uom?: string | null
+  nominal_capacity_per_hour?: number | null
+  available_hours_per_day?: number | null
+  efficiency_percent?: number | null
+}
+
+interface Branch { id: string; name: string; code: string }
+
+const EMPTY_FORM = { code: "", name: "", branch_id: "", work_center_type: "machine", status: "active", description: "", capacity_uom: "", nominal_capacity_per_hour: "", available_hours_per_day: "" }
+
+const TYPE_LABELS: Record<string, string> = { machine: "آلة", production_line: "خط إنتاج", labor_group: "مجموعة عمالة" }
+const STATUS_LABELS: Record<string, string> = { active: "نشط", inactive: "غير نشط", blocked: "موقوف" }
+const STATUS_VARIANTS: Record<string, "default" | "secondary" | "destructive"> = { active: "default", inactive: "secondary", blocked: "destructive" }
 
 export default function WorkCentersPage() {
-  const router = useRouter()
-  const [lang, setLang] = useState<AppLang>("ar")
+  const { toast } = useToast()
+  const { canAction, isReady: accessReady } = useAccess()
+  const canRead = accessReady ? canAction("manufacturing_boms", "read") : false
+  const canWrite = accessReady ? canAction("manufacturing_boms", "write") : false
+  const canUpdate = accessReady ? canAction("manufacturing_boms", "update") : false
+  const canDelete = accessReady ? canAction("manufacturing_boms", "delete") : false
 
-  useEffect(() => {
-    const handler = () => setLang(readAppLanguage())
-    handler()
-    window.addEventListener("app_language_changed", handler)
-    window.addEventListener("storage", (e) => { if (e.key === "app_language") handler() })
-    return () => window.removeEventListener("app_language_changed", handler)
-  }, [])
+  const [workCenters, setWorkCenters] = useState<WorkCenter[]>([])
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [loading, setLoading] = useState(true)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingWC, setEditingWC] = useState<WorkCenter | null>(null)
+  const [formData, setFormData] = useState(EMPTY_FORM)
+  const [saving, setSaving] = useState(false)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
-  const copy = WORK_CENTER_COPY[lang].page
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true)
+      const [wcRes, brRes] = await Promise.all([
+        fetch("/api/manufacturing/work-centers"),
+        fetch("/api/branches"),
+      ])
+      const wcJson = await wcRes.json()
+      const brJson = await brRes.json()
+      setWorkCenters(wcJson.data || [])
+      setBranches(brJson.branches || [])
+    } catch {
+      toast({ variant: "destructive", title: "خطأ في التحميل", description: "تعذر جلب بيانات مراكز العمل" })
+    } finally {
+      setLoading(false)
+    }
+  }, [toast])
+
+  useEffect(() => { if (canRead) loadData() }, [canRead, loadData])
+
+  const openAdd = () => { setEditingWC(null); setFormData(EMPTY_FORM); setDialogOpen(true) }
+  const openEdit = (wc: WorkCenter) => {
+    setEditingWC(wc)
+    setFormData({ code: wc.code, name: wc.name, branch_id: wc.branch_id, work_center_type: wc.work_center_type, status: wc.status, description: wc.description || "", capacity_uom: wc.capacity_uom || "", nominal_capacity_per_hour: wc.nominal_capacity_per_hour?.toString() || "", available_hours_per_day: wc.available_hours_per_day?.toString() || "" })
+    setDialogOpen(true)
+  }
+
+  const handleSave = async () => {
+    if (!formData.code.trim()) return toast({ variant: "destructive", title: "الكود مطلوب" })
+    if (!formData.name.trim()) return toast({ variant: "destructive", title: "الاسم مطلوب" })
+    if (!formData.branch_id) return toast({ variant: "destructive", title: "يجب تحديد الفرع" })
+    try {
+      setSaving(true)
+      const url = editingWC ? `/api/manufacturing/work-centers/${editingWC.id}` : "/api/manufacturing/work-centers"
+      const method = editingWC ? "PATCH" : "POST"
+      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...formData, nominal_capacity_per_hour: formData.nominal_capacity_per_hour || null, available_hours_per_day: formData.available_hours_per_day || null }) })
+      if (!res.ok) { const j = await res.json(); throw new Error(j.error || "حدث خطأ") }
+      toast({ title: editingWC ? "تم التعديل" : "تم الإنشاء", description: editingWC ? "تم تعديل مركز العمل بنجاح" : "تم إنشاء مركز العمل بنجاح" })
+      setDialogOpen(false)
+      await loadData()
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "خطأ في الحفظ", description: e.message })
+    } finally { setSaving(false) }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteId) return
+    try {
+      setDeleting(true)
+      const res = await fetch(`/api/manufacturing/work-centers/${deleteId}`, { method: "DELETE" })
+      if (!res.ok) { const j = await res.json(); throw new Error(j.error || "حدث خطأ") }
+      toast({ title: "تم الحذف", description: "تم حذف مركز العمل بنجاح" })
+      setDeleteId(null)
+      await loadData()
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "خطأ في الحذف", description: e.message })
+    } finally { setDeleting(false) }
+  }
 
   return (
     <PageGuard resource="manufacturing_boms">
-      <div dir={getTextDirection(lang)} className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
           <CompanyHeader />
-
-          <ManufacturingGuide
-            currentStep="bom"
-            lang={lang}
-            pageInfo={{
-              titleAr: "مراكز العمل — آلات وأقسام الإنتاج",
-              titleEn: "Work Centers — Production Machines & Departments",
-              descAr: "مراكز العمل هي الآلات أو الأقسام التي تُنجز فيها عمليات التصنيع. عرّفها قبل إنشاء مسارات التصنيع.",
-              descEn: "Work centers are the machines or departments where manufacturing operations take place. Define them before creating routings.",
-              whenAr: "عرّف مراكز العمل قبل إنشاء مسارات التصنيع حتى تتمكن من ربط كل عملية بمركزها.",
-              whenEn: "Define work centers before creating routings so you can assign each operation to its work center.",
-              nextStepId: "bom",
-            }}
+          <ERPPageHeader
+            title="مراكز العمل"
+            description="الآلات والأقسام التي تُنجز فيها عمليات التصنيع — يجب تعريفها قبل إنشاء مسارات التصنيع."
+            variant="list"
+            extra={canWrite ? <Button onClick={openAdd} className="gap-2"><Plus className="h-4 w-4" />إضافة مركز عمل</Button> : null}
           />
 
-          {/* Header card */}
-          <Card className="p-5 sm:p-6 dark:bg-slate-900 dark:border-slate-800">
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-cyan-100 dark:bg-cyan-900/30 rounded-xl">
-                <Cpu className="h-7 w-7 text-cyan-600 dark:text-cyan-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{copy.title}</h1>
-                  <Badge variant="outline" className="text-cyan-700 border-cyan-300 bg-cyan-50">{copy.pill}</Badge>
-                </div>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{copy.description}</p>
-              </div>
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
+              <Loader2 className="h-5 w-5 animate-spin" />جاري التحميل...
             </div>
-          </Card>
-
-          {/* What is a work center? */}
-          <Card className="p-5 sm:p-6 dark:bg-slate-900 dark:border-slate-800 space-y-3">
-            <div className="flex items-center gap-2">
-              <Info className="h-5 w-5 text-blue-500" />
-              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">{copy.whatTitle}</h2>
-            </div>
-            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{copy.whatDesc}</p>
-          </Card>
-
-          {/* Examples */}
-          <div className="space-y-3">
-            <h2 className="text-base font-bold text-slate-700 dark:text-slate-200 px-1">{copy.examplesTitle}</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {copy.examples.map((ex, idx) => (
-                <Card key={idx} className="p-4 dark:bg-slate-900 dark:border-slate-800 flex items-start gap-3">
-                  <span className="text-2xl">{ex.icon}</span>
-                  <div>
-                    <p className="font-semibold text-sm text-slate-800 dark:text-slate-100">{ex.name}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{ex.desc}</p>
-                  </div>
+          ) : workCenters.length === 0 ? (
+            <Card className="p-10 text-center">
+              <Cpu className="mx-auto h-10 w-10 text-slate-300 mb-3" />
+              <p className="text-lg font-medium text-slate-700 dark:text-slate-300">لا توجد مراكز عمل بعد</p>
+              <p className="text-sm text-slate-500 mt-1 mb-4">أضف أول مركز عمل لتتمكن من ربطه بعمليات التصنيع.</p>
+              {canWrite && <Button onClick={openAdd} className="gap-2"><Plus className="h-4 w-4" />إضافة مركز عمل</Button>}
+            </Card>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {workCenters.map((wc) => (
+                <Card key={wc.id} className="dark:bg-slate-900 dark:border-slate-800">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <CardTitle className="text-base truncate">{wc.code} — {wc.name}</CardTitle>
+                        <CardDescription className="mt-0.5">{TYPE_LABELS[wc.work_center_type] || wc.work_center_type}</CardDescription>
+                      </div>
+                      <Badge variant={STATUS_VARIANTS[wc.status] || "secondary"}>{STATUS_LABELS[wc.status] || wc.status}</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {wc.description && <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2">{wc.description}</p>}
+                    {(wc.nominal_capacity_per_hour || wc.available_hours_per_day) && (
+                      <div className="flex gap-3 text-xs text-slate-500">
+                        {wc.nominal_capacity_per_hour && <span>⚡ {wc.nominal_capacity_per_hour} {wc.capacity_uom || ""}/ساعة</span>}
+                        {wc.available_hours_per_day && <span>⏱ {wc.available_hours_per_day} ساعة/يوم</span>}
+                      </div>
+                    )}
+                    <div className="flex gap-2 pt-1">
+                      {canUpdate && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit(wc)}><Pencil className="h-3.5 w-3.5" />تعديل</Button>}
+                      {canDelete && <Button size="sm" variant="outline" className="gap-1.5 text-red-600 hover:bg-red-50" onClick={() => setDeleteId(wc.id)}><Trash2 className="h-3.5 w-3.5" />حذف</Button>}
+                    </div>
+                  </CardContent>
                 </Card>
               ))}
             </div>
-          </div>
-
-          {/* When to use */}
-          <Card className="p-5 sm:p-6 dark:bg-slate-900 dark:border-slate-800 space-y-3">
-            <div className="flex items-center gap-2">
-              <BookOpen className="h-5 w-5 text-amber-500" />
-              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">{copy.whenTitle}</h2>
-            </div>
-            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{copy.whenDesc}</p>
-          </Card>
-
-          {/* Relation to routings */}
-          <Card className="p-5 sm:p-6 dark:bg-slate-900 dark:border-slate-800 space-y-3">
-            <div className="flex items-center gap-2">
-              <GitMerge className="h-5 w-5 text-indigo-500" />
-              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">{copy.relationTitle}</h2>
-            </div>
-            <div className="bg-indigo-50 dark:bg-indigo-950/30 rounded-lg p-4">
-              <pre className="text-xs text-indigo-800 dark:text-indigo-300 whitespace-pre-wrap font-mono leading-relaxed">{copy.relationDesc}</pre>
-            </div>
-          </Card>
-
-          {/* Coming soon banner */}
-          <Card className="p-5 sm:p-6 dark:bg-slate-900 dark:border-slate-800 border-dashed border-2 border-amber-300 dark:border-amber-700 space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">🚧</span>
-              <h2 className="text-base font-bold text-amber-800 dark:text-amber-300">{copy.comingSoon}</h2>
-            </div>
-            <p className="text-sm text-amber-700 dark:text-amber-400 leading-relaxed">{copy.comingSoonDesc}</p>
-          </Card>
-
-          {/* Next step */}
-          <Card className="p-5 sm:p-6 dark:bg-slate-900 dark:border-slate-800 bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-950/20 dark:to-blue-950/20 border-cyan-200 dark:border-cyan-800">
-            <h2 className="text-sm font-bold text-cyan-800 dark:text-cyan-300 mb-3">{copy.nextStepTitle}</h2>
-            <p className="text-xs text-cyan-700 dark:text-cyan-400 mb-4">{copy.nextStepDesc}</p>
-            <div className="flex flex-wrap gap-3">
-              <Button
-                className="gap-2"
-                onClick={() => router.push("/manufacturing/routings")}
-              >
-                <GitMerge className="h-4 w-4" />
-                {copy.goToRoutings}
-                {lang === "ar" ? <ArrowLeft className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
-              </Button>
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => router.push("/manufacturing/production-orders")}
-              >
-                <Factory className="h-4 w-4" />
-                {copy.goToOrders}
-              </Button>
-            </div>
-          </Card>
+          )}
         </main>
       </div>
+
+      {/* Add / Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingWC ? "تعديل مركز العمل" : "إضافة مركز عمل جديد"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>الكود *</Label>
+              <Input value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value })} placeholder="WC-01" disabled={saving} />
+            </div>
+            <div className="space-y-2">
+              <Label>الاسم *</Label>
+              <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="آلة الخياطة" disabled={saving} />
+            </div>
+            <div className="space-y-2">
+              <Label>الفرع *</Label>
+              <Select value={formData.branch_id} onValueChange={(v) => setFormData({ ...formData, branch_id: v })} disabled={saving || !!editingWC}>
+                <SelectTrigger><SelectValue placeholder="اختر الفرع..." /></SelectTrigger>
+                <SelectContent>{branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>النوع</Label>
+              <Select value={formData.work_center_type} onValueChange={(v) => setFormData({ ...formData, work_center_type: v })} disabled={saving}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="machine">آلة</SelectItem>
+                  <SelectItem value="production_line">خط إنتاج</SelectItem>
+                  <SelectItem value="labor_group">مجموعة عمالة</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>الحالة</Label>
+              <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })} disabled={saving}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">نشط</SelectItem>
+                  <SelectItem value="inactive">غير نشط</SelectItem>
+                  <SelectItem value="blocked">موقوف</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>وحدة الطاقة (اختياري)</Label>
+              <Input value={formData.capacity_uom} onChange={(e) => setFormData({ ...formData, capacity_uom: e.target.value })} placeholder="قطعة، كجم، لتر..." disabled={saving} />
+            </div>
+            <div className="space-y-2">
+              <Label>الطاقة الإنتاجية / ساعة</Label>
+              <Input type="number" min="0" value={formData.nominal_capacity_per_hour} onChange={(e) => setFormData({ ...formData, nominal_capacity_per_hour: e.target.value })} placeholder="100" disabled={saving} />
+            </div>
+            <div className="space-y-2">
+              <Label>ساعات العمل / يوم</Label>
+              <Input type="number" min="0" max="24" value={formData.available_hours_per_day} onChange={(e) => setFormData({ ...formData, available_hours_per_day: e.target.value })} placeholder="8" disabled={saving} />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>الوصف (اختياري)</Label>
+              <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="وصف مختصر لمركز العمل..." disabled={saving} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>إلغاء</Button>
+            <Button onClick={handleSave} disabled={saving} className="gap-2">
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {editingWC ? "حفظ التعديلات" : "إضافة"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteId} onOpenChange={(open) => { if (!open) setDeleteId(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+            <AlertDialogDescription>هل أنت متأكد من حذف مركز العمل هذا؟ لا يمكن التراجع عن هذا الإجراء.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>إلغاء</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} disabled={deleting} className="bg-red-600 hover:bg-red-700">
+              {deleting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+              حذف
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageGuard>
   )
 }
