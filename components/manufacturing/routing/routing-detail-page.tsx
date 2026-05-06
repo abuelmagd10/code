@@ -55,6 +55,7 @@ import {
   type RoutingVersionCreatePayload,
   type RoutingVersionSnapshot,
   type RoutingVersionStatus,
+  type WorkCenterSummary,
   activateRoutingVersion,
   archiveRoutingVersion,
   buildProductLabel,
@@ -67,6 +68,7 @@ import {
   deactivateRoutingVersion,
   deleteRouting,
   deleteRoutingVersion,
+  fetchAllWorkCenters,
   fetchRoutingDetail,
   fetchRoutingVersionSnapshot,
   formatDateTime,
@@ -177,6 +179,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
   })
   const [versionForm, setVersionForm] = useState<RoutingVersionFormState>(EMPTY_VERSION_FORM)
   const [operationsDraft, setOperationsDraft] = useState<RoutingOperationDraft[]>([])
+  const [allWorkCenters, setAllWorkCenters] = useState<WorkCenterSummary[]>([])
 
   const activeSnapshot = versionSnapshot?.version.id === selectedVersionId ? versionSnapshot : null
   const selectedVersion =
@@ -196,12 +199,18 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
   const canDeleteRoutingRecord = Boolean(routing) && Boolean(routing?.versions.every((version) => version.status === "draft"))
 
   const workCentersById = useMemo(() => {
-    return Object.fromEntries(
-      (activeSnapshot?.operations || [])
-        .filter((operation) => operation.work_center)
-        .map((operation) => [operation.work_center_id, operation.work_center])
+    // Start with all fetched work centers
+    const byId: Record<string, WorkCenterSummary> = Object.fromEntries(
+      allWorkCenters.map((wc) => [wc.id, wc])
     )
-  }, [activeSnapshot])
+    // Merge in any work centers already embedded in the snapshot (richer data)
+    for (const operation of activeSnapshot?.operations || []) {
+      if (operation.work_center) {
+        byId[operation.work_center_id] = operation.work_center
+      }
+    }
+    return byId
+  }, [allWorkCenters, activeSnapshot])
 
   const hydrateHeaderForm = useCallback((detail: RoutingDetail) => {
     setHeaderForm({
@@ -291,6 +300,9 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
   useEffect(() => {
     if (!canRead) return
     loadRoutingDetailData()
+    fetchAllWorkCenters()
+      .then(setAllWorkCenters)
+      .catch(() => {/* non-critical — dropdown will be empty */})
   }, [canRead, loadRoutingDetailData])
 
   useEffect(() => {
@@ -943,31 +955,51 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                                     <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
                                                   </TooltipTrigger>
                                                   <TooltipContent side="top" className="max-w-xs">
-                                                    القسم أو الماكينة المسؤولة عن تنفيذ هذه العملية. أدخل معرّف UUID لمركز العمل من قائمة مراكز العمل المعرّفة في النظام.
+                                                    القسم أو الماكينة المسؤولة عن تنفيذ هذه العملية. اختر من القائمة أدناه.
                                                   </TooltipContent>
                                                 </Tooltip>
                                               </div>
-                                              <Input
-                                                value={operation.work_center_id}
-                                                onChange={(event) =>
-                                                  setOperationsDraft((current) =>
-                                                    current.map((item, opIndex) =>
-                                                      opIndex === index ? { ...item, work_center_id: event.target.value } : item
+                                              {allWorkCenters.length === 0 ? (
+                                                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                                                  لا توجد مراكز عمل معرّفة بعد.{" "}
+                                                  <a href="/manufacturing/work-centers" target="_blank" className="font-semibold underline underline-offset-2">
+                                                    أضف مراكز العمل أولاً
+                                                  </a>
+                                                </div>
+                                              ) : (
+                                                <Select
+                                                  value={operation.work_center_id || ""}
+                                                  onValueChange={(val) =>
+                                                    setOperationsDraft((current) =>
+                                                      current.map((item, opIndex) =>
+                                                        opIndex === index ? { ...item, work_center_id: val } : item
+                                                      )
                                                     )
-                                                  )
-                                                }
-                                                disabled={!canUpdate || !operationsEditable || savingOperations}
-                                                className="font-mono text-xs"
-                                              />
-                                              {workCenter ? (
-                                                <div className="rounded-lg border bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                                                  <div className="font-medium text-slate-900">{buildWorkCenterLabel(workCenter)}</div>
+                                                  }
+                                                  disabled={!canUpdate || !operationsEditable || savingOperations}
+                                                >
+                                                  <SelectTrigger>
+                                                    <SelectValue placeholder="اختر مركز العمل..." />
+                                                  </SelectTrigger>
+                                                  <SelectContent>
+                                                    {allWorkCenters.map((wc) => (
+                                                      <SelectItem key={wc.id} value={wc.id}>
+                                                        {buildWorkCenterLabel(wc)}
+                                                        {wc.work_center_type ? ` · ${wc.work_center_type}` : ""}
+                                                      </SelectItem>
+                                                    ))}
+                                                  </SelectContent>
+                                                </Select>
+                                              )}
+                                              {workCenter && (
+                                                <div className="rounded-lg border bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800">
+                                                  <div className="font-medium text-slate-900 dark:text-slate-100">{buildWorkCenterLabel(workCenter)}</div>
                                                   <div className="mt-1">
                                                     {workCenter.work_center_type || "غير محدد"} · {workCenter.status || "غير محدد"}
                                                     {workCenter.capacity_uom ? ` · ${formatQuantity(workCenter.nominal_capacity_per_hour)} ${workCenter.capacity_uom}/hr` : ""}
                                                   </div>
                                                 </div>
-                                              ) : null}
+                                              )}
                                             </div>
                                             <div className="flex items-center justify-between rounded-xl border px-4 py-3 xl:col-span-2" data-ai-help="manufacturing_routing_detail.quality_checkpoint">
                                               <div className="space-y-1">
