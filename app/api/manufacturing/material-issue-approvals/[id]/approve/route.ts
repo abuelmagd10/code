@@ -19,7 +19,8 @@ async function sendNotification(admin: any, params: {
   referenceId: string; referenceType: string; createdBy: string; eventKey: string;
 }) {
   try {
-    await admin.rpc("create_notification", {
+    console.log(`[MMIA_NOTIFICATION] Sending notification: role=${params.role}, branchId=${params.branchId}, eventKey=${params.eventKey}`)
+    const { data, error } = await admin.rpc("create_notification", {
       p_company_id: params.companyId,
       p_branch_id: params.branchId,
       p_assigned_to_role: params.role,
@@ -34,7 +35,14 @@ async function sendNotification(admin: any, params: {
       p_category: "approvals",
       p_event_key: params.eventKey,
     })
-  } catch { /* الإشعار غير حرج */ }
+    if (error) {
+      console.error(`[MMIA_NOTIFICATION] ❌ RPC error for role=${params.role}, branch=${params.branchId}:`, error.message, error.details)
+    } else {
+      console.log(`[MMIA_NOTIFICATION] ✅ Notification created: role=${params.role}, branch=${params.branchId}, id=${data}`)
+    }
+  } catch (err: any) {
+    console.error(`[MMIA_NOTIFICATION] ❌ Exception for role=${params.role}:`, err?.message)
+  }
 }
 
 export async function POST(
@@ -297,6 +305,7 @@ export async function POST(
       }
 
       // إشعار لمحاسب الفرع المرتبط بالمستودع
+      console.log(`[MMIA_SHORTAGE] Branch resolution: warehouseBranchId=${warehouseBranchId}, productionOrder.branch_id=${productionOrder?.branch_id}, final accountantBranchId=${accountantBranchId}`)
       if (accountantBranchId) {
         await sendNotification(admin, {
           companyId, branchId: accountantBranchId, role: "accountant",
@@ -307,6 +316,8 @@ export async function POST(
           createdBy: user.id,
           eventKey: `mmia_shortage_${id}_accountant`,
         })
+      } else {
+        console.warn(`[MMIA_SHORTAGE] ⚠️ No accountantBranchId resolved — skipping branch accountant notification! issue_warehouse_id=${productionOrder?.issue_warehouse_id}`)
       }
 
       return NextResponse.json({

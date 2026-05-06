@@ -12,5 +12,6 @@
     "less.lint.unknownAtRules": "ignore",
     "workbench.editor.autoLockGroups": {
         "default": true
-    }
+    },
+    "workbench.auxiliaryActivityBar.location": "hidden"
 }
