@@ -231,10 +231,10 @@ export default function MaterialIssueApprovalDetailPage() {
       approval_id: approvalId,
       production_order_id: data.production_order?.id || "",
       production_order_no: data.production_order?.order_no || "",
-      branch_id: data.approval?.branch_id || "",
-      warehouse_id: data.approval?.warehouse_id || "",
       shortage_items: JSON.stringify(shortageItems),
     })
+    // لا نمرر branch_id / warehouse_id لتجنب تعارض حوكمة المنتجات
+    // المستخدم يختار الفرع المناسب حيث المنتجات مسجلة
     router.push(`/purchase-orders/new?${params.toString()}`)
   }
 
