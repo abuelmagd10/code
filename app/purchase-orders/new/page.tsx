@@ -153,13 +153,16 @@ export default function NewPurchaseOrderPage() {
     if (source !== 'material_shortage') return
     try {
       const shortageItemsRaw = searchParamsHook.get('shortage_items')
+      console.log('[PO_AUTOFILL] Raw shortage_items param:', shortageItemsRaw?.substring(0, 200))
       if (!shortageItemsRaw) return
       const shortageItems = JSON.parse(shortageItemsRaw) as { product_id: string; product_name: string; quantity: number; uom: string }[]
+      console.log(`[PO_AUTOFILL] Parsed ${shortageItems.length} shortage items:`, shortageItems)
       if (!Array.isArray(shortageItems) || shortageItems.length === 0) return
       const newItems: POItem[] = shortageItems.map(si => ({
         product_id: si.product_id, quantity: si.quantity,
         unit_price: 0, tax_rate: 0, discount_percent: 0, item_type: 'product' as const,
       }))
+      console.log(`[PO_AUTOFILL] Setting ${newItems.length} poItems:`, newItems.map(i => ({ id: i.product_id, qty: i.quantity })))
       setPoItems(newItems)
       const poNo = searchParamsHook.get('production_order_no') || ''
       const approvalId = searchParamsHook.get('approval_id') || ''
@@ -168,7 +171,7 @@ export default function NewPurchaseOrderPage() {
       const warehouseParam = searchParamsHook.get('warehouse_id')
       if (branchParam) setBranchId(branchParam)
       if (warehouseParam) setWarehouseId(warehouseParam)
-    } catch (e) { console.error('Failed to parse shortage params:', e) }
+    } catch (e) { console.error('[PO_AUTOFILL] Failed to parse shortage params:', e) }
   }, [searchParamsHook])
 
   const loadData = async () => {
@@ -491,6 +494,7 @@ export default function NewPurchaseOrderPage() {
           return taxInclusive ? base : base * (1 + tax / 100)
         })()
       }))
+      console.log(`[PO_SUBMIT] Sending ${itemRows.length} items:`, itemRows.map(i => ({ product_id: i.product_id, qty: i.quantity, price: i.unit_price })))
 
       const response = await fetch("/api/purchase-orders", {
         method: "POST",

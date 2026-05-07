@@ -331,10 +331,20 @@ export async function POST(request: NextRequest) {
         ...item,
         purchase_order_id: newOrder.id
       }));
+      console.log(`[PO_CREATE] Inserting ${itemsToInsert.length} PO items for ${newOrder.po_number}:`, JSON.stringify(itemsToInsert.map((i: any) => ({ product_id: i.product_id, qty: i.quantity }))))
       const { error: itemsError } = await supabase.from("purchase_order_items").insert(itemsToInsert);
       if (itemsError) {
-        console.error("Failed to insert items:", itemsError);
+        console.error(`[PO_CREATE] ❌ Failed to insert PO items for ${newOrder.po_number}:`, itemsError);
+        // Rollback: delete the PO since items failed
+        await supabase.from("purchase_orders").delete().eq("id", newOrder.id)
+        return NextResponse.json({
+          error: `Failed to save purchase order items: ${itemsError.message}`,
+          error_ar: `فشل في حفظ بنود أمر الشراء: ${itemsError.message}`
+        }, { status: 500 })
       }
+      console.log(`[PO_CREATE] ✅ ${itemsToInsert.length} PO items inserted successfully`)
+    } else {
+      console.log(`[PO_CREATE] ⚠️ No items provided for ${newOrder.po_number}`)
     }
 
     let linkedBillId: string | null = null
@@ -395,10 +405,22 @@ export async function POST(request: NextRequest) {
             line_total: item.line_total,
           }))
 
+          console.log(`[PO_CREATE] Inserting ${billItems.length} bill items:`, JSON.stringify(billItems.map((i: any) => ({ product_id: i.product_id, qty: i.quantity }))))
           const { error: billItemsError } = await supabase.from("bill_items").insert(billItems)
           if (billItemsError) {
-            console.error("Failed to insert linked bill items:", billItemsError)
+            console.error(`[PO_CREATE] ❌ Failed to insert bill items:`, billItemsError)
+            // Don't fail the whole request, but warn the user
+            return NextResponse.json({
+              success: true,
+              data: { ...newOrder, bill_id: linkedBillId },
+              linkedBillId,
+              warning: `Purchase order created but bill items failed: ${billItemsError.message}`,
+              warning_ar: `تم إنشاء أمر الشراء لكن فشل حفظ بنود الفاتورة: ${billItemsError.message}`
+            }, { status: 201 })
           }
+          console.log(`[PO_CREATE] ✅ ${billItems.length} bill items inserted successfully`)
+        } else {
+          console.log(`[PO_CREATE] ⚠️ No items to copy to linked bill`)
         }
       }
     }

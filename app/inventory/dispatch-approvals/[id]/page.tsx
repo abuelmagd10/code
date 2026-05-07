@@ -226,6 +226,18 @@ export default function MaterialIssueApprovalDetailPage() {
         }
       })
 
+    console.log(`[CREATE_PO] Materials count: ${data.materials.length}, Shortage items: ${shortageItems.length}`)
+    console.log(`[CREATE_PO] Shortage items:`, JSON.stringify(shortageItems))
+    
+    if (shortageItems.length === 0) {
+      toast({ 
+        title: "لا توجد مواد ناقصة",
+        description: "لم يتم العثور على مواد ناقصة لإنشاء أمر شراء",
+        variant: "destructive" 
+      })
+      return
+    }
+
     const params = new URLSearchParams({
       source: "material_shortage",
       approval_id: approvalId,
