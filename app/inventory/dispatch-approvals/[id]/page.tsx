@@ -470,20 +470,36 @@ export default function MaterialIssueApprovalDetailPage() {
           </Card>
         )}
 
-        {/* Accountant View — Read Only + Create PO */}
+        {/* Accountant View — Read Only notice */}
         {data.user_is_accountant && (
           <Card className="dark:bg-slate-900 dark:border-slate-800">
             <CardContent className="pt-6">
-              <div className="flex items-start p-3 text-sm text-blue-800 border border-blue-200 rounded-lg bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800 mb-4">
+              <div className="flex items-start p-3 text-sm text-blue-800 border border-blue-200 rounded-lg bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800">
                 <Info className="flex-shrink-0 w-4 h-4 mr-2 rtl:mr-0 rtl:ml-2 mt-0.5" />
                 <div>{appLang === 'en' ? "You have read-only access. Contact the warehouse manager for modifications." : "لديك صلاحية اطلاع فقط. تواصل مع مسؤول المخزن للتعديلات."}</div>
               </div>
-              {(data.user_can_create_po || hasShortage) && (
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Create PO for Shortages — visible to ALL roles */}
+        {(data.user_can_create_po || hasShortage) && (
+          <Card className="dark:bg-slate-900 dark:border-slate-800 border-orange-200 dark:border-orange-900">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-orange-700 dark:text-orange-400">
+                    {appLang === 'en' ? "Material shortages detected" : "تم اكتشاف نقص في المواد"}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {appLang === 'en' ? "You can create a purchase order to procure the missing materials" : "يمكنك إنشاء أمر شراء لتوفير المواد الناقصة"}
+                  </p>
+                </div>
                 <Button onClick={handleCreatePO} className="bg-orange-600 hover:bg-orange-700 text-white gap-2">
                   <ShoppingCart className="w-4 h-4" />
-                  {appLang === 'en' ? "Create Purchase Order for Shortages" : "إنشاء أمر شراء للمواد الناقصة"}
+                  {appLang === 'en' ? "Create Purchase Order" : "إنشاء أمر شراء"}
                 </Button>
-              )}
+              </div>
             </CardContent>
           </Card>
         )}

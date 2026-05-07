@@ -234,7 +234,7 @@ export async function GET(
         user_can_approve: canApprove && (approval.status === "pending" || approval.status === "partially_approved"),
         user_can_reject: canApprove && (approval.status === "pending" || approval.status === "partially_approved"),
         user_is_accountant: isAccountant,
-        user_can_create_po: isAccountant && hasShortages && ["rejected", "partially_approved", "pending"].includes(approval.status),
+        user_can_create_po: hasShortages && ["rejected", "partially_approved", "pending", "approved"].includes(approval.status),
         user_role: memberRow.role,
       },
     })
