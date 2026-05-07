@@ -219,6 +219,9 @@ export async function GET(
       .includes(memberRow.role)
     const isAccountant = memberRow.role === "accountant"
     const hasShortages = materials.some((m: any) => m.shortage_qty > 0)
+    const upperRoles = ["owner", "admin", "general_manager", "manager"]
+    const canCreatePO = (upperRoles.includes(memberRow.role) || isAccountant) && hasShortages
+      && ["rejected", "partially_approved", "pending", "approved"].includes(approval.status)
 
     return NextResponse.json({
       success: true,
@@ -234,7 +237,7 @@ export async function GET(
         user_can_approve: canApprove && (approval.status === "pending" || approval.status === "partially_approved"),
         user_can_reject: canApprove && (approval.status === "pending" || approval.status === "partially_approved"),
         user_is_accountant: isAccountant,
-        user_can_create_po: hasShortages && ["rejected", "partially_approved", "pending", "approved"].includes(approval.status),
+        user_can_create_po: canCreatePO,
         user_role: memberRow.role,
       },
     })
