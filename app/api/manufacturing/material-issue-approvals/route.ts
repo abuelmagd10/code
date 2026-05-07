@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 
-const ALLOWED_ROLES = ["store_manager", "owner", "admin", "general_manager", "manager", "warehouse_manager"]
+const ALLOWED_ROLES = ["store_manager", "owner", "admin", "general_manager", "manager", "warehouse_manager", "accountant"]
 
 export async function GET(request: NextRequest) {
   try {
@@ -83,7 +83,13 @@ export async function GET(request: NextRequest) {
       .order("requested_at", { ascending: false })
 
     if (status !== "all") {
-      query = query.eq("status", status)
+      // Support comma-separated statuses like "pending,rejected"
+      const statuses = status.split(",").map(s => s.trim()).filter(Boolean)
+      if (statuses.length === 1) {
+        query = query.eq("status", statuses[0])
+      } else if (statuses.length > 1) {
+        query = query.in("status", statuses)
+      }
     }
     if (warehouseId) {
       query = query.eq("warehouse_id", warehouseId)
