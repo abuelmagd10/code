@@ -32,6 +32,19 @@ interface POItem {
   item_type?: 'product' | 'service';
 }
 
+interface MaterialShortageItem {
+  requirement_id?: string
+  product_id: string
+  product_name?: string
+  quantity: number
+  uom?: string | null
+  branch_id?: string | null
+  warehouse_id?: string | null
+  cost_center_id?: string | null
+  production_order_id?: string | null
+  material_issue_approval_id?: string | null
+}
+
 export default function NewPurchaseOrderPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
@@ -39,6 +52,12 @@ export default function NewPurchaseOrderPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [poItems, setPoItems] = useState<POItem[]>([])
+  const [materialShortageItems, setMaterialShortageItems] = useState<MaterialShortageItem[]>([])
+  const [materialShortageContext, setMaterialShortageContext] = useState<{
+    approval_id: string
+    production_order_id: string
+    production_order_no: string
+  } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [permWrite, setPermWrite] = useState(false)
@@ -153,25 +172,29 @@ export default function NewPurchaseOrderPage() {
     if (source !== 'material_shortage') return
     try {
       const shortageItemsRaw = searchParamsHook.get('shortage_items')
-      console.log('[PO_AUTOFILL] Raw shortage_items param:', shortageItemsRaw?.substring(0, 200))
       if (!shortageItemsRaw) return
-      const shortageItems = JSON.parse(shortageItemsRaw) as { product_id: string; product_name: string; quantity: number; uom: string }[]
-      console.log(`[PO_AUTOFILL] Parsed ${shortageItems.length} shortage items:`, shortageItems)
+      const shortageItems = JSON.parse(shortageItemsRaw) as MaterialShortageItem[]
       if (!Array.isArray(shortageItems) || shortageItems.length === 0) return
       const newItems: POItem[] = shortageItems.map(si => ({
         product_id: si.product_id, quantity: si.quantity,
         unit_price: 0, tax_rate: 0, discount_percent: 0, item_type: 'product' as const,
       }))
-      console.log(`[PO_AUTOFILL] Setting ${newItems.length} poItems:`, newItems.map(i => ({ id: i.product_id, qty: i.quantity })))
       setPoItems(newItems)
       const poNo = searchParamsHook.get('production_order_no') || ''
       const approvalId = searchParamsHook.get('approval_id') || ''
+      const productionOrderId = searchParamsHook.get('production_order_id') || ''
+      setMaterialShortageItems(shortageItems)
+      setMaterialShortageContext({
+        approval_id: approvalId,
+        production_order_id: productionOrderId,
+        production_order_no: poNo,
+      })
       setFormData(prev => ({ ...prev, notes: `أمر شراء لتغطية نقص مواد تصنيع — أمر إنتاج: ${poNo} | مرجع: ${approvalId}` }))
       const branchParam = searchParamsHook.get('branch_id')
       const warehouseParam = searchParamsHook.get('warehouse_id')
       if (branchParam) setBranchId(branchParam)
       if (warehouseParam) setWarehouseId(warehouseParam)
-    } catch (e) { console.error('[PO_AUTOFILL] Failed to parse shortage params:', e) }
+    } catch (e) { console.error('Failed to parse shortage params:', e) }
   }, [searchParamsHook])
 
   const loadData = async () => {
@@ -478,6 +501,7 @@ export default function NewPurchaseOrderPage() {
       const totals = calculateTotals
 
       const { data: { user: currentUser } } = await supabase.auth.getUser()
+      const isMaterialShortageSource = searchParamsHook?.get("source") === "material_shortage"
       const itemRows = poItems.map((item, idx) => ({
         product_id: item.product_id || null,
         quantity: item.quantity,
@@ -494,7 +518,6 @@ export default function NewPurchaseOrderPage() {
           return taxInclusive ? base : base * (1 + tax / 100)
         })()
       }))
-      console.log(`[PO_SUBMIT] Sending ${itemRows.length} items:`, itemRows.map(i => ({ product_id: i.product_id, qty: i.quantity, price: i.unit_price })))
 
       const response = await fetch("/api/purchase-orders", {
         method: "POST",
@@ -528,6 +551,25 @@ export default function NewPurchaseOrderPage() {
           created_by_user_id: currentUser?.id || null,
           items: itemRows,
           createLinkedBill: isAdmin,
+          source: isMaterialShortageSource ? "material_shortage" : undefined,
+          manufacturing_context: isMaterialShortageSource ? {
+            source: "material_shortage",
+            approval_id: materialShortageContext?.approval_id || null,
+            production_order_id: materialShortageContext?.production_order_id || null,
+            production_order_no: materialShortageContext?.production_order_no || null,
+            target_branch_id: branchId || null,
+            target_warehouse_id: warehouseId || null,
+            target_cost_center_id: costCenterId || null,
+            reason: "material_shortage",
+          } : undefined,
+          material_shortage_items: isMaterialShortageSource
+            ? materialShortageItems.map(item => ({
+                ...item,
+                target_branch_id: branchId || null,
+                target_warehouse_id: warehouseId || null,
+                target_cost_center_id: costCenterId || null,
+              }))
+            : undefined,
           appLang,
         }),
       })
@@ -535,18 +577,28 @@ export default function NewPurchaseOrderPage() {
       const result = await response.json().catch(() => ({})) as {
         success?: boolean
         error?: string
+        error_ar?: string
         data?: { id?: string; po_number?: string; bill_id?: string | null }
       }
       if (!response.ok || result.success === false || !result.data?.id || !result.data?.po_number) {
-        throw new Error(result.error || (appLang === 'en' ? 'Failed to create purchase order' : 'فشل إنشاء أمر الشراء'))
+        throw new Error(
+          (appLang === 'en' ? result.error : result.error_ar || result.error)
+          || (appLang === 'en' ? 'Failed to create purchase order' : 'فشل إنشاء أمر الشراء')
+        )
       }
 
       toastActionSuccess(toast, appLang === 'en' ? 'Save' : 'حفظ', appLang === 'en' ? 'Purchase Order' : 'أمر الشراء')
       router.refresh() // 🔄 تحديث البيانات قبل الانتقال
       router.push("/purchase-orders")
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error saving:", err)
-      toastActionError(toast, appLang === 'en' ? 'Save' : 'حفظ', appLang === 'en' ? 'Purchase Order' : 'أمر الشراء')
+      toastActionError(
+        toast,
+        appLang === 'en' ? 'Save' : 'حفظ',
+        appLang === 'en' ? 'Purchase Order' : 'أمر الشراء',
+        err?.message,
+        appLang
+      )
     } finally {
       setIsSaving(false)
     }

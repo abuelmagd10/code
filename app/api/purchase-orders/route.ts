@@ -27,6 +27,95 @@ const PURCHASE_PRIVILEGED_ROLES = new Set([
 
 const normalizeRole = (role: unknown) => String(role || "").trim().toLowerCase().replace(/\s+/g, "_")
 
+function isMaterialShortageSource(body: any) {
+  return body?.source === "material_shortage" || body?.manufacturing_context?.source === "material_shortage"
+}
+
+function normalizeLineNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function buildPurchaseOrderItemRow(item: any, purchaseOrderId: string) {
+  return {
+    purchase_order_id: purchaseOrderId,
+    product_id: item.product_id || null,
+    description: item.description || null,
+    quantity: normalizeLineNumber(item.quantity, 0),
+    unit_price: normalizeLineNumber(item.unit_price, 0),
+    tax_rate: normalizeLineNumber(item.tax_rate, 0),
+    discount_percent: normalizeLineNumber(item.discount_percent, 0),
+    item_type: item.item_type || "product",
+    line_total: normalizeLineNumber(item.line_total, 0),
+  }
+}
+
+function buildBillItemRow(item: any, billId: string) {
+  return {
+    bill_id: billId,
+    product_id: item.product_id || null,
+    description: item.description || null,
+    quantity: normalizeLineNumber(item.quantity, 0),
+    unit_price: normalizeLineNumber(item.unit_price, 0),
+    tax_rate: normalizeLineNumber(item.tax_rate, 0),
+    discount_percent: normalizeLineNumber(item.discount_percent, 0),
+    item_type: item.item_type || "product",
+    line_total: normalizeLineNumber(item.line_total, 0),
+  }
+}
+
+async function loadBranchNameMap(supabase: any, companyId: string, branchIds: string[]) {
+  const ids = Array.from(new Set(branchIds.filter(Boolean)))
+  if (ids.length === 0) return new Map<string, string>()
+
+  const { data, error } = await supabase
+    .from("branches")
+    .select("id, name")
+    .eq("company_id", companyId)
+    .in("id", ids)
+
+  if (error) {
+    console.error("Failed to load branch names:", error)
+    return new Map<string, string>()
+  }
+
+  return new Map((data || []).map((branch: any) => [branch.id, branch.name || branch.id]))
+}
+
+async function rollbackPurchaseOrderCreation(
+  supabase: any,
+  purchaseOrderId: string,
+  billId?: string | null
+) {
+  const cleanupErrors: string[] = []
+
+  if (billId) {
+    const { error: billDeleteError } = await supabase
+      .from("bills")
+      .delete()
+      .eq("id", billId)
+
+    if (billDeleteError) {
+      cleanupErrors.push(`bill cleanup failed: ${billDeleteError.message}`)
+    }
+  }
+
+  const { error: poDeleteError } = await supabase
+    .from("purchase_orders")
+    .delete()
+    .eq("id", purchaseOrderId)
+
+  if (poDeleteError) {
+    cleanupErrors.push(`purchase order cleanup failed: ${poDeleteError.message}`)
+  }
+
+  if (cleanupErrors.length > 0) {
+    console.error("Purchase order rollback cleanup failed:", cleanupErrors)
+  }
+
+  return cleanupErrors
+}
+
 async function loadWarehouse(supabase: any, companyId: string, warehouseId: string | null) {
   if (!warehouseId) return null
   const { data, error } = await supabase
@@ -242,6 +331,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const commandItems = Array.isArray(body.items) ? body.items : []
+    const fromMaterialShortage = isMaterialShortageSource(body)
     const purchaseOrderPayload = {
       supplier_id: body.supplier_id,
       po_date: body.po_date,
@@ -276,39 +366,111 @@ export async function POST(request: NextRequest) {
     // 3️⃣ التحقق من صحة البيانات (إلزامي)
     validateGovernanceData(dataWithGovernance, governance)
 
+    const normalizedRole = normalizeRole(governance.role)
+    const isPrivilegedRole = PURCHASE_PRIVILEGED_ROLES.has(normalizedRole)
+    const canCreateLinkedBill = isPrivilegedRole
+    const shouldCreateLinkedBill = Boolean(body.createLinkedBill) && canCreateLinkedBill
+
+    if (fromMaterialShortage && commandItems.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: "Cannot create a material shortage purchase order without line items.",
+        error_ar: "لا يمكن إنشاء أمر شراء للمواد الناقصة بدون بنود.",
+      }, { status: 422 })
+    }
+
+    if (shouldCreateLinkedBill && commandItems.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: "Cannot create a linked bill for a purchase order without line items.",
+        error_ar: "لا يمكن إنشاء فاتورة مرتبطة بأمر شراء لا يحتوي على بنود.",
+      }, { status: 422 })
+    }
+
     // --- Product Branch Isolation Check ---
     if (commandItems.length > 0) {
-      const productIds = commandItems.map((item: any) => item.product_id).filter(Boolean);
+      const productIds = Array.from(new Set(commandItems.map((item: any) => item.product_id).filter(Boolean)));
+
+      if (fromMaterialShortage && commandItems.some((item: any) => !item.product_id)) {
+        return NextResponse.json({
+          success: false,
+          error: "Material shortage items must include product_id values.",
+          error_ar: "يجب أن تحتوي بنود المواد الناقصة على معرفات المنتجات.",
+        }, { status: 422 })
+      }
+
+      if (fromMaterialShortage && commandItems.some((item: any) => normalizeLineNumber(item.quantity, 0) <= 0)) {
+        return NextResponse.json({
+          success: false,
+          error: "Material shortage item quantities must be greater than zero.",
+          error_ar: "يجب أن تكون كميات المواد الناقصة أكبر من صفر.",
+        }, { status: 422 })
+      }
+
       if (productIds.length > 0) {
         const { data: productsData, error: productsError } = await supabase
           .from("products")
-          .select("id, branch_id")
+          .select("id, name, branch_id")
+          .eq("company_id", governance.companyId)
           .in("id", productIds);
 
         if (productsError) {
            return NextResponse.json({ error: "Failed to validate products" }, { status: 500 });
         }
 
-        const isAdmin = PURCHASE_PRIVILEGED_ROLES.has(normalizeRole(governance.role));
         const docBranchId = dataWithGovernance.branch_id;
+        const productsById = new Map((productsData || []).map((product: any) => [product.id, product]))
+        const missingProductIds = productIds.filter((id: any) => !productsById.has(id))
 
-        if (!isAdmin && docBranchId) {
-          for (const product of productsData || []) {
-            if (product.branch_id && product.branch_id !== docBranchId) {
-              return NextResponse.json({
-                error: `Product Branch Isolation Violation: Product ${product.id} (branch ${product.branch_id}) cannot be added to document (branch ${docBranchId})`,
-                error_ar: "غير مصرح باستخدام منتجات من فروع أخرى"
-              }, { status: 403 });
-            }
-          }
+        if (missingProductIds.length > 0) {
+          return NextResponse.json({
+            success: false,
+            error: `Products not found or not accessible: ${missingProductIds.join(", ")}`,
+            error_ar: "بعض منتجات أمر الشراء غير موجودة أو غير متاحة لهذه الشركة.",
+            missing_products: missingProductIds,
+          }, { status: 422 })
+        }
+
+        const invalidBranchProducts = (productsData || [])
+          .filter((product: any) => docBranchId && product.branch_id && product.branch_id !== docBranchId)
+
+        if (fromMaterialShortage && invalidBranchProducts.length > 0) {
+          const branchNameMap = await loadBranchNameMap(
+            supabase,
+            governance.companyId,
+            [docBranchId, ...invalidBranchProducts.map((product: any) => product.branch_id)]
+          )
+          const targetBranchName = branchNameMap.get(docBranchId) || docBranchId
+          const invalidLabels = invalidBranchProducts.map((product: any) => {
+            const productBranchName = branchNameMap.get(product.branch_id) || product.branch_id
+            return `${product.name || product.id} (${productBranchName})`
+          })
+
+          return NextResponse.json({
+            success: false,
+            error: `Cannot create this purchase order because some shortage materials are not enabled for branch ${targetBranchName}. Invalid materials: ${invalidLabels.join(", ")}. Enable the products for the branch or make them global before creating the purchase order.`,
+            error_ar: `لا يمكن إنشاء أمر الشراء لأن بعض المواد الناقصة مسجلة على فرع آخر أو غير مفعلة لفرع ${targetBranchName}. المواد غير المسموحة: ${invalidLabels.join("، ")}. يرجى تفعيل هذه المواد للفرع أو جعلها Global قبل إنشاء أمر الشراء.`,
+            invalid_products: invalidBranchProducts.map((product: any) => ({
+              id: product.id,
+              name: product.name,
+              branch_id: product.branch_id,
+              branch_name: branchNameMap.get(product.branch_id) || product.branch_id,
+            })),
+            target_branch_id: docBranchId,
+            target_branch_name: targetBranchName,
+          }, { status: 422 })
+        }
+
+        if (!isPrivilegedRole && invalidBranchProducts.length > 0) {
+          const product = invalidBranchProducts[0]
+          return NextResponse.json({
+            error: `Product Branch Isolation Violation: Product ${product.id} (branch ${product.branch_id}) cannot be added to document (branch ${docBranchId})`,
+            error_ar: "غير مصرح باستخدام منتجات من فروع أخرى"
+          }, { status: 403 });
         }
       }
     }
     // ------------------------------------
-
-    const normalizedRole = normalizeRole(governance.role)
-    const canCreateLinkedBill = PURCHASE_PRIVILEGED_ROLES.has(normalizedRole)
-    const shouldCreateLinkedBill = Boolean(body.createLinkedBill) && canCreateLinkedBill
 
     // 4️⃣ الإدخال في قاعدة البيانات
     const { data: newOrder, error: insertError } = await supabase
@@ -327,24 +489,18 @@ export async function POST(request: NextRequest) {
     // --- Insert Items if provided ---
     const createdItems = commandItems
     if (commandItems.length > 0) {
-      const itemsToInsert = commandItems.map((item: any) => ({
-        ...item,
-        purchase_order_id: newOrder.id
-      }));
-      console.log(`[PO_CREATE] Inserting ${itemsToInsert.length} PO items for ${newOrder.po_number}:`, JSON.stringify(itemsToInsert.map((i: any) => ({ product_id: i.product_id, qty: i.quantity }))))
+      const itemsToInsert = commandItems.map((item: any) => buildPurchaseOrderItemRow(item, newOrder.id));
       const { error: itemsError } = await supabase.from("purchase_order_items").insert(itemsToInsert);
       if (itemsError) {
-        console.error(`[PO_CREATE] ❌ Failed to insert PO items for ${newOrder.po_number}:`, itemsError);
-        // Rollback: delete the PO since items failed
-        await supabase.from("purchase_orders").delete().eq("id", newOrder.id)
+        console.error("Failed to insert items:", itemsError);
+        const cleanupErrors = await rollbackPurchaseOrderCreation(supabase, newOrder.id)
         return NextResponse.json({
+          success: false,
           error: `Failed to save purchase order items: ${itemsError.message}`,
-          error_ar: `فشل في حفظ بنود أمر الشراء: ${itemsError.message}`
+          error_ar: `فشل حفظ بنود أمر الشراء، لذلك لم يتم إنشاء أمر الشراء أو الفاتورة. السبب: ${itemsError.message}`,
+          cleanup_errors: cleanupErrors,
         }, { status: 500 })
       }
-      console.log(`[PO_CREATE] ✅ ${itemsToInsert.length} PO items inserted successfully`)
-    } else {
-      console.log(`[PO_CREATE] ⚠️ No items provided for ${newOrder.po_number}`)
     }
 
     let linkedBillId: string | null = null
@@ -381,46 +537,55 @@ export async function POST(request: NextRequest) {
 
       if (linkedBillError) {
         console.error("Failed to create linked bill:", linkedBillError)
+        const cleanupErrors = await rollbackPurchaseOrderCreation(supabase, newOrder.id)
+        return NextResponse.json({
+          success: false,
+          error: `Failed to create linked bill: ${linkedBillError.message}`,
+          error_ar: `فشل إنشاء الفاتورة المرتبطة، لذلك تم إلغاء إنشاء أمر الشراء. السبب: ${linkedBillError.message}`,
+          cleanup_errors: cleanupErrors,
+        }, { status: 500 })
       } else if (linkedBill?.id) {
         linkedBillId = linkedBill.id
+        const activeLinkedBillId = linkedBill.id
 
         const { error: poLinkError } = await supabase
           .from("purchase_orders")
-          .update({ bill_id: linkedBillId })
+          .update({ bill_id: activeLinkedBillId })
           .eq("id", newOrder.id)
 
         if (poLinkError) {
           console.error("Failed to link purchase order to bill:", poLinkError)
+          const cleanupErrors = await rollbackPurchaseOrderCreation(supabase, newOrder.id, activeLinkedBillId)
+          return NextResponse.json({
+            success: false,
+            error: `Failed to link purchase order to bill: ${poLinkError.message}`,
+            error_ar: `فشل ربط أمر الشراء بالفاتورة، لذلك تم إلغاء إنشاء أمر الشراء والفاتورة. السبب: ${poLinkError.message}`,
+            cleanup_errors: cleanupErrors,
+          }, { status: 500 })
         }
 
         if (createdItems.length > 0) {
-          const billItems = createdItems.map((item: any) => ({
-            bill_id: linkedBillId,
-            product_id: item.product_id || null,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            tax_rate: item.tax_rate,
-            discount_percent: item.discount_percent || 0,
-            item_type: item.item_type || 'product',
-            line_total: item.line_total,
-          }))
+          const billItems = createdItems.map((item: any) => buildBillItemRow(item, activeLinkedBillId))
 
-          console.log(`[PO_CREATE] Inserting ${billItems.length} bill items:`, JSON.stringify(billItems.map((i: any) => ({ product_id: i.product_id, qty: i.quantity }))))
           const { error: billItemsError } = await supabase.from("bill_items").insert(billItems)
           if (billItemsError) {
-            console.error(`[PO_CREATE] ❌ Failed to insert bill items:`, billItemsError)
-            // Don't fail the whole request, but warn the user
+            console.error("Failed to insert linked bill items:", billItemsError)
+            const cleanupErrors = await rollbackPurchaseOrderCreation(supabase, newOrder.id, activeLinkedBillId)
             return NextResponse.json({
-              success: true,
-              data: { ...newOrder, bill_id: linkedBillId },
-              linkedBillId,
-              warning: `Purchase order created but bill items failed: ${billItemsError.message}`,
-              warning_ar: `تم إنشاء أمر الشراء لكن فشل حفظ بنود الفاتورة: ${billItemsError.message}`
-            }, { status: 201 })
+              success: false,
+              error: `Failed to save linked bill items: ${billItemsError.message}`,
+              error_ar: `فشل حفظ بنود الفاتورة المرتبطة، لذلك تم إلغاء إنشاء أمر الشراء والفاتورة. السبب: ${billItemsError.message}`,
+              cleanup_errors: cleanupErrors,
+            }, { status: 500 })
           }
-          console.log(`[PO_CREATE] ✅ ${billItems.length} bill items inserted successfully`)
         } else {
-          console.log(`[PO_CREATE] ⚠️ No items to copy to linked bill`)
+          const cleanupErrors = await rollbackPurchaseOrderCreation(supabase, newOrder.id, activeLinkedBillId)
+          return NextResponse.json({
+            success: false,
+            error: "Linked bill creation requires purchase order items.",
+            error_ar: "لا يمكن إنشاء فاتورة مرتبطة بدون بنود أمر شراء.",
+            cleanup_errors: cleanupErrors,
+          }, { status: 422 })
         }
       }
     }

@@ -219,21 +219,26 @@ export default function MaterialIssueApprovalDetailPage() {
           ? m.shortage_qty || Math.max(0, m.required_qty - m.available_qty)
           : m.required_qty - (approvedQtys[m.requirement_id] ?? m.approved_qty)
         return {
+          requirement_id: m.requirement_id,
           product_id: m.product_id,
           product_name: m.product_name,
           quantity: shortageQty,
           uom: m.uom,
+          branch_id: data.approval?.branch_id || data.production_order?.branch_id || null,
+          warehouse_id: data.approval?.warehouse_id || data.production_order?.issue_warehouse_id || null,
+          cost_center_id: data.approval?.cost_center_id || data.production_order?.cost_center_id || null,
+          production_order_id: data.production_order?.id || null,
+          material_issue_approval_id: approvalId,
         }
       })
 
-    console.log(`[CREATE_PO] Materials count: ${data.materials.length}, Shortage items: ${shortageItems.length}`)
-    console.log(`[CREATE_PO] Shortage items:`, JSON.stringify(shortageItems))
-    
     if (shortageItems.length === 0) {
-      toast({ 
-        title: "لا توجد مواد ناقصة",
-        description: "لم يتم العثور على مواد ناقصة لإنشاء أمر شراء",
-        variant: "destructive" 
+      toast({
+        title: appLang === 'en' ? "No shortages" : "لا توجد مواد ناقصة",
+        description: appLang === 'en'
+          ? "No shortage materials were found to create a purchase order."
+          : "لم يتم العثور على مواد ناقصة لإنشاء أمر شراء",
+        variant: "destructive",
       })
       return
     }
@@ -245,8 +250,7 @@ export default function MaterialIssueApprovalDetailPage() {
       production_order_no: data.production_order?.order_no || "",
       shortage_items: JSON.stringify(shortageItems),
     })
-    // لا نمرر branch_id / warehouse_id لتجنب تعارض حوكمة المنتجات
-    // المستخدم يختار الفرع المناسب حيث المنتجات مسجلة
+    // يختار المستخدم فرع الشراء المستهدف في شاشة أمر الشراء؛ البيانات أعلاه تحفظ سياق التصنيع فقط.
     router.push(`/purchase-orders/new?${params.toString()}`)
   }
 
