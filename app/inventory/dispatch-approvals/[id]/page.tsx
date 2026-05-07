@@ -36,7 +36,9 @@ interface ApprovalDetails {
   production_order: any
   materials: MaterialRow[]
   user_can_approve: boolean
+  user_can_reject: boolean
   user_is_accountant: boolean
+  user_can_create_po: boolean
   user_role: string
 }
 
@@ -207,15 +209,22 @@ export default function MaterialIssueApprovalDetailPage() {
     if (!data) return
     const shortageItems = data.materials
       .filter(m => {
+        // For rejected approvals, use shortage_qty from API
+        if (data.approval.status === 'rejected') return m.shortage_qty > 0
         const aq = approvedQtys[m.requirement_id] ?? m.approved_qty
         return m.required_qty - aq > 0
       })
-      .map(m => ({
-        product_id: m.product_id,
-        product_name: m.product_name,
-        quantity: m.required_qty - (approvedQtys[m.requirement_id] ?? m.approved_qty),
-        uom: m.uom,
-      }))
+      .map(m => {
+        const shortageQty = data.approval.status === 'rejected'
+          ? m.shortage_qty || Math.max(0, m.required_qty - m.available_qty)
+          : m.required_qty - (approvedQtys[m.requirement_id] ?? m.approved_qty)
+        return {
+          product_id: m.product_id,
+          product_name: m.product_name,
+          quantity: shortageQty,
+          uom: m.uom,
+        }
+      })
 
     const params = new URLSearchParams({
       source: "material_shortage",
@@ -269,6 +278,7 @@ export default function MaterialIssueApprovalDetailPage() {
 
   const { approval, production_order: po, materials } = data
   const hasShortage = materials.some(m => {
+    if (approval.status === 'rejected') return m.shortage_qty > 0 || m.available_qty < m.required_qty
     const aq = approvedQtys[m.requirement_id] ?? m.approved_qty
     return m.required_qty - aq > 0
   })
@@ -468,12 +478,28 @@ export default function MaterialIssueApprovalDetailPage() {
                 <Info className="flex-shrink-0 w-4 h-4 mr-2 rtl:mr-0 rtl:ml-2 mt-0.5" />
                 <div>{appLang === 'en' ? "You have read-only access. Contact the warehouse manager for modifications." : "لديك صلاحية اطلاع فقط. تواصل مع مسؤول المخزن للتعديلات."}</div>
               </div>
-              {hasShortage && (
+              {(data.user_can_create_po || hasShortage) && (
                 <Button onClick={handleCreatePO} className="bg-orange-600 hover:bg-orange-700 text-white gap-2">
                   <ShoppingCart className="w-4 h-4" />
                   {appLang === 'en' ? "Create Purchase Order for Shortages" : "إنشاء أمر شراء للمواد الناقصة"}
                 </Button>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Rejection Info */}
+        {approval.status === "rejected" && (
+          <Card className="border-red-200 dark:border-red-900 dark:bg-slate-900">
+            <CardContent className="pt-6">
+              <div className="flex items-start p-3 text-sm text-red-800 border border-red-200 rounded-lg bg-red-50 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800">
+                <X className="flex-shrink-0 w-4 h-4 mr-2 rtl:mr-0 rtl:ml-2 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold">{appLang === 'en' ? "This request was rejected" : "تم رفض هذا الطلب"}</p>
+                  {approval.rejection_reason && <p>{appLang === 'en' ? "Reason" : "السبب"}: {approval.rejection_reason}</p>}
+                  {approval.rejected_at && <p className="text-xs text-red-600 dark:text-red-400">{new Date(approval.rejected_at).toLocaleString(appLang === 'en' ? 'en-US' : 'ar-EG')}</p>}
+                </div>
+              </div>
             </CardContent>
           </Card>
         )}

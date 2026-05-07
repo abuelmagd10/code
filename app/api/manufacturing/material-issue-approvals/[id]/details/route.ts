@@ -218,6 +218,7 @@ export async function GET(
     const canApprove = ["store_manager", "warehouse_manager", "manager", "owner", "admin", "general_manager"]
       .includes(memberRow.role)
     const isAccountant = memberRow.role === "accountant"
+    const hasShortages = materials.some((m: any) => m.shortage_qty > 0)
 
     return NextResponse.json({
       success: true,
@@ -230,8 +231,10 @@ export async function GET(
         },
         production_order: productionOrder,
         materials,
-        user_can_approve: canApprove && approval.status === "pending",
+        user_can_approve: canApprove && (approval.status === "pending" || approval.status === "partially_approved"),
+        user_can_reject: canApprove && (approval.status === "pending" || approval.status === "partially_approved"),
         user_is_accountant: isAccountant,
+        user_can_create_po: isAccountant && hasShortages && ["rejected", "partially_approved", "pending"].includes(approval.status),
         user_role: memberRow.role,
       },
     })

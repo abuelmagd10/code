@@ -64,7 +64,7 @@ export async function POST(
     // ── جلب طلب الاعتماد
     const { data: approval, error: fetchError } = await admin
       .from("manufacturing_material_issue_approvals")
-      .select("id, status, production_order_id, requested_by")
+      .select("id, status, production_order_id, requested_by, warehouse_id")
       .eq("id", id)
       .eq("company_id", companyId)
       .single()
@@ -129,19 +129,24 @@ export async function POST(
     } catch { /* الإشعار غير حرج */ }
 
     // ── 5. إشعار محاسب الفرع التابع للمستودع
-    try {
+    {
+      // resolve warehouse branch: try issue_warehouse_id → approval.warehouse_id → production order branch
+      const warehouseIdToResolve = productionOrder?.issue_warehouse_id || (approval as any).warehouse_id
       let warehouseBranchId: string | null = null
-      if (productionOrder?.issue_warehouse_id) {
-        const { data: wh } = await admin
+      if (warehouseIdToResolve) {
+        const { data: wh, error: whErr } = await admin
           .from("warehouses")
           .select("branch_id")
-          .eq("id", productionOrder.issue_warehouse_id)
+          .eq("id", warehouseIdToResolve)
           .single()
+        if (whErr) console.error(`[MMIA_REJECT] Warehouse lookup error:`, whErr.message)
         warehouseBranchId = wh?.branch_id ?? null
       }
       const accountantBranchId = warehouseBranchId || productionOrder?.branch_id || null
+      console.log(`[MMIA_REJECT] Branch resolution: warehouseId=${warehouseIdToResolve}, warehouseBranchId=${warehouseBranchId}, productionOrder.branch_id=${productionOrder?.branch_id}, accountantBranchId=${accountantBranchId}`)
+
       if (accountantBranchId) {
-        await admin.rpc("create_notification", {
+        const { data: notifData, error: notifErr } = await admin.rpc("create_notification", {
           p_company_id: companyId,
           p_branch_id: accountantBranchId,
           p_assigned_to_role: "accountant",
@@ -151,13 +156,17 @@ export async function POST(
           p_reference_id: approval.production_order_id,
           p_reference_type: "manufacturing_material_issue_approval",
           p_created_by: user.id,
-          p_priority: "medium",
-          p_severity: "info",
+          p_priority: "high",
+          p_severity: "warning",
           p_category: "approvals",
           p_event_key: `mmia_rejected_${id}_accountant_${Date.now()}`,
         })
+        if (notifErr) console.error(`[MMIA_REJECT] ❌ Accountant notification error:`, notifErr.message)
+        else console.log(`[MMIA_REJECT] ✅ Accountant notification sent: branch=${accountantBranchId}, id=${notifData}`)
+      } else {
+        console.warn(`[MMIA_REJECT] ⚠️ No branch resolved for accountant notification`)
       }
-    } catch { /* الإشعار غير حرج */ }
+    }
 
     asyncAuditLog({
       companyId,
