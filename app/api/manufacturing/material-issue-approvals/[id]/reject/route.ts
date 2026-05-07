@@ -11,7 +11,7 @@ import {
 } from "@/lib/manufacturing/production-order-api"
 import { createNotification } from "@/lib/governance-layer"
 
-const ALLOWED_APPROVER_ROLES = ["manager", "owner", "admin", "warehouse_manager"]
+const ALLOWED_APPROVER_ROLES = ["store_manager", "manager", "owner", "admin", "general_manager", "warehouse_manager"]
 
 export async function POST(
   request: NextRequest,
