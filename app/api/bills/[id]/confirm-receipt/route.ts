@@ -5,6 +5,7 @@ import { AccountingTransactionService } from "@/lib/accounting-transaction-servi
 import { getAccrualAccountMapping } from "@/lib/accrual-accounting-engine"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { ERPError } from "@/lib/core/errors/erp-errors"
 import type { BillReceiptReplayAccountSnapshot, BillReceiptReplayPayload } from "@/lib/purchase-posting"
 import { BillReceiptNotificationService } from "@/lib/services/bill-receipt-notification.service"
 
@@ -596,6 +597,11 @@ async function repairBillReceiptStatus(
   }
 }
 
+function buildFinancialPeriodReceiptErrorMessage(date: string | null) {
+  const suffix = date ? ` (${date})` : ""
+  return `لا يمكن اعتماد الاستلام لأن تاريخ الاستلام${suffix} لا يقع داخل فترة محاسبية مفتوحة لهذه الشركة. يرجى إنشاء أو فتح فترة محاسبية تغطي هذا التاريخ ثم إعادة المحاولة.`
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -612,6 +618,8 @@ export async function POST(
       { status: 403 }
     )
   }
+
+  let effectiveReceiptDateForError: string | null = null
 
   try {
     const { id: billId } = await params
@@ -733,6 +741,7 @@ export async function POST(
 
     const receivedAtIso = new Date().toISOString()
     const effectiveReceiptDate = receivedAtIso.slice(0, 10)
+    effectiveReceiptDateForError = effectiveReceiptDate
     await requireOpenFinancialPeriod(context.companyId, effectiveReceiptDate)
 
     const accountMapping = await getAccrualAccountMapping(supabase, context.companyId)
@@ -836,6 +845,18 @@ export async function POST(
       inventoryTransactionIds: artifactsAfter.inventoryTransactionIds,
     })
   } catch (error: any) {
+    if (error instanceof ERPError && error.code === "ERR_PERIOD_CLOSED") {
+      return NextResponse.json(
+        {
+          success: false,
+          code: error.code,
+          error: buildFinancialPeriodReceiptErrorMessage(effectiveReceiptDateForError),
+          details: error.message,
+        },
+        { status: error.statusCode || 403 }
+      )
+    }
+
     console.error("[BILL_CONFIRM_RECEIPT] Unexpected error:", error)
     return NextResponse.json(
       { success: false, error: error?.message || "Unexpected error while confirming receipt" },

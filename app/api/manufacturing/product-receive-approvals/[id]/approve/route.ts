@@ -5,12 +5,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import {
-  getManufacturingApiContext,
+  assertProductReceiveApprovalScope,
+  getProductReceiveApprovalApiContext,
   handleManufacturingApiError,
-} from "@/lib/manufacturing/production-order-api"
+} from "@/lib/manufacturing/product-receive-approval-api"
 import { createNotification } from "@/lib/governance-layer"
-
-const ALLOWED_APPROVER_ROLES = ["manager", "owner", "admin", "warehouse_manager"]
 
 export async function POST(
   request: NextRequest,
@@ -18,14 +17,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const { supabase, admin, companyId, user, member } = await getManufacturingApiContext(request, "update")
-
-    if (!ALLOWED_APPROVER_ROLES.includes(member.role)) {
-      return NextResponse.json(
-        { success: false, error: "غير مصرح لك بالاعتماد. مخصص لمسؤولي المخزن والإدارة فقط" },
-        { status: 403 }
-      )
-    }
+    const { admin, companyId, user, member } = await getProductReceiveApprovalApiContext(request)
 
     let notes: string | null = null
     try {
@@ -34,7 +26,7 @@ export async function POST(
     } catch { /* body فارغ */ }
 
     // جلب طلب الاعتماد
-    const { data: approval, error: fetchError } = await supabase
+    const { data: approval, error: fetchError } = await admin
       .from("manufacturing_product_receive_approvals")
       .select("*")
       .eq("id", id)
@@ -52,15 +44,18 @@ export async function POST(
       )
     }
 
+    assertProductReceiveApprovalScope(member, approval)
+
     // تحديث حالة الاعتماد في أمر الإنتاج أولاً (قبل الإكمال الذرّي، لأن الإكمال يحول الأمر لحالة terminal)
-    await admin
+    const { error: orderStatusError } = await admin
       .from("manufacturing_production_orders")
       .update({ product_receive_approval_status: "approved" })
       .eq("id", approval.production_order_id)
       .eq("company_id", companyId)
+    if (orderStatusError) throw orderStatusError
 
     // تحديث سجل الاعتماد
-    await admin
+    const { error: approvalUpdateError } = await admin
       .from("manufacturing_product_receive_approvals")
       .update({
         status: "approved",
@@ -69,6 +64,8 @@ export async function POST(
         notes: notes ?? approval.notes,
       })
       .eq("id", id)
+      .eq("company_id", companyId)
+    if (approvalUpdateError) throw approvalUpdateError
 
     // إكمال أمر الإنتاج ذرّياً (يغيّر الحالة لـ completed — لذلك يجب أن يكون آخراً)
     const { error: completeError } = await admin.rpc("complete_manufacturing_production_order_atomic", {

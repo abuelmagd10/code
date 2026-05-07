@@ -97,6 +97,17 @@ type BillRecord = {
   receipt_status?: string | null
 }
 
+function getApiErrorMessage(payload: any, fallback: string) {
+  const error = payload?.error
+  if (typeof error === "string" && error.trim()) return error
+  if (error && typeof error === "object") {
+    if (typeof error.message === "string" && error.message.trim()) return error.message
+    if (typeof error.code === "string" && error.code.trim()) return error.code
+  }
+  if (typeof payload?.message === "string" && payload.message.trim()) return payload.message
+  return fallback
+}
+
 export default function GoodsReceiptPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
@@ -881,8 +892,10 @@ export default function GoodsReceiptPage() {
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.success) {
         throw new Error(
-          result.error ||
-          (appLang === "en" ? "Failed to confirm goods receipt" : "تعذر اعتماد استلام الفاتورة")
+          getApiErrorMessage(
+            result,
+            appLang === "en" ? "Failed to confirm goods receipt" : "تعذر اعتماد استلام الفاتورة"
+          )
         )
       }
 
@@ -935,8 +948,10 @@ export default function GoodsReceiptPage() {
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.success) {
         throw new Error(
-          result.error ||
-          (appLang === "en" ? "Failed to reject goods receipt" : "تعذر رفض اعتماد الاستلام")
+          getApiErrorMessage(
+            result,
+            appLang === "en" ? "Failed to reject goods receipt" : "تعذر رفض اعتماد الاستلام"
+          )
         )
       }
 
@@ -972,14 +987,25 @@ export default function GoodsReceiptPage() {
     try {
       setMfgLoading(true)
       const response = await fetch("/api/manufacturing/product-receive-approvals?status=pending", { cache: "no-store" })
-      const result = await response.json()
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(
+          getApiErrorMessage(
+            result,
+            appLang === "en"
+              ? "Failed to load manufacturing receipt approvals"
+              : "تعذر تحميل طلبات استلام منتجات التصنيع"
+          )
+        )
+      }
       setMfgApprovals(result.data || [])
-    } catch {
+    } catch (err) {
+      console.error("Error loading manufacturing receipt approvals:", err)
       setMfgApprovals([])
     } finally {
       setMfgLoading(false)
     }
-  }, [])
+  }, [appLang])
 
   // تحميل العداد فور فتح الصفحة (لإظهار الأرقام في الأزرار حتى قبل التبديل للتبويب)
   useEffect(() => {
@@ -1009,8 +1035,15 @@ export default function GoodsReceiptPage() {
         headers: { "Content-Type": "application/json" },
         body,
       })
-      const result = await response.json()
-      if (!response.ok || !result.success) throw new Error(result.error)
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(
+          getApiErrorMessage(
+            result,
+            appLang === "en" ? "Action failed" : "فشل تنفيذ الإجراء"
+          )
+        )
+      }
       toast({
         title: mfgActionType === "approve"
           ? (appLang === "en" ? "✅ Receipt Approved" : "✅ تم اعتماد الاستلام")

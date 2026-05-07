@@ -4,20 +4,21 @@
  */
 import { NextRequest, NextResponse } from "next/server"
 import {
-  getManufacturingApiContext,
+  applyProductReceiveApprovalScope,
+  getProductReceiveApprovalApiContext,
   handleManufacturingApiError,
-} from "@/lib/manufacturing/production-order-api"
+} from "@/lib/manufacturing/product-receive-approval-api"
 
 export async function GET(request: NextRequest) {
   try {
-    const { supabase, companyId } = await getManufacturingApiContext(request, "read")
+    const { admin, companyId, member } = await getProductReceiveApprovalApiContext(request)
     const { searchParams } = new URL(request.url)
 
     const status = searchParams.get("status") || "pending"
     const warehouseId = searchParams.get("warehouse_id")
     const branchId = searchParams.get("branch_id")
 
-    let query = supabase
+    let query = admin
       .from("manufacturing_product_receive_approvals")
       .select(`
         id,
@@ -52,14 +53,15 @@ export async function GET(request: NextRequest) {
       .order("requested_at", { ascending: false })
 
     if (status !== "all") {
-      query = query.eq("status", status)
+      const statuses = status.split(",").map((value) => value.trim()).filter(Boolean)
+      if (statuses.length === 1) {
+        query = query.eq("status", statuses[0])
+      } else if (statuses.length > 1) {
+        query = query.in("status", statuses)
+      }
     }
-    if (warehouseId) {
-      query = query.eq("warehouse_id", warehouseId)
-    }
-    if (branchId) {
-      query = query.eq("branch_id", branchId)
-    }
+
+    query = applyProductReceiveApprovalScope(query, member, { branchId, warehouseId })
 
     const { data, error } = await query
     if (error) throw error
