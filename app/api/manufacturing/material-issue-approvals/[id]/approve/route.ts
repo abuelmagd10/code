@@ -292,6 +292,7 @@ export async function POST(
       const accountantBranchId = warehouseBranchId || productionOrder?.branch_id || null
 
       // إشعارات للأدوار العليا (لا يرتبطان بفرع محدد)
+      const timestampSuffix = Date.now();
       for (const role of ["owner", "admin", "general_manager"]) {
         await sendNotification(admin, {
           companyId, branchId: null, role,
@@ -300,7 +301,7 @@ export async function POST(
           referenceId: approval.production_order_id,
           referenceType: "manufacturing_material_issue_approval",
           createdBy: user.id,
-          eventKey: `mmia_shortage_${id}_${role}`,
+          eventKey: `mmia_shortage_${id}_${role}_${timestampSuffix}`,
         })
       }
 
@@ -314,7 +315,7 @@ export async function POST(
           referenceId: approval.production_order_id,
           referenceType: "manufacturing_material_issue_approval",
           createdBy: user.id,
-          eventKey: `mmia_shortage_${id}_accountant`,
+          eventKey: `mmia_shortage_${id}_accountant_${timestampSuffix}`,
         })
       } else {
         console.warn(`[MMIA_SHORTAGE] ⚠️ No accountantBranchId resolved — skipping branch accountant notification! issue_warehouse_id=${productionOrder?.issue_warehouse_id}`)
