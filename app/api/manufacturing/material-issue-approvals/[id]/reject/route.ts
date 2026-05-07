@@ -100,7 +100,16 @@ export async function POST(
       .eq("id", approval.production_order_id)
       .eq("company_id", companyId)
 
-    // ── 3. إشعار لمقدم الطلب بالرفض
+    // ── 3. جلب بيانات أمر الإنتاج (للمستودع والفرع)
+    const { data: productionOrder } = await admin
+      .from("manufacturing_production_orders")
+      .select("id, order_no, branch_id, issue_warehouse_id")
+      .eq("id", approval.production_order_id)
+      .single()
+
+    const rejectMsg = `رُفض طلب صرف المواد${productionOrder?.order_no ? ` — أمر إنتاج: ${productionOrder.order_no}` : ""}${rejectionReason ? ` — السبب: ${rejectionReason}` : ""}`
+
+    // ── 4. إشعار لمقدم الطلب بالرفض
     try {
       await admin.rpc("create_notification", {
         p_company_id: companyId,
@@ -108,7 +117,7 @@ export async function POST(
         p_assigned_to_role: null,
         p_assigned_to_user: approval.requested_by,
         p_title: "❌ رُفض طلب صرف المواد",
-        p_message: `رُفض طلب صرف المواد${rejectionReason ? ` — السبب: ${rejectionReason}` : ""}`,
+        p_message: rejectMsg,
         p_reference_id: approval.production_order_id,
         p_reference_type: "manufacturing_material_issue_approval",
         p_created_by: user.id,
@@ -117,6 +126,37 @@ export async function POST(
         p_category: "approvals",
         p_event_key: `mmia_rejected_${id}_${Date.now()}`,
       })
+    } catch { /* الإشعار غير حرج */ }
+
+    // ── 5. إشعار محاسب الفرع التابع للمستودع
+    try {
+      let warehouseBranchId: string | null = null
+      if (productionOrder?.issue_warehouse_id) {
+        const { data: wh } = await admin
+          .from("warehouses")
+          .select("branch_id")
+          .eq("id", productionOrder.issue_warehouse_id)
+          .single()
+        warehouseBranchId = wh?.branch_id ?? null
+      }
+      const accountantBranchId = warehouseBranchId || productionOrder?.branch_id || null
+      if (accountantBranchId) {
+        await admin.rpc("create_notification", {
+          p_company_id: companyId,
+          p_branch_id: accountantBranchId,
+          p_assigned_to_role: "accountant",
+          p_assigned_to_user: null,
+          p_title: "❌ رُفض طلب صرف مواد تصنيع",
+          p_message: rejectMsg,
+          p_reference_id: approval.production_order_id,
+          p_reference_type: "manufacturing_material_issue_approval",
+          p_created_by: user.id,
+          p_priority: "medium",
+          p_severity: "info",
+          p_category: "approvals",
+          p_event_key: `mmia_rejected_${id}_accountant_${Date.now()}`,
+        })
+      }
     } catch { /* الإشعار غير حرج */ }
 
     asyncAuditLog({
