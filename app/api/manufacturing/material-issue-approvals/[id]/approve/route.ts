@@ -83,11 +83,17 @@ export async function POST(
 
     const admin = createServiceClient()
 
-    // ── قراءة الملاحظات (اختياري)
+    // ── قراءة البيانات من الطلب
     let notes: string | null = null
+    let approvedItems: { requirement_id: string; approved_quantity: number }[] | null = null
+    let requestedIssueType: string | null = null
+    let warehouseApprovalNotes: string | null = null
     try {
       const body = await request.json()
       notes = body?.notes ?? null
+      approvedItems = body?.approved_items ?? null
+      requestedIssueType = body?.issue_type ?? null
+      warehouseApprovalNotes = body?.warehouse_approval_notes ?? null
     } catch { /* body فارغ */ }
 
     // ── جلب طلب الاعتماد (بدون JOIN لتجنب أخطاء FK schema)
@@ -105,7 +111,7 @@ export async function POST(
       )
     }
 
-    if (approval.status !== "pending") {
+    if (approval.status !== "pending" && approval.status !== "partially_approved") {
       return NextResponse.json(
         { success: false, error: `لا يمكن الاعتماد — حالة الطلب الحالية: ${approval.status}` },
         { status: 422 }
@@ -274,12 +280,26 @@ export async function POST(
       }
     }
 
-    // ── حالة النقص في المخزون ─────────────────────────────────────────────
-    if (shortages.length > 0) {
+    // ── تحديد نوع الصرف (كامل أو جزئي) ───────────────────────────────────
+    // إذا تم إرسال approved_items من صفحة التفاصيل الجديدة
+    const isDetailedApproval = approvedItems && approvedItems.length > 0
+    let finalIssueType: "full" | "partial" = "full"
+
+    if (isDetailedApproval) {
+      // حساب نوع الصرف من الكميات المعتمدة
+      let allFull = true
+      for (const item of approvedItems!) {
+        const mat = materialsToCheck.find((m: any) => m.id === item.requirement_id || m.product_id === item.requirement_id)
+        if (!mat) continue
+        if (item.approved_quantity < mat.gross_required_qty) allFull = false
+      }
+      finalIssueType = allFull ? "full" : "partial"
+      if (requestedIssueType === "partial") finalIssueType = "partial"
+    } else if (shortages.length > 0) {
+      // السلوك القديم: إذا كان هناك نقص → إرسال إشعارات ورفض
       const orderNo  = productionOrder?.order_no || approval.production_order_id
       const shortageMsg = `أمر الإنتاج ${orderNo} — نقص في ${shortages.length} مادة خام. المخزون غير كافٍ لتنفيذ الصرف.`
 
-      // استنتاج فرع المخزن (المحاسب يجب أن يُخطَر بالنقص في فرع المستودع، ليس فرع أمر الإنتاج)
       let warehouseBranchId: string | null = null
       if (productionOrder?.issue_warehouse_id) {
         const { data: wh } = await admin
@@ -291,7 +311,6 @@ export async function POST(
       }
       const accountantBranchId = warehouseBranchId || productionOrder?.branch_id || null
 
-      // إشعارات للأدوار العليا (لا يرتبطان بفرع محدد)
       const timestampSuffix = Date.now();
       for (const role of ["owner", "admin", "general_manager"]) {
         await sendNotification(admin, {
@@ -305,8 +324,6 @@ export async function POST(
         })
       }
 
-      // إشعار لمحاسب الفرع المرتبط بالمستودع
-      console.log(`[MMIA_SHORTAGE] Branch resolution: warehouseBranchId=${warehouseBranchId}, productionOrder.branch_id=${productionOrder?.branch_id}, final accountantBranchId=${accountantBranchId}`)
       if (accountantBranchId) {
         await sendNotification(admin, {
           companyId, branchId: accountantBranchId, role: "accountant",
@@ -317,8 +334,6 @@ export async function POST(
           createdBy: user.id,
           eventKey: `mmia_shortage_${id}_accountant_${timestampSuffix}`,
         })
-      } else {
-        console.warn(`[MMIA_SHORTAGE] ⚠️ No accountantBranchId resolved — skipping branch accountant notification! issue_warehouse_id=${productionOrder?.issue_warehouse_id}`)
       }
 
       return NextResponse.json({
@@ -328,47 +343,103 @@ export async function POST(
       }, { status: 422 })
     }
 
-    // ── المخزون كافٍ → تنفيذ الاعتماد ────────────────────────────────────
+    // ── تحديث الكميات المعتمدة لكل سطر في POMR ────────────────────────────
+    if (isDetailedApproval && (requirements || []).length > 0) {
+      for (const item of approvedItems!) {
+        const mat = (requirements || []).find((r: any) => r.id === item.requirement_id)
+        if (!mat) continue
+        const shortage = Math.max(0, Number((mat as any).gross_required_qty) - item.approved_quantity)
+        const lineStatus = item.approved_quantity >= Number((mat as any).gross_required_qty)
+          ? "fully_issued" : item.approved_quantity > 0 ? "partially_issued" : "pending"
 
-    // 1. تشغيل أمر الإنتاج
-    const { error: startError } = await admin.rpc("start_manufacturing_production_order_atomic", {
-      p_company_id:          companyId,
-      p_production_order_id: approval.production_order_id,
-      p_started_by:          user.id,
-      p_started_at:          null,
-    })
-    if (startError) throw startError
+        await admin
+          .from("production_order_material_requirements")
+          .update({
+            approved_quantity: item.approved_quantity,
+            shortage_quantity: shortage,
+            line_issue_status: lineStatus,
+            approved_by: user.id,
+            approved_at: new Date().toISOString(),
+          })
+          .eq("id", item.requirement_id)
+      }
+    }
 
-    // 2. تحديث سجل الاعتماد
+    // ── تنفيذ الاعتماد ────────────────────────────────────────────────────
+    const approvalStatus = finalIssueType === "full" ? "approved" : "partially_approved"
+
+    // بدء أمر الإنتاج فقط إذا كان صرف كامل
+    if (finalIssueType === "full") {
+      const { error: startError } = await admin.rpc("start_manufacturing_production_order_atomic", {
+        p_company_id:          companyId,
+        p_production_order_id: approval.production_order_id,
+        p_started_by:          user.id,
+        p_started_at:          null,
+      })
+      if (startError) throw startError
+    }
+
+    // تحديث سجل الاعتماد
     const { error: updateApprovalError } = await admin
       .from("manufacturing_material_issue_approvals")
       .update({
-        status:      "approved",
+        status:      approvalStatus,
         approved_by: user.id,
         approved_at: new Date().toISOString(),
         notes:       notes ?? approval.notes,
+        issue_type:  finalIssueType,
+        warehouse_approval_notes: warehouseApprovalNotes,
       })
       .eq("id", id)
     if (updateApprovalError) throw updateApprovalError
 
-    // 3. تحديث حالة الاعتماد في أمر الإنتاج
+    // تحديث حالة الاعتماد في أمر الإنتاج
     await admin
       .from("manufacturing_production_orders")
-      .update({ material_issue_approval_status: "approved" })
+      .update({ material_issue_approval_status: approvalStatus })
       .eq("id", approval.production_order_id)
       .eq("company_id", companyId)
 
-    // 4. إشعار لمقدم الطلب بالموافقة
+    // إشعار لمقدم الطلب
+    const approvalMsg = finalIssueType === "full"
+      ? `تمت الموافقة على طلب صرف مواد أمر الإنتاج ${productionOrder?.order_no || ""} — يمكن البدء في صرف المواد الآن`
+      : `تمت الموافقة الجزئية على صرف مواد أمر الإنتاج ${productionOrder?.order_no || ""} — بعض المواد غير متوفرة بالكامل`
+
     await sendNotification(admin, {
       companyId, branchId: null, role: null,
       userId: approval.requested_by,
-      title:   "✅ تمت الموافقة على صرف المواد",
-      message: `تمت الموافقة على طلب صرف مواد أمر الإنتاج ${productionOrder?.order_no || ""} — يمكن البدء في صرف المواد الآن`,
+      title:   finalIssueType === "full" ? "✅ تمت الموافقة على صرف المواد" : "⚠️ موافقة جزئية على صرف المواد",
+      message: approvalMsg,
       referenceId:   approval.production_order_id,
       referenceType: "manufacturing_material_issue_approval",
       createdBy:     user.id,
-      eventKey:      `mmia_approved_${id}`,
+      eventKey:      `mmia_${approvalStatus}_${id}_${Date.now()}`,
     })
+
+    // إشعار محاسب الفرع بالنقص (عند الصرف الجزئي)
+    if (finalIssueType === "partial") {
+      let warehouseBranchId: string | null = null
+      if (productionOrder?.issue_warehouse_id) {
+        const { data: wh } = await admin
+          .from("warehouses")
+          .select("branch_id")
+          .eq("id", productionOrder.issue_warehouse_id)
+          .single()
+        warehouseBranchId = wh?.branch_id ?? null
+      }
+      const accountantBranchId = warehouseBranchId || productionOrder?.branch_id || null
+      if (accountantBranchId) {
+        await sendNotification(admin, {
+          companyId, branchId: accountantBranchId, role: "accountant",
+          title: "⚠️ صرف جزئي — مواد تصنيع ناقصة",
+          message: `تمت الموافقة الجزئية على صرف مواد أمر الإنتاج ${productionOrder?.order_no || ""} — يرجى مراجعة النواقص وإنشاء أمر شراء`,
+          referenceId: approval.production_order_id,
+          referenceType: "manufacturing_material_issue_approval",
+          createdBy: user.id,
+          eventKey: `mmia_partial_${id}_accountant_${Date.now()}`,
+        })
+      }
+    }
 
     asyncAuditLog({
       companyId,
@@ -378,14 +449,19 @@ export async function POST(
       table: "manufacturing_material_issue_approvals",
       recordId: id,
       recordIdentifier: String(approval.production_order_id),
-      oldData: { status: "pending" },
-      newData: { status: "approved", approved_by: user.id },
-      reason: "Approved material issue request — inventory checked OK — production order started",
+      oldData: { status: approval.status },
+      newData: { status: approvalStatus, issue_type: finalIssueType, approved_by: user.id },
+      reason: finalIssueType === "full"
+        ? "Approved material issue request — inventory checked OK — production order started"
+        : "Partially approved material issue — some materials have shortages",
     })
 
     return NextResponse.json({
       success: true,
-      message: "تمت الموافقة على صرف المواد وتم بدء تنفيذ أمر الإنتاج",
+      message: finalIssueType === "full"
+        ? "تمت الموافقة على صرف المواد وتم بدء تنفيذ أمر الإنتاج"
+        : "تمت الموافقة الجزئية على صرف المواد — يرجى مراجعة النواقص",
+      issue_type: finalIssueType,
     })
   } catch (error: any) {
     return NextResponse.json(

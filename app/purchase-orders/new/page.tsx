@@ -10,7 +10,7 @@ import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Trash2, Plus, ClipboardList, Save, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
@@ -144,6 +144,32 @@ export default function NewPurchaseOrderPage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // ── ملء تلقائي من طلب صرف مواد تصنيع (نقص مخزون) ───────────────────
+  const searchParamsHook = useSearchParams()
+  useEffect(() => {
+    if (!searchParamsHook) return
+    const source = searchParamsHook.get('source')
+    if (source !== 'material_shortage') return
+    try {
+      const shortageItemsRaw = searchParamsHook.get('shortage_items')
+      if (!shortageItemsRaw) return
+      const shortageItems = JSON.parse(shortageItemsRaw) as { product_id: string; product_name: string; quantity: number; uom: string }[]
+      if (!Array.isArray(shortageItems) || shortageItems.length === 0) return
+      const newItems: POItem[] = shortageItems.map(si => ({
+        product_id: si.product_id, quantity: si.quantity,
+        unit_price: 0, tax_rate: 0, discount_percent: 0, item_type: 'product' as const,
+      }))
+      setPoItems(newItems)
+      const poNo = searchParamsHook.get('production_order_no') || ''
+      const approvalId = searchParamsHook.get('approval_id') || ''
+      setFormData(prev => ({ ...prev, notes: `أمر شراء لتغطية نقص مواد تصنيع — أمر إنتاج: ${poNo} | مرجع: ${approvalId}` }))
+      const branchParam = searchParamsHook.get('branch_id')
+      const warehouseParam = searchParamsHook.get('warehouse_id')
+      if (branchParam) setBranchId(branchParam)
+      if (warehouseParam) setWarehouseId(warehouseParam)
+    } catch (e) { console.error('Failed to parse shortage params:', e) }
+  }, [searchParamsHook])
 
   const loadData = async () => {
     try {

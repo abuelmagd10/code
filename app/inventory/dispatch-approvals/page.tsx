@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { useToast } from "@/hooks/use-toast"
@@ -79,6 +80,7 @@ type TypeFilter = "all" | "sales" | "manufacturing"
 
 export default function DispatchApprovalsPage() {
   const supabase = useSupabase()
+  const router = useRouter()
   const { toast } = useToast()
 
   const [rows, setRows] = useState<UnifiedRow[]>([])
@@ -308,15 +310,28 @@ export default function DispatchApprovalsPage() {
       key: "action",
       format: (_: any, row: UnifiedRow) => (
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="text-green-600 hover:text-green-700 hover:bg-green-50"
-            onClick={() => handleActionClick(row, "approve")}
-            disabled={actionLoading === row.id}
-          >
-            <Check className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Approve" : "اعتماد"}
-          </Button>
+          {row._type === "manufacturing" ? (
+            /* طلبات التصنيع: توجيه لصفحة التفاصيل */
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+              onClick={() => router.push(`/inventory/dispatch-approvals/${row.id}`)}
+            >
+              <Check className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Review & Approve" : "مراجعة واعتماد"}
+            </Button>
+          ) : (
+            /* فواتير المبيعات: السلوك القديم */
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-green-600 hover:text-green-700 hover:bg-green-50"
+              onClick={() => handleActionClick(row, "approve")}
+              disabled={actionLoading === row.id}
+            >
+              <Check className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Approve" : "اعتماد"}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
