@@ -308,41 +308,77 @@ export default function DispatchApprovalsPage() {
     {
       header: appLang === 'en' ? "Action" : "إجراء",
       key: "action",
-      format: (_: any, row: UnifiedRow) => (
-        <div className="flex gap-2">
-          {row._type === "manufacturing" ? (
-            /* طلبات التصنيع: توجيه لصفحة التفاصيل */
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-              onClick={() => router.push(`/inventory/dispatch-approvals/${row.id}`)}
-            >
-              <Check className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Review & Approve" : "مراجعة واعتماد"}
-            </Button>
-          ) : (
-            /* فواتير المبيعات: السلوك القديم */
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-green-600 hover:text-green-700 hover:bg-green-50"
-              onClick={() => handleActionClick(row, "approve")}
-              disabled={actionLoading === row.id}
-            >
-              <Check className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Approve" : "اعتماد"}
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-            onClick={() => handleActionClick(row, "reject")}
-            disabled={actionLoading === row.id}
-          >
-            <X className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Reject" : "رفض"}
-          </Button>
-        </div>
-      )
+      format: (_: any, row: UnifiedRow) => {
+        const mfgStatus = row._type === "manufacturing" ? (row.raw as any)?.status : null
+        const isRejected = mfgStatus === "rejected"
+        const isPartial = mfgStatus === "partially_approved"
+        
+        return (
+          <div className="flex gap-2 items-center">
+            {row._type === "manufacturing" ? (
+              <>
+                {/* Status badge for manufacturing */}
+                {isRejected && (
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700 border border-red-200">
+                    {appLang === 'en' ? "Rejected" : "مرفوض"}
+                  </span>
+                )}
+                {isPartial && (
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                    {appLang === 'en' ? "Partial" : "جزئي"}
+                  </span>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={isRejected 
+                    ? "text-blue-600 hover:text-blue-700 hover:bg-blue-50" 
+                    : "text-orange-600 hover:text-orange-700 hover:bg-orange-50"}
+                  onClick={() => router.push(`/inventory/dispatch-approvals/${row.id}`)}
+                >
+                  {isRejected 
+                    ? (<>{appLang === 'en' ? "View Details" : "عرض التفاصيل"}</>)
+                    : (<><Check className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Review & Approve" : "مراجعة واعتماد"}</>)
+                  }
+                </Button>
+                {!isRejected && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    onClick={() => handleActionClick(row, "reject")}
+                    disabled={actionLoading === row.id}
+                  >
+                    <X className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Reject" : "رفض"}
+                  </Button>
+                )}
+              </>
+            ) : (
+              /* فواتير المبيعات: السلوك القديم */
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                  onClick={() => handleActionClick(row, "approve")}
+                  disabled={actionLoading === row.id}
+                >
+                  <Check className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Approve" : "اعتماد"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={() => handleActionClick(row, "reject")}
+                  disabled={actionLoading === row.id}
+                >
+                  <X className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Reject" : "رفض"}
+                </Button>
+              </>
+            )}
+          </div>
+        )
+      }
     }
   ]
 
@@ -366,8 +402,8 @@ export default function DispatchApprovalsPage() {
           <ERPPageHeader
             title={appLang === 'en' ? 'Dispatch Approvals' : 'اعتمادات إخراج المخزون'}
             description={appLang === 'en'
-              ? 'Review & manage pending dispatch requests — sales invoices and manufacturing material issues'
-              : 'إدارة ومراجعة طلبات الاعتماد المعلقة — فواتير المبيعات وصرف مواد التصنيع'}
+              ? 'Review & manage dispatch requests — sales invoices and manufacturing material issues'
+              : 'إدارة ومراجعة طلبات الاعتماد — فواتير المبيعات وصرف مواد التصنيع'}
             lang={appLang}
           />
         </div>
@@ -376,11 +412,11 @@ export default function DispatchApprovalsPage() {
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <CardTitle>{appLang === 'en' ? 'Pending Approvals' : 'طلبات قيد الانتظار'}</CardTitle>
+                <CardTitle>{appLang === 'en' ? 'Dispatch Approvals' : 'طلبات الاعتماد'}</CardTitle>
                 <CardDescription className="mt-1">
                   {appLang === 'en'
-                    ? 'All pending warehouse approvals — sales and manufacturing'
-                    : 'جميع طلبات الاعتماد المعلقة — المبيعات والتصنيع'}
+                    ? 'All warehouse approvals — sales and manufacturing'
+                    : 'جميع طلبات اعتماد المخزون — المبيعات والتصنيع'}
                 </CardDescription>
               </div>
               {/* ── فلتر النوع ── */}
