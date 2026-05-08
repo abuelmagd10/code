@@ -195,6 +195,7 @@ export default function MaterialIssuePage() {
                       const apvStatus = approvalStatus[order.id] || (order as any).material_issue_approval_status || "none"
                       const isPending = apvStatus === "pending"
                       const isRejected = apvStatus === "rejected"
+                      const isApproved = apvStatus === "approved" || apvStatus === "partially_approved"
                       return (
                         <TableRow key={order.id}>
                           <TableCell className="font-medium">{order.order_no}</TableCell>
@@ -216,13 +217,21 @@ export default function MaterialIssuePage() {
                                 <XCircle className="h-3 w-3" />{lang === "ar" ? "مرفوض" : "Rejected"}
                               </Badge>
                             )}
-                            {!isPending && !isRejected && (
+                            {isApproved && (
+                              <Badge variant="outline" className="gap-1 text-emerald-700 border-emerald-300 bg-emerald-50">
+                                <CheckCircle2 className="h-3 w-3" />
+                                {apvStatus === "partially_approved"
+                                  ? (lang === "ar" ? "اعتماد جزئي" : "Partially Approved")
+                                  : (lang === "ar" ? "تم الاعتماد" : "Approved")}
+                              </Badge>
+                            )}
+                            {!isPending && !isRejected && !isApproved && (
                               <Badge variant="outline" className="text-slate-500">{lang === "ar" ? "لم يُطلب" : "Not Requested"}</Badge>
                             )}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              {!isPending && (
+                              {!isPending && !isApproved && (
                                 <Button
                                   size="sm"
                                   className="gap-1 bg-orange-600 hover:bg-orange-700 text-white"

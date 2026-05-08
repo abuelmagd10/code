@@ -89,7 +89,7 @@ export interface ProductionOrderListItem {
   cancelled_by?: string | null
   cancellation_reason?: string | null
   notes?: string | null
-  material_issue_approval_status?: "none" | "pending" | "approved" | "rejected" | null
+  material_issue_approval_status?: "none" | "pending" | "approved" | "partially_approved" | "rejected" | null
   product_receive_approval_status?: "none" | "pending" | "approved" | "rejected" | null
   created_by?: string | null
   updated_by?: string | null
@@ -408,7 +408,8 @@ const COPY = {
       materialIssueReRequestBtn: "إعادة طلب الاعتماد",
       materialIssuePending: "بانتظار موافقة مسؤول المخزن",
       materialIssueRejected: "مرفوض — يمكنك إعادة الطلب",
-      materialIssueApprovedHint: "تم الاعتماد — ابدأ تنفيذ الأمر من الأزرار أعلاه.",
+      materialIssueApprovedHint: "تم اعتماد صرف المواد وبدء تنفيذ الأمر.",
+      materialIssuePartiallyApprovedHint: "تم اعتماد صرف المواد جزئياً — لا يمكن إنشاء طلب جديد لنفس الأمر.",
       // Phase 4 — Product Receive tab
       productReceiveTitle: "استلام المنتج النهائي",
       productReceiveDescription: "اطلب اعتماد استلام المنتج من مسؤول المخزن. بعد الموافقة سيُضاف المنتج للمستودع.",
@@ -624,7 +625,8 @@ const COPY = {
       materialIssueReRequestBtn: "Re-request Approval",
       materialIssuePending: "Awaiting warehouse manager approval",
       materialIssueRejected: "Rejected — you can re-request",
-      materialIssueApprovedHint: "Approved — start the order using the action buttons above.",
+      materialIssueApprovedHint: "Material issue approved and the order has started.",
+      materialIssuePartiallyApprovedHint: "Material issue partially approved — a new request cannot be created for the same order.",
       // Phase 4 — Product Receive tab
       productReceiveTitle: "Receive Finished Product",
       productReceiveDescription: "Request receipt approval from the warehouse manager. After approval the product is added to the warehouse.",

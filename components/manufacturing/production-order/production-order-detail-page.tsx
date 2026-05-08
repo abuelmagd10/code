@@ -246,6 +246,9 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
   const cancelEnabled = Boolean(order && canUpdate && canCancelProductionOrder(order.status))
   const deleteEnabled = Boolean(order && canDelete && canDeleteProductionOrder(order.status))
   const busy = Boolean(runningAction) || loading || savingHeader
+  const materialIssueApprovalStatus = String((order as any)?.material_issue_approval_status || "none")
+  const materialIssueCanRequest =
+    materialIssueApprovalStatus === "none" || materialIssueApprovalStatus === "" || materialIssueApprovalStatus === "rejected"
 
   const hydrateState = useCallback((nextSnapshot: ProductionOrderSnapshot) => {
     setSnapshot(nextSnapshot)
@@ -1125,7 +1128,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                           <CardContent className="space-y-4">
                             {/* حالة الاعتماد الحالية */}
                             {(() => {
-                              const approvalStatus = (order as any).material_issue_approval_status
+                              const approvalStatus = materialIssueApprovalStatus
                               if (approvalStatus === "pending") {
                                 return (
                                   <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950/30">
@@ -1139,6 +1142,14 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                                   <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-800 dark:bg-emerald-950/30">
                                     <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
                                     <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">{copy.detail.materialIssueApprovedHint}</p>
+                                  </div>
+                                )
+                              }
+                              if (approvalStatus === "partially_approved") {
+                                return (
+                                  <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950/30">
+                                    <CheckCircle2 className="h-5 w-5 text-amber-500 shrink-0" />
+                                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{copy.detail.materialIssuePartiallyApprovedHint}</p>
                                   </div>
                                 )
                               }
@@ -1168,7 +1179,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                               )}
                             </div>
                             {/* زر الطلب */}
-                            {(order as any).material_issue_approval_status !== "pending" && (
+                            {materialIssueCanRequest && (
                               <Button
                                 className="gap-2 bg-orange-600 hover:bg-orange-700 text-white"
                                 onClick={handleRequestMaterialIssue}
@@ -1177,7 +1188,7 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                                 <Send className="h-4 w-4" />
                                 {materialIssueRequesting
                                   ? copy.common.loadingAction
-                                  : (order as any).material_issue_approval_status === "rejected"
+                                  : materialIssueApprovalStatus === "rejected"
                                     ? copy.detail.materialIssueReRequestBtn
                                     : copy.detail.materialIssueRequestBtn}
                               </Button>

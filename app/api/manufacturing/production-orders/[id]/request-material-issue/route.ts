@@ -28,10 +28,18 @@ export async function POST(
       )
     }
 
-    // ── التحقق من عدم وجود طلب اعتماد معلق مسبقاً
-    if (existing.material_issue_approval_status === "pending") {
+    const currentApprovalStatus = String(existing.material_issue_approval_status || "none")
+
+    // ── التحقق من عدم وجود طلب اعتماد قائم أو مُعتمد مسبقاً
+    if (currentApprovalStatus === "pending") {
       return NextResponse.json(
         { success: false, error: "يوجد طلب اعتماد معلق بالفعل لهذا الأمر" },
+        { status: 409 }
+      )
+    }
+    if (currentApprovalStatus === "approved" || currentApprovalStatus === "partially_approved") {
+      return NextResponse.json(
+        { success: false, error: "تم اعتماد صرف المواد لهذا الأمر بالفعل ولا يمكن إنشاء طلب اعتماد جديد" },
         { status: 409 }
       )
     }
