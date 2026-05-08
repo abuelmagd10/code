@@ -132,6 +132,7 @@ export default function GoodsReceiptPage() {
   const billIdFromQuery = searchParams.get("billId")
   const [historySearchQuery, setHistorySearchQuery] = useState("")
   const [historyStatusFilter, setHistoryStatusFilter] = useState<"all" | "received" | "rejected">("all")
+  const [historyProductTypeFilter, setHistoryProductTypeFilter] = useState<"all" | "product" | "raw_material" | "manufactured">("all")
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([])
   const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string; branch_id: string }>>([])
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
@@ -1176,6 +1177,11 @@ export default function GoodsReceiptPage() {
     return bills.filter((bill) => {
       // فلتر الحالة
       if (historyStatusFilter !== "all" && bill.receipt_status !== historyStatusFilter) return false
+      // فلتر نوع المنتج
+      if (historyProductTypeFilter !== "all") {
+        const hasMatchingType = bill.items_summary?.some((item) => item.product_type === historyProductTypeFilter)
+        if (!hasMatchingType) return false
+      }
       // فلتر البحث
       if (historySearchQuery) {
         const q = historySearchQuery.toLowerCase()
@@ -1186,7 +1192,7 @@ export default function GoodsReceiptPage() {
       }
       return true
     })
-  }, [bills, activeTab, receiptType, historyStatusFilter, historySearchQuery])
+  }, [bills, activeTab, receiptType, historyStatusFilter, historyProductTypeFilter, historySearchQuery])
 
   const displayBills = (activeTab === "received" && receiptType === "purchase") ? filteredBills : bills
   const hasDisplayBills = displayBills.length > 0
@@ -1408,8 +1414,8 @@ export default function GoodsReceiptPage() {
               {activeTab === "received" && (
                 <FilterContainer
                   title={appLang === "en" ? "Search & Filters" : "البحث والفلاتر"}
-                  activeCount={(historySearchQuery ? 1 : 0) + (historyStatusFilter !== "all" ? 1 : 0)}
-                  onClear={() => { setHistorySearchQuery(""); setHistoryStatusFilter("all") }}
+                  activeCount={(historySearchQuery ? 1 : 0) + (historyStatusFilter !== "all" ? 1 : 0) + (historyProductTypeFilter !== "all" ? 1 : 0)}
+                  onClear={() => { setHistorySearchQuery(""); setHistoryStatusFilter("all"); setHistoryProductTypeFilter("all") }}
                 >
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="relative flex-1">
@@ -1434,6 +1440,20 @@ export default function GoodsReceiptPage() {
                         <SelectItem value="rejected">{appLang === "en" ? "Rejected" : "مرفوض"}</SelectItem>
                       </SelectContent>
                     </Select>
+                    <Select
+                      value={historyProductTypeFilter}
+                      onValueChange={(val) => setHistoryProductTypeFilter(val as "all" | "product" | "raw_material" | "manufactured")}
+                    >
+                      <SelectTrigger className="w-full sm:w-44">
+                        <SelectValue placeholder={appLang === "en" ? "All types" : "كل الأنواع"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{appLang === "en" ? "All types" : "كل الأنواع"}</SelectItem>
+                        <SelectItem value="product">{appLang === "en" ? "Product" : "منتج"}</SelectItem>
+                        <SelectItem value="raw_material">{appLang === "en" ? "Raw Material" : "مادة خام"}</SelectItem>
+                        <SelectItem value="manufactured">{appLang === "en" ? "Manufactured" : "مصنع"}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </FilterContainer>
               )}
@@ -1451,18 +1471,18 @@ export default function GoodsReceiptPage() {
                       ? (appLang === "en"
                         ? "No approved purchase bills pending warehouse receipt in your branch/warehouse."
                         : "لا توجد فواتير مشتريات معتمدة وبانتظار اعتماد الاستلام في فرعك ومخزنك.")
-                      : (historySearchQuery || historyStatusFilter !== "all")
+                      : (historySearchQuery || historyStatusFilter !== "all" || historyProductTypeFilter !== "all")
                         ? (appLang === "en" ? "No records match your filters." : "لا توجد سجلات تطابق الفلاتر المحددة.")
                         : (appLang === "en" 
                           ? "No receipt approval or rejection records found."
                           : "لا توجد سجلات اعتماد أو رفض استلام.")}
                   </p>
-                  {activeTab === "received" && (historySearchQuery || historyStatusFilter !== "all") && (
+                  {activeTab === "received" && (historySearchQuery || historyStatusFilter !== "all" || historyProductTypeFilter !== "all") && (
                     <Button
                       variant="outline"
                       size="sm"
                       className="mt-3"
-                      onClick={() => { setHistorySearchQuery(""); setHistoryStatusFilter("all") }}
+                      onClick={() => { setHistorySearchQuery(""); setHistoryStatusFilter("all"); setHistoryProductTypeFilter("all") }}
                     >
                       {appLang === "en" ? "Clear Filters" : "مسح الفلاتر"}
                     </Button>
