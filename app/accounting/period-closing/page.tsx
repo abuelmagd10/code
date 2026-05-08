@@ -448,11 +448,11 @@ export default function PeriodClosingPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Period Start' : 'تاريخ البداية'}</Label>
-                <Input value={selectedPeriod?.start || ""} disabled />
+                <Input type="date" value={selectedPeriod?.start || ""} onChange={(e) => setSelectedPeriod(prev => prev ? { ...prev, start: e.target.value } : { start: e.target.value, end: "" })} />
               </div>
               <div>
                 <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Period End' : 'تاريخ النهاية'}</Label>
-                <Input value={selectedPeriod?.end || ""} disabled />
+                <Input type="date" value={selectedPeriod?.end || ""} onChange={(e) => setSelectedPeriod(prev => prev ? { ...prev, end: e.target.value } : { start: "", end: e.target.value })} />
               </div>
             </div>
             <div>
