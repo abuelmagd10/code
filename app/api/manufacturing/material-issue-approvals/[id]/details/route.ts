@@ -244,16 +244,24 @@ export async function GET(
       }
 
       const requiredQty = Number(req.gross_required_qty)
-      const approvedQty = Number(req.approved_quantity ?? 0)
-      const shortageQty = Math.max(0, requiredQty - availableQty)
+      const cumulativeApprovedQty = Number(req.approved_quantity ?? 0)
+      const issuedQty = Number(req.issued_quantity ?? 0)
+      const consumedQty = Math.max(cumulativeApprovedQty, issuedQty)
+      const remainingQty = Math.max(0, requiredQty - consumedQty)
+      const isRemainingRequest = approval.status === "pending" && consumedQty > 0
+      const displayRequiredQty = isRemainingRequest ? remainingQty : requiredQty
+      const approvedQty = isRemainingRequest ? 0 : cumulativeApprovedQty
+      const shortageQty = Math.max(0, displayRequiredQty - availableQty)
 
       let lineStatus = "pending"
-      if (availableQty >= requiredQty) lineStatus = "fully_available"
+      if (remainingQty <= 0) lineStatus = "fully_issued"
+      else if (consumedQty > 0) lineStatus = "partially_issued"
+      else if (availableQty >= displayRequiredQty) lineStatus = "fully_available"
       else if (availableQty > 0) lineStatus = "partially_available"
       else lineStatus = "unavailable"
 
       // إذا تم الاعتماد سابقاً، استخدم الحالة المخزنة
-      if (req.line_issue_status && req.line_issue_status !== "pending") {
+      if (!isRemainingRequest && req.line_issue_status && req.line_issue_status !== "pending") {
         lineStatus = req.line_issue_status
       }
 
@@ -261,10 +269,13 @@ export async function GET(
         requirement_id: req.id,
         product_id: req.product_id,
         product_name: productMap[req.product_id] || req.product_id,
-        required_qty: requiredQty,
+        required_qty: displayRequiredQty,
+        original_required_qty: requiredQty,
+        cumulative_approved_qty: cumulativeApprovedQty,
+        remaining_qty: remainingQty,
         available_qty: availableQty,
         approved_qty: approvedQty,
-        issued_qty: Number(req.issued_quantity ?? 0),
+        issued_qty: issuedQty,
         shortage_qty: shortageQty,
         uom: req.issue_uom,
         is_optional: req.is_optional,

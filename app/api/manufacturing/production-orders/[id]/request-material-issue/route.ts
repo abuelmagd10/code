@@ -30,16 +30,48 @@ export async function POST(
 
     const currentApprovalStatus = String(existing.material_issue_approval_status || "none")
 
-    // ── التحقق من عدم وجود طلب اعتماد قائم أو مُعتمد مسبقاً
+    const { data: pendingApproval } = await admin
+      .from("manufacturing_material_issue_approvals")
+      .select("id")
+      .eq("production_order_id", id)
+      .eq("company_id", companyId)
+      .eq("status", "pending")
+      .maybeSingle()
+
+    const { data: materialRequirements, error: requirementsError } = await admin
+      .from("production_order_material_requirements")
+      .select("id, gross_required_qty, approved_quantity, issued_quantity, is_optional")
+      .eq("production_order_id", id)
+      .eq("company_id", companyId)
+
+    if (requirementsError) throw requirementsError
+
+    const issueLines = (materialRequirements || []).filter((line: any) => !line.is_optional)
+    const totalRemainingQty = issueLines.reduce((sum: number, line: any) => {
+      const requiredQty = Number(line.gross_required_qty ?? 0)
+      const approvedQty = Number(line.approved_quantity ?? 0)
+      const issuedQty = Number(line.issued_quantity ?? 0)
+      return sum + Math.max(0, requiredQty - Math.max(approvedQty, issuedQty))
+    }, 0)
+
+    const hasRequirementSnapshot = issueLines.length > 0
+
+    // ── التحقق من عدم وجود طلب اعتماد قائم، ثم السماح بطلب المتبقي فقط إذا كان هناك صرف جزئي
     if (currentApprovalStatus === "pending") {
       return NextResponse.json(
         { success: false, error: "يوجد طلب اعتماد معلق بالفعل لهذا الأمر" },
         { status: 409 }
       )
     }
-    if (currentApprovalStatus === "approved" || currentApprovalStatus === "partially_approved") {
+    if (pendingApproval) {
       return NextResponse.json(
-        { success: false, error: "تم اعتماد صرف المواد لهذا الأمر بالفعل ولا يمكن إنشاء طلب اعتماد جديد" },
+        { success: false, error: "يوجد طلب اعتماد معلق بالفعل لهذا الأمر" },
+        { status: 409 }
+      )
+    }
+    if (hasRequirementSnapshot && totalRemainingQty <= 0) {
+      return NextResponse.json(
+        { success: false, error: "تم صرف جميع المواد الخام المطلوبة لهذا الأمر" },
         { status: 409 }
       )
     }

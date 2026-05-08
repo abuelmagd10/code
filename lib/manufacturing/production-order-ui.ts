@@ -140,6 +140,29 @@ export interface ProductionOrderOperation {
   source_routing_operation?: SourceRoutingOperationSummary | null
 }
 
+export interface ProductionOrderMaterialIssueLine {
+  requirement_id: string
+  product_id: string
+  product_name?: string | null
+  required_qty: number
+  approved_qty: number
+  issued_qty: number
+  remaining_qty: number
+  uom?: string | null
+  line_status: "pending" | "partially_issued" | "fully_issued" | string
+  is_optional?: boolean | null
+}
+
+export interface ProductionOrderMaterialIssueSummary {
+  status: "not_issued" | "partial" | "complete"
+  has_pending_request: boolean
+  total_required_qty: number
+  total_approved_qty: number
+  total_issued_qty: number
+  total_remaining_qty: number
+  lines: ProductionOrderMaterialIssueLine[]
+}
+
 export interface ProductionOrderSnapshot {
   order: ProductionOrderListItem
   product?: ProductOption | null
@@ -148,6 +171,7 @@ export interface ProductionOrderSnapshot {
   routing?: RoutingSummary | null
   routing_version?: RoutingVersionSummary | null
   operations: ProductionOrderOperation[]
+  material_issue_summary?: ProductionOrderMaterialIssueSummary | null
 }
 
 export interface ProductionOrderOperationSnapshot {

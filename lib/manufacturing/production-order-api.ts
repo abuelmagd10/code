@@ -230,6 +230,8 @@ export async function loadProductionOrderSnapshot(
     { data: routing, error: routingError },
     { data: routingVersion, error: routingVersionError },
     { data: operations, error: operationsError },
+    { data: materialRequirements, error: materialRequirementsError },
+    { data: pendingMaterialApprovals, error: pendingMaterialApprovalsError },
   ] = await Promise.all([
     supabase.from("products").select("*").eq("id", order.product_id).maybeSingle(),
     supabase.from("manufacturing_boms").select("*").eq("id", order.bom_id).maybeSingle(),
@@ -242,6 +244,18 @@ export async function loadProductionOrderSnapshot(
       .eq("production_order_id", productionOrderId)
       .eq("company_id", companyId)
       .order("operation_no"),
+    supabase
+      .from("production_order_material_requirements")
+      .select("id, product_id, gross_required_qty, approved_quantity, issued_quantity, issue_uom, line_issue_status, is_optional, line_no")
+      .eq("production_order_id", productionOrderId)
+      .eq("company_id", companyId)
+      .order("line_no"),
+    supabase
+      .from("manufacturing_material_issue_approvals")
+      .select("id")
+      .eq("production_order_id", productionOrderId)
+      .eq("company_id", companyId)
+      .eq("status", "pending"),
   ])
 
   if (productError) throw productError
@@ -250,6 +264,8 @@ export async function loadProductionOrderSnapshot(
   if (routingError) throw routingError
   if (routingVersionError) throw routingVersionError
   if (operationsError) throw operationsError
+  if (materialRequirementsError) throw materialRequirementsError
+  if (pendingMaterialApprovalsError) throw pendingMaterialApprovalsError
 
   const workCenterIds = Array.from(new Set((operations || []).map((operation) => operation.work_center_id).filter(Boolean)))
   const sourceRoutingOperationIds = Array.from(
@@ -275,6 +291,52 @@ export async function loadProductionOrderSnapshot(
   const sourceRoutingOperationsById = Object.fromEntries(
     (sourceRoutingOperations || []).map((operation) => [operation.id, operation])
   )
+  const materialProductIds = Array.from(new Set((materialRequirements || []).map((line) => line.product_id).filter(Boolean)))
+  const { data: materialProducts, error: materialProductsError } = materialProductIds.length > 0
+    ? await supabase.from("products").select("id, name").in("id", materialProductIds)
+    : { data: [], error: null }
+
+  if (materialProductsError) throw materialProductsError
+
+  const materialProductById = Object.fromEntries((materialProducts || []).map((materialProduct) => [materialProduct.id, materialProduct]))
+  const materialLines = (materialRequirements || []).map((line) => {
+    const requiredQty = Number(line.gross_required_qty ?? 0)
+    const approvedQty = Number(line.approved_quantity ?? 0)
+    const issuedQty = Number(line.issued_quantity ?? 0)
+    const consumedQty = Math.max(approvedQty, issuedQty)
+    const remainingQty = Math.max(0, requiredQty - consumedQty)
+    const productRow = materialProductById[line.product_id]
+
+    return {
+      requirement_id: line.id,
+      product_id: line.product_id,
+      product_name: productRow?.name ?? line.product_id,
+      required_qty: requiredQty,
+      approved_qty: approvedQty,
+      issued_qty: issuedQty,
+      remaining_qty: remainingQty,
+      uom: line.issue_uom,
+      line_status: line.line_issue_status || (remainingQty <= 0 ? "fully_issued" : consumedQty > 0 ? "partially_issued" : "pending"),
+      is_optional: line.is_optional,
+    }
+  })
+  const requiredTotal = materialLines.reduce((sum, line) => sum + line.required_qty, 0)
+  const approvedTotal = materialLines.reduce((sum, line) => sum + line.approved_qty, 0)
+  const issuedTotal = materialLines.reduce((sum, line) => sum + line.issued_qty, 0)
+  const remainingTotal = materialLines.reduce((sum, line) => sum + line.remaining_qty, 0)
+  const materialIssueSummary = {
+    status: requiredTotal <= 0 || remainingTotal >= requiredTotal
+      ? "not_issued"
+      : remainingTotal > 0
+        ? "partial"
+        : "complete",
+    has_pending_request: (pendingMaterialApprovals || []).length > 0,
+    total_required_qty: requiredTotal,
+    total_approved_qty: approvedTotal,
+    total_issued_qty: issuedTotal,
+    total_remaining_qty: remainingTotal,
+    lines: materialLines,
+  }
 
   return {
     order,
@@ -290,6 +352,7 @@ export async function loadProductionOrderSnapshot(
         ? sourceRoutingOperationsById[operation.source_routing_operation_id] || null
         : null,
     })),
+    material_issue_summary: materialIssueSummary,
   }
 }
 

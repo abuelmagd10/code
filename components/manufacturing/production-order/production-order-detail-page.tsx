@@ -247,8 +247,24 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
   const deleteEnabled = Boolean(order && canDelete && canDeleteProductionOrder(order.status))
   const busy = Boolean(runningAction) || loading || savingHeader
   const materialIssueApprovalStatus = String((order as any)?.material_issue_approval_status || "none")
-  const materialIssueCanRequest =
-    materialIssueApprovalStatus === "none" || materialIssueApprovalStatus === "" || materialIssueApprovalStatus === "rejected"
+  const materialIssueSummary = snapshot?.material_issue_summary || null
+  const materialIssueLines = materialIssueSummary?.lines || []
+  const materialIssueGeneralStatus = materialIssueSummary?.status || "not_issued"
+  const materialIssueRemainingQty = Number(materialIssueSummary?.total_remaining_qty ?? 0)
+  const materialIssueHasAnyIssued = Number(materialIssueSummary?.total_approved_qty ?? 0) > 0 || Number(materialIssueSummary?.total_issued_qty ?? 0) > 0
+  const materialIssueHasPendingRequest = Boolean(materialIssueSummary?.has_pending_request || materialIssueApprovalStatus === "pending")
+  const materialIssueCanRequest = Boolean(
+    materialIssueSummary &&
+    materialIssueRemainingQty > 0 &&
+    !materialIssueHasPendingRequest &&
+    (materialIssueApprovalStatus === "none" ||
+      materialIssueApprovalStatus === "" ||
+      materialIssueApprovalStatus === "rejected" ||
+      materialIssueApprovalStatus === "partially_approved")
+  )
+  const materialIssueRequestButtonLabel = materialIssueHasAnyIssued
+    ? (appLang === "ar" ? "طلب اعتماد صرف المتبقي" : "Request Remaining Issue Approval")
+    : copy.detail.materialIssueRequestBtn
 
   const hydrateState = useCallback((nextSnapshot: ProductionOrderSnapshot) => {
     setSnapshot(nextSnapshot)
@@ -1166,6 +1182,19 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                             {/* معلومات الصرف */}
                             <div className="rounded-xl border bg-slate-50 dark:bg-slate-800/40 p-4 space-y-2 text-sm">
                               <div className="flex justify-between">
+                                <span className="text-slate-500">{appLang === "ar" ? "حالة الصرف" : "Issue status"}</span>
+                                <Badge
+                                  variant={materialIssueGeneralStatus === "complete" ? "default" : materialIssueGeneralStatus === "partial" ? "secondary" : "outline"}
+                                  className={materialIssueGeneralStatus === "complete" ? "bg-emerald-600 text-white" : materialIssueGeneralStatus === "partial" ? "bg-amber-100 text-amber-800 border-amber-300" : ""}
+                                >
+                                  {materialIssueGeneralStatus === "complete"
+                                    ? (appLang === "ar" ? "صرف كامل" : "Complete")
+                                    : materialIssueGeneralStatus === "partial"
+                                      ? (appLang === "ar" ? "صرف جزئي" : "Partial")
+                                      : (appLang === "ar" ? "لم يتم الصرف" : "Not issued")}
+                                </Badge>
+                              </div>
+                              <div className="flex justify-between">
                                 <span className="text-slate-500">{copy.detail.plannedQty}</span>
                                 <span className="font-medium">{formatQuantity(order.planned_quantity, appLang)}</span>
                               </div>
@@ -1178,6 +1207,63 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                                 </div>
                               )}
                             </div>
+                            {materialIssueLines.length > 0 && (
+                              <div className="overflow-x-auto rounded-xl border bg-white dark:bg-slate-900">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>{appLang === "ar" ? "المادة الخام" : "Raw material"}</TableHead>
+                                      <TableHead className="text-center">{appLang === "ar" ? "المطلوب" : "Required"}</TableHead>
+                                      <TableHead className="text-center">{appLang === "ar" ? "المعتمد/المصروف" : "Approved/issued"}</TableHead>
+                                      <TableHead className="text-center">{appLang === "ar" ? "المتبقي" : "Remaining"}</TableHead>
+                                      <TableHead className="text-center">{appLang === "ar" ? "الحالة" : "Status"}</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {materialIssueLines.map((line) => {
+                                      const consumedQty = Math.max(Number(line.approved_qty || 0), Number(line.issued_qty || 0))
+                                      const remainingQty = Number(line.remaining_qty || 0)
+                                      const lineStatus = remainingQty <= 0
+                                        ? (appLang === "ar" ? "مكتمل" : "Complete")
+                                        : consumedQty > 0
+                                          ? (appLang === "ar" ? "صرف جزئي" : "Partial")
+                                          : (appLang === "ar" ? "بانتظار الصرف" : "Pending")
+
+                                      return (
+                                        <TableRow key={line.requirement_id}>
+                                          <TableCell className="font-medium">{line.product_name || line.product_id}</TableCell>
+                                          <TableCell className="text-center">{formatQuantity(line.required_qty, appLang)} {line.uom || ""}</TableCell>
+                                          <TableCell className="text-center">{formatQuantity(consumedQty, appLang)} {line.uom || ""}</TableCell>
+                                          <TableCell className="text-center">{formatQuantity(remainingQty, appLang)} {line.uom || ""}</TableCell>
+                                          <TableCell className="text-center">
+                                            <Badge
+                                              variant="outline"
+                                              className={remainingQty <= 0 ? "border-emerald-300 bg-emerald-50 text-emerald-700" : consumedQty > 0 ? "border-amber-300 bg-amber-50 text-amber-700" : ""}
+                                            >
+                                              {lineStatus}
+                                            </Badge>
+                                          </TableCell>
+                                        </TableRow>
+                                      )
+                                    })}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            )}
+                            {materialIssueGeneralStatus === "partial" && !materialIssueHasPendingRequest && (
+                              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                                {appLang === "ar"
+                                  ? "تم صرف جزء من المواد الخام. يمكنك طلب اعتماد صرف الكميات المتبقية."
+                                  : "Part of the raw materials has been issued. You can request approval for the remaining quantities."}
+                              </p>
+                            )}
+                            {materialIssueGeneralStatus === "complete" && (
+                              <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                                {appLang === "ar"
+                                  ? "تم صرف جميع المواد الخام المطلوبة لهذا الأمر."
+                                  : "All required raw materials have been issued for this order."}
+                              </p>
+                            )}
                             {/* زر الطلب */}
                             {materialIssueCanRequest && (
                               <Button
@@ -1188,9 +1274,9 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                                 <Send className="h-4 w-4" />
                                 {materialIssueRequesting
                                   ? copy.common.loadingAction
-                                  : materialIssueApprovalStatus === "rejected"
+                                  : materialIssueApprovalStatus === "rejected" && !materialIssueHasAnyIssued
                                     ? copy.detail.materialIssueReRequestBtn
-                                    : copy.detail.materialIssueRequestBtn}
+                                    : materialIssueRequestButtonLabel}
                               </Button>
                             )}
                           </CardContent>

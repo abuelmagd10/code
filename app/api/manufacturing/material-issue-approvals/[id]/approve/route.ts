@@ -166,7 +166,7 @@ export async function POST(
     // ── جلب متطلبات المواد (production_order_material_requirements أولاً) ──────
     const { data: requirements, error: reqError } = await admin
       .from("production_order_material_requirements")
-      .select("id, product_id, warehouse_id, branch_id, gross_required_qty, issue_uom, is_optional")
+      .select("id, product_id, warehouse_id, branch_id, gross_required_qty, issue_uom, is_optional, approved_quantity, issued_quantity")
       .eq("production_order_id", approval.production_order_id)
       .eq("company_id", companyId)
 
@@ -178,6 +178,8 @@ export async function POST(
       warehouse_id: string | null
       branch_id: string | null
       gross_required_qty: number
+      approved_quantity: number
+      issued_quantity: number
       issue_uom: string
       is_optional: boolean
     }
@@ -191,6 +193,8 @@ export async function POST(
         warehouse_id:       r.warehouse_id,
         branch_id:          r.branch_id,
         gross_required_qty: Number(r.gross_required_qty),
+        approved_quantity:  Number(r.approved_quantity ?? 0),
+        issued_quantity:    Number(r.issued_quantity ?? 0),
         issue_uom:          r.issue_uom,
         is_optional:        r.is_optional,
       }))
@@ -214,6 +218,8 @@ export async function POST(
           warehouse_id:       productionOrder.issue_warehouse_id,
           branch_id:          productionOrder.branch_id,
           gross_required_qty: grossQty,
+          approved_quantity:  0,
+          issued_quantity:    0,
           issue_uom:          line.issue_uom,
           is_optional:        line.is_optional ?? false,
         })
@@ -257,6 +263,8 @@ export async function POST(
       }
     }
 
+    const availableQtyByMaterialId: Record<string, number> = {}
+
     for (const req of materialsToCheck) {
       if (req.is_optional) continue  // تخطى المواد الاختيارية
 
@@ -290,14 +298,17 @@ export async function POST(
 
       const snap = Array.isArray(snapRows) ? snapRows[0] : snapRows
       const freeQty: number = Number(snap?.free_quantity ?? 0)
+      if (req.id) availableQtyByMaterialId[req.id] = freeQty
+      availableQtyByMaterialId[req.product_id] = freeQty
+      const remainingQty = Math.max(0, req.gross_required_qty - Math.max(req.approved_quantity, req.issued_quantity))
       checkedCount++
-      debugLog.push(`checked product=${req.product_id} branch=${branchId} warehouse=${warehouseId} required=${req.gross_required_qty} free=${freeQty}`)
+      debugLog.push(`checked product=${req.product_id} branch=${branchId} warehouse=${warehouseId} remaining=${remainingQty} required=${req.gross_required_qty} free=${freeQty}`)
 
-      if (freeQty < req.gross_required_qty) {
+      if (freeQty < remainingQty) {
         shortages.push({
           product_id:    req.product_id,
           product_name:  "",   // سيتم ملؤه بعد اكتمال الحلقة
-          required_qty:  req.gross_required_qty,
+          required_qty:  remainingQty,
           available_qty: freeQty,
           uom:           req.issue_uom,
         })
@@ -346,10 +357,33 @@ export async function POST(
     if (isDetailedApproval) {
       // حساب نوع الصرف من الكميات المعتمدة
       let allFull = true
+      let anyApproved = false
       for (const item of approvedItems!) {
         const mat = materialsToCheck.find((m: any) => m.id === item.requirement_id || m.product_id === item.requirement_id)
         if (!mat) continue
-        if (item.approved_quantity < mat.gross_required_qty) allFull = false
+        const requestedQty = Number(item.approved_quantity ?? 0)
+        const remainingQty = Math.max(0, mat.gross_required_qty - Math.max(mat.approved_quantity, mat.issued_quantity))
+        const availableQty = availableQtyByMaterialId[String(mat.id || mat.product_id)] ?? 0
+        if (requestedQty < 0 || requestedQty > remainingQty) {
+          return NextResponse.json(
+            { success: false, error: "لا يمكن اعتماد كمية أكبر من الكمية المتبقية للمادة الخام" },
+            { status: 422 }
+          )
+        }
+        if (requestedQty > availableQty) {
+          return NextResponse.json(
+            { success: false, error: "لا يمكن اعتماد كمية أكبر من الرصيد المتاح في المخزن" },
+            { status: 422 }
+          )
+        }
+        if (requestedQty > 0) anyApproved = true
+        if (requestedQty < remainingQty) allFull = false
+      }
+      if (!anyApproved) {
+        return NextResponse.json(
+          { success: false, error: "يجب اعتماد كمية واحدة على الأقل من المواد المتبقية" },
+          { status: 422 }
+        )
       }
       finalIssueType = allFull ? "full" : "partial"
       if (requestedIssueType === "partial") finalIssueType = "partial"
@@ -406,14 +440,18 @@ export async function POST(
       for (const item of approvedItems!) {
         const mat = (requirements || []).find((r: any) => r.id === item.requirement_id)
         if (!mat) continue
-        const shortage = Math.max(0, Number((mat as any).gross_required_qty) - item.approved_quantity)
-        const lineStatus = item.approved_quantity >= Number((mat as any).gross_required_qty)
-          ? "fully_issued" : item.approved_quantity > 0 ? "partially_issued" : "pending"
+        const requiredQty = Number((mat as any).gross_required_qty)
+        const previousApprovedQty = Number((mat as any).approved_quantity ?? 0)
+        const previousIssuedQty = Number((mat as any).issued_quantity ?? 0)
+        const newApprovedQty = Math.max(previousApprovedQty, previousIssuedQty) + Number(item.approved_quantity ?? 0)
+        const shortage = Math.max(0, requiredQty - newApprovedQty)
+        const lineStatus = newApprovedQty >= requiredQty
+          ? "fully_issued" : newApprovedQty > 0 ? "partially_issued" : "pending"
 
         await admin
           .from("production_order_material_requirements")
           .update({
-            approved_quantity: item.approved_quantity,
+            approved_quantity: newApprovedQty,
             shortage_quantity: shortage,
             line_issue_status: lineStatus,
             approved_by: user.id,
