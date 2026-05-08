@@ -163,6 +163,13 @@ export async function POST(
       )
     }
 
+    const { error: syncError } = await admin.rpc("sync_manufacturing_production_order_materials_atomic", {
+      p_company_id: companyId,
+      p_production_order_id: approval.production_order_id,
+      p_user_id: user.id,
+    })
+    if (syncError) throw syncError
+
     // ── جلب متطلبات المواد (production_order_material_requirements أولاً) ──────
     const { data: requirements, error: reqError } = await admin
       .from("production_order_material_requirements")
@@ -436,10 +443,20 @@ export async function POST(
     }
 
     // ── تحديث الكميات المعتمدة لكل سطر في POMR ────────────────────────────
+    const issueLines: { material_requirement_id: string; issued_qty: number; notes?: string | null }[] = []
+
     if (isDetailedApproval && (requirements || []).length > 0) {
       for (const item of approvedItems!) {
         const mat = (requirements || []).find((r: any) => r.id === item.requirement_id)
         if (!mat) continue
+        const issueQty = Number(item.approved_quantity ?? 0)
+        if (issueQty > 0) {
+          issueLines.push({
+            material_requirement_id: item.requirement_id,
+            issued_qty: issueQty,
+            notes: warehouseApprovalNotes || notes || null,
+          })
+        }
         const requiredQty = Number((mat as any).gross_required_qty)
         const previousApprovedQty = Number((mat as any).approved_quantity ?? 0)
         const previousIssuedQty = Number((mat as any).issued_quantity ?? 0)
@@ -464,7 +481,15 @@ export async function POST(
         if ((mat as any).is_optional) continue
         const requiredQty = Number((mat as any).gross_required_qty ?? 0)
         const issuedQty = Number((mat as any).issued_quantity ?? 0)
+        const issueQty = Math.max(0, requiredQty - issuedQty)
         const approvedQty = Math.max(requiredQty, issuedQty)
+        if (issueQty > 0) {
+          issueLines.push({
+            material_requirement_id: (mat as any).id,
+            issued_qty: issueQty,
+            notes: warehouseApprovalNotes || notes || null,
+          })
+        }
 
         await admin
           .from("production_order_material_requirements")
@@ -479,19 +504,27 @@ export async function POST(
       }
     }
 
+    if (issueLines.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "لا توجد كميات متبقية صالحة للصرف من المخزن" },
+        { status: 422 }
+      )
+    }
+
+    const issueCommandKey = `mmia-${id}-${Date.now()}`
+    const { data: issueResult, error: issueError } = await admin.rpc("issue_manufacturing_production_order_materials_atomic", {
+      p_company_id: companyId,
+      p_production_order_id: approval.production_order_id,
+      p_posted_by: user.id,
+      p_lines: issueLines,
+      p_posted_at: null,
+      p_notes: warehouseApprovalNotes || notes || `صرف مواد معتمد من طلب ${id}`,
+      p_command_key: issueCommandKey,
+    })
+    if (issueError) throw issueError
+
     // ── تنفيذ الاعتماد ────────────────────────────────────────────────────
     const approvalStatus = finalIssueType === "full" ? "approved" : "partially_approved"
-
-    // بدء أمر الإنتاج فقط إذا كان صرف كامل
-    if (finalIssueType === "full") {
-      const { error: startError } = await admin.rpc("start_manufacturing_production_order_atomic", {
-        p_company_id:          companyId,
-        p_production_order_id: approval.production_order_id,
-        p_started_by:          user.id,
-        p_started_at:          null,
-      })
-      if (startError) throw startError
-    }
 
     // تحديث سجل الاعتماد
     const { error: updateApprovalError } = await admin
@@ -516,8 +549,8 @@ export async function POST(
 
     // إشعار لمقدم الطلب
     const approvalMsg = finalIssueType === "full"
-      ? `تمت الموافقة على طلب صرف مواد أمر الإنتاج ${productionOrder?.order_no || ""} — يمكن البدء في صرف المواد الآن`
-      : `تمت الموافقة الجزئية على صرف مواد أمر الإنتاج ${productionOrder?.order_no || ""} — بعض المواد غير متوفرة بالكامل`
+      ? `تمت الموافقة على طلب صرف مواد أمر الإنتاج ${productionOrder?.order_no || ""} وتم خصم المواد من المخزن`
+      : `تمت الموافقة الجزئية على صرف مواد أمر الإنتاج ${productionOrder?.order_no || ""} وتم خصم الكميات المعتمدة من المخزن`
 
     await sendNotification(admin, {
       companyId, branchId: null, role: null,
@@ -564,18 +597,19 @@ export async function POST(
       recordId: id,
       recordIdentifier: String(approval.production_order_id),
       oldData: { status: approval.status },
-      newData: { status: approvalStatus, issue_type: finalIssueType, approved_by: user.id },
+      newData: { status: approvalStatus, issue_type: finalIssueType, approved_by: user.id, issue_result: issueResult },
       reason: finalIssueType === "full"
-        ? "Approved material issue request — inventory checked OK — production order started"
-        : "Partially approved material issue — some materials have shortages",
+        ? "Approved material issue request — inventory issued from warehouse"
+        : "Partially approved material issue — approved quantities issued from warehouse",
     })
 
     return NextResponse.json({
       success: true,
       message: finalIssueType === "full"
-        ? "تمت الموافقة على صرف المواد وتم بدء تنفيذ أمر الإنتاج"
-        : "تمت الموافقة الجزئية على صرف المواد — يرجى مراجعة النواقص",
+        ? "تمت الموافقة على صرف المواد وتم خصمها من المخزن"
+        : "تمت الموافقة الجزئية على صرف المواد وتم خصم الكميات المعتمدة من المخزن",
       issue_type: finalIssueType,
+      issue_result: issueResult,
     })
   } catch (error: any) {
     return NextResponse.json(

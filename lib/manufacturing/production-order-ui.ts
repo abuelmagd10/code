@@ -426,13 +426,13 @@ const COPY = {
       },
       // Phase 4 — Material Issue tab
       materialIssueTitle: "صرف المواد الخام",
-      materialIssueDescription: "اطلب اعتماد صرف المواد من مسؤول المخزن. الاعتماد يحدد الكميات المسموح بصرفها، والخصم الفعلي يتم عند تنفيذ صرف المواد.",
+      materialIssueDescription: "اطلب اعتماد صرف المواد من مسؤول المخزن. عند الاعتماد يتم خصم الكميات المعتمدة من مخزن الصرف.",
       materialIssueNotAvailable: "صرف المواد متاح فقط بعد إصدار الأمر.",
       materialIssueRequestBtn: "طلب اعتماد الصرف",
       materialIssueReRequestBtn: "إعادة طلب الاعتماد",
       materialIssuePending: "بانتظار موافقة مسؤول المخزن",
       materialIssueRejected: "مرفوض — يمكنك إعادة الطلب",
-      materialIssueApprovedHint: "تم اعتماد صرف المواد. راجع الجدول لمعرفة الكميات المعتمدة والمصروفة فعلياً.",
+      materialIssueApprovedHint: "تم اعتماد صرف المواد وخصمها من مخزن الصرف. راجع الجدول لمعرفة الكميات المصروفة والمتبقية.",
       materialIssuePartiallyApprovedHint: "تم اعتماد صرف المواد جزئياً. يمكن طلب اعتماد صرف الكميات المتبقية.",
       // Phase 4 — Product Receive tab
       productReceiveTitle: "استلام المنتج النهائي",
@@ -643,13 +643,13 @@ const COPY = {
       },
       // Phase 4 — Material Issue tab
       materialIssueTitle: "Issue Raw Materials",
-      materialIssueDescription: "Request material issue approval from the warehouse manager. Approval records allowed quantities; stock is deducted only when material issue is posted.",
+      materialIssueDescription: "Request material issue approval from the warehouse manager. Approved quantities are deducted from the issue warehouse on approval.",
       materialIssueNotAvailable: "Material issue is only available after the order has been released.",
       materialIssueRequestBtn: "Request Issue Approval",
       materialIssueReRequestBtn: "Re-request Approval",
       materialIssuePending: "Awaiting warehouse manager approval",
       materialIssueRejected: "Rejected — you can re-request",
-      materialIssueApprovedHint: "Material issue was approved. Review the table for approved and actually issued quantities.",
+      materialIssueApprovedHint: "Material issue was approved and deducted from the issue warehouse. Review the table for issued and remaining quantities.",
       materialIssuePartiallyApprovedHint: "Material issue was partially approved. Remaining quantities can be requested again.",
       // Phase 4 — Product Receive tab
       productReceiveTitle: "Receive Finished Product",
