@@ -93,6 +93,7 @@ export async function POST(req: NextRequest) {
         period_start,
         period_end,
         status: 'open',
+        is_locked: false,
         notes: notes || null
       })
       .select()
