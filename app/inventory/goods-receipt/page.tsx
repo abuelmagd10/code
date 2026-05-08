@@ -396,11 +396,12 @@ export default function GoodsReceiptPage() {
         if (error) throw error
         if (!billData) return
 
-        // ✅ لا نفتح الـ dialog تلقائياً للفواتير المرفوضة
-        if (billData.receipt_status === "rejected") {
-          return
+        // ✅ إذا كانت الفاتورة مستلمة أو مرفوضة، قم بتبديل التبويب إلى "سجل الاستلام"
+        if (billData.receipt_status === "received" || billData.receipt_status === "rejected") {
+          setActiveTab("received")
+        } else {
+          setActiveTab("pending")
         }
-
         // ✅ للأدوار الإدارية: تحديث selectedBranchId و selectedWarehouseId إذا كانت الفاتورة في فرع/مخزن مختلف
         const role = String(userContext.role || "").trim().toLowerCase()
         if ((role === "owner" || role === "admin" || role === "general_manager") && billData.branch_id && billData.warehouse_id) {
