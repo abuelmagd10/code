@@ -459,6 +459,24 @@ export async function POST(
           })
           .eq("id", item.requirement_id)
       }
+    } else if (!isDetailedApproval && finalIssueType === "full" && (requirements || []).length > 0) {
+      for (const mat of (requirements || [])) {
+        if ((mat as any).is_optional) continue
+        const requiredQty = Number((mat as any).gross_required_qty ?? 0)
+        const issuedQty = Number((mat as any).issued_quantity ?? 0)
+        const approvedQty = Math.max(requiredQty, issuedQty)
+
+        await admin
+          .from("production_order_material_requirements")
+          .update({
+            approved_quantity: approvedQty,
+            shortage_quantity: 0,
+            line_issue_status: "fully_issued",
+            approved_by: user.id,
+            approved_at: new Date().toISOString(),
+          })
+          .eq("id", (mat as any).id)
+      }
     }
 
     // ── تنفيذ الاعتماد ────────────────────────────────────────────────────

@@ -291,7 +291,42 @@ export async function loadProductionOrderSnapshot(
   const sourceRoutingOperationsById = Object.fromEntries(
     (sourceRoutingOperations || []).map((operation) => [operation.id, operation])
   )
-  const materialProductIds = Array.from(new Set((materialRequirements || []).map((line) => line.product_id).filter(Boolean)))
+  let materialRequirementRows = materialRequirements || []
+
+  if (materialRequirementRows.length === 0 && order.bom_version_id) {
+    const { data: bomLines, error: bomLinesError } = await supabase
+      .from("manufacturing_bom_lines")
+      .select("id, component_product_id, line_no, quantity_per, scrap_percent, issue_uom, is_optional, line_type")
+      .eq("bom_version_id", order.bom_version_id)
+      .eq("company_id", companyId)
+      .neq("line_type", "byproduct")
+      .order("line_no")
+
+    if (bomLinesError) throw bomLinesError
+
+    const plannedQty = Number(order.planned_quantity ?? 1)
+    materialRequirementRows = (bomLines || []).map((line: any) => {
+      const qtyPer = Number(line.quantity_per ?? 0)
+      const scrapPct = Number(line.scrap_percent ?? 0)
+      const requiredQty = qtyPer * plannedQty * (1 + scrapPct / 100)
+      const approvedQty = order.material_issue_approval_status === "approved" ? requiredQty : 0
+      const issuedQty = 0
+
+      return {
+        id: line.id,
+        product_id: line.component_product_id,
+        gross_required_qty: requiredQty,
+        approved_quantity: approvedQty,
+        issued_quantity: issuedQty,
+        issue_uom: line.issue_uom,
+        line_issue_status: approvedQty >= requiredQty && requiredQty > 0 ? "fully_issued" : "pending",
+        is_optional: line.is_optional,
+        line_no: line.line_no,
+      }
+    })
+  }
+
+  const materialProductIds = Array.from(new Set(materialRequirementRows.map((line) => line.product_id).filter(Boolean)))
   const { data: materialProducts, error: materialProductsError } = materialProductIds.length > 0
     ? await supabase.from("products").select("id, name").in("id", materialProductIds)
     : { data: [], error: null }
@@ -299,7 +334,7 @@ export async function loadProductionOrderSnapshot(
   if (materialProductsError) throw materialProductsError
 
   const materialProductById = Object.fromEntries((materialProducts || []).map((materialProduct) => [materialProduct.id, materialProduct]))
-  const materialLines = (materialRequirements || []).map((line) => {
+  const materialLines = materialRequirementRows.map((line) => {
     const requiredQty = Number(line.gross_required_qty ?? 0)
     const approvedQty = Number(line.approved_quantity ?? 0)
     const issuedQty = Number(line.issued_quantity ?? 0)
