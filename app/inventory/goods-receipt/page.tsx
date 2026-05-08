@@ -97,6 +97,28 @@ type BillRecord = {
   receipt_status?: string | null
 }
 
+type ManufacturingHistoryRecord = {
+  id: string
+  history_type: "product_receive" | "material_issue"
+  status: string
+  proposed_quantity?: number | null
+  requested_at?: string | null
+  approved_at?: string | null
+  rejected_at?: string | null
+  rejection_reason?: string | null
+  notes?: string | null
+  production_order?: {
+    id?: string
+    order_no?: string | null
+    status?: string | null
+    planned_quantity?: number | null
+    order_uom?: string | null
+    product?: { id?: string; name?: string | null; name_en?: string | null; sku?: string | null } | null
+  } | null
+  branch?: { id?: string; name?: string | null } | null
+  warehouse?: { id?: string; name?: string | null } | null
+}
+
 function getApiErrorMessage(payload: any, fallback: string) {
   const error = payload?.error
   if (typeof error === "string" && error.trim()) return error
@@ -146,7 +168,7 @@ export default function GoodsReceiptPage() {
   const [mfgActionType, setMfgActionType] = useState<"approve" | "reject" | null>(null)
   const [mfgRejectReason, setMfgRejectReason] = useState("")
   const [mfgProcessing, setMfgProcessing] = useState(false)
-  const [mfgHistory, setMfgHistory] = useState<any[]>([])
+  const [mfgHistory, setMfgHistory] = useState<ManufacturingHistoryRecord[]>([])
   const [mfgHistoryLoading, setMfgHistoryLoading] = useState(false)
 
   // ✅ تحديث refs عند تغيير selectedBranchId و selectedWarehouseId
@@ -1004,11 +1026,24 @@ export default function GoodsReceiptPage() {
     }
   }
 
+  const buildMfgReceiptParams = useCallback((status: string) => {
+    const params = new URLSearchParams({ status })
+    const role = String(userContext?.role || "").trim().toLowerCase()
+    const isCompanyWideRole = ["owner", "admin", "general_manager", "manager"].includes(role)
+
+    if (!isCompanyWideRole) {
+      if (userContext?.branch_id) params.set("branch_id", userContext.branch_id)
+      if (userContext?.warehouse_id) params.set("warehouse_id", userContext.warehouse_id)
+    }
+
+    return params
+  }, [userContext])
+
   // ── تحميل اعتمادات استلام المنتجات المصنّعة ──
   const loadMfgApprovals = useCallback(async () => {
     try {
       setMfgLoading(true)
-      const response = await fetch("/api/manufacturing/product-receive-approvals?status=pending", { cache: "no-store" })
+      const response = await fetch(`/api/manufacturing/product-receive-approvals?${buildMfgReceiptParams("pending").toString()}`, { cache: "no-store" })
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.success) {
         throw new Error(
@@ -1027,7 +1062,7 @@ export default function GoodsReceiptPage() {
     } finally {
       setMfgLoading(false)
     }
-  }, [appLang])
+  }, [appLang, buildMfgReceiptParams])
 
   // تحميل العداد فور فتح الصفحة (لإظهار الأرقام في الأزرار حتى قبل التبديل للتبويب)
   useEffect(() => {
@@ -1047,26 +1082,61 @@ export default function GoodsReceiptPage() {
   const loadMfgHistory = useCallback(async () => {
     try {
       setMfgHistoryLoading(true)
-      const response = await fetch("/api/manufacturing/product-receive-approvals?status=approved,rejected", { cache: "no-store" })
-      const result = await response.json().catch(() => ({}))
-      if (!response.ok || !result.success) {
+      const [productResponse, materialResponse] = await Promise.all([
+        fetch(`/api/manufacturing/product-receive-approvals?${buildMfgReceiptParams("approved,rejected").toString()}`, { cache: "no-store" }),
+        fetch(`/api/manufacturing/material-issue-approvals?${buildMfgReceiptParams("approved,rejected,partially_approved").toString()}`, { cache: "no-store" }),
+      ])
+
+      const productResult = await productResponse.json().catch(() => ({}))
+      const materialResult = await materialResponse.json().catch(() => ({}))
+      if (!productResponse.ok || !productResult.success) {
         throw new Error(
           getApiErrorMessage(
-            result,
+            productResult,
             appLang === "en"
               ? "Failed to load manufacturing receipt history"
               : "تعذر تحميل سجل استلام التصنيع"
           )
         )
       }
-      setMfgHistory(result.data || [])
+      if (!materialResponse.ok || !materialResult.success) {
+        throw new Error(
+          getApiErrorMessage(
+            materialResult,
+            appLang === "en"
+              ? "Failed to load manufacturing material issue history"
+              : "تعذر تحميل سجل صرف مواد التصنيع"
+          )
+        )
+      }
+
+      const productRows: ManufacturingHistoryRecord[] = ((productResult.data || []) as any[]).map((row) => ({
+        ...row,
+        history_type: "product_receive",
+      }))
+      const materialRows: ManufacturingHistoryRecord[] = ((materialResult.data || []) as any[]).map((row) => ({
+        ...row,
+        history_type: "material_issue",
+      }))
+
+      setMfgHistory(
+        [...productRows, ...materialRows].sort((left, right) => {
+          const leftDate = left.status === "rejected"
+            ? left.rejected_at || left.requested_at
+            : left.approved_at || left.requested_at
+          const rightDate = right.status === "rejected"
+            ? right.rejected_at || right.requested_at
+            : right.approved_at || right.requested_at
+          return new Date(rightDate || 0).getTime() - new Date(leftDate || 0).getTime()
+        })
+      )
     } catch (err) {
       console.error("Error loading manufacturing receipt history:", err)
       setMfgHistory([])
     } finally {
       setMfgHistoryLoading(false)
     }
-  }, [appLang])
+  }, [appLang, buildMfgReceiptParams])
 
   // تحميل سجل التصنيع عند التبديل إلى التبويب
   useEffect(() => {
@@ -1585,15 +1655,16 @@ export default function GoodsReceiptPage() {
                     <AlertCircle className="w-10 h-10 mb-3 text-gray-300 dark:text-gray-600" />
                     <p className="text-sm">
                       {appLang === "en"
-                        ? "No manufacturing receipt records found."
-                        : "لا توجد سجلات استلام تصنيع."}
+                        ? "No manufacturing receipt or material issue records found."
+                        : "لا توجد سجلات استلام منتج أو صرف مواد تصنيع."}
                     </p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="min-w-[900px] w-full text-sm">
+                    <table className="min-w-[1000px] w-full text-sm">
                       <thead className="bg-gray-50 dark:bg-slate-800">
                         <tr>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Type" : "نوع السجل"}</th>
                           <th className="px-3 py-2 text-right">{appLang === "en" ? "Order #" : "رقم الأمر"}</th>
                           <th className="px-3 py-2 text-right">{appLang === "en" ? "Product" : "المنتج"}</th>
                           <th className="px-3 py-2 text-right">{appLang === "en" ? "Qty" : "الكمية"}</th>
@@ -1605,8 +1676,19 @@ export default function GoodsReceiptPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                        {mfgHistory.map((req: any) => (
+                        {mfgHistory.map((req) => (
                           <tr key={req.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/60">
+                            <td className="px-3 py-2">
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
+                                req.history_type === "material_issue"
+                                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                  : "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300"
+                              }`}>
+                                {req.history_type === "material_issue"
+                                  ? (appLang === "en" ? "Material Issue" : "صرف مواد")
+                                  : (appLang === "en" ? "Finished Receipt" : "استلام منتج")}
+                              </span>
+                            </td>
                             <td className="px-3 py-2 font-medium text-cyan-700 dark:text-cyan-400">
                               {req.production_order?.order_no || req.production_order?.id?.slice(0, 8) || "-"}
                             </td>
@@ -1619,19 +1701,28 @@ export default function GoodsReceiptPage() {
                             <td className="px-3 py-2">{req.branch?.name || "-"}</td>
                             <td className="px-3 py-2">{req.warehouse?.name || "-"}</td>
                             <td className="px-3 py-2">
-                              {(req.status === "approved" ? req.approved_at : req.rejected_at)
-                                ? new Date(req.status === "approved" ? req.approved_at : req.rejected_at).toLocaleDateString(appLang === "en" ? "en" : "ar")
-                                : "-"}
+                              {(() => {
+                                const decisionAt = req.status === "rejected"
+                                  ? req.rejected_at || req.requested_at
+                                  : req.approved_at || req.requested_at
+                                return decisionAt
+                                  ? new Date(decisionAt).toLocaleDateString(appLang === "en" ? "en" : "ar")
+                                  : "-"
+                              })()}
                             </td>
                             <td className="px-3 py-2 text-center">
                               <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
                                 req.status === "rejected"
                                   ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                                  : req.status === "partially_approved"
+                                    ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
                                   : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
                               }`}>
                                 {req.status === "rejected"
                                   ? (appLang === "en" ? "Rejected" : "مرفوض")
-                                  : (appLang === "en" ? "Approved" : "تم الاعتماد")}
+                                  : req.status === "partially_approved"
+                                    ? (appLang === "en" ? "Partially approved" : "اعتماد جزئي")
+                                    : (appLang === "en" ? "Approved" : "تم الاعتماد")}
                               </span>
                             </td>
                             <td className="px-3 py-2 max-w-[220px] truncate text-gray-600 dark:text-gray-300">

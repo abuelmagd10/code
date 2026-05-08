@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     // التحقق من الدور — يُسمح لمسؤولي المخزن والإدارة فقط
     const { data: member } = await supabase
       .from("company_members")
-      .select("role")
+      .select("role, branch_id, warehouse_id")
       .eq("company_id", companyId)
       .eq("user_id", user.id)
       .single()
@@ -50,6 +50,9 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status") || "pending"
     const warehouseId = searchParams.get("warehouse_id")
     const branchId = searchParams.get("branch_id")
+    const role = String(member.role || "").trim().toLowerCase()
+    const companyWideRoles = new Set(["owner", "admin", "general_manager", "manager"])
+    const isCompanyWideRole = companyWideRoles.has(role)
 
     let query = admin
       .from("manufacturing_material_issue_approvals")
@@ -91,11 +94,45 @@ export async function GET(request: NextRequest) {
         query = query.in("status", statuses)
       }
     }
-    if (warehouseId) {
-      query = query.eq("warehouse_id", warehouseId)
-    }
-    if (branchId) {
-      query = query.eq("branch_id", branchId)
+
+    if (isCompanyWideRole) {
+      if (warehouseId) {
+        query = query.eq("warehouse_id", warehouseId)
+      }
+      if (branchId) {
+        query = query.eq("branch_id", branchId)
+      }
+    } else {
+      const scopedBranchId = member.branch_id || null
+      const scopedWarehouseId = member.warehouse_id || null
+
+      if (!scopedBranchId) {
+        return NextResponse.json(
+          { success: false, error: "حسابك غير مرتبط بفرع، يرجى مراجعة إعدادات المستخدم" },
+          { status: 403 }
+        )
+      }
+
+      if (branchId && branchId !== scopedBranchId) {
+        return NextResponse.json(
+          { success: false, error: "لا يمكنك عرض طلبات صرف مواد تصنيع خارج فرعك" },
+          { status: 403 }
+        )
+      }
+
+      if (warehouseId && scopedWarehouseId && warehouseId !== scopedWarehouseId) {
+        return NextResponse.json(
+          { success: false, error: "لا يمكنك عرض طلبات صرف مواد تصنيع خارج مخزنك" },
+          { status: 403 }
+        )
+      }
+
+      query = query.eq("branch_id", scopedBranchId)
+      if (scopedWarehouseId) {
+        query = query.eq("warehouse_id", scopedWarehouseId)
+      } else if (warehouseId) {
+        query = query.eq("warehouse_id", warehouseId)
+      }
     }
 
     const { data, error } = await query
