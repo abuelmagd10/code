@@ -52,7 +52,7 @@ export default function PeriodClosingPage() {
 
   // Close period dialog
   const [showCloseDialog, setShowCloseDialog] = useState(false)
-  const [selectedPeriod, setSelectedPeriod] = useState<{ start: string; end: string; name?: string } | null>(null)
+  const [selectedPeriod, setSelectedPeriod] = useState<{ id?: string; start: string; end: string; name?: string } | null>(null)
   const [periodName, setPeriodName] = useState("")
   const [notes, setNotes] = useState("")
 
@@ -274,14 +274,7 @@ export default function PeriodClosingPage() {
                 </Button>
                 <Button
                   onClick={() => {
-                    const today = new Date()
-                    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
-                    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-                    setSelectedPeriod({
-                      start: firstDay.toISOString().split("T")[0],
-                      end: lastDay.toISOString().split("T")[0],
-                      name: `${firstDay.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}`,
-                    })
+                    setSelectedPeriod(null)
                     setPeriodName("")
                     setNotes("")
                     setShowCloseDialog(true)
@@ -445,16 +438,31 @@ export default function PeriodClosingPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Period Start' : 'تاريخ البداية'}</Label>
-                <Input type="date" value={selectedPeriod?.start || ""} onChange={(e) => setSelectedPeriod(prev => prev ? { ...prev, start: e.target.value } : { start: e.target.value, end: "" })} />
+                <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Select Open Period' : 'اختر الفترة المفتوحة المراد إقفالها'}</Label>
+                <select 
+                  className="w-full border rounded p-2 mt-1 bg-white dark:bg-slate-900"
+                  value={selectedPeriod?.id || ""}
+                  onChange={(e) => {
+                    const selected = periods.find(p => p.id === e.target.value)
+                    if (selected) {
+                      setSelectedPeriod({ id: selected.id, start: selected.period_start, end: selected.period_end, name: selected.period_name })
+                      setPeriodName(selected.period_name)
+                    } else {
+                      setSelectedPeriod(null)
+                      setPeriodName("")
+                    }
+                  }}
+                >
+                  <option value="" disabled>{(hydrated && appLang === 'en') ? 'Select a period...' : 'اختر فترة...'}</option>
+                  {periods.filter(p => p.status === 'open').map(p => (
+                    <option key={p.id} value={p.id}>{p.period_name} ({p.period_start} - {p.period_end})</option>
+                  ))}
+                </select>
+                {periods.filter(p => p.status === 'open').length === 0 && (
+                  <p className="text-red-500 text-sm mt-1">{(hydrated && appLang === 'en') ? 'No open periods available.' : 'لا توجد فترات مفتوحة.'}</p>
+                )}
               </div>
-              <div>
-                <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Period End' : 'تاريخ النهاية'}</Label>
-                <Input type="date" value={selectedPeriod?.end || ""} onChange={(e) => setSelectedPeriod(prev => prev ? { ...prev, end: e.target.value } : { start: "", end: e.target.value })} />
-              </div>
-            </div>
             <div>
               <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Period Name (Optional)' : 'اسم الفترة (اختياري)'}</Label>
               <Input value={periodName} onChange={(e) => setPeriodName(e.target.value)} placeholder={appLang === 'en' ? 'e.g., January 2026' : 'مثال: يناير 2026'} />
