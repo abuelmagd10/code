@@ -106,7 +106,7 @@ function buildMenuItems(lang: string) {
     { label: L.banking, href: `/banking${q}`, icon: DollarSign },
     { label: L.reports, href: `/reports${q}`, icon: BarChart3 },
     { label: L.coa, href: `/chart-of-accounts${q}`, icon: BookOpen },
-    { label: L.periods, href: `/accounting/periods${q}`, icon: Calendar },
+    { label: L.periods, href: `/accounting/period-closing${q}`, icon: Calendar },
     { label: L.annualClosing, href: `/annual-closing${q}`, icon: CheckCircle },
     { label: L.accountingValidation, href: `/reports/accounting-validation${q}`, icon: CheckCircle },
     { label: L.shareholders, href: `/shareholders${q}`, icon: Users },
@@ -237,7 +237,7 @@ export function Sidebar() {
     if (href.includes('/drawings')) return 'drawings'
     if (href.includes('/shareholders')) return 'shareholders'
     if (href.includes('/annual-closing')) return 'annual_closing'
-    if (href.includes('/accounting/periods')) return 'accounting_periods'
+    if (href.includes('/accounting/period-closing') || href.includes('/accounting/periods')) return 'accounting_periods'
     // أخرى
     if (href.includes('/products')) return 'products'
     if (href.includes('/reports')) return 'reports'
