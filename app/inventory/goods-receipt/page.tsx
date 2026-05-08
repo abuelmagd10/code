@@ -16,7 +16,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Package, CheckCircle, XCircle, Warehouse, Building2, AlertCircle, Loader2, Eye } from "lucide-react"
+import { Package, CheckCircle, XCircle, Warehouse, Building2, AlertCircle, Loader2, Eye, Search } from "lucide-react"
+import { FilterContainer } from "@/components/ui/filter-container"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -45,6 +46,7 @@ type BillForReceipt = {
   receipt_action_by_name?: string | null
   branch_name?: string | null
   warehouse_name?: string | null
+  items_summary?: Array<{ product_name: string; product_type: string | null; quantity: number }>
 }
 
 type BillItemRow = {
@@ -97,28 +99,6 @@ type BillRecord = {
   receipt_status?: string | null
 }
 
-type ManufacturingHistoryRecord = {
-  id: string
-  history_type: "product_receive" | "material_issue"
-  status: string
-  proposed_quantity?: number | null
-  requested_at?: string | null
-  approved_at?: string | null
-  rejected_at?: string | null
-  rejection_reason?: string | null
-  notes?: string | null
-  production_order?: {
-    id?: string
-    order_no?: string | null
-    status?: string | null
-    planned_quantity?: number | null
-    order_uom?: string | null
-    product?: { id?: string; name?: string | null; name_en?: string | null; sku?: string | null } | null
-  } | null
-  branch?: { id?: string; name?: string | null } | null
-  warehouse?: { id?: string; name?: string | null } | null
-}
-
 function getApiErrorMessage(payload: any, fallback: string) {
   const error = payload?.error
   if (typeof error === "string" && error.trim()) return error
@@ -150,6 +130,8 @@ export default function GoodsReceiptPage() {
   const [rejectionReason, setRejectionReason] = useState("")
   const loadRequestRef = useRef(0)
   const billIdFromQuery = searchParams.get("billId")
+  const [historySearchQuery, setHistorySearchQuery] = useState("")
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<"all" | "received" | "rejected">("all")
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([])
   const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string; branch_id: string }>>([])
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
@@ -168,7 +150,7 @@ export default function GoodsReceiptPage() {
   const [mfgActionType, setMfgActionType] = useState<"approve" | "reject" | null>(null)
   const [mfgRejectReason, setMfgRejectReason] = useState("")
   const [mfgProcessing, setMfgProcessing] = useState(false)
-  const [mfgHistory, setMfgHistory] = useState<ManufacturingHistoryRecord[]>([])
+  const [mfgHistory, setMfgHistory] = useState<any[]>([])
   const [mfgHistoryLoading, setMfgHistoryLoading] = useState(false)
 
   // ✅ تحديث refs عند تغيير selectedBranchId و selectedWarehouseId
@@ -775,6 +757,36 @@ export default function GoodsReceiptPage() {
             const right = b.receipt_action_at ? new Date(b.receipt_action_at).getTime() : 0
             return right - left
           })
+
+        // ✅ جلب بنود الفاتورة (المنتجات والكميات) لعرضها في سجل القرارات
+        try {
+          const billIds = fetchedBills.map((b) => b.id)
+          if (billIds.length > 0) {
+            const { data: itemsData } = await supabase
+              .from("bill_items")
+              .select("bill_id, quantity, products(name, product_type)")
+              .in("bill_id", billIds)
+
+            if (itemsData) {
+              const itemsByBill = new Map<string, Array<{ product_name: string; product_type: string | null; quantity: number }>>()
+              for (const item of itemsData as any[]) {
+                const billId = String(item.bill_id)
+                if (!itemsByBill.has(billId)) itemsByBill.set(billId, [])
+                itemsByBill.get(billId)!.push({
+                  product_name: item.products?.name || "-",
+                  product_type: item.products?.product_type || null,
+                  quantity: Number(item.quantity || 0),
+                })
+              }
+              fetchedBills = fetchedBills.map((bill) => ({
+                ...bill,
+                items_summary: itemsByBill.get(bill.id) || [],
+              }))
+            }
+          }
+        } catch (itemsErr) {
+          console.warn("[GoodsReceipt] Could not load bill items for history:", itemsErr)
+        }
       }
 
       if (loadRequestRef.current !== requestId) return
@@ -1082,54 +1094,19 @@ export default function GoodsReceiptPage() {
   const loadMfgHistory = useCallback(async () => {
     try {
       setMfgHistoryLoading(true)
-      const [productResponse, materialResponse] = await Promise.all([
-        fetch(`/api/manufacturing/product-receive-approvals?${buildMfgReceiptParams("approved,rejected").toString()}`, { cache: "no-store" }),
-        fetch(`/api/manufacturing/material-issue-approvals?${buildMfgReceiptParams("approved,rejected,partially_approved").toString()}`, { cache: "no-store" }),
-      ])
-
-      const productResult = await productResponse.json().catch(() => ({}))
-      const materialResult = await materialResponse.json().catch(() => ({}))
-      if (!productResponse.ok || !productResult.success) {
+      const response = await fetch(`/api/manufacturing/product-receive-approvals?${buildMfgReceiptParams("approved,rejected").toString()}`, { cache: "no-store" })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
         throw new Error(
           getApiErrorMessage(
-            productResult,
+            result,
             appLang === "en"
               ? "Failed to load manufacturing receipt history"
               : "تعذر تحميل سجل استلام التصنيع"
           )
         )
       }
-      if (!materialResponse.ok || !materialResult.success) {
-        throw new Error(
-          getApiErrorMessage(
-            materialResult,
-            appLang === "en"
-              ? "Failed to load manufacturing material issue history"
-              : "تعذر تحميل سجل صرف مواد التصنيع"
-          )
-        )
-      }
-
-      const productRows: ManufacturingHistoryRecord[] = ((productResult.data || []) as any[]).map((row) => ({
-        ...row,
-        history_type: "product_receive",
-      }))
-      const materialRows: ManufacturingHistoryRecord[] = ((materialResult.data || []) as any[]).map((row) => ({
-        ...row,
-        history_type: "material_issue",
-      }))
-
-      setMfgHistory(
-        [...productRows, ...materialRows].sort((left, right) => {
-          const leftDate = left.status === "rejected"
-            ? left.rejected_at || left.requested_at
-            : left.approved_at || left.requested_at
-          const rightDate = right.status === "rejected"
-            ? right.rejected_at || right.requested_at
-            : right.approved_at || right.requested_at
-          return new Date(rightDate || 0).getTime() - new Date(leftDate || 0).getTime()
-        })
-      )
+      setMfgHistory(result.data || [])
     } catch (err) {
       console.error("Error loading manufacturing receipt history:", err)
       setMfgHistory([])
@@ -1193,12 +1170,45 @@ export default function GoodsReceiptPage() {
 
   const hasBills = bills.length > 0
 
+  // ✅ فلترة سجل قرارات الاستلام
+  const filteredBills = useMemo(() => {
+    if (activeTab !== "received" || receiptType !== "purchase") return bills
+    return bills.filter((bill) => {
+      // فلتر الحالة
+      if (historyStatusFilter !== "all" && bill.receipt_status !== historyStatusFilter) return false
+      // فلتر البحث
+      if (historySearchQuery) {
+        const q = historySearchQuery.toLowerCase()
+        const matchBillNumber = bill.bill_number?.toLowerCase().includes(q)
+        const matchSupplier = bill.suppliers?.name?.toLowerCase().includes(q)
+        const matchProduct = bill.items_summary?.some((item) => item.product_name.toLowerCase().includes(q))
+        if (!matchBillNumber && !matchSupplier && !matchProduct) return false
+      }
+      return true
+    })
+  }, [bills, activeTab, receiptType, historyStatusFilter, historySearchQuery])
+
+  const displayBills = (activeTab === "received" && receiptType === "purchase") ? filteredBills : bills
+  const hasDisplayBills = displayBills.length > 0
+
   const totalBillsAmount = useMemo(
-    () => bills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0),
-    [bills]
+    () => displayBills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0),
+    [displayBills]
   )
   const isReceiptHistoryTab = activeTab === "received"
   const showCompanyScopeColumns = isReceiptHistoryTab && isOwnerAdmin
+
+  // ✅ تسمية نوع المنتج بالعربي/الإنجليزي
+  const getProductTypeLabel = (type: string | null) => {
+    if (!type) return ""
+    switch (type) {
+      case "product": return appLang === "en" ? "Product" : "منتج"
+      case "raw_material": return appLang === "en" ? "Raw Material" : "مادة خام"
+      case "manufactured": return appLang === "en" ? "Manufactured" : "مصنع"
+      case "semi_finished": return appLang === "en" ? "Semi-finished" : "نصف مصنع"
+      default: return type
+    }
+  }
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -1385,21 +1395,55 @@ export default function GoodsReceiptPage() {
                     : (appLang === "en" ? "Receipt decision history" : "سجل قرارات الاستلام")}
                 </CardTitle>
               </div>
-              {hasBills && (
+              {(activeTab === "pending" ? hasBills : hasDisplayBills) && (
                 <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                   {appLang === "en"
-                    ? `Total: ${bills.length} bills, amount ${totalBillsAmount.toFixed(2)}`
-                    : `الإجمالي: ${bills.length} فاتورة، بقيمة ${totalBillsAmount.toFixed(2)}`}
+                    ? `Total: ${displayBills.length} bills, amount ${totalBillsAmount.toFixed(2)}`
+                    : `الإجمالي: ${displayBills.length} فاتورة، بقيمة ${totalBillsAmount.toFixed(2)}`}
                 </div>
               )}
             </CardHeader>
             <CardContent>
+              {/* ✅ فلتر البحث والحالة — يظهر فقط في تبويب السجل */}
+              {activeTab === "received" && (
+                <FilterContainer
+                  title={appLang === "en" ? "Search & Filters" : "البحث والفلاتر"}
+                  activeCount={(historySearchQuery ? 1 : 0) + (historyStatusFilter !== "all" ? 1 : 0)}
+                  onClear={() => { setHistorySearchQuery(""); setHistoryStatusFilter("all") }}
+                >
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder={appLang === "en" ? "Search by bill #, supplier, or product..." : "البحث برقم الفاتورة أو المورد أو المنتج..."}
+                        value={historySearchQuery}
+                        onChange={(e) => setHistorySearchQuery(e.target.value)}
+                        className={appLang === "ar" ? "pr-10" : "pl-10"}
+                      />
+                    </div>
+                    <Select
+                      value={historyStatusFilter}
+                      onValueChange={(val) => setHistoryStatusFilter(val as "all" | "received" | "rejected")}
+                    >
+                      <SelectTrigger className="w-full sm:w-44">
+                        <SelectValue placeholder={appLang === "en" ? "All statuses" : "كل الحالات"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{appLang === "en" ? "All statuses" : "كل الحالات"}</SelectItem>
+                        <SelectItem value="received">{appLang === "en" ? "Received" : "تم الاستلام"}</SelectItem>
+                        <SelectItem value="rejected">{appLang === "en" ? "Rejected" : "مرفوض"}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </FilterContainer>
+              )}
+
               {loading ? (
                 <div className="flex items-center justify-center py-10 text-gray-500 dark:text-gray-400">
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                   {appLang === "en" ? "Loading bills..." : "جاري تحميل الفواتير..."}
                 </div>
-              ) : !hasBills ? (
+              ) : (activeTab === "pending" ? !hasBills : !hasDisplayBills) ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
                   <AlertCircle className="w-10 h-10 mb-3 text-gray-300 dark:text-gray-600" />
                   <p className="text-sm">
@@ -1407,10 +1451,22 @@ export default function GoodsReceiptPage() {
                       ? (appLang === "en"
                         ? "No approved purchase bills pending warehouse receipt in your branch/warehouse."
                         : "لا توجد فواتير مشتريات معتمدة وبانتظار اعتماد الاستلام في فرعك ومخزنك.")
-                      : (appLang === "en" 
-                        ? "No receipt approval or rejection records found."
-                        : "لا توجد سجلات اعتماد أو رفض استلام.")}
+                      : (historySearchQuery || historyStatusFilter !== "all")
+                        ? (appLang === "en" ? "No records match your filters." : "لا توجد سجلات تطابق الفلاتر المحددة.")
+                        : (appLang === "en" 
+                          ? "No receipt approval or rejection records found."
+                          : "لا توجد سجلات اعتماد أو رفض استلام.")}
                   </p>
+                  {activeTab === "received" && (historySearchQuery || historyStatusFilter !== "all") && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => { setHistorySearchQuery(""); setHistoryStatusFilter("all") }}
+                    >
+                      {appLang === "en" ? "Clear Filters" : "مسح الفلاتر"}
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1424,6 +1480,12 @@ export default function GoodsReceiptPage() {
                             <th className="px-3 py-2 text-right">{appLang === "en" ? "Branch" : "الفرع"}</th>
                             <th className="px-3 py-2 text-right">{appLang === "en" ? "Warehouse" : "المخزن"}</th>
                           </>
+                        )}
+                        <th className="px-3 py-2 text-right">
+                          {activeTab === "received" ? (appLang === "en" ? "Product" : "المنتج") : null}
+                        </th>
+                        {activeTab === "received" && (
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Qty" : "الكمية"}</th>
                         )}
                         <th className="px-3 py-2 text-right">
                           {activeTab === "received" ? (appLang === "en" ? "Decision Date" : "تاريخ القرار") : (appLang === "en" ? "Date" : "التاريخ")}
@@ -1440,7 +1502,7 @@ export default function GoodsReceiptPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                      {bills.map((bill) => (
+                      {displayBills.map((bill) => (
                         <tr key={bill.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/60">
                           <td className="px-3 py-2 font-medium text-blue-600 dark:text-blue-400">
                             {bill.bill_number}
@@ -1457,6 +1519,39 @@ export default function GoodsReceiptPage() {
                                 {bill.warehouse_name || bill.warehouse_id || "-"}
                               </td>
                             </>
+                          )}
+                          <td className="px-3 py-2">
+                            {activeTab === "received" && bill.items_summary && bill.items_summary.length > 0 ? (
+                              <div className="space-y-0.5">
+                                {bill.items_summary.map((item, idx) => (
+                                  <div key={idx} className="flex items-center gap-1 text-xs">
+                                    <span className="font-medium">{item.product_name}</span>
+                                    {item.product_type && (
+                                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                        item.product_type === "raw_material"
+                                          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                          : item.product_type === "manufactured"
+                                            ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+                                            : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                      }`}>
+                                        {getProductTypeLabel(item.product_type)}
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : activeTab === "pending" ? null : "-"}
+                          </td>
+                          {activeTab === "received" && (
+                            <td className="px-3 py-2">
+                              {bill.items_summary && bill.items_summary.length > 0 ? (
+                                <div className="space-y-0.5">
+                                  {bill.items_summary.map((item, idx) => (
+                                    <div key={idx} className="text-xs">{item.quantity}</div>
+                                  ))}
+                                </div>
+                              ) : "-"}
+                            </td>
                           )}
                           <td className="px-3 py-2">
                             {new Date(
@@ -1655,16 +1750,15 @@ export default function GoodsReceiptPage() {
                     <AlertCircle className="w-10 h-10 mb-3 text-gray-300 dark:text-gray-600" />
                     <p className="text-sm">
                       {appLang === "en"
-                        ? "No manufacturing receipt or material issue records found."
-                        : "لا توجد سجلات استلام منتج أو صرف مواد تصنيع."}
+                        ? "No manufacturing receipt records found."
+                        : "لا توجد سجلات استلام تصنيع."}
                     </p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="min-w-[1000px] w-full text-sm">
+                    <table className="min-w-[900px] w-full text-sm">
                       <thead className="bg-gray-50 dark:bg-slate-800">
                         <tr>
-                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Type" : "نوع السجل"}</th>
                           <th className="px-3 py-2 text-right">{appLang === "en" ? "Order #" : "رقم الأمر"}</th>
                           <th className="px-3 py-2 text-right">{appLang === "en" ? "Product" : "المنتج"}</th>
                           <th className="px-3 py-2 text-right">{appLang === "en" ? "Qty" : "الكمية"}</th>
@@ -1678,17 +1772,6 @@ export default function GoodsReceiptPage() {
                       <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                         {mfgHistory.map((req) => (
                           <tr key={req.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/60">
-                            <td className="px-3 py-2">
-                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
-                                req.history_type === "material_issue"
-                                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                                  : "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300"
-                              }`}>
-                                {req.history_type === "material_issue"
-                                  ? (appLang === "en" ? "Material Issue" : "صرف مواد")
-                                  : (appLang === "en" ? "Finished Receipt" : "استلام منتج")}
-                              </span>
-                            </td>
                             <td className="px-3 py-2 font-medium text-cyan-700 dark:text-cyan-400">
                               {req.production_order?.order_no || req.production_order?.id?.slice(0, 8) || "-"}
                             </td>
@@ -1714,15 +1797,11 @@ export default function GoodsReceiptPage() {
                               <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
                                 req.status === "rejected"
                                   ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-                                  : req.status === "partially_approved"
-                                    ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
                                   : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
                               }`}>
                                 {req.status === "rejected"
                                   ? (appLang === "en" ? "Rejected" : "مرفوض")
-                                  : req.status === "partially_approved"
-                                    ? (appLang === "en" ? "Partially approved" : "اعتماد جزئي")
-                                    : (appLang === "en" ? "Approved" : "تم الاعتماد")}
+                                  : (appLang === "en" ? "Approved" : "تم الاعتماد")}
                               </span>
                             </td>
                             <td className="px-3 py-2 max-w-[220px] truncate text-gray-600 dark:text-gray-300">
