@@ -186,11 +186,49 @@ export async function GET(
       }
     }
 
+    const stockWarehouseIds = Array.from(new Set([
+      approval.warehouse_id,
+      productionOrder?.issue_warehouse_id,
+      ...materialsToCheck.map((m: any) => m.warehouse_id),
+    ].filter(Boolean)))
+
+    const warehouseBranchMap: Record<string, string> = {}
+    if (stockWarehouseIds.length > 0) {
+      const { data: stockWarehouses } = await admin
+        .from("warehouses")
+        .select("id, branch_id")
+        .eq("company_id", companyId)
+        .in("id", stockWarehouseIds)
+
+      for (const warehouse of (stockWarehouses || [])) {
+        if (warehouse.id && warehouse.branch_id) {
+          warehouseBranchMap[warehouse.id] = warehouse.branch_id
+        }
+      }
+    }
+
+    let effectiveApprovalBranch = (approval as any).branch
+    const approvalWarehouseBranchId = (approval as any).warehouse?.branch_id || null
+    if (approvalWarehouseBranchId && approvalWarehouseBranchId !== approval.branch_id) {
+      const { data: warehouseBranch } = await admin
+        .from("branches")
+        .select("id, name")
+        .eq("id", approvalWarehouseBranchId)
+        .eq("company_id", companyId)
+        .maybeSingle()
+
+      effectiveApprovalBranch = warehouseBranch || effectiveApprovalBranch
+    }
+
     // فحص المخزون المتوفر لكل مادة
     const materials = []
     for (const req of materialsToCheck) {
-      const warehouseId = req.warehouse_id || productionOrder?.issue_warehouse_id
-      const branchId = req.branch_id || productionOrder?.branch_id
+      const warehouseId = req.warehouse_id || approval.warehouse_id || productionOrder?.issue_warehouse_id
+      const branchId = (warehouseId && warehouseBranchMap[warehouseId])
+        || approvalWarehouseBranchId
+        || approval.branch_id
+        || req.branch_id
+        || productionOrder?.branch_id
 
       let availableQty = 0
       if (warehouseId && branchId && req.product_id) {
@@ -249,6 +287,8 @@ export async function GET(
       data: {
         approval: {
           ...approval,
+          branch_id: effectiveApprovalBranch?.id || approval.branch_id,
+          branch: effectiveApprovalBranch,
           requested_by_name: requestedByName,
           approved_by_name: approvedByName,
           production_order_id: (approval as any).production_order_id,

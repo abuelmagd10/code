@@ -173,6 +173,7 @@ export async function POST(
     if (reqError) throw reqError
 
     interface MaterialToCheck {
+      id: string | null
       product_id: string
       warehouse_id: string | null
       branch_id: string | null
@@ -185,6 +186,7 @@ export async function POST(
     let materialsToCheck: MaterialToCheck[] = []
     if ((requirements || []).length > 0) {
       materialsToCheck = (requirements || []).map((r: any) => ({
+        id:                 r.id,
         product_id:         r.product_id,
         warehouse_id:       r.warehouse_id,
         branch_id:          r.branch_id,
@@ -207,6 +209,7 @@ export async function POST(
         const scrapPct = Number(line.scrap_percent ?? 0)
         const grossQty = qtyPer * plannedQty * (1 + scrapPct / 100)
         materialsToCheck.push({
+          id:                 null,
           product_id:         line.component_product_id,
           warehouse_id:       productionOrder.issue_warehouse_id,
           branch_id:          productionOrder.branch_id,
@@ -233,11 +236,35 @@ export async function POST(
       `planned_quantity=${productionOrder?.planned_quantity ?? "null"}`,
     ]
 
+    const stockWarehouseIds = Array.from(new Set([
+      approval.warehouse_id,
+      productionOrder?.issue_warehouse_id,
+      ...materialsToCheck.map((m) => m.warehouse_id),
+    ].filter(Boolean)))
+
+    const warehouseBranchMap: Record<string, string> = {}
+    if (stockWarehouseIds.length > 0) {
+      const { data: stockWarehouses } = await admin
+        .from("warehouses")
+        .select("id, branch_id")
+        .eq("company_id", companyId)
+        .in("id", stockWarehouseIds)
+
+      for (const warehouse of (stockWarehouses || [])) {
+        if (warehouse.id && warehouse.branch_id) {
+          warehouseBranchMap[warehouse.id] = warehouse.branch_id
+        }
+      }
+    }
+
     for (const req of materialsToCheck) {
       if (req.is_optional) continue  // تخطى المواد الاختيارية
 
-      const warehouseId = req.warehouse_id || productionOrder?.issue_warehouse_id
-      const branchId    = req.branch_id    || productionOrder?.branch_id
+      const warehouseId = req.warehouse_id || approval.warehouse_id || productionOrder?.issue_warehouse_id
+      const branchId = (warehouseId && warehouseBranchMap[warehouseId])
+        || approval.branch_id
+        || req.branch_id
+        || productionOrder?.branch_id
 
       if (!warehouseId || !branchId || !req.product_id) {
         debugLog.push(`skipped product=${req.product_id} wh=${warehouseId} br=${branchId}`)
@@ -264,7 +291,7 @@ export async function POST(
       const snap = Array.isArray(snapRows) ? snapRows[0] : snapRows
       const freeQty: number = Number(snap?.free_quantity ?? 0)
       checkedCount++
-      debugLog.push(`checked product=${req.product_id} required=${req.gross_required_qty} free=${freeQty}`)
+      debugLog.push(`checked product=${req.product_id} branch=${branchId} warehouse=${warehouseId} required=${req.gross_required_qty} free=${freeQty}`)
 
       if (freeQty < req.gross_required_qty) {
         shortages.push({
