@@ -136,6 +136,7 @@ export default function GoodsReceiptPage() {
   const pendingBillDataRef = useRef<BillForReceipt | null>(null) // ✅ تخزين بيانات الفاتورة المؤقتة لفتحها بعد تحديث الفرع/المخزن
   const selectedBranchIdRef = useRef<string | null>(null) // ✅ تتبع القيمة الحالية للفرع لتجنب stale closure
   const selectedWarehouseIdRef = useRef<string | null>(null) // ✅ تتبع القيمة الحالية للمخزن لتجنب stale closure
+  const handledAutoOpenBillIdRef = useRef<string | null>(null) // ✅ يمنع إعادة فتح فاتورة صدر لها قرار استلام عبر نفس الرابط
 
   // ── Manufacturing receive approvals ──
   const [receiptType, setReceiptType] = useState<"purchase" | "manufacturing">("purchase")
@@ -373,9 +374,20 @@ export default function GoodsReceiptPage() {
     resolveNames()
   }, [userContext, userContextLoading, isOwnerAdmin, supabase])
 
+  useEffect(() => {
+    handledAutoOpenBillIdRef.current = null
+  }, [billIdFromQuery])
+
   // ✅ فتح dialog الاستلام تلقائياً عند وجود billId في query string
   useEffect(() => {
-    if (!billIdFromQuery || dialogOpen || loading || !userContext || autoOpenDialogRef.current) return
+    if (
+      !billIdFromQuery ||
+      dialogOpen ||
+      loading ||
+      !userContext ||
+      autoOpenDialogRef.current ||
+      handledAutoOpenBillIdRef.current === billIdFromQuery
+    ) return
 
     const autoOpenBill = async () => {
       try {
@@ -399,8 +411,15 @@ export default function GoodsReceiptPage() {
         // ✅ إذا كانت الفاتورة مستلمة أو مرفوضة، قم بتبديل التبويب إلى "سجل الاستلام"
         if (billData.receipt_status === "received" || billData.receipt_status === "rejected") {
           setActiveTab("received")
+          activeTabRef.current = "received"
+          setDialogOpen(false)
+          setSelectedBill(null)
+          setReceiptItems([])
+          handledAutoOpenBillIdRef.current = billIdFromQuery
+          return
         } else {
           setActiveTab("pending")
+          activeTabRef.current = "pending"
         }
         // ✅ للأدوار الإدارية: تحديث selectedBranchId و selectedWarehouseId إذا كانت الفاتورة في فرع/مخزن مختلف
         const role = String(userContext.role || "").trim().toLowerCase()
