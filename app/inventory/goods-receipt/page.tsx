@@ -1171,6 +1171,29 @@ export default function GoodsReceiptPage() {
 
   const hasBills = bills.length > 0
 
+  const normalizeProductType = (type: string | null | undefined): "product" | "raw_material" | "manufactured" | "semi_finished" | null => {
+    if (!type) return null
+    const normalized = String(type).trim().toLowerCase()
+    if (!normalized) return null
+
+    // توحيد القيم المختلفة القادمة من قاعدة البيانات إلى القيم المعتمدة في UI
+    if (normalized === "purchased") return "product"
+    if (normalized === "raw" || normalized === "raw material") return "raw_material"
+    if (normalized === "manufacture" || normalized === "factory") return "manufactured"
+    if (normalized === "semi finished" || normalized === "semifinished") return "semi_finished"
+
+    if (
+      normalized === "product" ||
+      normalized === "raw_material" ||
+      normalized === "manufactured" ||
+      normalized === "semi_finished"
+    ) {
+      return normalized
+    }
+
+    return null
+  }
+
   // ✅ فلترة سجل قرارات الاستلام
   const filteredBills = useMemo(() => {
     if (activeTab !== "received" || receiptType !== "purchase") return bills
@@ -1179,7 +1202,9 @@ export default function GoodsReceiptPage() {
       if (historyStatusFilter !== "all" && bill.receipt_status !== historyStatusFilter) return false
       // فلتر نوع المنتج
       if (historyProductTypeFilter !== "all") {
-        const hasMatchingType = bill.items_summary?.some((item) => item.product_type === historyProductTypeFilter)
+        const hasMatchingType = bill.items_summary?.some(
+          (item) => normalizeProductType(item.product_type) === historyProductTypeFilter
+        )
         if (!hasMatchingType) return false
       }
       // فلتر البحث
@@ -1206,13 +1231,14 @@ export default function GoodsReceiptPage() {
 
   // ✅ تسمية نوع المنتج بالعربي/الإنجليزي
   const getProductTypeLabel = (type: string | null) => {
-    if (!type) return ""
-    switch (type) {
+    const normalized = normalizeProductType(type)
+    if (!normalized) return ""
+    switch (normalized) {
       case "product": return appLang === "en" ? "Product" : "منتج"
       case "raw_material": return appLang === "en" ? "Raw Material" : "مادة خام"
       case "manufactured": return appLang === "en" ? "Manufactured" : "مصنع"
       case "semi_finished": return appLang === "en" ? "Semi-finished" : "نصف مصنع"
-      default: return type
+      default: return ""
     }
   }
 
@@ -1546,11 +1572,11 @@ export default function GoodsReceiptPage() {
                                 {bill.items_summary.map((item, idx) => (
                                   <div key={idx} className="flex items-center gap-1 text-xs">
                                     <span className="font-medium">{item.product_name}</span>
-                                    {item.product_type && (
+                                    {normalizeProductType(item.product_type) && (
                                       <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                        item.product_type === "raw_material"
+                                        normalizeProductType(item.product_type) === "raw_material"
                                           ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                                          : item.product_type === "manufactured"
+                                          : normalizeProductType(item.product_type) === "manufactured"
                                             ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
                                             : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
                                       }`}>
