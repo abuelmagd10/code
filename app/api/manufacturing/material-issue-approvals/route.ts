@@ -106,14 +106,14 @@ export async function GET(request: NextRequest) {
       const scopedBranchId = member.branch_id || null
       const scopedWarehouseId = member.warehouse_id || null
 
-      if (!scopedBranchId) {
+      if (!scopedBranchId && !scopedWarehouseId) {
         return NextResponse.json(
-          { success: false, error: "حسابك غير مرتبط بفرع، يرجى مراجعة إعدادات المستخدم" },
+          { success: false, error: "حسابك غير مرتبط بفرع أو مخزن، يرجى مراجعة إعدادات المستخدم" },
           { status: 403 }
         )
       }
 
-      if (branchId && branchId !== scopedBranchId) {
+      if (branchId && scopedBranchId && branchId !== scopedBranchId) {
         return NextResponse.json(
           { success: false, error: "لا يمكنك عرض طلبات صرف مواد تصنيع خارج فرعك" },
           { status: 403 }
@@ -127,11 +127,34 @@ export async function GET(request: NextRequest) {
         )
       }
 
-      query = query.eq("branch_id", scopedBranchId)
       if (scopedWarehouseId) {
+        // لمسؤول المخزن، المخزن هو نطاق الاعتماد الحاكم. قد يكون فرع أمر الإنتاج
+        // مختلفًا عن فرع المخزن، لذلك لا نقيّد القائمة بفرع السجل مع المخزن معًا.
         query = query.eq("warehouse_id", scopedWarehouseId)
-      } else if (warehouseId) {
-        query = query.eq("warehouse_id", warehouseId)
+      } else if (scopedBranchId) {
+        const { data: branchWarehouses } = await admin
+          .from("warehouses")
+          .select("id")
+          .eq("company_id", companyId)
+          .eq("branch_id", scopedBranchId)
+
+        const scopedWarehouseIds = (branchWarehouses || [])
+          .map((warehouse: any) => warehouse.id)
+          .filter(Boolean)
+
+        if (warehouseId) {
+          if (!scopedWarehouseIds.includes(warehouseId)) {
+            return NextResponse.json(
+              { success: false, error: "لا يمكنك عرض طلبات صرف مواد تصنيع خارج مخازن فرعك" },
+              { status: 403 }
+            )
+          }
+          query = query.eq("warehouse_id", warehouseId)
+        } else if (scopedWarehouseIds.length > 0) {
+          query = query.or(`branch_id.eq.${scopedBranchId},warehouse_id.in.(${scopedWarehouseIds.join(",")})`)
+        } else {
+          query = query.eq("branch_id", scopedBranchId)
+        }
       }
     }
 

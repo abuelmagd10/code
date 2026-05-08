@@ -69,7 +69,7 @@ export async function POST(
     // ── التحقق من الدور
     const { data: memberRow } = await supabase
       .from("company_members")
-      .select("role")
+      .select("role, branch_id, warehouse_id")
       .eq("company_id", companyId)
       .eq("user_id", user.id)
       .single()
@@ -109,6 +109,37 @@ export async function POST(
         { success: false, error: "طلب الاعتماد غير موجود", debug: fetchError?.message },
         { status: 404 }
       )
+    }
+
+    const role = String(memberRow.role || "").trim().toLowerCase()
+    const companyWideRoles = new Set(["owner", "admin", "general_manager", "manager"])
+    if (!companyWideRoles.has(role)) {
+      const scopedWarehouseId = memberRow.warehouse_id || null
+      const scopedBranchId = memberRow.branch_id || null
+      let approvalWarehouseBranchId: string | null = null
+
+      if (approval.warehouse_id) {
+        const { data: approvalWarehouse } = await admin
+          .from("warehouses")
+          .select("branch_id")
+          .eq("id", approval.warehouse_id)
+          .eq("company_id", companyId)
+          .maybeSingle()
+        approvalWarehouseBranchId = approvalWarehouse?.branch_id ?? null
+      }
+
+      const isInWarehouseScope = scopedWarehouseId && approval.warehouse_id === scopedWarehouseId
+      const isInBranchScope = scopedBranchId && (
+        approval.branch_id === scopedBranchId ||
+        approvalWarehouseBranchId === scopedBranchId
+      )
+
+      if (!isInWarehouseScope && !isInBranchScope) {
+        return NextResponse.json(
+          { success: false, error: "لا يمكنك اعتماد طلب صرف مواد خارج نطاق فرعك أو مخزنك" },
+          { status: 403 }
+        )
+      }
     }
 
     if (approval.status !== "pending" && approval.status !== "partially_approved") {
@@ -317,7 +348,7 @@ export async function POST(
           companyId, branchId: null, role,
           title: "⚠️ نقص مخزون — طلب صرف مواد تصنيع",
           message: shortageMsg,
-          referenceId: approval.production_order_id,
+          referenceId: id,
           referenceType: "manufacturing_material_issue_approval",
           createdBy: user.id,
           eventKey: `mmia_shortage_${id}_${role}_${timestampSuffix}`,
@@ -329,7 +360,7 @@ export async function POST(
           companyId, branchId: accountantBranchId, role: "accountant",
           title: "⚠️ نقص مخزون — صرف مواد تصنيع",
           message: shortageMsg,
-          referenceId: approval.production_order_id,
+          referenceId: id,
           referenceType: "manufacturing_material_issue_approval",
           createdBy: user.id,
           eventKey: `mmia_shortage_${id}_accountant_${timestampSuffix}`,
@@ -410,7 +441,7 @@ export async function POST(
       userId: approval.requested_by,
       title:   finalIssueType === "full" ? "✅ تمت الموافقة على صرف المواد" : "⚠️ موافقة جزئية على صرف المواد",
       message: approvalMsg,
-      referenceId:   approval.production_order_id,
+      referenceId:   id,
       referenceType: "manufacturing_material_issue_approval",
       createdBy:     user.id,
       eventKey:      `mmia_${approvalStatus}_${id}_${Date.now()}`,
@@ -433,7 +464,7 @@ export async function POST(
           companyId, branchId: accountantBranchId, role: "accountant",
           title: "⚠️ صرف جزئي — مواد تصنيع ناقصة",
           message: `تمت الموافقة الجزئية على صرف مواد أمر الإنتاج ${productionOrder?.order_no || ""} — يرجى مراجعة النواقص وإنشاء أمر شراء`,
-          referenceId: approval.production_order_id,
+          referenceId: id,
           referenceType: "manufacturing_material_issue_approval",
           createdBy: user.id,
           eventKey: `mmia_partial_${id}_accountant_${Date.now()}`,

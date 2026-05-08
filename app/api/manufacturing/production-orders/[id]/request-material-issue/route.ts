@@ -43,6 +43,18 @@ export async function POST(
       notes = body?.notes ?? null
     } catch { /* body فارغ - مقبول */ }
 
+    let approvalBranchId = existing.branch_id ?? null
+    if (existing.issue_warehouse_id) {
+      const { data: issueWarehouse } = await admin
+        .from("warehouses")
+        .select("branch_id")
+        .eq("id", existing.issue_warehouse_id)
+        .eq("company_id", companyId)
+        .maybeSingle()
+
+      approvalBranchId = issueWarehouse?.branch_id ?? approvalBranchId
+    }
+
     // ── إنشاء سجل الاعتماد
     const { data: approval, error: insertError } = await admin
       .from("manufacturing_material_issue_approvals")
@@ -50,7 +62,7 @@ export async function POST(
         company_id: companyId,
         production_order_id: id,
         warehouse_id: existing.issue_warehouse_id ?? null,
-        branch_id: existing.branch_id ?? null,
+        branch_id: approvalBranchId,
         requested_by: user.id,
         notes,
         status: "pending",
@@ -75,8 +87,8 @@ export async function POST(
     const notifBase = {
       p_company_id: companyId,
       p_reference_type: "manufacturing_material_issue_approval",
-      // reference_id = production_order_id حتى يوجّه الإشعار لصفحة أمر الإنتاج مباشرةً
-      p_reference_id: id,
+      // reference_id = approval.id حتى يفتح الإشعار صفحة تفاصيل اعتماد الصرف مباشرةً
+      p_reference_id: approval.id,
       p_title: "🏭 طلب اعتماد صرف مواد خام",
       p_message: `طلب صرف مواد للأمر ${existing.order_no} — يتطلب موافقتك قبل بدء الإنتاج`,
       p_created_by: user.id,
@@ -115,7 +127,7 @@ export async function POST(
       table: "manufacturing_material_issue_approvals",
       recordId: approval.id,
       recordIdentifier: existing.order_no,
-      newData: { production_order_id: id, status: "pending", warehouse_id: existing.issue_warehouse_id },
+      newData: { production_order_id: id, status: "pending", warehouse_id: existing.issue_warehouse_id, branch_id: approvalBranchId },
       reason: "Requested material issue approval for production order",
     })
 

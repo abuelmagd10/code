@@ -91,8 +91,30 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'permission_change': (id) => `/settings/users?highlight=${id}`,
 
   // التصنيع
-  'manufacturing_material_issue_approval': (_id) => `/inventory/dispatch-approvals`,
+  'manufacturing_material_issue_approval': (id, eventKey) => {
+    const approvalId = getMaterialIssueApprovalIdFromEventKey(eventKey) || id
+    return `/inventory/dispatch-approvals/${approvalId}`
+  },
   'manufacturing_production_order': (id) => `/manufacturing/production-orders/${id}`,
+}
+
+function getMaterialIssueApprovalIdFromEventKey(eventKey?: string) {
+  if (!eventKey) return null
+
+  const uuid = "([0-9a-fA-F-]{36})"
+  const patterns = [
+    new RegExp(`^mmia_request_(?:sm|owner)_${uuid}$`),
+    new RegExp(`^mmia_shortage_${uuid}_`),
+    new RegExp(`^mmia_(?:approved|partially_approved|rejected)_${uuid}_`),
+    new RegExp(`^mmia_partial_${uuid}_`),
+  ]
+
+  for (const pattern of patterns) {
+    const match = eventKey.match(pattern)
+    if (match?.[1]) return match[1]
+  }
+
+  return null
 }
 
 /**

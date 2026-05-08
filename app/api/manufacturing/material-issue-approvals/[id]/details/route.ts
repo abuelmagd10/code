@@ -36,7 +36,7 @@ export async function GET(
     // التحقق من الدور
     const { data: memberRow } = await supabase
       .from("company_members")
-      .select("role, branch_id")
+      .select("role, branch_id, warehouse_id")
       .eq("company_id", companyId)
       .eq("user_id", user.id)
       .single()
@@ -59,7 +59,7 @@ export async function GET(
         requested_by, approved_by, rejected_by,
         production_order_id,
         issue_type, warehouse_approval_notes,
-        warehouse:warehouses ( id, name ),
+        warehouse:warehouses ( id, name, branch_id ),
         branch:branches ( id, name )
       `)
       .eq("id", id)
@@ -71,6 +71,27 @@ export async function GET(
         { success: false, error: "طلب الاعتماد غير موجود" },
         { status: 404 }
       )
+    }
+
+    const role = String(memberRow.role || "").trim().toLowerCase()
+    const companyWideRoles = new Set(["owner", "admin", "general_manager", "manager"])
+    if (!companyWideRoles.has(role)) {
+      const scopedWarehouseId = memberRow.warehouse_id || null
+      const scopedBranchId = memberRow.branch_id || null
+      const approvalWarehouseBranchId = (approval as any).warehouse?.branch_id || null
+
+      const isInWarehouseScope = scopedWarehouseId && approval.warehouse_id === scopedWarehouseId
+      const isInBranchScope = scopedBranchId && (
+        approval.branch_id === scopedBranchId ||
+        approvalWarehouseBranchId === scopedBranchId
+      )
+
+      if (!isInWarehouseScope && !isInBranchScope) {
+        return NextResponse.json(
+          { success: false, error: "طلب صرف المواد خارج نطاق فرعك أو مخزنك" },
+          { status: 403 }
+        )
+      }
     }
 
     // جلب أمر الإنتاج
