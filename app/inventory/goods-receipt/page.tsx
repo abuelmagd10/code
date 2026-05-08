@@ -146,6 +146,8 @@ export default function GoodsReceiptPage() {
   const [mfgActionType, setMfgActionType] = useState<"approve" | "reject" | null>(null)
   const [mfgRejectReason, setMfgRejectReason] = useState("")
   const [mfgProcessing, setMfgProcessing] = useState(false)
+  const [mfgHistory, setMfgHistory] = useState<any[]>([])
+  const [mfgHistoryLoading, setMfgHistoryLoading] = useState(false)
 
   // ✅ تحديث refs عند تغيير selectedBranchId و selectedWarehouseId
   useEffect(() => {
@@ -1041,6 +1043,38 @@ export default function GoodsReceiptPage() {
     }
   }, [receiptType, activeTab, loadMfgApprovals])
 
+  // ── تحميل سجل استلام التصنيع (مُعتمد/مرفوض) ──
+  const loadMfgHistory = useCallback(async () => {
+    try {
+      setMfgHistoryLoading(true)
+      const response = await fetch("/api/manufacturing/product-receive-approvals?status=approved,rejected", { cache: "no-store" })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(
+          getApiErrorMessage(
+            result,
+            appLang === "en"
+              ? "Failed to load manufacturing receipt history"
+              : "تعذر تحميل سجل استلام التصنيع"
+          )
+        )
+      }
+      setMfgHistory(result.data || [])
+    } catch (err) {
+      console.error("Error loading manufacturing receipt history:", err)
+      setMfgHistory([])
+    } finally {
+      setMfgHistoryLoading(false)
+    }
+  }, [appLang])
+
+  // تحميل سجل التصنيع عند التبديل إلى التبويب
+  useEffect(() => {
+    if (receiptType === "manufacturing" && activeTab === "received") {
+      loadMfgHistory()
+    }
+  }, [receiptType, activeTab, loadMfgHistory])
+
   const handleMfgAction = async () => {
     if (!mfgActionId || !mfgActionType) return
     if (mfgActionType === "reject" && !mfgRejectReason.trim()) return
@@ -1235,7 +1269,7 @@ export default function GoodsReceiptPage() {
               {appLang === "en" ? `🛒 Purchases${bills.length ? ` (${bills.length})` : ""}` : `🛒 مشتريات${bills.length ? ` (${bills.length})` : ""}`}
             </button>
             <button
-              onClick={() => { setReceiptType("manufacturing"); setActiveTab("pending"); }}
+              onClick={() => setReceiptType("manufacturing")}
               className={`px-4 py-1.5 text-sm font-medium rounded-full border transition-colors ${
                 receiptType === "manufacturing"
                   ? "bg-cyan-600 text-white border-cyan-600"
@@ -1246,14 +1280,13 @@ export default function GoodsReceiptPage() {
             </button>
           </div>
 
-          {/* Tabs (Purchase only) */}
-          {receiptType === "purchase" && (
+          {/* Tabs (Purchase & Manufacturing) */}
           <div className="flex border-b border-gray-200 dark:border-slate-800 mb-6">
             <button
               onClick={() => setActiveTab("pending")}
               className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 ${
                 activeTab === "pending"
-                  ? "border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400"
+                  ? (receiptType === "manufacturing" ? "border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400" : "border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400")
                   : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               }`}
             >
@@ -1263,14 +1296,13 @@ export default function GoodsReceiptPage() {
               onClick={() => setActiveTab("received")}
               className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 ${
                 activeTab === "received"
-                  ? "border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400"
+                  ? (receiptType === "manufacturing" ? "border-cyan-600 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400" : "border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400")
                   : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               }`}
             >
               {appLang === "en" ? "Received History" : "سجل الاستلام"}
             </button>
           </div>
-          )}
 
           {/* Content — Purchase */}
           {receiptType === "purchase" && <Card className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800">
@@ -1429,8 +1461,8 @@ export default function GoodsReceiptPage() {
             </CardContent>
           </Card>}
 
-          {/* Content — Manufacturing Receipts */}
-          {receiptType === "manufacturing" && (
+          {/* Content — Manufacturing Receipts (Pending) */}
+          {receiptType === "manufacturing" && activeTab === "pending" && (
             <Card className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800">
               <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -1515,6 +1547,95 @@ export default function GoodsReceiptPage() {
                                   {appLang === "en" ? "Reject" : "رفض"}
                                 </Button>
                               </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Content — Manufacturing Receipt History */}
+          {receiptType === "manufacturing" && activeTab === "received" && (
+            <Card className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Package className="w-5 h-5 text-cyan-600" />
+                  <CardTitle className="text-base sm:text-lg">
+                    {appLang === "en" ? "Manufacturing Receipt History" : "سجل استلام التصنيع"}
+                  </CardTitle>
+                </div>
+                {mfgHistory.length > 0 && (
+                  <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                    {appLang === "en" ? `${mfgHistory.length} records` : `${mfgHistory.length} سجل`}
+                  </span>
+                )}
+              </CardHeader>
+              <CardContent>
+                {mfgHistoryLoading ? (
+                  <div className="flex items-center justify-center py-10 text-gray-500 dark:text-gray-400">
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    {appLang === "en" ? "Loading..." : "جاري التحميل..."}
+                  </div>
+                ) : mfgHistory.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+                    <AlertCircle className="w-10 h-10 mb-3 text-gray-300 dark:text-gray-600" />
+                    <p className="text-sm">
+                      {appLang === "en"
+                        ? "No manufacturing receipt records found."
+                        : "لا توجد سجلات استلام تصنيع."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[900px] w-full text-sm">
+                      <thead className="bg-gray-50 dark:bg-slate-800">
+                        <tr>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Order #" : "رقم الأمر"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Product" : "المنتج"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Qty" : "الكمية"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Branch" : "الفرع"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Warehouse" : "المخزن"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Decision Date" : "تاريخ القرار"}</th>
+                          <th className="px-3 py-2 text-center">{appLang === "en" ? "Status" : "الحالة"}</th>
+                          <th className="px-3 py-2 text-right">{appLang === "en" ? "Reason" : "سبب الرفض"}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                        {mfgHistory.map((req: any) => (
+                          <tr key={req.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/60">
+                            <td className="px-3 py-2 font-medium text-cyan-700 dark:text-cyan-400">
+                              {req.production_order?.order_no || req.production_order?.id?.slice(0, 8) || "-"}
+                            </td>
+                            <td className="px-3 py-2">
+                              {appLang === "en"
+                                ? (req.production_order?.product?.name_en || req.production_order?.product?.name || "-")
+                                : (req.production_order?.product?.name || req.production_order?.product?.name_en || "-")}
+                            </td>
+                            <td className="px-3 py-2">{req.proposed_quantity ?? req.production_order?.planned_quantity ?? "-"}</td>
+                            <td className="px-3 py-2">{req.branch?.name || "-"}</td>
+                            <td className="px-3 py-2">{req.warehouse?.name || "-"}</td>
+                            <td className="px-3 py-2">
+                              {(req.status === "approved" ? req.approved_at : req.rejected_at)
+                                ? new Date(req.status === "approved" ? req.approved_at : req.rejected_at).toLocaleDateString(appLang === "en" ? "en" : "ar")
+                                : "-"}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
+                                req.status === "rejected"
+                                  ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                              }`}>
+                                {req.status === "rejected"
+                                  ? (appLang === "en" ? "Rejected" : "مرفوض")
+                                  : (appLang === "en" ? "Approved" : "تم الاعتماد")}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 max-w-[220px] truncate text-gray-600 dark:text-gray-300">
+                              {req.status === "rejected" ? req.rejection_reason || "-" : "-"}
                             </td>
                           </tr>
                         ))}
