@@ -1048,6 +1048,8 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
                     { label: (lang === 'en' ? 'Chart of Accounts' : 'الشجرة المحاسبية'), href: `/chart-of-accounts${q}`, icon: BookOpen },
+                    { label: (lang === 'en' ? 'Accounting Periods' : 'الفترات المحاسبية'), href: `/accounting/period-closing${q}`, icon: Calendar },
+                    { label: (lang === 'en' ? 'Annual Closing' : 'الإقفال السنوي'), href: `/annual-closing${q}`, icon: CheckCircle },
                     { label: (lang === 'en' ? 'Taxes' : 'الضرائب'), href: `/settings/taxes${q}`, icon: Settings },
                     { label: (lang === 'en' ? 'Shareholders' : 'المساهمون'), href: `/shareholders${q}`, icon: Users },
                     { label: (lang === 'en' ? 'Financial Reports' : 'التقارير المالية'), href: `/reports${q}`, icon: BarChart3 },
