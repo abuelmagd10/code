@@ -404,11 +404,13 @@ export function EnhancedSidebar() {
                     { label: (appLanguage === 'en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
                     { label: (appLanguage === 'en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
                     { label: (appLanguage === 'en' ? 'Chart of Accounts' : 'الشجرة المحاسبية'), href: `/chart-of-accounts${q}`, icon: BookOpen },
+                    { label: (appLanguage === 'en' ? 'Accounting Periods' : 'الفترات المحاسبية'), href: `/accounting/period-closing${q}`, icon: FileText },
                     { label: (appLanguage === 'en' ? 'Taxes' : 'الضرائب'), href: `/settings/taxes${q}`, icon: Settings },
                     { label: (appLanguage === 'en' ? 'Shareholders' : 'المساهمون'), href: `/shareholders${q}`, icon: Users },
                     { label: (appLanguage === 'en' ? 'Financial Reports' : 'التقارير المالية'), href: `/reports${q}`, icon: BarChart3 },
                   ]
                 },
+
                 {
                   key: 'fixed_assets', icon: Building2, label: (appLanguage === 'en' ? 'Fixed Assets' : 'الأصول الثابتة'), items: [
                     { label: (appLanguage === 'en' ? 'Assets List' : 'قائمة الأصول'), href: `/fixed-assets${q}`, icon: Package },

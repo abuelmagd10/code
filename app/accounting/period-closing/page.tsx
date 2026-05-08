@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Download, Lock, Unlock, AlertTriangle } from "lucide-react"
+import { Lock, Plus, AlertTriangle } from "lucide-react"
 import { CompanyHeader } from "@/components/company-header"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -47,14 +47,21 @@ export default function PeriodClosingPage() {
   const [periods, setPeriods] = useState<AccountingPeriod[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isClosing, setIsClosing] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+  const [userRole, setUserRole] = useState<string>("")
+
+  // Close period dialog
   const [showCloseDialog, setShowCloseDialog] = useState(false)
-  const [selectedPeriod, setSelectedPeriod] = useState<{
-    start: string
-    end: string
-    name?: string
-  } | null>(null)
+  const [selectedPeriod, setSelectedPeriod] = useState<{ start: string; end: string; name?: string } | null>(null)
   const [periodName, setPeriodName] = useState("")
   const [notes, setNotes] = useState("")
+
+  // Create period dialog
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [newPeriodName, setNewPeriodName] = useState("")
+  const [newPeriodStart, setNewPeriodStart] = useState("")
+  const [newPeriodEnd, setNewPeriodEnd] = useState("")
+  const [newPeriodNotes, setNewPeriodNotes] = useState("")
 
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [hydrated, setHydrated] = useState(false)
@@ -66,13 +73,11 @@ export default function PeriodClosingPage() {
   useEffect(() => {
     setHydrated(true)
     loadPeriods()
+    loadUserRole()
     const handler = () => {
       try {
         const docLang = document.documentElement?.lang
-        if (docLang === 'en') {
-          setAppLang('en')
-          return
-        }
+        if (docLang === 'en') { setAppLang('en'); return }
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
@@ -80,20 +85,31 @@ export default function PeriodClosingPage() {
     }
     handler()
     window.addEventListener('app_language_changed', handler)
-    window.addEventListener('storage', (e: any) => {
-      if (e?.key === 'app_language') handler()
-    })
-    return () => {
-      window.removeEventListener('app_language_changed', handler)
-    }
+    window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
+    return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
+
+  const loadUserRole = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .maybeSingle()
+      setUserRole(member?.role || "")
+    } catch {}
+  }
 
   const loadPeriods = async () => {
     try {
       setIsLoading(true)
       const res = await fetch("/api/accounting-periods")
       if (!res.ok) throw new Error("Failed to load periods")
-
       const data = await res.json()
       setPeriods(data.data || [])
     } catch (error: any) {
@@ -107,28 +123,82 @@ export default function PeriodClosingPage() {
     }
   }
 
+  const handleCreatePeriod = async () => {
+    if (!newPeriodName || !newPeriodStart || !newPeriodEnd) {
+      toast({
+        title: appLang === 'en' ? "Validation Error" : "بيانات ناقصة",
+        description: appLang === 'en' ? "Please fill all required fields" : "يرجى ملء جميع الحقول المطلوبة",
+        variant: "destructive",
+      })
+      return
+    }
+    if (newPeriodStart > newPeriodEnd) {
+      toast({
+        title: appLang === 'en' ? "Invalid Dates" : "تواريخ غير صحيحة",
+        description: appLang === 'en' ? "Start date must be before end date" : "تاريخ البداية يجب أن يكون قبل تاريخ النهاية",
+        variant: "destructive",
+      })
+      return
+    }
+    try {
+      setIsCreating(true)
+      const res = await fetch("/api/accounting-periods", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          period_name: newPeriodName,
+          period_start: newPeriodStart,
+          period_end: newPeriodEnd,
+          notes: newPeriodNotes || undefined,
+        }),
+      })
+      const result = await res.json()
+      if (!res.ok || result.error) throw new Error(result.error || "Failed to create period")
+      toast({
+        title: appLang === 'en' ? "✅ Success" : "✅ تم بنجاح",
+        description: appLang === 'en'
+          ? `Accounting period "${newPeriodName}" created and opened successfully.`
+          : `تم إنشاء وفتح الفترة المحاسبية "${newPeriodName}" بنجاح.`,
+      })
+      setShowCreateDialog(false)
+      setNewPeriodName("")
+      setNewPeriodStart("")
+      setNewPeriodEnd("")
+      setNewPeriodNotes("")
+      loadPeriods()
+    } catch (error: any) {
+      toast({
+        title: appLang === 'en' ? "Error" : "❌ خطأ",
+        description: error.message || (appLang === 'en' ? "Failed to create period" : "فشل إنشاء الفترة"),
+        variant: "destructive",
+      })
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
+  const openCreateDialogForCurrentMonth = () => {
+    const today = new Date()
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+    setNewPeriodStart(firstDay.toISOString().split("T")[0])
+    setNewPeriodEnd(lastDay.toISOString().split("T")[0])
+    setNewPeriodName(`${firstDay.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}`)
+    setNewPeriodNotes("")
+    setShowCreateDialog(true)
+  }
+
   const handleClosePeriod = async () => {
     if (!selectedPeriod) return
-
     try {
       setIsClosing(true)
-
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) {
-        toast({
-          title: appLang === 'en' ? "Error" : "خطأ",
-          description: appLang === 'en' ? "Company not found" : "الشركة غير موجودة",
-          variant: "destructive",
-        })
+        toast({ title: appLang === 'en' ? "Error" : "خطأ", description: appLang === 'en' ? "Company not found" : "الشركة غير موجودة", variant: "destructive" })
         return
       }
-
-      // التحقق من إمكانية الإقفال
-      const checkRes = await fetch(
-        `/api/period-closing?periodStart=${selectedPeriod.start}&periodEnd=${selectedPeriod.end}`
-      )
+      const checkRes = await fetch(`/api/period-closing?periodStart=${selectedPeriod.start}&periodEnd=${selectedPeriod.end}`)
       const checkData = await checkRes.json()
-
       if (!checkData.canClose) {
         toast({
           title: appLang === 'en' ? "Cannot Close Period" : "❌ لا يمكن إقفال الفترة",
@@ -137,43 +207,26 @@ export default function PeriodClosingPage() {
         })
         return
       }
-
-      // إقفال الفترة
       const closeRes = await fetch("/api/period-closing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          periodStart: selectedPeriod.start,
-          periodEnd: selectedPeriod.end,
-          periodName: periodName || selectedPeriod.name,
-          notes: notes || undefined,
-        }),
+        body: JSON.stringify({ periodStart: selectedPeriod.start, periodEnd: selectedPeriod.end, periodName: periodName || selectedPeriod.name, notes: notes || undefined }),
       })
-
       const result: PeriodClosingResult = await closeRes.json()
-
-      if (!result.success) {
-        throw new Error(result.error || (appLang === 'en' ? "Failed to close period" : "فشل إقفال الفترة"))
-      }
-
+      if (!result.success) throw new Error(result.error || (appLang === 'en' ? "Failed to close period" : "فشل إقفال الفترة"))
       toast({
         title: appLang === 'en' ? "Success" : "✅ نجح",
         description: appLang === 'en'
           ? `Period closed successfully. Net Income: ${numberFmt.format(result.netIncome || 0)}`
           : `تم إقفال الفترة بنجاح. صافي الربح: ${numberFmt.format(result.netIncome || 0)}`,
       })
-
       setShowCloseDialog(false)
       setSelectedPeriod(null)
       setPeriodName("")
       setNotes("")
       loadPeriods()
     } catch (error: any) {
-      toast({
-        title: appLang === 'en' ? "Error" : "❌ خطأ",
-        description: error.message || (appLang === 'en' ? "Failed to close period" : "فشل إقفال الفترة"),
-        variant: "destructive",
-      })
+      toast({ title: appLang === 'en' ? "Error" : "❌ خطأ", description: error.message || (appLang === 'en' ? "Failed to close period" : "فشل إقفال الفترة"), variant: "destructive" })
     } finally {
       setIsClosing(false)
     }
@@ -194,6 +247,8 @@ export default function PeriodClosingPage() {
     )
   }
 
+  const isOwnerOrAdmin = ["owner", "admin"].includes(userRole)
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
@@ -202,31 +257,42 @@ export default function PeriodClosingPage() {
           <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
             <div>
               <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>
-                {(hydrated && appLang === 'en') ? 'Period Closing' : 'إقفال الفترات المحاسبية'}
+                {(hydrated && appLang === 'en') ? 'Accounting Periods' : 'الفترات المحاسبية'}
               </h1>
               <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2" suppressHydrationWarning>
-                {(hydrated && appLang === 'en') ? 'Close accounting periods and lock transactions' : 'إقفال الفترات المحاسبية وقفل المعاملات'}
+                {(hydrated && appLang === 'en') ? 'Manage, open and close accounting periods' : 'إدارة وفتح وإقفال الفترات المحاسبية'}
               </p>
             </div>
-            <Button
-              onClick={() => {
-                const today = new Date()
-                const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
-                const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-                setSelectedPeriod({
-                  start: firstDay.toISOString().split("T")[0],
-                  end: lastDay.toISOString().split("T")[0],
-                  name: `${firstDay.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}`,
-                })
-                setPeriodName("")
-                setNotes("")
-                setShowCloseDialog(true)
-              }}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              <Lock className="w-4 h-4 mr-2" />
-              {(hydrated && appLang === 'en') ? 'Close Period' : 'إقفال فترة'}
-            </Button>
+            {isOwnerOrAdmin && (
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  onClick={openCreateDialogForCurrentMonth}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  {(hydrated && appLang === 'en') ? 'New Period' : 'فترة جديدة'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    const today = new Date()
+                    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+                    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+                    setSelectedPeriod({
+                      start: firstDay.toISOString().split("T")[0],
+                      end: lastDay.toISOString().split("T")[0],
+                      name: `${firstDay.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}`,
+                    })
+                    setPeriodName("")
+                    setNotes("")
+                    setShowCloseDialog(true)
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Lock className="w-4 h-4 mr-2" />
+                  {(hydrated && appLang === 'en') ? 'Close Period' : 'إقفال فترة'}
+                </Button>
+              </div>
+            )}
           </div>
 
           {isLoading ? (
@@ -245,46 +311,42 @@ export default function PeriodClosingPage() {
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="border-b">
-                        <th className="text-right p-2" suppressHydrationWarning>
-                          {(hydrated && appLang === 'en') ? 'Period Name' : 'اسم الفترة'}
-                        </th>
-                        <th className="text-right p-2" suppressHydrationWarning>
-                          {(hydrated && appLang === 'en') ? 'Start Date' : 'تاريخ البداية'}
-                        </th>
-                        <th className="text-right p-2" suppressHydrationWarning>
-                          {(hydrated && appLang === 'en') ? 'End Date' : 'تاريخ النهاية'}
-                        </th>
-                        <th className="text-right p-2" suppressHydrationWarning>
-                          {(hydrated && appLang === 'en') ? 'Status' : 'الحالة'}
-                        </th>
-                        <th className="text-right p-2" suppressHydrationWarning>
-                          {(hydrated && appLang === 'en') ? 'Journal Entry' : 'القيد المحاسبي'}
-                        </th>
-                        <th className="text-right p-2" suppressHydrationWarning>
-                          {(hydrated && appLang === 'en') ? 'Closed At' : 'تاريخ الإقفال'}
-                        </th>
+                        <th className="text-right p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Period Name' : 'اسم الفترة'}</th>
+                        <th className="text-right p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Start Date' : 'تاريخ البداية'}</th>
+                        <th className="text-right p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'End Date' : 'تاريخ النهاية'}</th>
+                        <th className="text-right p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Status' : 'الحالة'}</th>
+                        <th className="text-right p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Journal Entry' : 'القيد المحاسبي'}</th>
+                        <th className="text-right p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Closed At' : 'تاريخ الإقفال'}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {periods.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="text-center p-4 text-gray-500" suppressHydrationWarning>
-                            {(hydrated && appLang === 'en') ? 'No periods found' : 'لا توجد فترات'}
+                          <td colSpan={6} className="text-center p-8 text-gray-500">
+                            <div className="flex flex-col items-center gap-3">
+                              <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-slate-800 flex items-center justify-center">
+                                <Lock className="w-6 h-6 text-gray-400" />
+                              </div>
+                              <p suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'No accounting periods found' : 'لا توجد فترات محاسبية'}</p>
+                              {isOwnerOrAdmin && (
+                                <Button size="sm" onClick={openCreateDialogForCurrentMonth} className="bg-green-600 hover:bg-green-700">
+                                  <Plus className="w-4 h-4 mr-1" />
+                                  {(hydrated && appLang === 'en') ? 'Create first period' : 'إنشاء أول فترة'}
+                                </Button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ) : (
                         periods.map((period) => (
                           <tr key={period.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                            <td className="p-2">{period.period_name}</td>
+                            <td className="p-2 font-medium">{period.period_name}</td>
                             <td className="p-2">{period.period_start}</td>
                             <td className="p-2">{period.period_end}</td>
                             <td className="p-2">{getStatusBadge(period.status, period.is_locked)}</td>
                             <td className="p-2">
                               {period.journal_entry_id ? (
-                                <a
-                                  href={`/journal-entries?entry_id=${period.journal_entry_id}`}
-                                  className="text-blue-600 hover:underline"
-                                >
+                                <a href={`/journal-entries?entry_id=${period.journal_entry_id}`} className="text-blue-600 hover:underline">
                                   {period.journal_entry_id.substring(0, 8)}...
                                 </a>
                               ) : (
@@ -292,9 +354,7 @@ export default function PeriodClosingPage() {
                               )}
                             </td>
                             <td className="p-2">
-                              {period.closed_at
-                                ? new Date(period.closed_at).toLocaleDateString('ar-EG')
-                                : "-"}
+                              {period.closed_at ? new Date(period.closed_at).toLocaleDateString('ar-EG') : "-"}
                             </td>
                           </tr>
                         ))
@@ -308,7 +368,70 @@ export default function PeriodClosingPage() {
         </div>
       </main>
 
-      {/* Dialog for Closing Period */}
+      {/* Dialog: Create New Period */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle suppressHydrationWarning>
+              {(hydrated && appLang === 'en') ? 'Create New Accounting Period' : 'إنشاء فترة محاسبية جديدة'}
+            </DialogTitle>
+            <DialogDescription suppressHydrationWarning>
+              {(hydrated && appLang === 'en')
+                ? 'Create an open accounting period to allow financial transactions within its date range.'
+                : 'إنشاء فترة محاسبية مفتوحة تسمح بتسجيل العمليات المالية خلال نطاقها الزمني.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Period Name *' : 'اسم الفترة *'}</Label>
+              <Input
+                value={newPeriodName}
+                onChange={(e) => setNewPeriodName(e.target.value)}
+                placeholder={appLang === 'en' ? 'e.g., May 2026' : 'مثال: مايو 2026'}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Start Date *' : 'تاريخ البداية *'}</Label>
+                <Input type="date" value={newPeriodStart} onChange={(e) => setNewPeriodStart(e.target.value)} />
+              </div>
+              <div>
+                <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'End Date *' : 'تاريخ النهاية *'}</Label>
+                <Input type="date" value={newPeriodEnd} onChange={(e) => setNewPeriodEnd(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Notes (Optional)' : 'ملاحظات (اختياري)'}</Label>
+              <textarea
+                className="w-full border rounded p-2 text-sm"
+                value={newPeriodNotes}
+                onChange={(e) => setNewPeriodNotes(e.target.value)}
+                rows={2}
+                placeholder={appLang === 'en' ? 'Additional notes...' : 'ملاحظات إضافية...'}
+              />
+            </div>
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded p-3">
+              <p className="text-sm text-blue-800 dark:text-blue-200" suppressHydrationWarning>
+                {(hydrated && appLang === 'en')
+                  ? 'The period will be created with status "Open", allowing financial transactions within this date range.'
+                  : 'ستُنشأ الفترة بحالة "مفتوحة"، مما يتيح تسجيل الحركات المالية خلال هذا النطاق الزمني.'}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)} disabled={isCreating}>
+              {(hydrated && appLang === 'en') ? 'Cancel' : 'إلغاء'}
+            </Button>
+            <Button onClick={handleCreatePeriod} disabled={isCreating} className="bg-green-600 hover:bg-green-700">
+              {isCreating
+                ? (hydrated && appLang === 'en' ? 'Creating...' : 'جاري الإنشاء...')
+                : (hydrated && appLang === 'en' ? 'Create Period' : 'إنشاء الفترة')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Close Period */}
       <Dialog open={showCloseDialog} onOpenChange={setShowCloseDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -322,39 +445,23 @@ export default function PeriodClosingPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div>
-              <Label suppressHydrationWarning>
-                {(hydrated && appLang === 'en') ? 'Period Start' : 'تاريخ البداية'}
-              </Label>
-              <Input value={selectedPeriod?.start || ""} disabled />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Period Start' : 'تاريخ البداية'}</Label>
+                <Input value={selectedPeriod?.start || ""} disabled />
+              </div>
+              <div>
+                <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Period End' : 'تاريخ النهاية'}</Label>
+                <Input value={selectedPeriod?.end || ""} disabled />
+              </div>
             </div>
             <div>
-              <Label suppressHydrationWarning>
-                {(hydrated && appLang === 'en') ? 'Period End' : 'تاريخ النهاية'}
-              </Label>
-              <Input value={selectedPeriod?.end || ""} disabled />
+              <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Period Name (Optional)' : 'اسم الفترة (اختياري)'}</Label>
+              <Input value={periodName} onChange={(e) => setPeriodName(e.target.value)} placeholder={appLang === 'en' ? 'e.g., January 2026' : 'مثال: يناير 2026'} />
             </div>
             <div>
-              <Label suppressHydrationWarning>
-                {(hydrated && appLang === 'en') ? 'Period Name (Optional)' : 'اسم الفترة (اختياري)'}
-              </Label>
-              <Input
-                value={periodName}
-                onChange={(e) => setPeriodName(e.target.value)}
-                placeholder={appLang === 'en' ? 'e.g., January 2026' : 'مثال: يناير 2026'}
-              />
-            </div>
-            <div>
-              <Label suppressHydrationWarning>
-                {(hydrated && appLang === 'en') ? 'Notes (Optional)' : 'ملاحظات (اختياري)'}
-              </Label>
-              <textarea
-                className="w-full border rounded p-2"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={3}
-                placeholder={appLang === 'en' ? 'Additional notes...' : 'ملاحظات إضافية...'}
-              />
+              <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Notes (Optional)' : 'ملاحظات (اختياري)'}</Label>
+              <textarea className="w-full border rounded p-2" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder={appLang === 'en' ? 'Additional notes...' : 'ملاحظات إضافية...'} />
             </div>
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-3">
               <div className="flex items-start gap-2">
