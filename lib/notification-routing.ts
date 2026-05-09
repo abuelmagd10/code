@@ -96,9 +96,6 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
     return `/inventory/dispatch-approvals/${approvalId}`
   },
   'manufacturing_product_receive_approval': (id, eventKey) => {
-    if (eventKey && eventKey.includes('_wm')) {
-      return `/inventory/goods-receipt`
-    }
     return `/manufacturing/product-receive`
   },
   'manufacturing_production_order': (id) => `/manufacturing/production-orders/${id}`,
