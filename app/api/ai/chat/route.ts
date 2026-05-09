@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
       pageKey: pageKey || null,
     })
 
-    const history: CopilotChatMessage[] = [...messages, { role: "user", content: message }]
+    const history: CopilotChatMessage[] = messages
     const userContextSnapshot = {
       pageKey: pageKey || null,
       role: security.member?.role || null,

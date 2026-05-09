@@ -374,13 +374,13 @@ function buildLead(
 
     if (intents.askGreeting && isPureGreetingIntent(intents)) {
       return [
-        "مساء النور. أنا المساعد المحلي التفاعلي داخل التطبيق.",
-        title ? `أنا موجود الآن داخل ${pageLabel}.` : "أستطيع إرشادك داخل الصفحة الحالية حسب السياق المتاح.",
+        "أهلًا بك. أنا معك داخل النظام.",
+        title ? `نركز الآن على ${pageLabel}، واسألني بالطريقة التي تناسبك.` : "أستطيع إرشادك داخل الصفحة الحالية حسب السياق المتاح.",
       ].join("\n")
     }
 
     if (intents.askCapabilities) {
-      return `أستطيع مساعدتك في فهم العمل داخل ${pageLabel} اعتمادًا على دليل الصفحة، صلاحياتك الحالية، وبيانات النظام الحية.`
+      return `أكيد. أستطيع مساعدتك في فهم العمل داخل ${pageLabel} اعتمادًا على دليل الصفحة، صلاحياتك الحالية، وبيانات النظام الحية.`
     }
 
     if (intents.askPageContents) {
@@ -408,7 +408,7 @@ function buildLead(
     }
 
     return [
-      title ? `أعمل الآن عبر المساعد المحلي التفاعلي داخل ${pageLabel}.` : "أعمل الآن عبر المساعد المحلي التفاعلي داخل النظام.",
+      title ? `تمام، خلّيني أربط سؤالك بسياق ${pageLabel}.` : "تمام، خلّيني أربط سؤالك بسياق النظام الحالي.",
       context.liveContext.summary,
     ].join("\n")
   }
@@ -422,13 +422,13 @@ function buildLead(
 
   if (intents.askGreeting && isPureGreetingIntent(intents)) {
     return [
-      "Hello. I am the interactive local copilot inside the ERP.",
-      title ? `I am currently focused on ${pageLabel}.` : "I can guide you inside the current page using local context.",
+      "Hello. I am with you inside the ERP.",
+      title ? `We are focused on ${pageLabel}, and you can ask me in your own words.` : "I can guide you inside the current page using local context.",
     ].join("\n")
   }
 
   if (intents.askCapabilities) {
-    return `I can help you understand the work on ${pageLabel} using the page guide, your current permissions, and live ERP data.`
+    return `Absolutely. I can help you understand the work on ${pageLabel} using the page guide, your current permissions, and live ERP data.`
   }
 
   if (intents.askPageContents) {
@@ -457,8 +457,8 @@ function buildLead(
 
   return [
     title
-      ? `I am answering through the interactive local copilot inside ${pageLabel}.`
-      : "I am answering through the interactive local copilot inside the ERP.",
+      ? `Let me connect your question to the context of ${pageLabel}.`
+      : "Let me connect your question to the current ERP context.",
     context.liveContext.summary,
   ].join("\n")
 }
@@ -2184,23 +2184,23 @@ function buildFallbackResult(
   const answer =
     context.language === "ar"
       ? [
-          "أعمل حالياً في وضع الرد المحلي الآمن بسبب محدودية السياق المحلي المتاح لهذا السؤال.",
+          "فاهم سؤالك. عندي الآن سياق محلي محدود لهذه النقطة، لذلك سأبقى في الرد الآمن بدل ما أخمّن.",
           context.guide?.description ||
-            "يمكنني ما زلت شرح الصفحة الحالية وإعطاؤك خطوات تشغيل عامة داخل النظام.",
+            "أستطيع رغم ذلك شرح الصفحة الحالية وإعطاءك اتجاه تشغيل عام داخل النظام.",
           `سؤالك: ${userMessage}`,
           buildEasySummary(
             "ar",
-            "أستطيع توجيهك وشرح الخطوة التالية، لكنني لا أنفذ أي حفظ أو اعتماد أو تعديل من داخل المساعد."
+            "أرسل لي اسم العملية أو المستند الذي تقصده وسأربطه لك بالخطوة التالية دون تنفيذ أي حفظ أو اعتماد أو تعديل."
           ),
         ].join("\n\n")
       : [
-          "I am currently using a safe local fallback because the available local context for this question is limited.",
+          "I understand the question. I only have limited local context for this point, so I will stay in safe guidance instead of guessing.",
           context.guide?.description ||
-            "I can still explain the current page and provide general operating guidance inside the ERP.",
+            "I can still explain the current page and give you general operating direction inside the ERP.",
           `Your question: ${userMessage}`,
           buildEasySummary(
             "en",
-            "I can guide you and explain the next step, but I do not save, approve, or change anything from inside the copilot."
+            "Send me the process or document you mean and I will connect it to the next step without saving, approving, or changing anything."
           ),
         ].join("\n\n")
 

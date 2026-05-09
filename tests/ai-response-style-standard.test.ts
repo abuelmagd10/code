@@ -9,6 +9,11 @@ describe("AI response style standard", () => {
     const standard = buildResponseStyleInstructions("ar")
 
     expect(standard).toContain("مستخدم أعمال")
+    expect(standard).toContain("لا يعرف البرمجة")
+    expect(standard).toContain("الفاتورة")
+    expect(standard).toContain("API")
+    expect(standard).toContain("تحدث كزميل خبير")
+    expect(standard).toContain("سياق المحادثة السابقة")
     expect(standard).toContain("ما وظيفة هذا الشيء؟")
     expect(standard).toContain("لماذا هو موجود؟")
     expect(standard).toContain("ماذا يحدث بعد الحفظ أو الإرسال أو الاعتماد؟")
@@ -20,6 +25,11 @@ describe("AI response style standard", () => {
     const standard = buildResponseStyleInstructions("en")
 
     expect(standard).toContain("business user")
+    expect(standard).toContain("does not know programming")
+    expect(standard).toContain("invoice")
+    expect(standard).toContain("API")
+    expect(standard).toContain("expert colleague")
+    expect(standard).toContain("conversational context")
     expect(standard).toContain("What is it for?")
     expect(standard).toContain("Why does it exist?")
     expect(standard).toContain("What happens after saving, submitting, or approving?")
@@ -32,8 +42,10 @@ describe("AI response style standard", () => {
     const english = buildResponseStyleInstructions("en", "compact")
 
     expect(arabic).toContain("حوّله لمعناه للمستخدم")
+    expect(arabic).toContain("جملة مفهومة للمستخدم")
     expect(arabic).toContain("خلاصة سهلة")
     expect(english).toContain("translate it into user meaning")
+    expect(english).toContain("sentence the user can understand")
     expect(english).toContain("easy summary")
   })
 
