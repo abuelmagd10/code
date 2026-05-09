@@ -91,6 +91,25 @@ export async function POST(
       })
     } catch { /* غير حرج */ }
 
+    // إشعار الأدوار العليا بالرفض
+    for (const seniorRole of ["owner", "admin", "general_manager"]) {
+      try {
+        await createNotification({
+          companyId,
+          referenceType: "manufacturing_product_receive_approval",
+          referenceId: id,
+          title: "❌ رُفض طلب استلام منتج تصنيع",
+          message: `تم رفض طلب الاستلام — السبب: ${rejectionReason}`,
+          createdBy: user.id,
+          assignedToRole: seniorRole,
+          priority: "high",
+          severity: "error",
+          category: "approvals",
+          eventKey: `mpra_rejected_${id}_${seniorRole}_${Date.now()}`,
+        })
+      } catch { /* غير حرج */ }
+    }
+
     asyncAuditLog({
       companyId,
       userId: user.id,

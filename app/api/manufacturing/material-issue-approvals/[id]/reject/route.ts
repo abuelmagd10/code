@@ -199,6 +199,30 @@ export async function POST(
       }
     }
 
+    // ── 6. إشعار الأدوار العليا بالرفض (owner, admin, general_manager)
+    {
+      const timestampSuffix = Date.now()
+      for (const seniorRole of ["owner", "admin", "general_manager"]) {
+        try {
+          await admin.rpc("create_notification", {
+            p_company_id: companyId,
+            p_branch_id: null,
+            p_assigned_to_role: seniorRole,
+            p_assigned_to_user: null,
+            p_title: "❌ رُفض طلب صرف مواد تصنيع",
+            p_message: rejectMsg,
+            p_reference_id: id,
+            p_reference_type: "manufacturing_material_issue_approval",
+            p_created_by: user.id,
+            p_priority: "high",
+            p_severity: "error",
+            p_category: "approvals",
+            p_event_key: `mmia_rejected_${id}_${seniorRole}_${timestampSuffix}`,
+          })
+        } catch { /* غير حرج */ }
+      }
+    }
+
     asyncAuditLog({
       companyId,
       userId: user.id,
