@@ -13,6 +13,71 @@ const ALLOWED_ROLES = [
   "warehouse_manager", "accountant"
 ]
 
+async function loadOpenReservationQtyByRequirement(
+  admin: any,
+  companyId: string,
+  productionOrderId: string
+): Promise<Record<string, number>> {
+  const closedStatuses = new Set(["consumed", "released", "cancelled", "expired", "closed"])
+
+  const { data: reservations, error: reservationError } = await admin
+    .from("inventory_reservations")
+    .select("id, status")
+    .eq("company_id", companyId)
+    .eq("source_type", "production_order")
+    .eq("source_id", productionOrderId)
+
+  if (reservationError) throw reservationError
+
+  const reservationIds = (reservations || [])
+    .filter((reservation: any) => !closedStatuses.has(String(reservation.status || "")))
+    .map((reservation: any) => reservation.id)
+    .filter(Boolean)
+
+  if (reservationIds.length === 0) return {}
+
+  const { data: lines, error: lineError } = await admin
+    .from("inventory_reservation_lines")
+    .select("id, source_line_id")
+    .in("reservation_id", reservationIds)
+
+  if (lineError) throw lineError
+
+  const lineToRequirement: Record<string, string> = {}
+  for (const line of (lines || [])) {
+    if (line.id && line.source_line_id) {
+      lineToRequirement[line.id] = line.source_line_id
+    }
+  }
+
+  const lineIds = Object.keys(lineToRequirement)
+  if (lineIds.length === 0) return {}
+
+  const { data: allocations, error: allocationError } = await admin
+    .from("inventory_reservation_allocations")
+    .select("reservation_line_id, allocated_qty, consumed_qty, released_qty, status")
+    .in("reservation_line_id", lineIds)
+    .eq("status", "active")
+
+  if (allocationError) throw allocationError
+
+  const qtyByRequirement: Record<string, number> = {}
+  for (const allocation of (allocations || [])) {
+    const requirementId = lineToRequirement[allocation.reservation_line_id]
+    if (!requirementId) continue
+
+    const openQty = Math.max(
+      Number(allocation.allocated_qty ?? 0)
+        - Number(allocation.consumed_qty ?? 0)
+        - Number(allocation.released_qty ?? 0),
+      0
+    )
+    qtyByRequirement[requirementId] = (qtyByRequirement[requirementId] || 0) + openQty
+  }
+
+  return qtyByRequirement
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -207,6 +272,12 @@ export async function GET(
       }
     }
 
+    const openReservationQtyByRequirement = await loadOpenReservationQtyByRequirement(
+      admin,
+      companyId,
+      approval.production_order_id
+    )
+
     let effectiveApprovalBranch = (approval as any).branch
     const approvalWarehouseBranchId = (approval as any).warehouse?.branch_id || null
     if (approvalWarehouseBranchId && approvalWarehouseBranchId !== approval.branch_id) {
@@ -238,9 +309,12 @@ export async function GET(
             p_branch_id: branchId,
             p_warehouse_id: warehouseId,
             p_product_id: req.product_id,
-          })
+        })
         const snap = Array.isArray(snapRows) ? snapRows[0] : snapRows
-        availableQty = Number(snap?.free_quantity ?? 0)
+        const freeQty = Number(snap?.free_quantity ?? 0)
+        const onHandQty = Number(snap?.on_hand_quantity ?? 0)
+        const ownReservedQty = req.id ? Number(openReservationQtyByRequirement[req.id] || 0) : 0
+        availableQty = Math.max(0, Math.min(onHandQty, freeQty + ownReservedQty))
       }
 
       const requiredQty = Number(req.gross_required_qty)

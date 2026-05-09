@@ -12,6 +12,71 @@ import { getActiveCompanyId } from "@/lib/company"
 
 const ALLOWED_APPROVER_ROLES = ["store_manager", "manager", "owner", "admin", "general_manager", "warehouse_manager"]
 
+async function loadOpenReservationQtyByRequirement(
+  admin: any,
+  companyId: string,
+  productionOrderId: string
+): Promise<Record<string, number>> {
+  const closedStatuses = new Set(["consumed", "released", "cancelled", "expired", "closed"])
+
+  const { data: reservations, error: reservationError } = await admin
+    .from("inventory_reservations")
+    .select("id, status")
+    .eq("company_id", companyId)
+    .eq("source_type", "production_order")
+    .eq("source_id", productionOrderId)
+
+  if (reservationError) throw reservationError
+
+  const reservationIds = (reservations || [])
+    .filter((reservation: any) => !closedStatuses.has(String(reservation.status || "")))
+    .map((reservation: any) => reservation.id)
+    .filter(Boolean)
+
+  if (reservationIds.length === 0) return {}
+
+  const { data: lines, error: lineError } = await admin
+    .from("inventory_reservation_lines")
+    .select("id, source_line_id")
+    .in("reservation_id", reservationIds)
+
+  if (lineError) throw lineError
+
+  const lineToRequirement: Record<string, string> = {}
+  for (const line of (lines || [])) {
+    if (line.id && line.source_line_id) {
+      lineToRequirement[line.id] = line.source_line_id
+    }
+  }
+
+  const lineIds = Object.keys(lineToRequirement)
+  if (lineIds.length === 0) return {}
+
+  const { data: allocations, error: allocationError } = await admin
+    .from("inventory_reservation_allocations")
+    .select("reservation_line_id, allocated_qty, consumed_qty, released_qty, status")
+    .in("reservation_line_id", lineIds)
+    .eq("status", "active")
+
+  if (allocationError) throw allocationError
+
+  const qtyByRequirement: Record<string, number> = {}
+  for (const allocation of (allocations || [])) {
+    const requirementId = lineToRequirement[allocation.reservation_line_id]
+    if (!requirementId) continue
+
+    const openQty = Math.max(
+      Number(allocation.allocated_qty ?? 0)
+        - Number(allocation.consumed_qty ?? 0)
+        - Number(allocation.released_qty ?? 0),
+      0
+    )
+    qtyByRequirement[requirementId] = (qtyByRequirement[requirementId] || 0) + openQty
+  }
+
+  return qtyByRequirement
+}
+
 /** إرسال إشعار عبر RPC مباشرةً (آمن من السيرفر) */
 async function sendNotification(admin: any, params: {
   companyId: string; branchId: string | null; role: string | null;
@@ -271,6 +336,11 @@ export async function POST(
     }
 
     const availableQtyByMaterialId: Record<string, number> = {}
+    const openReservationQtyByRequirement = await loadOpenReservationQtyByRequirement(
+      admin,
+      companyId,
+      approval.production_order_id
+    )
 
     for (const req of materialsToCheck) {
       if (req.is_optional) continue  // تخطى المواد الاختيارية
@@ -305,18 +375,21 @@ export async function POST(
 
       const snap = Array.isArray(snapRows) ? snapRows[0] : snapRows
       const freeQty: number = Number(snap?.free_quantity ?? 0)
-      if (req.id) availableQtyByMaterialId[req.id] = freeQty
-      availableQtyByMaterialId[req.product_id] = freeQty
+      const onHandQty: number = Number(snap?.on_hand_quantity ?? 0)
+      const ownReservedQty = req.id ? Number(openReservationQtyByRequirement[req.id] || 0) : 0
+      const issueAvailableQty = Math.max(0, Math.min(onHandQty, freeQty + ownReservedQty))
+      if (req.id) availableQtyByMaterialId[req.id] = issueAvailableQty
+      availableQtyByMaterialId[req.product_id] = issueAvailableQty
       const remainingQty = Math.max(0, req.gross_required_qty - Math.max(req.approved_quantity, req.issued_quantity))
       checkedCount++
-      debugLog.push(`checked product=${req.product_id} branch=${branchId} warehouse=${warehouseId} remaining=${remainingQty} required=${req.gross_required_qty} free=${freeQty}`)
+      debugLog.push(`checked product=${req.product_id} branch=${branchId} warehouse=${warehouseId} remaining=${remainingQty} required=${req.gross_required_qty} free=${freeQty} own_reserved=${ownReservedQty} issue_available=${issueAvailableQty}`)
 
-      if (freeQty < remainingQty) {
+      if (issueAvailableQty < remainingQty) {
         shortages.push({
           product_id:    req.product_id,
           product_name:  "",   // سيتم ملؤه بعد اكتمال الحلقة
           required_qty:  remainingQty,
-          available_qty: freeQty,
+          available_qty: issueAvailableQty,
           uom:           req.issue_uom,
         })
       }
