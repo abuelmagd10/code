@@ -104,6 +104,9 @@ export async function POST(
       await createNotification({ ...notificationPayload, assignedToRole: "warehouse_manager", eventKey: `mpra_request_wm_${approval.id}` })
     } catch { /* غير حرج */ }
     try {
+      await createNotification({ ...notificationPayload, assignedToRole: "store_manager", eventKey: `mpra_request_sm_${approval.id}` })
+    } catch { /* غير حرج */ }
+    try {
       await createNotification({ ...notificationPayload, assignedToRole: "manager", eventKey: `mpra_request_mgr_${approval.id}` })
     } catch { /* غير حرج */ }
 

@@ -150,6 +150,14 @@ export async function POST(
         p_event_key: `mmia_request_sm_${approval.id}`,
       })
     } catch { /* الإشعار غير حرج */ }
+    // إشعار لمدير المخزن (warehouse_manager)
+    try {
+      await admin.rpc("create_notification", {
+        ...notifBase,
+        p_assigned_to_role: "warehouse_manager",
+        p_event_key: `mmia_request_wm_${approval.id}`,
+      })
+    } catch { /* الإشعار غير حرج */ }
     // إشعار للمالك (owner) — دور احتياطي لضمان وصول الطلب
     try {
       await admin.rpc("create_notification", {
