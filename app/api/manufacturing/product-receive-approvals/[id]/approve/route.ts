@@ -9,7 +9,6 @@ import {
   getProductReceiveApprovalApiContext,
   handleManufacturingApiError,
 } from "@/lib/manufacturing/product-receive-approval-api"
-import { createNotification } from "@/lib/governance-layer"
 
 export async function POST(
   request: NextRequest,
@@ -78,20 +77,24 @@ export async function POST(
 
     if (completeError) throw completeError
 
-    // إشعار لمقدم الطلب
+    // إشعار لمقدم الطلب — نستخدم admin.rpc مباشرةً
     try {
-      await createNotification({
-        companyId,
-        referenceType: "manufacturing_product_receive_approval",
-        referenceId: id,
-        title: "✅ تمت الموافقة على استلام المنتج",
-        message: "تمت الموافقة على طلب استلام المنتج النهائي — تم إضافة المنتج للمستودع تلقائياً",
-        createdBy: user.id,
-        assignedToUser: approval.requested_by,
-        priority: "high",
-        severity: "info",
-        category: "approvals",
-        eventKey: `mpra_approved_${id}`,
+      await admin.rpc("create_notification", {
+        p_company_id: companyId,
+        p_reference_type: "manufacturing_product_receive_approval",
+        p_reference_id: id,
+        p_title: "✅ تمت الموافقة على استلام المنتج",
+        p_message: "تمت الموافقة على طلب استلام المنتج النهائي — تم إضافة المنتج للمستودع تلقائياً",
+        p_created_by: user.id,
+        p_assigned_to_user: approval.requested_by,
+        p_assigned_to_role: null,
+        p_branch_id: null,
+        p_warehouse_id: null,
+        p_cost_center_id: null,
+        p_priority: "high",
+        p_severity: "info",
+        p_category: "approvals",
+        p_event_key: `mpra_approved_${id}`,
       })
     } catch { /* غير حرج */ }
 

@@ -9,7 +9,6 @@ import {
   getProductReceiveApprovalApiContext,
   handleManufacturingApiError,
 } from "@/lib/manufacturing/product-receive-approval-api"
-import { createNotification } from "@/lib/governance-layer"
 
 export async function POST(
   request: NextRequest,
@@ -74,38 +73,47 @@ export async function POST(
       .eq("company_id", companyId)
     if (orderStatusError) throw orderStatusError
 
-    // إشعار لمقدم الطلب بالرفض
+    // إشعار لمقدم الطلب بالرفض — نستخدم admin.rpc مباشرةً
     try {
-      await createNotification({
-        companyId,
-        referenceType: "manufacturing_product_receive_approval",
-        referenceId: id,
-        title: "❌ رُفض طلب استلام المنتج",
-        message: `تم رفض طلب الاستلام — السبب: ${rejectionReason}`,
-        createdBy: user.id,
-        assignedToUser: approval.requested_by,
-        priority: "high",
-        severity: "error",
-        category: "approvals",
-        eventKey: `mpra_rejected_${id}`,
+      await admin.rpc("create_notification", {
+        p_company_id: companyId,
+        p_reference_type: "manufacturing_product_receive_approval",
+        p_reference_id: id,
+        p_title: "❌ رُفض طلب استلام المنتج",
+        p_message: `تم رفض طلب الاستلام — السبب: ${rejectionReason}`,
+        p_created_by: user.id,
+        p_assigned_to_user: approval.requested_by,
+        p_assigned_to_role: null,
+        p_branch_id: null,
+        p_warehouse_id: null,
+        p_cost_center_id: null,
+        p_priority: "high",
+        p_severity: "error",
+        p_category: "approvals",
+        p_event_key: `mpra_rejected_${id}`,
       })
     } catch { /* غير حرج */ }
 
     // إشعار الأدوار العليا بالرفض
+    const timestampSuffix = Date.now()
     for (const seniorRole of ["owner", "admin", "general_manager"]) {
       try {
-        await createNotification({
-          companyId,
-          referenceType: "manufacturing_product_receive_approval",
-          referenceId: id,
-          title: "❌ رُفض طلب استلام منتج تصنيع",
-          message: `تم رفض طلب الاستلام — السبب: ${rejectionReason}`,
-          createdBy: user.id,
-          assignedToRole: seniorRole,
-          priority: "high",
-          severity: "error",
-          category: "approvals",
-          eventKey: `mpra_rejected_${id}_${seniorRole}_${Date.now()}`,
+        await admin.rpc("create_notification", {
+          p_company_id: companyId,
+          p_reference_type: "manufacturing_product_receive_approval",
+          p_reference_id: id,
+          p_title: "❌ رُفض طلب استلام منتج تصنيع",
+          p_message: `تم رفض طلب الاستلام — السبب: ${rejectionReason}`,
+          p_created_by: user.id,
+          p_assigned_to_role: seniorRole,
+          p_assigned_to_user: null,
+          p_branch_id: null,
+          p_warehouse_id: null,
+          p_cost_center_id: null,
+          p_priority: "high",
+          p_severity: "error",
+          p_category: "approvals",
+          p_event_key: `mpra_rejected_${id}_${seniorRole}_${timestampSuffix}`,
         })
       } catch { /* غير حرج */ }
     }

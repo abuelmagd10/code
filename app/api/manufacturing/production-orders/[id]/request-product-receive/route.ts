@@ -10,7 +10,6 @@ import {
   getManufacturingApiContext,
   handleManufacturingApiError,
 } from "@/lib/manufacturing/production-order-api"
-import { createNotification } from "@/lib/governance-layer"
 
 export async function POST(
   request: NextRequest,
@@ -86,28 +85,33 @@ export async function POST(
       .eq("id", id)
       .eq("company_id", companyId)
 
-    // إرسال إشعارَين: لمسؤول المخزن ثم للمدير (احتياطي)
-    const notificationPayload = {
-      companyId,
-      referenceType: "manufacturing_product_receive_approval",
-      referenceId: approval.id,
-      title: "📦 طلب اعتماد استلام منتج تصنيع",
-      message: `طلب استلام المنتج النهائي للأمر ${existing.order_no} — الكمية: ${proposedQuantity}`,
-      createdBy: user.id,
-      branchId: existing.branch_id ?? undefined,
-      warehouseId: existing.receipt_warehouse_id ?? existing.issue_warehouse_id ?? undefined,
-      priority: "high" as const,
-      severity: "warning" as const,
-      category: "approvals" as const,
+    // إرسال إشعارات لمسؤولي المخزن — نستخدم admin.rpc مباشرةً لأن governance-layer يستخدم browser client
+    const notifBase = {
+      p_company_id: companyId,
+      p_reference_type: "manufacturing_product_receive_approval",
+      p_reference_id: approval.id,
+      p_title: "📦 طلب اعتماد استلام منتج تصنيع",
+      p_message: `طلب استلام المنتج النهائي للأمر ${existing.order_no} — الكمية: ${proposedQuantity}`,
+      p_created_by: user.id,
+      p_branch_id: null as string | null,
+      p_warehouse_id: existing.receipt_warehouse_id ?? existing.issue_warehouse_id ?? null,
+      p_cost_center_id: null as string | null,
+      p_assigned_to_user: null as string | null,
+      p_priority: "high",
+      p_severity: "warning",
+      p_category: "approvals",
     }
     try {
-      await createNotification({ ...notificationPayload, assignedToRole: "warehouse_manager", eventKey: `mpra_request_wm_${approval.id}` })
+      await admin.rpc("create_notification", { ...notifBase, p_assigned_to_role: "warehouse_manager", p_event_key: `mpra_request_wm_${approval.id}` })
     } catch { /* غير حرج */ }
     try {
-      await createNotification({ ...notificationPayload, assignedToRole: "store_manager", eventKey: `mpra_request_sm_${approval.id}` })
+      await admin.rpc("create_notification", { ...notifBase, p_assigned_to_role: "store_manager", p_event_key: `mpra_request_sm_${approval.id}` })
     } catch { /* غير حرج */ }
     try {
-      await createNotification({ ...notificationPayload, assignedToRole: "manager", eventKey: `mpra_request_mgr_${approval.id}` })
+      await admin.rpc("create_notification", { ...notifBase, p_assigned_to_role: "owner", p_event_key: `mpra_request_owner_${approval.id}` })
+    } catch { /* غير حرج */ }
+    try {
+      await admin.rpc("create_notification", { ...notifBase, p_assigned_to_role: "manager", p_event_key: `mpra_request_mgr_${approval.id}` })
     } catch { /* غير حرج */ }
 
     asyncAuditLog({
