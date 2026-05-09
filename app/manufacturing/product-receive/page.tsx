@@ -1,8 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowUpRight, Clock, PackageCheck, RefreshCw, SendHorizontal, XCircle } from "lucide-react"
+import { ArrowUpRight, CheckCircle2, Clock, Loader2, PackageCheck, RefreshCw, Search, SendHorizontal, XCircle } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import { CompanyHeader } from "@/components/company-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,8 +12,12 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { FilterContainer } from "@/components/ui/filter-container"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
+import { getActiveCompanyId } from "@/lib/company"
+import { useSupabase } from "@/lib/supabase/hooks"
 import {
   type AppLang,
   type ProductionOrderListItem,
@@ -26,9 +30,12 @@ import {
   readAppLanguage,
 } from "@/lib/manufacturing/production-order-ui"
 
+type HistoryStatusFilter = "all" | "pending" | "approved" | "rejected"
+
 export default function ProductReceivePage() {
   const router = useRouter()
   const { toast } = useToast()
+  const supabase = useSupabase()
   const [lang, setLang] = useState<AppLang>("ar")
   const [orders, setOrders] = useState<ProductionOrderListItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -36,6 +43,13 @@ export default function ProductReceivePage() {
   const [requestedQty, setRequestedQty] = useState<number>(0)
   const [requestNotes, setRequestNotes] = useState("")
   const [requesting, setRequesting] = useState(false)
+
+  // History
+  const [activeTab, setActiveTab] = useState<"pending" | "history">("pending")
+  const [historyRows, setHistoryRows] = useState<any[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historySearch, setHistorySearch] = useState("")
+  const [historyStatus, setHistoryStatus] = useState<HistoryStatusFilter>("all")
 
   useEffect(() => {
     const handler = () => setLang(readAppLanguage())
@@ -58,6 +72,27 @@ export default function ProductReceivePage() {
   }, [])
 
   useEffect(() => { loadOrders() }, [loadOrders])
+
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistoryLoading(true)
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+      const res = await fetch(`/api/manufacturing/product-receive-approvals?status=all&company_id=${companyId}`)
+      if (res.ok) { const json = await res.json(); setHistoryRows(json.data || []) }
+    } catch (e) { console.error(e) } finally { setHistoryLoading(false) }
+  }, [supabase])
+
+  useEffect(() => { if (activeTab === "history") loadHistory() }, [activeTab, loadHistory])
+
+  const filteredHistory = useMemo(() => historyRows.filter(r => {
+    if (historyStatus !== "all" && r.status !== historyStatus) return false
+    if (historySearch) {
+      const q = historySearch.toLowerCase()
+      if (!r.production_order?.order_no?.toLowerCase().includes(q) && !r.production_order?.product?.name?.toLowerCase().includes(q)) return false
+    }
+    return true
+  }), [historyRows, historyStatus, historySearch])
 
   const openRequestDialog = (order: ProductionOrderListItem) => {
     setRequestDialogOrder(order)
@@ -133,14 +168,25 @@ export default function ProductReceivePage() {
                 <PackageCheck className="h-4 w-4" />
                 {lang === "ar" ? "اعتمادات الاستلام" : "Receipt Approvals"}
               </Button>
-              <Button variant="outline" size="sm" onClick={loadOrders} disabled={loading} className="gap-2">
-                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              <Button variant="outline" size="sm" onClick={activeTab === "pending" ? loadOrders : loadHistory} disabled={loading || historyLoading} className="gap-2">
+                <RefreshCw className={`h-4 w-4 ${(loading || historyLoading) ? "animate-spin" : ""}`} />
                 {lang === "ar" ? "تحديث" : "Refresh"}
               </Button>
             </div>
           </div>
 
+          {/* Tabs */}
+          <div className="flex border-b border-gray-200 dark:border-slate-800">
+            <button onClick={() => setActiveTab("pending")} className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === "pending" ? "border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400" : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"}`}>
+              {lang === "ar" ? "أوامر جاهزة للاستلام" : "Ready to Receive"}
+            </button>
+            <button onClick={() => setActiveTab("history")} className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === "history" ? "border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400" : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"}`}>
+              {lang === "ar" ? "سجل طلبات الاستلام" : "Receipt Request History"}
+            </button>
+          </div>
+
           {/* Stats */}
+          {activeTab === "pending" && (
           <div className="grid gap-4 md:grid-cols-3">
             <Card className="p-4 border-emerald-200 bg-emerald-50/80 dark:bg-emerald-950/20 dark:border-emerald-800">
               <div className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
@@ -165,8 +211,10 @@ export default function ProductReceivePage() {
               </div>
             </Card>
           </div>
+          )}
 
           {/* Orders Table */}
+          {activeTab === "pending" && (
           <Card className="p-0 overflow-hidden">
             <CardHeader className="px-4 py-3 border-b">
               <CardTitle className="text-base">{lang === "ar" ? "أوامر الإنتاج قيد التنفيذ" : "In-Progress Production Orders"}</CardTitle>
@@ -258,6 +306,78 @@ export default function ProductReceivePage() {
               </Table>
             </CardContent>
           </Card>
+          )}
+
+          {/* ── History Tab ── */}
+          {activeTab === "history" && (
+          <Card className="dark:bg-slate-900 dark:border-slate-800">
+            <CardHeader>
+              <CardTitle className="text-base">{lang === "ar" ? "سجل طلبات استلام المنتج النهائي" : "Product Receipt Request History"}</CardTitle>
+              <CardDescription>{lang === "ar" ? "جميع الطلبات — المعلقة والمعتمدة والمرفوضة" : "All requests — pending, approved, and rejected"}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FilterContainer title={lang === "ar" ? "البحث والفلاتر" : "Search & Filters"} activeCount={(historySearch ? 1 : 0) + (historyStatus !== "all" ? 1 : 0)} onClear={() => { setHistorySearch(""); setHistoryStatus("all") }}>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input placeholder={lang === "ar" ? "البحث برقم الأمر أو المنتج..." : "Search by order # or product..."} value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} className={lang === "ar" ? "pr-10" : "pl-10"} />
+                  </div>
+                  <Select value={historyStatus} onValueChange={(v) => setHistoryStatus(v as HistoryStatusFilter)}>
+                    <SelectTrigger className="w-full sm:w-44"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{lang === "ar" ? "كل الحالات" : "All"}</SelectItem>
+                      <SelectItem value="pending">{lang === "ar" ? "بانتظار" : "Pending"}</SelectItem>
+                      <SelectItem value="approved">{lang === "ar" ? "معتمد" : "Approved"}</SelectItem>
+                      <SelectItem value="rejected">{lang === "ar" ? "مرفوض" : "Rejected"}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </FilterContainer>
+              {historyLoading ? (
+                <div className="flex items-center justify-center py-10 text-gray-500"><Loader2 className="w-5 h-5 mr-2 animate-spin" />{lang === "ar" ? "جاري التحميل..." : "Loading..."}</div>
+              ) : filteredHistory.length === 0 ? (
+                <div className="flex flex-col items-center py-12 text-gray-500">
+                  <PackageCheck className="w-10 h-10 mb-3 text-gray-300" />
+                  <p className="text-sm">{(historySearch || historyStatus !== "all") ? (lang === "ar" ? "لا توجد نتائج" : "No results") : (lang === "ar" ? "لا توجد طلبات سابقة" : "No requests found")}</p>
+                  {(historySearch || historyStatus !== "all") && <Button variant="outline" size="sm" className="mt-3" onClick={() => { setHistorySearch(""); setHistoryStatus("all") }}>{lang === "ar" ? "مسح الفلاتر" : "Clear"}</Button>}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-[800px] w-full text-sm">
+                    <thead className="bg-gray-50 dark:bg-slate-800">
+                      <tr>
+                        <th className="px-3 py-2 text-right">{lang === "ar" ? "رقم الأمر" : "Order #"}</th>
+                        <th className="px-3 py-2 text-right">{lang === "ar" ? "المنتج" : "Product"}</th>
+                        <th className="px-3 py-2 text-right">{lang === "ar" ? "الكمية" : "Qty"}</th>
+                        <th className="px-3 py-2 text-right">{lang === "ar" ? "المخزن" : "Warehouse"}</th>
+                        <th className="px-3 py-2 text-right">{lang === "ar" ? "تاريخ الطلب" : "Date"}</th>
+                        <th className="px-3 py-2 text-center">{lang === "ar" ? "الحالة" : "Status"}</th>
+                        <th className="px-3 py-2 text-right">{lang === "ar" ? "ملاحظات" : "Notes"}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                      {filteredHistory.map((r: any) => (
+                        <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/60">
+                          <td className="px-3 py-2 font-medium text-blue-600">{r.production_order?.order_no || "-"}</td>
+                          <td className="px-3 py-2">{r.production_order?.product?.name || "-"}</td>
+                          <td className="px-3 py-2">{r.proposed_quantity ?? r.production_order?.planned_quantity ?? "-"}</td>
+                          <td className="px-3 py-2">{r.warehouse?.name || "-"}</td>
+                          <td className="px-3 py-2">{new Date(r.requested_at).toLocaleDateString(lang === "en" ? "en-US" : "ar-EG")}</td>
+                          <td className="px-3 py-2 text-center">
+                            {r.status === "pending" && <Badge variant="outline" className="gap-1 text-amber-700 border-amber-300 bg-amber-50"><Clock className="h-3 w-3" />{lang === "ar" ? "بانتظار" : "Pending"}</Badge>}
+                            {r.status === "approved" && <Badge variant="outline" className="gap-1 text-emerald-700 border-emerald-300 bg-emerald-50"><CheckCircle2 className="h-3 w-3" />{lang === "ar" ? "معتمد" : "Approved"}</Badge>}
+                            {r.status === "rejected" && <Badge variant="outline" className="gap-1 text-red-700 border-red-300 bg-red-50"><XCircle className="h-3 w-3" />{lang === "ar" ? "مرفوض" : "Rejected"}</Badge>}
+                          </td>
+                          <td className="px-3 py-2 max-w-[200px] truncate text-gray-600">{r.status === "rejected" ? (r.rejection_reason || "-") : (r.notes || "-")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          )}
 
           {/* Request Approval Dialog */}
           <Dialog open={!!requestDialogOrder} onOpenChange={(open) => { if (!open) setRequestDialogOrder(null) }}>
