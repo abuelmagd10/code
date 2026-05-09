@@ -16,7 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { CompanyHeader } from "@/components/company-header"
-import { Package, Check, X, Box, Info, Search, Factory, FileText, AlertTriangle } from "lucide-react"
+import { Package, Check, X, Box, Info, Search, Factory, FileText, AlertTriangle, Loader2, Eye } from "lucide-react"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import {
   Dialog,
@@ -27,6 +27,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FilterContainer } from "@/components/ui/filter-container"
 import { LoadingState } from "@/components/ui/loading-state"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -76,7 +77,22 @@ interface UnifiedRow {
   raw: DispatchInvoice | ManufacturingApproval
 }
 
+// ─── History row ──────────────────────────────────────────────────────────────
+interface HistoryRow {
+  _type: ApprovalType
+  id: string
+  reference: string
+  date: string            // decision date
+  party: string
+  warehouse: string
+  extra: string
+  status: string          // approved | rejected
+  reason?: string
+  decidedBy?: string
+}
+
 type TypeFilter = "all" | "sales" | "manufacturing"
+type HistoryStatusFilter = "all" | "approved" | "rejected"
 
 export default function DispatchApprovalsPage() {
   const supabase = useSupabase()
@@ -87,6 +103,14 @@ export default function DispatchApprovalsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
+  const [activeTab, setActiveTab] = useState<"pending" | "history">("pending")
+
+  // History state
+  const [historyRows, setHistoryRows] = useState<HistoryRow[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historySearchQuery, setHistorySearchQuery] = useState("")
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<HistoryStatusFilter>("all")
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<TypeFilter>("all")
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -202,6 +226,75 @@ export default function DispatchApprovalsPage() {
   }, [supabase, appLang]) // eslint-disable-line
 
   useEffect(() => { loadAll() }, [loadAll])
+
+  // ✅ تحميل سجل الإرسال (المعتمد + المرفوض)
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistoryLoading(true)
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      // ── 1. فواتير مبيعات تم اعتمادها أو رفضها من المخزن ──
+      const { data: invData } = await supabase
+        .from('invoices')
+        .select(`
+          id, invoice_number, invoice_date, total_amount, warehouse_status,
+          warehouse_rejection_reason, warehouse_rejected_at,
+          customers (name),
+          shipping_providers (provider_name)
+        `)
+        .eq('company_id', companyId)
+        .in('warehouse_status', ['approved', 'rejected'])
+        .order('updated_at', { ascending: false })
+
+      const salesHistory: HistoryRow[] = (invData || []).map((inv: any) => ({
+        _type: "sales" as ApprovalType,
+        id: inv.id,
+        reference: inv.invoice_number,
+        date: inv.warehouse_status === "rejected"
+          ? (inv.warehouse_rejected_at || inv.invoice_date)
+          : inv.invoice_date,
+        party: inv.customers?.name || "-",
+        warehouse: "-",
+        extra: inv.shipping_providers?.provider_name || "-",
+        status: inv.warehouse_status,
+        reason: inv.warehouse_rejection_reason || undefined,
+      }))
+
+      // ── 2. طلبات صرف مواد التصنيع المعتمدة/المرفوضة ──
+      const mfgRes = await fetch(`/api/manufacturing/material-issue-approvals?status=approved,rejected&company_id=${companyId}`)
+      let mfgHistory: HistoryRow[] = []
+      if (mfgRes.ok) {
+        const mfgJson = await mfgRes.json()
+        mfgHistory = ((mfgJson.data || []) as ManufacturingApproval[]).map((apv) => ({
+          _type: "manufacturing" as ApprovalType,
+          id: apv.id,
+          reference: apv.production_order?.order_no || apv.id,
+          date: (apv as any).approved_at || (apv as any).rejected_at || apv.requested_at,
+          party: apv.production_order?.product?.name || "-",
+          warehouse: apv.warehouse?.name || "-",
+          extra: apv.branch?.name || "-",
+          status: apv.status,
+          reason: apv.rejection_reason || undefined,
+        }))
+      }
+
+      setHistoryRows([...salesHistory, ...mfgHistory].sort((a, b) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      ))
+    } catch (error: any) {
+      console.error("Error loading dispatch history:", error)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }, [supabase])
+
+  // تحميل السجل عند التبديل إلى تبويب السجل
+  useEffect(() => {
+    if (activeTab === "history") {
+      loadHistory()
+    }
+  }, [activeTab, loadHistory])
 
   const handleActionClick = (row: UnifiedRow, mode: "approve" | "reject") => {
     setSelectedRow(row)
@@ -391,6 +484,21 @@ export default function DispatchApprovalsPage() {
   const salesCount = rows.filter(r => r._type === "sales").length
   const mfgCount = rows.filter(r => r._type === "manufacturing").length
 
+  // ✅ فلترة سجل الإرسال
+  const filteredHistoryRows = historyRows.filter(row => {
+    if (historyTypeFilter !== "all" && row._type !== historyTypeFilter) return false
+    if (historyStatusFilter !== "all" && row.status !== historyStatusFilter) return false
+    if (historySearchQuery) {
+      const q = historySearchQuery.toLowerCase()
+      if (!row.reference.toLowerCase().includes(q) && !row.party.toLowerCase().includes(q)) return false
+    }
+    return true
+  })
+
+  const historySalesCount = historyRows.filter(r => r._type === "sales").length
+  const historyMfgCount = historyRows.filter(r => r._type === "manufacturing").length
+  const hasActiveHistoryFilters = historySearchQuery !== "" || historyStatusFilter !== "all" || historyTypeFilter !== "all"
+
   if (!hydrated) return null
 
   return (
@@ -408,6 +516,32 @@ export default function DispatchApprovalsPage() {
           />
         </div>
 
+        {/* ── Tabs: بانتظار الاعتماد / سجل الإرسال ── */}
+        <div className="flex border-b border-gray-200 dark:border-slate-800 mb-4">
+          <button
+            onClick={() => setActiveTab("pending")}
+            className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === "pending"
+                ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            }`}
+          >
+            {appLang === "en" ? "Pending Approvals" : "بانتظار الاعتماد"}
+          </button>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === "history"
+                ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            }`}
+          >
+            {appLang === "en" ? "Dispatch History" : "سجل الإرسال"}
+          </button>
+        </div>
+
+        {/* ── Pending Tab ── */}
+        {activeTab === "pending" && (
         <Card className="dark:bg-slate-900 dark:border-slate-800">
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -488,6 +622,165 @@ export default function DispatchApprovalsPage() {
             )}
           </CardContent>
         </Card>
+        )}
+
+        {/* ── History Tab ── */}
+        {activeTab === "history" && (
+        <Card className="dark:bg-slate-900 dark:border-slate-800">
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle>{appLang === 'en' ? 'Dispatch History' : 'سجل الإرسال'}</CardTitle>
+                <CardDescription className="mt-1">
+                  {appLang === 'en'
+                    ? 'History of approved and rejected dispatch requests'
+                    : 'سجل طلبات الإرسال المعتمدة والمرفوضة'}
+                </CardDescription>
+              </div>
+              {historyRows.length > 0 && (
+                <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                  {appLang === 'en'
+                    ? `Total: ${filteredHistoryRows.length} records`
+                    : `الإجمالي: ${filteredHistoryRows.length} سجل`}
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <FilterContainer
+              title={appLang === 'en' ? "Search & Filters" : "البحث والفلاتر"}
+              activeCount={(historySearchQuery ? 1 : 0) + (historyStatusFilter !== "all" ? 1 : 0) + (historyTypeFilter !== "all" ? 1 : 0)}
+              onClear={() => { setHistorySearchQuery(""); setHistoryStatusFilter("all"); setHistoryTypeFilter("all") }}
+            >
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder={appLang === 'en' ? "Search by reference # or name..." : "البحث بالرقم المرجعي أو الاسم..."}
+                    value={historySearchQuery}
+                    onChange={(e) => setHistorySearchQuery(e.target.value)}
+                    className={appLang === 'ar' ? 'pr-10' : 'pl-10'}
+                  />
+                </div>
+                <Select
+                  value={historyStatusFilter}
+                  onValueChange={(val) => setHistoryStatusFilter(val as HistoryStatusFilter)}
+                >
+                  <SelectTrigger className="w-full sm:w-44">
+                    <SelectValue placeholder={appLang === 'en' ? "All statuses" : "كل الحالات"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{appLang === 'en' ? "All statuses" : "كل الحالات"}</SelectItem>
+                    <SelectItem value="approved">{appLang === 'en' ? "Approved" : "تم الاعتماد"}</SelectItem>
+                    <SelectItem value="rejected">{appLang === 'en' ? "Rejected" : "مرفوض"}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={historyTypeFilter}
+                  onValueChange={(val) => setHistoryTypeFilter(val as TypeFilter)}
+                >
+                  <SelectTrigger className="w-full sm:w-48">
+                    <SelectValue placeholder={appLang === 'en' ? "All types" : "كل الأنواع"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{appLang === 'en' ? `All types (${historyRows.length})` : `كل الأنواع (${historyRows.length})`}</SelectItem>
+                    <SelectItem value="sales">{appLang === 'en' ? `Sales (${historySalesCount})` : `مبيعات (${historySalesCount})`}</SelectItem>
+                    <SelectItem value="manufacturing">{appLang === 'en' ? `Mfg. (${historyMfgCount})` : `تصنيع (${historyMfgCount})`}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </FilterContainer>
+
+            {historyLoading ? (
+              <div className="flex items-center justify-center py-10 text-gray-500 dark:text-gray-400">
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                {appLang === 'en' ? "Loading dispatch history..." : "جاري تحميل سجل الإرسال..."}
+              </div>
+            ) : filteredHistoryRows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+                <Package className="w-10 h-10 mb-3 text-gray-300 dark:text-gray-600" />
+                <p className="text-sm">
+                  {hasActiveHistoryFilters
+                    ? (appLang === 'en' ? "No records match your filters." : "لا توجد سجلات تطابق الفلاتر المحددة.")
+                    : (appLang === 'en' ? "No dispatch history records found." : "لا توجد سجلات إرسال.")}
+                </p>
+                {hasActiveHistoryFilters && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => { setHistorySearchQuery(""); setHistoryStatusFilter("all"); setHistoryTypeFilter("all") }}
+                  >
+                    {appLang === 'en' ? "Clear Filters" : "مسح الفلاتر"}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-[900px] w-full text-sm">
+                  <thead className="bg-gray-50 dark:bg-slate-800">
+                    <tr>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Type" : "النوع"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Reference #" : "الرقم المرجعي"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Customer / Product" : "العميل / المنتج"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Warehouse" : "المستودع"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Branch / Shipping" : "الفرع / شركة الشحن"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Decision Date" : "تاريخ القرار"}</th>
+                      <th className="px-3 py-2 text-center">{appLang === 'en' ? "Status" : "الحالة"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Reason" : "سبب الرفض"}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                    {filteredHistoryRows.map((row) => (
+                      <tr key={`${row._type}-${row.id}`} className="hover:bg-gray-50 dark:hover:bg-slate-800/60">
+                        <td className="px-3 py-2">
+                          {row._type === "sales" ? (
+                            <Badge variant="outline" className="gap-1 text-blue-700 border-blue-300 bg-blue-50 whitespace-nowrap">
+                              <FileText className="w-3 h-3" />{appLang === 'en' ? "Sales" : "مبيعات"}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="gap-1 text-orange-700 border-orange-300 bg-orange-50 whitespace-nowrap">
+                              <Factory className="w-3 h-3" />{appLang === 'en' ? "Mfg." : "تصنيع"}
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 font-medium text-blue-600 dark:text-blue-400">
+                          {row.reference}
+                        </td>
+                        <td className="px-3 py-2">{row.party}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center text-gray-500">
+                            <Box className={`w-4 h-4 ${appLang === 'en' ? 'mr-2' : 'ml-2'}`} />
+                            {row.warehouse}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">{row.extra}</td>
+                        <td className="px-3 py-2">
+                          {new Date(row.date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
+                            row.status === "rejected"
+                              ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                          }`}>
+                            {row.status === "rejected"
+                              ? (appLang === 'en' ? "Rejected" : "مرفوض")
+                              : (appLang === 'en' ? "Approved" : "تم الاعتماد")}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 max-w-[220px] truncate text-gray-600 dark:text-gray-300">
+                          {row.status === "rejected" ? (row.reason || "-") : "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        )}
 
         {/* ── Shortage Detail Modal ── */}
         <Dialog open={isShortageModalOpen} onOpenChange={setIsShortageModalOpen}>
