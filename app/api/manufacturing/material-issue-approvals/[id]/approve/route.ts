@@ -484,7 +484,7 @@ export async function POST(
       const accountantBranchId = warehouseBranchId || productionOrder?.branch_id || null
 
       const timestampSuffix = Date.now();
-      for (const role of ["owner", "admin", "general_manager"]) {
+      for (const role of ["general_manager"]) {
         await sendNotification(admin, {
           companyId, branchId: null, role,
           title: "⚠️ نقص مخزون — طلب صرف مواد تصنيع",

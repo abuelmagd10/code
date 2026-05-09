@@ -199,10 +199,10 @@ export async function POST(
       }
     }
 
-    // ── 6. إشعار الأدوار العليا بالرفض (owner, admin, general_manager)
+    // ── 6. إشعار الأدوار العليا بالرفض (owner و admin يرون كل الإشعارات تلقائياً)
     {
       const timestampSuffix = Date.now()
-      for (const seniorRole of ["owner", "admin", "general_manager"]) {
+      for (const seniorRole of ["general_manager"]) {
         try {
           await admin.rpc("create_notification", {
             p_company_id: companyId,
