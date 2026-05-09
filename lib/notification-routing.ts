@@ -27,6 +27,9 @@ export type ReferenceType =
   | 'bank_voucher'
   | 'sales_return_request'
   | 'sales_return'
+  | 'manufacturing_material_issue_approval'
+  | 'manufacturing_product_receive_approval'
+  | 'manufacturing_production_order'
 
 /**
  * خريطة reference_type إلى route
@@ -95,8 +98,8 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
     const approvalId = getMaterialIssueApprovalIdFromEventKey(eventKey) || id
     return `/inventory/dispatch-approvals/${approvalId}`
   },
-  'manufacturing_product_receive_approval': (id, eventKey) => {
-    return `/manufacturing/product-receive`
+  'manufacturing_product_receive_approval': (id) => {
+    return `/inventory/goods-receipt?type=manufacturing&approvalId=${id}`
   },
   'manufacturing_production_order': (id) => `/manufacturing/production-orders/${id}`,
 }
@@ -106,7 +109,7 @@ function getMaterialIssueApprovalIdFromEventKey(eventKey?: string) {
 
   const uuid = "([0-9a-fA-F-]{36})"
   const patterns = [
-    new RegExp(`^mmia_request_(?:sm|owner)_${uuid}$`),
+    new RegExp(`^mmia_request_(?:sm|wm|owner)_${uuid}$`),
     new RegExp(`^mmia_shortage_${uuid}_`),
     new RegExp(`^mmia_(?:approved|partially_approved|rejected)_${uuid}_`),
     new RegExp(`^mmia_partial_${uuid}_`),

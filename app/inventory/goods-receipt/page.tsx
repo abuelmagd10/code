@@ -130,6 +130,8 @@ export default function GoodsReceiptPage() {
   const [rejectionReason, setRejectionReason] = useState("")
   const loadRequestRef = useRef(0)
   const billIdFromQuery = searchParams.get("billId")
+  const receiptTypeFromQuery = searchParams.get("type")
+  const mfgApprovalIdFromQuery = searchParams.get("approvalId")
   const [historySearchQuery, setHistorySearchQuery] = useState("")
   const [historyStatusFilter, setHistoryStatusFilter] = useState<"all" | "received" | "rejected">("all")
   const [historyProductTypeFilter, setHistoryProductTypeFilter] = useState<"all" | "product" | "raw_material" | "manufactured">("all")
@@ -153,6 +155,13 @@ export default function GoodsReceiptPage() {
   const [mfgProcessing, setMfgProcessing] = useState(false)
   const [mfgHistory, setMfgHistory] = useState<any[]>([])
   const [mfgHistoryLoading, setMfgHistoryLoading] = useState(false)
+
+  useEffect(() => {
+    if (receiptTypeFromQuery === "manufacturing" || mfgApprovalIdFromQuery) {
+      setReceiptType("manufacturing")
+      setActiveTab("pending")
+    }
+  }, [mfgApprovalIdFromQuery, receiptTypeFromQuery])
 
   // ✅ تحديث refs عند تغيير selectedBranchId و selectedWarehouseId
   useEffect(() => {

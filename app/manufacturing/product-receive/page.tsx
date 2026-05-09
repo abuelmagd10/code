@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FilterContainer } from "@/components/ui/filter-container"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
+import { useAccess } from "@/lib/access-context"
 import { getActiveCompanyId } from "@/lib/company"
 import { useSupabase } from "@/lib/supabase/hooks"
 import {
@@ -36,6 +37,8 @@ export default function ProductReceivePage() {
   const router = useRouter()
   const { toast } = useToast()
   const supabase = useSupabase()
+  const { canAction, isReady: accessReady } = useAccess()
+  const canRead = accessReady ? canAction("manufacturing_boms", "read") : false
   const [lang, setLang] = useState<AppLang>("ar")
   const [orders, setOrders] = useState<ProductionOrderListItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -60,6 +63,8 @@ export default function ProductReceivePage() {
   }, [])
 
   const loadOrders = useCallback(async () => {
+    if (!canRead) return
+
     try {
       setLoading(true)
       const result = await fetchProductionOrderList({ status: "in_progress" })
@@ -69,11 +74,15 @@ export default function ProductReceivePage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [canRead])
 
-  useEffect(() => { loadOrders() }, [loadOrders])
+  useEffect(() => {
+    if (canRead) loadOrders()
+  }, [canRead, loadOrders])
 
   const loadHistory = useCallback(async () => {
+    if (!canRead) return
+
     try {
       setHistoryLoading(true)
       const companyId = await getActiveCompanyId(supabase)
@@ -81,9 +90,11 @@ export default function ProductReceivePage() {
       const res = await fetch(`/api/manufacturing/product-receive-approvals?status=all&company_id=${companyId}`)
       if (res.ok) { const json = await res.json(); setHistoryRows(json.data || []) }
     } catch (e) { console.error(e) } finally { setHistoryLoading(false) }
-  }, [supabase])
+  }, [canRead, supabase])
 
-  useEffect(() => { if (activeTab === "history") loadHistory() }, [activeTab, loadHistory])
+  useEffect(() => {
+    if (activeTab === "history" && canRead) loadHistory()
+  }, [activeTab, canRead, loadHistory])
 
   const filteredHistory = useMemo(() => historyRows.filter(r => {
     if (historyStatus !== "all" && r.status !== historyStatus) return false

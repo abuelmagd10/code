@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FilterContainer } from "@/components/ui/filter-container"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
+import { useAccess } from "@/lib/access-context"
 import { getActiveCompanyId } from "@/lib/company"
 import { useSupabase } from "@/lib/supabase/hooks"
 import {
@@ -54,6 +55,8 @@ export default function MaterialIssuePage() {
   const router = useRouter()
   const { toast } = useToast()
   const supabase = useSupabase()
+  const { canAction, isReady: accessReady } = useAccess()
+  const canRead = accessReady ? canAction("manufacturing_boms", "read") : false
   const [lang, setLang] = useState<AppLang>("ar")
   const [orders, setOrders] = useState<ProductionOrderListItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -76,6 +79,8 @@ export default function MaterialIssuePage() {
   }, [])
 
   const loadOrders = useCallback(async () => {
+    if (!canRead) return
+
     try {
       setLoading(true)
       const result = await fetchProductionOrderList({ status: "released" })
@@ -91,12 +96,16 @@ export default function MaterialIssuePage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [canRead])
 
-  useEffect(() => { loadOrders() }, [loadOrders])
+  useEffect(() => {
+    if (canRead) loadOrders()
+  }, [canRead, loadOrders])
 
   // ✅ تحميل سجل طلبات الصرف
   const loadHistory = useCallback(async () => {
+    if (!canRead) return
+
     try {
       setHistoryLoading(true)
       const companyId = await getActiveCompanyId(supabase)
@@ -111,11 +120,11 @@ export default function MaterialIssuePage() {
     } finally {
       setHistoryLoading(false)
     }
-  }, [supabase])
+  }, [canRead, supabase])
 
   useEffect(() => {
-    if (activeTab === "history") loadHistory()
-  }, [activeTab, loadHistory])
+    if (activeTab === "history" && canRead) loadHistory()
+  }, [activeTab, canRead, loadHistory])
 
   const handleRequestApproval = async (orderId: string, orderNo: string) => {
     try {

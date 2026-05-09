@@ -60,14 +60,27 @@ export async function POST(
       )
     }
 
+    const receiptWarehouseId = existing.receipt_warehouse_id ?? existing.issue_warehouse_id ?? null
+    let approvalBranchId = existing.branch_id ?? null
+    if (receiptWarehouseId) {
+      const { data: receiptWarehouse } = await admin
+        .from("warehouses")
+        .select("branch_id")
+        .eq("id", receiptWarehouseId)
+        .eq("company_id", companyId)
+        .maybeSingle()
+
+      approvalBranchId = receiptWarehouse?.branch_id ?? approvalBranchId
+    }
+
     // إنشاء سجل الاعتماد
     const { data: approval, error: insertError } = await admin
       .from("manufacturing_product_receive_approvals")
       .insert({
         company_id: companyId,
         production_order_id: id,
-        warehouse_id: existing.receipt_warehouse_id ?? existing.issue_warehouse_id ?? null,
-        branch_id: existing.branch_id ?? null,
+        warehouse_id: receiptWarehouseId,
+        branch_id: approvalBranchId,
         proposed_quantity: proposedQuantity,
         requested_by: user.id,
         notes,
@@ -93,8 +106,8 @@ export async function POST(
       p_title: "📦 طلب اعتماد استلام منتج تصنيع",
       p_message: `طلب استلام المنتج النهائي للأمر ${existing.order_no} — الكمية: ${proposedQuantity}`,
       p_created_by: user.id,
-      p_branch_id: existing.branch_id ?? null,
-      p_warehouse_id: existing.receipt_warehouse_id ?? existing.issue_warehouse_id ?? null,
+      p_branch_id: approvalBranchId,
+      p_warehouse_id: receiptWarehouseId,
       p_cost_center_id: null as string | null,
       p_assigned_to_user: null as string | null,
       p_priority: "high",
@@ -107,12 +120,6 @@ export async function POST(
     try {
       await admin.rpc("create_notification", { ...notifBase, p_assigned_to_role: "store_manager", p_event_key: `mpra_request_sm_${approval.id}` })
     } catch { /* غير حرج */ }
-    try {
-      await admin.rpc("create_notification", { ...notifBase, p_assigned_to_role: "owner", p_event_key: `mpra_request_owner_${approval.id}` })
-    } catch { /* غير حرج */ }
-    try {
-      await admin.rpc("create_notification", { ...notifBase, p_assigned_to_role: "manager", p_event_key: `mpra_request_mgr_${approval.id}` })
-    } catch { /* غير حرج */ }
 
     asyncAuditLog({
       companyId,
@@ -122,7 +129,13 @@ export async function POST(
       table: "manufacturing_product_receive_approvals",
       recordId: approval.id,
       recordIdentifier: existing.order_no,
-      newData: { production_order_id: id, status: "pending", proposed_quantity: proposedQuantity },
+      newData: {
+        production_order_id: id,
+        status: "pending",
+        proposed_quantity: proposedQuantity,
+        warehouse_id: receiptWarehouseId,
+        branch_id: approvalBranchId,
+      },
       reason: "Requested product receive approval for production order",
     })
 
