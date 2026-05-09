@@ -84,8 +84,8 @@ export async function POST(
         p_created_by: user.id,
         p_assigned_to_user: approval.requested_by,
         p_assigned_to_role: null,
-        p_branch_id: null,
-        p_warehouse_id: null,
+        p_branch_id: approval.branch_id ?? null,
+        p_warehouse_id: approval.warehouse_id ?? null,
         p_cost_center_id: null,
         p_priority: "high",
         p_severity: "error",
@@ -95,7 +95,6 @@ export async function POST(
     } catch { /* غير حرج */ }
 
     // إشعار الأدوار العليا بالرفض (owner و admin يرون كل الإشعارات تلقائياً فلا نكررها)
-    const timestampSuffix = Date.now()
     for (const seniorRole of ["general_manager"]) {
       try {
         await admin.rpc("create_notification", {
@@ -107,13 +106,13 @@ export async function POST(
           p_created_by: user.id,
           p_assigned_to_role: seniorRole,
           p_assigned_to_user: null,
-          p_branch_id: null,
-          p_warehouse_id: null,
+          p_branch_id: approval.branch_id ?? null,
+          p_warehouse_id: approval.warehouse_id ?? null,
           p_cost_center_id: null,
           p_priority: "high",
           p_severity: "error",
           p_category: "approvals",
-          p_event_key: `mpra_rejected_${id}_${seniorRole}_${timestampSuffix}`,
+          p_event_key: `mpra_rejected_${id}_${seniorRole}`,
         })
       } catch { /* غير حرج */ }
     }

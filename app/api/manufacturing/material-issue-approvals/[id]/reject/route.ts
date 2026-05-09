@@ -155,12 +155,11 @@ export async function POST(
         p_priority: "high",
         p_severity: "error",
         p_category: "approvals",
-        p_event_key: `mmia_rejected_${id}_${Date.now()}`,
+        p_event_key: `mmia_rejected_${id}`,
       })
     } catch { /* الإشعار غير حرج */ }
 
     // ── 5. إشعار محاسب الفرع التابع للمستودع
-    {
       // resolve warehouse branch: try issue_warehouse_id → approval.warehouse_id → production order branch
       const warehouseIdToResolve = productionOrder?.issue_warehouse_id || (approval as any).warehouse_id
       let warehouseBranchId: string | null = null
@@ -190,23 +189,20 @@ export async function POST(
           p_priority: "high",
           p_severity: "warning",
           p_category: "approvals",
-          p_event_key: `mmia_rejected_${id}_accountant_${Date.now()}`,
+          p_event_key: `mmia_rejected_${id}_accountant`,
         })
         if (notifErr) console.error(`[MMIA_REJECT] ❌ Accountant notification error:`, notifErr.message)
         else console.log(`[MMIA_REJECT] ✅ Accountant notification sent: branch=${accountantBranchId}, id=${notifData}`)
       } else {
         console.warn(`[MMIA_REJECT] ⚠️ No branch resolved for accountant notification`)
       }
-    }
-
     // ── 6. إشعار الأدوار العليا بالرفض (owner و admin يرون كل الإشعارات تلقائياً)
     {
-      const timestampSuffix = Date.now()
       for (const seniorRole of ["general_manager"]) {
         try {
           await admin.rpc("create_notification", {
             p_company_id: companyId,
-            p_branch_id: null,
+            p_branch_id: accountantBranchId,
             p_assigned_to_role: seniorRole,
             p_assigned_to_user: null,
             p_title: "❌ رُفض طلب صرف مواد تصنيع",
@@ -217,7 +213,7 @@ export async function POST(
             p_priority: "high",
             p_severity: "error",
             p_category: "approvals",
-            p_event_key: `mmia_rejected_${id}_${seniorRole}_${timestampSuffix}`,
+            p_event_key: `mmia_rejected_${id}_${seniorRole}`,
           })
         } catch { /* غير حرج */ }
       }

@@ -93,7 +93,7 @@ export async function POST(
       p_title: "📦 طلب اعتماد استلام منتج تصنيع",
       p_message: `طلب استلام المنتج النهائي للأمر ${existing.order_no} — الكمية: ${proposedQuantity}`,
       p_created_by: user.id,
-      p_branch_id: null as string | null,
+      p_branch_id: existing.branch_id ?? null,
       p_warehouse_id: existing.receipt_warehouse_id ?? existing.issue_warehouse_id ?? null,
       p_cost_center_id: null as string | null,
       p_assigned_to_user: null as string | null,

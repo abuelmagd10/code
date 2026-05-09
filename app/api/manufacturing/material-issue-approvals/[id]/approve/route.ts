@@ -483,16 +483,15 @@ export async function POST(
       }
       const accountantBranchId = warehouseBranchId || productionOrder?.branch_id || null
 
-      const timestampSuffix = Date.now();
       for (const role of ["general_manager"]) {
         await sendNotification(admin, {
-          companyId, branchId: null, role,
+          companyId, branchId: accountantBranchId, role,
           title: "⚠️ نقص مخزون — طلب صرف مواد تصنيع",
           message: shortageMsg,
           referenceId: id,
           referenceType: "manufacturing_material_issue_approval",
           createdBy: user.id,
-          eventKey: `mmia_shortage_${id}_${role}_${timestampSuffix}`,
+          eventKey: `mmia_shortage_${id}_${role}`,
         })
       }
 
@@ -504,7 +503,7 @@ export async function POST(
           referenceId: id,
           referenceType: "manufacturing_material_issue_approval",
           createdBy: user.id,
-          eventKey: `mmia_shortage_${id}_accountant_${timestampSuffix}`,
+          eventKey: `mmia_shortage_${id}_accountant`,
         })
       }
 
@@ -656,7 +655,7 @@ export async function POST(
           referenceId: id,
           referenceType: "manufacturing_material_issue_approval",
           createdBy: user.id,
-          eventKey: `mmia_partial_${id}_accountant_${Date.now()}`,
+          eventKey: `mmia_partial_${id}_accountant`,
         })
       }
     }
