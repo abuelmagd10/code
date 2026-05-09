@@ -279,16 +279,24 @@ export default function ProductReceivePage() {
                   <Label>{lang === "ar" ? "الكمية المراد استلامها" : "Quantity to Receive"}</Label>
                   <Input
                     type="number"
-                    min={0}
+                    min={0.001}
+                    max={Number(requestDialogOrder?.planned_quantity) || 0}
                     step="0.001"
                     value={requestedQty}
                     onChange={(e) => setRequestedQty(Number(e.target.value))}
                   />
                   <p className="text-xs text-slate-500">
                     {lang === "ar"
-                      ? `الكمية المخططة: ${formatQuantity(requestDialogOrder?.planned_quantity, lang)}`
-                      : `Planned quantity: ${formatQuantity(requestDialogOrder?.planned_quantity, lang)}`}
+                      ? `الكمية المخططة: ${formatQuantity(requestDialogOrder?.planned_quantity, lang)} (الحد الأقصى)`
+                      : `Planned quantity: ${formatQuantity(requestDialogOrder?.planned_quantity, lang)} (maximum)`}
                   </p>
+                  {requestedQty > Number(requestDialogOrder?.planned_quantity || 0) && (
+                    <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                      {lang === "ar"
+                        ? "⚠️ لا يمكن أن تتجاوز الكمية المستلمة الكمية المخططة"
+                        : "⚠️ Received quantity cannot exceed the planned quantity"}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>{lang === "ar" ? "ملاحظات (اختياري)" : "Notes (optional)"}</Label>
@@ -307,7 +315,7 @@ export default function ProductReceivePage() {
                 <Button
                   className="gap-2 bg-emerald-600 hover:bg-emerald-700"
                   onClick={handleRequestApproval}
-                  disabled={requesting || requestedQty <= 0}
+                  disabled={requesting || requestedQty <= 0 || requestedQty > Number(requestDialogOrder?.planned_quantity || 0)}
                 >
                   <SendHorizontal className="h-4 w-4" />
                   {requesting ? (lang === "ar" ? "جاري الإرسال..." : "Sending...") : (lang === "ar" ? "إرسال طلب الاعتماد" : "Send Approval Request")}

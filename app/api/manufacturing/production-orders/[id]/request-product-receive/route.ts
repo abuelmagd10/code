@@ -53,6 +53,14 @@ export async function POST(
       )
     }
 
+    const plannedQty = Number(existing.planned_quantity) || 0
+    if (proposedQuantity > plannedQty) {
+      return NextResponse.json(
+        { success: false, error: `لا يمكن أن تتجاوز الكمية المستلمة (${proposedQuantity}) الكمية المخططة (${plannedQty})` },
+        { status: 422 }
+      )
+    }
+
     // إنشاء سجل الاعتماد
     const { data: approval, error: insertError } = await admin
       .from("manufacturing_product_receive_approvals")
