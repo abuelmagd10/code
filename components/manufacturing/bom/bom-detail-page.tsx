@@ -238,11 +238,6 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     [products]
   )
 
-  const branchCompatibleProducts = useMemo(() => {
-    if (!bom?.branch_id) return products
-    return products.filter((product) => !product.branch_id || product.branch_id === bom.branch_id)
-  }, [products, bom?.branch_id])
-
   const ownerProduct = useMemo(() => {
     if (!bom?.product_id) return null
     return productMap[bom.product_id] || bom.product || null
@@ -655,7 +650,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
   }
 
   const getLineProductOptions = (line: BomLineDraft) => {
-    const allowedProducts = branchCompatibleProducts.filter((product) =>
+    const allowedProducts = products.filter((product) =>
       isBomLineProductOptionAllowed(product, line.line_type, ownerProduct?.id)
     )
 
@@ -671,7 +666,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
   }
 
   const getSubstituteProductOptions = (line: BomLineDraft, substituteProductId?: string) => {
-    const allowedProducts = branchCompatibleProducts.filter((product) =>
+    const allowedProducts = products.filter((product) =>
       isBomLineProductOptionAllowed(product, "component", ownerProduct?.id) &&
       product.id !== line.component_product_id
     )

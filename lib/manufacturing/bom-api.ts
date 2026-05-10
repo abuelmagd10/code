@@ -493,6 +493,11 @@ function isBomOutputProductTypeAllowed(productType: string | null | undefined) {
   return productType === MANUFACTURING_OWNER_PRODUCT_TYPE
 }
 
+function resolveBomProductType(product: { item_type?: string | null; product_type?: string | null }) {
+  if (product.item_type === "service") return "service"
+  return normalizeProductTypeInput(product.product_type) || "purchased"
+}
+
 export async function assertBomStructureEligibleProducts(
   supabase: ManufacturingDbClient,
   params: {
@@ -516,7 +521,7 @@ export async function assertBomStructureEligibleProducts(
 
   const { data: products, error } = await supabase
     .from("products")
-    .select("id, company_id, branch_id, product_type, sku, name")
+    .select("id, company_id, branch_id, item_type, product_type, sku, name")
     .eq("company_id", params.companyId)
     .in("id", productIds)
 
@@ -530,15 +535,8 @@ export async function assertBomStructureEligibleProducts(
       throw new ManufacturingApiError(404, `Component product not found: ${line.component_product_id}`)
     }
 
-    const componentType = normalizeProductTypeInput(component.product_type)
+    const componentType = resolveBomProductType(component)
     const componentLabel = formatProductLabel(component, line.component_product_id)
-
-    if (!componentType) {
-      throw new ManufacturingApiError(
-        409,
-        `Component product ${componentLabel} must have product_type populated`
-      )
-    }
 
     if (!isBomInputProductTypeAllowed(componentType)) {
       throw new ManufacturingApiError(
@@ -551,13 +549,6 @@ export async function assertBomStructureEligibleProducts(
       throw new ManufacturingApiError(
         400,
         `Output line product ${componentLabel} must be product_type=${MANUFACTURING_OWNER_PRODUCT_TYPE}. line_no=${line.line_no}`
-      )
-    }
-
-    if (component.branch_id && component.branch_id !== params.branchId) {
-      throw new ManufacturingApiError(
-        400,
-        `Component product ${componentLabel} must be same-branch or global`
       )
     }
 
@@ -574,27 +565,13 @@ export async function assertBomStructureEligibleProducts(
         throw new ManufacturingApiError(404, `Substitute product not found: ${substitute.substitute_product_id}`)
       }
 
-      const substituteType = normalizeProductTypeInput(substituteProduct.product_type)
+      const substituteType = resolveBomProductType(substituteProduct)
       const substituteLabel = formatProductLabel(substituteProduct, substitute.substitute_product_id)
-
-      if (!substituteType) {
-        throw new ManufacturingApiError(
-          409,
-          `Substitute product ${substituteLabel} must have product_type populated`
-        )
-      }
 
       if (!isBomInputProductTypeAllowed(substituteType)) {
         throw new ManufacturingApiError(
           400,
           `Substitute product ${substituteLabel} with product_type=${substituteType} is not eligible for BOM quantity logic`
-        )
-      }
-
-      if (substituteProduct.branch_id && substituteProduct.branch_id !== params.branchId) {
-        throw new ManufacturingApiError(
-          400,
-          `Substitute product ${substituteLabel} must be same-branch or global`
         )
       }
 

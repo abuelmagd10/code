@@ -205,11 +205,12 @@ describe("manufacturing BOM UI helpers", () => {
     expect(isBomLineProductOptionAllowed(subAssembly, "component", ownerProductId)).toBe(true)
     expect(isBomLineProductOptionAllowed(ownerProduct, "component", ownerProductId)).toBe(false)
     expect(isBomLineProductOptionAllowed(service, "component", ownerProductId)).toBe(false)
-    expect(isBomLineProductOptionAllowed(legacyProduct, "component", ownerProductId)).toBe(false)
+    expect(isBomLineProductOptionAllowed(legacyProduct, "component", ownerProductId)).toBe(true)
 
     expect(isBomLineProductOptionAllowed(subAssembly, "co_product", ownerProductId)).toBe(true)
     expect(isBomLineProductOptionAllowed(rawMaterial, "co_product", ownerProductId)).toBe(false)
     expect(isBomLineProductOptionAllowed(purchased, "by_product", ownerProductId)).toBe(false)
+    expect(isBomLineProductOptionAllowed(legacyProduct, "by_product", ownerProductId)).toBe(false)
     expect(isBomLineProductOptionAllowed(ownerProduct, "by_product", ownerProductId)).toBe(false)
 
     expect(getBomLineProductFilterMessage("component")).toContain("مواد خام")

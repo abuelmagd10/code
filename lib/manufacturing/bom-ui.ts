@@ -563,7 +563,8 @@ export function buildProductLabel(product?: ProductOption | null) {
 
 function normalizeBomProductType(product?: ProductOption | null) {
   if (!product || product.item_type === "service") return "service"
-  return String(product.product_type || "").trim()
+  const productType = String(product.product_type || "").trim()
+  return productType || "purchased"
 }
 
 export function isBomLineProductOptionAllowed(
