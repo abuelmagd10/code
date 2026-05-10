@@ -81,6 +81,8 @@ import {
   formatQuantity,
   getVersionStatusLabel,
   getVersionStatusVariant,
+  getBomLineProductFilterMessage,
+  isBomLineProductOptionAllowed,
   isVersionHeaderEditable,
   isVersionStructureEditable,
   isoToLocalDateTimeInput,
@@ -652,10 +654,62 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     setStructureDraft((current) => [...current, createEmptyLine(nextLineNo)])
   }
 
+  const getLineProductOptions = (line: BomLineDraft) => {
+    const allowedProducts = branchCompatibleProducts.filter((product) =>
+      isBomLineProductOptionAllowed(product, line.line_type, ownerProduct?.id)
+    )
+
+    const selectedProduct = productMap[line.component_product_id]
+    if (
+      selectedProduct &&
+      !allowedProducts.some((product) => product.id === selectedProduct.id)
+    ) {
+      return [selectedProduct, ...allowedProducts]
+    }
+
+    return allowedProducts
+  }
+
+  const getSubstituteProductOptions = (line: BomLineDraft, substituteProductId?: string) => {
+    const allowedProducts = branchCompatibleProducts.filter((product) =>
+      isBomLineProductOptionAllowed(product, "component", ownerProduct?.id) &&
+      product.id !== line.component_product_id
+    )
+
+    const selectedProduct = substituteProductId ? productMap[substituteProductId] : null
+    if (
+      selectedProduct &&
+      !allowedProducts.some((product) => product.id === selectedProduct.id)
+    ) {
+      return [selectedProduct, ...allowedProducts]
+    }
+
+    return allowedProducts
+  }
+
   const updateLine = (lineIndex: number, patch: Partial<BomLineDraft>) => {
     setStructureDraft((current) =>
       current.map((line, index) => (index === lineIndex ? { ...line, ...patch } : line))
     )
+  }
+
+  const handleLineTypeChange = (lineIndex: number, lineType: BomLineDraft["line_type"]) => {
+    const currentLine = structureDraft[lineIndex]
+    const currentProduct = productMap[currentLine?.component_product_id || ""]
+    const keepSelectedProduct = currentProduct
+      ? isBomLineProductOptionAllowed(currentProduct, lineType, ownerProduct?.id)
+      : false
+
+    updateLine(lineIndex, {
+      line_type: lineType,
+      component_product_id: keepSelectedProduct ? currentLine.component_product_id : "",
+      substitutes: lineType === "component" ? currentLine.substitutes : [],
+    })
+  }
+
+  const getProductOptionLabel = (product: ProductOption, lineType: BomLineDraft["line_type"]) => {
+    const allowed = isBomLineProductOptionAllowed(product, lineType, ownerProduct?.id)
+    return allowed ? buildProductLabel(product) : `${buildProductLabel(product)} — غير مناسب لنوع الإضافة`
   }
 
   const removeLine = (lineIndex: number) => {
@@ -914,7 +968,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                             {structureEditable && canUpdate && (
                               <>
                                 <Button variant="outline" onClick={addLine} className="gap-2" data-ai-help="manufacturing_bom_detail.components_table">
-                                  إضافة مادة
+                                  إضافة مكوّن
                                 </Button>
                                 <Button
                                   variant="outline"
@@ -997,10 +1051,10 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   <Package2 className="h-8 w-8 text-slate-300" />
                                   <div className="text-lg font-medium text-slate-900">لا توجد مكونات بعد</div>
                                   <p className="text-sm leading-6 text-slate-500">
-                                    ابدأ بإضافة المواد الخام اللازمة لتصنيع هذا المنتج.
+                                    ابدأ بإضافة مكوّنات التصنيع اللازمة لهذا المنتج.
                                   </p>
                                   {structureEditable && (
-                                    <Button onClick={addLine} disabled={!canUpdate}>إضافة مادة خام</Button>
+                                    <Button onClick={addLine} disabled={!canUpdate}>إضافة مكوّن</Button>
                                   )}
                                 </div>
                               </div>
@@ -1011,7 +1065,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                     <CardHeader className="pb-4">
                                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                         <div>
-                                          <CardTitle className="text-base">مادة خام #{line.line_no}</CardTitle>
+                                          <CardTitle className="text-base">سطر BOM #{line.line_no}</CardTitle>
                                           <CardDescription>
                                             {productMap[line.component_product_id]
                                               ? buildProductLabel(productMap[line.component_product_id])
@@ -1045,7 +1099,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           <select
                                             className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
                                             value={line.line_type}
-                                            onChange={(event) => updateLine(lineIndex, { line_type: event.target.value as BomLineDraft["line_type"] })}
+                                            onChange={(event) => handleLineTypeChange(lineIndex, event.target.value as BomLineDraft["line_type"])}
                                             disabled={!structureEditable || !canUpdate}
                                           >
                                             {BOM_LINE_TYPE_OPTIONS.map((option) => (
@@ -1057,9 +1111,9 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           {/* Contextual hint for the selected line type */}
                                           {line.line_type === "component" && (
                                             <div className="flex gap-2 rounded-lg border border-blue-100 bg-blue-50 p-2.5">
-                                              <span className="mt-0.5 text-base leading-none">🔩</span>
+                                              <span className="mt-0.5 text-base leading-none">•</span>
                                               <div>
-                                                <p className="text-xs font-semibold text-blue-800">مكوّن (مادة خام)</p>
+                                                <p className="text-xs font-semibold text-blue-800">مكوّن تصنيع</p>
                                                 <p className="mt-0.5 text-xs leading-5 text-blue-700">
                                                   مادة تُستهلك بالكامل في التصنيع وتُصرف من المخزون.
                                                 </p>
@@ -1071,7 +1125,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           )}
                                           {line.line_type === "co_product" && (
                                             <div className="flex gap-2 rounded-lg border border-emerald-100 bg-emerald-50 p-2.5">
-                                              <span className="mt-0.5 text-base leading-none">🔀</span>
+                                              <span className="mt-0.5 text-base leading-none">•</span>
                                               <div>
                                                 <p className="text-xs font-semibold text-emerald-800">منتج مشترك</p>
                                                 <p className="mt-0.5 text-xs leading-5 text-emerald-700">
@@ -1088,7 +1142,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           )}
                                           {line.line_type === "by_product" && (
                                             <div className="flex gap-2 rounded-lg border border-amber-100 bg-amber-50 p-2.5">
-                                              <span className="mt-0.5 text-base leading-none">♻️</span>
+                                              <span className="mt-0.5 text-base leading-none">•</span>
                                               <div>
                                                 <p className="text-xs font-semibold text-amber-800">منتج ثانوي</p>
                                                 <p className="mt-0.5 text-xs leading-5 text-amber-700">
@@ -1113,12 +1167,20 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             disabled={!structureEditable || !canUpdate}
                                           >
                                             <option value="">اختر المنتج</option>
-                                            {branchCompatibleProducts.map((product) => (
+                                            {getLineProductOptions(line).map((product) => (
                                               <option key={product.id} value={product.id}>
-                                                {buildProductLabel(product)}
+                                                {getProductOptionLabel(product, line.line_type)}
                                               </option>
                                             ))}
                                           </select>
+                                          <p className="text-xs leading-5 text-slate-500">
+                                            {getBomLineProductFilterMessage(line.line_type)}
+                                          </p>
+                                          {getLineProductOptions(line).length === 0 && (
+                                            <p className="text-xs leading-5 text-amber-700">
+                                              لا توجد منتجات مناسبة لنوع الإضافة الحالي. راجع نوع المنتج من صفحة المنتجات.
+                                            </p>
+                                          )}
                                         </div>
                                       </div>
 
@@ -1181,9 +1243,9 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                       <div className="space-y-3" data-ai-help="manufacturing_bom_detail.substitutes">
                                         <div className="flex flex-wrap items-center justify-between gap-3">
                                           <div>
-                                            <div className="text-sm font-semibold text-slate-900">المواد البديلة</div>
+                                            <div className="text-sm font-semibold text-slate-900">المكونات البديلة</div>
                                             <div className="text-xs text-slate-500">
-                                               في حال نقص هذه المادة من المخزن، يستخدم النظام إحدى هذه البدائل تلقائياً.
+                                               في حال نقص هذا المكوّن من المخزن، يستخدم النظام إحدى هذه البدائل تلقائياً.
                                             </div>
                                           </div>
                                           <Button
@@ -1215,12 +1277,15 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                                       disabled={!structureEditable || !canUpdate}
                                                     >
                                                       <option value="">اختر البديل</option>
-                                                      {branchCompatibleProducts.map((product) => (
+                                                      {getSubstituteProductOptions(line, substitute.substitute_product_id).map((product) => (
                                                         <option key={product.id} value={product.id}>
-                                                          {buildProductLabel(product)}
+                                                          {getProductOptionLabel(product, "component")}
                                                         </option>
                                                       ))}
                                                     </select>
+                                                    <p className="text-xs leading-5 text-slate-500">
+                                                      تظهر فقط المنتجات الصالحة كمدخلات تصنيع، مع استبعاد المكوّن الأساسي والمنتج النهائي.
+                                                    </p>
                                                   </div>
                                                   <div className="space-y-2" data-ai-help="manufacturing_bom_detail.quantity_per_unit">
                                                     <Label>الكمية</Label>

@@ -489,6 +489,10 @@ export function isBomInputProductTypeAllowed(productType: string | null | undefi
   return BOM_ALLOWED_INPUT_PRODUCT_TYPE_SET.has(productType.trim())
 }
 
+function isBomOutputProductTypeAllowed(productType: string | null | undefined) {
+  return productType === MANUFACTURING_OWNER_PRODUCT_TYPE
+}
+
 export async function assertBomStructureEligibleProducts(
   supabase: ManufacturingDbClient,
   params: {
@@ -540,6 +544,13 @@ export async function assertBomStructureEligibleProducts(
       throw new ManufacturingApiError(
         400,
         `Component product ${componentLabel} with product_type=${componentType} is not eligible for BOM quantity logic`
+      )
+    }
+
+    if (line.line_type !== "component" && !isBomOutputProductTypeAllowed(componentType)) {
+      throw new ManufacturingApiError(
+        400,
+        `Output line product ${componentLabel} must be product_type=${MANUFACTURING_OWNER_PRODUCT_TYPE}. line_no=${line.line_no}`
       )
     }
 

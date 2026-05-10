@@ -10,8 +10,10 @@ import {
   findExistingBomForCreateSelection,
   formatQuantity,
   getDuplicateBomCreateMessage,
+  getBomLineProductFilterMessage,
   getVersionStatusLabel,
   getVersionStatusVariant,
+  isBomLineProductOptionAllowed,
   type BomListItem,
   isVersionHeaderEditable,
   isVersionStructureEditable,
@@ -187,6 +189,31 @@ describe("manufacturing BOM UI helpers", () => {
     expect(buildProductLabel({ id: "p2", name: "Unnamed SKU" })).toBe("Unnamed SKU")
     expect(buildProductLabel(undefined)).toBe("—")
     expect(formatQuantity(12.34567)).toBe("12.3457")
+  })
+
+  it("filters BOM product pickers by line type", () => {
+    const ownerProductId = "finished-good"
+    const rawMaterial = { id: "raw-1", item_type: "product", product_type: "raw_material" }
+    const purchased = { id: "purchase-1", item_type: "product", product_type: "purchased" }
+    const subAssembly = { id: "assembly-1", item_type: "product", product_type: "manufactured" }
+    const ownerProduct = { id: ownerProductId, item_type: "product", product_type: "manufactured" }
+    const service = { id: "service-1", item_type: "service", product_type: "service" }
+    const legacyProduct = { id: "legacy-1", item_type: "product", product_type: null }
+
+    expect(isBomLineProductOptionAllowed(rawMaterial, "component", ownerProductId)).toBe(true)
+    expect(isBomLineProductOptionAllowed(purchased, "component", ownerProductId)).toBe(true)
+    expect(isBomLineProductOptionAllowed(subAssembly, "component", ownerProductId)).toBe(true)
+    expect(isBomLineProductOptionAllowed(ownerProduct, "component", ownerProductId)).toBe(false)
+    expect(isBomLineProductOptionAllowed(service, "component", ownerProductId)).toBe(false)
+    expect(isBomLineProductOptionAllowed(legacyProduct, "component", ownerProductId)).toBe(false)
+
+    expect(isBomLineProductOptionAllowed(subAssembly, "co_product", ownerProductId)).toBe(true)
+    expect(isBomLineProductOptionAllowed(rawMaterial, "co_product", ownerProductId)).toBe(false)
+    expect(isBomLineProductOptionAllowed(purchased, "by_product", ownerProductId)).toBe(false)
+    expect(isBomLineProductOptionAllowed(ownerProduct, "by_product", ownerProductId)).toBe(false)
+
+    expect(getBomLineProductFilterMessage("component")).toContain("مواد خام")
+    expect(getBomLineProductFilterMessage("co_product")).toContain("المنتجات المصنّعة")
   })
 
   it("detects duplicate BOM create selections by branch, product and usage", () => {

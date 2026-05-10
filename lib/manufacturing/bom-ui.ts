@@ -9,6 +9,9 @@ export const BOM_LINE_TYPE_OPTIONS = [
   { value: "by_product", label: "By Product", labelAr: "منتج ثانوي" },
 ] as const
 
+export const BOM_COMPONENT_INPUT_PRODUCT_TYPES = ["raw_material", "purchased", "manufactured"] as const
+export const BOM_OUTPUT_PRODUCT_TYPES = ["manufactured"] as const
+
 export const BOM_VERSION_STATUSES = [
   "draft",
   "pending_approval",
@@ -556,6 +559,41 @@ export function buildProductLabel(product?: ProductOption | null) {
   const name = product.name?.trim()
   if (sku && name) return `${sku} — ${name}`
   return sku || name || product.id
+}
+
+function normalizeBomProductType(product?: ProductOption | null) {
+  if (!product || product.item_type === "service") return "service"
+  return String(product.product_type || "").trim()
+}
+
+export function isBomLineProductOptionAllowed(
+  product: ProductOption | null | undefined,
+  lineType: BomLineType,
+  ownerProductId?: string | null
+) {
+  if (!product) return false
+  if (ownerProductId && product.id === ownerProductId) return false
+
+  const productType = normalizeBomProductType(product)
+  if (productType === "service") return false
+
+  if (lineType === "component") {
+    return BOM_COMPONENT_INPUT_PRODUCT_TYPES.includes(productType as typeof BOM_COMPONENT_INPUT_PRODUCT_TYPES[number])
+  }
+
+  return BOM_OUTPUT_PRODUCT_TYPES.includes(productType as typeof BOM_OUTPUT_PRODUCT_TYPES[number])
+}
+
+export function getBomLineProductFilterMessage(lineType: BomLineType, lang: "ar" | "en" = "ar") {
+  if (lineType === "component") {
+    return lang === "en"
+      ? "Shows raw materials, purchased items, and manufactured subassemblies only. Services and the finished product itself are excluded."
+      : "تظهر مواد خام، أصناف مشتراة، وتجميعات مصنّعة فرعية فقط. لا تظهر الخدمات أو المنتج النهائي نفسه."
+  }
+
+  return lang === "en"
+    ? "Shows manufactured products only because this line is an output from the same production run."
+    : "تظهر المنتجات المصنّعة فقط لأن هذا السطر يمثل مخرجاً من نفس عملية التصنيع."
 }
 
 export function buildBranchLabel(branch?: BranchOption | null) {
