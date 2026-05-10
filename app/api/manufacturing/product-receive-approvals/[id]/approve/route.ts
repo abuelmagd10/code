@@ -104,6 +104,13 @@ export async function POST(
     const operationStartAt = new Date(approvedAtDate.getTime() - 1000).toISOString()
     let completeResult: any = null
 
+    const { error: orderStatusError } = await admin
+      .from("manufacturing_production_orders")
+      .update({ product_receive_approval_status: "approved" })
+      .eq("id", approval.production_order_id)
+      .eq("company_id", companyId)
+    if (orderStatusError) throw orderStatusError
+
     if (isFullReceipt) {
       const { error: operationsError } = await admin
         .from("manufacturing_production_order_operations")
@@ -146,13 +153,6 @@ export async function POST(
       .eq("id", id)
       .eq("company_id", companyId)
     if (approvalUpdateError) throw approvalUpdateError
-
-    const { error: orderStatusError } = await admin
-      .from("manufacturing_production_orders")
-      .update({ product_receive_approval_status: "approved" })
-      .eq("id", approval.production_order_id)
-      .eq("company_id", companyId)
-    if (orderStatusError) throw orderStatusError
 
     // إشعار لمقدم الطلب — نستخدم admin.rpc مباشرةً
     try {
