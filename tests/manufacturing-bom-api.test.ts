@@ -31,4 +31,16 @@ describe("manufacturing BOM API errors", () => {
     const payload = await response.json()
     expect(payload.details.code).toBe("BOM_APPROVED_EFFECTIVE_WINDOW_OVERLAP")
   })
+
+  it("returns an Arabic validation message for empty BOM version approval submissions", async () => {
+    const response = handleManufacturingApiError({
+      code: "P0001",
+      message: "BOM version must contain at least one line before approval submission. bom_version_id=abc",
+    })
+
+    expect(response.status).toBe(400)
+    const payload = await response.json()
+    expect(payload.details.code).toBe("BOM_VERSION_EMPTY_STRUCTURE")
+    expect(payload.error).toContain("مكوّن واحد")
+  })
 })

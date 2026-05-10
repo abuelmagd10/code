@@ -249,6 +249,9 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
   const selectedVersion = versionSnapshot?.version || bom?.versions.find((version) => version.id === selectedVersionId) || null
   const versionEditable = selectedVersion ? isVersionHeaderEditable(selectedVersion.status) : false
   const structureEditable = selectedVersion ? isVersionStructureEditable(selectedVersion.status) : false
+  const selectedVersionPersistedLineCount =
+    versionSnapshot?.version.id === selectedVersionId ? versionSnapshot.lines.length : null
+  const selectedVersionHasNoPersistedLines = selectedVersionPersistedLineCount === 0
 
   const hydrateHeaderForm = useCallback((detail: BomDetail) => {
     setHeaderForm({
@@ -578,6 +581,26 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     } finally {
       setRunningAction(null)
     }
+  }
+
+  const handleSubmitVersionForApproval = async () => {
+    if (!selectedVersionId) return
+
+    if (selectedVersionHasNoPersistedLines) {
+      toast({
+        variant: "destructive",
+        title: "لا يمكن إرسال نسخة فارغة",
+        description: "أضف مادة واحدة على الأقل ثم اضغط حفظ المواد قبل الإرسال للاعتماد.",
+      })
+      return
+    }
+
+    await executeVersionAction(
+      "submit",
+      () => submitBomVersion(selectedVersionId),
+      "تم إرسال النسخة للاعتماد",
+      "أصبحت النسخة في حالة pending_approval."
+    )
   }
 
   const handleReject = async () => {
@@ -915,12 +938,12 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                               <Button
                                 variant="outline"
                                 onClick={() => {
-                                  if (!selectedVersionId) return
-                                  void executeVersionAction("submit", () => submitBomVersion(selectedVersionId), "تم إرسال النسخة للاعتماد", "أصبحت النسخة في حالة pending_approval.")
+                                  void handleSubmitVersionForApproval()
                                 }}
-                                disabled={!canUpdate || runningAction === "submit"}
+                                disabled={!canUpdate || runningAction === "submit" || loadingVersion}
                                 className="gap-2"
                                 data-ai-help="manufacturing_bom_detail.submit_approval_button"
+                                title={selectedVersionHasNoPersistedLines ? "أضف مادة واحدة على الأقل واحفظ المواد قبل الإرسال للاعتماد" : undefined}
                               >
                                 {runningAction === "submit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                                 إرسال للاعتماد
@@ -1385,9 +1408,10 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                     حفظ رأس النسخة
                                   </Button>
                                   <Button variant="outline"
-                                    onClick={() => { if (!selectedVersionId) return; void executeVersionAction("submit", () => submitBomVersion(selectedVersionId), "تم إرسال النسخة للاعتماد", "أصبحت النسخة في حالة pending_approval.") }}
-                                    disabled={!selectedVersionId || !canUpdate || !canSubmitVersion(selectedVersion.status) || runningAction === "submit"}
-                                    className="gap-2" data-ai-help="manufacturing_bom_detail.submit_approval_button">
+                                    onClick={() => { void handleSubmitVersionForApproval() }}
+                                    disabled={!selectedVersionId || !canUpdate || !canSubmitVersion(selectedVersion.status) || runningAction === "submit" || loadingVersion}
+                                    className="gap-2" data-ai-help="manufacturing_bom_detail.submit_approval_button"
+                                    title={selectedVersionHasNoPersistedLines ? "أضف مادة واحدة على الأقل واحفظ المواد قبل الإرسال للاعتماد" : undefined}>
                                     {runningAction === "submit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                                     إرسال للاعتماد
                                   </Button>

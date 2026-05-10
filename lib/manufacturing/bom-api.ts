@@ -303,6 +303,17 @@ function mapManufacturingDbError(error: any) {
         { code: "BOM_APPROVED_REQUIRES_EFFECTIVE_FROM" }
       )
     }
+
+    if (
+      text.includes("BOM version must contain at least one line before approval submission") ||
+      text.includes("BOM version must have at least one line")
+    ) {
+      return new ManufacturingApiError(
+        400,
+        "لا يمكن إرسال نسخة BOM للاعتماد قبل إضافة مكوّن واحد على الأقل وحفظ المواد.",
+        { code: "BOM_VERSION_EMPTY_STRUCTURE" }
+      )
+    }
   }
 
   return null
@@ -700,6 +711,30 @@ export async function assertBomVersionCloneable(
   }
 
   return sourceVersion
+}
+
+export async function assertBomVersionReadyForApproval(
+  supabase: ManufacturingDbClient,
+  params: {
+    companyId: string
+    bomVersionId: string
+  }
+) {
+  const { count, error } = await supabase
+    .from("manufacturing_bom_lines")
+    .select("id", { count: "exact", head: true })
+    .eq("company_id", params.companyId)
+    .eq("bom_version_id", params.bomVersionId)
+
+  if (error) throw error
+
+  if (!count || count <= 0) {
+    throw new ManufacturingApiError(
+      400,
+      "لا يمكن إرسال نسخة BOM للاعتماد قبل إضافة مكوّن واحد على الأقل وحفظ المواد.",
+      { code: "BOM_VERSION_EMPTY_STRUCTURE" }
+    )
+  }
 }
 
 export async function assertBomAccessible(
