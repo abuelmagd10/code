@@ -1,6 +1,6 @@
 /**
  * POST /api/manufacturing/product-receive-approvals/[id]/approve
- * اعتماد طلب استلام المنتج النهائي — يكمل أمر الإنتاج تلقائياً
+ * اعتماد طلب استلام المنتج النهائي — يسجل استلام المنتج في المخزون
  */
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
@@ -45,37 +45,64 @@ export async function POST(
 
     assertProductReceiveApprovalScope(member, approval)
 
-    // تحديث حالة الاعتماد في أمر الإنتاج أولاً (قبل الإكمال الذرّي، لأن الإكمال يحول الأمر لحالة terminal)
-    const { error: orderStatusError } = await admin
+    const { data: order, error: orderError } = await admin
       .from("manufacturing_production_orders")
-      .update({ product_receive_approval_status: "approved" })
+      .select("id, order_no, status, receipt_warehouse_id")
       .eq("id", approval.production_order_id)
       .eq("company_id", companyId)
-    if (orderStatusError) throw orderStatusError
+      .single()
 
-    // تحديث سجل الاعتماد
+    if (orderError || !order) {
+      return NextResponse.json({ success: false, error: "أمر التصنيع غير موجود" }, { status: 404 })
+    }
+
+    if (order.status !== "in_progress") {
+      return NextResponse.json(
+        { success: false, error: `لا يمكن اعتماد الاستلام — حالة أمر التصنيع الحالية: ${order.status}` },
+        { status: 422 }
+      )
+    }
+
+    if (!order.receipt_warehouse_id) {
+      return NextResponse.json(
+        { success: false, error: "أمر التصنيع لا يحتوي على مخزن استلام للمنتج النهائي" },
+        { status: 422 }
+      )
+    }
+
+    const { data: receiptResult, error: receiptError } = await admin.rpc("receipt_manufacturing_production_order_output_atomic", {
+      p_company_id: companyId,
+      p_production_order_id: approval.production_order_id,
+      p_posted_by: user.id,
+      p_received_qty: approval.proposed_quantity,
+      p_posted_at: null,
+      p_notes: notes ?? approval.notes,
+      p_command_key: `mpra_${id}`,
+    })
+
+    if (receiptError) throw receiptError
+
+    const approvedAt = new Date().toISOString()
+
+    // تحديث سجل الاعتماد بعد نجاح حركة المخزون
     const { error: approvalUpdateError } = await admin
       .from("manufacturing_product_receive_approvals")
       .update({
         status: "approved",
         approved_by: user.id,
-        approved_at: new Date().toISOString(),
+        approved_at: approvedAt,
         notes: notes ?? approval.notes,
       })
       .eq("id", id)
       .eq("company_id", companyId)
     if (approvalUpdateError) throw approvalUpdateError
 
-    // إكمال أمر الإنتاج ذرّياً (يغيّر الحالة لـ completed — لذلك يجب أن يكون آخراً)
-    const { error: completeError } = await admin.rpc("complete_manufacturing_production_order_atomic", {
-      p_company_id: companyId,
-      p_production_order_id: approval.production_order_id,
-      p_completed_by: user.id,
-      p_completed_quantity: approval.proposed_quantity,
-      p_completed_at: null,
-    })
-
-    if (completeError) throw completeError
+    const { error: orderStatusError } = await admin
+      .from("manufacturing_production_orders")
+      .update({ product_receive_approval_status: "approved" })
+      .eq("id", approval.production_order_id)
+      .eq("company_id", companyId)
+    if (orderStatusError) throw orderStatusError
 
     // إشعار لمقدم الطلب — نستخدم admin.rpc مباشرةً
     try {
@@ -84,7 +111,7 @@ export async function POST(
         p_reference_type: "manufacturing_product_receive_approval",
         p_reference_id: id,
         p_title: "✅ تمت الموافقة على استلام المنتج",
-        p_message: "تمت الموافقة على طلب استلام المنتج النهائي — تم إضافة المنتج للمستودع تلقائياً",
+        p_message: "تمت الموافقة على طلب استلام المنتج النهائي — تم إضافة المنتج للمستودع",
         p_created_by: user.id,
         p_assigned_to_user: approval.requested_by,
         p_assigned_to_role: null,
@@ -108,12 +135,13 @@ export async function POST(
       recordIdentifier: String(approval.production_order_id),
       oldData: { status: "pending" },
       newData: { status: "approved", approved_by: user.id },
-      reason: "Approved product receive request — production order completed",
+      reason: "Approved product receive request and posted finished-goods receipt",
     })
 
     return NextResponse.json({
       success: true,
-      message: "تمت الموافقة على استلام المنتج وتم إكمال أمر الإنتاج",
+      data: { receipt_result: receiptResult },
+      message: "تمت الموافقة على استلام المنتج وتمت إضافة المنتج للمستودع",
     })
   } catch (error) {
     return handleManufacturingApiError(error)
