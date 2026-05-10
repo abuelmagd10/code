@@ -26,6 +26,15 @@ import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { validatePrice, getValidationError, validateField } from "@/lib/validation"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import {
+  getDefaultProductAccountingAccounts,
+  isCompatibleProductExpenseAccount,
+  isCompatibleProductIncomeAccount,
+  isStockProductType,
+  validateProductAccountingSelection,
+  type ProductAccountingAccount,
+} from "@/lib/product-accounting"
+import type { ProductType } from "@/lib/product-type"
 
 interface Product {
   id: string
@@ -77,7 +86,7 @@ interface CostCenter {
   branch_id: string | null
 }
 
-interface Account {
+interface Account extends ProductAccountingAccount {
   id: string
   account_code: string
   account_name: string
@@ -137,33 +146,14 @@ export default function ProductsPage() {
   // 🔗 Accounting Auto-Linkage
   const [autoFilledAccounts, setAutoFilledAccounts] = useState<{ incomeId: string; expenseId: string } | null>(null)
 
-  // Smart auto-detection based on item type
-  const getDefaultAccounts = (itemType: 'product' | 'service', accs: Account[]) => {
-    const incomeAccounts = accs.filter(a => a.account_type === 'income')
-    const expenseAccounts = accs.filter(a => a.account_type === 'expense')
-
-    // Income: prefer sales_revenue sub_type → first income account
-    const incomeId =
-      (incomeAccounts.find(a => (a as any).sub_type === 'sales_revenue') ||
-        incomeAccounts[0])?.id || ''
-
-    // Expense: for products prefer COGS (code 5xxx or sub_type cogs) → first expense
-    // For services: prefer first expense account
-    const expenseId = itemType === 'product'
-      ? (expenseAccounts.find(a =>
-        (a as any).sub_type === 'cost_of_goods_sold' ||
-        (a as any).sub_type === 'cogs' ||
-        a.account_code?.startsWith('5')
-      ) || expenseAccounts[0])?.id || ''
-      : expenseAccounts[0]?.id || ''
-
-    return { incomeId, expenseId }
-  }
-
-  // Auto-fill accounts when opening new item form or switching item_type
+  // Auto-fill accounts when opening new item form or switching item/product type
   useEffect(() => {
     if (editingId || accounts.length === 0) return // Don't auto-fill when editing
-    const defaults = getDefaultAccounts(formData.item_type, accounts)
+    const defaults = getDefaultProductAccountingAccounts(
+      formData.product_type as ProductType,
+      accounts,
+      formData.item_type
+    )
     if (defaults.incomeId || defaults.expenseId) {
       setFormData(prev => ({
         ...prev,
@@ -173,7 +163,7 @@ export default function ProductsPage() {
       setAutoFilledAccounts(defaults)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.item_type, accounts, editingId])
+  }, [formData.item_type, formData.product_type, accounts, editingId])
 
   // 🏢 بيانات الفروع والمستودعات ومراكز التكلفة
   const [branches, setBranches] = useState<Branch[]>([])
@@ -319,9 +309,10 @@ export default function ProductsPage() {
       if (!companyId) return
       const { data } = await supabase
         .from('chart_of_accounts')
-        .select('id, account_code, account_name, account_type')
+        .select('id, account_code, account_name, account_type, sub_type, normal_balance, is_active')
         .eq('company_id', companyId)
         .in('account_type', ['income', 'expense'])
+        .eq('is_active', true)
         .order('account_code')
       setAccounts(data || [])
     } catch (error) {
@@ -374,6 +365,12 @@ export default function ProductsPage() {
   const filteredCostCenters = formData.branch_id
     ? costCenters.filter(cc => cc.branch_id === formData.branch_id || !cc.branch_id)
     : costCenters
+
+  const compatibleIncomeAccounts = accounts.filter(isCompatibleProductIncomeAccount)
+  const compatibleExpenseAccounts = accounts.filter((account) =>
+    isCompatibleProductExpenseAccount(account, formData.product_type as ProductType, formData.item_type)
+  )
+  const isStockAccountingProduct = isStockProductType(formData.product_type as ProductType, formData.item_type)
 
   const loadProducts = async () => {
     try {
@@ -431,6 +428,26 @@ export default function ProductsPage() {
       if (!costPriceValidation.isValid) {
         errors.cost_price = costPriceValidation.error || ''
       }
+    }
+
+    const accountingValidation = validateProductAccountingSelection({
+      itemType: formData.item_type,
+      productType: formData.product_type as ProductType,
+      incomeAccountId: formData.income_account_id || null,
+      expenseAccountId: formData.expense_account_id || null,
+      accounts,
+      lang: appLang,
+    })
+
+    if (!accountingValidation.success) {
+      errors.accounting = accountingValidation.errors.join('\n')
+      if (accountingValidation.errors.some((error) => error.includes('الإيرادات') || error.includes('Income'))) {
+        errors.income_account_id = accountingValidation.errors.find((error) => error.includes('الإيرادات') || error.includes('Income')) || accountingValidation.errors[0]
+      }
+      if (accountingValidation.errors.some((error) => error.includes('تكلفة') || error.includes('COGS') || error.includes('Services'))) {
+        errors.expense_account_id = accountingValidation.errors.find((error) => error.includes('تكلفة') || error.includes('COGS') || error.includes('Services')) || accountingValidation.errors[0]
+      }
+      toastActionError(toast, accountingValidation.errors[0])
     }
 
     setFormErrors(errors)
@@ -1047,7 +1064,11 @@ export default function ProductsPage() {
                               const autoCostCenterId = userCostCenterId || costCenters.find(cc => cc.branch_id === userBranchId)?.id || ""
 
                               // 🔐 Enterprise Logic: عند التغيير إلى Product
-                              const newData: any = { ...formData, item_type: 'product' }
+                              const newData: any = {
+                                ...formData,
+                                item_type: 'product',
+                                product_type: formData.product_type === 'service' ? 'purchased' : formData.product_type,
+                              }
                               if (isNormalRole) {
                                 // للأدوار العادية: فرض جميع القيم
                                 newData.branch_id = userBranchId || ""
@@ -1073,7 +1094,7 @@ export default function ProductsPage() {
                               const autoCostCenterId = userCostCenterId || costCenters.find(cc => cc.branch_id === userBranchId)?.id || ""
 
                               // 🔐 Enterprise Logic: عند التغيير إلى Service
-                              const newData: any = { ...formData, item_type: 'service', warehouse_id: "" }
+                              const newData: any = { ...formData, item_type: 'service', product_type: 'service', warehouse_id: "" }
                               if (isNormalRole) {
                                 // للأدوار العادية: فرض Branch و Cost Center فقط
                                 newData.branch_id = userBranchId || ""
@@ -1362,8 +1383,8 @@ export default function ProductsPage() {
                             <Sparkles className="w-4 h-4 mt-0.5 flex-shrink-0" />
                             <span>
                               {appLang === 'en'
-                                ? `Accounts auto-suggested based on ${formData.item_type === 'product' ? 'product' : 'service'} type.${isNormalRole ? ' Assigned automatically by system.' : ' You can change them manually.'}`
-                                : `تم اقتراح الحسابات تلقائياً بناءً على نوع ${formData.item_type === 'product' ? 'المنتج' : 'الخدمة'}.${isNormalRole ? ' تم التعيين التلقائي بواسطة النظام.' : ' يمكنك تغييرها يدوياً.'}`}
+                                ? `Accounts auto-selected from the accounting pattern: ${isStockAccountingProduct ? 'Sales Revenue + COGS' : 'Service Revenue + non-COGS expense'}.${isNormalRole ? ' Assigned automatically by system.' : ' You can change them manually within the compatible accounts only.'}`
+                                : `تم تحديد الحسابات تلقائياً حسب النمط المحاسبي: ${isStockAccountingProduct ? 'إيرادات مبيعات + تكلفة مبيعات' : 'إيراد خدمات + مصروف غير تكلفة مبيعات'}.${isNormalRole ? ' تم التعيين التلقائي بواسطة النظام.' : ' يمكنك تغييرها يدوياً ضمن الحسابات المتوافقة فقط.'}`}
                             </span>
                           </div>
                         )}
@@ -1393,15 +1414,18 @@ export default function ProductsPage() {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="none">{appLang === 'en' ? 'None' : 'بدون'}</SelectItem>
-                                {accounts.filter(a => a.account_type === 'income').map(a => (
+                                {compatibleIncomeAccounts.map(a => (
                                   <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
+                            {formErrors.income_account_id && (
+                              <p className="text-xs text-red-500">{formErrors.income_account_id}</p>
+                            )}
                           </div>
                           <div className="space-y-2">
                             <div className="flex items-center gap-1.5">
-                              <Label>{appLang === 'en' ? (formData.item_type === 'product' ? 'COGS Account' : 'Expense Account') : (formData.item_type === 'product' ? 'حساب تكلفة المبيعات' : 'حساب المصروفات')}</Label>
+                              <Label>{appLang === 'en' ? (isStockAccountingProduct ? 'COGS Account' : 'Expense Account') : (isStockAccountingProduct ? 'حساب تكلفة المبيعات' : 'حساب المصروفات')}</Label>
                               {!editingId && autoFilledAccounts && formData.expense_account_id === autoFilledAccounts.expenseId && formData.expense_account_id && (
                                 <Sparkles className="w-3 h-3 text-purple-500" />
                               )}
@@ -1423,11 +1447,14 @@ export default function ProductsPage() {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="none">{appLang === 'en' ? 'None' : 'بدون'}</SelectItem>
-                                {accounts.filter(a => a.account_type === 'expense').map(a => (
+                                {compatibleExpenseAccounts.map(a => (
                                   <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
+                            {formErrors.expense_account_id && (
+                              <p className="text-xs text-red-500">{formErrors.expense_account_id}</p>
+                            )}
                           </div>
                         </div>
                       </div>

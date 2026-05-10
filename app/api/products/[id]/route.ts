@@ -2,6 +2,10 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { apiGuard, asyncAuditLog, ErrorHandler, ERPError } from "@/lib/core"
 import { resolveProductClassification } from "@/lib/product-type"
+import {
+  getDefaultProductAccountingAccounts,
+  validateProductAccountingSelection,
+} from "@/lib/product-accounting"
 
 // PUT - Update existing product
 export async function PUT(
@@ -31,7 +35,7 @@ export async function PUT(
 
     const { data: existingProduct, error: existingError } = await supabase
       .from("products")
-      .select("id, sku, item_type, product_type")
+      .select("id, sku, item_type, product_type, income_account_id, expense_account_id")
       .eq("id", id)
       .eq("company_id", companyId)
       .maybeSingle()
@@ -81,9 +85,46 @@ export async function PUT(
       finalCostCenterId = member.cost_center_id || finalCostCenterId
     }
 
+    const { data: accountingAccounts, error: accountingAccountsError } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name, account_type, sub_type, normal_balance, is_active')
+      .eq('company_id', companyId)
+      .eq('is_active', true)
+      .in('account_type', ['income', 'expense'])
+
+    if (accountingAccountsError) {
+      return ErrorHandler.handle(new ERPError('ERR_SYSTEM', 'تعذر تحميل حسابات الربط المحاسبي', 500, accountingAccountsError.message))
+    }
+
+    const accountingDefaults = getDefaultProductAccountingAccounts(
+      classification.productType,
+      accountingAccounts || [],
+      classification.itemType
+    )
+    const requestedIncomeAccountId =
+      body.income_account_id !== undefined ? (body.income_account_id || null) : (existingProduct.income_account_id || null)
+    const requestedExpenseAccountId =
+      body.expense_account_id !== undefined ? (body.expense_account_id || null) : (existingProduct.expense_account_id || null)
+    const finalIncomeAccountId = requestedIncomeAccountId || accountingDefaults.incomeId || null
+    const finalExpenseAccountId = requestedExpenseAccountId || accountingDefaults.expenseId || null
+    const accountingValidation = validateProductAccountingSelection({
+      itemType: classification.itemType,
+      productType: classification.productType,
+      incomeAccountId: finalIncomeAccountId,
+      expenseAccountId: finalExpenseAccountId,
+      accounts: accountingAccounts || [],
+      lang: 'ar',
+    })
+
+    if (!accountingValidation.success) {
+      return ErrorHandler.handle(ErrorHandler.validation(accountingValidation.errors.join(' ')))
+    }
+
     // Prepare data with enforced values
     const productData = {
       ...body,
+      income_account_id: finalIncomeAccountId,
+      expense_account_id: finalExpenseAccountId,
       branch_id: finalBranchId,
       cost_center_id: finalCostCenterId,
       warehouse_id: finalWarehouseId,
@@ -120,7 +161,9 @@ export async function PUT(
         unit_price: data.unit_price,
         branch_id: data.branch_id,
         item_type: data.item_type,
-        product_type: data.product_type
+        product_type: data.product_type,
+        income_account_id: data.income_account_id,
+        expense_account_id: data.expense_account_id
       },
       reason: 'Updated product/service details'
     })

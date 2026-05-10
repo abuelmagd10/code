@@ -2,6 +2,10 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { apiGuard, asyncAuditLog, ErrorHandler, ERPError } from "@/lib/core"
 import { resolveProductClassification } from "@/lib/product-type"
+import {
+  getDefaultProductAccountingAccounts,
+  validateProductAccountingSelection,
+} from "@/lib/product-accounting"
 
 export async function POST(req: Request) {
   try {
@@ -47,6 +51,37 @@ export async function POST(req: Request) {
       }
     }
 
+    const { data: accountingAccounts, error: accountingAccountsError } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name, account_type, sub_type, normal_balance, is_active')
+      .eq('company_id', companyId)
+      .eq('is_active', true)
+      .in('account_type', ['income', 'expense'])
+
+    if (accountingAccountsError) {
+      return ErrorHandler.handle(new ERPError('ERR_SYSTEM', 'تعذر تحميل حسابات الربط المحاسبي', 500, accountingAccountsError.message))
+    }
+
+    const accountingDefaults = getDefaultProductAccountingAccounts(
+      classification.productType,
+      accountingAccounts || [],
+      classification.itemType
+    )
+    const finalIncomeAccountId = body.income_account_id || accountingDefaults.incomeId || null
+    const finalExpenseAccountId = body.expense_account_id || accountingDefaults.expenseId || null
+    const accountingValidation = validateProductAccountingSelection({
+      itemType: classification.itemType,
+      productType: classification.productType,
+      incomeAccountId: finalIncomeAccountId,
+      expenseAccountId: finalExpenseAccountId,
+      accounts: accountingAccounts || [],
+      lang: 'ar',
+    })
+
+    if (!accountingValidation.success) {
+      return ErrorHandler.handle(ErrorHandler.validation(accountingValidation.errors.join(' ')))
+    }
+
     // 3️⃣ Call Atomic RPC (handles defaults and constraints at the DB layer)
     const { data: rpcResult, error: rpcError } = await supabase.rpc('create_product_atomic', {
       p_company_id: companyId,
@@ -60,8 +95,8 @@ export async function POST(req: Request) {
       p_reorder_level: body.reorder_level || 0,
       p_item_type: classification.itemType,
       p_product_type: classification.productType,
-      p_income_account_id: body.income_account_id || null,
-      p_expense_account_id: body.expense_account_id || null,
+      p_income_account_id: finalIncomeAccountId,
+      p_expense_account_id: finalExpenseAccountId,
       p_tax_code_id: body.tax_code_id || null,
       p_branch_id: finalBranchId,
       p_warehouse_id: finalWarehouseId,
@@ -88,6 +123,8 @@ export async function POST(req: Request) {
         name: body.name,
         item_type: classification.itemType,
         product_type: classification.productType,
+        income_account_id: finalIncomeAccountId,
+        expense_account_id: finalExpenseAccountId,
         branch_id: finalBranchId,
         warehouse_id: rpcResult.final_warehouse_id,
         cost_center_id: rpcResult.final_cost_center_id
@@ -102,6 +139,8 @@ export async function POST(req: Request) {
         ...body,
         item_type: classification.itemType,
         product_type: classification.productType,
+        income_account_id: finalIncomeAccountId,
+        expense_account_id: finalExpenseAccountId,
         branch_id: finalBranchId,
         warehouse_id: rpcResult.final_warehouse_id,
         cost_center_id: rpcResult.final_cost_center_id
