@@ -160,14 +160,43 @@ export async function POST(request: NextRequest) {
     if (dataWithGovernance.branch_id && !governance.branchIds.includes(dataWithGovernance.branch_id)) {
       throw new Error('Governance Violation: Invalid branch_id')
     }
+    if (!dataWithGovernance.branch_id) {
+      return NextResponse.json({
+        error: "Warehouse branch is required",
+        error_ar: "يجب تحديد فرع للمخزن"
+      }, { status: 422 })
+    }
     
     const supabase = await createClient()
+
+    const { data: branchDefaults, error: branchDefaultsError } = await supabase
+      .from("branches")
+      .select("default_cost_center_id")
+      .eq("id", dataWithGovernance.branch_id)
+      .eq("company_id", governance.companyId)
+      .single()
+
+    if (branchDefaultsError) {
+      return NextResponse.json({
+        error: branchDefaultsError.message,
+        error_ar: "فشل في قراءة إعدادات الفرع"
+      }, { status: 500 })
+    }
+
+    const resolvedCostCenterId = body.cost_center_id || branchDefaults?.default_cost_center_id || null
+    if (!resolvedCostCenterId) {
+      return NextResponse.json({
+        error: "Warehouse cost center is required",
+        error_ar: "يجب تحديد مركز تكلفة للمخزن أو ضبط مركز تكلفة افتراضي للفرع"
+      }, { status: 422 })
+    }
     
     // 4️⃣ الإدخال في قاعدة البيانات
     const { data: warehouse, error: insertError } = await supabase
       .from("warehouses")
       .insert({
         ...dataWithGovernance,
+        cost_center_id: resolvedCostCenterId,
         is_main: false,
         is_active: body.is_active !== false
       })

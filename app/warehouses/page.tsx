@@ -49,6 +49,7 @@ interface Branch {
   id: string
   name?: string
   branch_name?: string
+  default_cost_center_id?: string | null
 }
 
 interface CostCenter {
@@ -135,7 +136,7 @@ export default function WarehousesPage() {
       // Load branches (filtered by permissions)
       let branchesQuery = supabase
         .from("branches")
-        .select("id, name, branch_name")
+        .select("id, name, branch_name, default_cost_center_id")
         .eq("company_id", companyId)
         .eq("is_active", true)
 
@@ -205,11 +206,20 @@ export default function WarehousesPage() {
   useEffect(() => {
     // Filter cost centers based on selected branch
     if (formData.branch_id) {
-      setFilteredCostCenters(costCenters.filter(cc => cc.branch_id === formData.branch_id))
+      const branchCostCenters = costCenters.filter(cc => cc.branch_id === formData.branch_id)
+      setFilteredCostCenters(branchCostCenters)
+
+      const selectedBranch = branches.find((branch) => branch.id === formData.branch_id)
+      if (!formData.cost_center_id && selectedBranch?.default_cost_center_id) {
+        setFormData((current) => ({
+          ...current,
+          cost_center_id: current.cost_center_id || selectedBranch.default_cost_center_id || "",
+        }))
+      }
     } else {
       setFilteredCostCenters(costCenters)
     }
-  }, [formData.branch_id, costCenters])
+  }, [branches, formData.branch_id, formData.cost_center_id, costCenters])
 
   const openCreateDialog = () => {
     setSelectedWarehouse(null)
@@ -239,14 +249,26 @@ export default function WarehousesPage() {
   }
 
   const handleSave = async () => {
-    if (!formData.name.trim()) {
-      toast({ variant: "destructive", title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'Name is required' : 'الاسم مطلوب' })
-      return
-    }
-    if (!userContext) {
-      toast({ variant: "destructive", title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'User context not loaded' : 'لم يتم تحميل بيانات المستخدم' })
-      return
-    }
+      if (!formData.name.trim()) {
+        toast({ variant: "destructive", title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'Name is required' : 'الاسم مطلوب' })
+        return
+      }
+      const selectedBranch = branches.find((branch) => branch.id === formData.branch_id)
+      const resolvedCostCenterId = formData.cost_center_id || selectedBranch?.default_cost_center_id || ""
+      if (!formData.branch_id || !resolvedCostCenterId) {
+        toast({
+          variant: "destructive",
+          title: appLang === 'en' ? 'Error' : 'خطأ',
+          description: appLang === 'en'
+            ? 'Branch and cost center are required'
+            : 'يجب تحديد الفرع ومركز التكلفة للمخزن',
+        })
+        return
+      }
+      if (!userContext) {
+        toast({ variant: "destructive", title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'User context not loaded' : 'لم يتم تحميل بيانات المستخدم' })
+        return
+      }
     try {
       setSaving(true)
       const companyId = userContext.company_id
@@ -256,8 +278,8 @@ export default function WarehousesPage() {
         company_id: companyId,
         name: formData.name.trim(),
         code: formData.code.trim().toUpperCase() || null,
-        branch_id: formData.branch_id || null,
-        cost_center_id: formData.cost_center_id || null,
+        branch_id: formData.branch_id,
+        cost_center_id: resolvedCostCenterId,
         address: formData.address.trim() || null,
         city: formData.city.trim() || null,
         phone: formData.phone.trim() || null,
@@ -428,7 +450,15 @@ export default function WarehousesPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>{appLang === 'en' ? 'Branch' : 'الفرع'}</Label>
-                  <select className="w-full border rounded-lg p-2" value={formData.branch_id} onChange={(e) => setFormData({ ...formData, branch_id: e.target.value, cost_center_id: '' })}>
+                  <select
+                    className="w-full border rounded-lg p-2"
+                    value={formData.branch_id}
+                    onChange={(e) => {
+                      const branchId = e.target.value
+                      const defaultCostCenterId = branches.find((branch) => branch.id === branchId)?.default_cost_center_id || ""
+                      setFormData({ ...formData, branch_id: branchId, cost_center_id: defaultCostCenterId })
+                    }}
+                  >
                     <option value="">{appLang === 'en' ? 'Select branch' : 'اختر الفرع'}</option>
                     {branches.map((b) => <option key={b.id} value={b.id}>{b.name || b.branch_name}</option>)}
                   </select>

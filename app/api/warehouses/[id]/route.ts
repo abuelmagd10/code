@@ -46,7 +46,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     // Check if trying to edit main warehouse name
     const { data: existing } = await supabase
       .from("warehouses")
-      .select("is_main")
+      .select("company_id, branch_id, is_main")
       .eq("id", id)
       .single()
 
@@ -54,13 +54,35 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Cannot rename main warehouse" }, { status: 400 })
     }
 
+    const resolvedBranchId = body.branch_id || existing?.branch_id || null
+    if (!resolvedBranchId) {
+      return NextResponse.json({ error: "Warehouse branch is required" }, { status: 422 })
+    }
+
+    let resolvedCostCenterId = body.cost_center_id || null
+    if (!resolvedCostCenterId) {
+      const { data: branchDefaults, error: branchDefaultsError } = await supabase
+        .from("branches")
+        .select("default_cost_center_id")
+        .eq("id", resolvedBranchId)
+        .eq("company_id", existing?.company_id)
+        .single()
+
+      if (branchDefaultsError) throw branchDefaultsError
+      resolvedCostCenterId = branchDefaults?.default_cost_center_id || null
+    }
+
+    if (!resolvedCostCenterId) {
+      return NextResponse.json({ error: "Warehouse cost center is required" }, { status: 422 })
+    }
+
     const { data: warehouse, error } = await supabase
       .from("warehouses")
       .update({
         name: body.name,
         code: body.code || null,
-        branch_id: body.branch_id || null,
-        cost_center_id: body.cost_center_id || null,
+        branch_id: resolvedBranchId,
+        cost_center_id: resolvedCostCenterId,
         address: body.address || null,
         city: body.city || null,
         phone: body.phone || null,
@@ -120,4 +142,3 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
-
