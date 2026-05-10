@@ -6,6 +6,7 @@ import {
   getManufacturingApiContext,
   handleManufacturingApiError,
   jsonError,
+  ManufacturingApiError,
   parseJsonBody,
   resolveScopedBranchId,
 } from "@/lib/manufacturing/bom-api"
@@ -97,6 +98,47 @@ export async function POST(request: NextRequest) {
       branchId: finalBranchId,
       productId: payload.product_id,
     })
+
+    const { data: existingBomForProduct, error: existingBomForProductError } = await supabase
+      .from("manufacturing_boms")
+      .select("id, bom_code, bom_name, branch_id, product_id, bom_usage")
+      .eq("company_id", companyId)
+      .eq("branch_id", finalBranchId)
+      .eq("product_id", payload.product_id)
+      .eq("bom_usage", payload.bom_usage)
+      .maybeSingle()
+
+    if (existingBomForProductError) throw existingBomForProductError
+    if (existingBomForProduct) {
+      throw new ManufacturingApiError(
+        409,
+        "A BOM already exists for this product, branch and usage. Open the existing BOM and add a new version instead.",
+        {
+          code: "DUPLICATE_BOM_PRODUCT_USAGE",
+          existing_bom: existingBomForProduct,
+        }
+      )
+    }
+
+    const { data: existingBomForCode, error: existingBomForCodeError } = await supabase
+      .from("manufacturing_boms")
+      .select("id, bom_code, bom_name, branch_id, product_id, bom_usage")
+      .eq("company_id", companyId)
+      .eq("branch_id", finalBranchId)
+      .eq("bom_code", payload.bom_code)
+      .maybeSingle()
+
+    if (existingBomForCodeError) throw existingBomForCodeError
+    if (existingBomForCode) {
+      throw new ManufacturingApiError(
+        409,
+        "BOM code is already used in this branch. Choose a different BOM code.",
+        {
+          code: "DUPLICATE_BOM_CODE",
+          existing_bom: existingBomForCode,
+        }
+      )
+    }
 
     const { data, error } = await supabase
       .from("manufacturing_boms")

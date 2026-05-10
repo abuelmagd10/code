@@ -32,7 +32,9 @@ import {
   fetchBomList,
   fetchBranchOptions,
   fetchManufacturingProductOptions,
+  findExistingBomForCreateSelection,
   formatDateTime,
+  getDuplicateBomCreateMessage,
   getVersionStatusLabel,
   getVersionStatusVariant,
 } from "@/lib/manufacturing/bom-ui"
@@ -67,6 +69,8 @@ export function BomListPage() {
   const [lookupsLoading, setLookupsLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [createScopeBoms, setCreateScopeBoms] = useState<BomListItem[]>([])
+  const [createScopeLoading, setCreateScopeLoading] = useState(false)
 
   const [filterForm, setFilterForm] = useState<BomListFilters>({
     branchId: "",
@@ -96,15 +100,24 @@ export function BomListPage() {
     [branches]
   )
 
+  const existingCreateBomByProductId = useMemo(() => {
+    const entries = createScopeBoms
+      .filter((bom) => bom.branch_id === createForm.branch_id && bom.bom_usage === createForm.bom_usage)
+      .map((bom) => [bom.product_id, bom] as const)
+
+    return new Map(entries)
+  }, [createScopeBoms, createForm.branch_id, createForm.bom_usage])
+
   // Only "manufactured" products can own a BOM — filter strictly here to prevent UX confusion.
   const ownerProductOptions = useMemo(
     () =>
       products.filter(
         (product) =>
           product.product_type === "manufactured" &&
-          (!createForm.branch_id || !product.branch_id || product.branch_id === createForm.branch_id)
+          (!createForm.branch_id || !product.branch_id || product.branch_id === createForm.branch_id) &&
+          !existingCreateBomByProductId.has(product.id)
       ),
-    [products, createForm.branch_id]
+    [products, createForm.branch_id, existingCreateBomByProductId]
   )
 
   const selectedProduct = useMemo(
@@ -164,6 +177,28 @@ export function BomListPage() {
     }
   }, [toast, lang])
 
+  const loadCreateScopeBoms = useCallback(async () => {
+    if (!createOpen || !createForm.branch_id || !createForm.bom_usage) {
+      setCreateScopeBoms([])
+      return
+    }
+
+    try {
+      setCreateScopeLoading(true)
+      const result = await fetchBomList({
+        branchId: createForm.branch_id,
+        bomUsage: createForm.bom_usage,
+        isActive: "all",
+      })
+      setCreateScopeBoms(result.items)
+    } catch (error) {
+      console.error("Error loading BOM create scope:", error)
+      setCreateScopeBoms([])
+    } finally {
+      setCreateScopeLoading(false)
+    }
+  }, [createForm.bom_usage, createForm.branch_id, createOpen])
+
   useEffect(() => {
     loadLookups()
   }, [loadLookups])
@@ -172,6 +207,10 @@ export function BomListPage() {
     if (!canRead) return
     loadBoms(appliedFilters)
   }, [appliedFilters, canRead, loadBoms])
+
+  useEffect(() => {
+    loadCreateScopeBoms()
+  }, [loadCreateScopeBoms])
 
   const resetCreateForm = useCallback(() => {
     setCreateForm({
@@ -194,14 +233,22 @@ export function BomListPage() {
     })
   }
 
+  const showDuplicateBomToast = useCallback((existingBom?: Pick<BomListItem, "bom_code" | "bom_name"> | null) => {
+    toast({
+      variant: "destructive",
+      title: lang === "en" ? "BOM already exists" : "قائمة المواد موجودة بالفعل",
+      description: getDuplicateBomCreateMessage(existingBom, lang),
+    })
+  }, [lang, toast])
+
   const handleCreate = async () => {
-    if (!createForm.product_id || !createForm.bom_code.trim() || !createForm.bom_name.trim()) {
+    if (!createForm.branch_id || !createForm.product_id || !createForm.bom_code.trim() || !createForm.bom_name.trim()) {
       toast({
         variant: "destructive",
         title: lang === "en" ? "Missing required fields" : "البيانات الأساسية غير مكتملة",
         description: lang === "en"
-          ? "Product, BOM code and name are required."
-          : "يجب تحديد المنتج ورمز قائمة المواد واسمها قبل الإنشاء.",
+          ? "Branch, product, BOM code and name are required."
+          : "يجب تحديد الفرع والمنتج ورمز قائمة المواد واسمها قبل الإنشاء.",
       })
       return
     }
@@ -218,8 +265,31 @@ export function BomListPage() {
       return
     }
 
+    const duplicateFromLoadedScope = findExistingBomForCreateSelection(createScopeBoms, createForm)
+    if (duplicateFromLoadedScope) {
+      showDuplicateBomToast(duplicateFromLoadedScope)
+      return
+    }
+
     try {
       setCreating(true)
+      const duplicateCheck = await fetchBomList({
+        branchId: createForm.branch_id,
+        productId: createForm.product_id,
+        bomUsage: createForm.bom_usage,
+        isActive: "all",
+      })
+      const duplicateFromServer = findExistingBomForCreateSelection(duplicateCheck.items, createForm)
+      if (duplicateFromServer) {
+        setCreateScopeBoms((current) => {
+          const byId = new Map(current.map((bom) => [bom.id, bom]))
+          byId.set(duplicateFromServer.id, duplicateFromServer)
+          return Array.from(byId.values())
+        })
+        showDuplicateBomToast(duplicateFromServer)
+        return
+      }
+
       const created = await createBom({
         ...createForm,
         bom_code: createForm.bom_code.trim(),
@@ -238,6 +308,24 @@ export function BomListPage() {
       await loadBoms(appliedFilters)
       router.push(`/manufacturing/boms/${created.id}`)
     } catch (error: any) {
+      const errorCode = error?.code || error?.details?.code
+      if (errorCode === "DUPLICATE_BOM_PRODUCT_USAGE") {
+        showDuplicateBomToast(error?.details?.existing_bom)
+        await loadCreateScopeBoms()
+        return
+      }
+
+      if (errorCode === "DUPLICATE_BOM_CODE") {
+        toast({
+          variant: "destructive",
+          title: lang === "en" ? "BOM code already exists" : "رمز قائمة المواد مستخدم بالفعل",
+          description: lang === "en"
+            ? "Choose a different BOM code for this branch."
+            : "اختر رمزاً مختلفاً لقائمة المواد داخل هذا الفرع.",
+        })
+        return
+      }
+
       toast({
         variant: "destructive",
         title: lang === "en" ? "Failed to create BOM" : "تعذّر إنشاء قائمة المواد",
@@ -566,6 +654,7 @@ export function BomListPage() {
                       ...current,
                       branch_id: value,
                       product_id: "",
+                      source_warehouse_id: null,
                     }))
                   }
                 >
@@ -604,15 +693,30 @@ export function BomListPage() {
                 <Label>{lang === "en" ? "Manufactured Product" : "المنتج المصنَّع"}</Label>
                 <Select
                   value={createForm.product_id || ""}
+                  disabled={!createForm.branch_id || createScopeLoading}
                   onValueChange={(value) => setCreateForm((current) => ({ ...current, product_id: value }))}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder={lang === "en" ? "Select finished product" : "اختر المنتج النهائي"} />
+                    <SelectValue
+                      placeholder={
+                        !createForm.branch_id
+                          ? (lang === "en" ? "Select branch first" : "اختر الفرع أولاً")
+                          : (lang === "en" ? "Select finished product" : "اختر المنتج النهائي")
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    {ownerProductOptions.length === 0 ? (
+                    {createScopeLoading ? (
                       <div className="py-3 px-2 text-sm text-muted-foreground text-center">
-                        {lang === "en" ? "No products available for this branch" : "لا توجد منتجات متاحة للفرع المختار"}
+                        {lang === "en" ? "Loading available products..." : "جاري تحميل المنتجات المتاحة..."}
+                      </div>
+                    ) : ownerProductOptions.length === 0 ? (
+                      <div className="py-3 px-2 text-sm text-muted-foreground text-center">
+                        {createScopeBoms.length > 0
+                          ? (lang === "en"
+                              ? "All manufactured products for this branch/usage already have a BOM"
+                              : "كل المنتجات التصنيعية لهذا الفرع ونوع الاستخدام لديها قائمة مواد بالفعل")
+                          : (lang === "en" ? "No products available for this branch" : "لا توجد منتجات متاحة للفرع المختار")}
                       </div>
                     ) : (
                       ownerProductOptions.map((product) => (
@@ -654,7 +758,11 @@ export function BomListPage() {
                 <Label>{lang === "en" ? "Usage Type" : "نوع الاستخدام"}</Label>
                 <Select
                   value={createForm.bom_usage}
-                  onValueChange={(value) => setCreateForm((current) => ({ ...current, bom_usage: value as BomCreatePayload["bom_usage"] }))}
+                  onValueChange={(value) => setCreateForm((current) => ({
+                    ...current,
+                    bom_usage: value as BomCreatePayload["bom_usage"],
+                    product_id: "",
+                  }))}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
@@ -691,7 +799,7 @@ export function BomListPage() {
               <Button variant="outline" onClick={() => setCreateOpen(false)}>
                 {lang === "en" ? "Cancel" : "إلغاء"}
               </Button>
-              <Button onClick={handleCreate} disabled={creating || lookupsLoading}>
+              <Button onClick={handleCreate} disabled={creating || lookupsLoading || createScopeLoading}>
                 {creating ? (lang === "en" ? "Creating..." : "جاري الإنشاء...") : (lang === "en" ? "Create BOM" : "إنشاء قائمة المواد")}
               </Button>
             </DialogFooter>

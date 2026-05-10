@@ -7,9 +7,12 @@ import {
   canRejectVersion,
   canSetDefaultVersion,
   canSubmitVersion,
+  findExistingBomForCreateSelection,
   formatQuantity,
+  getDuplicateBomCreateMessage,
   getVersionStatusLabel,
   getVersionStatusVariant,
+  type BomListItem,
   isVersionHeaderEditable,
   isVersionStructureEditable,
   type BomLine,
@@ -184,6 +187,34 @@ describe("manufacturing BOM UI helpers", () => {
     expect(buildProductLabel({ id: "p2", name: "Unnamed SKU" })).toBe("Unnamed SKU")
     expect(buildProductLabel(undefined)).toBe("—")
     expect(formatQuantity(12.34567)).toBe("12.3457")
+  })
+
+  it("detects duplicate BOM create selections by branch, product and usage", () => {
+    const existingBom = {
+      id: "bom-1",
+      branch_id: "branch-1",
+      product_id: "product-1",
+      bom_usage: "production",
+      bom_code: "BOM-FG-001",
+      bom_name: "Finished Good BOM",
+      versions: [],
+      is_active: true,
+    } as BomListItem
+
+    expect(findExistingBomForCreateSelection([existingBom], {
+      branch_id: "branch-1",
+      product_id: "product-1",
+      bom_usage: "production",
+    })).toBe(existingBom)
+
+    expect(findExistingBomForCreateSelection([existingBom], {
+      branch_id: "branch-1",
+      product_id: "product-1",
+      bom_usage: "engineering",
+    })).toBeNull()
+
+    expect(getDuplicateBomCreateMessage(existingBom)).toContain("BOM-FG-001")
+    expect(getDuplicateBomCreateMessage(existingBom, "en")).toContain("add a new version")
   })
 
   it("maps manufacturing BOM routes to the correct guarded resource", () => {

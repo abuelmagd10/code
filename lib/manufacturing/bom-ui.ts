@@ -258,14 +258,32 @@ interface SuccessfulResponse<T> {
   branches?: BranchOption[]
 }
 
+export class ManufacturingUiApiError extends Error {
+  status: number
+  details?: any
+  code?: string
+
+  constructor(message: string, options: { status: number; details?: any }) {
+    super(message)
+    this.name = "ManufacturingUiApiError"
+    this.status = options.status
+    this.details = options.details
+    this.code = options.details?.code
+  }
+}
+
 async function parseApiResponse<T>(response: Response): Promise<SuccessfulResponse<T>> {
   const payload = await response.json().catch(() => null)
 
   if (!response.ok || payload?.success === false) {
-    throw new Error(
+    throw new ManufacturingUiApiError(
       payload?.error ||
       payload?.message ||
-      "حدث خطأ غير متوقع أثناء تنفيذ الطلب"
+      "حدث خطأ غير متوقع أثناء تنفيذ الطلب",
+      {
+        status: response.status,
+        details: payload?.details,
+      }
     )
   }
 
@@ -542,6 +560,41 @@ export function buildProductLabel(product?: ProductOption | null) {
 
 export function buildBranchLabel(branch?: BranchOption | null) {
   return branch?.name || branch?.branch_name || "—"
+}
+
+export function findExistingBomForCreateSelection(
+  boms: BomListItem[],
+  selection: Pick<BomCreatePayload, "branch_id" | "product_id" | "bom_usage">
+) {
+  if (!selection.branch_id || !selection.product_id || !selection.bom_usage) return null
+
+  return (
+    boms.find(
+      (bom) =>
+        bom.branch_id === selection.branch_id &&
+        bom.product_id === selection.product_id &&
+        bom.bom_usage === selection.bom_usage
+    ) || null
+  )
+}
+
+export function getDuplicateBomCreateMessage(
+  existingBom: Pick<BomListItem, "bom_code" | "bom_name"> | null | undefined,
+  lang: "ar" | "en" = "ar"
+) {
+  const label = existingBom
+    ? `${existingBom.bom_code}${existingBom.bom_name ? ` - ${existingBom.bom_name}` : ""}`
+    : null
+
+  if (lang === "en") {
+    return label
+      ? `A BOM already exists for this product, branch and usage: ${label}. Open the existing BOM and add a new version instead.`
+      : "A BOM already exists for this product, branch and usage. Open the existing BOM and add a new version instead."
+  }
+
+  return label
+    ? `توجد قائمة مواد بالفعل لهذا المنتج في نفس الفرع ونوع الاستخدام: ${label}. افتح القائمة الحالية وأضف إصداراً جديداً بدلاً من إنشاء قائمة جديدة.`
+    : "توجد قائمة مواد بالفعل لهذا المنتج في نفس الفرع ونوع الاستخدام. افتح القائمة الحالية وأضف إصداراً جديداً بدلاً من إنشاء قائمة جديدة."
 }
 
 export function isoToLocalDateTimeInput(value?: string | null) {

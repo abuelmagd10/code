@@ -196,6 +196,36 @@ export function mapDbErrorToStatus(error: any) {
   return 500
 }
 
+function mapManufacturingDbError(error: any) {
+  const code = String(error?.code || "")
+  if (code !== "23505") return null
+
+  const text = [
+    error?.message,
+    error?.details,
+    error?.hint,
+    error?.constraint,
+  ].filter(Boolean).join(" ")
+
+  if (text.includes("uq_manufacturing_boms_branch_product_usage")) {
+    return new ManufacturingApiError(
+      409,
+      "A BOM already exists for this product, branch and usage. Open the existing BOM and add a new version instead.",
+      { code: "DUPLICATE_BOM_PRODUCT_USAGE" }
+    )
+  }
+
+  if (text.includes("uq_manufacturing_boms_branch_code")) {
+    return new ManufacturingApiError(
+      409,
+      "BOM code is already used in this branch. Choose a different BOM code.",
+      { code: "DUPLICATE_BOM_CODE" }
+    )
+  }
+
+  return null
+}
+
 export function handleManufacturingApiError(error: unknown) {
   if (error instanceof ManufacturingApiError) {
     return jsonError(error.status, error.message, error.details)
@@ -207,6 +237,10 @@ export function handleManufacturingApiError(error: unknown) {
 
   if (error && typeof error === "object" && "message" in error) {
     const anyError = error as any
+    const mappedError = mapManufacturingDbError(anyError)
+    if (mappedError) {
+      return jsonError(mappedError.status, mappedError.message, mappedError.details)
+    }
     return jsonError(mapDbErrorToStatus(anyError), String(anyError.message || "Unexpected error"), anyError.details)
   }
 
