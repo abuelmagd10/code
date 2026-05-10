@@ -224,6 +224,7 @@ export default function NewTransferPage() {
 
   const loadWarehouseStock = async (warehouseId: string) => {
     try {
+      setProductStock({})
       const { data: wh } = await supabase
         .from("warehouses")
         .select("branch_id")
@@ -242,15 +243,20 @@ export default function NewTransferPage() {
 
       const { data: transactions } = await supabase
         .from("inventory_transactions")
-        .select("product_id, quantity_change, is_deleted")
+        .select("product_id, quantity_change, transaction_type, cost_center_id, is_deleted")
         .eq("company_id", companyId)
         .eq("branch_id", branchId)
-        .eq("cost_center_id", defaults.default_cost_center_id)
         .eq("warehouse_id", warehouseId)
 
       const stock: Record<string, number> = {}
         ; (transactions || []).forEach((t: any) => {
           if (t.is_deleted) return
+          const txCostCenterId = String(t.cost_center_id || '')
+          const txType = String(t.transaction_type || '')
+          const defaultCostCenterId = String(defaults.default_cost_center_id || '')
+          if (defaultCostCenterId && txCostCenterId !== defaultCostCenterId && txType !== 'transfer_in' && txType !== 'transfer_out') {
+            return
+          }
           const pid = String(t.product_id || '')
           stock[pid] = (stock[pid] || 0) + Number(t.quantity_change || 0)
         })
@@ -301,7 +307,7 @@ export default function NewTransferPage() {
         return false
       }
       const available = productStock[item.product_id] || 0
-      if (item.quantity > available) {
+      if (available <= 0 || item.quantity > available) {
         toast({ title: appLang === 'en' ? 'Quantity exceeds available stock' : 'الكمية تتجاوز المتوفر', variant: 'destructive' })
         return false
       }
@@ -580,7 +586,7 @@ export default function NewTransferPage() {
                       .map(i => i.product_id)
                       .filter(Boolean)
                     const availableProducts = products.filter(
-                      p => !selectedProductIds.includes(p.id) || p.id === item.product_id
+                      p => (productStock[p.id] || 0) > 0 && (!selectedProductIds.includes(p.id) || p.id === item.product_id)
                     )
 
                     return (
@@ -592,11 +598,17 @@ export default function NewTransferPage() {
                               <SelectValue placeholder={appLang === 'en' ? 'Select product...' : 'اختر المنتج...'} />
                             </SelectTrigger>
                             <SelectContent>
-                              {availableProducts.map(p => (
-                                <SelectItem key={p.id} value={p.id}>
-                                  {p.name} ({p.sku}) - {appLang === 'en' ? 'Avail' : 'متوفر'}: {productStock[p.id] || 0}
-                                </SelectItem>
-                              ))}
+                              {availableProducts.length === 0 ? (
+                                <div className="px-2 py-1.5 text-sm text-gray-500 dark:text-gray-400">
+                                  {appLang === 'en' ? 'No products available in source warehouse' : 'لا توجد منتجات متوفرة في المخزن المصدر'}
+                                </div>
+                              ) : (
+                                availableProducts.map(p => (
+                                  <SelectItem key={p.id} value={p.id}>
+                                    {p.name} ({p.sku}) - {appLang === 'en' ? 'Avail' : 'متوفر'}: {productStock[p.id] || 0}
+                                  </SelectItem>
+                                ))
+                              )}
                             </SelectContent>
                           </Select>
                         </div>

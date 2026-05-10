@@ -685,6 +685,43 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
         if (existingTransferOut) {
           console.log("⚠️ Transfer out already exists, skipping...")
         } else {
+          const { checkInventoryAvailability } = await import("@/lib/inventory-check")
+          const itemsToCheck = (transfer.items || []).map((item: TransferItem) => ({
+            product_id: item.product_id,
+            quantity: item.quantity_requested
+          }))
+
+          const { success, shortages } = await checkInventoryAvailability(
+            supabase,
+            itemsToCheck,
+            undefined,
+            {
+              company_id: companyId,
+              branch_id: srcBranchId,
+              warehouse_id: transfer.source_warehouse_id,
+              cost_center_id: srcCostCenterId
+            }
+          )
+
+          if (!success && shortages.length > 0) {
+            const shortageMessages = shortages.map(s => {
+              const productName = (transfer.items || []).find((i: TransferItem) => i.product_id === s.product_id)?.products?.name || 'منتج'
+              return appLang === 'en'
+                ? `• ${productName}: Required ${s.requested}, Available ${s.available}`
+                : `• ${productName}: مطلوب ${s.requested}، متوفر ${s.available}`
+            }).join('\n')
+
+            toast({
+              title: appLang === 'en' ? 'Insufficient Stock' : 'المخزون غير كافٍ',
+              description: appLang === 'en'
+                ? `Cannot receive transfer. Insufficient stock in source warehouse:\n${shortageMessages}`
+                : `لا يمكن استلام النقل. المخزون غير كافٍ في المخزن المصدر:\n${shortageMessages}`,
+              variant: 'destructive',
+              duration: 8000
+            })
+            return
+          }
+
           // 1️⃣ بدء النقل: خصم من المخزن المصدر (transfer_out)
           for (const item of transfer.items || []) {
             const destWarehouseName = (transfer.destination_warehouses as any)?.name || 'المخزن الوجهة'
