@@ -65,13 +65,11 @@ import {
   cancelProductionOrder,
   canCancelProductionOrder,
   canDeleteProductionOrder,
-  canCompleteProductionOrder,
   canEditProductionOrderHeader,
   canRegenerateProductionOrder,
   canReleaseProductionOrder,
   canStartProductionOrder,
   canUpdateProductionOrderOperationProgress,
-  completeProductionOrder,
   deleteProductionOrder,
   fetchProductionOrderDetail,
   formatDateTime,
@@ -122,11 +120,6 @@ interface RegenerateFormState {
   notes: string
 }
 
-interface CompleteFormState {
-  completed_quantity: string
-  completed_at: string
-}
-
 interface CancelFormState {
   cancellation_reason: string
   cancelled_at: string
@@ -165,11 +158,6 @@ const EMPTY_REGENERATE_FORM: RegenerateFormState = {
   notes: "",
 }
 
-const EMPTY_COMPLETE_FORM: CompleteFormState = {
-  completed_quantity: "",
-  completed_at: "",
-}
-
 const EMPTY_CANCEL_FORM: CancelFormState = {
   cancellation_reason: "",
   cancelled_at: "",
@@ -202,11 +190,9 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
   const [runningAction, setRunningAction] = useState<string | null>(null)
   const [headerForm, setHeaderForm] = useState<DraftHeaderFormState>(EMPTY_HEADER_FORM)
   const [regenerateForm, setRegenerateForm] = useState<RegenerateFormState>(EMPTY_REGENERATE_FORM)
-  const [completeForm, setCompleteForm] = useState<CompleteFormState>(EMPTY_COMPLETE_FORM)
   const [cancelForm, setCancelForm] = useState<CancelFormState>(EMPTY_CANCEL_FORM)
   const [progressForm, setProgressForm] = useState<ProgressFormState>(EMPTY_PROGRESS_FORM)
   const [regenerateOpen, setRegenerateOpen] = useState(false)
-  const [completeOpen, setCompleteOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [progressOpen, setProgressOpen] = useState(false)
   const [releaseConfirmOpen, setReleaseConfirmOpen] = useState(false)
@@ -242,7 +228,6 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
   const hasOperations = Boolean(snapshot && snapshot.operations.length > 0)
   const releaseEnabled = Boolean(order && canUpdate && canReleaseProductionOrder(order.status) && hasOperations)
   const startEnabled = Boolean(order && canUpdate && canStartProductionOrder(order.status))
-  const completeEnabled = Boolean(order && canUpdate && canCompleteProductionOrder(order.status))
   const cancelEnabled = Boolean(order && canUpdate && canCancelProductionOrder(order.status))
   const deleteEnabled = Boolean(order && canDelete && canDeleteProductionOrder(order.status))
   const busy = Boolean(runningAction) || loading || savingHeader
@@ -290,10 +275,6 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
       planned_start_at: isoToLocalDateTimeInput(nextSnapshot.order.planned_start_at),
       planned_end_at: isoToLocalDateTimeInput(nextSnapshot.order.planned_end_at),
       notes: nextSnapshot.order.notes || "",
-    })
-    setCompleteForm({
-      completed_quantity: String(nextSnapshot.order.planned_quantity ?? ""),
-      completed_at: "",
     })
     setCancelForm(EMPTY_CANCEL_FORM)
     // Phase 4: pre-fill receive quantity from planned
@@ -517,33 +498,6 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
     }
   }
 
-  const handleComplete = async () => {
-    if (!order) return
-
-    try {
-      setRunningAction("complete")
-      await completeProductionOrder(order.id, {
-        completed_quantity: Number(completeForm.completed_quantity || 0),
-        completed_at: localDateTimeInputToIso(completeForm.completed_at),
-      })
-      setCompleteOpen(false)
-      toast({
-        title: copy.detail.completeSuccessTitle,
-        description: copy.detail.completeSuccessDescription,
-      })
-      await refreshWorkspace()
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: copy.detail.completeErrorTitle,
-        description: error?.message || copy.detail.completeErrorDescription,
-      })
-      await refreshWorkspace()
-    } finally {
-      setRunningAction(null)
-    }
-  }
-
   const handleCancel = async () => {
     if (!order) return
 
@@ -699,10 +653,6 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
               <Button onClick={() => setStartConfirmOpen(true)} disabled={!startEnabled || busy} className="gap-2" data-ai-help="manufacturing_production_order_detail.start_button">
                 <PlayCircle className="h-4 w-4" />
                 {copy.detail.start}
-              </Button>
-              <Button onClick={() => setCompleteOpen(true)} disabled={!completeEnabled || busy} className="gap-2" data-ai-help="manufacturing_production_order_detail.complete_button">
-                <CheckCircle2 className="h-4 w-4" />
-                {copy.detail.complete}
               </Button>
               <Button variant="destructive" onClick={() => setCancelOpen(true)} disabled={!cancelEnabled || busy} className="gap-2" data-ai-help="manufacturing_production_order_detail.cancel_button">
                 <XCircle className="h-4 w-4" />
@@ -1504,45 +1454,6 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
             </Button>
             <Button onClick={handleRegenerate} disabled={runningAction === "regenerate"} data-ai-help="manufacturing_production_order_detail.regenerate_button">
               {runningAction === "regenerate" ? copy.common.loadingAction : copy.detail.regenerate}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={completeOpen} onOpenChange={setCompleteOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{copy.detail.dialogs.completeTitle}</DialogTitle>
-            <CardDescription>{copy.detail.dialogs.completeDescription}</CardDescription>
-          </DialogHeader>
-          <div className="grid gap-4">
-            <div className="space-y-2" data-ai-help="manufacturing_production_order_detail.completed_quantity">
-              <Label>{copy.detail.completedQty}</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.0001"
-                value={completeForm.completed_quantity}
-                onChange={(event) =>
-                  setCompleteForm((current) => ({ ...current, completed_quantity: event.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{copy.detail.completedAt}</Label>
-              <Input
-                type="datetime-local"
-                value={completeForm.completed_at}
-                onChange={(event) => setCompleteForm((current) => ({ ...current, completed_at: event.target.value }))}
-              />
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setCompleteOpen(false)} disabled={runningAction === "complete"}>
-              {copy.common.cancel}
-            </Button>
-            <Button onClick={handleComplete} disabled={runningAction === "complete"} data-ai-help="manufacturing_production_order_detail.complete_button">
-              {runningAction === "complete" ? copy.common.loadingAction : copy.detail.complete}
             </Button>
           </DialogFooter>
         </DialogContent>

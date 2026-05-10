@@ -1,6 +1,6 @@
 /**
  * POST /api/manufacturing/product-receive-approvals/[id]/approve
- * اعتماد طلب استلام المنتج النهائي — يسجل استلام المنتج في المخزون
+ * اعتماد طلب استلام المنتج النهائي — يسجل الاستلام ويغلق أمر التصنيع عند استلام كامل الكمية
  */
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
@@ -47,7 +47,7 @@ export async function POST(
 
     const { data: order, error: orderError } = await admin
       .from("manufacturing_production_orders")
-      .select("id, order_no, status, receipt_warehouse_id")
+      .select("id, order_no, status, planned_quantity, receipt_warehouse_id")
       .eq("id", approval.production_order_id)
       .eq("company_id", companyId)
       .single()
@@ -70,6 +70,23 @@ export async function POST(
       )
     }
 
+    const { data: previousReceiptLines, error: previousReceiptError } = await admin
+      .from("production_order_receipt_lines")
+      .select("received_qty")
+      .eq("production_order_id", approval.production_order_id)
+      .eq("company_id", companyId)
+
+    if (previousReceiptError) throw previousReceiptError
+
+    const plannedQty = Number(order.planned_quantity || 0)
+    const alreadyReceivedQty = (previousReceiptLines || []).reduce(
+      (sum: number, line: any) => sum + Number(line.received_qty || 0),
+      0
+    )
+    const requestedQty = Number(approval.proposed_quantity || 0)
+    const remainingQty = Math.max(0, plannedQty - alreadyReceivedQty)
+    const isFullReceipt = plannedQty > 0 && requestedQty >= remainingQty - 0.0001
+
     const { data: receiptResult, error: receiptError } = await admin.rpc("receipt_manufacturing_production_order_output_atomic", {
       p_company_id: companyId,
       p_production_order_id: approval.production_order_id,
@@ -83,6 +100,37 @@ export async function POST(
     if (receiptError) throw receiptError
 
     const approvedAt = new Date().toISOString()
+    let completeResult: any = null
+
+    if (isFullReceipt) {
+      const { error: operationsError } = await admin
+        .from("manufacturing_production_order_operations")
+        .update({
+          status: "completed",
+          completed_quantity: plannedQty,
+          actual_start_at: approvedAt,
+          actual_end_at: approvedAt,
+          started_by: user.id,
+          completed_by: user.id,
+          updated_by: user.id,
+        })
+        .eq("production_order_id", approval.production_order_id)
+        .eq("company_id", companyId)
+        .neq("status", "completed")
+
+      if (operationsError) throw operationsError
+
+      const { data: completionData, error: completionError } = await admin.rpc("complete_manufacturing_production_order_atomic", {
+        p_company_id: companyId,
+        p_production_order_id: approval.production_order_id,
+        p_completed_by: user.id,
+        p_completed_quantity: plannedQty,
+        p_completed_at: approvedAt,
+      })
+
+      if (completionError) throw completionError
+      completeResult = completionData
+    }
 
     // تحديث سجل الاعتماد بعد نجاح حركة المخزون
     const { error: approvalUpdateError } = await admin
@@ -111,7 +159,9 @@ export async function POST(
         p_reference_type: "manufacturing_product_receive_approval",
         p_reference_id: id,
         p_title: "✅ تمت الموافقة على استلام المنتج",
-        p_message: "تمت الموافقة على طلب استلام المنتج النهائي — تم إضافة المنتج للمستودع",
+        p_message: isFullReceipt
+          ? "تمت الموافقة على استلام كامل المنتج النهائي — تم إضافة المنتج للمستودع وإكمال أمر التصنيع"
+          : "تمت الموافقة على طلب استلام المنتج النهائي — تم إضافة المنتج للمستودع",
         p_created_by: user.id,
         p_assigned_to_user: approval.requested_by,
         p_assigned_to_role: null,
@@ -134,14 +184,18 @@ export async function POST(
       recordId: id,
       recordIdentifier: String(approval.production_order_id),
       oldData: { status: "pending" },
-      newData: { status: "approved", approved_by: user.id },
-      reason: "Approved product receive request and posted finished-goods receipt",
+      newData: { status: "approved", approved_by: user.id, auto_completed_order: isFullReceipt },
+      reason: isFullReceipt
+        ? "Approved full product receive request, posted finished-goods receipt, and auto-completed production order"
+        : "Approved product receive request and posted finished-goods receipt",
     })
 
     return NextResponse.json({
       success: true,
-      data: { receipt_result: receiptResult },
-      message: "تمت الموافقة على استلام المنتج وتمت إضافة المنتج للمستودع",
+      data: { receipt_result: receiptResult, complete_result: completeResult, auto_completed_order: isFullReceipt },
+      message: isFullReceipt
+        ? "تمت الموافقة على استلام كامل المنتج وتم إكمال أمر التصنيع تلقائياً"
+        : "تمت الموافقة على استلام المنتج وتمت إضافة المنتج للمستودع",
     })
   } catch (error) {
     return handleManufacturingApiError(error)
