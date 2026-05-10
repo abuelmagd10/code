@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import {
   assertBomAccessible,
+  assertBomVersionCloneable,
   createBomVersionSchema,
   getManufacturingApiContext,
   handleManufacturingApiError,
@@ -17,6 +18,16 @@ export async function POST(
     const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "write")
     const payload = await parseOptionalJsonBody(request, createBomVersionSchema)
     const bom = await assertBomAccessible(supabase, companyId, id)
+
+    if (payload.clone_from_version_id) {
+      await assertBomVersionCloneable(admin, {
+        companyId,
+        bomId: id,
+        branchId: bom.branch_id,
+        ownerProductId: bom.product_id,
+        cloneFromVersionId: payload.clone_from_version_id,
+      })
+    }
 
     const { data, error } = await admin.rpc("create_manufacturing_bom_version_atomic", {
       p_company_id: companyId,

@@ -192,14 +192,12 @@ export function mapDbErrorToStatus(error: any) {
   if (code === "23503") return 400
   if (code === "23514") return 400
   if (code === "22P02") return 400
-  if (code === "P0001") return 409
+  if (code === "P0001") return 400
   return 500
 }
 
 function mapManufacturingDbError(error: any) {
   const code = String(error?.code || "")
-  if (code !== "23505") return null
-
   const text = [
     error?.message,
     error?.details,
@@ -207,20 +205,104 @@ function mapManufacturingDbError(error: any) {
     error?.constraint,
   ].filter(Boolean).join(" ")
 
-  if (text.includes("uq_manufacturing_boms_branch_product_usage")) {
-    return new ManufacturingApiError(
-      409,
-      "A BOM already exists for this product, branch and usage. Open the existing BOM and add a new version instead.",
-      { code: "DUPLICATE_BOM_PRODUCT_USAGE" }
-    )
+  if (code === "23505") {
+    if (text.includes("uq_manufacturing_boms_branch_product_usage")) {
+      return new ManufacturingApiError(
+        409,
+        "A BOM already exists for this product, branch and usage. Open the existing BOM and add a new version instead.",
+        { code: "DUPLICATE_BOM_PRODUCT_USAGE" }
+      )
+    }
+
+    if (text.includes("uq_manufacturing_boms_branch_code")) {
+      return new ManufacturingApiError(
+        409,
+        "BOM code is already used in this branch. Choose a different BOM code.",
+        { code: "DUPLICATE_BOM_CODE" }
+      )
+    }
   }
 
-  if (text.includes("uq_manufacturing_boms_branch_code")) {
-    return new ManufacturingApiError(
-      409,
-      "BOM code is already used in this branch. Choose a different BOM code.",
-      { code: "DUPLICATE_BOM_CODE" }
-    )
+  if (code === "P0001") {
+    if (text.includes("Clone source BOM version not found")) {
+      return new ManufacturingApiError(
+        400,
+        "لا يمكن استنساخ النسخة المحددة لأنها لا تتبع قائمة المواد الحالية.",
+        { code: "INVALID_BOM_CLONE_SOURCE" }
+      )
+    }
+
+    if (text.includes("Owner product cannot be used as a direct component")) {
+      return new ManufacturingApiError(
+        400,
+        "لا يمكن استخدام المنتج النهائي نفسه كمكوّن مباشر داخل نفس نسخة قائمة المواد. عدّل المكونات أو ابدأ نسخة فارغة.",
+        { code: "BOM_OWNER_AS_COMPONENT" }
+      )
+    }
+
+    if (text.includes("Component product must have product_type populated")) {
+      return new ManufacturingApiError(
+        400,
+        "لا يمكن إنشاء/استنساخ نسخة قائمة المواد لأن أحد المكونات لا يحتوي على نوع منتج محدد.",
+        { code: "BOM_COMPONENT_MISSING_PRODUCT_TYPE" }
+      )
+    }
+
+    if (text.includes("Component product_type is not eligible")) {
+      return new ManufacturingApiError(
+        400,
+        "لا يمكن إنشاء/استنساخ نسخة قائمة المواد لأن أحد المكونات نوعه غير صالح لاستخدامه في كميات التصنيع.",
+        { code: "BOM_COMPONENT_INVALID_PRODUCT_TYPE" }
+      )
+    }
+
+    if (text.includes("Substitute product must have product_type populated")) {
+      return new ManufacturingApiError(
+        400,
+        "لا يمكن إنشاء/استنساخ نسخة قائمة المواد لأن أحد البدائل لا يحتوي على نوع منتج محدد.",
+        { code: "BOM_SUBSTITUTE_MISSING_PRODUCT_TYPE" }
+      )
+    }
+
+    if (text.includes("Substitute product_type is not eligible")) {
+      return new ManufacturingApiError(
+        400,
+        "لا يمكن إنشاء/استنساخ نسخة قائمة المواد لأن أحد البدائل نوعه غير صالح لاستخدامه في التصنيع.",
+        { code: "BOM_SUBSTITUTE_INVALID_PRODUCT_TYPE" }
+      )
+    }
+
+    if (text.includes("Substitute product cannot be the same as the primary component")) {
+      return new ManufacturingApiError(
+        400,
+        "لا يمكن أن يكون البديل هو نفس المنتج الأساسي في سطر المكوّن.",
+        { code: "BOM_SUBSTITUTE_SAME_AS_COMPONENT" }
+      )
+    }
+
+    if (text.includes("BOM substitutes are allowed only for component lines")) {
+      return new ManufacturingApiError(
+        400,
+        "البدائل مسموحة فقط مع سطور المكونات، وليست مع المنتجات المشتركة أو الثانوية.",
+        { code: "BOM_SUBSTITUTE_ON_NON_COMPONENT" }
+      )
+    }
+
+    if (text.includes("Approved BOM version effective window overlaps another approved version")) {
+      return new ManufacturingApiError(
+        409,
+        "فترة سريان نسخة قائمة المواد المعتمدة تتداخل مع نسخة معتمدة أخرى.",
+        { code: "BOM_APPROVED_EFFECTIVE_WINDOW_OVERLAP" }
+      )
+    }
+
+    if (text.includes("Approved BOM version requires effective_from")) {
+      return new ManufacturingApiError(
+        400,
+        "النسخة المعتمدة من قائمة المواد يجب أن تحتوي على تاريخ بداية السريان.",
+        { code: "BOM_APPROVED_REQUIRES_EFFECTIVE_FROM" }
+      )
+    }
   }
 
   return null
@@ -502,6 +584,122 @@ export async function assertBomStructureEligibleProducts(
       }
     }
   }
+}
+
+export async function assertBomVersionCloneable(
+  supabase: ManufacturingDbClient,
+  params: {
+    companyId: string
+    bomId: string
+    branchId: string
+    ownerProductId: string
+    cloneFromVersionId: string
+  }
+) {
+  const { data: sourceVersion, error: versionError } = await supabase
+    .from("manufacturing_bom_versions")
+    .select("id, bom_id, version_no")
+    .eq("id", params.cloneFromVersionId)
+    .eq("bom_id", params.bomId)
+    .eq("company_id", params.companyId)
+    .maybeSingle()
+
+  if (versionError) throw versionError
+
+  if (!sourceVersion) {
+    throw new ManufacturingApiError(
+      400,
+      "لا يمكن استنساخ النسخة المحددة لأنها لا تتبع قائمة المواد الحالية.",
+      { code: "INVALID_BOM_CLONE_SOURCE" }
+    )
+  }
+
+  const { data: lines, error: linesError } = await supabase
+    .from("manufacturing_bom_lines")
+    .select("id, line_no, component_product_id, line_type, quantity_per, scrap_percent, issue_uom, is_optional, notes")
+    .eq("bom_version_id", params.cloneFromVersionId)
+    .eq("company_id", params.companyId)
+    .order("line_no")
+
+  if (linesError) throw linesError
+
+  const lineIds = (lines || []).map((line) => line.id)
+  let substitutes: Array<{
+    bom_line_id: string
+    substitute_product_id: string
+    substitute_quantity: number
+    priority: number
+    effective_from?: string | null
+    effective_to?: string | null
+    notes?: string | null
+  }> = []
+
+  if (lineIds.length > 0) {
+    const { data, error } = await supabase
+      .from("manufacturing_bom_line_substitutes")
+      .select("bom_line_id, substitute_product_id, substitute_quantity, priority, effective_from, effective_to, notes")
+      .eq("company_id", params.companyId)
+      .in("bom_line_id", lineIds)
+
+    if (error) throw error
+    substitutes = data || []
+  }
+
+  const substitutesByLineId = substitutes.reduce<Record<string, typeof substitutes>>((acc, substitute) => {
+    acc[substitute.bom_line_id] ||= []
+    acc[substitute.bom_line_id].push(substitute)
+    return acc
+  }, {})
+
+  const cloneLines: UpdateBomStructureInput["lines"] = (lines || []).map((line) => ({
+    line_no: Number(line.line_no),
+    component_product_id: line.component_product_id,
+    line_type: line.line_type,
+    quantity_per: Number(line.quantity_per),
+    scrap_percent: Number(line.scrap_percent || 0),
+    issue_uom: line.issue_uom || null,
+    is_optional: Boolean(line.is_optional),
+    notes: line.notes || null,
+    substitutes: (substitutesByLineId[line.id] || []).map((substitute) => ({
+      substitute_product_id: substitute.substitute_product_id,
+      substitute_quantity: Number(substitute.substitute_quantity),
+      priority: Number(substitute.priority || 1),
+      effective_from: substitute.effective_from || null,
+      effective_to: substitute.effective_to || null,
+      notes: substitute.notes || null,
+    })),
+  }))
+
+  const ownerAsComponentLine = cloneLines.find(
+    (line) => line.line_type === "component" && line.component_product_id === params.ownerProductId
+  )
+
+  if (ownerAsComponentLine) {
+    throw new ManufacturingApiError(
+      400,
+      `لا يمكن استنساخ النسخة v${sourceVersion.version_no} لأن السطر ${ownerAsComponentLine.line_no} يستخدم المنتج النهائي نفسه كمكوّن. ابدأ نسخة فارغة أو عدّل النسخة المصدر أولاً.`,
+      { code: "BOM_OWNER_AS_COMPONENT", sourceVersionId: sourceVersion.id, lineNo: ownerAsComponentLine.line_no }
+    )
+  }
+
+  try {
+    await assertBomStructureEligibleProducts(supabase, {
+      companyId: params.companyId,
+      branchId: params.branchId,
+      lines: cloneLines,
+    })
+  } catch (error) {
+    if (error instanceof ManufacturingApiError) {
+      throw new ManufacturingApiError(
+        error.status,
+        `لا يمكن استنساخ النسخة v${sourceVersion.version_no}: ${error.message}`,
+        { code: "INVALID_BOM_CLONE_STRUCTURE", sourceVersionId: sourceVersion.id, cause: error.details }
+      )
+    }
+    throw error
+  }
+
+  return sourceVersion
 }
 
 export async function assertBomAccessible(

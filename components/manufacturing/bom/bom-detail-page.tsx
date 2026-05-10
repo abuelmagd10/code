@@ -1789,7 +1789,13 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
               )}
         </div>
 
-        <Dialog open={createVersionOpen} onOpenChange={setCreateVersionOpen}>
+        <Dialog
+          open={createVersionOpen}
+          onOpenChange={(open) => {
+            setCreateVersionOpen(open)
+            if (!open) setCreateVersionForm(EMPTY_CREATE_VERSION_FORM)
+          }}
+        >
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>إنشاء BOM Version جديدة</DialogTitle>
