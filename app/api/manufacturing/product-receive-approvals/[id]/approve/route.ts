@@ -99,7 +99,9 @@ export async function POST(
 
     if (receiptError) throw receiptError
 
-    const approvedAt = new Date().toISOString()
+    const approvedAtDate = new Date()
+    const approvedAt = approvedAtDate.toISOString()
+    const operationStartAt = new Date(approvedAtDate.getTime() - 1000).toISOString()
     let completeResult: any = null
 
     if (isFullReceipt) {
@@ -108,7 +110,7 @@ export async function POST(
         .update({
           status: "completed",
           completed_quantity: plannedQty,
-          actual_start_at: approvedAt,
+          actual_start_at: operationStartAt,
           actual_end_at: approvedAt,
           started_by: user.id,
           completed_by: user.id,
