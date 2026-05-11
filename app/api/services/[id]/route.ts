@@ -111,6 +111,16 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
     if (error) throw error
 
+    // Update product_catalog_id separately if explicitly provided (allows clearing to null)
+    if (body.product_catalog_id !== undefined) {
+      const { error: linkErr } = await supabase
+        .from('services')
+        .update({ product_catalog_id: body.product_catalog_id ?? null })
+        .eq('id', id)
+        .eq('company_id', companyId)
+      if (linkErr) throw linkErr
+    }
+
     asyncAuditLog({
       companyId,
       userId:   user.id,

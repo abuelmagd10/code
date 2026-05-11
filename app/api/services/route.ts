@@ -118,6 +118,16 @@ export async function POST(req: NextRequest) {
 
     if (error) throw error
 
+    // Set product_catalog_id if provided (not included in create_service_atomic parameters)
+    if (body.product_catalog_id) {
+      const { error: linkErr } = await supabase
+        .from('services')
+        .update({ product_catalog_id: body.product_catalog_id })
+        .eq('id', result.service_id)
+        .eq('company_id', companyId)
+      if (linkErr) throw linkErr
+    }
+
     asyncAuditLog({
       companyId,
       userId:   user.id,

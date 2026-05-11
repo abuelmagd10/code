@@ -18,8 +18,10 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
-import { Plus, Search, ClipboardList } from "lucide-react"
+import { Plus, Search, ClipboardList, Info, X } from "lucide-react"
 import type { Service } from "@/types/services"
+
+const BANNER_KEY = "services_catalog_banner_dismissed"
 
 const SERVICE_TYPE_OPTIONS = [
   { value: "all",        ar: "جميع الأنواع", en: "All Types" },
@@ -64,6 +66,20 @@ export default function ServicesPage() {
   // Archive dialog
   const [archiveTarget, setArchiveTarget] = useState<Service | null>(null)
   const [isArchiving, setIsArchiving]     = useState(false)
+
+  // Dismissible info banner
+  const [showBanner, setShowBanner] = useState(false)
+  useEffect(() => {
+    try {
+      setShowBanner(localStorage.getItem(BANNER_KEY) !== "1")
+    } catch {
+      setShowBanner(false)
+    }
+  }, [])
+  const dismissBanner = () => {
+    try { localStorage.setItem(BANNER_KEY, "1") } catch { /* ignore */ }
+    setShowBanner(false)
+  }
 
   // Check permissions via supabase (canAction is async and takes supabase)
   useEffect(() => {
@@ -142,8 +158,11 @@ export default function ServicesPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
       <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
         <ERPPageHeader
-          title={t("الخدمات", "Services")}
-          description={t(`${total} خدمة مسجلة`, `${total} services registered`)}
+          title={t("خدمات الحجز", "Booking Services")}
+          description={t(
+            "الخدمات القابلة للجدولة بمواعيد محددة، مع موظفين وطاقة استيعابية",
+            "Schedulable services with defined appointments, staff, and capacity"
+          )}
           variant="list"
           actions={
             canCreate ? (
@@ -156,6 +175,26 @@ export default function ServicesPage() {
             ) : undefined
           }
         />
+
+        {/* Info banner — dismissible */}
+        {showBanner && (
+          <div className="mt-4 flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40 px-4 py-3 text-sm text-blue-800 dark:text-blue-200">
+            <Info className="mt-0.5 w-4 h-4 flex-shrink-0" />
+            <p className="flex-1">
+              {t(
+                "هذه الخدمات مخصصة للحجوزات (مثل الجلسات والمواعيد). يختلف هذا عن كتالوج المنتجات والخدمات في قسم المبيعات. يمكنك ربط خدمة الحجز بمنتج في الكتالوج لتفعيل الترحيل المحاسبي التلقائي عند إتمام الحجز.",
+                "These services are for bookings (e.g. sessions and appointments). This is separate from the products/services catalog in the Sales module. You can link a booking service to a product to enable automatic GL posting when a booking is completed."
+              )}
+            </p>
+            <button
+              onClick={dismissBanner}
+              className="flex-shrink-0 rounded p-0.5 hover:bg-blue-100 dark:hover:bg-blue-900"
+              aria-label={t("إغلاق", "Dismiss")}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Filters */}
         <FilterContainer

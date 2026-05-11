@@ -3,7 +3,7 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
-import { Eye, Pencil, Archive, Clock, Users } from "lucide-react"
+import { Eye, Pencil, Archive, Clock, Users, Link2 } from "lucide-react"
 import Link from "next/link"
 import type { Service } from "@/types/services"
 
@@ -96,6 +96,21 @@ export function ServicesTable({
           <Users className="w-3.5 h-3.5" />
           {row.capacity}
         </span>
+      ),
+    },
+    {
+      key: "product_catalog_id",
+      header: t("ربط", "Linked"),
+      align: "center" as const,
+      format: (_, row) => (
+        row.product_catalog_id ? (
+          <span title={t("مرتبط بكتالوج المنتجات", "Linked to product catalog")}
+            className="inline-flex items-center justify-center text-blue-600 dark:text-blue-400">
+            <Link2 className="w-4 h-4" />
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-xs">—</span>
+        )
       ),
     },
     {

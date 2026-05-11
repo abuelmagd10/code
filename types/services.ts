@@ -31,6 +31,7 @@ export interface Service {
 
   revenue_account_id: string | null
   expense_account_id: string | null
+  product_catalog_id: string | null
 
   image_url: string | null
   color_code: string | null

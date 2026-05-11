@@ -20,14 +20,14 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { Loader2, Save } from "lucide-react"
+import { Loader2, Save, Link2 } from "lucide-react"
 import { createServiceSchema, SERVICE_TYPE_VALUES } from "@/lib/services/booking-api"
 import {
   ServiceSchedulesEditor,
   schedulesToUpsertInput,
   type ScheduleRow,
 } from "@/components/services/ServiceSchedulesEditor"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import type { Service, ServiceSchedule } from "@/types/services"
 
 // Use createServiceSchema for both create and edit (edit uses same fields)
@@ -65,6 +65,20 @@ export function ServiceForm({
     initialSchedules ?? []
   )
 
+  const [catalogProducts, setCatalogProducts] = useState<{ id: string; name: string }[]>([])
+  useEffect(() => {
+    fetch("/api/products?item_type=service&limit=200")
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        if (json?.products) {
+          setCatalogProducts(
+            json.products.map((p: any) => ({ id: p.id, name: p.name ?? p.product_name ?? p.id }))
+          )
+        }
+      })
+      .catch(() => { /* non-critical */ })
+  }, [])
+
   const form = useForm<ServiceFormValues>({
     resolver: zodResolver(createServiceSchema),
     defaultValues: {
@@ -91,6 +105,7 @@ export function ServiceForm({
       revenue_account_id: null,
       expense_account_id: null,
       cost_center_id: null,
+      product_catalog_id: null,
       branch_id: null,
       ...initialData,
     },
@@ -353,6 +368,43 @@ export function ServiceForm({
                           onChange={(e) => field.onChange(e.target.value || null)}
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Product Catalog Link */}
+                <FormField
+                  control={form.control}
+                  name="product_catalog_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <Link2 className="w-3.5 h-3.5" />
+                        {t("ربط بكتالوج المنتجات", "Link to Product Catalog")}
+                      </FormLabel>
+                      <Select
+                        value={field.value ?? "none"}
+                        onValueChange={(v) => field.onChange(v === "none" ? null : v)}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder={t("اختر منتج (اختياري)", "Select product (optional)")} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">{t("بدون ربط", "No link")}</SelectItem>
+                          {catalogProducts.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription className="text-xs">
+                        {t(
+                          "ربط اختياري بمنتج من نوع «خدمة» في كتالوج المبيعات. عند إتمام الحجز سيُستخدم هذا المنتج لإنشاء بند في الفاتورة والترحيل المحاسبي تلقائياً.",
+                          "Optional link to a service-type product in the sales catalog. When a booking is completed, this product will be used to create an invoice line item and trigger automatic GL posting."
+                        )}
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
