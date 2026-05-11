@@ -26,15 +26,33 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
     const supabase = await createClient()
 
-    const { data, error } = await supabase
+    const { data: staffRows, error } = await supabase
       .from('service_staff')
-      .select('*, company_members(user_id, email, role, full_name)')
+      .select('*')
       .eq('service_id', id)
       .eq('company_id', companyId)
 
     if (error) throw error
 
-    return NextResponse.json({ success: true, staff: data })
+    // Enrich with member profile (no hard FK between service_staff and company_members)
+    let staff = staffRows ?? []
+    if (staff.length > 0) {
+      const userIds = [...new Set(staff.map((s: any) => s.employee_user_id))]
+      const { data: members } = await supabase
+        .from('company_members')
+        .select('user_id, email, role, full_name')
+        .eq('company_id', companyId)
+        .in('user_id', userIds)
+      if (members && members.length > 0) {
+        const memberMap = Object.fromEntries(members.map((m: any) => [m.user_id, m]))
+        staff = staff.map((s: any) => ({
+          ...s,
+          company_members: memberMap[s.employee_user_id] ?? null,
+        }))
+      }
+    }
+
+    return NextResponse.json({ success: true, staff })
   } catch (error) {
     return handleBookingApiError(error)
   }

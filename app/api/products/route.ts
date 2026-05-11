@@ -7,6 +7,42 @@ import {
   validateProductAccountingSelection,
 } from "@/lib/product-accounting"
 
+export async function GET(req: Request) {
+  try {
+    const { context, errorResponse } = await apiGuard(req, {
+      requireAuth: true,
+      requireCompany: true,
+    })
+    if (errorResponse) return errorResponse
+
+    const { companyId } = context!
+    const url = new URL(req.url)
+    const itemType = url.searchParams.get('item_type')
+    const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '50', 10), 500)
+    const search = url.searchParams.get('search') ?? ''
+
+    const supabase = await createClient()
+
+    let query = supabase
+      .from('products')
+      .select('id, name, item_type, is_active', { count: 'exact' })
+      .eq('company_id', companyId)
+      .eq('is_active', true)
+      .order('name')
+      .limit(limit)
+
+    if (itemType) query = query.eq('item_type', itemType)
+    if (search)   query = query.ilike('name', `%${search}%`)
+
+    const { data: products, error, count } = await query
+    if (error) throw error
+
+    return NextResponse.json({ success: true, products: products ?? [], total: count ?? 0 })
+  } catch (error) {
+    return ErrorHandler.handle(error)
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const { context, errorResponse } = await apiGuard(req, {
