@@ -76,8 +76,8 @@ export default function ServiceDetailPage() {
         if (!res.ok) throw new Error("Not found")
         const json = await res.json()
         setService(json.service)
-        if (json.schedules) {
-          setSchedules(schedulesFromApi(json.schedules))
+        if (json.service?.schedules) {
+          setSchedules(schedulesFromApi(json.service.schedules))
         }
       } catch {
         router.push(`/services${q}`)

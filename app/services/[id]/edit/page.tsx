@@ -38,8 +38,8 @@ export default function EditServicePage() {
         if (!res.ok) throw new Error("Not found")
         const json = await res.json()
         setService(json.service)
-        if (json.schedules) {
-          setInitialSchedules(schedulesFromApi(json.schedules))
+        if (json.service?.schedules) {
+          setInitialSchedules(schedulesFromApi(json.service.schedules))
         }
       } catch {
         router.push(`/services${q}`)
@@ -64,11 +64,13 @@ export default function EditServicePage() {
 
       // 2. Replace schedules
       const activeSchedules = schedulesToUpsertInput(schedules)
-      await fetch(`/api/services/${id}/schedules`, {
+      const schedRes  = await fetch(`/api/services/${id}/schedules`, {
         method:  "PUT",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ schedules: activeSchedules }),
       })
+      const schedJson = await schedRes.json()
+      if (!schedRes.ok) throw new Error(schedJson.error || "Failed to update schedules")
 
       toastActionSuccess(toast, t("تم حفظ التعديلات بنجاح", "Changes saved successfully"))
       router.push(`/services/${id}${q}`)
