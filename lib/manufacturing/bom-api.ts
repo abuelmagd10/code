@@ -10,7 +10,7 @@ export const BOM_USAGE_VALUES = ["production", "engineering"] as const
 export const BOM_LINE_TYPE_VALUES = ["component", "co_product", "by_product"] as const
 export const SUBSTITUTE_STRATEGY_VALUES = ["none", "primary_only"] as const
 export const MANUFACTURING_OWNER_PRODUCT_TYPE = "manufactured" as const
-export const BOM_ALLOWED_INPUT_PRODUCT_TYPES = ["raw_material", "purchased", "manufactured"] as const
+export const BOM_ALLOWED_INPUT_PRODUCT_TYPES = ["raw_material"] as const
 
 const BOM_ALLOWED_INPUT_PRODUCT_TYPE_SET = new Set<string>(BOM_ALLOWED_INPUT_PRODUCT_TYPES)
 
@@ -251,7 +251,7 @@ function mapManufacturingDbError(error: any) {
     if (text.includes("Component product_type is not eligible")) {
       return new ManufacturingApiError(
         400,
-        "لا يمكن إنشاء/استنساخ نسخة قائمة المواد لأن أحد المكونات نوعه غير صالح لاستخدامه في كميات التصنيع.",
+        "لا يمكن إنشاء/استنساخ نسخة قائمة المواد لأن مكوّنات التصنيع يجب أن تكون من نوع مادة خام فقط.",
         { code: "BOM_COMPONENT_INVALID_PRODUCT_TYPE" }
       )
     }
@@ -267,7 +267,7 @@ function mapManufacturingDbError(error: any) {
     if (text.includes("Substitute product_type is not eligible")) {
       return new ManufacturingApiError(
         400,
-        "لا يمكن إنشاء/استنساخ نسخة قائمة المواد لأن أحد البدائل نوعه غير صالح لاستخدامه في التصنيع.",
+        "لا يمكن إنشاء/استنساخ نسخة قائمة المواد لأن بدائل المكوّنات يجب أن تكون من نوع مادة خام فقط.",
         { code: "BOM_SUBSTITUTE_INVALID_PRODUCT_TYPE" }
       )
     }
@@ -541,7 +541,7 @@ export async function assertBomStructureEligibleProducts(
     if (!isBomInputProductTypeAllowed(componentType)) {
       throw new ManufacturingApiError(
         400,
-        `Component product ${componentLabel} with product_type=${componentType} is not eligible for BOM quantity logic`
+        `Component product ${componentLabel} with product_type=${componentType} is not eligible for BOM quantity logic. Component lines must use raw_material products.`
       )
     }
 
@@ -571,7 +571,7 @@ export async function assertBomStructureEligibleProducts(
       if (!isBomInputProductTypeAllowed(substituteType)) {
         throw new ManufacturingApiError(
           400,
-          `Substitute product ${substituteLabel} with product_type=${substituteType} is not eligible for BOM quantity logic`
+          `Substitute product ${substituteLabel} with product_type=${substituteType} is not eligible for BOM quantity logic. Substitute products must use raw_material products.`
         )
       }
 

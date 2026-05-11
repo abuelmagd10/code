@@ -201,11 +201,11 @@ describe("manufacturing BOM UI helpers", () => {
     const legacyProduct = { id: "legacy-1", item_type: "product", product_type: null }
 
     expect(isBomLineProductOptionAllowed(rawMaterial, "component", ownerProductId)).toBe(true)
-    expect(isBomLineProductOptionAllowed(purchased, "component", ownerProductId)).toBe(true)
-    expect(isBomLineProductOptionAllowed(subAssembly, "component", ownerProductId)).toBe(true)
+    expect(isBomLineProductOptionAllowed(purchased, "component", ownerProductId)).toBe(false)
+    expect(isBomLineProductOptionAllowed(subAssembly, "component", ownerProductId)).toBe(false)
     expect(isBomLineProductOptionAllowed(ownerProduct, "component", ownerProductId)).toBe(false)
     expect(isBomLineProductOptionAllowed(service, "component", ownerProductId)).toBe(false)
-    expect(isBomLineProductOptionAllowed(legacyProduct, "component", ownerProductId)).toBe(true)
+    expect(isBomLineProductOptionAllowed(legacyProduct, "component", ownerProductId)).toBe(false)
 
     expect(isBomLineProductOptionAllowed(subAssembly, "co_product", ownerProductId)).toBe(true)
     expect(isBomLineProductOptionAllowed(rawMaterial, "co_product", ownerProductId)).toBe(false)
@@ -213,7 +213,7 @@ describe("manufacturing BOM UI helpers", () => {
     expect(isBomLineProductOptionAllowed(legacyProduct, "by_product", ownerProductId)).toBe(false)
     expect(isBomLineProductOptionAllowed(ownerProduct, "by_product", ownerProductId)).toBe(false)
 
-    expect(getBomLineProductFilterMessage("component")).toContain("مواد خام")
+    expect(getBomLineProductFilterMessage("component")).toContain("المواد الخام فقط")
     expect(getBomLineProductFilterMessage("co_product")).toContain("المنتجات المصنّعة")
   })
 

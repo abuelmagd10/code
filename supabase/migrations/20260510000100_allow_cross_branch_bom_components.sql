@@ -1,14 +1,24 @@
 -- ==============================================================================
--- Manufacturing BOM component branch scope relaxation
+-- Manufacturing BOM component branch scope and line-type product filtering
 -- Purpose:
 --   A BOM is the manufacturing recipe for a company product. Component selection
 --   should be driven by product_type and company ownership, while the actual
 --   issue warehouse/branch is governed later by the production order.
 -- Scope:
---   - Allow BOM components/substitutes from any branch in the same company.
---   - Keep services out of BOM quantity logic.
+--   - Allow BOM raw-material components/substitutes from any branch in the same company.
+--   - Require component and substitute lines to point to raw-material products only.
 --   - Require output lines (co/by products) to point to manufactured products.
 -- ==============================================================================
+
+CREATE OR REPLACE FUNCTION public.mb_is_bom_input_product_type_allowed(
+  p_product_type TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+IMMUTABLE
+AS $function$
+  SELECT COALESCE(BTRIM(p_product_type), '') = 'raw_material';
+$function$;
 
 CREATE OR REPLACE FUNCTION public.mb_is_bom_output_product_type_allowed(
   p_product_type TEXT
@@ -82,7 +92,7 @@ BEGIN
 
   IF COALESCE(p_line_type, '') = 'component' THEN
     IF NOT public.mb_is_bom_input_product_type_allowed(v_effective_component_product_type) THEN
-      RAISE EXCEPTION 'Component product_type is not eligible for BOM quantity logic. product_id=%, product_type=%',
+      RAISE EXCEPTION 'Component product_type is not eligible for BOM quantity logic. Component lines must use raw_material products. product_id=%, product_type=%',
         p_component_product_id, v_effective_component_product_type;
     END IF;
 
@@ -169,7 +179,7 @@ BEGIN
   END IF;
 
   IF NOT public.mb_is_bom_input_product_type_allowed(v_effective_substitute_product_type) THEN
-    RAISE EXCEPTION 'Substitute product_type is not eligible for BOM quantity logic. product_id=%, product_type=%',
+    RAISE EXCEPTION 'Substitute product_type is not eligible for BOM quantity logic. Substitute products must use raw_material products. product_id=%, product_type=%',
       p_substitute_product_id, v_effective_substitute_product_type;
   END IF;
 

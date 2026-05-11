@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   handleManufacturingApiError,
+  isBomInputProductTypeAllowed,
   mapDbErrorToStatus,
 } from "../lib/manufacturing/bom-api"
 
@@ -42,5 +43,12 @@ describe("manufacturing BOM API errors", () => {
     const payload = await response.json()
     expect(payload.details.code).toBe("BOM_VERSION_EMPTY_STRUCTURE")
     expect(payload.error).toContain("مكوّن واحد")
+  })
+
+  it("allows only raw materials as BOM component inputs", () => {
+    expect(isBomInputProductTypeAllowed("raw_material")).toBe(true)
+    expect(isBomInputProductTypeAllowed("purchased")).toBe(false)
+    expect(isBomInputProductTypeAllowed("manufactured")).toBe(false)
+    expect(isBomInputProductTypeAllowed("service")).toBe(false)
   })
 })

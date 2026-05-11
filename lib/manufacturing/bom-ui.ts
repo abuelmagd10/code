@@ -9,7 +9,7 @@ export const BOM_LINE_TYPE_OPTIONS = [
   { value: "by_product", label: "By Product", labelAr: "منتج ثانوي" },
 ] as const
 
-export const BOM_COMPONENT_INPUT_PRODUCT_TYPES = ["raw_material", "purchased", "manufactured"] as const
+export const BOM_COMPONENT_INPUT_PRODUCT_TYPES = ["raw_material"] as const
 export const BOM_OUTPUT_PRODUCT_TYPES = ["manufactured"] as const
 
 export const BOM_VERSION_STATUSES = [
@@ -588,8 +588,8 @@ export function isBomLineProductOptionAllowed(
 export function getBomLineProductFilterMessage(lineType: BomLineType, lang: "ar" | "en" = "ar") {
   if (lineType === "component") {
     return lang === "en"
-      ? "Shows raw materials, purchased items, and manufactured subassemblies only. Services and the finished product itself are excluded."
-      : "تظهر مواد خام، أصناف مشتراة، وتجميعات مصنّعة فرعية فقط. لا تظهر الخدمات أو المنتج النهائي نفسه."
+      ? "Shows raw materials only because this line is consumed during manufacturing. Regular products, manufactured products, services, and the finished product itself are excluded."
+      : "تظهر المواد الخام فقط لأن هذا السطر يُستهلك أثناء التصنيع. لا تظهر المنتجات العادية أو المصنّعة أو الخدمات أو المنتج النهائي نفسه."
   }
 
   return lang === "en"

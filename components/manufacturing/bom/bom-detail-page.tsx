@@ -1154,14 +1154,16 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           )}
                                         </div>
                                         <div className="space-y-2 xl:col-span-2" data-ai-help="manufacturing_bom_detail.component_product">
-                                          <Label>المادة / المنتج</Label>
+                                          <Label>{line.line_type === "component" ? "المادة الخام" : "المنتج الناتج"}</Label>
                                           <select
                                             className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
                                             value={line.component_product_id}
                                             onChange={(event) => updateLine(lineIndex, { component_product_id: event.target.value })}
                                             disabled={!structureEditable || !canUpdate}
                                           >
-                                            <option value="">اختر المنتج</option>
+                                            <option value="">
+                                              {line.line_type === "component" ? "اختر المادة الخام" : "اختر المنتج الناتج"}
+                                            </option>
                                             {getLineProductOptions(line).map((product) => (
                                               <option key={product.id} value={product.id}>
                                                 {getProductOptionLabel(product, line.line_type)}
