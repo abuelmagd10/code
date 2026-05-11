@@ -34,12 +34,16 @@ export default function EditServicePage() {
     const load = async () => {
       setIsLoading(true)
       try {
-        const res = await fetch(`/api/services/${id}`)
-        if (!res.ok) throw new Error("Not found")
-        const json = await res.json()
-        setService(json.service)
-        if (json.service?.schedules) {
-          setInitialSchedules(schedulesFromApi(json.service.schedules))
+        const [svcRes, schedRes] = await Promise.all([
+          fetch(`/api/services/${id}`, { cache: 'no-store' }),
+          fetch(`/api/services/${id}/schedules`, { cache: 'no-store' }),
+        ])
+        if (!svcRes.ok) throw new Error("Not found")
+        const svcJson   = await svcRes.json()
+        const schedJson = schedRes.ok ? await schedRes.json() : null
+        setService(svcJson.service)
+        if (schedJson?.schedules) {
+          setInitialSchedules(schedulesFromApi(schedJson.schedules))
         }
       } catch {
         router.push(`/services${q}`)
@@ -73,6 +77,7 @@ export default function EditServicePage() {
       if (!schedRes.ok) throw new Error(schedJson.error || "Failed to update schedules")
 
       toastActionSuccess(toast, t("تم حفظ التعديلات بنجاح", "Changes saved successfully"))
+      router.refresh()
       router.push(`/services/${id}${q}`)
     } catch (err: any) {
       toastActionError(toast, t("خطأ في الحفظ", "Save Error"), err.message)
