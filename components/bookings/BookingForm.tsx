@@ -23,6 +23,7 @@ import {
 import { Loader2, Save, AlertTriangle } from "lucide-react"
 import { createBookingSchema, BOOKING_SOURCE_VALUES } from "@/lib/services/booking-api"
 import { AvailabilityChecker } from "@/components/bookings/AvailabilityChecker"
+import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import type { AvailableSlot } from "@/types/bookings"
 
 type BookingFormValues = z.infer<typeof createBookingSchema>
@@ -205,23 +206,15 @@ export function BookingForm({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t("العميل", "Customer")} *</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t("اختر عميل...", "Select customer...")} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {customers.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            <span className="flex items-center gap-2">
-                              {c.name}
-                              {c.phone && <span className="text-muted-foreground text-xs">{c.phone}</span>}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <CustomerSearchSelect
+                        customers={customers}
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        placeholder={t("اختر عميل...", "Select customer...")}
+                        searchPlaceholder={t("ابحث بالاسم أو الهاتف...", "Search by name or phone...")}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}

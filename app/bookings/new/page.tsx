@@ -7,6 +7,8 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { BookingForm } from "@/components/bookings/BookingForm"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
+import { useSupabase } from "@/lib/supabase/hooks"
+import { getAccessFilter } from "@/lib/authz"
 
 interface SimpleService {
   id: string; service_name: string; service_code: string
@@ -24,7 +26,8 @@ export default function NewBookingPage() {
   const t            = (ar: string, en: string) => (isAr ? ar : en)
   const q            = appLang === "en" ? "?lang=en" : ""
 
-  const { toast } = useToast()
+  const { toast }  = useToast()
+  const supabase   = useSupabase()
 
   const [services, setServices]     = useState<SimpleService[]>([])
   const [customers, setCustomers]   = useState<SimpleCustomer[]>([])
@@ -35,20 +38,85 @@ export default function NewBookingPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [svcRes, custRes, membRes] = await Promise.all([
+        // ── Services & Staff via API (no governance needed) ──────────────────
+        const [svcRes, membRes] = await Promise.all([
           fetch("/api/services?is_active=true&is_bookable=true&limit=200"),
-          fetch("/api/customers?limit=200"),
           fetch("/api/company-members"),
         ])
-        if (svcRes.ok)  { const j = await svcRes.json();  setServices(j.services   ?? []) }
-        if (custRes.ok) { const j = await custRes.json(); setCustomers(j.customers  ?? []) }
-        if (membRes.ok) { const j = await membRes.json(); setStaff(j.members       ?? []) }
+        if (svcRes.ok)  { const j = await svcRes.json();  setServices(j.services ?? []) }
+        if (membRes.ok) { const j = await membRes.json(); setStaff(j.members    ?? []) }
+
+        // ── Customers: role-based governance (mirrors invoices/new/page.tsx) ─
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+
+        const { getActiveCompanyId } = await import("@/lib/company")
+        const companyId = await getActiveCompanyId(supabase)
+        if (!companyId) return
+
+        // Fetch member profile
+        const { data: memberData } = await supabase
+          .from("company_members")
+          .select("role, branch_id, cost_center_id, warehouse_id")
+          .eq("company_id", companyId)
+          .eq("user_id", user.id)
+          .maybeSingle()
+
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("user_id")
+          .eq("id", companyId)
+          .single()
+
+        const isOwner = companyData?.user_id === user.id
+        const role    = isOwner ? "owner" : (memberData?.role || "viewer")
+        const branchId      = isOwner ? null : (memberData?.branch_id      ?? null)
+        const costCenterId  = isOwner ? null : (memberData?.cost_center_id  ?? null)
+
+        const accessFilter = getAccessFilter(role, user.id, branchId, costCenterId)
+
+        let customersQuery = supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("company_id", companyId)
+
+        if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+          // Staff: own customers + shared via permission_sharing
+          const { data: sharedRows } = await supabase
+            .from("permission_sharing")
+            .select("grantor_user_id")
+            .eq("grantee_user_id", user.id)
+            .eq("resource_type", "customers")
+            .eq("is_active", true)
+
+          const sharedIds  = sharedRows?.map((s: any) => s.grantor_user_id) ?? []
+          const allUserIds = [accessFilter.createdByUserId, ...sharedIds].filter(Boolean) as string[]
+          customersQuery   = customersQuery.in("created_by_user_id", allUserIds)
+
+        } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+          // Manager/Supervisor: customers created by anyone in the branch
+          const { data: branchUsers } = await supabase
+            .from("company_members")
+            .select("user_id")
+            .eq("company_id", companyId)
+            .eq("branch_id", accessFilter.branchId)
+
+          const branchUserIds = branchUsers?.map((u: any) => u.user_id) ?? []
+          if (branchUserIds.length > 0) {
+            customersQuery = customersQuery.in("created_by_user_id", branchUserIds)
+          }
+        }
+        // Owner/Admin: no extra filter — sees all customers
+
+        const { data: customersData } = await customersQuery
+        setCustomers(customersData ?? [])
+
       } finally {
         setIsLoadingData(false)
       }
     }
     load()
-  }, [])
+  }, [supabase])
 
   const handleSubmit = async (data: any) => {
     setIsSubmitting(true)
