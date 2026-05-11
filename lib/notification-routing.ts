@@ -30,6 +30,7 @@ export type ReferenceType =
   | 'manufacturing_material_issue_approval'
   | 'manufacturing_product_receive_approval'
   | 'manufacturing_production_order'
+  | 'booking'
 
 /**
  * خريطة reference_type إلى route
@@ -92,6 +93,9 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'user_warehouse_change': (id) => `/settings/users?highlight=${id}`,
   'user_role_change': (id) => `/settings/users?highlight=${id}`,
   'permission_change': (id) => `/settings/users?highlight=${id}`,
+
+  // الحجوزات
+  'booking': (id) => `/bookings/${id}`,
 
   // التصنيع
   'manufacturing_material_issue_approval': (id, eventKey) => {

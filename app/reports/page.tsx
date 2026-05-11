@@ -31,6 +31,17 @@ export default function ReportsPage() {
   const t = (en: string, ar: string) => (appLang === 'en' ? en : ar)
   const groups = [
     {
+      title: t('Bookings & Services Reports', 'تقارير الحجوزات والخدمات'),
+      items: [
+        { title: t('Revenue by Service', 'الإيرادات حسب الخدمة'), description: t('Completed booking revenue per service with completion rate', 'إيرادات الحجوزات المكتملة لكل خدمة مع معدل الإنجاز'), href: "/reports/bookings/revenue-by-service", icon: "💰" },
+        { title: t('Bookings by Staff', 'الحجوزات حسب الموظف'), description: t('Staff performance — bookings, revenue, commissions, ratings', 'أداء الموظفين — الحجوزات والإيرادات والعمولات والتقييمات'), href: "/reports/bookings/bookings-by-staff", icon: "👤" },
+        { title: t('Cancelled Bookings', 'الحجوزات الملغاة'), description: t('Cancellations & no-shows with lost revenue analysis', 'تحليل الإلغاءات والغيابات مع الإيرادات الفائتة'), href: "/reports/bookings/cancelled-bookings", icon: "❌" },
+        { title: t('Occupancy Rate', 'نسبة الإشغال'), description: t('Booked slots vs. service capacity — daily trend', 'الحجوزات النشطة مقارنة بالطاقة الاستيعابية — الاتجاه اليومي'), href: "/reports/bookings/occupancy-rate", icon: "📊" },
+        { title: t('Top Services', 'الخدمات الأكثر طلباً'), description: t('Best performing services by revenue, bookings, or rating', 'الخدمات الأعلى أداءً حسب الإيرادات أو الحجوزات أو التقييم'), href: "/reports/bookings/top-services", icon: "⭐" },
+        { title: t('Bookings by Branch', 'الحجوزات حسب الفرع'), description: t('Compare branch performance across bookings and revenue', 'مقارنة أداء الفروع في الحجوزات والإيرادات'), href: "/reports/bookings/bookings-by-branch", icon: "🏢" },
+      ],
+    },
+    {
       title: t('Simple Reports (Non-Accountants)', 'التقارير المبسطة (لغير المحاسبين)'),
       items: [
         { title: t('Financial Summary', 'ملخص النشاط المالي'), description: t('Simple report explaining how money flows in the business', 'تقرير مبسط يشرح كيف تتحرك الأموال في المشروع'), href: "/reports/simple-summary", icon: "📊" },
