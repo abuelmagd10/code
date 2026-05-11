@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
     const supabase = await createClient()
 
-    const [{ data: service, error }, { data: schedules, error: schedErr }, { data: staff, error: staffErr }] =
+    const [{ data: service, error }, { data: schedules, error: schedErr }, { data: staffRows, error: staffErr }] =
       await Promise.all([
         supabase
           .from('services')
@@ -40,9 +40,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
           .eq('service_id', id)
           .eq('company_id', companyId)
           .order('day_of_week'),
+        // employee_user_id has no hard FK to company_members (intentional), so we fetch separately
         supabase
           .from('service_staff')
-          .select('*, company_members(user_id, email, role)')
+          .select('*')
           .eq('service_id', id)
           .eq('company_id', companyId),
       ])
@@ -55,9 +56,27 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       throw new BookingApiError(404, 'الخدمة غير موجودة أو غير مصرح بالوصول إليها')
     }
 
+    // Enrich staff rows with company_members profile (email, role)
+    let staff = staffRows ?? []
+    if (staff.length > 0) {
+      const userIds = [...new Set(staff.map((s: any) => s.employee_user_id))]
+      const { data: members } = await supabase
+        .from('company_members')
+        .select('user_id, email, role')
+        .eq('company_id', companyId)
+        .in('user_id', userIds)
+      if (members && members.length > 0) {
+        const memberMap = Object.fromEntries(members.map((m: any) => [m.user_id, m]))
+        staff = staff.map((s: any) => ({
+          ...s,
+          company_members: memberMap[s.employee_user_id] ?? null,
+        }))
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      service: { ...service, schedules: schedules ?? [], staff: staff ?? [] },
+      service: { ...service, schedules: schedules ?? [], staff },
     })
   } catch (error) {
     return handleBookingApiError(error)
