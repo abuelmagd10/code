@@ -120,6 +120,7 @@ CREATE OR REPLACE FUNCTION public.update_service_atomic(
   p_cost_center_id       UUID          DEFAULT NULL,
   p_image_url            TEXT          DEFAULT NULL,
   p_color_code           TEXT          DEFAULT NULL,
+  p_currency_code        TEXT          DEFAULT NULL,
   p_is_bookable          BOOLEAN       DEFAULT NULL,
   p_requires_approval    BOOLEAN       DEFAULT NULL,
   p_notes                TEXT          DEFAULT NULL
@@ -171,6 +172,7 @@ BEGIN
     cost_center_id       = COALESCE(p_cost_center_id,       cost_center_id),
     image_url            = COALESCE(p_image_url,            image_url),
     color_code           = COALESCE(p_color_code,           color_code),
+    currency_code        = COALESCE(p_currency_code,        currency_code),
     is_bookable          = COALESCE(p_is_bookable,          is_bookable),
     requires_approval    = COALESCE(p_requires_approval,    requires_approval),
     notes                = COALESCE(p_notes,                notes),
