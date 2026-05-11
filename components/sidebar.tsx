@@ -209,6 +209,8 @@ export function Sidebar() {
     if (href.includes('/fixed-assets/reports')) return 'fixed_assets_reports'
     if (href.includes('/fixed-assets')) return 'fixed_assets'
     // الهيكل التنظيمي
+    if (href.includes('/services')) return 'services'
+    if (href.includes('/bookings')) return 'bookings'
     if (href.includes('/branches')) return 'branches'
     if (href.includes('/cost-centers')) return 'cost_centers'
     if (href.includes('/warehouses')) return 'warehouses'
@@ -1025,6 +1027,12 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
                     { label: (lang === 'en' ? 'Dispatch Approvals' : 'موافقات الإرسال'), href: `/inventory/dispatch-approvals${q}`, icon: CheckCircle },
                     { label: (lang === 'en' ? 'Goods Receipt Approvals' : 'اعتماد الاستلام'), href: `/inventory/goods-receipt${q}`, icon: CheckCircle },
+                  ]
+                },
+                {
+                  key: 'services_bookings', icon: Calendar, label: (lang === 'en' ? 'Services & Bookings' : 'الخدمات والحجوزات'), items: [
+                    { label: (lang === 'en' ? 'Services' : 'الخدمات'), href: `/services${q}`, icon: ClipboardList },
+                    { label: (lang === 'en' ? 'Bookings' : 'الحجوزات'), href: `/bookings${q}`, icon: Calendar },
                   ]
                 },
                 {
