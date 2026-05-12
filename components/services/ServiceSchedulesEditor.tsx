@@ -84,10 +84,22 @@ export function ServiceSchedulesEditor({
           ? DAY_LABELS[row.day_of_week]!.ar
           : DAY_LABELS[row.day_of_week]!.en
 
+        const timeInvalid =
+          row.is_active &&
+          !!row.start_time &&
+          !!row.end_time &&
+          row.end_time <= row.start_time
+
         return (
           <Card
             key={row.day_of_week}
-            className={`transition-colors ${row.is_active ? "border-orange-300 bg-orange-50/30 dark:border-orange-800 dark:bg-orange-950/10" : "opacity-60"}`}
+            className={`transition-colors ${
+              timeInvalid
+                ? "border-red-400 bg-red-50/30 dark:border-red-700 dark:bg-red-950/10"
+                : row.is_active
+                ? "border-orange-300 bg-orange-50/30 dark:border-orange-800 dark:bg-orange-950/10"
+                : "opacity-60"
+            }`}
           >
             <CardContent className="p-3">
               <div
@@ -104,7 +116,7 @@ export function ServiceSchedulesEditor({
                   onChange={(e) =>
                     updateRow(row.day_of_week, { start_time: e.target.value })
                   }
-                  className="h-8 text-sm tabular-nums"
+                  className={`h-8 text-sm tabular-nums ${timeInvalid ? "border-red-400" : ""}`}
                 />
 
                 {/* End time */}
@@ -115,7 +127,7 @@ export function ServiceSchedulesEditor({
                   onChange={(e) =>
                     updateRow(row.day_of_week, { end_time: e.target.value })
                   }
-                  className="h-8 text-sm tabular-nums"
+                  className={`h-8 text-sm tabular-nums ${timeInvalid ? "border-red-400" : ""}`}
                 />
 
                 {/* Active toggle */}
@@ -127,6 +139,14 @@ export function ServiceSchedulesEditor({
                   }
                 />
               </div>
+              {timeInvalid && (
+                <p className="text-xs text-red-500 mt-1 col-span-4">
+                  {t(
+                    "وقت الانتهاء يجب أن يكون بعد وقت البداية",
+                    "End time must be after start time"
+                  )}
+                </p>
+              )}
             </CardContent>
           </Card>
         )

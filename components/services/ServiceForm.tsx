@@ -61,9 +61,23 @@ export function ServiceForm({
   const isAr = lang !== "en"
   const t = (ar: string, en: string) => (isAr ? ar : en)
 
-  const [schedules, setSchedules] = useState<ScheduleRow[]>(
-    initialSchedules ?? []
-  )
+  // Always initialise to a full 7-row grid so the state matches what
+  // ServiceSchedulesEditor renders (it shows defaultRows() when value is empty).
+  const [schedules, setSchedules] = useState<ScheduleRow[]>(() => {
+    const base: ScheduleRow[] = Array.from({ length: 7 }, (_, i) => ({
+      day_of_week: i,
+      is_active: i >= 0 && i <= 4, // Sun–Thu active by default
+      start_time: "09:00",
+      end_time: "18:00",
+    }))
+    if (!initialSchedules || initialSchedules.length === 0) return base
+    for (const r of initialSchedules) {
+      if (r.day_of_week >= 0 && r.day_of_week <= 6) {
+        base[r.day_of_week] = { ...base[r.day_of_week]!, ...r }
+      }
+    }
+    return base
+  })
 
   const [catalogProducts, setCatalogProducts] = useState<{ id: string; name: string }[]>([])
   useEffect(() => {
@@ -112,6 +126,21 @@ export function ServiceForm({
   })
 
   const handleSubmit = async (data: ServiceFormValues) => {
+    // Validate schedule times before submitting
+    const invalidDay = schedules.find(
+      (r) => r.is_active && r.start_time && r.end_time && r.end_time <= r.start_time
+    )
+    if (invalidDay) {
+      const dayNames = isAr
+        ? ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"]
+        : ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
+      alert(
+        isAr
+          ? `يوم ${dayNames[invalidDay.day_of_week]}: وقت الانتهاء يجب أن يكون بعد وقت البداية`
+          : `${dayNames[invalidDay.day_of_week]}: End time must be after start time`
+      )
+      return
+    }
     await onSubmit(data, schedules)
   }
 

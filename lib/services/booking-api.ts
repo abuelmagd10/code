@@ -107,12 +107,17 @@ export const updateServiceSchema = z
     message: 'At least one field must be provided',
   })
 
-export const upsertScheduleSchema = z.object({
-  day_of_week: z.coerce.number().int().min(0).max(6),
-  start_time: timeString,
-  end_time: timeString,
-  is_active: z.boolean().optional().default(true),
-})
+export const upsertScheduleSchema = z
+  .object({
+    day_of_week: z.coerce.number().int().min(0).max(6),
+    start_time: timeString,
+    end_time: timeString,
+    is_active: z.boolean().optional().default(true),
+  })
+  .refine((d) => d.end_time > d.start_time, {
+    message: 'وقت الانتهاء يجب أن يكون بعد وقت البداية (end_time must be after start_time)',
+    path: ['end_time'],
+  })
 
 export const upsertSchedulesSchema = z.object({
   schedules: z.array(upsertScheduleSchema).min(1, 'At least one schedule required'),
