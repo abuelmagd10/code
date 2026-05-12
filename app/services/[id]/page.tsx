@@ -50,6 +50,7 @@ export default function ServiceDetailPage() {
 
   const [service, setService]     = useState<Service | null>(null)
   const [schedules, setSchedules] = useState<ReturnType<typeof schedulesFromApi>>([])
+  const [linkedProductName, setLinkedProductName] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [canEdit, setCanEdit]     = useState(false)
   const [canDelete, setCanDelete] = useState(false)
@@ -82,6 +83,20 @@ export default function ServiceDetailPage() {
         setService(svcJson.service)
         if (schedJson?.schedules) {
           setSchedules(schedulesFromApi(schedJson.schedules))
+        }
+        // Resolve linked product name for display
+        const pcId = svcJson?.service?.product_catalog_id
+        if (pcId) {
+          try {
+            const prodRes = await fetch(`/api/products?item_type=service&limit=500`, { cache: 'no-store' })
+            if (prodRes.ok) {
+              const prodJson = await prodRes.json()
+              const match = (prodJson?.products ?? []).find((p: any) => p.id === pcId)
+              setLinkedProductName(match?.name ?? null)
+            }
+          } catch { /* non-critical */ }
+        } else {
+          setLinkedProductName(null)
         }
       } catch {
         router.push(`/services${q}`)
@@ -212,6 +227,18 @@ export default function ServiceDetailPage() {
                       }
                     />
                   )}
+                  <InfoRow
+                    label={t("منتج كتالوج المبيعات", "Sales Catalog Product")}
+                    value={
+                      service.product_catalog_id ? (
+                        <span className="text-blue-700 dark:text-blue-400">
+                          {linkedProductName ?? service.product_catalog_id}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">{t("غير مربوط", "Not linked")}</span>
+                      )
+                    }
+                  />
                 </CardContent>
               </Card>
 

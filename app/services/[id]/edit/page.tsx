@@ -123,6 +123,7 @@ export default function EditServicePage() {
     requires_approval:    service.requires_approval,
     notes:                service.notes,
     branch_id:            service.branch_id,
+    product_catalog_id:   service.product_catalog_id,
   }
 
   return (
