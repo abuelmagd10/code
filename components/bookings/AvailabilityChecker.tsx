@@ -26,6 +26,17 @@ export function AvailabilityChecker({
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
 
+  // Format "HH:MM[:SS]" → 12-hour with localized AM/PM (ص/م in Arabic)
+  const formatTime12 = (time: string): string => {
+    const [hStr, mStr] = time.split(":")
+    const h = parseInt(hStr ?? "0", 10)
+    const m = parseInt(mStr ?? "0", 10)
+    if (Number.isNaN(h) || Number.isNaN(m)) return time
+    const period = isAr ? (h < 12 ? "ص" : "م") : (h < 12 ? "AM" : "PM")
+    const h12 = h % 12 === 0 ? 12 : h % 12
+    return `${h12}:${String(m).padStart(2, "0")} ${period}`
+  }
+
   const [slots, setSlots]         = useState<AvailableSlot[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError]         = useState<string | null>(null)
@@ -140,7 +151,7 @@ export function AvailabilityChecker({
               `}
             >
               <Clock className="w-3.5 h-3.5" />
-              {slot.start_time.substring(0, 5)}
+              {formatTime12(slot.start_time)}
               {isSelected && <CheckCircle className="w-3.5 h-3.5" />}
               {isAvail && slot.available_capacity > 1 && (
                 <span className="text-[10px] opacity-70">×{slot.available_capacity}</span>

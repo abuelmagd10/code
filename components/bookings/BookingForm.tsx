@@ -77,6 +77,17 @@ export function BookingForm({
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
 
+  // Format "HH:MM[:SS]" → 12-hour with localized AM/PM (ص/م in Arabic)
+  const formatTime12 = (time: string): string => {
+    const [hStr, mStr] = time.split(":")
+    const h = parseInt(hStr ?? "0", 10)
+    const m = parseInt(mStr ?? "0", 10)
+    if (Number.isNaN(h) || Number.isNaN(m)) return time
+    const period = isAr ? (h < 12 ? "ص" : "م") : (h < 12 ? "AM" : "PM")
+    const h12 = h % 12 === 0 ? 12 : h % 12
+    return `${h12}:${String(m).padStart(2, "0")} ${period}`
+  }
+
   // Derived state for availability + totals
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null)
   const [selectedService, setSelectedService] = useState<SimpleService | null>(null)
@@ -340,7 +351,7 @@ export function BookingForm({
                   <div className="flex items-center gap-2 mt-1">
                     <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 border-0">
                       {t("الوقت المختار", "Selected")}:{" "}
-                      {selectedSlot.start_time.substring(0, 5)} – {selectedSlot.end_time.substring(0, 5)}
+                      {formatTime12(selectedSlot.start_time)} – {formatTime12(selectedSlot.end_time)}
                     </Badge>
                   </div>
                 )}
