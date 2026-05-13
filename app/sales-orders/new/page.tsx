@@ -11,7 +11,13 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
-import { Trash2, Plus, ShoppingCart, Save, Loader2 } from "lucide-react"
+import { Trash2, Plus, ShoppingCart, Save, Loader2, Link2 } from "lucide-react"
+import { BundleSelectionDialog } from "@/components/invoices/BundleSelectionDialog"
+import {
+  bundleRowToInvoiceItem,
+  type ExpandedBundleRow,
+  type BundleExpandResponse,
+} from "@/lib/products/bundle-helpers"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
@@ -81,6 +87,12 @@ interface SOItem {
   tax_rate: number
   discount_percent?: number
   item_type?: 'product' | 'service'
+  description?: string
+  // ── UI-only bundle markers (stripped on submit) ──
+  __bundle_parent_id?: string
+  __bundle_role?: 'parent' | 'child'
+  __bundle_locked?: boolean
+  __bundle_handling?: 'add_to_total' | 'included' | 'free'
 }
 
 export default function NewSalesOrderPage() {
@@ -89,6 +101,13 @@ export default function NewSalesOrderPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [soItems, setSoItems] = useState<SOItem[]>([])
+  // ── Bundle expansion state (Req 2 / Phase B.4.4) ──
+  const [bundleDialog, setBundleDialog] = useState<{
+    open: boolean
+    parentName: string
+    parentRowIndex: number
+    rows: ExpandedBundleRow[]
+  }>({ open: false, parentName: "", parentRowIndex: -1, rows: [] })
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isCustDialogOpen, setIsCustDialogOpen] = useState(false)
@@ -536,6 +555,24 @@ export default function NewSalesOrderPage() {
   }
 
   const removeItem = (index: number) => {
+    const target = soItems[index]
+    if (target?.__bundle_role === "child" && target.__bundle_locked) {
+      toast({
+        title: appLang === 'en' ? "Not allowed" : "غير مسموح",
+        description: appLang === 'en' ? "This is a mandatory bundle item" : "هذا الصنف مرفق إلزامي ولا يمكن حذفه يدوياً",
+        variant: "destructive",
+      })
+      return
+    }
+    if (target?.__bundle_role === "parent") {
+      const parentId = target.__bundle_parent_id ?? target.product_id
+      setSoItems(soItems.filter((it, i) => {
+        if (i === index) return false
+        if (it.__bundle_role === "child" && it.__bundle_parent_id === parentId) return false
+        return true
+      }))
+      return
+    }
     setSoItems(soItems.filter((_, i) => i !== index))
   }
 
@@ -552,10 +589,97 @@ export default function NewSalesOrderPage() {
         const code = taxCodes.find((c) => c.id === defaultCodeId)
         if (code) newItems[index].tax_rate = Number(code.rate)
       }
+      setSoItems(newItems)
+      // Bundle expansion (Req 2 / Phase B.4.4) — non-blocking
+      if (value && product) {
+        void maybeExpandBundle(index, value, Number(newItems[index].quantity) || 1, product.name ?? "")
+      }
+      return
     } else {
       ; (newItems[index] as any)[field] = value
     }
     setSoItems(newItems)
+  }
+
+  // Same expansion flow as /invoices/new (mirrors Req 2 Phase B.4.3)
+  const maybeExpandBundle = async (
+    parentIndex: number,
+    productId: string,
+    parentQty: number,
+    parentName: string
+  ) => {
+    try {
+      const res = await fetch(
+        `/api/products/${productId}/bundle/expand?qty=${parentQty}`,
+        { cache: "no-store" }
+      )
+      if (!res.ok) return
+      const json = (await res.json()) as BundleExpandResponse
+      if (!json.rows || json.rows.length === 0) return
+
+      setSoItems((current) => {
+        const next = [...current]
+        if (next[parentIndex]) {
+          next[parentIndex] = {
+            ...next[parentIndex],
+            __bundle_role: "parent",
+            __bundle_parent_id: productId,
+          }
+        }
+        return next
+      })
+
+      if (!json.has_optional) {
+        appendBundleChildrenAfter(parentIndex, json.rows)
+        toast({
+          title: appLang === 'en' ? "Bundle items added" : "تم إضافة الأصناف المرفقة",
+          description: appLang === 'en'
+            ? `${json.rows.length} item(s) from "${parentName}"`
+            : `${json.rows.length} صنف من حزمة "${parentName}"`,
+        })
+      } else {
+        setBundleDialog({
+          open: true,
+          parentName,
+          parentRowIndex: parentIndex,
+          rows: json.rows,
+        })
+      }
+    } catch (e) {
+      console.error("Bundle expand failed:", e)
+    }
+  }
+
+  const appendBundleChildrenAfter = (parentIndex: number, rows: ExpandedBundleRow[]) => {
+    const childItems: SOItem[] = rows.map((r) => {
+      const draft = bundleRowToInvoiceItem(r)
+      return {
+        product_id:        draft.product_id,
+        quantity:          draft.quantity,
+        unit_price:        draft.unit_price,
+        tax_rate:          draft.tax_rate ?? 0,
+        discount_percent:  0,
+        description:       draft.description,
+        item_type:         "product",
+        __bundle_parent_id: draft.__bundle_parent_id,
+        __bundle_role:      "child",
+        __bundle_locked:    draft.__bundle_locked,
+        __bundle_handling:  draft.__bundle_handling,
+      }
+    })
+    setSoItems((current) => {
+      const next = [...current]
+      next.splice(parentIndex + 1, 0, ...childItems)
+      return next
+    })
+  }
+
+  const handleBundleConfirm = (selected: ExpandedBundleRow[]) => {
+    appendBundleChildrenAfter(bundleDialog.parentRowIndex, selected)
+    setBundleDialog({ open: false, parentName: "", parentRowIndex: -1, rows: [] })
+  }
+  const handleBundleCancel = () => {
+    setBundleDialog({ open: false, parentName: "", parentRowIndex: -1, rows: [] })
   }
 
   const calculateTotals = () => {
@@ -740,7 +864,17 @@ export default function NewSalesOrderPage() {
           warehouse_id: warehouseId,
           items: soItems
             .filter((item) => !!item.product_id && (item.quantity ?? 0) > 0)
-            .map(item => ({ ...item, product_id: item.product_id })),
+            // Build clean objects — never spread the row, otherwise the
+            // __bundle_* UI-only markers (Req 2 / Phase B.4.4) leak to the API.
+            .map(item => ({
+              product_id:        item.product_id,
+              quantity:          item.quantity,
+              unit_price:        item.unit_price,
+              tax_rate:          item.tax_rate,
+              discount_percent:  item.discount_percent ?? 0,
+              item_type:         item.item_type ?? 'product',
+              description:       item.description || undefined,
+            })),
 
         }),
       })
@@ -1298,20 +1432,37 @@ export default function NewSalesOrderPage() {
                             const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
                             const base = item.quantity * item.unit_price * discountFactor
                             const lineTotal = taxInclusive ? base : base * rateFactor
+                            const isBundleChild = item.__bundle_role === "child"
+                            const isFreeOrIncluded = item.__bundle_handling && item.__bundle_handling !== "add_to_total"
+                            const rowClass = isBundleChild
+                              ? "bg-blue-50/40 dark:bg-blue-950/20 hover:bg-blue-50/60"
+                              : "hover:bg-gray-50 dark:hover:bg-slate-800/50"
 
                             return (
-                              <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                                <td className="px-3 py-3">
-                                  <ProductSearchSelect
-                                    products={products}
-                                    value={item.product_id}
-                                    onValueChange={(value) => updateItem(index, "product_id", value)}
-                                    lang={appLang as 'ar' | 'en'}
-                                    currency={soCurrency}
-                                    showStock={true}
-                                    showPrice={true}
-                                    branchStockMap={branchStockMap}
-                                  />
+                              <tr key={index} className={rowClass}>
+                                <td className={`px-3 py-3 ${isBundleChild ? (appLang === 'en' ? 'pl-10' : 'pr-10') : ''}`}>
+                                  <div className="flex items-center gap-2">
+                                    {isBundleChild && (
+                                      <Link2 className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" aria-label="bundle child" />
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <ProductSearchSelect
+                                        products={products}
+                                        value={item.product_id}
+                                        onValueChange={(value) => updateItem(index, "product_id", value)}
+                                        lang={appLang as 'ar' | 'en'}
+                                        currency={soCurrency}
+                                        showStock={true}
+                                        showPrice={true}
+                                        branchStockMap={branchStockMap}
+                                      />
+                                      {isBundleChild && item.description && (
+                                        <p className="text-[10px] text-blue-700 dark:text-blue-300 mt-0.5 italic truncate">
+                                          {item.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
                                 </td>
                                 <td className="px-3 py-3">
                                   <div className="flex flex-col items-center gap-1">
@@ -1380,7 +1531,13 @@ export default function NewSalesOrderPage() {
                                   />
                                 </td>
                                 <td className="px-3 py-3 text-center font-medium text-blue-600 dark:text-blue-400">
-                                  {lineTotal.toFixed(2)}
+                                  {isFreeOrIncluded ? (
+                                    <span className="text-muted-foreground italic text-xs">
+                                      ({appLang === 'en' ? 'included' : 'مشمول'})
+                                    </span>
+                                  ) : (
+                                    lineTotal.toFixed(2)
+                                  )}
                                 </td>
                                 <td className="px-3 py-3">
                                   <Button
@@ -1388,7 +1545,11 @@ export default function NewSalesOrderPage() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => removeItem(index)}
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1"
+                                    disabled={isBundleChild && !!item.__bundle_locked}
+                                    title={isBundleChild && item.__bundle_locked
+                                      ? (appLang === 'en' ? 'Mandatory bundle item' : 'صنف مرفق إلزامي')
+                                      : undefined}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1 disabled:opacity-30"
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </Button>
@@ -1649,6 +1810,16 @@ export default function NewSalesOrderPage() {
           </form>
         </div>
       </main>
+
+      {/* Bundle selection dialog (Req 2 / Phase B.4.4) */}
+      <BundleSelectionDialog
+        open={bundleDialog.open}
+        parentName={bundleDialog.parentName}
+        rows={bundleDialog.rows}
+        onCancel={handleBundleCancel}
+        onConfirm={handleBundleConfirm}
+        lang={appLang}
+      />
     </div>
   )
 }

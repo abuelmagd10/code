@@ -229,6 +229,29 @@ export async function POST(request: NextRequest) {
     // 7️⃣ الإدخال في قاعدة البيانات
     // ✅ استخراج items قبل الإدراج (ليست عموداً في جدول sales_orders)
     const { items: _bodyItems, ...orderDataToInsert } = finalData
+
+    // 7.5️⃣ Defensive bundle-completeness guard (Req 2 / Phase B.4.4)
+    //   Refuses an SO that omits mandatory bundle children for any product
+    //   the caller included. Protects non-UI callers from bypassing the
+    //   BundleSelectionDialog. The DB pipeline is NOT modified.
+    if (Array.isArray(_bodyItems) && _bodyItems.length > 0) {
+      const { data: validation, error: validationErr } = await supabase.rpc(
+        'bdl_validate_bundle_completeness',
+        { p_items: _bodyItems, p_company_id: finalData.company_id || governance.companyId }
+      )
+      if (validationErr) {
+        console.error("Bundle validation RPC error:", validationErr)
+      } else if (validation && validation.complete === false) {
+        return NextResponse.json({
+          success: false,
+          error:    'بعض الأصناف المرفقة الإلزامية ناقصة',
+          error_ar: 'بعض الأصناف المرفقة الإلزامية ناقصة',
+          code:     'BUNDLE_INCOMPLETE',
+          details:  validation.missing ?? [],
+        }, { status: 400 })
+      }
+    }
+
     const { data: newSalesOrder, error: insertError } = await supabase
       .from("sales_orders")
       .insert(orderDataToInsert)
