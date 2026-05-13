@@ -384,12 +384,25 @@ export function BundleItemsManager({ productId, parentName, lang = "ar" }: Bundl
                 />
                 <Label className="cursor-pointer text-xs">{t("اختياري", "Optional")}</Label>
               </div>
-              <div className="flex items-center gap-3 rounded-md border p-2">
+              <div
+                className="flex items-center gap-3 rounded-md border p-2"
+                title={t(
+                  "ميزة قادمة — حالياً السلوك يتبع إعداد \"تتبع المخزون\" في كل منتج",
+                  "Coming soon — currently the behaviour follows each product's track_inventory flag"
+                )}
+              >
                 <Switch
                   checked={draft.auto_deduct_inventory}
                   onCheckedChange={(v) => setDraft((d) => ({ ...d, auto_deduct_inventory: v }))}
                 />
-                <Label className="cursor-pointer text-xs">{t("خصم مخزون تلقائي", "Auto-deduct inventory")}</Label>
+                <div className="flex-1">
+                  <Label className="cursor-pointer text-xs flex items-center gap-1">
+                    {t("خصم مخزون تلقائي", "Auto-deduct inventory")}
+                    <span className="text-[9px] text-amber-600 dark:text-amber-400 font-medium">
+                      ({t("قريباً", "soon")})
+                    </span>
+                  </Label>
+                </div>
               </div>
             </div>
             <div>

@@ -339,3 +339,80 @@ supabase/migrations/
   20260512001100_bookings_rls_views.sql       B11 - RLS + Views
   20260512001200_bookings_api_rpcs.sql        B12 - RPCs الحجوزات
 ```
+
+
+---
+
+## 🔗 التكامل مع كتالوج المنتجات (Req 1)
+
+ابتداءً من **2026-05-13** أصبح كل service مرتبطاً إلزامياً بصف في
+`products` حيث `item_type = 'service'`. المنتج هو **single source of truth**
+للحقول التالية ولا يمكن تعديلها على الخدمة:
+
+| حقل الخدمة | المصدر من products |
+|---|---|
+| `service_name` | `products.name` |
+| `unit_price` | `products.unit_price` |
+| `cost_price` | `products.cost_price` |
+| `revenue_account_id` | `products.income_account_id` |
+| `expense_account_id` | `products.expense_account_id` |
+
+### التحديث ثنائي الاتجاه
+
+- **forward** — أي `INSERT/UPDATE` على services يجلب القيم الحديثة من
+  المنتج المرتبط (trigger `svc_trg_inherit_pricing`).
+- **reverse** — أي `UPDATE` على products من نوع service يدفع التغييرات
+  لكل الخدمات المرتبطة به (trigger `svc_trg_sync_from_product`).
+- **حذف المنتج المرتبط** ممنوع — `FK ON DELETE RESTRICT`.
+
+### Migrations المضافة
+
+```
+20260513000100_services_mandatory_product_link.sql  Req 1
+20260513000200_product_bundle_items.sql             Req 2
+```
+
+تفاصيل كاملة + خطة rollback: `docs/MIGRATIONS_HISTORY.md`.
+
+---
+
+## 📦 الأصناف المرفقة (Req 2)
+
+نظام Bundle Items يسمح لأي منتج (parent) بحمل قائمة من المنتجات
+الأخرى (children) تُضاف تلقائياً للفاتورة عند البيع. لأن الخدمة في
+نظامنا تُمثَّل في الكتالوج كمنتج (`item_type='service'`)، فإن:
+
+> **أي خدمة يمكن أن يكون لها bundle items.**
+
+### مثال
+
+خدمة **"تقشير وجه"** مربوطة بـ `products.id = X`. في `/products/X/bundle`
+نُضيف:
+- `كريم بعد التقشير` (qty=1, إلزامي, `add_to_total`)
+- `ماسك مرطّب` (qty=1, اختياري, `included`)
+
+عند إكمال حجز للخدمة أو فتح فاتورة يدوية من `/invoices/new`:
+
+- إذا كل الـ children إلزامي → يُضافون تلقائياً + toast.
+- إذا يوجد اختياري → `BundleSelectionDialog` يُفتح للاختيار.
+- المخزون يُخصم لكل child حسب `products.track_inventory` المعتاد.
+- القيد المحاسبي يُسجَّل لكل سطر بحسابه.
+
+### نقاط التكامل
+
+| المكوّن | كيف يتعامل مع bundle |
+|---|---|
+| `complete_booking_atomic` | يُنشئ `invoice_items` بـ `product_id = service.product_catalog_id`. توسيع الـ bundle يحدث عبر UI الفاتورة، لا داخل الـ RPC. |
+| `invoice_items` | بنفس البنية. كل سطر مستقل. |
+| نظام المحاسبة | بدون تعديل. كل سطر يقرأ حسابات المنتج المرتبط. |
+| نظام المخزون | بدون تعديل. الـ COGS + خصم المخزون يعملان لكل سطر باستقلالية. |
+
+### القيود المعروفة
+
+- **`auto_deduct_inventory = false`** مؤجَّل — حالياً السلوك يتبع
+  `products.track_inventory` فقط. الحقل محفوظ في DB لتفعيله لاحقاً
+  دون migration.
+- **Bundle parentage بعد الحفظ** غير مُخزَّن كعمود — يُحفظ كنص داخل
+  `invoice_items.description` على شكل `"childName (مرفق مع: parentName)"`.
+
+تفاصيل كاملة: `docs/PRODUCT_BUNDLES.md`.
