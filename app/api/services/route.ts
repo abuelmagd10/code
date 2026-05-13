@@ -91,13 +91,11 @@ export async function POST(req: NextRequest) {
       p_company_id:          companyId,
       p_branch_id:           resolvedBranchId,
       p_created_by:          user.id,
-      p_service_name:        body.service_name,
+      p_product_catalog_id:  body.product_catalog_id,
       p_service_type:        body.service_type,
-      p_unit_price:          body.unit_price,
       p_duration_minutes:    body.duration_minutes,
       p_description:         body.description ?? null,
       p_category:            body.category ?? null,
-      p_cost_price:          body.cost_price ?? 0,
       p_tax_rate:            body.tax_rate ?? 0,
       p_commission_rate:     body.commission_rate ?? 0,
       p_capacity:            body.capacity ?? 1,
@@ -105,8 +103,6 @@ export async function POST(req: NextRequest) {
       p_advance_booking_days: body.advance_booking_days ?? 30,
       p_min_advance_hours:   body.min_advance_hours ?? 1,
       p_cancel_before_hours: body.cancel_before_hours ?? 24,
-      p_revenue_account_id:  body.revenue_account_id ?? null,
-      p_expense_account_id:  body.expense_account_id ?? null,
       p_cost_center_id:      body.cost_center_id ?? null,
       p_image_url:           body.image_url ?? null,
       p_color_code:          body.color_code ?? null,
@@ -118,16 +114,6 @@ export async function POST(req: NextRequest) {
 
     if (error) throw error
 
-    // Set product_catalog_id if provided (not included in create_service_atomic parameters)
-    if (body.product_catalog_id) {
-      const { error: linkErr } = await supabase
-        .from('services')
-        .update({ product_catalog_id: body.product_catalog_id })
-        .eq('id', result.service_id)
-        .eq('company_id', companyId)
-      if (linkErr) throw linkErr
-    }
-
     asyncAuditLog({
       companyId,
       userId:   user.id,
@@ -136,7 +122,7 @@ export async function POST(req: NextRequest) {
       table:    'services',
       recordId: result.service_id,
       recordIdentifier: result.service_code,
-      newData:  { service_name: body.service_name, service_type: body.service_type },
+      newData:  { product_catalog_id: body.product_catalog_id, service_type: body.service_type },
     })
 
     return NextResponse.json({ success: true, service: result }, { status: 201 })

@@ -103,13 +103,10 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       p_company_id:          companyId,
       p_service_id:          id,
       p_updated_by:          user.id,
-      p_service_name:        body.service_name ?? null,
       p_service_type:        body.service_type ?? null,
-      p_unit_price:          body.unit_price ?? null,
       p_duration_minutes:    body.duration_minutes ?? null,
       p_description:         body.description ?? null,
       p_category:            body.category ?? null,
-      p_cost_price:          body.cost_price ?? null,
       p_tax_rate:            body.tax_rate ?? null,
       p_commission_rate:     body.commission_rate ?? null,
       p_capacity:            body.capacity ?? null,
@@ -117,8 +114,6 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       p_advance_booking_days: body.advance_booking_days ?? null,
       p_min_advance_hours:   body.min_advance_hours ?? null,
       p_cancel_before_hours: body.cancel_before_hours ?? null,
-      p_revenue_account_id:  body.revenue_account_id ?? null,
-      p_expense_account_id:  body.expense_account_id ?? null,
       p_cost_center_id:      body.cost_center_id ?? null,
       p_image_url:           body.image_url ?? null,
       p_color_code:          body.color_code ?? null,
@@ -126,19 +121,10 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       p_is_bookable:         body.is_bookable ?? null,
       p_requires_approval:   body.requires_approval ?? null,
       p_notes:               body.notes ?? null,
+      p_product_catalog_id:  body.product_catalog_id ?? null,
     })
 
     if (error) throw error
-
-    // Update product_catalog_id separately if explicitly provided (allows clearing to null)
-    if (body.product_catalog_id !== undefined) {
-      const { error: linkErr } = await supabase
-        .from('services')
-        .update({ product_catalog_id: body.product_catalog_id ?? null })
-        .eq('id', id)
-        .eq('company_id', companyId)
-      if (linkErr) throw linkErr
-    }
 
     asyncAuditLog({
       companyId,

@@ -79,15 +79,23 @@ export function ServiceForm({
     return base
   })
 
-  const [catalogProducts, setCatalogProducts] = useState<{ id: string; name: string }[]>([])
+  interface CatalogProduct {
+    id: string
+    name: string
+    sku?: string
+    unit_price?: number
+    cost_price?: number
+    income_account_id?: string | null
+    expense_account_id?: string | null
+  }
+  const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([])
+  const [catalogQuery, setCatalogQuery] = useState("")
   useEffect(() => {
-    fetch("/api/products?item_type=service&limit=200")
+    fetch("/api/products?item_type=service&limit=500")
       .then((r) => r.ok ? r.json() : null)
       .then((json) => {
         if (json?.products) {
-          setCatalogProducts(
-            json.products.map((p: any) => ({ id: p.id, name: p.name ?? p.product_name ?? p.id }))
-          )
+          setCatalogProducts(json.products as CatalogProduct[])
         }
       })
       .catch(() => { /* non-critical */ })
@@ -96,11 +104,8 @@ export function ServiceForm({
   const form = useForm<ServiceFormValues>({
     resolver: zodResolver(createServiceSchema),
     defaultValues: {
-      service_name: "",
       service_type: "individual",
-      unit_price: 0,
       duration_minutes: 60,
-      cost_price: 0,
       tax_rate: 0,
       commission_rate: 0,
       capacity: 1,
@@ -116,14 +121,25 @@ export function ServiceForm({
       notes: null,
       image_url: null,
       color_code: null,
-      revenue_account_id: null,
-      expense_account_id: null,
       cost_center_id: null,
-      product_catalog_id: null,
+      product_catalog_id: undefined as any,
       branch_id: null,
       ...initialData,
-    },
+    } as any,
   })
+
+  // Resolved linked product (for inheritance preview)
+  const linkedProductId = form.watch("product_catalog_id" as any) as string | undefined
+  const linkedProduct = catalogProducts.find((p) => p.id === linkedProductId) || null
+  const initialLinkedProductId = (initialData as any)?.product_catalog_id as string | undefined
+
+  // Filtered list for the search input
+  const filteredCatalog = catalogQuery.trim().length === 0
+    ? catalogProducts
+    : catalogProducts.filter((p) => {
+        const q = catalogQuery.toLowerCase()
+        return (p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q))
+      })
 
   const handleSubmit = async (data: ServiceFormValues) => {
     // Validate schedule times before submitting
@@ -140,6 +156,20 @@ export function ServiceForm({
           : `${dayNames[invalidDay.day_of_week]}: End time must be after start time`
       )
       return
+    }
+    // Warn when the catalog link is being changed on an existing service
+    if (
+      mode === "edit" &&
+      initialLinkedProductId &&
+      (data as any).product_catalog_id &&
+      (data as any).product_catalog_id !== initialLinkedProductId
+    ) {
+      const oldP = catalogProducts.find((p) => p.id === initialLinkedProductId)
+      const newP = catalogProducts.find((p) => p.id === (data as any).product_catalog_id)
+      const msg = isAr
+        ? `سيؤدي تغيير صنف الكتالوج إلى تحديث:\n  • الاسم: "${oldP?.name ?? "—"}" ← "${newP?.name ?? "—"}"\n  • السعر: ${oldP?.unit_price ?? "—"} ← ${newP?.unit_price ?? "—"}\n  • التكلفة: ${oldP?.cost_price ?? "—"} ← ${newP?.cost_price ?? "—"}\n  • الحسابات المحاسبية\n\nهل تريد المتابعة؟`
+        : `Changing the catalog product will overwrite:\n  • Name: "${oldP?.name ?? "—"}" → "${newP?.name ?? "—"}"\n  • Price: ${oldP?.unit_price ?? "—"} → ${newP?.unit_price ?? "—"}\n  • Cost:  ${oldP?.cost_price ?? "—"} → ${newP?.cost_price ?? "—"}\n  • Accounting accounts\n\nProceed?`
+      if (!window.confirm(msg)) return
     }
     await onSubmit(data, schedules)
   }
@@ -161,21 +191,80 @@ export function ServiceForm({
                 <CardTitle className="text-base">{t("معلومات الخدمة", "Service Information")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Service Name */}
-                  <FormField
-                    control={form.control}
-                    name="service_name"
-                    render={({ field }) => (
-                      <FormItem className="md:col-span-2">
-                        <FormLabel>{t("اسم الخدمة", "Service Name")} *</FormLabel>
+                {/* ── Product Catalog Selector (REQUIRED — source of truth) ── */}
+                <FormField
+                  control={form.control}
+                  name={"product_catalog_id" as any}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <Link2 className="w-3.5 h-3.5 text-orange-500" />
+                        {t("صنف الكتالوج", "Catalog Product")} *
+                      </FormLabel>
+                      <Input
+                        type="search"
+                        placeholder={t("ابحث بالاسم أو الكود (SKU)...", "Search by name or SKU…")}
+                        value={catalogQuery}
+                        onChange={(e) => setCatalogQuery(e.target.value)}
+                        className="mb-2"
+                      />
+                      <Select
+                        value={(field.value as string) ?? ""}
+                        onValueChange={(v) => field.onChange(v)}
+                      >
                         <FormControl>
-                          <Input {...field} placeholder={t("مثال: تدليك الوجه", "e.g. Facial Massage")} />
+                          <SelectTrigger>
+                            <SelectValue placeholder={t("اختر صنفاً من كتالوج الخدمات", "Choose a service from catalog")} />
+                          </SelectTrigger>
                         </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                        <SelectContent>
+                          {filteredCatalog.length === 0 ? (
+                            <div className="p-3 text-sm text-muted-foreground text-center">
+                              {t(
+                                "لا توجد أصناف خدمات. أنشئ صنفاً من نوع «خدمة» في المنتجات والخدمات أولاً.",
+                                "No service items. Create a product with item_type=service first."
+                              )}
+                            </div>
+                          ) : (
+                            filteredCatalog.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.sku ? `${p.name} — ${p.sku}` : p.name}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription className="text-xs">
+                        {t(
+                          "💡 الأسعار والحسابات تُسحب من هذا الصنف وتُحدَّث تلقائياً عند أي تعديل على المنتج.",
+                          "💡 Pricing and accounts are inherited from this catalog item and refresh automatically whenever the product changes."
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* ── Inherited Values Preview (read-only) ── */}
+                {linkedProduct ? (
+                  <div className="rounded-lg border-2 border-dashed border-orange-300 bg-orange-50/40 dark:border-orange-800 dark:bg-orange-950/20 p-4 space-y-2">
+                    <p className="text-xs font-medium text-orange-700 dark:text-orange-300">
+                      📦 {t("قيم موروثة من الكتالوج (للقراءة فقط)", "Inherited from catalog (read-only)")}
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("الاسم", "Name")}:</span><span className="font-medium">{linkedProduct.name}</span></div>
+                      <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("الكود (SKU)", "SKU")}:</span><span className="font-mono text-xs">{linkedProduct.sku ?? "—"}</span></div>
+                      <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("سعر البيع", "Unit Price")}:</span><span className="font-semibold text-green-700 dark:text-green-400 tabular-nums">{Number(linkedProduct.unit_price ?? 0).toLocaleString()}</span></div>
+                      <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("التكلفة", "Cost Price")}:</span><span className="tabular-nums">{Number(linkedProduct.cost_price ?? 0).toLocaleString()}</span></div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground text-center">
+                    {t("اختر صنفاً من الكتالوج لعرض الأسعار والحسابات", "Pick a catalog item to preview its pricing and accounts")}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                   {/* Service Type */}
                   <FormField
@@ -222,49 +311,6 @@ export function ServiceForm({
                     )}
                   />
 
-                  {/* Unit Price */}
-                  <FormField
-                    control={form.control}
-                    name="unit_price"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t("السعر", "Price")} *</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {/* Cost Price */}
-                  <FormField
-                    control={form.control}
-                    name="cost_price"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t("سعر التكلفة", "Cost Price")}</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            value={field.value ?? 0}
-                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
                   {/* Tax Rate */}
                   <FormField
                     control={form.control}
@@ -283,6 +329,9 @@ export function ServiceForm({
                             onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
                           />
                         </FormControl>
+                        <FormDescription className="text-xs">
+                          {t("ⓘ معدل الضريبة مستقل عن صنف الكتالوج", "ⓘ Tax rate is independent of the catalog item")}
+                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -397,43 +446,6 @@ export function ServiceForm({
                           onChange={(e) => field.onChange(e.target.value || null)}
                         />
                       </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Product Catalog Link */}
-                <FormField
-                  control={form.control}
-                  name="product_catalog_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center gap-1.5">
-                        <Link2 className="w-3.5 h-3.5" />
-                        {t("ربط بكتالوج المنتجات", "Link to Product Catalog")}
-                      </FormLabel>
-                      <Select
-                        value={field.value ?? "none"}
-                        onValueChange={(v) => field.onChange(v === "none" ? null : v)}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder={t("اختر منتج (اختياري)", "Select product (optional)")} />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">{t("بدون ربط", "No link")}</SelectItem>
-                          {catalogProducts.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormDescription className="text-xs">
-                        {t(
-                          "ربط اختياري بمنتج من نوع «خدمة» في كتالوج المبيعات. عند إتمام الحجز سيُستخدم هذا المنتج لإنشاء بند في الفاتورة والترحيل المحاسبي تلقائياً.",
-                          "Optional link to a service-type product in the sales catalog. When a booking is completed, this product will be used to create an invoice line item and trigger automatic GL posting."
-                        )}
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

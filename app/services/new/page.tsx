@@ -31,7 +31,7 @@ export default function NewServicePage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Failed to create service")
 
-      const serviceId: string = json.service?.id ?? json.id
+      const serviceId: string = json.service?.service_id ?? json.service?.id ?? json.id
 
       // 2. Save schedules (active days only)
       const activeSchedules = schedulesToUpsertInput(schedules)

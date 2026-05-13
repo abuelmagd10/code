@@ -13,6 +13,7 @@ interface ServicesTableProps {
   onArchive?: (service: Service) => void
   canEdit?: boolean
   canDelete?: boolean
+  productsMap?: Record<string, { name: string; sku?: string }>
 }
 
 const SERVICE_TYPE_LABELS: Record<string, { ar: string; en: string; color: string }> = {
@@ -29,6 +30,7 @@ export function ServicesTable({
   onArchive,
   canEdit = true,
   canDelete = false,
+  productsMap = {},
 }: ServicesTableProps) {
   const isAr = lang !== "en"
   const t = (ar: string, en: string) => (isAr ? ar : en)
@@ -100,18 +102,23 @@ export function ServicesTable({
     },
     {
       key: "product_catalog_id",
-      header: t("ربط", "Linked"),
+      header: t("صنف الكتالوج", "Catalog SKU"),
       align: "center" as const,
-      format: (_, row) => (
-        row.product_catalog_id ? (
-          <span title={t("مرتبط بكتالوج المنتجات", "Linked to product catalog")}
-            className="inline-flex items-center justify-center text-blue-600 dark:text-blue-400">
-            <Link2 className="w-4 h-4" />
+      format: (_, row) => {
+        if (!row.product_catalog_id) {
+          return <span className="text-muted-foreground text-xs">—</span>
+        }
+        const p = productsMap[row.product_catalog_id]
+        return (
+          <span
+            title={p?.name ?? t("مرتبط بكتالوج المنتجات", "Linked to product catalog")}
+            className="inline-flex items-center gap-1 text-blue-700 dark:text-blue-400 font-mono text-xs"
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            {p?.sku ?? row.product_catalog_id.slice(0, 8)}
           </span>
-        ) : (
-          <span className="text-muted-foreground text-xs">—</span>
         )
-      ),
+      },
     },
     {
       key: "is_bookable",

@@ -98,14 +98,13 @@ export default function EditServicePage() {
 
   if (!service) return null
 
+  // Note: service_name, unit_price, cost_price, revenue_account_id, expense_account_id
+  // are inherited from products via DB trigger — not sent through the form.
   const initialData = {
-    service_name:         service.service_name,
     service_type:         service.service_type,
-    unit_price:           service.unit_price,
     duration_minutes:     service.duration_minutes,
     description:          service.description,
     category:             service.category,
-    cost_price:           service.cost_price,
     tax_rate:             service.tax_rate,
     commission_rate:      service.commission_rate,
     capacity:             service.capacity,
@@ -113,8 +112,6 @@ export default function EditServicePage() {
     advance_booking_days: service.advance_booking_days,
     min_advance_hours:    service.min_advance_hours,
     cancel_before_hours:  service.cancel_before_hours,
-    revenue_account_id:   service.revenue_account_id,
-    expense_account_id:   service.expense_account_id,
     cost_center_id:       service.cost_center_id,
     image_url:            service.image_url,
     color_code:           service.color_code,
@@ -123,7 +120,7 @@ export default function EditServicePage() {
     requires_approval:    service.requires_approval,
     notes:                service.notes,
     branch_id:            service.branch_id,
-    product_catalog_id:   service.product_catalog_id,
+    product_catalog_id:   service.product_catalog_id ?? undefined,
   }
 
   return (

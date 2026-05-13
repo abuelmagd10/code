@@ -48,15 +48,19 @@ export const SERVICE_TYPE_VALUES = [
   'daily',
 ] as const
 
+// NOTE: service_name, unit_price, cost_price, revenue_account_id,
+// expense_account_id are intentionally NOT in these schemas. They are
+// inherited from the linked product (`products.id` where item_type='service')
+// by a database trigger. Any value supplied for them would be silently
+// overwritten — so we reject them at the validation layer to surface
+// misuse early.
 export const createServiceSchema = z.object({
   branch_id: uuidSchema.optional().nullable(),
-  service_name: trimmedString.min(1, 'service_name is required'),
+  product_catalog_id: uuidSchema, // REQUIRED — source of truth
   service_type: z.enum(SERVICE_TYPE_VALUES).default('individual'),
-  unit_price: z.coerce.number().nonnegative('unit_price must be >= 0'),
   duration_minutes: z.coerce.number().int().positive('duration_minutes must be > 0'),
   description: nullableString.optional(),
   category: nullableString.optional(),
-  cost_price: z.coerce.number().nonnegative().optional().default(0),
   tax_rate: z.coerce.number().min(0).max(100).optional().default(0),
   commission_rate: z.coerce.number().min(0).max(100).optional().default(0),
   capacity: z.coerce.number().int().positive().optional().default(1),
@@ -64,10 +68,7 @@ export const createServiceSchema = z.object({
   advance_booking_days: z.coerce.number().int().positive().optional().default(30),
   min_advance_hours: z.coerce.number().int().nonnegative().optional().default(1),
   cancel_before_hours: z.coerce.number().int().nonnegative().optional().default(24),
-  revenue_account_id: uuidSchema.optional().nullable(),
-  expense_account_id: uuidSchema.optional().nullable(),
   cost_center_id: uuidSchema.optional().nullable(),
-  product_catalog_id: uuidSchema.optional().nullable(),
   image_url: nullableString.optional(),
   color_code: nullableString.optional(),
   currency_code: trimmedString.optional().default('EGP'),
@@ -78,13 +79,10 @@ export const createServiceSchema = z.object({
 
 export const updateServiceSchema = z
   .object({
-    service_name: trimmedString.min(1).optional(),
     service_type: z.enum(SERVICE_TYPE_VALUES).optional(),
-    unit_price: z.coerce.number().nonnegative().optional(),
     duration_minutes: z.coerce.number().int().positive().optional(),
     description: nullableString.optional(),
     category: nullableString.optional(),
-    cost_price: z.coerce.number().nonnegative().optional(),
     tax_rate: z.coerce.number().min(0).max(100).optional(),
     commission_rate: z.coerce.number().min(0).max(100).optional(),
     capacity: z.coerce.number().int().positive().optional(),
@@ -92,10 +90,8 @@ export const updateServiceSchema = z
     advance_booking_days: z.coerce.number().int().positive().optional(),
     min_advance_hours: z.coerce.number().int().nonnegative().optional(),
     cancel_before_hours: z.coerce.number().int().nonnegative().optional(),
-    revenue_account_id: uuidSchema.optional().nullable(),
-    expense_account_id: uuidSchema.optional().nullable(),
     cost_center_id: uuidSchema.optional().nullable(),
-    product_catalog_id: uuidSchema.optional().nullable(),
+    product_catalog_id: uuidSchema.optional(), // can change the link, not clear it
     image_url: nullableString.optional(),
     color_code: nullableString.optional(),
     currency_code: trimmedString.optional(),

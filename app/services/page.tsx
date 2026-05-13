@@ -51,6 +51,7 @@ export default function ServicesPage() {
   const { toast } = useToast()
 
   const [services, setServices]   = useState<Service[]>([])
+  const [productsMap, setProductsMap] = useState<Record<string, { name: string; sku?: string }>>({})
   const [total, setTotal]         = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [canEdit, setCanEdit]     = useState(false)
@@ -122,6 +123,22 @@ export default function ServicesPage() {
   useEffect(() => {
     loadServices()
   }, [loadServices])
+
+  // Load catalog service-type products once for SKU lookup in the table
+  useEffect(() => {
+    fetch("/api/products?item_type=service&limit=500")
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        if (json?.products) {
+          const map: Record<string, { name: string; sku?: string }> = {}
+          for (const p of json.products) {
+            map[p.id] = { name: p.name, sku: p.sku }
+          }
+          setProductsMap(map)
+        }
+      })
+      .catch(() => { /* non-critical */ })
+  }, [])
 
   const handleArchive = async () => {
     if (!archiveTarget) return
@@ -276,6 +293,7 @@ export default function ServicesPage() {
                 canEdit={canEdit}
                 canDelete={canDelete}
                 onArchive={canDelete ? setArchiveTarget : undefined}
+                productsMap={productsMap}
               />
             )}
           </CardContent>
