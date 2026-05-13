@@ -12,8 +12,15 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
-import { Trash2, Plus } from "lucide-react"
+import { Trash2, Plus, Link2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { BundleSelectionDialog } from "@/components/invoices/BundleSelectionDialog"
+import {
+  bundleRowToInvoiceItem,
+  stripBundleMarkers,
+  type ExpandedBundleRow,
+  type BundleExpandResponse,
+} from "@/lib/products/bundle-helpers"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { createNotification } from "@/lib/governance-layer"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
@@ -84,6 +91,12 @@ interface InvoiceItem {
   tax_rate: number
   discount_percent?: number
   item_type?: 'product' | 'service'
+  description?: string
+  // ── UI-only bundle markers (stripped on submit) ──
+  __bundle_parent_id?: string
+  __bundle_role?: 'parent' | 'child'
+  __bundle_locked?: boolean
+  __bundle_handling?: 'add_to_total' | 'included' | 'free'
 }
 
 export default function NewInvoicePage() {
@@ -92,6 +105,13 @@ export default function NewInvoicePage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([])
+  // ── Bundle expansion state (Req 2 / Phase B.4) ──
+  const [bundleDialog, setBundleDialog] = useState<{
+    open: boolean
+    parentName: string
+    parentRowIndex: number
+    rows: ExpandedBundleRow[]
+  }>({ open: false, parentName: "", parentRowIndex: -1, rows: [] })
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -444,6 +464,25 @@ export default function NewInvoicePage() {
   }
 
   const removeInvoiceItem = (index: number) => {
+    const target = invoiceItems[index]
+    if (target?.__bundle_role === "child" && target.__bundle_locked) {
+      toast({
+        title: "غير مسموح",
+        description: "هذا الصنف مرفق إلزامي ولا يمكن حذفه يدوياً",
+        variant: "destructive",
+      })
+      return
+    }
+    // If the user removes a parent, also drop its mandatory/optional children.
+    if (target?.__bundle_role === "parent") {
+      const parentId = target.__bundle_parent_id ?? target.product_id
+      setInvoiceItems(invoiceItems.filter((it, i) => {
+        if (i === index) return false
+        if (it.__bundle_role === "child" && it.__bundle_parent_id === parentId) return false
+        return true
+      }))
+      return
+    }
     setInvoiceItems(invoiceItems.filter((_, i) => i !== index))
   }
 
@@ -460,10 +499,101 @@ export default function NewInvoicePage() {
         const code = taxCodes.find((c) => c.id === defaultCodeId)
         if (code) newItems[index].tax_rate = Number(code.rate)
       }
+      setInvoiceItems(newItems)
+      // Bundle expansion (Req 2 / Phase B.4) — non-blocking
+      if (value && product) {
+        void maybeExpandBundle(index, value, Number(newItems[index].quantity) || 1, product.name ?? "")
+      }
+      return
     } else {
       ; (newItems[index] as any)[field] = value
     }
     setInvoiceItems(newItems)
+  }
+
+  // Fetch the bundle for the just-picked product. If none → no-op. If all
+  // children are mandatory → auto-add silently with a toast. If any child is
+  // optional → open the BundleSelectionDialog so the user picks.
+  const maybeExpandBundle = async (
+    parentIndex: number,
+    productId: string,
+    parentQty: number,
+    parentName: string
+  ) => {
+    try {
+      const res = await fetch(
+        `/api/products/${productId}/bundle/expand?qty=${parentQty}`,
+        { cache: "no-store" }
+      )
+      if (!res.ok) return
+      const json = (await res.json()) as BundleExpandResponse
+      if (!json.rows || json.rows.length === 0) return
+
+      // Mark the parent row so children can render indented under it
+      setInvoiceItems((current) => {
+        const next = [...current]
+        if (next[parentIndex]) {
+          next[parentIndex] = {
+            ...next[parentIndex],
+            __bundle_role: "parent",
+            __bundle_parent_id: productId,
+          }
+        }
+        return next
+      })
+
+      if (!json.has_optional) {
+        // All children are mandatory → add them all immediately
+        appendBundleChildrenAfter(parentIndex, json.rows)
+        toast({
+          title: "تم إضافة الأصناف المرفقة",
+          description: `${json.rows.length} صنف من حزمة "${parentName}"`,
+        })
+      } else {
+        // Open dialog for user choice
+        setBundleDialog({
+          open: true,
+          parentName,
+          parentRowIndex: parentIndex,
+          rows: json.rows,
+        })
+      }
+    } catch (e) {
+      console.error("Bundle expand failed:", e)
+    }
+  }
+
+  // Splice the expanded children right after the parent row
+  const appendBundleChildrenAfter = (parentIndex: number, rows: ExpandedBundleRow[]) => {
+    const childItems: InvoiceItem[] = rows.map((r) => {
+      const draft = bundleRowToInvoiceItem(r)
+      return {
+        product_id:        draft.product_id,
+        quantity:          draft.quantity,
+        unit_price:        draft.unit_price,
+        tax_rate:          draft.tax_rate ?? 0,
+        discount_percent:  0,
+        description:       draft.description,
+        item_type:         "product",
+        __bundle_parent_id: draft.__bundle_parent_id,
+        __bundle_role:      "child",
+        __bundle_locked:    draft.__bundle_locked,
+        __bundle_handling:  draft.__bundle_handling,
+      }
+    })
+    setInvoiceItems((current) => {
+      const next = [...current]
+      next.splice(parentIndex + 1, 0, ...childItems)
+      return next
+    })
+  }
+
+  const handleBundleConfirm = (selected: ExpandedBundleRow[]) => {
+    appendBundleChildrenAfter(bundleDialog.parentRowIndex, selected)
+    setBundleDialog({ open: false, parentName: "", parentRowIndex: -1, rows: [] })
+  }
+  const handleBundleCancel = () => {
+    setBundleDialog({ open: false, parentName: "", parentRowIndex: -1, rows: [] })
   }
 
   const calculateTotals = () => {
@@ -640,7 +770,7 @@ export default function NewInvoicePage() {
           .eq("id", formData.customer_id)
           .single()
 
-        // Build items list
+        // Build items list — strip bundle UI markers (Req 2 / Phase B.4)
         const itemsToSend = invoiceItems
           .filter((item) => !!item.product_id && (item.quantity ?? 0) > 0)
           .map((item) => {
@@ -649,6 +779,9 @@ export default function NewInvoicePage() {
             const base = item.quantity * item.unit_price * discountFactor
             const netLine = taxInclusive ? (base / rateFactor) : base
             const product = products.find(p => p.id === item.product_id)
+            // The __bundle_* markers stay only in component state and never
+            // leave this map. We construct a fresh object instead of spreading
+            // `item` to be sure no UI-only field leaks to the API.
             return {
               product_id: item.product_id,
               quantity: item.quantity,
@@ -658,6 +791,7 @@ export default function NewInvoicePage() {
               line_total: netLine,
               returned_quantity: 0,
               item_type: product?.item_type || 'product',
+              description: item.description || undefined,
             }
           })
 
@@ -1438,18 +1572,35 @@ export default function NewInvoicePage() {
                             const base = item.quantity * item.unit_price * discountFactor
                             const lineTotal = taxInclusive ? base : base * rateFactor
 
+                            const isBundleChild = item.__bundle_role === "child"
+                            const isFreeOrIncluded = item.__bundle_handling && item.__bundle_handling !== "add_to_total"
+                            const rowClass = isBundleChild
+                              ? "bg-blue-50/40 dark:bg-blue-950/20 hover:bg-blue-50/60"
+                              : "hover:bg-gray-50 dark:hover:bg-slate-800/50"
                             return (
-                              <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                                <td className="px-3 py-3">
-                                  <ProductSearchSelect
-                                    products={products}
-                                    value={item.product_id}
-                                    onValueChange={(value) => updateInvoiceItem(index, "product_id", value)}
-                                    lang={appLang as 'ar' | 'en'}
-                                    currency={invoiceCurrency}
-                                    showStock={true}
-                                    showPrice={true}
-                                  />
+                              <tr key={index} className={rowClass}>
+                                <td className={`px-3 py-3 ${isBundleChild ? (appLang === 'en' ? 'pl-10' : 'pr-10') : ''}`}>
+                                  <div className="flex items-center gap-2">
+                                    {isBundleChild && (
+                                      <Link2 className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" aria-label="bundle child" />
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <ProductSearchSelect
+                                        products={products}
+                                        value={item.product_id}
+                                        onValueChange={(value) => updateInvoiceItem(index, "product_id", value)}
+                                        lang={appLang as 'ar' | 'en'}
+                                        currency={invoiceCurrency}
+                                        showStock={true}
+                                        showPrice={true}
+                                      />
+                                      {isBundleChild && item.description && (
+                                        <p className="text-[10px] text-blue-700 dark:text-blue-300 mt-0.5 italic truncate">
+                                          {item.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
                                 </td>
                                 <td className="px-3 py-3">
                                   <NumericInput
@@ -1513,7 +1664,13 @@ export default function NewInvoicePage() {
                                   />
                                 </td>
                                 <td className="px-3 py-3 text-center font-medium text-blue-600 dark:text-blue-400">
-                                  {lineTotal.toFixed(2)}
+                                  {isFreeOrIncluded ? (
+                                    <span className="text-muted-foreground italic text-xs">
+                                      ({appLang === 'en' ? 'included' : 'مشمول'})
+                                    </span>
+                                  ) : (
+                                    lineTotal.toFixed(2)
+                                  )}
                                 </td>
                                 <td className="px-3 py-3">
                                   <Button
@@ -1521,7 +1678,11 @@ export default function NewInvoicePage() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => removeInvoiceItem(index)}
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1"
+                                    disabled={isBundleChild && !!item.__bundle_locked}
+                                    title={isBundleChild && item.__bundle_locked
+                                      ? (appLang === 'en' ? 'Mandatory bundle item' : 'صنف مرفق إلزامي')
+                                      : undefined}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1 disabled:opacity-30"
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </Button>
@@ -1800,6 +1961,16 @@ export default function NewInvoicePage() {
           </form>
         </div>
       </main>
+
+      {/* Bundle selection dialog (Req 2 / Phase B.4) */}
+      <BundleSelectionDialog
+        open={bundleDialog.open}
+        parentName={bundleDialog.parentName}
+        rows={bundleDialog.rows}
+        onCancel={handleBundleCancel}
+        onConfirm={handleBundleConfirm}
+        lang={appLang}
+      />
     </div>
   )
 }

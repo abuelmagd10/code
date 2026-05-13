@@ -127,6 +127,28 @@ export async function POST(req: NextRequest) {
     const invoiceItems = invoiceData.items || []
     delete invoiceData.items
 
+    // 2.5️⃣ Defensive bundle-completeness guard (Req 2 / Phase B.4.5)
+    //   Refuses an invoice that omits mandatory bundle children for any product
+    //   the caller included. This protects the pipeline against non-UI callers
+    //   (mobile / scripts / third-party) that would otherwise bypass the
+    //   BundleSelectionDialog. The DB and accounting RPCs are NOT modified.
+    if (Array.isArray(invoiceItems) && invoiceItems.length > 0) {
+      const { data: validation, error: validationErr } = await supabase.rpc(
+        'bdl_validate_bundle_completeness',
+        { p_items: invoiceItems, p_company_id: companyId }
+      )
+      if (validationErr) {
+        console.error("Bundle validation RPC error:", validationErr)
+      } else if (validation && validation.complete === false) {
+        return NextResponse.json({
+          success: false,
+          error:   'بعض الأصناف المرفقة الإلزامية ناقصة',
+          code:    'BUNDLE_INCOMPLETE',
+          details: validation.missing ?? [],
+        }, { status: 400 })
+      }
+    }
+
     // 3️⃣ Call Atomic RPC (handles creation and synchronous accounting engine)
     const { data: rpcResult, error: rpcError } = await supabase.rpc('create_sales_invoice_atomic', {
       p_invoice_data: invoiceData,
