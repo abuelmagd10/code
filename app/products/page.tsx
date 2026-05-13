@@ -16,7 +16,8 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { ensureCompanyId, getActiveCompanyId } from "@/lib/company"
-import { Plus, Edit2, Trash2, Search, AlertCircle, Package, Wrench, Sparkles, Factory, Layers } from "lucide-react"
+import Link from "next/link"
+import { Plus, Edit2, Trash2, Search, AlertCircle, Package, Wrench, Sparkles, Factory, Layers, Package2 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { canAction } from "@/lib/authz"
@@ -98,6 +99,7 @@ export default function ProductsPage() {
   const { toast } = useToast()
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [products, setProducts] = useState<Product[]>([])
+  const [bundlesMap, setBundlesMap] = useState<Record<string, { count: number; has_optional: boolean }>>({})
 
   // تهيئة اللغة بعد hydration
   useEffect(() => {
@@ -387,6 +389,11 @@ export default function ProductsPage() {
         const { data } = await supabase.from('products').select('*').eq('company_id', companyId)
         setProducts(data || [])
       }
+      // Load bundles map (non-blocking, non-critical)
+      fetch(`/api/products/bundles`, { cache: 'no-store' })
+        .then((r) => r.ok ? r.json() : null)
+        .then((j) => { if (j?.bundles) setBundlesMap(j.bundles) })
+        .catch(() => { /* non-critical */ })
     } catch (error) {
       console.error("Error loading products:", error)
     } finally {
@@ -974,34 +981,56 @@ export default function ProductsPage() {
       header: appLang === 'en' ? 'Actions' : 'إجراءات',
       type: 'actions',
       align: 'center',
-      format: (_, row) => (
-        <div className="flex gap-1 justify-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => handleEdit(row)}
-            disabled={!permUpdate}
-            title={appLang === 'en' ? 'Edit product' : 'تعديل المنتج'}
-          >
-            <Edit2 className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-red-500 hover:text-red-600"
-            onClick={() => handleDelete(row.id)}
-            disabled={!permDelete}
-            title={appLang === 'en' ? 'Delete product' : 'حذف المنتج'}
-          >
-            <Trash2 className="w-4 h-4" />
-          </Button>
-        </div>
-      )
+      format: (_, row) => {
+        const bundleInfo = bundlesMap[row.id]
+        return (
+          <div className="flex gap-1 justify-center items-center">
+            {bundleInfo && bundleInfo.count > 0 && (
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                title={appLang === 'en' ? `${bundleInfo.count} bundle item(s)` : `${bundleInfo.count} صنف مرفق`}
+              >
+                <Package2 className="w-3 h-3" />
+                {bundleInfo.count}
+              </span>
+            )}
+            <Link href={`/products/${row.id}/bundle${appLang === 'en' ? '?lang=en' : ''}`} prefetch={false}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-blue-600 hover:text-blue-700"
+                title={appLang === 'en' ? 'Manage bundle items' : 'إدارة الأصناف المرفقة'}
+              >
+                <Package2 className="w-4 h-4" />
+              </Button>
+            </Link>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => handleEdit(row)}
+              disabled={!permUpdate}
+              title={appLang === 'en' ? 'Edit product' : 'تعديل المنتج'}
+            >
+              <Edit2 className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-red-500 hover:text-red-600"
+              onClick={() => handleDelete(row.id)}
+              disabled={!permDelete}
+              title={appLang === 'en' ? 'Delete product' : 'حذف المنتج'}
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+        )
+      }
     })
 
     return columns
-  }, [appLang, currencySymbol, activeTab, productTaxDefaults, taxCodes, permUpdate, permDelete, branches])
+  }, [appLang, currencySymbol, activeTab, productTaxDefaults, taxCodes, permUpdate, permDelete, branches, bundlesMap])
 
   const lowStockProducts = products.filter((p) => (p.item_type === 'product' || !p.item_type) && p.quantity_on_hand <= p.reorder_level)
   const productsCount = products.filter(p => p.item_type === 'product' || !p.item_type).length
