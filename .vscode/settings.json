@@ -13,5 +13,6 @@
     "workbench.editor.autoLockGroups": {
         "default": true
     },
-    "workbench.auxiliaryActivityBar.location": "hidden"
+    "workbench.auxiliaryActivityBar.location": "hidden",
+    "claudeCode.useTerminal": true
 }
