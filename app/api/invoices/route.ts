@@ -149,6 +149,64 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 2.6️⃣ Defensive stock-availability guard (Option B — Req 2 follow-up)
+    //   Refuses an invoice whose non-service items demand more than what's
+    //   available in the target branch (including duplicated rows — we
+    //   aggregate by product_id first). Bundle children with included/free
+    //   pricing still consume inventory and ARE checked. Services are
+    //   skipped. The DB pipeline is NOT modified.
+    if (Array.isArray(invoiceItems) && invoiceItems.length > 0 && finalBranchId) {
+      const aggregated: Record<string, number> = {}
+      for (const it of invoiceItems) {
+        if (!it?.product_id || it.item_type === 'service') continue
+        aggregated[it.product_id] = (aggregated[it.product_id] || 0) + (Number(it.quantity) || 0)
+      }
+      const productIds = Object.keys(aggregated)
+      if (productIds.length > 0) {
+        // NOTE: we query the inventory_available_balance view directly
+        // because the public.get_inventory_available_balance RPC has a
+        // declared return-type mismatch (integer vs. bigint) that causes a
+        // 42804 error at runtime. The view itself is correct and exposes
+        // the same per-warehouse rows; we sum them per product.
+        const { data: balanceRows, error: balErr } = await supabase
+          .from('inventory_available_balance')
+          .select('product_id, available_quantity')
+          .eq('company_id', companyId)
+          .eq('branch_id', finalBranchId)
+          .in('product_id', productIds)
+        if (balErr) {
+          console.error('[INV_STOCK_CHECK_ERR]', balErr)
+        }
+        const totals: Record<string, number> = {}
+        productIds.forEach(pid => { totals[pid] = 0 })
+        ;(balanceRows ?? []).forEach((r: any) => {
+          totals[r.product_id] = (totals[r.product_id] || 0) + Math.max(0, Number(r.available_quantity) || 0)
+        })
+        const balances = productIds.map(pid => ({ product_id: pid, available: totals[pid] }))
+
+        const insufficient = balances
+          .map(b => {
+            const requested = aggregated[b.product_id] ?? 0
+            return { ...b, requested, shortage: requested - b.available }
+          })
+          .filter(b => b.requested > b.available)
+
+        if (insufficient.length > 0) {
+          return NextResponse.json({
+            success: false,
+            error:   'عجز في المخزون',
+            code:    'INSUFFICIENT_STOCK',
+            details: insufficient.map(i => ({
+              product_id:         i.product_id,
+              requested_quantity: i.requested,
+              available_quantity: i.available,
+              shortage:           i.shortage,
+            })),
+          }, { status: 400 })
+        }
+      }
+    }
+
     // 3️⃣ Call Atomic RPC (handles creation and synchronous accounting engine)
     const { data: rpcResult, error: rpcError } = await supabase.rpc('create_sales_invoice_atomic', {
       p_invoice_data: invoiceData,

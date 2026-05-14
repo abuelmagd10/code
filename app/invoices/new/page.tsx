@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useTransition } from "react"
+import { useState, useEffect, useTransition, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -174,6 +174,12 @@ export default function NewInvoicePage() {
   const [branchId, setBranchId] = useState<string | null>(null)
   const [costCenterId, setCostCenterId] = useState<string | null>(null)
   const [warehouseId, setWarehouseId] = useState<string | null>(null)
+
+  // 🔐 Branch-scoped stock map for Option A guard (Req 2 follow-up)
+  // Mirrors /sales-orders/new pattern. Loaded after products + branch are
+  // known; refreshed when branch changes.
+  const [branchStockMap, setBranchStockMap] = useState<Record<string, number>>({})
+  const [, setIsLoadingStock] = useState(false)
 
   // 🔐 ERP Access Control - سياق المستخدم
   const [userContext, setUserContext] = useState<UserContext | null>(null)
@@ -670,6 +676,70 @@ export default function NewInvoicePage() {
     }
   }
 
+  // 🔐 Branch-stock loader (Option A — UI guard)
+  // Mirrors /sales-orders/new exactly so behaviour is identical between
+  // the two pages.
+  const loadBranchStock = useCallback(async (targetBranchId: string | null, productsList: Product[]) => {
+    if (!targetBranchId || productsList.length === 0) {
+      setBranchStockMap({})
+      return
+    }
+    try {
+      setIsLoadingStock(true)
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      const { data: branchWarehouses, error: whError } = await supabase
+        .from('warehouses')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('branch_id', targetBranchId)
+        .eq('is_active', true)
+      if (whError) { setBranchStockMap({}); return }
+
+      const warehouseIds = (branchWarehouses || []).map((w: { id: string }) => w.id)
+      const productIds = productsList.filter(p => p.item_type !== 'service').map(p => p.id)
+
+      if (warehouseIds.length === 0) {
+        const emptyStock: Record<string, number> = {}
+        productIds.forEach(pid => { emptyStock[pid] = 0 })
+        setBranchStockMap(emptyStock)
+        return
+      }
+      if (productIds.length === 0) { setBranchStockMap({}); return }
+
+      const { data: transactions, error: txError } = await supabase
+        .from('inventory_transactions')
+        .select('product_id, quantity_change')
+        .eq('company_id', companyId)
+        .in('warehouse_id', warehouseIds)
+        .in('product_id', productIds)
+        .or('is_deleted.is.null,is_deleted.eq.false')
+      if (txError) { setBranchStockMap({}); return }
+
+      const stockMap: Record<string, number> = {}
+      productIds.forEach(pid => { stockMap[pid] = 0 })
+      ;(transactions || []).forEach((tx: any) => {
+        stockMap[tx.product_id] = (stockMap[tx.product_id] || 0) + Number(tx.quantity_change || 0)
+      })
+      Object.keys(stockMap).forEach(pid => { stockMap[pid] = Math.max(0, stockMap[pid]) })
+      setBranchStockMap(stockMap)
+    } catch (err) {
+      console.error('Error loading branch stock:', err)
+      setBranchStockMap({})
+    } finally {
+      setIsLoadingStock(false)
+    }
+  }, [supabase])
+
+  // Reload branch stock when branch or products change
+  useEffect(() => {
+    if (branchId && products.length > 0) {
+      loadBranchStock(branchId, products)
+    }
+  }, [branchId, products, loadBranchStock])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -694,6 +764,34 @@ export default function NewInvoicePage() {
     if (invoiceItems.length === 0) {
       toast({ title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang === 'en' ? "Please add invoice items" : "يرجى إضافة عناصر للفاتورة", variant: "destructive" })
       return
+    }
+
+    // 🔐 Stock Validation (Frontend — Option A guard for Req 2 follow-up)
+    // Aggregate quantities by product_id so duplicates (e.g. user added a
+    // bundle child manually AND via expansion) are counted as one demand.
+    // Skips services and rows without a product_id. Bundle children with
+    // included/free pricing still consume inventory and ARE checked.
+    {
+      const aggregated: Record<string, number> = {}
+      for (const it of invoiceItems) {
+        if (it.item_type === 'service' || !it.product_id) continue
+        aggregated[it.product_id] = (aggregated[it.product_id] || 0) + (Number(it.quantity) || 0)
+      }
+      for (const [pid, requested] of Object.entries(aggregated)) {
+        const available = branchStockMap[pid] ?? 0
+        if (requested > available) {
+          const product = products.find(p => p.id === pid)
+          toast({
+            title: appLang === 'en' ? "Insufficient Stock" : "عجز في المخزون",
+            description: appLang === 'en'
+              ? `Product "${product?.name ?? pid}" has only ${available} available in the selected branch (you requested ${requested}).`
+              : `المنتج "${product?.name ?? pid}" متوفر منه ${available} فقط في الفرع المختار (المطلوب ${requested}).`,
+            variant: "destructive",
+            duration: 7000,
+          })
+          return
+        }
+      }
     }
 
     // Validate shipping provider is selected
@@ -1603,12 +1701,22 @@ export default function NewInvoicePage() {
                                   </div>
                                 </td>
                                 <td className="px-3 py-3">
-                                  <NumericInput
-                                    min={1}
-                                    value={item.quantity}
-                                    onChange={(val) => updateInvoiceItem(index, "quantity", Math.max(1, Math.round(val)))}
-                                    className="text-center text-sm"
-                                  />
+                                  <div className="flex flex-col items-center gap-1">
+                                    <NumericInput
+                                      min={1}
+                                      value={item.quantity}
+                                      onChange={(val) => updateInvoiceItem(index, "quantity", Math.max(1, Math.round(val)))}
+                                      className={`text-center text-sm ${item.item_type !== 'service' && item.product_id && item.quantity > (branchStockMap[item.product_id] ?? 0)
+                                          ? 'border-red-500 focus-visible:ring-red-500'
+                                          : ''
+                                        }`}
+                                    />
+                                    {item.item_type !== 'service' && item.product_id && item.quantity > (branchStockMap[item.product_id] ?? 0) && (
+                                      <span className="text-[10px] text-red-500 font-medium">
+                                        {appLang === 'en' ? 'Max:' : 'المتاح:'} {branchStockMap[item.product_id] ?? 0}
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="px-3 py-3">
                                   <NumericInput

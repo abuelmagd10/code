@@ -252,6 +252,62 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 7.6️⃣ Defensive stock-availability guard (Option B — Req 2 follow-up)
+    //   Refuses an SO whose non-service items demand more than the target
+    //   branch has available. Aggregates duplicates by product_id. Bundle
+    //   children with included/free pricing still consume inventory and
+    //   ARE checked. Services are skipped. DB pipeline is NOT modified.
+    if (Array.isArray(_bodyItems) && _bodyItems.length > 0 && finalData.branch_id) {
+      const scopedCompanyId = finalData.company_id || governance.companyId
+      const aggregated: Record<string, number> = {}
+      for (const it of _bodyItems) {
+        if (!it?.product_id || it.item_type === 'service') continue
+        aggregated[it.product_id] = (aggregated[it.product_id] || 0) + (Number(it.quantity) || 0)
+      }
+      const productIds = Object.keys(aggregated)
+      if (productIds.length > 0) {
+        // NOTE: querying the view directly (not the RPC) — see comment in
+        // app/api/invoices/route.ts for the rationale.
+        const { data: balanceRows, error: balErr } = await supabase
+          .from('inventory_available_balance')
+          .select('product_id, available_quantity')
+          .eq('company_id', scopedCompanyId)
+          .eq('branch_id', finalData.branch_id)
+          .in('product_id', productIds)
+        if (balErr) {
+          console.error('[SO_STOCK_CHECK_ERR]', balErr)
+        }
+        const totals: Record<string, number> = {}
+        productIds.forEach(pid => { totals[pid] = 0 })
+        ;(balanceRows ?? []).forEach((r: any) => {
+          totals[r.product_id] = (totals[r.product_id] || 0) + Math.max(0, Number(r.available_quantity) || 0)
+        })
+        const balances = productIds.map(pid => ({ product_id: pid, available: totals[pid] }))
+
+        const insufficient = balances
+          .map(b => {
+            const requested = aggregated[b.product_id] ?? 0
+            return { ...b, requested, shortage: requested - b.available }
+          })
+          .filter(b => b.requested > b.available)
+
+        if (insufficient.length > 0) {
+          return NextResponse.json({
+            success: false,
+            error:    'عجز في المخزون',
+            error_ar: 'عجز في المخزون',
+            code:     'INSUFFICIENT_STOCK',
+            details:  insufficient.map(i => ({
+              product_id:         i.product_id,
+              requested_quantity: i.requested,
+              available_quantity: i.available,
+              shortage:           i.shortage,
+            })),
+          }, { status: 400 })
+        }
+      }
+    }
+
     const { data: newSalesOrder, error: insertError } = await supabase
       .from("sales_orders")
       .insert(orderDataToInsert)
