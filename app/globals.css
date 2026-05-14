@@ -3,6 +3,52 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Prevent sidebar shake and improve performance */
+aside[class*="fixed"] {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  contain: layout style paint;
+}
+
+/* Prevent dropdown from affecting layout - Enhanced */
+[data-radix-popper-content-wrapper] {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  will-change: transform;
+  contain: layout style paint;
+  isolation: isolate;
+}
+
+/* Prevent Select dropdown from causing layout shifts */
+[data-radix-select-viewport] {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+}
+
+/* Prevent Portal content from affecting main layout */
+[data-radix-portal] {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+[data-radix-portal] > * {
+  pointer-events: auto;
+}
+
+/* Stabilize Select trigger during open/close */
+[data-radix-select-trigger] {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* Prevent content wrapper from affecting layout */
+body:has([data-radix-select-content]) {
+  overflow: visible !important;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

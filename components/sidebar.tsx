@@ -878,7 +878,9 @@ export function Sidebar() {
         className={`fixed right-0 bg-slate-900 text-white transform transition-transform duration-300 overflow-y-auto
           w-[280px] sm:w-72 md:w-64
           ${isOpen ? "translate-x-0 z-[9998]" : "translate-x-full md:translate-x-0 z-[9998] md:z-40"}
-          top-16 md:top-0 h-[calc(100vh-64px)] md:h-screen`}
+          top-16 md:top-0 h-[calc(100vh-64px)] md:h-screen
+          will-change-transform backface-hidden`}
+        style={{ WebkitBackfaceVisibility: 'hidden', backfaceVisibility: 'hidden' }}
       >
         {/* Header - مخفي على الهاتف لأنه موجود في الشريط العلوي */}
         <div className="hidden md:block sticky top-0 bg-slate-900 z-10 p-4 sm:p-5 md:p-6 border-b border-slate-800 md:border-0 pt-6 md:pt-4">
