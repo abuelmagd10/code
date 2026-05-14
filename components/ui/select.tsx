@@ -6,24 +6,24 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
-interface SelectProps extends React.ComponentProps<typeof SelectPrimitive.Root> {
-  modal?: boolean
-}
+type SelectRootProps = React.ComponentProps<typeof SelectPrimitive.Root> & { modal?: boolean }
+// Cast once so every call site stays clean — Radix accepts `modal` at runtime but omits it from its TS types.
+const SelectRoot = SelectPrimitive.Root as React.ComponentType<SelectRootProps>
 
 function Select({
   value,
   defaultValue,
   modal,
   ...props
-}: SelectProps) {
+}: SelectRootProps) {
   // Normalize null controlled values to empty string to avoid React warnings.
   const normalizedValue = value === null ? '' : value
   return (
-    <SelectPrimitive.Root
+    <SelectRoot
       data-slot="select"
       value={normalizedValue as any}
       defaultValue={defaultValue}
-      modal={modal as any}
+      modal={modal}
       {...props}
     />
   )
