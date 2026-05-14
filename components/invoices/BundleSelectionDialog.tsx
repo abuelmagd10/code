@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
-import { Lock, Package } from "lucide-react"
+import { Lock, Package, Info } from "lucide-react"
 import type { ExpandedBundleRow } from "@/lib/products/bundle-helpers"
 
 interface BundleSelectionDialogProps {
@@ -130,17 +130,33 @@ export function BundleSelectionDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="w-5 h-5 text-orange-500" />
-            {t("الأصناف المرفقة لـ", "Bundle items for")} "{parentName}"
+            📦 {t(`الأصناف المرفقة لـ "${parentName}"`, `Bundle items for "${parentName}"`)}
           </DialogTitle>
           <DialogDescription>
             {t(
-              "اختر الأصناف الاختيارية التي تريد إضافتها للفاتورة. الإلزامية تُضاف تلقائياً.",
-              "Pick optional add-ons. Required items are added automatically."
+              "اختر الأصناف الإضافية التي تريد إضافتها للفاتورة:",
+              "Choose the add-on items you want to include in the invoice:"
             )}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+        {/* Quick guide */}
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+          <div className="flex gap-2 text-sm">
+            <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-amber-900 dark:text-amber-100">
+              <p className="font-semibold mb-1">{t("دليل سريع:", "Quick guide:")}</p>
+              <ul className="space-y-1 text-xs">
+                <li>🔒 <strong>{t("إلزامي:", "Required:")}</strong> {t("سيُضاف تلقائياً (لا يمكن إلغاؤه)", "Added automatically (cannot be unchecked)")}</li>
+                <li>📝 <strong>{t("اختياري:", "Optional:")}</strong> {t("أنت تقرر إضافته", "You decide whether to include it")}</li>
+                <li>💰 <strong>{t("(مشمول):", "(Included):")}</strong> {t("السعر مدفوع ضمن المنتج الأم", "Price already covered in parent")}</li>
+                <li>🎁 <strong>{t("(هدية):", "(Free):")}</strong> {t("مجاناً للعميل", "Free for the client")}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
           {mandatoryRows.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-medium text-muted-foreground">
