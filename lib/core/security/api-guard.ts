@@ -5,7 +5,23 @@ import { getActiveCompanyId } from '@/lib/company';
 /**
  * الـ Role Types المدعومة في النظام
  */
-export type Role = 'owner' | 'admin' | 'manager' | 'accountant' | 'store_manager' | 'cashier' | 'sales_representative' | '';
+export type Role =
+  | 'owner'
+  | 'admin'
+  | 'general_manager'
+  | 'manager'
+  | 'accountant'
+  | 'store_manager'
+  | 'warehouse_manager'
+  | 'cashier'
+  | 'sales_representative'
+  | 'manufacturing_officer'
+  | 'booking_officer'
+  | 'purchasing_officer'
+  | 'staff'
+  | 'employee'
+  | 'viewer'
+  | '';
 
 /**
  * الـ Resource Types المدعومة في مصفوفة الصلاحيات (RBAC)

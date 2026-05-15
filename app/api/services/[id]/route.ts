@@ -21,19 +21,25 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     const { context, errorResponse } = await apiGuard(req, { requireAuth: true, requireCompany: true })
     if (errorResponse) return errorResponse
 
-    const { companyId } = context!
+    const { companyId, member } = context!
     const { id } = await params
 
     const supabase = await createClient()
 
+    let serviceQuery = supabase
+      .from('services')
+      .select('*')
+      .eq('id', id)
+      .eq('company_id', companyId)
+
+    // booking_officer: التحقق من أن الخدمة تنتمي لفرعه
+    if (member?.branch_id && String(member.role || '') === 'booking_officer') {
+      serviceQuery = serviceQuery.eq('branch_id', member.branch_id)
+    }
+
     const [{ data: service, error }, { data: schedules, error: schedErr }, { data: staffRows, error: staffErr }] =
       await Promise.all([
-        supabase
-          .from('services')
-          .select('*')
-          .eq('id', id)
-          .eq('company_id', companyId)
-          .maybeSingle(),
+        serviceQuery.maybeSingle(),
         supabase
           .from('service_schedules')
           .select('*')
@@ -92,12 +98,25 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
     const { context, errorResponse } = await apiGuard(req, { requireAuth: true, requireCompany: true })
     if (errorResponse) return errorResponse
 
-    const { user, companyId } = context!
+    const { user, companyId, member } = context!
     const { id } = await params
 
     const body = await parseJsonBody(req, updateServiceSchema)
 
     const supabase = await createClient()
+
+    // booking_officer: التحقق أن الخدمة تنتمي لفرعه قبل التعديل
+    if (member?.branch_id && String(member.role || '') === 'booking_officer') {
+      const { data: svc } = await supabase
+        .from('services')
+        .select('branch_id')
+        .eq('id', id)
+        .eq('company_id', companyId)
+        .maybeSingle()
+      if (!svc || svc.branch_id !== member.branch_id) {
+        return NextResponse.json({ success: false, error: 'لا يمكنك تعديل خدمة خارج فرعك' }, { status: 403 })
+      }
+    }
 
     const { data: result, error } = await supabase.rpc('update_service_atomic', {
       p_company_id:          companyId,

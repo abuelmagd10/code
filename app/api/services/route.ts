@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const { context, errorResponse } = await apiGuard(req, { requireAuth: true, requireCompany: true })
     if (errorResponse) return errorResponse
 
-    const { companyId } = context!
+    const { companyId, member } = context!
     const sp = req.nextUrl.searchParams
     const { from, to, page, limit } = parsePagination(sp)
 
@@ -31,6 +31,11 @@ export async function GET(req: NextRequest) {
       .eq('company_id', companyId)
       .order('service_name')
       .range(from, to)
+
+    // booking_officer مقيَّد بفرعه تلقائياً
+    if (member?.branch_id && String(member.role || '') === 'booking_officer') {
+      query = query.eq('branch_id', member.branch_id)
+    }
 
     const branchId     = sp.get('branch_id')
     const serviceType  = sp.get('service_type')
