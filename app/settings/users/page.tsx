@@ -1058,6 +1058,10 @@ export default function UsersSettingsPage() {
     manager: { ar: 'مدير', en: 'Manager', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400', description: 'إدارة العمليات اليومية' },
     accountant: { ar: 'محاسب', en: 'Accountant', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', description: 'إدارة الحسابات والفواتير' },
     store_manager: { ar: 'مسؤول مخزن', en: 'Store Manager', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400', description: 'إدارة المخزون والمنتجات' },
+    // ── الأدوار الجديدة ──────────────────────────────────────────
+    manufacturing_officer: { ar: 'مسؤول التصنيع', en: 'Manufacturing Officer', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300', description: 'إدارة قوائم المواد والإنتاج' },
+    booking_officer: { ar: 'مسؤول الحجوزات', en: 'Booking Officer', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400', description: 'إدارة الحجوزات والخدمات' },
+    purchasing_officer: { ar: 'مسؤول المشتريات', en: 'Purchasing Officer', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400', description: 'إدارة المشتريات والموردين' },
     staff: { ar: 'موظف', en: 'Staff', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', description: 'صلاحيات محدودة' },
     viewer: { ar: 'عرض فقط', en: 'Viewer', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400', description: 'عرض البيانات فقط' },
   }
@@ -1199,6 +1203,23 @@ export default function UsersSettingsPage() {
     ],
     store_manager: [
       'dashboard', 'products', 'inventory', 'product_availability', 'inventory_transfers', 'third_party_inventory', 'write_offs', 'dispatch_approvals', 'inventory_goods_receipt', 'purchase_orders', 'sales_orders', 'shipping'
+    ],
+    // ── الأدوار الجديدة ──────────────────────────────────────────
+    manufacturing_officer: [
+      'dashboard', 'manufacturing_boms', 'products', 'inventory', 'product_availability', 'reports'
+    ],
+    booking_officer: [
+      'dashboard', 'bookings', 'services', 'customers', 'payments', 'reports'
+    ],
+    purchasing_officer: [
+      'dashboard', 'reports',
+      'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits',
+      'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts',
+      'banking', 'annual_closing', 'accounting_periods', 'shareholders',
+      'fixed_assets', 'asset_categories', 'fixed_assets_reports',
+      'taxes', 'exchange_rates', 'accounting_maintenance',
+      'products', 'inventory', 'inventory_transfers', 'inventory_goods_receipt',
+      'product_availability', 'write_offs', 'third_party_inventory',
     ],
     staff: [
       'dashboard', 'customers', 'estimates', 'sales_orders', 'invoices', 'inventory', 'product_availability', 'attendance'
@@ -1394,6 +1415,9 @@ export default function UsersSettingsPage() {
                               <SelectItem value="manager">مدير</SelectItem>
                               <SelectItem value="accountant">محاسب</SelectItem>
                               <SelectItem value="store_manager">مسؤول مخزن</SelectItem>
+                              <SelectItem value="manufacturing_officer">مسؤول التصنيع</SelectItem>
+                              <SelectItem value="booking_officer">مسؤول الحجوزات</SelectItem>
+                              <SelectItem value="purchasing_officer">مسؤول المشتريات</SelectItem>
                               <SelectItem value="staff">موظف</SelectItem>
                               <SelectItem value="viewer">عرض فقط</SelectItem>
                             </SelectContent>
@@ -1790,6 +1814,9 @@ export default function UsersSettingsPage() {
                       <SelectItem value="manager">مدير</SelectItem>
                       <SelectItem value="accountant">محاسب</SelectItem>
                       <SelectItem value="store_manager">مسؤول مخزن</SelectItem>
+                      <SelectItem value="manufacturing_officer">مسؤول التصنيع</SelectItem>
+                      <SelectItem value="booking_officer">مسؤول الحجوزات</SelectItem>
+                      <SelectItem value="purchasing_officer">مسؤول المشتريات</SelectItem>
                       <SelectItem value="staff">موظف</SelectItem>
                       <SelectItem value="viewer">عرض فقط</SelectItem>
                     </SelectContent>
@@ -2043,6 +2070,24 @@ export default function UsersSettingsPage() {
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-orange-500"></span>
                           مسؤول مخزن
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="manufacturing_officer">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                          مسؤول التصنيع
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="booking_officer">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-teal-500"></span>
+                          مسؤول الحجوزات
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="purchasing_officer">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                          مسؤول المشتريات
                         </div>
                       </SelectItem>
                       <SelectItem value="staff">

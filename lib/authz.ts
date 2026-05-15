@@ -34,6 +34,11 @@ export type AdvancedAction =
   | "approve"          // اعتماد
   | "post_depreciation" // ترحيل الإهلاك
   | "approve_depreciation" // اعتماد الإهلاك
+  // ── أفعال دورة الاعتماد (R3+) ──────────────────────────────
+  | "submit_for_approval"   // إرسال للاعتماد (manufacturing_officer)
+  | "reject_approval"       // رفض الاعتماد (admin/owner/gm)
+  | "re_submit"             // إعادة الإرسال بعد رفض أو تعديل
+  | "warehouse_issue"       // تنفيذ صرف من المخزن (store_manager)
 
 export type ActionType = BasicAction | AdvancedAction
 
@@ -405,6 +410,13 @@ const FALLBACK_PAGES = [
   { resource: "branches", path: "/branches" },
   { resource: "cost_centers", path: "/cost-centers" },
   { resource: "warehouses", path: "/warehouses" },
+  // التصنيع (للـ manufacturing_officer)
+  { resource: "manufacturing_boms", path: "/manufacturing/boms" },
+  // الحجوزات (للـ booking_officer)
+  { resource: "bookings", path: "/bookings" },
+  { resource: "services", path: "/services" },
+  // المشتريات المتقدمة (للـ purchasing_officer)
+  { resource: "purchase_requests", path: "/purchase-requests" },
   // الإعدادات
   { resource: "settings", path: "/settings" },
   { resource: "users", path: "/settings/users" },

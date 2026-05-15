@@ -74,6 +74,10 @@ export interface AccessProfile {
   is_manager: boolean
   is_store_manager: boolean
   is_staff: boolean
+  // ── الأدوار الجديدة (Phase R1) ──────────────────────────────
+  is_manufacturing_officer: boolean
+  is_booking_officer: boolean
+  is_purchasing_officer: boolean
 }
 
 export interface AccessContextType {
@@ -138,6 +142,8 @@ export function getFirstAllowedRoute(allowedPages: string[]): string {
     "dashboard",
     "approvals",
     "manufacturing_boms",
+    "bookings",        // booking_officer
+    "purchase_requests", // purchasing_officer
     "invoices",
     "sales_orders",
     "customers",
@@ -152,23 +158,33 @@ export function getFirstAllowedRoute(allowedPages: string[]): string {
     "settings",
   ]
 
+  // خريطة تحويل resource → مسار URL
+  const resourceToPath: Record<string, string> = {
+    manufacturing_boms:  "/manufacturing/boms",
+    purchase_requests:   "/purchase-requests",
+    bookings:            "/bookings",
+    purchase_orders:     "/purchase-orders",
+    sales_orders:        "/sales-orders",
+    sales_returns:       "/sales-returns",
+    inventory_transfers: "/inventory-transfers",
+    journal_entries:     "/journal-entries",
+    chart_of_accounts:   "/chart-of-accounts",
+    fixed_assets:        "/fixed-assets",
+    annual_closing:      "/annual-closing",
+    accounting_periods:  "/accounting/periods",
+  }
+
   // البحث عن أول صفحة مسموحة حسب الأولوية
   for (const page of priorityPages) {
     if (allowedPages.includes(page)) {
-      if (page === "manufacturing_boms") {
-        return "/manufacturing/boms"
-      }
-      return `/${page.replace(/_/g, "-")}`
+      return resourceToPath[page] ?? `/${page.replace(/_/g, "-")}`
     }
   }
 
   // إذا لم توجد صفحة من الأولويات، إرجاع أول صفحة من allowedPages
   const firstPage = allowedPages[0]
   if (firstPage) {
-    if (firstPage === "manufacturing_boms") {
-      return "/manufacturing/boms"
-    }
-    return `/${firstPage.replace(/_/g, "-")}`
+    return resourceToPath[firstPage] ?? `/${firstPage.replace(/_/g, "-")}`
   }
 
   // إذا لم توجد أي صفحة من القائمة، إرجاع /dashboard لتجنب التوجيه الخاطئ المؤقت
@@ -296,6 +312,26 @@ async function fetchAccessProfile(
         store_manager: [
           'dashboard', 'manufacturing_boms', 'products', 'inventory', 'product_availability', 'inventory_transfers', 'third_party_inventory', 'write_offs', 'inventory_goods_receipt', 'purchase_orders', 'sales_orders', 'shipping'
         ],
+        // ── الأدوار الجديدة (Phase R1) ────────────────────────────
+        manufacturing_officer: [
+          'dashboard', 'manufacturing_boms', 'products', 'inventory', 'product_availability', 'reports'
+        ],
+        booking_officer: [
+          'dashboard', 'bookings', 'services', 'customers', 'payments', 'reports'
+        ],
+        purchasing_officer: [
+          'dashboard', 'reports',
+          // المشتريات
+          'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits',
+          // المحاسبة (موروثة من المحاسب)
+          'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts',
+          'banking', 'annual_closing', 'accounting_periods', 'shareholders',
+          'fixed_assets', 'asset_categories', 'fixed_assets_reports',
+          'taxes', 'exchange_rates', 'accounting_maintenance',
+          // المخزون (مرتبط بالمشتريات)
+          'products', 'inventory', 'inventory_transfers', 'inventory_goods_receipt',
+          'product_availability', 'write_offs', 'third_party_inventory',
+        ],
         staff: [
           'dashboard', 'customers', 'estimates', 'sales_orders', 'invoices', 'inventory', 'product_availability', 'attendance'
         ],
@@ -403,6 +439,9 @@ async function fetchAccessProfile(
       is_manager: role === "manager",
       is_store_manager: role === "store_manager",
       is_staff: role === "staff" || role === "employee",
+      is_manufacturing_officer: role === "manufacturing_officer",
+      is_booking_officer: role === "booking_officer",
+      is_purchasing_officer: role === "purchasing_officer",
     }
   } catch (error) {
     console.error("[AccessContext] Error fetching access profile:", error)
