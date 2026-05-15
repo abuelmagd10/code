@@ -1,0 +1,389 @@
+"use client"
+
+import { useState, useEffect, useCallback } from "react"
+import { createClient } from "@/lib/supabase/client"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
+import { useToast } from "@/hooks/use-toast"
+import {
+  CheckCircle2, XCircle, Clock, Layers, GitMerge,
+  RefreshCw, AlertCircle, ChevronDown, ChevronUp,
+} from "lucide-react"
+import { PageGuard } from "@/components/page-guard"
+import Link from "next/link"
+
+// ── Types ──────────────────────────────────────────────────
+
+interface PendingBomVersion {
+  id: string; version_no: number; status: string; submitted_at: string
+  bom_code: string; product_name: string; branch_name: string
+  submitted_by_email: string
+  type: "bom_version"
+}
+
+interface PendingRoutingVersion {
+  id: string; version_no: number; approval_status: string; submitted_at: string
+  routing_code: string; routing_name: string; branch_name: string
+  submitted_by_email: string
+  type: "routing_version"
+}
+
+type PendingItem = PendingBomVersion | PendingRoutingVersion
+
+// ── Component ─────────────────────────────────────────────
+
+function ApprovalsContent() {
+  const supabase = createClient()
+  const { toast } = useToast()
+  const [appLang, setAppLang] = useState<"ar" | "en">("ar")
+  const [isLoading, setIsLoading] = useState(true)
+  const [bomVersions, setBomVersions] = useState<PendingBomVersion[]>([])
+  const [routingVersions, setRoutingVersions] = useState<PendingRoutingVersion[]>([])
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing">("all")
+  const [runningId, setRunningId] = useState<string | null>(null)
+  const [rejectId, setRejectId] = useState<string | null>(null)
+  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | null>(null)
+  const [rejectReason, setRejectReason] = useState("")
+
+  const t = (ar: string, en: string) => appLang === "ar" ? ar : en
+
+  useEffect(() => {
+    const h = () => { try { setAppLang((localStorage.getItem("app_language") || "ar") === "en" ? "en" : "ar") } catch {} }
+    h(); window.addEventListener("app_language_changed", h)
+    return () => window.removeEventListener("app_language_changed", h)
+  }, [])
+
+  const load = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const cid = document.cookie.split(";").find(c => c.trim().startsWith("active_company_id="))?.split("=")[1] || ""
+      if (!cid) return
+
+      // BOM versions pending
+      const { data: boms } = await supabase
+        .from("manufacturing_bom_versions")
+        .select(`
+          id, version_no, status, submitted_at,
+          manufacturing_boms!inner(bom_code, products!inner(name)),
+          branches!inner(name)
+        `)
+        .eq("company_id", cid)
+        .eq("status", "pending_approval")
+        .order("submitted_at", { ascending: true })
+        .limit(50)
+
+      setBomVersions((boms || []).map((b: any) => ({
+        id: b.id,
+        version_no: b.version_no,
+        status: b.status,
+        submitted_at: b.submitted_at,
+        bom_code: b.manufacturing_boms?.bom_code ?? "—",
+        product_name: b.manufacturing_boms?.products?.name ?? "—",
+        branch_name: b.branches?.name ?? "—",
+        submitted_by_email: "—",
+        type: "bom_version" as const,
+      })))
+
+      // Routing versions pending
+      const { data: routings } = await supabase
+        .from("manufacturing_routing_versions")
+        .select(`
+          id, version_no, approval_status, submitted_at,
+          manufacturing_routings!inner(routing_code, routing_name),
+          branches!inner(name)
+        `)
+        .eq("company_id", cid)
+        .eq("approval_status", "pending_approval")
+        .order("submitted_at", { ascending: true })
+        .limit(50)
+
+      setRoutingVersions((routings || []).map((r: any) => ({
+        id: r.id,
+        version_no: r.version_no,
+        approval_status: r.approval_status,
+        submitted_at: r.submitted_at,
+        routing_code: r.manufacturing_routings?.routing_code ?? "—",
+        routing_name: r.manufacturing_routings?.routing_name ?? "—",
+        branch_name: r.branches?.name ?? "—",
+        submitted_by_email: "—",
+        type: "routing_version" as const,
+      })))
+    } finally {
+      setIsLoading(false)
+    }
+  }, [supabase])
+
+  useEffect(() => { load() }, [load])
+
+  const handleApprove = async (item: PendingItem) => {
+    setRunningId(item.id)
+    try {
+      const endpoint = item.type === "bom_version"
+        ? `/api/manufacturing/bom-versions/${item.id}/approve`
+        : `/api/manufacturing/routing-versions/${item.id}/approve`
+      const res = await fetch(endpoint, { method: "POST" })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Failed")
+      toast({ title: t("تمت الموافقة ✅", "Approved ✅"), description: t("تمت الموافقة بنجاح", "Approved successfully") })
+      await load()
+    } catch (e: any) {
+      toast({ title: t("خطأ", "Error"), description: e.message, variant: "destructive" })
+    } finally {
+      setRunningId(null)
+    }
+  }
+
+  const handleReject = async () => {
+    if (!rejectId || !rejectType || !rejectReason.trim()) return
+    setRunningId(rejectId)
+    try {
+      const endpoint = rejectType === "bom_version"
+        ? `/api/manufacturing/bom-versions/${rejectId}/reject`
+        : `/api/manufacturing/routing-versions/${rejectId}/reject`
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rejection_reason: rejectReason.trim() }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Failed")
+      toast({ title: t("تم الرفض", "Rejected"), description: t("تم رفض الطلب", "Request rejected") })
+      setRejectId(null); setRejectType(null); setRejectReason("")
+      await load()
+    } catch (e: any) {
+      toast({ title: t("خطأ", "Error"), description: e.message, variant: "destructive" })
+    } finally {
+      setRunningId(null)
+    }
+  }
+
+  const totalPending = bomVersions.length + routingVersions.length
+  const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
+
+  const BomCard = ({ b }: { b: PendingBomVersion }) => (
+    <Card key={b.id} className="border-l-4 border-l-blue-500">
+      <CardContent className="py-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg shrink-0">
+              <Layers className="w-4 h-4 text-blue-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-sm">{b.product_name}</p>
+              <p className="text-xs text-muted-foreground font-mono">{b.bom_code} · v{b.version_no}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                🏢 {b.branch_name} · 📅 {fmtDate(b.submitted_at)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+              <Clock className="w-3 h-3 me-1" />{t("انتظار", "Pending")}
+            </Badge>
+            <Link href={`/manufacturing/boms`} className="text-xs text-blue-600 hover:underline">{t("عرض", "View")}</Link>
+          </div>
+        </div>
+        <div className="flex gap-2 mt-3">
+          <Button
+            size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+            disabled={runningId === b.id}
+            onClick={() => handleApprove(b)}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />{t("موافقة", "Approve")}
+          </Button>
+          <Button
+            size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+            disabled={runningId === b.id}
+            onClick={() => { setRejectId(b.id); setRejectType("bom_version"); setRejectReason("") }}
+          >
+            <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+          </Button>
+        </div>
+        {/* Reject reason input */}
+        {rejectId === b.id && (
+          <div className="mt-3 space-y-2">
+            <Textarea
+              placeholder={t("سبب الرفض (مطلوب)…", "Rejection reason (required)…")}
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              rows={2}
+              className="text-sm"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" variant="destructive" className="text-xs" disabled={!rejectReason.trim() || runningId === b.id} onClick={handleReject}>
+                {t("تأكيد الرفض", "Confirm Reject")}
+              </Button>
+              <Button size="sm" variant="ghost" className="text-xs" onClick={() => { setRejectId(null); setRejectReason("") }}>
+                {t("إلغاء", "Cancel")}
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+
+  const RoutingCard = ({ r }: { r: PendingRoutingVersion }) => (
+    <Card key={r.id} className="border-l-4 border-l-purple-500">
+      <CardContent className="py-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg shrink-0">
+              <GitMerge className="w-4 h-4 text-purple-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-sm">{r.routing_name}</p>
+              <p className="text-xs text-muted-foreground font-mono">{r.routing_code} · v{r.version_no}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                🏢 {r.branch_name} · 📅 {fmtDate(r.submitted_at)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+              <Clock className="w-3 h-3 me-1" />{t("انتظار", "Pending")}
+            </Badge>
+            <Link href={`/manufacturing/routings`} className="text-xs text-purple-600 hover:underline">{t("عرض", "View")}</Link>
+          </div>
+        </div>
+        <div className="flex gap-2 mt-3">
+          <Button
+            size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+            disabled={runningId === r.id}
+            onClick={() => handleApprove(r)}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />{t("موافقة", "Approve")}
+          </Button>
+          <Button
+            size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+            disabled={runningId === r.id}
+            onClick={() => { setRejectId(r.id); setRejectType("routing_version"); setRejectReason("") }}
+          >
+            <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+          </Button>
+        </div>
+        {rejectId === r.id && (
+          <div className="mt-3 space-y-2">
+            <Textarea
+              placeholder={t("سبب الرفض (مطلوب)…", "Rejection reason (required)…")}
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              rows={2}
+              className="text-sm"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" variant="destructive" className="text-xs" disabled={!rejectReason.trim() || runningId === r.id} onClick={handleReject}>
+                {t("تأكيد الرفض", "Confirm Reject")}
+              </Button>
+              <Button size="sm" variant="ghost" className="text-xs" onClick={() => { setRejectId(null); setRejectReason("") }}>
+                {t("إلغاء", "Cancel")}
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+
+  return (
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900" dir={appLang === "ar" ? "rtl" : "ltr"}>
+      <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+        <div className="max-w-4xl mx-auto space-y-6">
+
+          {/* Header */}
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardContent className="py-5">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+                    <AlertCircle className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-bold">{t("صندوق الموافقات", "Approval Inbox")}</h1>
+                    <p className="text-sm text-muted-foreground">
+                      {t("الطلبات المعلقة التي تحتاج موافقتك", "Pending requests awaiting your approval")}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {totalPending > 0 && (
+                    <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                      {totalPending} {t("معلق", "pending")}
+                    </Badge>
+                  )}
+                  <Button variant="outline" size="sm" onClick={load} disabled={isLoading} className="gap-1">
+                    <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+                    {t("تحديث", "Refresh")}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Tabs */}
+          <div className="flex gap-2 flex-wrap">
+            {(["all", "bom", "routing"] as const).map(tab => (
+              <Button
+                key={tab}
+                size="sm"
+                variant={activeTab === tab ? "default" : "outline"}
+                onClick={() => setActiveTab(tab)}
+                className="gap-1"
+              >
+                {tab === "all"     && <>{t("الكل", "All")} ({totalPending})</>}
+                {tab === "bom"     && <><Layers    className="w-3.5 h-3.5" />{t("قوائم المواد", "BOMs")} ({bomVersions.length})</>}
+                {tab === "routing" && <><GitMerge  className="w-3.5 h-3.5" />{t("مسارات التصنيع", "Routings")} ({routingVersions.length})</>}
+              </Button>
+            ))}
+          </div>
+
+          {/* Content */}
+          {isLoading ? (
+            <div className="py-16 text-center text-muted-foreground">{t("جاري التحميل…", "Loading…")}</div>
+          ) : totalPending === 0 ? (
+            <Card>
+              <CardContent className="py-16 text-center">
+                <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                <p className="font-semibold text-lg">{t("لا توجد موافقات معلقة 🎉", "No pending approvals 🎉")}</p>
+                <p className="text-muted-foreground text-sm mt-1">{t("كل الطلبات تمت معالجتها", "All requests have been processed")}</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {/* BOM versions */}
+              {(activeTab === "all" || activeTab === "bom") && bomVersions.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <Layers className="w-4 h-4" />{t("قوائم المواد (BOM Versions)", "BOM Versions")}
+                  </h2>
+                  {bomVersions.map(b => <BomCard key={b.id} b={b} />)}
+                </div>
+              )}
+
+              {/* Routing versions */}
+              {(activeTab === "all" || activeTab === "routing") && routingVersions.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <GitMerge className="w-4 h-4" />{t("مسارات التصنيع (Routing Versions)", "Routing Versions")}
+                  </h2>
+                  {routingVersions.map(r => <RoutingCard key={r.id} r={r} />)}
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
+      </main>
+    </div>
+  )
+}
+
+export default function ApprovalsPage() {
+  return (
+    <PageGuard resource="approvals">
+      <ApprovalsContent />
+    </PageGuard>
+  )
+}

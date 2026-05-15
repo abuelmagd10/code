@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import { createNotification } from "@/lib/governance-layer"
 import {
-  assertBomVersionAccessible,
+  assertRoutingVersionAccessible,
   getManufacturingApiContext,
   handleManufacturingApiError,
-} from "@/lib/manufacturing/bom-api"
+} from "@/lib/manufacturing/routing-api"
 import {
   recordApprovalAction,
   getNextCycleNo,
@@ -19,28 +19,27 @@ export async function POST(
   try {
     const { id } = await params
     const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "approve")
-    const version = await assertBomVersionAccessible(supabase, companyId, id)
+    const version = await assertRoutingVersionAccessible(supabase, companyId, id)
 
-    const { data, error } = await admin.rpc("approve_manufacturing_bom_version_atomic", {
-      p_company_id: companyId,
-      p_bom_version_id: id,
-      p_approved_by: user.id,
+    const { data, error } = await admin.rpc("approve_routing_version_atomic", {
+      p_company_id:         companyId,
+      p_routing_version_id: id,
+      p_approved_by:        user.id,
     })
-
     if (error) throw error
 
     // ── approval_history ─────────────────────────────────────
-    const cycleNo = await getNextCycleNo(supabase, companyId, "bom_version", id)
+    const cycleNo = await getNextCycleNo(supabase, companyId, "routing", id)
     await recordApprovalAction({
       supabase, companyId,
-      referenceType: "bom_version",
+      referenceType: "routing",
       referenceId: id,
       cycleNo,
       action: "approved",
       actorId: user.id,
       actorRole: "admin",
       snapshotData: buildApprovalSnapshot({
-        statusBefore: version.status,
+        statusBefore: "pending_approval",
         statusAfter: "approved",
         extraFields: { version_no: version.version_no },
       }),
@@ -48,34 +47,30 @@ export async function POST(
     })
 
     asyncAuditLog({
-      companyId,
-      userId: user.id,
-      userEmail: user.email || undefined,
-      action: "UPDATE",
-      table: "manufacturing_bom_versions",
-      recordId: id,
-      recordIdentifier: `bom-version-${version.version_no}`,
-      oldData: { status: version.status },
-      newData: { status: "approved" },
-      reason: "Approved manufacturing BOM version",
+      companyId, userId: user.id, userEmail: user.email || undefined,
+      action: "UPDATE", table: "manufacturing_routing_versions", recordId: id,
+      recordIdentifier: `routing-version-${version.version_no}`,
+      oldData: { approval_status: "pending_approval" }, newData: { approval_status: "approved" },
+      reason: "Approved routing version",
     })
 
-    // Notify submitter that their BOM version was approved
-    if (version.submitted_by) {
+    // إشعار مقدّم الطلب
+    const submittedBy = (version as any).submitted_by
+    if (submittedBy) {
       try {
         await createNotification({
           companyId,
-          referenceType: "manufacturing_bom_version",
+          referenceType: "manufacturing_routing_version",
           referenceId: id,
-          title: "✅ تمت الموافقة على نسخة BOM",
-          message: `تمت الموافقة على نسخة BOM رقم ${version.version_no} — أصبحت جاهزة للاستخدام في أوامر الإنتاج`,
+          title: "✅ تمت الموافقة على نسخة مسار التصنيع",
+          message: `تمت الموافقة على نسخة مسار التصنيع رقم ${version.version_no} — يمكن تفعيلها الآن`,
           createdBy: user.id,
           branchId: version.branch_id ?? undefined,
-          assignedToUser: version.submitted_by,
+          assignedToUser: submittedBy,
           priority: "high",
           severity: "info",
           category: "approvals",
-          eventKey: `bom_v_approved_${id}`,
+          eventKey: `rv_approved_${id}`,
         })
       } catch { /* non-critical */ }
     }

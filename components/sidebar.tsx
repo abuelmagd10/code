@@ -92,6 +92,7 @@ function buildMenuItems(lang: string) {
   const q = lang === "en" ? "?lang=en" : ""
   const items = [
     { label: L.dashboard, href: `/dashboard${q}`, icon: BarChart3 },
+    { label: (lang === 'en' ? '🔔 Approvals' : '🔔 الموافقات'), href: `/approvals${q}`, icon: BarChart3 },
     { label: L.products, href: `/products${q}`, icon: Package },
     { label: L.inventory, href: `/inventory${q}`, icon: DollarSign },
     { label: L.customers, href: `/customers${q}`, icon: Users },

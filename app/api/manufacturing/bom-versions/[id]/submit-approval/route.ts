@@ -7,6 +7,11 @@ import {
   getManufacturingApiContext,
   handleManufacturingApiError,
 } from "@/lib/manufacturing/bom-api"
+import {
+  recordApprovalAction,
+  getNextCycleNo,
+  buildApprovalSnapshot,
+} from "@/lib/manufacturing/approval-history"
 
 export async function POST(
   request: NextRequest,
@@ -29,6 +34,25 @@ export async function POST(
     })
 
     if (error) throw error
+
+    // ── approval_history ─────────────────────────────────────
+    const cycleNo = await getNextCycleNo(supabase, companyId, "bom_version", id)
+    const isResubmit = version.status === "rejected"
+    await recordApprovalAction({
+      supabase, companyId,
+      referenceType: "bom_version",
+      referenceId: id,
+      cycleNo,
+      action: isResubmit ? "re_submitted" : "submitted",
+      actorId: user.id,
+      actorRole: "manufacturing_officer",
+      snapshotData: buildApprovalSnapshot({
+        statusBefore: version.status,
+        statusAfter: "pending_approval",
+        extraFields: { version_no: version.version_no },
+      }),
+      branchId: version.branch_id,
+    })
 
     asyncAuditLog({
       companyId,

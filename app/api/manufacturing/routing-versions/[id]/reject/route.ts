@@ -1,18 +1,22 @@
 import { NextRequest, NextResponse } from "next/server"
+import { z } from "zod"
 import { asyncAuditLog } from "@/lib/core"
 import { createNotification } from "@/lib/governance-layer"
 import {
-  assertBomVersionAccessible,
+  assertRoutingVersionAccessible,
   getManufacturingApiContext,
   handleManufacturingApiError,
   parseJsonBody,
-  rejectBomVersionSchema,
-} from "@/lib/manufacturing/bom-api"
+} from "@/lib/manufacturing/routing-api"
 import {
   recordApprovalAction,
   getNextCycleNo,
   buildApprovalSnapshot,
 } from "@/lib/manufacturing/approval-history"
+
+const rejectSchema = z.object({
+  rejection_reason: z.string().min(1, "سبب الرفض مطلوب"),
+})
 
 export async function POST(
   request: NextRequest,
@@ -21,23 +25,22 @@ export async function POST(
   try {
     const { id } = await params
     const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "approve")
-    const payload = await parseJsonBody(request, rejectBomVersionSchema)
-    const version = await assertBomVersionAccessible(supabase, companyId, id)
+    const payload = await parseJsonBody(request, rejectSchema)
+    const version = await assertRoutingVersionAccessible(supabase, companyId, id)
 
-    const { data, error } = await admin.rpc("reject_manufacturing_bom_version_atomic", {
-      p_company_id: companyId,
-      p_bom_version_id: id,
-      p_rejected_by: user.id,
-      p_rejection_reason: payload.rejection_reason,
+    const { data, error } = await admin.rpc("reject_routing_version_atomic", {
+      p_company_id:         companyId,
+      p_routing_version_id: id,
+      p_rejected_by:        user.id,
+      p_rejection_reason:   payload.rejection_reason,
     })
-
     if (error) throw error
 
     // ── approval_history ─────────────────────────────────────
-    const cycleNo = await getNextCycleNo(supabase, companyId, "bom_version", id)
+    const cycleNo = await getNextCycleNo(supabase, companyId, "routing", id)
     await recordApprovalAction({
       supabase, companyId,
-      referenceType: "bom_version",
+      referenceType: "routing",
       referenceId: id,
       cycleNo,
       action: "rejected",
@@ -45,7 +48,7 @@ export async function POST(
       actorRole: "admin",
       reason: payload.rejection_reason,
       snapshotData: buildApprovalSnapshot({
-        statusBefore: version.status,
+        statusBefore: "pending_approval",
         statusAfter: "rejected",
         extraFields: { version_no: version.version_no },
       }),
@@ -53,34 +56,31 @@ export async function POST(
     })
 
     asyncAuditLog({
-      companyId,
-      userId: user.id,
-      userEmail: user.email || undefined,
-      action: "UPDATE",
-      table: "manufacturing_bom_versions",
-      recordId: id,
-      recordIdentifier: `bom-version-${version.version_no}`,
-      oldData: { status: version.status },
-      newData: { status: "rejected", rejection_reason: payload.rejection_reason },
-      reason: "Rejected manufacturing BOM version",
+      companyId, userId: user.id, userEmail: user.email || undefined,
+      action: "UPDATE", table: "manufacturing_routing_versions", recordId: id,
+      recordIdentifier: `routing-version-${version.version_no}`,
+      oldData: { approval_status: "pending_approval" },
+      newData: { approval_status: "rejected", rejection_reason: payload.rejection_reason },
+      reason: "Rejected routing version",
     })
 
-    // Notify submitter that their BOM version was rejected
-    if (version.submitted_by) {
+    // إشعار مقدّم الطلب
+    const submittedBy = (version as any).submitted_by
+    if (submittedBy) {
       try {
         await createNotification({
           companyId,
-          referenceType: "manufacturing_bom_version",
+          referenceType: "manufacturing_routing_version",
           referenceId: id,
-          title: "❌ رُفضت نسخة BOM",
-          message: `رُفضت نسخة BOM رقم ${version.version_no}${payload.rejection_reason ? ` — السبب: ${payload.rejection_reason}` : ""}`,
+          title: "❌ رُفضت نسخة مسار التصنيع",
+          message: `رُفضت نسخة مسار التصنيع رقم ${version.version_no}${payload.rejection_reason ? ` — السبب: ${payload.rejection_reason}` : ""}`,
           createdBy: user.id,
           branchId: version.branch_id ?? undefined,
-          assignedToUser: version.submitted_by,
+          assignedToUser: submittedBy,
           priority: "high",
           severity: "error",
           category: "approvals",
-          eventKey: `bom_v_rejected_${id}`,
+          eventKey: `rv_rejected_${id}`,
         })
       } catch { /* non-critical */ }
     }

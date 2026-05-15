@@ -30,6 +30,20 @@ export async function POST(
       )
     }
 
+    // ── التحقق من الاعتماد (Phase R3) ───────────────────────
+    // approval_status يجب أن يكون 'approved' قبل التفعيل
+    const approvalStatus = (version as any).approval_status
+    if (approvalStatus && approvalStatus !== "approved") {
+      throw new ManufacturingApiError(
+        409,
+        approvalStatus === "pending_approval"
+          ? "نسخة مسار التصنيع بانتظار الاعتماد — يجب انتظار موافقة الإدارة قبل التفعيل."
+          : approvalStatus === "draft"
+            ? "نسخة مسار التصنيع لم تُرسَل للاعتماد بعد — يرجى إرسالها للاعتماد أولاً."
+            : `لا يمكن تفعيل النسخة — حالة الاعتماد: ${approvalStatus}`
+      )
+    }
+
     const { data, error } = await admin.rpc("activate_manufacturing_routing_version_atomic", {
       p_company_id: companyId,
       p_routing_version_id: id,
