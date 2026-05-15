@@ -10,6 +10,7 @@ import {
   getManufacturingApiContext,
   handleManufacturingApiError,
 } from "@/lib/manufacturing/production-order-api"
+import { notifyWarehouseStaff } from "@/lib/manufacturing/notification-helpers"
 
 export async function POST(
   request: NextRequest,
@@ -121,41 +122,30 @@ export async function POST(
 
     if (updateError) throw updateError
 
-    // ── إرسال إشعار لمسؤول المخزن التابع لمخزن الصرف المحدد في أمر التصنيع ──
-    // نستخدم admin client مباشرةً لأن governance-layer يستخدم browser client
-    // ويفشل في سياق API route
+    // ── warehouse-specific notification (R8.2) ─────────────────
     const notifBase = {
-      p_company_id: companyId,
-      p_reference_type: "manufacturing_material_issue_approval",
-      // reference_id = approval.id حتى يفتح الإشعار صفحة تفاصيل اعتماد الصرف مباشرةً
-      p_reference_id: approval.id,
-      p_title: "🏭 طلب اعتماد صرف مواد خام",
-      p_message: `طلب صرف مواد للأمر ${existing.order_no} — يتطلب موافقتك قبل بدء الإنتاج`,
-      p_created_by: user.id,
-      p_branch_id: approvalBranchId,
-      p_warehouse_id: existing.issue_warehouse_id ?? null,
-      p_cost_center_id: null as string | null,
+      p_company_id:       companyId,
+      p_reference_type:   "manufacturing_material_issue_approval",
+      p_reference_id:     approval.id,
+      p_title:            "🏭 طلب اعتماد صرف مواد خام",
+      p_message:          `طلب صرف مواد للأمر ${existing.order_no} — يتطلب موافقتك قبل بدء الإنتاج`,
+      p_created_by:       user.id,
+      p_branch_id:        approvalBranchId,
+      p_warehouse_id:     existing.issue_warehouse_id ?? null,
+      p_cost_center_id:   null as string | null,
+      p_assigned_to_role: null as string | null,
       p_assigned_to_user: null as string | null,
-      p_priority: "high",
-      p_severity: "warning",
-      p_category: "approvals",
+      p_priority:         "high",
+      p_severity:         "warning",
+      p_category:         "approvals",
     }
-    // إشعار لمسؤول المخزن (store_manager) — الدور الموجود فعلاً في قاعدة البيانات
-    try {
-      await admin.rpc("create_notification", {
-        ...notifBase,
-        p_assigned_to_role: "store_manager",
-        p_event_key: `mmia_request_sm_${approval.id}`,
-      })
-    } catch { /* الإشعار غير حرج */ }
-    // إشعار لمدير المخزن (warehouse_manager)
-    try {
-      await admin.rpc("create_notification", {
-        ...notifBase,
-        p_assigned_to_role: "warehouse_manager",
-        p_event_key: `mmia_request_wm_${approval.id}`,
-      })
-    } catch { /* الإشعار غير حرج */ }
+    await notifyWarehouseStaff({
+      admin, companyId,
+      warehouseId:    existing.issue_warehouse_id ?? null,
+      notifBase,
+      eventKeyPrefix: "mmia_request",
+      referenceId:    approval.id,
+    })
 
     asyncAuditLog({
       companyId,

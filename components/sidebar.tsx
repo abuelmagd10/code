@@ -126,6 +126,7 @@ export function Sidebar() {
   const [myCompanies, setMyCompanies] = useState<Array<{ id: string; name: string; logo_url?: string }>>([])
   const [activeCompanyId, setActiveCompanyId] = useState<string>("")
   const [showCompanySwitcher, setShowCompanySwitcher] = useState(false)
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0)
   const pathname = usePathname()
   const router = useRouter()
   const supabaseHook = useSupabase()
@@ -135,6 +136,39 @@ export function Sidebar() {
 
   // 🔐 استخدام role من AccessContext
   const myRole = profile?.role || ""
+
+  // ── R8: Pending Approvals Badge ─────────────────────────────
+  const APPROVALS_BADGE_ROLES = ["admin", "owner", "general_manager", "manager"]
+
+  const refreshApprovalsCount = useCallback(async () => {
+    if (!APPROVALS_BADGE_ROLES.includes(myRole)) {
+      setPendingApprovalsCount(0)
+      return
+    }
+    try {
+      const res = await fetch("/api/notifications/pending-approvals-count", { cache: "no-store" })
+      if (res.ok) {
+        const json = await res.json()
+        setPendingApprovalsCount(Number(json.count ?? 0))
+      }
+    } catch { /* non-critical */ }
+  }, [myRole])
+
+  // polling + refresh on navigation للـ badge
+  useEffect(() => {
+    if (!hydrated || !activeCompanyId || !myRole) return
+    refreshApprovalsCount()
+    const interval = setInterval(refreshApprovalsCount, 30_000)
+    return () => clearInterval(interval)
+  }, [hydrated, activeCompanyId, myRole, refreshApprovalsCount])
+
+  // refresh badge when navigating away from /approvals (user likely acted)
+  useEffect(() => {
+    if (hydrated && activeCompanyId && myRole) {
+      refreshApprovalsCount()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname])
 
   // الحفاظ على التوافق مع النظام القديم (fallback)
   const [permissionsReady, setPermissionsReady] = useState<boolean>(false)
@@ -293,6 +327,11 @@ export function Sidebar() {
           <span className="flex items-center gap-2 sm:gap-3">
             <IconMain className="w-5 h-5 flex-shrink-0" />
             <span suppressHydrationWarning>{group.label}</span>
+            {group.badge > 0 && (
+              <Badge className="bg-red-500 text-white text-[10px] px-1.5 py-0 h-4 min-w-4 flex items-center justify-center rounded-full ml-1">
+                {group.badge > 99 ? "99+" : group.badge}
+              </Badge>
+            )}
           </span>
           <ChevronDown className={`w-4 h-4 transition-transform flex-shrink-0 ${open ? 'rotate-180' : ''}`} />
         </button>
@@ -1000,9 +1039,9 @@ export function Sidebar() {
               const lang = hydrated ? appLanguage : 'ar'
               const q = lang === 'en' ? '?lang=en' : ''
               const allowHr = ["owner", "admin", "manager"].includes(myRole)
-              const groups: Array<{ key: string; icon: any; label: string; items: Array<{ label: string; href: string; icon: any }> }> = [
+              const groups: Array<{ key: string; icon: any; label: string; badge?: number; items: Array<{ label: string; href: string; icon: any }> }> = [
                 { key: 'dashboard', icon: BarChart3, label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), items: [{ label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 }] },
-                { key: 'approvals', icon: CheckCircle, label: (lang === 'en' ? '🔔 Approvals' : '🔔 الموافقات'), items: [{ label: (lang === 'en' ? 'Approval Inbox' : 'صندوق الموافقات'), href: `/approvals${q}`, icon: CheckCircle }] },
+                { key: 'approvals', icon: CheckCircle, label: (lang === 'en' ? '🔔 Approvals' : '🔔 الموافقات'), badge: pendingApprovalsCount, items: [{ label: (lang === 'en' ? 'Approval Inbox' : 'صندوق الموافقات'), href: `/approvals${q}`, icon: CheckCircle }] },
                 {
                   key: 'sales', icon: FileText, label: (lang === 'en' ? 'Sales' : 'المبيعات'), items: [
                     { label: (lang === 'en' ? 'Customers' : 'العملاء'), href: `/customers${q}`, icon: Users },

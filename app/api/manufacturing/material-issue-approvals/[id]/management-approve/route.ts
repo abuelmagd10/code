@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
+import { notifyWarehouseStaff } from "@/lib/manufacturing/notification-helpers"
 import {
   recordApprovalAction,
   buildApprovalSnapshot,
@@ -123,36 +124,32 @@ export async function POST(
       })
     } catch { /* approval_history غير حرج */ }
 
-    // إشعار لمسؤولي المخزن بأن الإدارة وافقت وينتظر الدور عليهم
+    // ── إشعار warehouse-specific (R8.2) ────────────────────────
+    const effectiveWarehouseId = approval.warehouse_id || productionOrder?.issue_warehouse_id || null
     const notifBase = {
-      p_company_id:    companyId,
-      p_reference_type: "manufacturing_material_issue_approval",
-      p_reference_id:  id,
-      p_title:         "✅ موافقة الإدارة — طلب صرف مواد تصنيع",
-      p_message:       `أمر الإنتاج ${productionOrder?.order_no || ""} — وافقت الإدارة على الصرف. يرجى مراجعة المخزون وإتمام الاعتماد`,
-      p_created_by:    user.id,
-      p_branch_id:     approval.branch_id || productionOrder?.branch_id || null,
-      p_warehouse_id:  approval.warehouse_id || productionOrder?.issue_warehouse_id || null,
-      p_cost_center_id: null as string | null,
+      p_company_id:       companyId,
+      p_reference_type:   "manufacturing_material_issue_approval",
+      p_reference_id:     id,
+      p_title:            "✅ موافقة الإدارة — طلب صرف مواد تصنيع",
+      p_message:          `أمر الإنتاج ${productionOrder?.order_no || ""} — وافقت الإدارة على الصرف. يرجى مراجعة المخزون وإتمام الاعتماد`,
+      p_created_by:       user.id,
+      p_branch_id:        approval.branch_id || productionOrder?.branch_id || null,
+      p_warehouse_id:     effectiveWarehouseId,
+      p_cost_center_id:   null as string | null,
+      p_assigned_to_role: null as string | null,
       p_assigned_to_user: null as string | null,
-      p_priority:      "high",
-      p_severity:      "info",
-      p_category:      "approvals",
+      p_priority:         "high",
+      p_severity:         "info",
+      p_category:         "approvals",
     }
-    try {
-      await admin.rpc("create_notification", {
-        ...notifBase,
-        p_assigned_to_role: "store_manager",
-        p_event_key: `mmia_mgmt_approved_sm_${id}`,
-      })
-    } catch { /* non-critical */ }
-    try {
-      await admin.rpc("create_notification", {
-        ...notifBase,
-        p_assigned_to_role: "warehouse_manager",
-        p_event_key: `mmia_mgmt_approved_wm_${id}`,
-      })
-    } catch { /* non-critical */ }
+    // إرسال لمسؤولي المخزن المحدد فقط (warehouse-specific routing)
+    await notifyWarehouseStaff({
+      admin, companyId,
+      warehouseId:    effectiveWarehouseId,
+      notifBase,
+      eventKeyPrefix: "mmia_mgmt_approved",
+      referenceId:    id,
+    })
 
     // إشعار لمقدم الطلب
     if (approval.requested_by) {
