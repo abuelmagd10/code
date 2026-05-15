@@ -3,6 +3,7 @@ import { asyncAuditLog } from "@/lib/core"
 import { createNotification } from "@/lib/governance-layer"
 import {
   assertBomVersionAccessible,
+  assertBomVersionOwnershipForOfficer,
   assertBomVersionReadyForApproval,
   getManufacturingApiContext,
   handleManufacturingApiError,
@@ -19,8 +20,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "update")
+    const { supabase, admin, companyId, user, member } = await getManufacturingApiContext(request, "update")
     const version = await assertBomVersionAccessible(supabase, companyId, id)
+    await assertBomVersionOwnershipForOfficer(supabase, companyId, version.bom_id, member, user.id)
 
     await assertBomVersionReadyForApproval(admin, {
       companyId,

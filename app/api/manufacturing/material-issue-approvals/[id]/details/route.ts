@@ -10,7 +10,7 @@ import { getActiveCompanyId } from "@/lib/company"
 
 const ALLOWED_ROLES = [
   "store_manager", "manager", "owner", "admin", "general_manager",
-  "warehouse_manager", "accountant"
+  "warehouse_manager", "accountant", "manufacturing_officer"
 ]
 
 async function loadOpenReservationQtyByRequirement(
@@ -139,6 +139,12 @@ export async function GET(
     }
 
     const role = String(memberRow.role || "").trim().toLowerCase()
+
+    // manufacturing_officer يرى طلبات الصرف التي قدّمها هو فقط
+    if (role === "manufacturing_officer" && (approval as any).requested_by !== user.id) {
+      return NextResponse.json({ success: false, error: "طلب الاعتماد غير موجود" }, { status: 404 })
+    }
+
     const companyWideRoles = new Set(["owner", "admin", "general_manager", "manager"])
     if (!companyWideRoles.has(role)) {
       const scopedWarehouseId = memberRow.warehouse_id || null

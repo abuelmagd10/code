@@ -7,6 +7,7 @@ import {
   parseJsonBody,
   updateRoutingOperationsSchema,
 } from "@/lib/manufacturing/routing-api"
+import { assertRoutingVersionOwnershipForOfficer } from "@/lib/manufacturing/bom-api"
 
 export async function PUT(
   request: NextRequest,
@@ -14,9 +15,10 @@ export async function PUT(
 ) {
   try {
     const { id } = await params
-    const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "update")
+    const { supabase, admin, companyId, user, member } = await getManufacturingApiContext(request, "update")
     const payload = await parseJsonBody(request, updateRoutingOperationsSchema)
     const version = await assertRoutingVersionAccessible(supabase, companyId, id)
+    await assertRoutingVersionOwnershipForOfficer(supabase, companyId, version.routing_id, member, user.id)
 
     const { data, error } = await admin.rpc("update_manufacturing_routing_operations_atomic", {
       p_company_id: companyId,

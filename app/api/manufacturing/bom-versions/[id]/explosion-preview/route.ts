@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import {
+  assertBomVersionAccessible,
+  assertBomVersionOwnershipForOfficer,
   explosionPreviewSchema,
   getManufacturingApiContext,
   handleManufacturingApiError,
@@ -24,8 +26,10 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId } = await getManufacturingApiContext(request, "read")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "read")
     const payload = await parseJsonBody(request, explosionPreviewSchema)
+    const version = await assertBomVersionAccessible(supabase, companyId, id)
+    await assertBomVersionOwnershipForOfficer(supabase, companyId, version.bom_id, member, user.id)
     const snapshot = await loadBomVersionSnapshot(supabase, companyId, id)
 
     const asOfDate = payload.as_of_date || new Date().toISOString()

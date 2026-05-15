@@ -9,10 +9,11 @@ import {
   parseJsonBody,
   resolveScopedBranchId,
 } from "@/lib/manufacturing/routing-api"
+import { applyManufacturingOfficerFilter } from "@/lib/manufacturing/bom-api"
 
 export async function GET(request: NextRequest) {
   try {
-    const { supabase, companyId, member } = await getManufacturingApiContext(request, "read")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "read")
     const { searchParams } = new URL(request.url)
 
     const requestedBranchId = searchParams.get("branch_id")
@@ -38,6 +39,9 @@ export async function GET(request: NextRequest) {
     if (q) {
       query = query.or(`routing_code.ilike.%${q}%,routing_name.ilike.%${q}%`)
     }
+
+    // manufacturing_officer يرى Routings التي أنشأها هو فقط
+    query = applyManufacturingOfficerFilter(query, member, user.id)
 
     const { data: routings, error } = await query
     if (error) throw error

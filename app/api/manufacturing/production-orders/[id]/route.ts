@@ -15,6 +15,7 @@ import {
   recordApprovalAction,
   buildApprovalSnapshot,
 } from "@/lib/manufacturing/approval-history"
+import { assertManufacturingOfficerOwnership } from "@/lib/manufacturing/bom-api"
 
 export async function GET(
   request: NextRequest,
@@ -22,7 +23,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId } = await getManufacturingApiContext(request, "read")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "read")
+    const order = await assertProductionOrderAccessible(supabase, companyId, id)
+    assertManufacturingOfficerOwnership(order, member, user.id, "Production order not found")
     const snapshot = await loadProductionOrderSnapshot(supabase, companyId, id)
 
     return NextResponse.json({
@@ -40,9 +43,10 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId, user } = await getManufacturingApiContext(request, "update")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "update")
     const payload = await parseJsonBody(request, updateProductionOrderSchema)
     const existing = await assertProductionOrderAccessible(supabase, companyId, id)
+    assertManufacturingOfficerOwnership(existing, member, user.id, "Production order not found")
 
     assertProductionOrderEditable(existing)
 
@@ -156,8 +160,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId, user } = await getManufacturingApiContext(request, "delete")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "delete")
     const existing = await assertProductionOrderAccessible(supabase, companyId, id)
+    assertManufacturingOfficerOwnership(existing, member, user.id, "Production order not found")
 
     assertProductionOrderDeleteAllowed(existing)
 

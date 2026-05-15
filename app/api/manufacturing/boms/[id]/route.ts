@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import {
   assertBomAccessible,
+  assertManufacturingOfficerOwnership,
   getManufacturingApiContext,
   handleManufacturingApiError,
   parseJsonBody,
@@ -14,8 +15,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId } = await getManufacturingApiContext(request, "read")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "read")
     const bom = await assertBomAccessible(supabase, companyId, id)
+    assertManufacturingOfficerOwnership(bom, member, user.id, "BOM not found")
 
     const [{ data: versions, error: versionsError }, { data: product, error: productError }] = await Promise.all([
       supabase
@@ -53,9 +55,10 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId, user } = await getManufacturingApiContext(request, "update")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "update")
     const payload = await parseJsonBody(request, updateBomSchema)
     const existing = await assertBomAccessible(supabase, companyId, id)
+    assertManufacturingOfficerOwnership(existing, member, user.id, "BOM not found")
 
     const { data, error } = await supabase
       .from("manufacturing_boms")
@@ -100,8 +103,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId, user } = await getManufacturingApiContext(request, "delete")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "delete")
     const existing = await assertBomAccessible(supabase, companyId, id)
+    assertManufacturingOfficerOwnership(existing, member, user.id, "BOM not found")
 
     const { data, error } = await supabase
       .from("manufacturing_boms")

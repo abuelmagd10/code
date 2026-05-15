@@ -8,6 +8,7 @@ import {
   parseJsonBody,
   updateRoutingSchema,
 } from "@/lib/manufacturing/routing-api"
+import { assertManufacturingOfficerOwnership } from "@/lib/manufacturing/bom-api"
 
 export async function GET(
   request: NextRequest,
@@ -15,8 +16,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId } = await getManufacturingApiContext(request, "read")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "read")
     const routing = await assertRoutingAccessible(supabase, companyId, id)
+    assertManufacturingOfficerOwnership(routing, member, user.id, "Routing not found")
 
     const [
       { data: versions, error: versionsError },
@@ -60,9 +62,10 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId, user } = await getManufacturingApiContext(request, "update")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "update")
     const payload = await parseJsonBody(request, updateRoutingSchema)
     const existing = await assertRoutingAccessible(supabase, companyId, id)
+    assertManufacturingOfficerOwnership(existing, member, user.id, "Routing not found")
 
     const { data, error } = await supabase
       .from("manufacturing_routings")
@@ -107,8 +110,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId, user } = await getManufacturingApiContext(request, "delete")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "delete")
     const existing = await assertRoutingAccessible(supabase, companyId, id)
+    assertManufacturingOfficerOwnership(existing, member, user.id, "Routing not found")
 
     await assertRoutingDeleteAllowed(supabase, companyId, id)
 

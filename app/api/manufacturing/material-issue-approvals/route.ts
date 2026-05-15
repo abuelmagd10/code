@@ -30,7 +30,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "No active company" }, { status: 404 })
     }
 
-    // التحقق من الدور — يُسمح لمسؤولي المخزن والإدارة فقط
+    // التحقق من الدور — يُسمح لمسؤولي المخزن والإدارة + manufacturing_officer (يرى طلباته فقط)
+    const MANUFACTURING_OFFICER_ROLE = "manufacturing_officer"
     const { data: member } = await supabase
       .from("company_members")
       .select("role, branch_id, warehouse_id")
@@ -38,11 +39,35 @@ export async function GET(request: NextRequest) {
       .eq("user_id", user.id)
       .single()
 
-    if (!member || !ALLOWED_ROLES.includes(member.role)) {
+    const isManufacturingOfficer = member?.role === MANUFACTURING_OFFICER_ROLE
+    if (!member || (!ALLOWED_ROLES.includes(member.role) && !isManufacturingOfficer)) {
       return NextResponse.json(
         { success: false, error: "غير مصرح — مخصص لمسؤولي المخزن والإدارة فقط" },
         { status: 403 }
       )
+    }
+
+    // manufacturing_officer: يرى طلبات الصرف التي قدّمها هو فقط (supabase كافٍ — RLS يحمي)
+    if (isManufacturingOfficer) {
+      let query = supabase
+        .from("manufacturing_material_issue_approvals")
+        .select(`
+          id, status, requested_at, approved_at, rejected_at,
+          rejection_reason, notes, warehouse_id, branch_id, requested_by,
+          production_order:manufacturing_production_orders (
+            id, order_no, status, planned_quantity, order_uom,
+            product:products ( id, name, sku )
+          ),
+          warehouse:warehouses ( id, name ),
+          branch:branches ( id, name )
+        `)
+        .eq("company_id", companyId)
+        .eq("requested_by", user.id)
+        .order("requested_at", { ascending: false })
+
+      const { data, error } = await query
+      if (error) throw error
+      return NextResponse.json({ success: true, data: data || [], meta: { total: (data || []).length } })
     }
 
     const admin = createServiceClient()

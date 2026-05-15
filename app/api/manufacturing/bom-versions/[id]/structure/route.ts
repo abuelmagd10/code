@@ -3,6 +3,7 @@ import { asyncAuditLog } from "@/lib/core"
 import {
   assertBomStructureEligibleProducts,
   assertBomVersionAccessible,
+  assertBomVersionOwnershipForOfficer,
   getManufacturingApiContext,
   handleManufacturingApiError,
   parseJsonBody,
@@ -15,9 +16,10 @@ export async function PUT(
 ) {
   try {
     const { id } = await params
-    const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "update")
+    const { supabase, admin, companyId, user, member } = await getManufacturingApiContext(request, "update")
     const payload = await parseJsonBody(request, updateBomStructureSchema)
     const version = await assertBomVersionAccessible(supabase, companyId, id)
+    await assertBomVersionOwnershipForOfficer(supabase, companyId, version.bom_id, member, user.id)
 
     await assertBomStructureEligibleProducts(admin, {
       companyId,

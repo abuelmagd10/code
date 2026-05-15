@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import {
   assertBomVersionAccessible,
+  assertBomVersionOwnershipForOfficer,
   getManufacturingApiContext,
   handleManufacturingApiError,
 } from "@/lib/manufacturing/bom-api"
@@ -12,8 +13,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "update")
+    const { supabase, admin, companyId, user, member } = await getManufacturingApiContext(request, "update")
     const version = await assertBomVersionAccessible(supabase, companyId, id)
+    await assertBomVersionOwnershipForOfficer(supabase, companyId, version.bom_id, member, user.id)
 
     const { data, error } = await admin.rpc("set_default_manufacturing_bom_version_atomic", {
       p_company_id: companyId,

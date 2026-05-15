@@ -13,6 +13,7 @@ const ALLOWED_PRODUCT_RECEIVE_APPROVAL_ROLES = new Set([
   "owner",
   "admin",
   "general_manager",
+  "manufacturing_officer", // يرى طلباته فقط (own_only مطبّق في route)
 ])
 
 const BRANCH_WAREHOUSE_SCOPED_ROLES = new Set(["store_manager", "warehouse_manager"])

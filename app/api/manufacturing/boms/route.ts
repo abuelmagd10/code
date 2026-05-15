@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import {
+  applyManufacturingOfficerFilter,
   assertManufacturableProduct,
   createBomSchema,
   getManufacturingApiContext,
@@ -13,7 +14,7 @@ import {
 
 export async function GET(request: NextRequest) {
   try {
-    const { supabase, companyId, member } = await getManufacturingApiContext(request, "read")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "read")
     const { searchParams } = new URL(request.url)
 
     const requestedBranchId = searchParams.get("branch_id")
@@ -37,6 +38,9 @@ export async function GET(request: NextRequest) {
     if (q) {
       query = query.or(`bom_code.ilike.%${q}%,bom_name.ilike.%${q}%`)
     }
+
+    // manufacturing_officer يرى BOMs التي أنشأها هو فقط
+    query = applyManufacturingOfficerFilter(query, member, user.id)
 
     const { data: boms, error } = await query
     if (error) throw error

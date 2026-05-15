@@ -5,6 +5,7 @@ import {
   getManufacturingApiContext,
   handleManufacturingApiError,
 } from "@/lib/manufacturing/routing-api"
+import { assertRoutingVersionOwnershipForOfficer } from "@/lib/manufacturing/bom-api"
 
 export async function POST(
   request: NextRequest,
@@ -12,8 +13,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "update")
+    const { supabase, admin, companyId, user, member } = await getManufacturingApiContext(request, "update")
     const version = await assertRoutingVersionAccessible(supabase, companyId, id)
+    await assertRoutingVersionOwnershipForOfficer(supabase, companyId, version.routing_id, member, user.id)
 
     const { data, error } = await admin.rpc("archive_manufacturing_routing_version_atomic", {
       p_company_id: companyId,

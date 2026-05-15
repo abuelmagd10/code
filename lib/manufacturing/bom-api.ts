@@ -846,3 +846,81 @@ export async function loadBomVersionSnapshot(
     productsById,
   }
 }
+
+// ── Phase R9: Manufacturing Officer own_only helpers ──────────
+
+/**
+ * Applies created_by = userId filter when caller is manufacturing_officer.
+ * Use on GET list queries.
+ */
+export function applyManufacturingOfficerFilter(
+  query: any,
+  member: { role: string },
+  userId: string,
+  ownerColumn = "created_by"
+) {
+  if (member.role === "manufacturing_officer") {
+    return query.eq(ownerColumn, userId)
+  }
+  return query
+}
+
+/**
+ * Throws 404 when manufacturing_officer tries to access a record they don't own.
+ * Uses 404 (not 403) to prevent enumeration attacks.
+ */
+export function assertManufacturingOfficerOwnership(
+  record: { created_by?: string | null },
+  member: { role: string },
+  userId: string,
+  errorMessage = "Not found"
+): void {
+  if (member.role === "manufacturing_officer" && record.created_by !== userId) {
+    throw new ManufacturingApiError(404, errorMessage)
+  }
+}
+
+/**
+ * Checks manufacturing_officer ownership via the PARENT BOM of a bom_version.
+ * The version's own created_by may differ (e.g. admin created a new version for officer's BOM).
+ */
+export async function assertBomVersionOwnershipForOfficer(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  companyId: string,
+  bomId: string,
+  member: { role: string },
+  userId: string
+): Promise<void> {
+  if (member.role !== "manufacturing_officer") return
+  const { data: bom } = await supabase
+    .from("manufacturing_boms")
+    .select("created_by")
+    .eq("id", bomId)
+    .eq("company_id", companyId)
+    .maybeSingle()
+  if (!bom || bom.created_by !== userId) {
+    throw new ManufacturingApiError(404, "BOM version not found")
+  }
+}
+
+/**
+ * Checks manufacturing_officer ownership via the PARENT Routing of a routing_version.
+ */
+export async function assertRoutingVersionOwnershipForOfficer(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  companyId: string,
+  routingId: string,
+  member: { role: string },
+  userId: string
+): Promise<void> {
+  if (member.role !== "manufacturing_officer") return
+  const { data: routing } = await supabase
+    .from("manufacturing_routings")
+    .select("created_by")
+    .eq("id", routingId)
+    .eq("company_id", companyId)
+    .maybeSingle()
+  if (!routing || routing.created_by !== userId) {
+    throw new ManufacturingApiError(404, "Routing version not found")
+  }
+}

@@ -10,6 +10,7 @@ import {
   parseJsonBody,
   updateRoutingVersionSchema,
 } from "@/lib/manufacturing/routing-api"
+import { assertRoutingVersionOwnershipForOfficer } from "@/lib/manufacturing/bom-api"
 import {
   recordApprovalAction,
   buildApprovalSnapshot,
@@ -21,7 +22,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId } = await getManufacturingApiContext(request, "read")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "read")
+    const version = await assertRoutingVersionAccessible(supabase, companyId, id)
+    await assertRoutingVersionOwnershipForOfficer(supabase, companyId, version.routing_id, member, user.id)
     const snapshot = await loadRoutingVersionSnapshot(supabase, companyId, id)
 
     return NextResponse.json({
@@ -39,9 +42,10 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId, user } = await getManufacturingApiContext(request, "update")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "update")
     const payload = await parseJsonBody(request, updateRoutingVersionSchema)
     const existing = await assertRoutingVersionAccessible(supabase, companyId, id)
+    await assertRoutingVersionOwnershipForOfficer(supabase, companyId, existing.routing_id, member, user.id)
 
     // ── Re-approval on edit (Phase R3) ───────────────────────
     const currentApprovalStatus = (existing as any).approval_status ?? "draft"
@@ -135,8 +139,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const { supabase, companyId, user } = await getManufacturingApiContext(request, "delete")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "delete")
     const existing = await assertRoutingVersionAccessible(supabase, companyId, id)
+    await assertRoutingVersionOwnershipForOfficer(supabase, companyId, existing.routing_id, member, user.id)
 
     assertRoutingVersionDeleteAllowed(existing)
 

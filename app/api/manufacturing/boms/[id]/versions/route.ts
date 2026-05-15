@@ -3,6 +3,7 @@ import { asyncAuditLog } from "@/lib/core"
 import {
   assertBomAccessible,
   assertBomVersionCloneable,
+  assertManufacturingOfficerOwnership,
   createBomVersionSchema,
   getManufacturingApiContext,
   handleManufacturingApiError,
@@ -15,9 +16,10 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "write")
+    const { supabase, admin, companyId, user, member } = await getManufacturingApiContext(request, "write")
     const payload = await parseOptionalJsonBody(request, createBomVersionSchema)
     const bom = await assertBomAccessible(supabase, companyId, id)
+    assertManufacturingOfficerOwnership(bom, member, user.id, "BOM not found")
 
     if (payload.clone_from_version_id) {
       await assertBomVersionCloneable(admin, {

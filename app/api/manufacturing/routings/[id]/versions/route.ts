@@ -7,6 +7,7 @@ import {
   handleManufacturingApiError,
   parseOptionalJsonBody,
 } from "@/lib/manufacturing/routing-api"
+import { assertManufacturingOfficerOwnership } from "@/lib/manufacturing/bom-api"
 
 export async function POST(
   request: NextRequest,
@@ -14,9 +15,10 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "write")
+    const { supabase, admin, companyId, user, member } = await getManufacturingApiContext(request, "write")
     const payload = await parseOptionalJsonBody(request, createRoutingVersionSchema)
     const routing = await assertRoutingAccessible(supabase, companyId, id)
+    assertManufacturingOfficerOwnership(routing, member, user.id, "Routing not found")
 
     const { data, error } = await admin.rpc("create_manufacturing_routing_version_atomic", {
       p_company_id: companyId,

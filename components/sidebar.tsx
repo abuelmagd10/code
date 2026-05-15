@@ -245,6 +245,8 @@ export function Sidebar() {
     if (href.includes('/products')) return 'products'
     if (href.includes('/reports')) return 'reports'
     if (href.includes('/dashboard')) return 'dashboard'
+    // صندوق الموافقات — يجب أن يأتي قبل fallback
+    if (href.includes('/approvals') && !href.includes('/dispatch-approvals') && !href.includes('/goods-receipt')) return 'approvals'
     return ''
   }
 
@@ -1000,6 +1002,7 @@ export function Sidebar() {
               const allowHr = ["owner", "admin", "manager"].includes(myRole)
               const groups: Array<{ key: string; icon: any; label: string; items: Array<{ label: string; href: string; icon: any }> }> = [
                 { key: 'dashboard', icon: BarChart3, label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), items: [{ label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 }] },
+                { key: 'approvals', icon: CheckCircle, label: (lang === 'en' ? '🔔 Approvals' : '🔔 الموافقات'), items: [{ label: (lang === 'en' ? 'Approval Inbox' : 'صندوق الموافقات'), href: `/approvals${q}`, icon: CheckCircle }] },
                 {
                   key: 'sales', icon: FileText, label: (lang === 'en' ? 'Sales' : 'المبيعات'), items: [
                     { label: (lang === 'en' ? 'Customers' : 'العملاء'), href: `/customers${q}`, icon: Users },

@@ -6,6 +6,7 @@ import {
   getManufacturingApiContext,
   handleManufacturingApiError,
 } from "@/lib/manufacturing/routing-api"
+import { assertRoutingVersionOwnershipForOfficer } from "@/lib/manufacturing/bom-api"
 import {
   recordApprovalAction,
   getNextCycleNo,
@@ -18,8 +19,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "update")
+    const { supabase, admin, companyId, user, member } = await getManufacturingApiContext(request, "update")
     const version = await assertRoutingVersionAccessible(supabase, companyId, id)
+    await assertRoutingVersionOwnershipForOfficer(supabase, companyId, version.routing_id, member, user.id)
 
     // يجب أن تكون في حالة draft أو rejected
     const currentApprovalStatus = (version as any).approval_status ?? "draft"

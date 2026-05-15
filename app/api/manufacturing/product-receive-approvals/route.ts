@@ -11,7 +11,7 @@ import {
 
 export async function GET(request: NextRequest) {
   try {
-    const { admin, companyId, member } = await getProductReceiveApprovalApiContext(request)
+    const { admin, companyId, member, user } = await getProductReceiveApprovalApiContext(request)
     const { searchParams } = new URL(request.url)
 
     const status = searchParams.get("status") || "pending"
@@ -61,7 +61,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    query = applyProductReceiveApprovalScope(query, member, { branchId, warehouseId })
+    // manufacturing_officer يرى طلبات الاستلام التي قدّمها هو فقط
+    if (member.role === "manufacturing_officer") {
+      query = query.eq("requested_by", user.id)
+    } else {
+      query = applyProductReceiveApprovalScope(query, member, { branchId, warehouseId })
+    }
 
     const { data, error } = await query
     if (error) throw error
