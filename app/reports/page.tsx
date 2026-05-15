@@ -31,6 +31,14 @@ export default function ReportsPage() {
   const t = (en: string, ar: string) => (appLang === 'en' ? en : ar)
   const groups = [
     {
+      title: t('Manufacturing Reports', 'تقارير التصنيع'),
+      items: [
+        { title: t('Production Orders', 'أوامر الإنتاج'), description: t('Status, completion rate and quantity tracking for all production orders', 'حالة ونسبة إنجاز وتتبع الكميات لجميع أوامر الإنتاج'), href: "/reports/manufacturing/production-orders", icon: "🏭" },
+        { title: t('Material Consumption', 'استهلاك المواد'), description: t('Raw materials issued from inventory per production run', 'المواد الخام المصروفة من المخزون لكل دورة إنتاج'), href: "/reports/manufacturing/material-consumption", icon: "📦" },
+        { title: t('BOM Cost Analysis', 'تحليل تكلفة BOM'), description: t('Theoretical cost per bill of materials based on component cost prices', 'التكلفة النظرية لكل قائمة مواد بناءً على أسعار تكلفة المكونات'), href: "/reports/manufacturing/bom-cost", icon: "🧮" },
+      ],
+    },
+    {
       title: t('Bookings & Services Reports', 'تقارير الحجوزات والخدمات'),
       items: [
         { title: t('Revenue by Service', 'الإيرادات حسب الخدمة'), description: t('Completed booking revenue per service with completion rate', 'إيرادات الحجوزات المكتملة لكل خدمة مع معدل الإنجاز'), href: "/reports/bookings/revenue-by-service", icon: "💰" },

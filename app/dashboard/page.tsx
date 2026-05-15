@@ -17,6 +17,8 @@ import DashboardDailyIncomeCard from "@/components/DashboardDailyIncomeCard"
 import DashboardInventoryStats from "@/components/DashboardInventoryStats"
 import DashboardProductServiceStats from "@/components/DashboardProductServiceStats"
 import AdvancedDashboardCharts from "@/components/charts/AdvancedDashboardCharts"
+import DashboardManufacturingStats from "@/components/DashboardManufacturingStats"
+import DashboardBookingStats from "@/components/DashboardBookingStats"
 import {
   buildDashboardVisibilityRules,
   type DashboardScope,
@@ -332,6 +334,23 @@ export default async function DashboardPage({
               toDate={toDate}
               branchId={branchId}
             />
+          )}
+
+          {/* ── Widget 7a: التصنيع + الحجوزات (Client Components — مستقلان) ── */}
+          {companyId && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <DashboardManufacturingStats
+                companyId={companyId}
+                appLang={appLang}
+                branchId={branchId}
+              />
+              <DashboardBookingStats
+                companyId={companyId}
+                appLang={appLang}
+                currency={currency}
+                branchId={branchId}
+              />
+            </div>
           )}
 
           {/* ── Widget 7: تحليلات الأعمال المتقدمة (Client Component — مستقل) ── */}
