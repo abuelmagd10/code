@@ -185,7 +185,7 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
     case 'general_manager':
     case 'generalmanager':
     case 'superadmin':
-      // المدير العام يرى كل الشركة
+    case 'purchasing_officer': // رؤية عبر الفروع للمشتريات (R7)
       const { data: allBranches } = await supabase
         .from('branches')
         .select('id')
@@ -287,7 +287,7 @@ export function addGovernanceData(
 ): any {
   // 🔐 Governance: Role-based enforcement
   const role = String(context.role || 'staff').trim().toLowerCase().replace(/\s+/g, '_')
-  const isAdmin = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(role)
+  const isAdmin = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin', 'purchasing_officer'].includes(role)
 
   // For non-admin users, enforce their assigned governance values
   if (!isAdmin) {
