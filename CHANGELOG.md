@@ -2,6 +2,161 @@
 
 All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
+---
+
+## [3.0.0] - 2026-05-16
+
+### 🎉 Major Release: Roles Overhaul + Approval Workflows + Manufacturing Security
+
+---
+
+### ✅ Added — الأدوار الجديدة (Phase R1)
+
+**3 أدوار جديدة:**
+- `manufacturing_officer` — مسؤول التصنيع: BOMs, Routings, POs (own_only, يحتاج اعتماد)
+- `booking_officer` — مسؤول الحجوزات: Bookings, Services لفرعه
+- `purchasing_officer` — مسؤول المشتريات: يرث المحاسب + رؤية كل الفواتير عبر الفروع
+
+**Files:** `lib/authz.ts`, `lib/access-context.tsx`, `app/settings/users/page.tsx`
+
+---
+
+### ✅ Added — Approval History Infrastructure (Phase R2)
+
+- جدول `approval_history` append-only مع RLS صارم (لا UPDATE/DELETE)
+- RPCs: `record_approval_action()`, `get_approval_history()`
+- TypeScript helpers: `lib/manufacturing/approval-history.ts`
+- API: `GET /api/manufacturing/approval-history`
+
+**Migration:** `20260515000100_approval_history.sql`
+
+---
+
+### ✅ Added — BOM & Routing Approval Workflow (Phase R3)
+
+**BOMs:**
+- Re-approval on edit: تعديل BOM معتمد → إعادة دورة الاعتماد تلقائياً
+- تسجيل كل action في approval_history
+
+**Routings:**
+- أعمدة approval_status جديدة (منفصلة عن status التشغيلي)
+- 3 RPCs: submit/approve/reject routing version
+- `activate` يتطلب `approval_status = 'approved'` أولاً
+- Routes: submit-approval, approve, reject
+
+**صفحة الموافقات:** `app/approvals/page.tsx` مع تبويبات BOMs/Routings
+
+**Migration:** `20260515000200_routing_approval_and_bom_cycle.sql`
+
+---
+
+### ✅ Added — Production Order Approval Workflow (Phase R4)
+
+- أعمدة: `approval_status`, `cycle_no`, `submitted_by`, `po_approved_by/at`
+- 3 RPCs: submit/approve/reject production order
+- شرط التقديم: BOM + Routing يجب أن يكونا معتمَدَين
+- `release` محظور قبل `approval_status = 'approved'`
+- own_only filter لـ manufacturing_officer في list API
+- تاب "أوامر الإنتاج" في صفحة الموافقات
+
+**Migration:** `20260515000300_production_order_approval.sql`
+
+---
+
+### ✅ Added — Material Issue Two-Stage Workflow (Phase R5)
+
+- `management_approved` status جديد في `manufacturing_material_issue_approvals`
+- أعمدة: `management_approved_by/at/notes`
+- Route جديد: `POST /api/manufacturing/material-issue-approvals/[id]/management-approve`
+- `/approve` يقبل `management_approved` كحالة مدخل (Backward compat)
+- تاب "طلبات الصرف" في صفحة الموافقات مع زرَّي مرحلتَين
+
+**Migration:** `20260515000400_material_issue_two_stage.sql`
+
+---
+
+### ✅ Added — Booking Officer Integration (Phase R6)
+
+- `GET /api/services`: تصفية تلقائية بالفرع لـ booking_officer
+- `GET /api/services/[id]`: تحقق من ملكية الفرع
+- `PUT /api/services/[id]`: حارس branch قبل التعديل
+- `Role` type في `api-guard.ts`: إضافة جميع الأدوار الجديدة
+- دالة `seed_booking_officer_permissions()` للشركات الجديدة
+
+**Migration:** `20260515000500_booking_officer_permissions.sql`
+
+---
+
+### ✅ Added — Purchasing Officer Integration (Phase R7)
+
+- `governance-middleware.ts`: purchasing_officer → company-wide branchIds (يرى كل الفواتير)
+- الكتابة مُجبَرة على فرعه (مثل المحاسب)
+- دالة `seed_purchasing_officer_permissions()`
+
+**Migration:** `20260515000600_purchasing_officer_permissions.sql`
+
+---
+
+### ✅ Added — Manufacturing Officer Restrictions (Phase R9)
+
+**Helpers في `lib/manufacturing/bom-api.ts`:**
+- `applyManufacturingOfficerFilter()` — فلتر list queries
+- `assertManufacturingOfficerOwnership()` — 404 guard (ليس 403 — منع enumeration)
+- `assertBomVersionOwnershipForOfficer()` — فحص BOM الأب
+- `assertRoutingVersionOwnershipForOfficer()` — فحص Routing الأب
+
+**24 endpoint مؤمَّن:**
+- BOMs: list, [id] GET/PATCH/DELETE, versions POST
+- BOM Versions: [id] GET/PATCH/DELETE, structure, explosion-preview, submit-approval, set-default
+- Routings: list, [id] GET/PATCH/DELETE, versions POST
+- Routing Versions: [id] GET/PATCH/DELETE, operations, submit-approval, activate, deactivate, archive
+- Production Orders: [id] GET/PATCH/DELETE
+- Material Issue Approvals: list (own), [id]/details
+- Product Receive Approvals: list (own)
+
+**Sidebar:** `/approvals` مُضافة لـ groups الفعلية (كانت في dead code) مع `getResourceFromHref` mapping.
+
+---
+
+### ✅ Added — Notifications Polish (Phase R8)
+
+**Sidebar Badge:**
+- RPC `get_pending_approvals_count()` يجمع كل أنواع الموافقات المعلقة
+- API: `GET /api/notifications/pending-approvals-count`
+- Sidebar: Badge أحمر، polling 30 ثانية + refresh عند التنقل
+- يظهر فقط للأدوار: admin, owner, general_manager, manager
+
+**Warehouse-Specific Notification Routing:**
+- `lib/manufacturing/notification-helpers.ts` — `notifyWarehouseStaff()`
+- إشعارات صرف المواد تصل للمخزن المحدد فقط (ليس كل المخازن)
+- Fallback: role-based إذا لم يكن هناك مستخدم مرتبط بالمخزن
+
+**Migration:** `20260516000100_pending_approvals_count_rpc.sql`
+
+---
+
+### 📊 إحصائيات الإصدار
+
+| الفئة | العدد |
+|-------|-------|
+| Migrations جديدة | 7 |
+| ملفات TypeScript معدَّلة/جديدة | 50+ |
+| API Routes جديدة | 15 |
+| API Routes محدَّثة (own_only) | 24 |
+| Helpers مُنشأة | 6 |
+| TypeScript errors | 0 |
+| Breaking changes | 0 |
+
+---
+
+### ⚠️ Notes
+
+- جميع التغييرات **additive** — لا تعديل على RLS الموجودة
+- الأدوار القديمة تعمل بدون أي تأثير
+- Backward compatibility كامل للـ Material Issue workflow
+
+---
+
 ## [2.0.0] - 2024-01-15
 
 ### 🎉 Major Release: 100% Governance Coverage + Refund System

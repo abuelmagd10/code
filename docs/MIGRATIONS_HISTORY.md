@@ -1,3 +1,102 @@
+# Migrations History — ERB VitaSlims ERP
+
+---
+
+## Phases R1–R9 — Roles & Approval Workflows (2026-05-15 → 2026-05-16)
+
+### `20260515000100_approval_history.sql`
+**Phase R2 — Approval History Infrastructure**
+
+جدول `approval_history` مُحكَم الحفظ (append-only). يُسجّل كل عملية اعتماد عبر النظام.
+
+**ما يفعله:**
+- إنشاء جدول `public.approval_history` (id, company_id, reference_type, reference_id, cycle_no, action, actor_id, actor_role, reason, snapshot_data, branch_id, created_at)
+- RLS: قراءة لكل أعضاء الشركة، كتابة عبر RPC فقط، لا UPDATE ولا DELETE
+- RPC: `record_approval_action()` + `get_approval_history()`
+- Indexes على (company_id, reference_type, reference_id, cycle_no)
+
+**Rollback:** لا يوجد rollback آمن — البيانات immutable بالتصميم.
+
+---
+
+### `20260515000200_routing_approval_and_bom_cycle.sql`
+**Phase R3 — BOM cycle_no + Routing Approval Columns**
+
+**ما يفعله:**
+- `manufacturing_bom_versions`: إضافة `cycle_no INTEGER DEFAULT 1`
+- `manufacturing_routing_versions`: إضافة `approval_status TEXT DEFAULT 'draft'`, `cycle_no`, `submitted_by`, `submitted_at`, `approved_by/at`, `rejected_by/at`, `rejection_reason`
+- 3 RPCs: `submit/approve/reject_routing_version_atomic`
+- Index على (company_id, approval_status) WHERE approval_status = 'pending_approval'
+
+**Rollback forward-fix:**
+```sql
+ALTER TABLE manufacturing_routing_versions DROP COLUMN IF EXISTS approval_status;
+-- إلخ
+```
+
+---
+
+### `20260515000300_production_order_approval.sql`
+**Phase R4 — Production Order Approval Workflow**
+
+**ما يفعله:**
+- `manufacturing_production_orders`: إضافة `approval_status`, `cycle_no`, `submitted_by/at`, `po_approved_by/at`, `po_rejected_by/at/reason`
+- ملاحظة: البادئة `po_` لتجنب تعارض الأسماء مع `released_by`
+- 3 RPCs: `submit/approve/reject_production_order_atomic`
+- RPC submit يتحقق من: BOM `status='approved'` AND Routing `approval_status='approved'`
+- Index على (company_id, approval_status) WHERE approval_status = 'pending_approval'
+
+---
+
+### `20260515000400_material_issue_two_stage.sql`
+**Phase R5 — Material Issue Two-Stage Workflow**
+
+**ما يفعله:**
+- `manufacturing_material_issue_approvals`: توسعة CHECK constraint لإضافة `management_approved`
+- إضافة أعمدة: `management_approved_by`, `management_approved_at`, `management_approved_notes`
+- Indexes على pending و warehouse-pending
+- يحتوي DO block لإصلاح اسم الـ constraint الموجود بأمان
+
+---
+
+### `20260515000500_booking_officer_permissions.sql`
+**Phase R6 — Booking Officer Default Permissions**
+
+**ما يفعله:**
+- دالة `seed_booking_officer_permissions(company_id)` تُضيف صلاحيات افتراضية لـ booking_officer
+- Permissions: bookings/services (write), customers/payments (write), reports (read)
+- `ON CONFLICT DO NOTHING` — لا تطغى على صلاحيات مُخصَّصة
+- DO block يُشغّل للشركات الموجودة التي لديها booking_officer بدون permissions
+
+---
+
+### `20260515000600_purchasing_officer_permissions.sql`
+**Phase R7 — Purchasing Officer Default Permissions**
+
+**ما يفعله:**
+- دالة `seed_purchasing_officer_permissions(company_id)` للصلاحيات الافتراضية
+- Permissions: bills/suppliers/purchase_orders (write), accounting (read), products (read)
+- نفس نمط `ON CONFLICT DO NOTHING`
+
+---
+
+### `20260516000100_pending_approvals_count_rpc.sql`
+**Phase R8 — Sidebar Approvals Badge RPC**
+
+**ما يفعله:**
+- دالة `get_pending_approvals_count(company_id, user_id) RETURNS INTEGER`
+- تجمع: BOM pending + Routing pending + PO pending + MI pending/management_approved
+- تُعيد 0 لغير الأدوار العليا (admin/owner/gm/manager)
+- SECURITY DEFINER + GRANT لـ authenticated/anon
+
+**Verification:**
+```sql
+SELECT get_pending_approvals_count('company-uuid', 'user-uuid');
+-- يجب أن يعيد عدداً صحيحاً
+```
+
+---
+
 # Migrations History — Req 1 & Req 2 (May 2026)
 
 Chronological log of every SQL migration shipped for the
