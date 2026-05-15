@@ -104,7 +104,8 @@ export async function POST(
       }
     }
 
-    if (approval.status !== "pending" && approval.status !== "partially_approved") {
+    const REJECTABLE_STATUSES = ["pending", "management_approved", "partially_approved"]
+    if (!REJECTABLE_STATUSES.includes(approval.status)) {
       return NextResponse.json(
         { success: false, error: `لا يمكن الرفض — حالة الطلب الحالية: ${approval.status}` },
         { status: 422 }

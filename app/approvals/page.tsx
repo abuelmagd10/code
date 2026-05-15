@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import {
   CheckCircle2, XCircle, Clock, Layers, GitMerge,
-  RefreshCw, AlertCircle, ChevronDown, ChevronUp, Factory,
+  RefreshCw, AlertCircle, ChevronDown, ChevronUp, Factory, Package,
 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import Link from "next/link"
@@ -36,7 +36,14 @@ interface PendingProductionOrder {
   type: "production_order"
 }
 
-type PendingItem = PendingBomVersion | PendingRoutingVersion | PendingProductionOrder
+interface PendingMaterialIssue {
+  id: string; status: string; requested_at: string
+  order_no: string; product_name: string; branch_name: string
+  warehouse_name: string
+  type: "material_issue"
+}
+
+type PendingItem = PendingBomVersion | PendingRoutingVersion | PendingProductionOrder | PendingMaterialIssue
 
 // ── Component ─────────────────────────────────────────────
 
@@ -48,10 +55,11 @@ function ApprovalsContent() {
   const [bomVersions, setBomVersions] = useState<PendingBomVersion[]>([])
   const [routingVersions, setRoutingVersions] = useState<PendingRoutingVersion[]>([])
   const [productionOrders, setProductionOrders] = useState<PendingProductionOrder[]>([])
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po">("all")
+  const [materialIssues, setMaterialIssues] = useState<PendingMaterialIssue[]>([])
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi">("all")
   const [runningId, setRunningId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
-  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | null>(null)
+  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | null>(null)
   const [rejectReason, setRejectReason] = useState("")
 
   const t = (ar: string, en: string) => appLang === "ar" ? ar : en
@@ -141,6 +149,31 @@ function ApprovalsContent() {
         branch_name: p.branches?.name ?? "—",
         type: "production_order" as const,
       })))
+
+      // Material issue approvals — pending management + pending warehouse
+      const { data: mis } = await supabase
+        .from("manufacturing_material_issue_approvals")
+        .select(`
+          id, status, requested_at,
+          manufacturing_production_orders!inner(order_no, products!inner(name)),
+          branches(name),
+          warehouses(name)
+        `)
+        .eq("company_id", cid)
+        .in("status", ["pending", "management_approved"])
+        .order("requested_at", { ascending: true })
+        .limit(50)
+
+      setMaterialIssues((mis || []).map((m: any) => ({
+        id: m.id,
+        status: m.status,
+        requested_at: m.requested_at,
+        order_no: m.manufacturing_production_orders?.order_no ?? "—",
+        product_name: m.manufacturing_production_orders?.products?.name ?? "—",
+        branch_name: m.branches?.name ?? "—",
+        warehouse_name: m.warehouses?.name ?? "—",
+        type: "material_issue" as const,
+      })))
     } finally {
       setIsLoading(false)
     }
@@ -148,13 +181,15 @@ function ApprovalsContent() {
 
   useEffect(() => { load() }, [load])
 
-  const handleApprove = async (item: PendingItem) => {
+  const handleApprove = async (item: PendingItem, stage?: "management" | "warehouse") => {
     setRunningId(item.id)
     try {
       const endpoint =
         item.type === "bom_version"     ? `/api/manufacturing/bom-versions/${item.id}/approve` :
         item.type === "routing_version" ? `/api/manufacturing/routing-versions/${item.id}/approve` :
-                                          `/api/manufacturing/production-orders/${item.id}/approve`
+        item.type === "production_order"? `/api/manufacturing/production-orders/${item.id}/approve` :
+        stage === "management"          ? `/api/manufacturing/material-issue-approvals/${item.id}/management-approve` :
+                                          `/api/manufacturing/material-issue-approvals/${item.id}/approve`
       const res = await fetch(endpoint, { method: "POST" })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Failed")
@@ -174,7 +209,8 @@ function ApprovalsContent() {
       const endpoint =
         rejectType === "bom_version"     ? `/api/manufacturing/bom-versions/${rejectId}/reject` :
         rejectType === "routing_version" ? `/api/manufacturing/routing-versions/${rejectId}/reject` :
-                                           `/api/manufacturing/production-orders/${rejectId}/reject`
+        rejectType === "production_order"? `/api/manufacturing/production-orders/${rejectId}/reject` :
+                                           `/api/manufacturing/material-issue-approvals/${rejectId}/reject`
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -192,7 +228,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
 
   const BomCard = ({ b }: { b: PendingBomVersion }) => (
@@ -320,6 +356,89 @@ function ApprovalsContent() {
     </Card>
   )
 
+  const STATUS_LABEL: Record<string, { ar: string; en: string; color: string }> = {
+    pending:             { ar: "انتظار الإدارة",  en: "Pending Management", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300" },
+    management_approved: { ar: "انتظار المخزن",   en: "Pending Warehouse",  color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" },
+  }
+
+  const MaterialIssueCard = ({ m }: { m: PendingMaterialIssue }) => {
+    const sl = STATUS_LABEL[m.status] ?? { ar: m.status, en: m.status, color: "bg-gray-100 text-gray-700" }
+    const isPendingManagement = m.status === "pending"
+    const isPendingWarehouse  = m.status === "management_approved"
+    return (
+      <Card key={m.id} className="border-l-4 border-l-teal-500">
+        <CardContent className="py-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="flex items-start gap-3 flex-1 min-w-0">
+              <div className="p-2 bg-teal-100 dark:bg-teal-900/30 rounded-lg shrink-0">
+                <Package className="w-4 h-4 text-teal-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-sm">{m.product_name}</p>
+                <p className="text-xs text-muted-foreground font-mono">{m.order_no}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  🏢 {m.branch_name} · 🏭 {m.warehouse_name} · 📅 {fmtDate(m.requested_at)}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge className={`text-xs ${sl.color}`}>
+                <Clock className="w-3 h-3 me-1" />{t(sl.ar, sl.en)}
+              </Badge>
+              <Link href={`/manufacturing/production-orders`} className="text-xs text-teal-600 hover:underline">{t("عرض", "View")}</Link>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-3 flex-wrap">
+            {isPendingManagement && (
+              <Button
+                size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                disabled={runningId === m.id}
+                onClick={() => handleApprove(m, "management")}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد الإدارة", "Management Approve")}
+              </Button>
+            )}
+            {isPendingWarehouse && (
+              <Button
+                size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                disabled={runningId === m.id}
+                onClick={() => handleApprove(m, "warehouse")}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد المخزن", "Warehouse Approve")}
+              </Button>
+            )}
+            <Button
+              size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+              disabled={runningId === m.id}
+              onClick={() => { setRejectId(m.id); setRejectType("material_issue"); setRejectReason("") }}
+            >
+              <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+            </Button>
+          </div>
+          {rejectId === m.id && (
+            <div className="mt-3 space-y-2">
+              <Textarea
+                placeholder={t("سبب الرفض (مطلوب)…", "Rejection reason (required)…")}
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                rows={2}
+                className="text-sm"
+              />
+              <div className="flex gap-2">
+                <Button size="sm" variant="destructive" className="text-xs" disabled={!rejectReason.trim() || runningId === m.id} onClick={handleReject}>
+                  {t("تأكيد الرفض", "Confirm Reject")}
+                </Button>
+                <Button size="sm" variant="ghost" className="text-xs" onClick={() => { setRejectId(null); setRejectReason("") }}>
+                  {t("إلغاء", "Cancel")}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
+
   const ProductionOrderCard = ({ p }: { p: PendingProductionOrder }) => (
     <Card key={p.id} className="border-l-4 border-l-orange-500">
       <CardContent className="py-4">
@@ -431,6 +550,9 @@ function ApprovalsContent() {
             <Button size="sm" variant={activeTab === "po"      ? "default" : "outline"} onClick={() => setActiveTab("po")}      className="gap-1">
               <Factory  className="w-3.5 h-3.5" />{t("أوامر الإنتاج", "Production Orders")} ({productionOrders.length})
             </Button>
+            <Button size="sm" variant={activeTab === "mi"      ? "default" : "outline"} onClick={() => setActiveTab("mi")}      className="gap-1">
+              <Package  className="w-3.5 h-3.5" />{t("طلبات الصرف", "Material Issues")} ({materialIssues.length})
+            </Button>
           </div>
 
           {/* Content */}
@@ -473,6 +595,16 @@ function ApprovalsContent() {
                     <Factory className="w-4 h-4" />{t("أوامر الإنتاج (Production Orders)", "Production Orders")}
                   </h2>
                   {productionOrders.map(p => <ProductionOrderCard key={p.id} p={p} />)}
+                </div>
+              )}
+
+              {/* Material issue approvals */}
+              {(activeTab === "all" || activeTab === "mi") && materialIssues.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <Package className="w-4 h-4" />{t("طلبات صرف المواد", "Material Issue Requests")}
+                  </h2>
+                  {materialIssues.map(m => <MaterialIssueCard key={m.id} m={m} />)}
                 </div>
               )}
             </div>
