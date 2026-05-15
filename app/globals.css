@@ -3,40 +3,27 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Prevent sidebar shake and improve performance */
+/* GPU acceleration for sidebar to prevent layout shake */
 aside[class*="fixed"] {
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
-  contain: layout style paint;
+  /* NOTE: contain:paint removed — it clips fixed-position descendants (dropdowns) to the element's border box */
 }
 
-/* Prevent dropdown from affecting layout - Enhanced */
+/* GPU acceleration for Radix popper wrapper (safe: Radix inline transform overrides this stylesheet rule) */
 [data-radix-popper-content-wrapper] {
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
-  will-change: transform;
-  contain: layout style paint;
-  isolation: isolate;
+  /* NOTE: contain/will-change/isolation removed — they create new containing blocks that break position:fixed inside portals */
 }
 
-/* Prevent Select dropdown from causing layout shifts */
+/* GPU acceleration for Select viewport */
 [data-radix-select-viewport] {
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
 }
 
-/* Prevent Portal content from affecting main layout */
-[data-radix-portal] {
-  position: fixed;
-  z-index: 9999;
-  pointer-events: none;
-}
-
-[data-radix-portal] > * {
-  pointer-events: auto;
-}
-
-/* Stabilize Select trigger during open/close */
+/* GPU acceleration for Select trigger */
 [data-radix-select-trigger] {
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
@@ -44,7 +31,7 @@ aside[class*="fixed"] {
   -webkit-backface-visibility: hidden;
 }
 
-/* Prevent content wrapper from affecting layout */
+/* Prevent body scroll-lock when Select is open */
 body:has([data-radix-select-content]) {
   overflow: visible !important;
 }
