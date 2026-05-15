@@ -8,6 +8,7 @@ import {
   loadProductionOrderSnapshot,
   parseOptionalJsonBody,
   releaseProductionOrderSchema,
+  ManufacturingApiError,
 } from "@/lib/manufacturing/production-order-api"
 
 export async function POST(
@@ -19,6 +20,15 @@ export async function POST(
     const { supabase, admin, companyId, user } = await getManufacturingApiContext(request, "update")
     const payload = await parseOptionalJsonBody(request, releaseProductionOrderSchema)
     const existing = await assertProductionOrderAccessible(supabase, companyId, id)
+
+    // يجب أن تكون approval_status = 'approved' قبل الإصدار
+    const approvalStatus = (existing as any).approval_status
+    if (approvalStatus && approvalStatus !== "approved") {
+      throw new ManufacturingApiError(
+        409,
+        `لا يمكن إصدار أمر الإنتاج قبل اعتماده — حالة الاعتماد: ${approvalStatus}`
+      )
+    }
 
     const { data, error } = await admin.rpc("release_manufacturing_production_order_atomic", {
       p_company_id: companyId,

@@ -13,7 +13,7 @@ import {
 
 export async function GET(request: NextRequest) {
   try {
-    const { supabase, companyId, member } = await getManufacturingApiContext(request, "read")
+    const { supabase, companyId, user, member } = await getManufacturingApiContext(request, "read")
     const { searchParams } = new URL(request.url)
 
     const requestedBranchId = searchParams.get("branch_id")
@@ -30,6 +30,12 @@ export async function GET(request: NextRequest) {
     if (requestedBranchId) query = query.eq("branch_id", requestedBranchId)
     if (searchParams.get("product_id")) query = query.eq("product_id", searchParams.get("product_id"))
     if (searchParams.get("status")) query = query.eq("status", searchParams.get("status"))
+    if (searchParams.get("approval_status")) query = query.eq("approval_status", searchParams.get("approval_status"))
+
+    // manufacturing_officer رؤية محدودة — فقط الأوامر التي أنشأها
+    if (member.role === "manufacturing_officer") {
+      query = query.eq("created_by", user.id)
+    }
 
     const q = searchParams.get("q")?.trim()
     if (q) {

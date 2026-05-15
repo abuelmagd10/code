@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
+import { createNotification } from "@/lib/governance-layer"
 import {
   assertProductionOrderAccessible,
   assertProductionOrderDeleteAllowed,
@@ -10,6 +11,10 @@ import {
   parseJsonBody,
   updateProductionOrderSchema,
 } from "@/lib/manufacturing/production-order-api"
+import {
+  recordApprovalAction,
+  buildApprovalSnapshot,
+} from "@/lib/manufacturing/approval-history"
 
 export async function GET(
   request: NextRequest,
@@ -41,8 +46,21 @@ export async function PATCH(
 
     assertProductionOrderEditable(existing)
 
+    // ── Re-approval on edit (Phase R4) ───────────────────────
+    const currentApprovalStatus = (existing as any).approval_status ?? "draft"
+    const wasApproved = currentApprovalStatus === "approved"
+    const reapprovalFields = wasApproved
+      ? {
+          approval_status: "pending_approval",
+          cycle_no: ((existing as any).cycle_no ?? 1) + 1,
+          po_approved_by: null,
+          po_approved_at: null,
+        }
+      : {}
+
     const updateData: Record<string, unknown> = {
       updated_by: user.id,
+      ...reapprovalFields,
     }
 
     if ("bom_id" in payload) {
@@ -65,6 +83,42 @@ export async function PATCH(
       .single()
 
     if (error) throw error
+
+    if (wasApproved) {
+      const newCycleNo = ((existing as any).cycle_no ?? 1) + 1
+      await recordApprovalAction({
+        supabase, companyId,
+        referenceType: "production_order",
+        referenceId: id,
+        cycleNo: newCycleNo,
+        action: "edit_triggered_reapproval",
+        actorId: user.id,
+        actorRole: "manufacturing_officer",
+        reason: "تعديل أمر الإنتاج بعد الموافقة أعاد دورة الاعتماد",
+        snapshotData: buildApprovalSnapshot({
+          statusBefore: "approved",
+          statusAfter: "pending_approval",
+          extraFields: { order_no: existing.order_no, edited_fields: Object.keys(payload) },
+        }),
+        branchId: existing.branch_id,
+      })
+
+      const notifBase = {
+        companyId,
+        referenceType: "manufacturing_production_order",
+        referenceId: id,
+        title: "🔄 إعادة اعتماد أمر إنتاج بعد تعديل",
+        message: `أمر الإنتاج ${existing.order_no} تم تعديله — يحتاج إعادة اعتماد`,
+        createdBy: user.id,
+        branchId: existing.branch_id ?? undefined,
+        priority: "high" as const,
+        severity: "warning" as const,
+        category: "approvals" as const,
+      }
+      try { await createNotification({ ...notifBase, assignedToRole: "admin",           eventKey: `po_reapproval_admin_${id}` }) } catch { /* non-critical */ }
+      try { await createNotification({ ...notifBase, assignedToRole: "owner",           eventKey: `po_reapproval_owner_${id}` }) } catch { /* non-critical */ }
+      try { await createNotification({ ...notifBase, assignedToRole: "general_manager", eventKey: `po_reapproval_gm_${id}`    }) } catch { /* non-critical */ }
+    }
 
     const snapshot = await loadProductionOrderSnapshot(supabase, companyId, id)
 
