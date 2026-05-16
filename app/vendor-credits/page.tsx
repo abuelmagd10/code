@@ -62,16 +62,14 @@ export default function VendorCreditsPage() {
   // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
   const branchFilter = useBranchFilter()
 
-  // تهيئة اللغة والعملة بعد hydration
+  // تهيئة اللغة والعملة + الاستماع لتغيير اللغة
   useEffect(() => {
-    try {
-      const lang = (localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar'
-      setAppLang(lang)
-    } catch { }
-    try {
-      const currency = localStorage.getItem('app_currency') || 'EGP'
-      setAppCurrency(currency)
-    } catch { }
+    const read = () => { try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { } }
+    read()
+    try { setAppCurrency(localStorage.getItem('app_currency') || 'EGP') } catch { }
+    window.addEventListener('app_language_changed', read)
+    window.addEventListener('storage', read)
+    return () => { window.removeEventListener('app_language_changed', read); window.removeEventListener('storage', read) }
   }, [])
 
   // Pagination state

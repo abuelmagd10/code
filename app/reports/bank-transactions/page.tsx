@@ -165,7 +165,7 @@ export default function BankTransactionsReport() {
 
   return (
     <div className="flex min-h-screen" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
-      <main className="flex-1 p-6 bg-gray-50 dark:bg-gray-900">
+      <main className="flex-1 md:mr-64 p-4 md:p-6 pt-20 md:pt-8 bg-gray-50 dark:bg-gray-900">
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">

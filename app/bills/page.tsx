@@ -95,10 +95,14 @@ export default function BillsPage() {
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [hydrated, setHydrated] = useState(false)
 
-  // تهيئة اللغة بعد hydration
+  // تهيئة اللغة + الاستماع لتغييرها
   useEffect(() => {
-    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+    const read = () => { try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { } }
+    read()
+    window.addEventListener('app_language_changed', read)
+    window.addEventListener('storage', read)
     setHydrated(true)
+    return () => { window.removeEventListener('app_language_changed', read); window.removeEventListener('storage', read) }
   }, [])
 
   // 🔐 ERP Access Control - سياق المستخدم

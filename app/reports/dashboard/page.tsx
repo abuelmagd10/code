@@ -39,7 +39,8 @@ export default function FinancialDashboardPage() {
     if (!summary) return <div className="p-8 text-center text-muted-foreground">No data available</div>
 
     return (
-        <div className="p-6 space-y-6">
+        <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+          <main className="flex-1 md:mr-64 p-4 md:p-6 pt-20 md:pt-8 space-y-6 overflow-x-hidden">
             <h1 className="text-3xl font-bold tracking-tight mb-8">Financial Overview</h1>
 
             {/* KPI CARDS */}
@@ -125,6 +126,7 @@ export default function FinancialDashboardPage() {
                     </CardContent>
                 </Card>
             </div>
+          </main>
         </div>
     )
 }

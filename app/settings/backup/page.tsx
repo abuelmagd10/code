@@ -135,7 +135,9 @@ export default function BackupPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+      <main className="flex-1 md:mr-64 p-4 md:p-6 pt-20 md:pt-8 overflow-x-hidden">
+    <div className="max-w-4xl mx-auto">
       <div className="mb-6">
         <h1 className="text-3xl font-bold">
           {t('Backup & Restore', 'النسخ الاحتياطي والاستعادة')}
@@ -297,6 +299,8 @@ export default function BackupPage() {
           language={language}
         />
       )}
+    </div>
+      </main>
     </div>
   )
 }

@@ -259,7 +259,7 @@ export default function AccountingValidationPage() {
 
   return (
     <div className="flex min-h-screen bg-gray-50" dir={dir}>
-      <main className="flex-1 p-6 overflow-auto">
+      <main className="flex-1 md:mr-64 p-4 md:p-6 pt-20 md:pt-8 overflow-auto">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">

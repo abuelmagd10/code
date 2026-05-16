@@ -40,10 +40,12 @@ export default function CustomerCreditsPage() {
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
 
   useEffect(() => {
-    try {
-      setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
-      setAppCurrency(localStorage.getItem('app_currency') || 'EGP')
-    } catch {}
+    const read = () => { try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { } }
+    read()
+    try { setAppCurrency(localStorage.getItem('app_currency') || 'EGP') } catch {}
+    window.addEventListener('app_language_changed', read)
+    window.addEventListener('storage', read)
+    return () => { window.removeEventListener('app_language_changed', read); window.removeEventListener('storage', read) }
   }, [])
 
   const loadData = useCallback(async () => {

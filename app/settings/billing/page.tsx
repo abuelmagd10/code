@@ -169,7 +169,8 @@ export default function BillingPage() {
   const subStatus = STATUS_MAP[status?.subscription_status ?? 'free'] ?? STATUS_MAP.free
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 p-4 md:p-8" dir="rtl">
+    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950" dir="rtl">
+      <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
       <div className="max-w-4xl mx-auto space-y-6">
 
         {/* Header */}
@@ -376,6 +377,7 @@ export default function BillingPage() {
           </Link>
         </div>
       </div>
+      </main>
     </div>
   )
 }

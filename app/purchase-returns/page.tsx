@@ -104,7 +104,11 @@ export default function PurchaseReturnsPage() {
   const [isRecordingRefund, setIsRecordingRefund] = useState(false)
 
   useEffect(() => {
-    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+    const read = () => { try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { } }
+    read()
+    window.addEventListener('app_language_changed', read)
+    window.addEventListener('storage', read)
+    return () => { window.removeEventListener('app_language_changed', read); window.removeEventListener('storage', read) }
   }, [])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")

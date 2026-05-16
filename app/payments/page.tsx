@@ -261,13 +261,14 @@ export default function PaymentsPage() {
     return !documentBranchId || documentBranchId === userContext.branch_id
   }, [userContext])
 
-  // التحقق من الصلاحيات
-  // تهيئة القيم بعد hydration
+  // تهيئة القيم بعد hydration + الاستماع لتغيير اللغة
   useEffect(() => {
-    try {
-      setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
-      setOnline(navigator.onLine)
-    } catch { }
+    const read = () => { try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { } }
+    read()
+    try { setOnline(navigator.onLine) } catch { }
+    window.addEventListener('app_language_changed', read)
+    window.addEventListener('storage', read)
+    return () => { window.removeEventListener('app_language_changed', read); window.removeEventListener('storage', read) }
   }, [])
 
   useEffect(() => {

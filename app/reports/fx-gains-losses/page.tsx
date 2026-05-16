@@ -148,7 +148,8 @@ export default function FXGainsLossesReportPage() {
   if (loading) return <div className="p-8 text-center">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</div>
 
   return (
-    <div className="p-3 sm:p-4 md:p-6 pt-20 md:pt-6 max-w-6xl mx-auto space-y-4 sm:space-y-6 overflow-x-hidden" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+    <div className="flex-1 md:mr-64 p-3 sm:p-4 md:p-6 pt-20 md:pt-8 max-w-6xl mx-auto space-y-4 sm:space-y-6 overflow-x-hidden">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Link href="/reports"><Button variant="ghost" size="icon" className="flex-shrink-0"><ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" /></Button></Link>
@@ -271,6 +272,7 @@ export default function FXGainsLossesReportPage() {
           </p>
         </CardContent>
       </Card>
+    </div>
     </div>
   )
 }

@@ -133,6 +133,10 @@ export default function ExchangeRatesPage() {
     }
     loadData()
     try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch { }
+    const langRead = () => { try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch { } }
+    window.addEventListener('app_language_changed', langRead)
+    window.addEventListener('storage', langRead)
+    return () => { window.removeEventListener('app_language_changed', langRead); window.removeEventListener('storage', langRead) }
   }, [supabase])
 
   const handleAddRate = async () => {

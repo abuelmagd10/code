@@ -46,9 +46,13 @@ export default function SalesReturnsPage() {
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [currentUserRole, setCurrentUserRole] = useState<string>('viewer')
 
-  // تهيئة اللغة بعد hydration
+  // تهيئة اللغة + الاستماع لتغييرها
   useEffect(() => {
-    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+    const read = () => { try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { } }
+    read()
+    window.addEventListener('app_language_changed', read)
+    window.addEventListener('storage', read)
+    return () => { window.removeEventListener('app_language_changed', read); window.removeEventListener('storage', read) }
   }, [])
 
   // Pagination state
