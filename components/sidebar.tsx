@@ -127,6 +127,7 @@ export function Sidebar() {
   const [activeCompanyId, setActiveCompanyId] = useState<string>("")
   const [showCompanySwitcher, setShowCompanySwitcher] = useState(false)
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0)
+  const [pendingDispatchCount, setPendingDispatchCount] = useState(0)
   const pathname = usePathname()
   const router = useRouter()
   const supabaseHook = useSupabase()
@@ -154,7 +155,24 @@ export function Sidebar() {
     } catch { /* non-critical */ }
   }, [myRole])
 
-  // polling + refresh on navigation للـ badge
+  // ── R8+: Pending Dispatch Badge (store_manager / warehouse_manager) ──────────
+  const DISPATCH_BADGE_ROLES = ["store_manager", "warehouse_manager", "admin", "owner", "general_manager", "manager"]
+
+  const refreshDispatchCount = useCallback(async () => {
+    if (!DISPATCH_BADGE_ROLES.includes(myRole)) {
+      setPendingDispatchCount(0)
+      return
+    }
+    try {
+      const res = await fetch("/api/notifications/pending-dispatch-count", { cache: "no-store" })
+      if (res.ok) {
+        const json = await res.json()
+        setPendingDispatchCount(Number(json.count ?? 0))
+      }
+    } catch { /* non-critical */ }
+  }, [myRole])
+
+  // polling + refresh on navigation للـ approvals badge
   useEffect(() => {
     if (!hydrated || !activeCompanyId || !myRole) return
     refreshApprovalsCount()
@@ -162,10 +180,19 @@ export function Sidebar() {
     return () => clearInterval(interval)
   }, [hydrated, activeCompanyId, myRole, refreshApprovalsCount])
 
-  // refresh badge when navigating away from /approvals (user likely acted)
+  // polling + refresh on navigation للـ dispatch badge
+  useEffect(() => {
+    if (!hydrated || !activeCompanyId || !myRole) return
+    refreshDispatchCount()
+    const interval = setInterval(refreshDispatchCount, 30_000)
+    return () => clearInterval(interval)
+  }, [hydrated, activeCompanyId, myRole, refreshDispatchCount])
+
+  // refresh both badges when navigating (user likely acted)
   useEffect(() => {
     if (hydrated && activeCompanyId && myRole) {
       refreshApprovalsCount()
+      refreshDispatchCount()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname])
@@ -358,6 +385,11 @@ export function Sidebar() {
                   >
                     <Icon className="w-4 h-4 flex-shrink-0" />
                     <span suppressHydrationWarning>{it.label}</span>
+                    {(it.badge ?? 0) > 0 && (
+                      <Badge className="bg-red-500 text-white text-[10px] px-1.5 py-0 h-4 min-w-4 flex items-center justify-center rounded-full ms-auto">
+                        {it.badge > 99 ? "99+" : it.badge}
+                      </Badge>
+                    )}
                   </button>
                 </Link>
               )
@@ -1039,7 +1071,7 @@ export function Sidebar() {
               const lang = hydrated ? appLanguage : 'ar'
               const q = lang === 'en' ? '?lang=en' : ''
               const allowHr = ["owner", "admin", "manager"].includes(myRole)
-              const groups: Array<{ key: string; icon: any; label: string; badge?: number; items: Array<{ label: string; href: string; icon: any }> }> = [
+              const groups: Array<{ key: string; icon: any; label: string; badge?: number; items: Array<{ label: string; href: string; icon: any; badge?: number }> }> = [
                 { key: 'dashboard', icon: BarChart3, label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), items: [{ label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 }] },
                 { key: 'approvals', icon: CheckCircle, label: (lang === 'en' ? '🔔 Approvals' : '🔔 الموافقات'), badge: pendingApprovalsCount, items: [{ label: (lang === 'en' ? 'Approval Inbox' : 'صندوق الموافقات'), href: `/approvals${q}`, icon: CheckCircle }] },
                 {
@@ -1070,7 +1102,7 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Inventory Transfers' : 'نقل المخزون'), href: `/inventory-transfers${q}`, icon: ArrowLeftRight },
                     { label: (lang === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
                     { label: (lang === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
-                    { label: (lang === 'en' ? 'Dispatch Approvals' : 'موافقات الإرسال'), href: `/inventory/dispatch-approvals${q}`, icon: CheckCircle },
+                    { label: (lang === 'en' ? 'Dispatch Approvals' : 'موافقات الإرسال'), href: `/inventory/dispatch-approvals${q}`, icon: CheckCircle, badge: pendingDispatchCount },
                     { label: (lang === 'en' ? 'Goods Receipt Approvals' : 'اعتماد الاستلام'), href: `/inventory/goods-receipt${q}`, icon: CheckCircle },
                   ]
                 },

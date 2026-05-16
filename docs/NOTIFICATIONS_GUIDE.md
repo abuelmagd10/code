@@ -107,15 +107,13 @@ await createNotification({
 
 ---
 
-## Sidebar Badge — R8
+## Sidebar Badges — R8 + Fix (مزدوج)
 
-### RPC: `get_pending_approvals_count`
+### Badge 1: صندوق الموافقات (الإدارة العليا)
 
-**المهاجرة:** `20260516000100_pending_approvals_count_rpc.sql`
+**RPC:** `get_pending_approvals_count` — **المهاجرة:** `20260516000200_fix_approval_count_rpcs.sql`
 
 ```sql
--- يُعيد مجموع الموافقات المعلقة للأدوار العليا فقط
--- يُعيد 0 لباقي الأدوار
 SELECT get_pending_approvals_count(company_id, user_id);
 ```
 
@@ -123,30 +121,42 @@ SELECT get_pending_approvals_count(company_id, user_id);
 - `manufacturing_bom_versions` → `status = 'pending_approval'`
 - `manufacturing_routing_versions` → `approval_status = 'pending_approval'`
 - `manufacturing_production_orders` → `approval_status = 'pending_approval'`
-- `manufacturing_material_issue_approvals` → `status IN ('pending', 'management_approved')`
+- `manufacturing_material_issue_approvals` → `status = 'pending'` ← **Stage 1 فقط**
 
-**الأدوار التي ترى الـ Badge:** `admin`, `owner`, `general_manager`, `manager`
+**الأدوار:** `admin`, `owner`, `general_manager`, `manager`  
+**API:** `GET /api/notifications/pending-approvals-count`  
+**يظهر في:** مجموعة `🔔 الموافقات` بالـ Sidebar
 
-### API Endpoint
+---
 
+### Badge 2: موافقات الإرسال (مسؤول المخزن) — جديد
+
+**RPC:** `get_pending_dispatch_count` — **المهاجرة:** `20260516000200_fix_approval_count_rpcs.sql`
+
+```sql
+SELECT get_pending_dispatch_count(company_id, user_id);
 ```
-GET /api/notifications/pending-approvals-count
-Response: { count: number }
-```
+
+**ما يُحسبه:**
+- `manufacturing_material_issue_approvals` → `status = 'management_approved'` ← **Stage 2**
+- store_manager/warehouse_manager: مخزنهم فقط | الإدارة: كل المخازن
+
+**الأدوار:** `store_manager`, `warehouse_manager`, `admin`, `owner`, `general_manager`, `manager`  
+**API:** `GET /api/notifications/pending-dispatch-count`  
+**يظهر في:** عنصر `موافقات الإرسال` في مجموعة المخزون بالـ Sidebar
+
+---
 
 ### في Sidebar
 
-ملف: `components/sidebar.tsx`
-
 ```typescript
-// polling كل 30 ثانية
-const interval = setInterval(refreshApprovalsCount, 30_000)
+// polling كل 30 ثانية لكلا الـ badges
+const interval1 = setInterval(refreshApprovalsCount, 30_000)
+const interval2 = setInterval(refreshDispatchCount, 30_000)
 
 // refresh عند التنقل بين الصفحات
-useEffect(() => { refreshApprovalsCount() }, [pathname])
+useEffect(() => { refreshApprovalsCount(); refreshDispatchCount() }, [pathname])
 ```
-
-الـ Badge يظهر في مجموعة `🔔 الموافقات` بالـ Sidebar.
 
 ---
 

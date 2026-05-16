@@ -200,7 +200,8 @@ export default function DispatchApprovalsPage() {
       })
 
       // ── 2. اعتمادات صرف مواد التصنيع ───────────────────────────────────────
-      const mfgRes = await fetch(`/api/manufacturing/material-issue-approvals?status=pending,rejected,partially_approved&company_id=${companyId}`)
+      // management_approved = Stage 2 (waiting warehouse) | partially_approved/rejected = for reference
+      const mfgRes = await fetch(`/api/manufacturing/material-issue-approvals?status=management_approved,partially_approved,rejected&company_id=${companyId}`)
       let mfgRows: UnifiedRow[] = []
       if (mfgRes.ok) {
         const mfgJson = await mfgRes.json()

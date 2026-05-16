@@ -82,20 +82,27 @@
 
 ## الاختبار 4: Material Issue ثنائي المرحلة
 
-**الهدف:** التحقق من سير الموافقة الثنائية.
+**الهدف:** التحقق من سير الموافقة الثنائية — كل مرحلة في صفحتها الصحيحة.
 
 | # | الخطوة | النتيجة المتوقعة | ✓/✗ |
 |---|--------|-----------------|-----|
 | 1 | A يُنشئ طلب صرف مواد (`request-material-issue`) | `status = 'pending'` | |
-| 2 | F (store_manager للمخزن M) يستلم إشعار | إشعار خاص بـ F فقط (ليس مخازن أخرى) | |
-| 3 | C (admin) يرى طلب الصرف في Approvals Inbox | ظاهر في تاب "طلبات الصرف" | |
-| 4 | C يوافق Stage 1 (`management-approve`) | `status = 'management_approved'` | |
-| 5 | F يستلم إشعار Stage 2 | يصل لـ F فقط لا لكل المخازن | |
-| 6 | A يستلم إشعار "الإدارة وافقت" | وصل لـ A | |
-| 7 | F يوافق Stage 2 (`approve`) | `status = 'approved'` + مواد تُصدر من المخزون | |
-| 8 | التحقق من `approval_history` | 4 سجلات: submitted, approved_management, approved | |
+| 2 | التحقق: الطلب يظهر في `/approvals` → تاب "طلبات الصرف" | **ظاهر** لـ C | |
+| 3 | التحقق: الطلب **لا يظهر** في `/inventory/dispatch-approvals` | **غير ظاهر** لـ F (Stage 2 لم تبدأ) | |
+| 4 | C (admin) يوافق Stage 1 (`management-approve`) | `status = 'management_approved'` | |
+| 5 | التحقق: الطلب **اختفى** من `/approvals` | **غير ظاهر** بعد موافقة الإدارة | |
+| 6 | التحقق: الطلب **ظهر** في `/inventory/dispatch-approvals` | **ظاهر** لـ F الآن (Stage 2 جاهز) | |
+| 7 | Badge F في Sidebar على "موافقات الإرسال" يزيد | Badge يظهر بعدد صحيح خلال 30 ثانية | |
+| 8 | F يستلم إشعار Stage 2 | يصل لـ F فقط لا لكل المخازن | |
+| 9 | A يستلم إشعار "الإدارة وافقت" | وصل لـ A | |
+| 10 | F يوافق Stage 2 (`approve`) | `status = 'approved'` + مواد تُصدر من المخزون | |
+| 11 | التحقق: الطلب **اختفى** من `/inventory/dispatch-approvals` | **غير ظاهر** بعد الاعتماد | |
+| 12 | التحقق من `approval_history` | سجلات: submitted, approved_management, approved_warehouse | |
 
-**معيار النجاح:** الإشعارات تصل للأشخاص الصحيحين فقط.
+**معيار النجاح:** 
+- `pending` → يظهر فقط في `/approvals` 
+- `management_approved` → يظهر فقط في `/inventory/dispatch-approvals`
+- الإشعارات تصل للأشخاص الصحيحين فقط.
 
 ---
 

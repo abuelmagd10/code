@@ -227,10 +227,28 @@ RPC `submit_production_order_for_approval_atomic` يتحقق من:
 
 المخزن (store_manager/warehouse_manager) لا يزال قادراً على الاعتماد مباشرة من `pending` (Stage 1 اختيارية).
 
+### توزيع الـ Status بين صفحتين (مهم!)
+
+| Status | يظهر في | المسؤول |
+|--------|---------|---------|
+| `pending` | `/approvals` (تاب طلبات الصرف) | الإدارة العليا — Stage 1 |
+| `management_approved` | `/inventory/dispatch-approvals` | مسؤول المخزن — Stage 2 |
+| `approved` | لا يظهر في أي inbox | تم الإصدار |
+| `rejected` | `/inventory/dispatch-approvals` (سجل) | للمرجعية |
+
+**المبدأ:** كل مرحلة في صفحتها — لا تكرار، لا ضياع طلبات.
+
+### Sidebar Badges
+
+- **`🔔 الموافقات`** (admin/owner/gm/manager): يعد `pending` فقط (Stage 1)
+- **`موافقات الإرسال`** (store_manager/warehouse_manager + إدارة): يعد `management_approved` (Stage 2)
+
 ### Warehouse-Specific Notification Routing
 
 عند management-approve → إشعار يصل لمسؤولي **المخزن المحدد** في أمر الإنتاج فقط.  
 `lib/manufacturing/notification-helpers.ts` — `notifyWarehouseStaff()`
+
+الرابط في الإشعار: `/inventory/dispatch-approvals/${approvalId}` (عبر `lib/notification-routing.ts`)
 
 Fallback: إذا لا يوجد مستخدم مرتبط بالمخزن → إرسال للـ role عاماً.
 

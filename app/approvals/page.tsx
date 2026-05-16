@@ -150,7 +150,8 @@ function ApprovalsContent() {
         type: "production_order" as const,
       })))
 
-      // Material issue approvals — pending management + pending warehouse
+      // Material issue approvals — pending management approval only (Stage 1)
+      // management_approved goes to /inventory/dispatch-approvals for warehouse staff (Stage 2)
       const { data: mis } = await supabase
         .from("manufacturing_material_issue_approvals")
         .select(`
@@ -160,7 +161,7 @@ function ApprovalsContent() {
           warehouses(name)
         `)
         .eq("company_id", cid)
-        .in("status", ["pending", "management_approved"])
+        .eq("status", "pending")
         .order("requested_at", { ascending: true })
         .limit(50)
 
@@ -356,15 +357,7 @@ function ApprovalsContent() {
     </Card>
   )
 
-  const STATUS_LABEL: Record<string, { ar: string; en: string; color: string }> = {
-    pending:             { ar: "انتظار الإدارة",  en: "Pending Management", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300" },
-    management_approved: { ar: "انتظار المخزن",   en: "Pending Warehouse",  color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" },
-  }
-
   const MaterialIssueCard = ({ m }: { m: PendingMaterialIssue }) => {
-    const sl = STATUS_LABEL[m.status] ?? { ar: m.status, en: m.status, color: "bg-gray-100 text-gray-700" }
-    const isPendingManagement = m.status === "pending"
-    const isPendingWarehouse  = m.status === "management_approved"
     return (
       <Card key={m.id} className="border-l-4 border-l-teal-500">
         <CardContent className="py-4">
@@ -382,31 +375,20 @@ function ApprovalsContent() {
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <Badge className={`text-xs ${sl.color}`}>
-                <Clock className="w-3 h-3 me-1" />{t(sl.ar, sl.en)}
+              <Badge className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                <Clock className="w-3 h-3 me-1" />{t("انتظار الإدارة", "Pending Management")}
               </Badge>
               <Link href={`/manufacturing/production-orders`} className="text-xs text-teal-600 hover:underline">{t("عرض", "View")}</Link>
             </div>
           </div>
           <div className="flex gap-2 mt-3 flex-wrap">
-            {isPendingManagement && (
-              <Button
-                size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs"
-                disabled={runningId === m.id}
-                onClick={() => handleApprove(m, "management")}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد الإدارة", "Management Approve")}
-              </Button>
-            )}
-            {isPendingWarehouse && (
-              <Button
-                size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
-                disabled={runningId === m.id}
-                onClick={() => handleApprove(m, "warehouse")}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد المخزن", "Warehouse Approve")}
-              </Button>
-            )}
+            <Button
+              size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs"
+              disabled={runningId === m.id}
+              onClick={() => handleApprove(m, "management")}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد الإدارة", "Management Approve")}
+            </Button>
             <Button
               size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
               disabled={runningId === m.id}
