@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { toastActionError, toastActionSuccess } from "@/lib/notifications";
 import { FileText } from "lucide-react";
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect";
+import { getActiveCompanyId } from "@/lib/company";
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; sale_price?: number; item_type?: 'product' | 'service' };
@@ -70,13 +71,16 @@ export default function EstimatesPage() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const { data: cust } = await supabase.from("customers").select("id, name, phone").order("name");
+      const companyId = await getActiveCompanyId(supabase);
+      if (!companyId) { setLoading(false); return; }
+      const { data: cust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).order("name");
       setCustomers(cust || []);
-      const { data: prod } = await supabase.from("products").select("id, name, sale_price").order("name");
+      const { data: prod } = await supabase.from("products").select("id, name, sale_price").eq("company_id", companyId).order("name");
       setProducts(prod || []);
       const { data: est } = await supabase
         .from("estimates")
         .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes")
+        .eq("company_id", companyId)
         .order("created_at", { ascending: false });
       setEstimates(est || []);
       setLoading(false);
