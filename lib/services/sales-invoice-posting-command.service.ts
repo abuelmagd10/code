@@ -127,6 +127,16 @@ export class SalesInvoicePostingCommandService {
       })
 
       if (!postingResult.success) {
+        // DUPLICATE_JOURNAL_VIOLATION means journal already exists (race condition / retry)
+        // Treat as idempotent success — the accounting entries are already recorded
+        if (postingResult.error?.includes("DUPLICATE_JOURNAL_VIOLATION")) {
+          console.log("✅ [INVOICE_POST] Journal already exists (DUPLICATE_JOURNAL_VIOLATION) — treating as idempotent success")
+          return {
+            success: true,
+            idempotent: true,
+            message: "القيد المحاسبي موجود مسبقاً — تم الترحيل بنجاح",
+          }
+        }
         throw new SalesInvoicePostingCommandError(postingResult.error || "فشل ترحيل الفاتورة", 400)
       }
     } else {
