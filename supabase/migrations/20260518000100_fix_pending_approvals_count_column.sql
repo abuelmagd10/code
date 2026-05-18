@@ -40,11 +40,13 @@ BEGIN
   WHERE company_id = p_company_id
     AND status     = 'pending_approval';
 
-  -- Routing versions بانتظار الاعتماد (uses approval_status column)
+  -- Routing versions بانتظار الاعتماد
+  -- Note: approval_status column from migration 20260515000200 may not exist yet
+  -- Fall back to status column which always exists
   SELECT COUNT(*) INTO v_rv_count
   FROM public.manufacturing_routing_versions
-  WHERE company_id      = p_company_id
-    AND approval_status = 'pending_approval';
+  WHERE company_id = p_company_id
+    AND status     = 'pending_approval';
 
   -- Production orders بانتظار الاعتماد (uses status column, NOT approval_status)
   SELECT COUNT(*) INTO v_po_count
