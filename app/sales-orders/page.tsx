@@ -1086,15 +1086,15 @@ function SalesOrdersContent() {
     }
   });
 
-  // تحديث دوري لحالة الفواتير كل 30 ثانية
+  // 🔄 Refresh when user returns to tab (enterprise pattern — no polling)
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (orders.length > 0) {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && orders.length > 0) {
         refreshAllInvoicesStatus();
       }
-    }, 30000);
-
-    return () => clearInterval(interval);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [orders]);
 
   // دالة للحصول على ملخص المنتجات لأمر معين مع الكميات المرتجعة

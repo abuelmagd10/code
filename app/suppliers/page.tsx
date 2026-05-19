@@ -205,19 +205,8 @@ export default function SuppliersPage() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [suppliers, supabase]);
 
-  // 🔄 تحديث الأرصدة بشكل دوري (كل 30 ثانية) لضمان تحديث البيانات
-  useEffect(() => {
-    if (suppliers.length === 0) return
-
-    const interval = setInterval(async () => {
-      const companyId = await getActiveCompanyId(supabase)
-      if (companyId && suppliers.length > 0) {
-        await loadSupplierBalances(companyId, suppliers)
-      }
-    }, 30000) // كل 30 ثانية
-
-    return () => clearInterval(interval)
-  }, [suppliers, supabase])
+  // ❌ No periodic polling — Enterprise pattern:
+  // Balances update via: visibilitychange + Realtime subscriptions + user navigation
 
   const loadSuppliers = async () => {
     try {
