@@ -606,42 +606,73 @@ export default function ThirdPartyInventoryPage() {
     }
   }, [filteredItems])
 
-  // ── Load history/log data ──
+  // ── Load history/log data (with same governance as loadData) ──
   const loadLog = useCallback(async () => {
     try {
       setLogLoading(true)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      const { data, error } = await supabase
+      // 🔐 Governance: reuse currentUserRole, isMainWarehouse, userContext from parent state
+      const role = currentUserRole
+      const branchId = userContext?.branch_id || null
+      const userId = currentUserId
+
+      let query = supabase
         .from('third_party_inventory')
         .select(`
-          id, quantity, unit_cost, total_cost, status,
+          id, invoice_id, quantity, unit_cost, total_cost, status,
           cleared_quantity, returned_quantity, cleared_at,
           tracking_type, payment_status, delivery_status,
           notes, created_at, updated_at,
           products (name, sku, product_type),
           invoices!inner (invoice_number, invoice_date, total_amount, status,
-            customers (name)),
+            customers (name),
+            sales_orders!invoices_sales_order_id_fkey (created_by_user_id)),
           shipping_providers (provider_name),
           branches (name),
           warehouses (name)
         `)
         .eq('company_id', companyId)
-        .order('created_at', { ascending: false })
+
+      // 🔐 Apply governance filters (mirrors loadData logic)
+      const isStoreManagerMainWH = role === 'store_manager' && isMainWarehouse
+      if (['owner', 'admin', 'general_manager'].includes(role) || isStoreManagerMainWH) {
+        // 👑 Full access — no branch filter
+      } else if (role === 'store_manager' || role === 'manager' || role === 'accountant') {
+        // 🏢 Branch-scoped
+        if (branchId) {
+          query = query.eq('branch_id', branchId)
+        }
+      }
+      // 👨‍💼 Staff/Sales/Employee: filtered after fetch (same as loadData)
+
+      query = query.order('created_at', { ascending: false })
+
+      const { data, error } = await query
 
       if (error) {
         console.error("Error loading third-party log:", error)
         return
       }
 
-      setLogItems(data || [])
+      let logData = data || []
+
+      // 🔐 Staff/Sales: show only records from their own sales orders
+      if (role === 'staff' || role === 'sales' || role === 'employee') {
+        logData = logData.filter((row: any) => {
+          const createdBy = row.invoices?.sales_orders?.created_by_user_id
+          return createdBy === userId
+        })
+      }
+
+      setLogItems(logData)
     } catch (err) {
       console.error("Error loading third-party log:", err)
     } finally {
       setLogLoading(false)
     }
-  }, [supabase])
+  }, [supabase, currentUserRole, isMainWarehouse, userContext, currentUserId])
 
   useEffect(() => {
     if (activeTab === "log") {
