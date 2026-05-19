@@ -85,10 +85,13 @@ interface HistoryRow {
   date: string            // decision date
   party: string
   warehouse: string
-  extra: string
+  branch: string
+  shippingProvider: string
   status: string          // approved | rejected
   reason?: string
   decidedBy?: string
+  amount?: number
+  items?: Array<{ product_name: string; quantity: number; product_type?: string }>
 }
 
 type TypeFilter = "all" | "sales" | "manufacturing"
@@ -240,13 +243,33 @@ export default function DispatchApprovalsPage() {
         .from('invoices')
         .select(`
           id, invoice_number, invoice_date, total_amount, warehouse_status,
-          warehouse_rejection_reason, warehouse_rejected_at,
+          warehouse_rejection_reason, warehouse_rejected_at, warehouse_approved_by,
           customers (name),
-          shipping_providers (provider_name)
+          shipping_providers (provider_name),
+          branches (name),
+          warehouses (name),
+          invoice_items (quantity, products (name, product_type))
         `)
         .eq('company_id', companyId)
         .in('warehouse_status', ['approved', 'rejected'])
         .order('updated_at', { ascending: false })
+
+      // Resolve approver names
+      const approverIds = (invData || [])
+        .map((inv: any) => inv.warehouse_approved_by)
+        .filter(Boolean)
+      let approverMap: Record<string, string> = {}
+      if (approverIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, username, full_name')
+          .in('id', [...new Set(approverIds)])
+        if (profiles) {
+          for (const p of profiles) {
+            approverMap[p.id] = p.full_name || p.username || p.id
+          }
+        }
+      }
 
       const salesHistory: HistoryRow[] = (invData || []).map((inv: any) => ({
         _type: "sales" as ApprovalType,
@@ -256,10 +279,18 @@ export default function DispatchApprovalsPage() {
           ? (inv.warehouse_rejected_at || inv.invoice_date)
           : inv.invoice_date,
         party: inv.customers?.name || "-",
-        warehouse: "-",
-        extra: inv.shipping_providers?.provider_name || "-",
+        warehouse: inv.warehouses?.name || "-",
+        branch: inv.branches?.name || "-",
+        shippingProvider: inv.shipping_providers?.provider_name || "-",
         status: inv.warehouse_status,
         reason: inv.warehouse_rejection_reason || undefined,
+        decidedBy: inv.warehouse_approved_by ? (approverMap[inv.warehouse_approved_by] || inv.warehouse_approved_by) : undefined,
+        amount: inv.total_amount,
+        items: (inv.invoice_items || []).map((item: any) => ({
+          product_name: item.products?.name || "-",
+          quantity: item.quantity,
+          product_type: item.products?.product_type,
+        })),
       }))
 
       // ── 2. طلبات صرف مواد التصنيع المعتمدة/المرفوضة ──
@@ -274,9 +305,15 @@ export default function DispatchApprovalsPage() {
           date: (apv as any).approved_at || (apv as any).rejected_at || apv.requested_at,
           party: apv.production_order?.product?.name || "-",
           warehouse: apv.warehouse?.name || "-",
-          extra: apv.branch?.name || "-",
+          branch: apv.branch?.name || "-",
+          shippingProvider: "-",
           status: apv.status,
           reason: apv.rejection_reason || undefined,
+          items: apv.production_order?.product ? [{
+            product_name: apv.production_order.product.name,
+            quantity: apv.production_order.planned_quantity,
+            product_type: "manufactured",
+          }] : undefined,
         }))
       }
 
@@ -718,15 +755,19 @@ export default function DispatchApprovalsPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-[900px] w-full text-sm">
+                <table className="min-w-[980px] w-full text-sm">
                   <thead className="bg-gray-50 dark:bg-slate-800">
                     <tr>
                       <th className="px-3 py-2 text-right">{appLang === 'en' ? "Type" : "النوع"}</th>
                       <th className="px-3 py-2 text-right">{appLang === 'en' ? "Reference #" : "الرقم المرجعي"}</th>
                       <th className="px-3 py-2 text-right">{appLang === 'en' ? "Customer / Product" : "العميل / المنتج"}</th>
-                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Warehouse" : "المستودع"}</th>
-                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Branch / Shipping" : "الفرع / شركة الشحن"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Product" : "المنتج"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Qty" : "الكمية"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Branch" : "الفرع"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Warehouse" : "المخزن"}</th>
                       <th className="px-3 py-2 text-right">{appLang === 'en' ? "Decision Date" : "تاريخ القرار"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Amount" : "المبلغ"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Handled By" : "منفذ القرار"}</th>
                       <th className="px-3 py-2 text-center">{appLang === 'en' ? "Status" : "الحالة"}</th>
                       <th className="px-3 py-2 text-right">{appLang === 'en' ? "Reason" : "سبب الرفض"}</th>
                     </tr>
@@ -736,11 +777,11 @@ export default function DispatchApprovalsPage() {
                       <tr key={`${row._type}-${row.id}`} className="hover:bg-gray-50 dark:hover:bg-slate-800/60">
                         <td className="px-3 py-2">
                           {row._type === "sales" ? (
-                            <Badge variant="outline" className="gap-1 text-blue-700 border-blue-300 bg-blue-50 whitespace-nowrap">
+                            <Badge variant="outline" className="gap-1 text-blue-700 border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-700 whitespace-nowrap">
                               <FileText className="w-3 h-3" />{appLang === 'en' ? "Sales" : "مبيعات"}
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="gap-1 text-orange-700 border-orange-300 bg-orange-50 whitespace-nowrap">
+                            <Badge variant="outline" className="gap-1 text-orange-700 border-orange-300 bg-orange-50 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-700 whitespace-nowrap">
                               <Factory className="w-3 h-3" />{appLang === 'en' ? "Mfg." : "تصنيع"}
                             </Badge>
                           )}
@@ -750,14 +791,52 @@ export default function DispatchApprovalsPage() {
                         </td>
                         <td className="px-3 py-2">{row.party}</td>
                         <td className="px-3 py-2">
-                          <div className="flex items-center text-gray-500">
-                            <Box className={`w-4 h-4 ${appLang === 'en' ? 'mr-2' : 'ml-2'}`} />
-                            {row.warehouse}
-                          </div>
+                          {row.items && row.items.length > 0 ? (
+                            <div className="space-y-0.5">
+                              {row.items.map((item, idx) => (
+                                <div key={idx} className="flex items-center gap-1 text-xs">
+                                  <span className="font-medium">{item.product_name}</span>
+                                  {item.product_type && (
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                      item.product_type === "raw_material"
+                                        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                        : item.product_type === "manufactured"
+                                          ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+                                          : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                    }`}>
+                                      {item.product_type === "raw_material" ? (appLang === 'en' ? "Raw" : "خام")
+                                        : item.product_type === "manufactured" ? (appLang === 'en' ? "Mfg" : "مصنّع")
+                                        : item.product_type}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : "-"}
                         </td>
-                        <td className="px-3 py-2">{row.extra}</td>
+                        <td className="px-3 py-2">
+                          {row.items && row.items.length > 0 ? (
+                            <div className="space-y-0.5">
+                              {row.items.map((item, idx) => (
+                                <div key={idx} className="text-xs">{item.quantity}</div>
+                              ))}
+                            </div>
+                          ) : "-"}
+                        </td>
+                        <td className="px-3 py-2">{row.branch}</td>
+                        <td className="px-3 py-2">{row.warehouse}</td>
                         <td className="px-3 py-2">
                           {new Date(row.date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {row.amount != null ? Number(row.amount).toFixed(2) : "-"}
+                        </td>
+                        <td className={`px-3 py-2 font-medium ${
+                          row.status === "rejected"
+                            ? "text-red-700 dark:text-red-400"
+                            : "text-emerald-700 dark:text-emerald-400"
+                        }`}>
+                          {row.decidedBy || "-"}
                         </td>
                         <td className="px-3 py-2 text-center">
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
