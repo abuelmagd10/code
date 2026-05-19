@@ -172,24 +172,19 @@ export default function ThirdPartyInventoryPage() {
       loadData()
     }
 
-    // تحديث عند ظهور الصفحة
+    // تحديث عند ظهور الصفحة (المستخدم يرجع للتبويب)
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
-    // تحديث عند تغيير حالة الفاتورة (من خلال custom event)
+    // تحديث عند تغيير حالة الفاتورة (event-driven)
     window.addEventListener('invoice_status_changed', handleInvoiceUpdate)
 
-    // تحديث دوري كل 60 ثانية (enterprise standard — يقلل حمل الشبكة)
-    // التحديثات الفورية تأتي من أحداث Realtime و visibilitychange
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        loadData()
-      }
-    }, 60000)
+    // ❌ لا يوجد polling دوري — Enterprise pattern:
+    // البيانات تتحدث فقط عبر: Realtime subscriptions + Events + visibilitychange
+    // المستخدم يمكنه الضغط على تبويب البضائع الحالية لإعادة التحميل
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('invoice_status_changed', handleInvoiceUpdate)
-      clearInterval(interval)
     }
   }, [])
 
