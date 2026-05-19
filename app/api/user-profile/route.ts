@@ -114,7 +114,24 @@ export async function PATCH(request: NextRequest) {
     // بناء البيانات للتحديث
     const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() }
     if (username !== undefined) updateData.username = username.toLowerCase().trim()
-    if (display_name !== undefined) updateData.display_name = display_name
+    if (display_name !== undefined) {
+      // 🔐 Enterprise: if member is linked to an employee, block display_name change from profile
+      // display_name is managed via employee record (Settings → Members → Link Employee)
+      const { data: linkedMember } = await supabase
+        .from("company_members")
+        .select("employee_id")
+        .eq("user_id", user.id)
+        .not("employee_id", "is", null)
+        .limit(1)
+
+      if (linkedMember && linkedMember.length > 0) {
+        return badRequestError(
+          "الاسم الظاهر مرتبط بسجل الموظف. لتغيير الاسم، تواصل مع المدير لتحديثه من سجل الموظفين.",
+          ["display_name"]
+        )
+      }
+      updateData.display_name = display_name
+    }
     if (phone !== undefined) updateData.phone = phone
     if (bio !== undefined) updateData.bio = bio
     if (language !== undefined) updateData.language = language

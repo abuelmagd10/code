@@ -7,16 +7,20 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, User, AtSign, Check, X, Settings } from "lucide-react"
+import { Loader2, User, AtSign, Check, X, Settings, Link2 } from "lucide-react"
+import { useSupabase } from "@/lib/supabase/hooks"
+import { getActiveCompanyId } from "@/lib/company"
 
 export default function ProfilePage() {
   const { toast } = useToast()
+  const supabase = useSupabase()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [checkingUsername, setCheckingUsername] = useState(false)
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null)
   const [usernameError, setUsernameError] = useState<string | null>(null)
-  
+  const [linkedEmployeeName, setLinkedEmployeeName] = useState<string | null>(null)
+
   const [profile, setProfile] = useState({
     username: "",
     display_name: "",
@@ -43,6 +47,30 @@ export default function ProfilePage() {
           email: data.email || ""
         })
         setOriginalUsername(data.profile?.username || "")
+      }
+
+      // Check if user is linked to an employee
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const cid = await getActiveCompanyId(supabase)
+        if (cid) {
+          const { data: member } = await supabase
+            .from("company_members")
+            .select("employee_id")
+            .eq("company_id", cid)
+            .eq("user_id", user.id)
+            .not("employee_id", "is", null)
+            .maybeSingle()
+
+          if (member?.employee_id) {
+            const { data: emp } = await supabase
+              .from("employees")
+              .select("full_name")
+              .eq("id", member.employee_id)
+              .maybeSingle()
+            setLinkedEmployeeName(emp?.full_name || "موظف مرتبط")
+          }
+        }
       }
     } catch (err) {
       console.error(err)
@@ -203,7 +231,15 @@ export default function ProfilePage() {
                   value={profile.display_name}
                   onChange={(e) => setProfile(p => ({ ...p, display_name: e.target.value }))}
                   placeholder="أحمد محمد"
+                  disabled={!!linkedEmployeeName}
+                  className={linkedEmployeeName ? "bg-muted" : ""}
                 />
+                {linkedEmployeeName && (
+                  <div className="flex items-center gap-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-xs text-purple-700 dark:text-purple-300">
+                    <Link2 className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>الاسم مرتبط بسجل الموظف: <strong>{linkedEmployeeName}</strong>. لتغيير الاسم، تواصل مع المدير لتحديثه من الإعدادات.</span>
+                  </div>
+                )}
               </div>
 
               {/* رقم الهاتف */}
