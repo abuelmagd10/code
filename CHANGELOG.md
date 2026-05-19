@@ -4,6 +4,35 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.1.1] - 2026-05-19
+
+### 🔧 Fixed — إصلاحات (Phase 2-B)
+
+- **Exchange rate staleness in normal path**: When a rate exists in DB with `rate_date <= targetDate`, the code now checks its age:
+  - `< 1 day` → use silently
+  - `1-7 days` → use + `console.warn` (`aged_rate_used`)
+  - `> 7 days` → throw `RATE_TOO_OLD` (instead of silently using a months-old rate)
+- **سعر الصرف القديم في المسار الطبيعي**: عند العثور على سعر في DB، يتم الآن فحص قِدَمه: أقل من يوم يُستخدم بصمت، 1-7 أيام يُستخدم مع تحذير في الـ console، أكثر من 7 أيام يرمي خطأ `RATE_TOO_OLD`.
+- **Toast notifications language auto-detection**: Fixed a pre-existing bug where `toastActionSuccess`/`toastActionError`/`toastDeleteSuccess`/`toastDeleteError` defaulted to Arabic templates even when callers passed English text. The helpers now auto-detect the active UI language from `localStorage.app_language` when `lang` parameter is omitted. Eliminates mixed-output like "تم Save بنجاح" in EN UI mode. No caller code changes required — fix is centralized in `lib/notifications.ts`.
+- **اكتشاف لغة الإشعارات تلقائياً**: تم إصلاح bug قائم سابقاً كان يُسبب خلطاً لغوياً في الـ toast (مثل "تم Save بنجاح"). الـ helper الآن يكتشف اللغة تلقائياً من `localStorage.app_language` إذا لم يُمرَّر معامل `lang`. إصلاح مركزي بدون الحاجة لتعديل ~30 موقع استدعاء.
+
+### 🗂️ Files Modified — ملفات معدَّلة
+
+| File | Change |
+|------|--------|
+| `lib/exchange-rates.ts` | Add staleness check (1/7 day thresholds) to normal-path DB lookup + reverse lookup |
+| `lib/currency-conversion-system.ts` | Same staleness check |
+| `lib/currency-converter.ts` | Same staleness check |
+| `lib/notifications.ts` | Add `detectLanguage()` helper + auto-detect when `lang` omitted in all 4 toast helpers |
+| `CHANGELOG.md` | This entry |
+
+### 🛡️ Risk Assessment — تقييم المخاطر
+
+- **Behavioral change**: Calls to `getExchangeRate` with a rate older than 7 days will now throw `RATE_TOO_OLD` (previously returned silently). Production has ~37 rates all dated 2026-05-19, so no immediate impact.
+- **Toast helper**: Now auto-detects language. Existing callers that explicitly passed `lang` continue to work unchanged. Callers that omitted `lang` (most of the codebase) now get correct language instead of fixed Arabic.
+
+---
+
 ## [3.1.0] - 2026-05-19
 
 ### 🔧 Fixed (Critical) — إصلاحات حرجة

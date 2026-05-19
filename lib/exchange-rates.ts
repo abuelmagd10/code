@@ -112,10 +112,37 @@ export async function getExchangeRate(
 
   const targetDate = date || new Date().toISOString().slice(0, 10)
 
+  // Helper: check staleness of a rate relative to targetDate.
+  // Returns the rate if usable, throws RATE_TOO_OLD if too old.
+  const STALE_WARN_DAYS = 1   // > 24 hours → warn
+  const STALE_ERROR_DAYS = 7  // > 7 days → throw
+  const evaluateRate = (rate: number, rateDate: string, direction: 'direct' | 'reverse'): number => {
+    const daysOld = Math.floor(
+      (new Date(targetDate).getTime() - new Date(rateDate).getTime()) / (1000 * 60 * 60 * 24)
+    )
+    const finalRate = direction === 'reverse' ? 1 / rate : rate
+    if (daysOld > STALE_ERROR_DAYS) {
+      throw new ExchangeRateError(
+        'RATE_TOO_OLD',
+        `سعر الصرف ${fromCurrency}→${toCurrency} قديم (${daysOld} يوم). آخر سعر معروف: ${finalRate.toFixed(6)} بتاريخ ${rateDate}`,
+        finalRate,
+        rateDate,
+        daysOld
+      )
+    }
+    if (daysOld > STALE_WARN_DAYS) {
+      console.warn(
+        `[exchange-rates] aged_rate_used: ${fromCurrency}→${toCurrency} rate=${finalRate} ` +
+        `from ${rateDate} (${daysOld} days old, threshold=${STALE_WARN_DAYS})`
+      )
+    }
+    return finalRate
+  }
+
   // Try to get from database first
   const { data: dbRate } = await supabase
     .from('exchange_rates')
-    .select('rate')
+    .select('rate, rate_date')
     .eq('company_id', companyId)
     .eq('from_currency', fromCurrency)
     .eq('to_currency', toCurrency)
@@ -124,18 +151,14 @@ export async function getExchangeRate(
     .limit(1)
     .maybeSingle()
 
-  if (dbRate?.rate) {
-    // TODO: The normal path does not check staleness — it returns any rate with
-    // rate_date <= targetDate regardless of age. The stale-rate check below only
-    // guards the "no rate + API failure" path. Consider adding an optional
-    // staleness warning here for rates older than N days.
-    return Number(dbRate.rate)
+  if (dbRate?.rate && dbRate.rate_date) {
+    return evaluateRate(Number(dbRate.rate), dbRate.rate_date, 'direct')
   }
 
   // Try reverse rate
   const { data: reverseRate } = await supabase
     .from('exchange_rates')
-    .select('rate')
+    .select('rate, rate_date')
     .eq('company_id', companyId)
     .eq('from_currency', toCurrency)
     .eq('to_currency', fromCurrency)
@@ -144,8 +167,8 @@ export async function getExchangeRate(
     .limit(1)
     .maybeSingle()
 
-  if (reverseRate?.rate) {
-    return 1 / Number(reverseRate.rate)
+  if (reverseRate?.rate && reverseRate.rate_date) {
+    return evaluateRate(Number(reverseRate.rate), reverseRate.rate_date, 'reverse')
   }
 
   // Fetch from API as fallback
