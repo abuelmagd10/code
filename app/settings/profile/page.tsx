@@ -32,6 +32,18 @@ export default function ProfilePage() {
 
   useEffect(() => {
     loadProfile()
+
+    // Refresh when user returns to this tab (link/unlink may have happened)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') loadProfile()
+    }
+    const handleProfileUpdated = () => loadProfile()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('profile_updated', handleProfileUpdated)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('profile_updated', handleProfileUpdated)
+    }
   }, [])
 
   const loadProfile = async () => {

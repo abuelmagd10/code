@@ -46,10 +46,47 @@ export async function POST(req: NextRequest) {
 
     // If unlinking (employeeId is null)
     if (!normalizedEmployeeId) {
+      // Get the previous employee name before unlinking
+      let previousEmployeeName: string | null = null
+      if (member.employee_id) {
+        const { data: prevEmp } = await admin
+          .from("employees")
+          .select("full_name")
+          .eq("id", member.employee_id)
+          .maybeSingle()
+        previousEmployeeName = prevEmp?.full_name || null
+      }
+
       await admin
         .from("company_members")
         .update({ employee_id: null })
         .eq("id", member.id)
+
+      // Restore display_name to username or email (remove employee name)
+      if (previousEmployeeName) {
+        const { data: profile } = await admin
+          .from("user_profiles")
+          .select("username")
+          .eq("user_id", memberUserId)
+          .maybeSingle()
+
+        // Get email as fallback
+        let fallbackName = profile?.username || null
+        if (!fallbackName) {
+          try {
+            const { data: userData } = await (admin as any).auth.admin.getUserById(memberUserId)
+            fallbackName = userData?.user?.email?.split("@")[0] || null
+          } catch { }
+        }
+
+        await admin
+          .from("user_profiles")
+          .update({
+            display_name: fallbackName || previousEmployeeName,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", memberUserId)
+      }
 
       return apiSuccess({ ok: true, unlinked: true })
     }
