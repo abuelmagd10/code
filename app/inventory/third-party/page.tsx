@@ -178,12 +178,13 @@ export default function ThirdPartyInventoryPage() {
     // تحديث عند تغيير حالة الفاتورة (من خلال custom event)
     window.addEventListener('invoice_status_changed', handleInvoiceUpdate)
 
-    // تحديث دوري كل 5 ثوانٍ
+    // تحديث دوري كل 60 ثانية (enterprise standard — يقلل حمل الشبكة)
+    // التحديثات الفورية تأتي من أحداث Realtime و visibilitychange
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         loadData()
       }
-    }, 5000)
+    }, 60000)
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
