@@ -73,11 +73,12 @@ export async function POST(req: NextRequest) {
         // Audit Log
         try {
             await admin.from('audit_logs').insert({
-                action: 'RESOLVE_ANOMALY',
+                action: 'UPDATE',
                 target_table: 'attendance_raw_logs',
                 company_id: companyId,
                 user_id: user.id,
                 record_id: log_id,
+                reason: 'attendance_anomaly_resolved',
                 new_data: { action, resolution_notes }
             })
         } catch { }

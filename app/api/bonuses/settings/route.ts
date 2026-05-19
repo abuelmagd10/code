@@ -104,13 +104,16 @@ export async function PATCH(req: NextRequest) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تحديث إعدادات البونص", dbError.message)
     }
 
-    // Log to audit
+    // Log to audit (schema-aware: action must be in CHECK list; metadata replaces 'details')
     try {
       await client.from("audit_logs").insert({
-        action: "bonus_settings_updated",
         company_id: companyId,
         user_id: user.id,
-        details: updateData
+        action: "SETTINGS",
+        target_table: "companies",
+        record_id: companyId,
+        reason: "bonus_settings_updated",
+        new_data: updateData
       })
     } catch {}
 

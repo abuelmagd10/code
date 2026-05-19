@@ -82,11 +82,12 @@ export async function POST(req: NextRequest) {
         // Audit Log
         try {
             await admin.from('audit_logs').insert({
-                action: 'CREATE_SHIFT',
+                action: 'INSERT',
                 target_table: 'attendance_shifts',
                 company_id: companyId,
                 user_id: user.id,
                 record_id: data.id,
+                reason: 'shift_created',
                 new_data: newShift
             })
         } catch { }

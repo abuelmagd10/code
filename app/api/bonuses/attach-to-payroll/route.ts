@@ -111,13 +111,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Log to audit
+    // Log to audit (schema-aware: action must be in CHECK list; metadata replaces 'details')
     try {
       await client.from("audit_logs").insert({
-        action: "bonuses_attached_to_payroll",
         company_id: companyId,
         user_id: user.id,
-        details: { payroll_run_id: payrollRunId, count: bonusIds.length, total_by_employee: bonusByEmployee }
+        action: "UPDATE",
+        target_table: "user_bonuses",
+        record_id: payrollRunId,
+        reason: "bonuses_attached_to_payroll",
+        metadata: { payroll_run_id: payrollRunId, count: bonusIds.length, total_by_employee: bonusByEmployee }
       })
     } catch {}
 

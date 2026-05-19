@@ -4,6 +4,55 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.2.1] - 2026-05-19
+
+### 🔧 Fixed — إصلاحات (Phase 4-C: HR/Payroll audit_logs sweep)
+
+- **HR/Payroll audit log inserts**: Found and fixed 10 audit_logs inserts across the bonuses + payroll + HR modules that were silently failing due to the same two bugs we previously fixed for FX accounts:
+  - Wrong action values (custom strings not in the `audit_logs.action` CHECK constraint, which only allows `INSERT, UPDATE, DELETE, REVERT, APPROVE, POST, CANCEL, REVERSE, CLOSE, LOGIN, LOGOUT, ACCESS_DENIED, SETTINGS, REJECT, CONFIRM, SUBMIT, WAREHOUSE_REJECT`)
+  - Wrong column name `details` instead of `metadata` or `new_data` per the actual schema
+- **Files fixed**:
+  - `app/api/bonuses/attach-to-payroll/route.ts` — `bonuses_attached_to_payroll` → `action='UPDATE'`, `target_table='user_bonuses'`, `reason='bonuses_attached_to_payroll'`, `metadata={...}`
+  - `app/api/bonuses/settings/route.ts` — `bonus_settings_updated` → `action='SETTINGS'`, `target_table='companies'`, `reason='bonus_settings_updated'`, `new_data={...}`
+  - `app/api/bonuses/reverse/route.ts` — `bonus_reversed` → `action='REVERSE'`, `target_table='user_bonuses'`, `reason='bonus_reversed'`, `metadata={...}`
+  - `app/api/hr/payroll/payslips/route.ts` (×2) — `payslip_updated/deleted` → `action='UPDATE'/'DELETE'`, `target_table='payslips'`
+  - `app/api/hr/employees/route.ts` (×3) — `employee_added/updated/deleted` → `action='INSERT'/'UPDATE'/'DELETE'`, `target_table='employees'`, with `reason` preserving the original event identifier
+  - `app/api/hr/attendance/anomalies/route.ts` — `RESOLVE_ANOMALY` → `action='UPDATE'`, `reason='attendance_anomaly_resolved'`
+  - `app/api/hr/attendance/shifts/route.ts` — `CREATE_SHIFT` → `action='INSERT'`, `reason='shift_created'`
+
+- **مسح audit_logs في HR/Payroll**: تم اكتشاف وإصلاح 10 مواقع تُسجِّل audit_logs بقيم action غير مسموحة (تكسر CHECK constraint) أو بعمود خاطئ (`details` بدلاً من `metadata`/`new_data`). الإصلاحات تستخدم action صالحة + reason للحدث الأصلي، وتحافظ على كل البيانات في metadata/new_data.
+
+### 📋 Operational Audit — مراجعة تشغيلية
+
+**Bonus → Payroll end-to-end flow status:**
+- Employees CRUD: ✅ working (`employees.base_salary` schema is consistent)
+- Payroll run creation + payslip generation: ✅ working
+- Bonus calculation (`POST /api/bonuses`): ✅ working (sales_order creator attribution from Phase 4-A + per-employee config from Phase 4-B)
+- Bonus attach to payroll (`POST /api/bonuses/attach-to-payroll`): ✅ working (`payslips.sales_bonus` column exists and is correctly updated)
+- Payroll posting to journal entries: ✅ working (`post_payroll_atomic` RPC)
+- Auto-aggregation of bonuses during payroll calculation: ⚠️ Manual click required ("Attach to Payroll" button)
+- `commission_ledger` system: ❌ Dead code (schema exists but never populated). Documented as future cleanup.
+
+### 🗂️ Files Modified — ملفات معدَّلة
+
+| File | Change |
+|------|--------|
+| `app/api/bonuses/attach-to-payroll/route.ts` | Fix audit_logs columns + action value |
+| `app/api/bonuses/settings/route.ts` | Same fix |
+| `app/api/bonuses/reverse/route.ts` | Same fix |
+| `app/api/hr/payroll/payslips/route.ts` | Same fix (2 inserts) |
+| `app/api/hr/employees/route.ts` | Same fix (3 inserts) |
+| `app/api/hr/attendance/anomalies/route.ts` | Same fix |
+| `app/api/hr/attendance/shifts/route.ts` | Same fix |
+| `CHANGELOG.md` | This entry |
+
+### 🛡️ Risk Assessment — تقييم المخاطر
+
+- **Production impact**: Zero data loss. The actual operations (insert/update/delete on bonuses/payslips/employees) always succeeded. Only the audit trail entries were silently failing. After this fix, the audit_logs table will start receiving proper entries for these events.
+- **Backward compatible**: API signatures unchanged. Callers receive identical responses.
+
+---
+
 ## [3.2.0] - 2026-05-19
 
 ### ✨ Added — إضافات (Phase 4-B: Per-Employee Bonus Configuration)

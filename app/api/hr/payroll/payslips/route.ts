@@ -73,10 +73,12 @@ export async function PUT(req: NextRequest) {
     }
     try {
       await (admin || ssr).from('audit_logs').insert({
-        action: 'payslip_updated',
         company_id: companyId,
         user_id: user!.id,
-        details: { runId, employeeId }
+        action: 'UPDATE',
+        target_table: 'payslips',
+        reason: 'payslip_updated',
+        metadata: { runId, employeeId }
       })
     } catch {}
     return apiSuccess({ ok: true })
@@ -138,10 +140,12 @@ export async function DELETE(req: NextRequest) {
     }
     try {
       await (admin || ssr).from('audit_logs').insert({
-        action: 'payslip_deleted',
         company_id: companyId,
         user_id: user!.id,
-        details: { runId, employeeId }
+        action: 'DELETE',
+        target_table: 'payslips',
+        reason: 'payslip_deleted',
+        metadata: { runId, employeeId }
       })
     } catch {}
     return apiSuccess({ ok: true })

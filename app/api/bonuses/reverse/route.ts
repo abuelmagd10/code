@@ -100,13 +100,16 @@ export async function POST(req: NextRequest) {
       reversedBonuses.push(bonus.id)
     }
 
-    // Log to audit
+    // Log to audit (schema-aware: action must be in CHECK list; metadata replaces 'details')
     try {
       await client.from("audit_logs").insert({
-        action: "bonus_reversed",
         company_id: companyId,
         user_id: user.id,
-        details: { bonus_ids: reversedBonuses, reason: reason || "Manual reversal", invoice_id: invoiceId }
+        action: "REVERSE",
+        target_table: "user_bonuses",
+        record_id: invoiceId,
+        reason: "bonus_reversed",
+        metadata: { bonus_ids: reversedBonuses, reversal_reason: reason || "Manual reversal", invoice_id: invoiceId }
       })
     } catch {}
 
