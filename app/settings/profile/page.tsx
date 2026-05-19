@@ -115,15 +115,20 @@ export default function ProfilePage() {
     
     setSaving(true)
     try {
+      // 🔐 If linked to employee, don't send display_name (managed by employee record)
+      const payload: Record<string, string> = {
+        username: profile.username,
+        phone: profile.phone,
+        bio: profile.bio,
+      }
+      if (!linkedEmployeeName) {
+        payload.display_name = profile.display_name
+      }
+
       const res = await fetch("/api/user-profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: profile.username,
-          display_name: profile.display_name,
-          phone: profile.phone,
-          bio: profile.bio
-        })
+        body: JSON.stringify(payload)
       })
       const data = await res.json()
       
