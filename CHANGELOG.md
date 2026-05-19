@@ -4,6 +4,56 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.2.0] - 2026-05-19
+
+### ✨ Added — إضافات (Phase 4-B: Per-Employee Bonus Configuration)
+
+- **Per-employee bonus configuration**: Each employee can now have their own bonus settings (type, percentage, fixed amount, points rate, daily/monthly caps, payout mode) that override the company defaults. Fields left empty inherit from the company-level config.
+- **بونص لكل موظف**: كل موظف يمكن أن يكون له إعدادات بونص خاصة به (النوع، النسبة، المبلغ الثابت، النقاط، الحدود اليومية والشهرية، وضع الدفع) تتجاوز إعدادات الشركة. الحقول الفارغة ترث من إعدادات الشركة العامة.
+- **Employee opt-out**: Setting `bonus_enabled=false` on a per-employee config excludes that specific salesperson from bonus calculation (e.g., for owners who don't take commissions) while still keeping the company-wide bonus system active for everyone else.
+- **New page** `/settings/employee-bonuses`: Table view of all employees with linked user accounts showing their current config status (Default / Custom / Suspended), with edit/reset actions per row.
+- **New API** `app/api/employee-bonus-configs/route.ts`:
+  - `GET` — list configs for current company (joined with employee details)
+  - `POST` — upsert a per-employee config
+  - `DELETE` — remove a config (revert to company default)
+- **Resolution order** in `POST /api/bonuses` (bonus calculation):
+  1. `employee_bonus_config` row for `creatorUserId` (must have `is_active=true`)
+  2. NULL fields in that row → fall back to `companies.bonus_*`
+  3. No active row → use company defaults entirely
+
+### 🔧 Fixed — إصلاحات
+
+- **Bonus audit log** (in `app/api/bonuses/route.ts`): The audit log insert was using wrong column names (`details` instead of `metadata`) and an invalid `action` value (`bonus_calculated` instead of one of the allowed CHECK constraint values). Fixed to use `action: 'INSERT'`, `target_table: 'user_bonuses'`, `reason: 'bonus_calculated'`, and `metadata` payload with attribution sources (`creator_source`, `config_source`).
+
+### 🗄️ Database — قاعدة البيانات
+
+- Migration `20260519000300_employee_bonus_config.sql`:
+  - New table `employee_bonus_config` (18 columns) with override fields for every bonus parameter on `companies`.
+  - Hybrid linkage: `user_id` (REQUIRED, for invoice attribution) + `employee_id` (OPTIONAL, for HR module).
+  - `UNIQUE (company_id, user_id)` — one config per user per company.
+  - RLS company isolation policy enabled.
+  - `updated_at` auto-maintained via trigger.
+  - Reversible (rollback SQL documented at end of migration).
+
+### 🗂️ Files Modified — ملفات معدَّلة
+
+| File | Change |
+|------|--------|
+| `supabase/migrations/20260519000300_employee_bonus_config.sql` | New — Migration |
+| `app/api/employee-bonus-configs/route.ts` | New — CRUD endpoints for per-employee configs |
+| `app/settings/employee-bonuses/page.tsx` | New — Management UI page |
+| `app/api/bonuses/route.ts` | Add per-employee override resolution; fix audit log columns/action |
+| `app/settings/page.tsx` | Add "Per-Employee Bonuses" link in the bonus settings card |
+| `CHANGELOG.md` | This entry |
+
+### 🛡️ Risk Assessment — تقييم المخاطر
+
+- **Additive only**: New table, new API, new page. Existing behavior preserved when no `employee_bonus_config` rows exist.
+- **Backward compatible**: All callers of `POST /api/bonuses` continue to work; just receive the more-correctly-attributed result.
+- **Production impact**: `commission_ledger` and `user_bonuses` are both empty in production at time of this change — no historical data affected.
+
+---
+
 ## [3.1.2] - 2026-05-19
 
 ### 🔧 Fixed (Critical) — إصلاحات حرجة (Phase 4-A)

@@ -2075,6 +2075,12 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <Link href="/settings/employee-bonuses">
+                  <Button variant="outline" size="sm" className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300">
+                    <Users2 className="w-4 h-4 mr-1" />
+                    {language === 'en' ? 'Per-Employee Bonuses' : 'بونصات الموظفين'}
+                  </Button>
+                </Link>
                 <Label htmlFor="bonus-enabled" className="text-sm text-gray-600 dark:text-gray-400">
                   {language === 'en' ? 'Enable' : 'تفعيل'}
                 </Label>

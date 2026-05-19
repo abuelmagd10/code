@@ -213,6 +213,49 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Bonus] Attributing invoice ${invoiceId} to user ${creatorUserId} (source: ${creatorSource})`)
 
+    // ============================================================================
+    // Per-Employee Bonus Configuration (Phase 4-B)
+    // ============================================================================
+    // Resolution order:
+    //   1. employee_bonus_config row for creatorUserId (must have is_active=true)
+    //   2. NULL fields in that row → fall back to companies.bonus_*
+    //   3. No active row → use company defaults entirely
+    //
+    // Note: company.bonus_enabled (checked above) is the MASTER GATE.
+    // Per-employee bonus_enabled=false can ADDITIONALLY exclude a specific
+    // salesperson (e.g. owners who don't take commissions).
+    const { data: empConfig } = await dbClient
+      .from("employee_bonus_config")
+      .select("bonus_enabled, bonus_type, bonus_percentage, bonus_fixed_amount, bonus_points_per_value, bonus_daily_cap, bonus_monthly_cap, bonus_payout_mode, is_active")
+      .eq("company_id", companyId)
+      .eq("user_id", creatorUserId)
+      .eq("is_active", true)
+      .maybeSingle()
+
+    // Per-employee opt-out check
+    if (empConfig && empConfig.bonus_enabled === false) {
+      return apiError(
+        HTTP_STATUS.BAD_REQUEST,
+        "البونص معطل لهذا الموظف",
+        "Bonus is disabled for this employee",
+        { disabled: true, source: 'employee_override', userId: creatorUserId }
+      )
+    }
+
+    // Build effective config — empConfig fields override company defaults when not NULL
+    const effective = {
+      bonus_type: empConfig?.bonus_type ?? company.bonus_type,
+      bonus_percentage: empConfig?.bonus_percentage ?? company.bonus_percentage,
+      bonus_fixed_amount: empConfig?.bonus_fixed_amount ?? company.bonus_fixed_amount,
+      bonus_points_per_value: empConfig?.bonus_points_per_value ?? company.bonus_points_per_value,
+      bonus_daily_cap: empConfig?.bonus_daily_cap ?? company.bonus_daily_cap,
+      bonus_monthly_cap: empConfig?.bonus_monthly_cap ?? company.bonus_monthly_cap,
+      bonus_payout_mode: empConfig?.bonus_payout_mode ?? company.bonus_payout_mode,
+    }
+
+    const configSource = empConfig ? 'employee_override' : 'company_default'
+    console.log(`[Bonus] Using config source: ${configSource} for user ${creatorUserId}`)
+
     // Check if bonus already exists for this invoice
     const { data: existingBonus } = await dbClient
       .from("user_bonuses")
@@ -231,23 +274,23 @@ export async function POST(req: NextRequest) {
     let bonusAmount = 0
     let calculationRate = 0
 
-    switch (company.bonus_type) {
+    switch (effective.bonus_type) {
       case "percentage":
-        calculationRate = Number(company.bonus_percentage || 0)
+        calculationRate = Number(effective.bonus_percentage || 0)
         bonusAmount = Math.round(invoiceTotal * (calculationRate / 100) * 100) / 100
         break
       case "fixed":
-        bonusAmount = Number(company.bonus_fixed_amount || 0)
+        bonusAmount = Number(effective.bonus_fixed_amount || 0)
         break
       case "points":
-        const pointsPerValue = Number(company.bonus_points_per_value || 100)
+        const pointsPerValue = Number(effective.bonus_points_per_value || 100)
         bonusAmount = Math.floor(invoiceTotal / pointsPerValue)
         calculationRate = pointsPerValue
         break
     }
 
-    // Apply monthly cap if set
-    if (company.bonus_monthly_cap && company.bonus_monthly_cap > 0) {
+    // Apply monthly cap if set (uses effective per-employee or company value)
+    if (effective.bonus_monthly_cap && effective.bonus_monthly_cap > 0) {
       const now = new Date()
       const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
       const { data: monthlyBonuses } = await dbClient
@@ -259,9 +302,9 @@ export async function POST(req: NextRequest) {
         .not("status", "in", '("reversed","cancelled")')
 
       const currentMonthTotal = (monthlyBonuses || []).reduce((sum, b) => sum + Number(b.bonus_amount || 0), 0)
-      const remaining = Number(company.bonus_monthly_cap) - currentMonthTotal
+      const remaining = Number(effective.bonus_monthly_cap) - currentMonthTotal
       if (remaining <= 0) {
-        return apiError(HTTP_STATUS.BAD_REQUEST, "تم الوصول للحد الأقصى الشهري للبونص", "Monthly bonus cap reached", { cap: company.bonus_monthly_cap, current: currentMonthTotal })
+        return apiError(HTTP_STATUS.BAD_REQUEST, "تم الوصول للحد الأقصى الشهري للبونص", "Monthly bonus cap reached", { cap: effective.bonus_monthly_cap, current: currentMonthTotal, source: configSource })
       }
       bonusAmount = Math.min(bonusAmount, remaining)
     }
@@ -285,12 +328,12 @@ export async function POST(req: NextRequest) {
         sales_order_id: invoice.sales_order_id || null,
         bonus_amount: bonusAmount,
         bonus_currency: invoice.currency || (company as any).base_currency || (company as any).currency || "EGP",
-        bonus_type: company.bonus_type,
+        bonus_type: effective.bonus_type,
         calculation_base: invoiceTotal,
         calculation_rate: calculationRate,
-        status: company.bonus_payout_mode === "immediate" ? "scheduled" : "pending",
+        status: effective.bonus_payout_mode === "immediate" ? "scheduled" : "pending",
         created_by: user.id,
-        note: `Bonus for invoice ${invoiceId}`
+        note: `Bonus for invoice ${invoiceId} (config: ${configSource})`
       })
       .select()
       .single()
@@ -299,13 +342,23 @@ export async function POST(req: NextRequest) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إنشاء البونص", insertErr.message)
     }
 
-    // Log to audit
+    // Log to audit (schema-aware: action must be in CHECK list; metadata replaces 'details')
     try {
       await dbClient.from("audit_logs").insert({
-        action: "bonus_calculated",
         company_id: companyId,
         user_id: user.id,
-        details: { invoice_id: invoiceId, bonus_amount: bonusAmount, beneficiary_user_id: creatorUserId }
+        action: "INSERT",
+        target_table: "user_bonuses",
+        record_id: bonus?.id,
+        reason: "bonus_calculated",
+        metadata: {
+          invoice_id: invoiceId,
+          sales_order_id: invoice.sales_order_id,
+          bonus_amount: bonusAmount,
+          beneficiary_user_id: creatorUserId,
+          creator_source: creatorSource,
+          config_source: configSource
+        }
       })
     } catch {}
 
