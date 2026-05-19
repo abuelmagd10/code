@@ -243,7 +243,7 @@ export default function DispatchApprovalsPage() {
         .from('invoices')
         .select(`
           id, invoice_number, invoice_date, total_amount, warehouse_status,
-          warehouse_rejection_reason, warehouse_rejected_at, warehouse_approved_by,
+          warehouse_rejection_reason, warehouse_rejected_at, approved_by,
           customers (name),
           shipping_providers (provider_name),
           branches (name),
@@ -254,19 +254,19 @@ export default function DispatchApprovalsPage() {
         .in('warehouse_status', ['approved', 'rejected'])
         .order('updated_at', { ascending: false })
 
-      // Resolve approver names
+      // Resolve approver names (same pattern as goods-receipt page)
       const approverIds = (invData || [])
-        .map((inv: any) => inv.warehouse_approved_by)
+        .map((inv: any) => inv.approved_by)
         .filter(Boolean)
       let approverMap: Record<string, string> = {}
       if (approverIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, username, full_name')
-          .in('id', [...new Set(approverIds)])
-        if (profiles) {
-          for (const p of profiles) {
-            approverMap[p.id] = p.full_name || p.username || p.id
+        const { data: usersData } = await supabase
+          .from('user_profiles')
+          .select('user_id, display_name, username')
+          .in('user_id', [...new Set(approverIds)])
+        if (usersData) {
+          for (const u of usersData) {
+            approverMap[u.user_id] = u.display_name || u.username || u.user_id
           }
         }
       }
@@ -284,7 +284,7 @@ export default function DispatchApprovalsPage() {
         shippingProvider: inv.shipping_providers?.provider_name || "-",
         status: inv.warehouse_status,
         reason: inv.warehouse_rejection_reason || undefined,
-        decidedBy: inv.warehouse_approved_by ? (approverMap[inv.warehouse_approved_by] || inv.warehouse_approved_by) : undefined,
+        decidedBy: inv.approved_by ? (approverMap[inv.approved_by] || inv.approved_by) : undefined,
         amount: inv.total_amount,
         items: (inv.invoice_items || []).map((item: any) => ({
           product_name: item.products?.name || "-",
