@@ -956,9 +956,8 @@ export default function UsersSettingsPage() {
 
       toastActionSuccess(toast, "ربط", selectedEmployeeId ? "العضو بالموظف" : "إلغاء الربط")
       setShowLinkEmployeeDialog(false)
-      // Notify sidebar and other components to refresh display_name
+      // Notify sidebar to refresh display_name only
       window.dispatchEvent(new Event('profile_updated'))
-      window.dispatchEvent(new Event('user_context_changed'))
     } catch (err: any) {
       toastActionError(toast, "ربط", "العضو بالموظف", err.message)
     } finally {
@@ -1791,9 +1790,8 @@ export default function UsersSettingsPage() {
                       ))
                       toastActionSuccess(toast, "ربط", resolvedId ? "العضو بالموظف" : "إلغاء الربط")
                       setShowLinkEmployeeDialog(false)
-                      // Notify sidebar and other components to refresh display_name
+                      // Notify sidebar to refresh display_name only
                       window.dispatchEvent(new Event('profile_updated'))
-                      window.dispatchEvent(new Event('user_context_changed'))
                     })
                     .catch((err: any) => toastActionError(toast, "ربط", "العضو بالموظف", err.message))
                     .finally(() => setLinkingEmployee(false))
