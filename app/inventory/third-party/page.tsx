@@ -627,7 +627,8 @@ export default function ThirdPartyInventoryPage() {
           tracking_type, payment_status, delivery_status,
           notes, created_at, updated_at,
           products (name, sku, product_type),
-          invoices!inner (invoice_number, invoice_date, total_amount, status,
+          invoices!inner (invoice_number, invoice_date, total_amount, original_total,
+            status, paid_amount, returned_amount, return_status, warehouse_status,
             customers (name),
             branches (name),
             warehouses (name),
@@ -1289,6 +1290,44 @@ export default function ThirdPartyInventoryPage() {
                       <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                         {logItems.map((row) => {
                           const availQty = Number(row.quantity) - Number(row.cleared_quantity) - Number(row.returned_quantity)
+
+                          // ✅ Compute real payment status from invoice data (not stale column)
+                          const paidAmount = Number(row.invoices?.paid_amount || 0)
+                          const returnedAmount = Number(row.invoices?.returned_amount || 0)
+                          const originalTotal = Number(row.invoices?.original_total || row.invoices?.total_amount || 0)
+                          const isFullyReturned = returnedAmount >= originalTotal && originalTotal > 0
+                          let computedPaymentStatus: string
+                          if (isFullyReturned) {
+                            computedPaymentStatus = 'fully_returned'
+                          } else if (paidAmount >= originalTotal && originalTotal > 0) {
+                            computedPaymentStatus = 'paid'
+                          } else if (paidAmount > 0) {
+                            computedPaymentStatus = 'partially_paid'
+                          } else {
+                            computedPaymentStatus = 'unpaid'
+                          }
+
+                          // ✅ Compute real delivery status from quantities + invoice warehouse_status
+                          const qty = Number(row.quantity)
+                          const cleared = Number(row.cleared_quantity)
+                          const returned = Number(row.returned_quantity)
+                          let computedDeliveryStatus: string
+                          if (returned >= qty && qty > 0) {
+                            computedDeliveryStatus = 'returned'
+                          } else if (cleared >= qty && qty > 0) {
+                            computedDeliveryStatus = 'delivered'
+                          } else if (cleared > 0 && cleared < qty) {
+                            computedDeliveryStatus = 'partially_delivered'
+                          } else if (row.invoices?.warehouse_status === 'approved') {
+                            computedDeliveryStatus = 'dispatched'
+                          } else if (row.invoices?.status === 'sent' || row.invoices?.status === 'confirmed') {
+                            computedDeliveryStatus = 'in_transit'
+                          } else {
+                            computedDeliveryStatus = 'pending'
+                          }
+
+                          const hasPartialReturn = returnedAmount > 0 && returnedAmount < originalTotal
+
                           return (
                             <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/60">
                               <td className="px-3 py-2 font-medium text-blue-600 dark:text-blue-400">
@@ -1361,31 +1400,46 @@ export default function ThirdPartyInventoryPage() {
                               </td>
                               <td className="px-3 py-2 text-center">
                                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
-                                  row.delivery_status === "delivered" || row.delivery_status === "with_customer"
+                                  computedDeliveryStatus === "delivered"
                                     ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                                    : row.delivery_status === "returned"
+                                    : computedDeliveryStatus === "returned"
                                       ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-                                      : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                      : computedDeliveryStatus === "dispatched"
+                                        ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+                                        : computedDeliveryStatus === "partially_delivered"
+                                          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                          : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
                                 }`}>
-                                  {row.delivery_status === "with_customer" ? (isAr ? "لدى العميل" : "With Customer")
-                                    : row.delivery_status === "delivered" ? (isAr ? "تم التسليم" : "Delivered")
-                                    : row.delivery_status === "returned" ? (isAr ? "مرتجع" : "Returned")
-                                    : row.delivery_status === "in_transit" ? (isAr ? "في الطريق" : "In Transit")
-                                    : row.delivery_status || (isAr ? "مفتوح" : "Open")}
+                                  {computedDeliveryStatus === "delivered" ? (isAr ? "تم التسليم" : "Delivered")
+                                    : computedDeliveryStatus === "returned" ? (isAr ? "مرتجع" : "Returned")
+                                    : computedDeliveryStatus === "dispatched" ? (isAr ? "تم الإرسال" : "Dispatched")
+                                    : computedDeliveryStatus === "partially_delivered" ? (isAr ? "تسليم جزئي" : "Partial Delivery")
+                                    : computedDeliveryStatus === "in_transit" ? (isAr ? "في الطريق" : "In Transit")
+                                    : (isAr ? "قيد الانتظار" : "Pending")}
                                 </span>
                               </td>
                               <td className="px-3 py-2 text-center">
-                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
-                                  row.payment_status === "paid"
-                                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                                    : row.payment_status === "partially_paid"
-                                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                                      : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                                }`}>
-                                  {row.payment_status === "paid" ? (isAr ? "مدفوع" : "Paid")
-                                    : row.payment_status === "partially_paid" ? (isAr ? "مدفوع جزئياً" : "Partial")
-                                    : (isAr ? "غير مدفوع" : "Unpaid")}
-                                </span>
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
+                                    computedPaymentStatus === "paid"
+                                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                                      : computedPaymentStatus === "partially_paid"
+                                        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                        : computedPaymentStatus === "fully_returned"
+                                          ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                                          : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                                  }`}>
+                                    {computedPaymentStatus === "paid" ? (isAr ? "مدفوع" : "Paid")
+                                      : computedPaymentStatus === "partially_paid" ? (isAr ? "مدفوع جزئياً" : "Partial")
+                                      : computedPaymentStatus === "fully_returned" ? (isAr ? "مرتجع بالكامل" : "Fully Returned")
+                                      : (isAr ? "غير مدفوع" : "Unpaid")}
+                                  </span>
+                                  {hasPartialReturn && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+                                      {isAr ? "مرتجع جزئي" : "Partial Return"}
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           )
