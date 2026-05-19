@@ -438,6 +438,81 @@ export async function createFXGainLossEntry(
   }
 }
 
+// ========================================
+// FX Account Configuration
+// ========================================
+
+/**
+ * Get the configured FX Gain/Loss account IDs for a company.
+ *
+ * Resolution order:
+ *   1. companies.fx_gain_account_id / fx_loss_account_id (if configured)
+ *   2. Default accounts by code: 4320 (FX Gains) / 5310 (FX Losses)
+ *   3. Throw FX_ACCOUNTS_NOT_CONFIGURED error
+ *
+ * The try/catch around the companies query ensures the code works even if
+ * the migration adding fx_gain_account_id/fx_loss_account_id has not been
+ * applied yet (columns don't exist → query fails → fall through to defaults).
+ */
+export async function getFXAccounts(
+  supabase: SupabaseClient,
+  companyId: string
+): Promise<{ gainId: string; lossId: string }> {
+  let configuredGainId: string | null = null
+  let configuredLossId: string | null = null
+
+  // Step 1: Try reading company-level configuration
+  try {
+    const { data, error } = await supabase
+      .from('companies')
+      .select('fx_gain_account_id, fx_loss_account_id')
+      .eq('id', companyId)
+      .single()
+
+    if (data && !error) {
+      configuredGainId = data.fx_gain_account_id
+      configuredLossId = data.fx_loss_account_id
+    }
+  } catch {
+    // Columns may not exist yet (migration not applied) — fall through to defaults
+    console.warn('[getFXAccounts] FX configuration columns not available, using defaults')
+  }
+
+  // If both are configured, return them directly
+  if (configuredGainId && configuredLossId) {
+    return { gainId: configuredGainId, lossId: configuredLossId }
+  }
+
+  // Step 2: Fall back to default account codes 4320 / 5310
+  const codesToFind: string[] = []
+  if (!configuredGainId) codesToFind.push('4320')
+  if (!configuredLossId) codesToFind.push('5310')
+
+  const { data: defaultAccounts } = await supabase
+    .from('chart_of_accounts')
+    .select('id, account_code')
+    .eq('company_id', companyId)
+    .in('account_code', codesToFind)
+
+  const gain4320 = defaultAccounts?.find(a => a.account_code === '4320')
+  const loss5310 = defaultAccounts?.find(a => a.account_code === '5310')
+
+  const gainId = configuredGainId || gain4320?.id
+  const lossId = configuredLossId || loss5310?.id
+
+  if (!gainId || !lossId) {
+    const missing: string[] = []
+    if (!gainId) missing.push('4320 (أرباح فروق العملة)')
+    if (!lossId) missing.push('5310 (خسائر فروق العملة)')
+    throw new Error(
+      `FX_ACCOUNTS_NOT_CONFIGURED: حسابات فروق العملة غير موجودة: ${missing.join(' و ')}. ` +
+      'يرجى تشغيل Migration 20260519000200 أو تهيئة الحسابات يدوياً من الإعدادات.'
+    )
+  }
+
+  return { gainId, lossId }
+}
+
 /**
  * Manual rate override with audit trail
  */
@@ -535,35 +610,18 @@ export async function performCurrencyRevaluation(
     let totalGain = 0
     let totalLoss = 0
 
-    // Get FX accounts for gain/loss
-    const { data: fxAccounts } = await supabase
-      .from('chart_of_accounts')
-      .select('id, account_code, account_name')
-      .eq('company_id', companyId)
-      .in('account_code', ['4200', '5200', '7100', '8100']) // Common FX gain/loss codes
-      .limit(4)
-
-    // Find or use default FX accounts
-    let fxGainAccountId = fxAccounts?.find(a =>
-      a.account_code === '4200' || a.account_name?.includes('أرباح') || a.account_name?.includes('Gain')
-    )?.id
-    let fxLossAccountId = fxAccounts?.find(a =>
-      a.account_code === '5200' || a.account_name?.includes('خسائر') || a.account_name?.includes('Loss')
-    )?.id
-
-    // If no FX accounts found, create them
-    if (!fxGainAccountId || !fxLossAccountId) {
-      const { data: newAccounts } = await createFXAccountsIfNeeded(supabase, companyId)
-      if (newAccounts) {
-        fxGainAccountId = fxGainAccountId || newAccounts.gainAccountId
-        fxLossAccountId = fxLossAccountId || newAccounts.lossAccountId
-      }
-    }
-
-    if (!fxGainAccountId || !fxLossAccountId) {
+    // Get FX accounts (configured or default 4320/5310)
+    let fxGainAccountId: string
+    let fxLossAccountId: string
+    try {
+      const fxAccounts = await getFXAccounts(supabase, companyId)
+      fxGainAccountId = fxAccounts.gainId
+      fxLossAccountId = fxAccounts.lossId
+    } catch (fxErr: unknown) {
+      const fxMessage = fxErr instanceof Error ? fxErr.message : 'FX accounts not found'
       return {
         success: false,
-        error: 'Could not find or create FX gain/loss accounts',
+        error: fxMessage,
         totalGain: 0,
         totalLoss: 0,
         revaluedAccounts: 0
@@ -749,63 +807,20 @@ export async function performCurrencyRevaluation(
 }
 
 /**
- * Create FX Gain/Loss accounts if they don't exist
+ * Look up FX Gain/Loss accounts by default codes (4320/5310).
+ *
+ * @deprecated Use getFXAccounts() instead — it checks company configuration first.
+ * Kept for backward compatibility; internally delegates to getFXAccounts().
  */
 async function createFXAccountsIfNeeded(
   supabase: SupabaseClient,
   companyId: string
 ): Promise<{ data: { gainAccountId: string; lossAccountId: string } | null }> {
   try {
-    // Check if accounts exist
-    const { data: existing } = await supabase
-      .from('chart_of_accounts')
-      .select('id, account_code')
-      .eq('company_id', companyId)
-      .in('account_code', ['4200', '5200'])
-
-    let gainAccountId = existing?.find(a => a.account_code === '4200')?.id
-    let lossAccountId = existing?.find(a => a.account_code === '5200')?.id
-
-    // Create gain account if needed
-    if (!gainAccountId) {
-      const { data: gainAccount } = await supabase
-        .from('chart_of_accounts')
-        .insert({
-          company_id: companyId,
-          account_code: '4200',
-          account_name: 'أرباح فروق صرف العملات',
-          account_name_en: 'Foreign Exchange Gains',
-          account_type: 'revenue',
-          is_active: true
-        })
-        .select()
-        .single()
-      gainAccountId = gainAccount?.id
-    }
-
-    // Create loss account if needed
-    if (!lossAccountId) {
-      const { data: lossAccount } = await supabase
-        .from('chart_of_accounts')
-        .insert({
-          company_id: companyId,
-          account_code: '5200',
-          account_name: 'خسائر فروق صرف العملات',
-          account_name_en: 'Foreign Exchange Losses',
-          account_type: 'expense',
-          is_active: true
-        })
-        .select()
-        .single()
-      lossAccountId = lossAccount?.id
-    }
-
-    if (gainAccountId && lossAccountId) {
-      return { data: { gainAccountId, lossAccountId } }
-    }
-    return { data: null }
+    const { gainId, lossId } = await getFXAccounts(supabase, companyId)
+    return { data: { gainAccountId: gainId, lossAccountId: lossId } }
   } catch (err) {
-    console.error('Error creating FX accounts:', err)
+    console.error('Error finding FX accounts:', err)
     return { data: null }
   }
 }

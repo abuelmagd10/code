@@ -5,6 +5,20 @@
 
 import { SupabaseClient } from '@supabase/supabase-js'
 
+// Custom error for exchange rate failures
+export class ExchangeRateError extends Error {
+  constructor(
+    public code: 'RATE_TOO_OLD' | 'NO_RATE_AVAILABLE' | 'API_FAILED',
+    message: string,
+    public staleRate?: number,
+    public rateDate?: string,
+    public daysOld?: number
+  ) {
+    super(message)
+    this.name = 'ExchangeRateError'
+  }
+}
+
 // Currency definitions with symbols and names
 export const CURRENCIES: Record<string, { symbol: string; nameEn: string; nameAr: string; decimals: number }> = {
   EGP: { symbol: '£', nameEn: 'Egyptian Pound', nameAr: 'الجنيه المصري', decimals: 2 },
@@ -111,6 +125,10 @@ export async function getExchangeRate(
     .maybeSingle()
 
   if (dbRate?.rate) {
+    // TODO: The normal path does not check staleness — it returns any rate with
+    // rate_date <= targetDate regardless of age. The stale-rate check below only
+    // guards the "no rate + API failure" path. Consider adding an optional
+    // staleness warning here for rates older than N days.
     return Number(dbRate.rate)
   }
 
@@ -138,7 +156,62 @@ export async function getExchangeRate(
     return apiRate
   }
 
-  return 1 // Default to 1 if all else fails
+  // API failed — try stale rate (any date, no upper bound)
+  const { data: staleDirect } = await supabase
+    .from('exchange_rates')
+    .select('rate, rate_date')
+    .eq('company_id', companyId)
+    .eq('from_currency', fromCurrency)
+    .eq('to_currency', toCurrency)
+    .order('rate_date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const staleRecord = staleDirect
+    || await (async () => {
+      const { data: staleReverse } = await supabase
+        .from('exchange_rates')
+        .select('rate, rate_date')
+        .eq('company_id', companyId)
+        .eq('from_currency', toCurrency)
+        .eq('to_currency', fromCurrency)
+        .order('rate_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (staleReverse?.rate) {
+        return { rate: 1 / Number(staleReverse.rate), rate_date: staleReverse.rate_date }
+      }
+      return null
+    })()
+
+  if (staleRecord?.rate) {
+    const daysOld = Math.floor(
+      (new Date(targetDate).getTime() - new Date(staleRecord.rate_date).getTime()) / (1000 * 60 * 60 * 24)
+    )
+
+    if (daysOld <= 7) {
+      console.warn(
+        `[exchange-rates] stale_rate_used: ${fromCurrency}→${toCurrency} rate=${staleRecord.rate} ` +
+        `from ${staleRecord.rate_date} (${daysOld} days old)`
+      )
+      return Number(staleRecord.rate)
+    }
+
+    // Rate too old — let the caller decide
+    throw new ExchangeRateError(
+      'RATE_TOO_OLD',
+      `سعر الصرف ${fromCurrency}→${toCurrency} قديم (${daysOld} يوم). آخر سعر معروف: ${staleRecord.rate} بتاريخ ${staleRecord.rate_date}`,
+      Number(staleRecord.rate),
+      staleRecord.rate_date,
+      daysOld
+    )
+  }
+
+  // No rate exists at all
+  throw new ExchangeRateError(
+    'NO_RATE_AVAILABLE',
+    `لا يوجد سعر صرف لـ ${fromCurrency}→${toCurrency}. يرجى إدخال السعر يدوياً من إعدادات أسعار الصرف.`
+  )
 }
 
 // Save exchange rate to database (insert; duplicate same-day rate is ignored to avoid 400 from upsert constraint mismatch)

@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import { ExchangeRateError } from './exchange-rates'
 
 export interface ConversionResult {
   originalAmount: number
@@ -87,10 +88,67 @@ export async function getExchangeRate(
   try {
     const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${fromCurrency}`)
     const json = await res.json()
-    return json.rates?.[toCurrency] || 1
+    const apiRate = json.rates?.[toCurrency]
+    if (apiRate) return apiRate
   } catch {
-    return 1
+    // API failed — fall through to stale rate check
   }
+
+  // API failed — try stale rate from DB (any date, no upper bound)
+  const { data: staleDirect } = await supabase
+    .from('exchange_rates')
+    .select('rate, rate_date')
+    .eq('company_id', companyId)
+    .eq('from_currency', fromCurrency)
+    .eq('to_currency', toCurrency)
+    .order('rate_date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const staleRecord = staleDirect
+    || await (async () => {
+      const { data: staleReverse } = await supabase
+        .from('exchange_rates')
+        .select('rate, rate_date')
+        .eq('company_id', companyId)
+        .eq('from_currency', toCurrency)
+        .eq('to_currency', fromCurrency)
+        .order('rate_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (staleReverse?.rate) {
+        return { rate: 1 / Number(staleReverse.rate), rate_date: staleReverse.rate_date }
+      }
+      return null
+    })()
+
+  if (staleRecord?.rate) {
+    const today = new Date().toISOString().slice(0, 10)
+    const daysOld = Math.floor(
+      (new Date(today).getTime() - new Date(staleRecord.rate_date).getTime()) / (1000 * 60 * 60 * 24)
+    )
+
+    if (daysOld <= 7) {
+      console.warn(
+        `[currency-converter] stale_rate_used: ${fromCurrency}→${toCurrency} ` +
+        `rate=${staleRecord.rate} from ${staleRecord.rate_date} (${daysOld} days old)`
+      )
+      return Number(staleRecord.rate)
+    }
+
+    throw new ExchangeRateError(
+      'RATE_TOO_OLD',
+      `سعر الصرف ${fromCurrency}→${toCurrency} قديم (${daysOld} يوم). آخر سعر معروف: ${staleRecord.rate} بتاريخ ${staleRecord.rate_date}`,
+      Number(staleRecord.rate),
+      staleRecord.rate_date,
+      daysOld
+    )
+  }
+
+  throw new ExchangeRateError(
+    'NO_RATE_AVAILABLE',
+    `لا يوجد سعر صرف لـ ${fromCurrency}→${toCurrency}. يرجى إدخال السعر يدوياً من إعدادات أسعار الصرف.`
+  )
 }
 
 /**

@@ -20,7 +20,8 @@ import { getActiveCompanyId } from "@/lib/company"
 import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Save, History, Download, UploadCloud, Database, FileJson, CheckCircle2, AlertCircle, Loader2, HardDrive, RefreshCcw, Calendar, FileText, Package, ShoppingCart, Truck, CreditCard, BookOpen, Users2, Coins, Eye, Bot } from "lucide-react"
 import { type AISettings, DEFAULT_AI_SETTINGS, fetchAISettings, saveAISettings } from "@/lib/page-guides"
 import { Progress } from "@/components/ui/progress"
-import { getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getActiveCurrencies, getFXAccounts, type Currency } from "@/lib/currency-service"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 
 // Professional currency list with symbols and flags (fallback)
 const FALLBACK_CURRENCIES = [
@@ -80,6 +81,14 @@ export default function SettingsPage() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'editor' | 'viewer'>('viewer') // Track user role
   const [isCompanyOwner, setIsCompanyOwner] = useState<boolean>(false) // Is user the company owner?
+  // FX Account Configuration states
+  const [fxGainAccountId, setFxGainAccountId] = useState<string | null>(null)
+  const [fxLossAccountId, setFxLossAccountId] = useState<string | null>(null)
+  const [fxIncomeAccounts, setFxIncomeAccounts] = useState<Array<{ id: string; code: string; name: string }>>([])
+  const [fxExpenseAccounts, setFxExpenseAccounts] = useState<Array<{ id: string; code: string; name: string }>>([])
+  const [savingFX, setSavingFX] = useState(false)
+  const [fxColumnsAvailable, setFxColumnsAvailable] = useState(true)
+
   const darkEnabled = resolvedTheme === "dark"
   const texts = {
     ar: {
@@ -184,6 +193,58 @@ export default function SettingsPage() {
       }
     }
     loadCurrencies()
+  }, [supabase, companyId])
+
+  // Load FX account configuration
+  useEffect(() => {
+    const loadFXConfig = async () => {
+      if (!supabase || !companyId) return
+      try {
+        // Step 1: Try reading FX config from companies table
+        try {
+          const { data, error } = await supabase
+            .from('companies')
+            .select('fx_gain_account_id, fx_loss_account_id')
+            .eq('id', companyId)
+            .single()
+          if (data && !error) {
+            setFxGainAccountId(data.fx_gain_account_id)
+            setFxLossAccountId(data.fx_loss_account_id)
+            setFxColumnsAvailable(true)
+          }
+        } catch {
+          // Columns don't exist yet (migration not applied)
+          setFxColumnsAvailable(false)
+        }
+
+        // Step 2: Load accounts for dropdowns
+        const { data: incomeAccts } = await supabase
+          .from('chart_of_accounts')
+          .select('id, account_code, account_name')
+          .eq('company_id', companyId)
+          .eq('account_type', 'income')
+          .eq('is_active', true)
+          .order('account_code')
+
+        const { data: expenseAccts } = await supabase
+          .from('chart_of_accounts')
+          .select('id, account_code, account_name')
+          .eq('company_id', companyId)
+          .eq('account_type', 'expense')
+          .eq('is_active', true)
+          .order('account_code')
+
+        setFxIncomeAccounts((incomeAccts || []).map((a: any) => ({
+          id: a.id, code: a.account_code, name: a.account_name
+        })))
+        setFxExpenseAccounts((expenseAccts || []).map((a: any) => ({
+          id: a.id, code: a.account_code, name: a.account_name
+        })))
+      } catch (err) {
+        console.error('[Settings] Error loading FX config:', err)
+      }
+    }
+    loadFXConfig()
   }, [supabase, companyId])
 
   // Bonus settings states
@@ -755,6 +816,68 @@ export default function SettingsPage() {
     } finally {
       setSavingBonus(false)
     }
+  }
+
+  // Save FX account configuration
+  const handleSaveFXAccounts = async () => {
+    if (!isCompanyOwner || !companyId || !userId) return
+
+    setSavingFX(true)
+    try {
+      // Capture previous values for audit log
+      let prevGain: string | null = null
+      let prevLoss: string | null = null
+      try {
+        const { data: prevData } = await supabase
+          .from('companies')
+          .select('fx_gain_account_id, fx_loss_account_id')
+          .eq('id', companyId)
+          .single()
+        if (prevData) {
+          prevGain = prevData.fx_gain_account_id
+          prevLoss = prevData.fx_loss_account_id
+        }
+      } catch { /* columns may not exist */ }
+
+      const { error: updateError } = await supabase
+        .from('companies')
+        .update({
+          fx_gain_account_id: fxGainAccountId,
+          fx_loss_account_id: fxLossAccountId
+        })
+        .eq('id', companyId)
+
+      if (updateError) throw updateError
+
+      // Audit log (best-effort)
+      try {
+        await supabase.from('audit_logs').insert({
+          company_id: companyId,
+          user_id: userId,
+          action: 'fx_accounts_configured',
+          table_name: 'companies',
+          record_id: companyId,
+          new_values: { fx_gain_account_id: fxGainAccountId, fx_loss_account_id: fxLossAccountId },
+          old_values: { fx_gain_account_id: prevGain, fx_loss_account_id: prevLoss }
+        })
+      } catch { /* Don't fail if audit log fails */ }
+
+      toastActionSuccess(toast, language === 'en' ? 'Save' : 'حفظ', language === 'en' ? 'FX Account Settings' : 'إعدادات حسابات فروق العملة')
+    } catch (err) {
+      console.error('[Settings] Error saving FX accounts:', err)
+      toastActionError(toast, language === 'en' ? 'Save' : 'حفظ', language === 'en' ? 'FX Account Settings' : 'إعدادات حسابات فروق العملة',
+        err instanceof Error ? err.message : undefined)
+    } finally {
+      setSavingFX(false)
+    }
+  }
+
+  // Reset FX accounts to defaults (state only — user must press Save to apply)
+  const handleResetFX = () => {
+    if (!isCompanyOwner) return
+    setFxGainAccountId(null)
+    setFxLossAccountId(null)
+    toastActionSuccess(toast, language === 'en' ? 'Reset' : 'إعادة تعيين', language === 'en' ? 'FX Accounts' : 'حسابات فروق العملة')
   }
 
   const handleSave = async () => {
@@ -1753,6 +1876,136 @@ export default function SettingsPage() {
                   {language === 'en' ? 'Manage Exchange Rates' : 'إدارة أسعار الصرف'}
                   <ChevronRight className="w-4 h-4" />
                 </Link>
+
+                {/* ─── FX Account Configuration ─────────────────────── */}
+                <div className="mt-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Coins className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                      <h3 className="font-semibold text-emerald-800 dark:text-emerald-200">
+                        {language === 'en' ? 'FX Account Configuration' : 'إعدادات حسابات فروق العملة'}
+                      </h3>
+                    </div>
+                    {!isCompanyOwner && (
+                      <Badge variant="outline" className="text-xs bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
+                        <Eye className="w-3 h-3 mr-1" />
+                        {language === 'en' ? 'View only' : 'عرض فقط'}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {!fxColumnsAvailable && (
+                    <div className="rounded-md bg-yellow-50 dark:bg-yellow-900/20 p-3 text-sm text-yellow-800 dark:text-yellow-200 border border-yellow-200 dark:border-yellow-800">
+                      <AlertCircle className="w-4 h-4 inline mr-1" />
+                      {language === 'en'
+                        ? 'Migration 20260519000200 must be applied first to enable this feature.'
+                        : 'يلزم تطبيق Migration 20260519000200 أولاً لتفعيل هذه الميزة.'}
+                    </div>
+                  )}
+
+                  <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 p-3 text-xs text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                    {language === 'en'
+                      ? 'Changing these accounts affects only future entries. Existing entries remain linked to the previous account.'
+                      : 'تنبيه: تغيير هذه الحسابات سيؤثر فقط على القيود المستقبلية. القيود السابقة ستبقى مرتبطة بالحساب السابق.'}
+                  </div>
+
+                  {/* FX Gain Account */}
+                  <div className="space-y-1">
+                    <Label className="text-gray-600 dark:text-gray-400 text-sm">
+                      {language === 'en' ? 'FX Gains Account' : 'حساب أرباح فروق العملة'}
+                    </Label>
+                    <Select
+                      value={fxGainAccountId || ''}
+                      onValueChange={(v) => setFxGainAccountId(v || null)}
+                      disabled={!isCompanyOwner || savingFX || !fxColumnsAvailable}
+                    >
+                      <SelectTrigger className="w-full bg-white dark:bg-slate-800">
+                        <SelectValue placeholder={language === 'en'
+                          ? 'Default: 4320 - FX Gains'
+                          : 'افتراضي: 4320 - أرباح فروق العملة'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {fxIncomeAccounts.map(a => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.code} - {a.name}
+                            {a.code === '4320' && !fxGainAccountId && (
+                              <span className="text-xs text-muted-foreground mr-2"> ({language === 'en' ? 'default' : 'افتراضي'})</span>
+                            )}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* FX Loss Account */}
+                  <div className="space-y-1">
+                    <Label className="text-gray-600 dark:text-gray-400 text-sm">
+                      {language === 'en' ? 'FX Losses Account' : 'حساب خسائر فروق العملة'}
+                    </Label>
+                    <Select
+                      value={fxLossAccountId || ''}
+                      onValueChange={(v) => setFxLossAccountId(v || null)}
+                      disabled={!isCompanyOwner || savingFX || !fxColumnsAvailable}
+                    >
+                      <SelectTrigger className="w-full bg-white dark:bg-slate-800">
+                        <SelectValue placeholder={language === 'en'
+                          ? 'Default: 5310 - FX Losses'
+                          : 'افتراضي: 5310 - خسائر فروق العملة'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {fxExpenseAccounts.map(a => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.code} - {a.name}
+                            {a.code === '5310' && !fxLossAccountId && (
+                              <span className="text-xs text-muted-foreground mr-2"> ({language === 'en' ? 'default' : 'افتراضي'})</span>
+                            )}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      onClick={handleSaveFXAccounts}
+                      disabled={!isCompanyOwner || savingFX || !fxColumnsAvailable}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      <Save className="w-4 h-4 mr-1" />
+                      {savingFX
+                        ? (language === 'en' ? 'Saving...' : 'جاري الحفظ...')
+                        : (language === 'en' ? 'Save Configuration' : 'حفظ التهيئة')}
+                    </Button>
+
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="outline" size="sm" disabled={!isCompanyOwner || savingFX}>
+                          {language === 'en' ? 'Reset to Defaults' : 'إعادة تعيين للافتراضي'}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            {language === 'en' ? 'Confirm Reset' : 'تأكيد إعادة التعيين'}
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {language === 'en'
+                              ? 'FX accounts will be reset to defaults (4320/5310). Press "Save Configuration" to apply.'
+                              : 'سيتم إعادة حسابات فروق العملة إلى الافتراضي (4320/5310). اضغط "حفظ التهيئة" للتطبيق.'}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>{language === 'en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleResetFX}>
+                            {language === 'en' ? 'Confirm' : 'تأكيد'}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">

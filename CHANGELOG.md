@@ -4,6 +4,59 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.1.0] - 2026-05-19
+
+### 🔧 Fixed (Critical) — إصلاحات حرجة
+
+- **Multi-currency accounting**: Corrected FX gain/loss accounts from incorrectly hardcoded 4200/5200 (which were Service Revenue and Operating Expenses) to 4320/5310. Production impact: zero (no FX entries existed in production at time of fix).
+- **محاسبة تعدد العملات**: تم تصحيح حسابات أرباح/خسائر فروق العملة من 4200/5200 الخاطئة (التي كانت إيرادات الخدمات والمصروفات التشغيلية) إلى 4320/5310 الصحيحة. التأثير على الإنتاج: صفر (لم تكن توجد قيود FX في الإنتاج وقت الإصلاح).
+- **Exchange rate fallback**: Replaced silent `return 1` fallback (which would post transactions with rate=1 on API failure) with proper error handling and stale-rate detection (7-day window) across 3 currency modules.
+- **معالجة سعر الصرف**: استبدال آلية `return 1` الصامتة (التي كانت ستسجّل المعاملات بسعر = 1 عند فشل API) بمعالجة أخطاء سليمة واكتشاف الأسعار القديمة (نافذة 7 أيام) عبر 3 وحدات.
+
+### ✨ Added — إضافات
+
+- **Account 4320 (FX Gains)** auto-created for all 47 existing companies via Migration `20260519000200`.
+- **حساب 4320 (أرباح فروق العملة)** أُنشئ تلقائياً لجميع الشركات الـ 47 الموجودة عبر Migration `20260519000200`.
+- **Configurable FX accounts**: Companies can now select custom FX gain/loss accounts via Settings page (`/settings`). Defaults to 4320/5310 if not configured.
+- **حسابات FX قابلة للتهيئة**: الشركات يمكنها اختيار حسابات FX مخصصة عبر صفحة الإعدادات. الافتراضي 4320/5310 إن لم تُهيَّأ.
+- **ExchangeRateError class** with typed error codes (`RATE_TOO_OLD`, `NO_RATE_AVAILABLE`, `API_FAILED`) for proper UI error handling.
+- **كلاس ExchangeRateError** مع رموز أخطاء مُحدَّدة لمعالجة سليمة في الـ UI.
+- **Audit trail**: FX account configuration changes are now logged in `audit_logs` table.
+- **مسار التدقيق**: تغييرات تهيئة حسابات FX تُسجَّل الآن في جدول `audit_logs`.
+
+### 🗄️ Database — قاعدة البيانات
+
+- Migration `20260519000200_fx_account_configuration.sql`:
+  - Adds `companies.fx_gain_account_id` (UUID, nullable, FK to chart_of_accounts, ON DELETE RESTRICT)
+  - Adds `companies.fx_loss_account_id` (UUID, nullable, FK to chart_of_accounts, ON DELETE RESTRICT)
+  - Inserts account `4320` (أرباح فروق العملة) for companies missing it under parent `4300`
+  - Idempotent + reversible
+
+### 📚 Documentation — توثيق
+
+- Added `docs/FX_MIGRATION_ROLLOUT_PLAN.md` with deployment order, verification queries, manual test cases, and rollback procedure.
+
+### ⚠️ Known Limitations — قيود معروفة (للتحسين المستقبلي)
+
+- Exchange rate "happy path" (when rate exists with `rate_date <= targetDate`) does not check staleness — any-age rate is silently returned. The new stale-rate check only triggers when API fails. Future improvement should add staleness threshold to the normal path too.
+- Toast notification helpers (`toastActionSuccess`/`toastActionError`) don't pass the `language` parameter consistently in existing handlers, causing potential English/Arabic mixing in EN UI mode. Pre-existing issue, scoped for a separate refactor.
+
+### 🗂️ Files Modified — ملفات معدَّلة
+
+| File | Change |
+|------|--------|
+| `supabase/migrations/20260519000200_fx_account_configuration.sql` | New — Migration |
+| `docs/FX_MIGRATION_ROLLOUT_PLAN.md` | New — Rollout plan |
+| `lib/currency-service.ts` | Added `getFXAccounts`, refactored `performCurrencyRevaluation` and `createFXAccountsIfNeeded` |
+| `lib/exchange-rates.ts` | Added `ExchangeRateError`, replaced `return 1` with stale-rate fallback + typed errors |
+| `lib/currency-conversion-system.ts` | Same `return 1` fix, imports `ExchangeRateError` |
+| `lib/currency-converter.ts` | Same `return 1` fix, imports `ExchangeRateError` |
+| `app/reports/fx-gains-losses/page.tsx` | Uses `getFXAccounts` instead of hardcoded 4200/5200 |
+| `app/settings/page.tsx` | New "FX Account Configuration" section with dropdowns + audit logging |
+| `CHANGELOG.md` | This entry |
+
+---
+
 ## [3.0.0] - 2026-05-16
 
 ### 🎉 Major Release: Roles Overhaul + Approval Workflows + Manufacturing Security
