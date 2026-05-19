@@ -621,17 +621,17 @@ export default function ThirdPartyInventoryPage() {
       let query = supabase
         .from('third_party_inventory')
         .select(`
-          id, invoice_id, quantity, unit_cost, total_cost, status,
+          id, invoice_id, branch_id, warehouse_id, quantity, unit_cost, total_cost, status,
           cleared_quantity, returned_quantity, cleared_at,
           tracking_type, payment_status, delivery_status,
           notes, created_at, updated_at,
           products (name, sku, product_type),
           invoices!inner (invoice_number, invoice_date, total_amount, status,
             customers (name),
+            branches (name),
+            warehouses (name),
             sales_orders!invoices_sales_order_id_fkey (created_by_user_id)),
-          shipping_providers (provider_name),
-          branches (name),
-          warehouses (name)
+          shipping_providers (provider_name)
         `)
         .eq('company_id', companyId)
 
@@ -1353,8 +1353,8 @@ export default function ThirdPartyInventoryPage() {
                                   {row.shipping_providers?.provider_name || "-"}
                                 </Badge>
                               </td>
-                              <td className="px-3 py-2">{row.branches?.name || "-"}</td>
-                              <td className="px-3 py-2">{row.warehouses?.name || "-"}</td>
+                              <td className="px-3 py-2">{row.invoices?.branches?.name || "-"}</td>
+                              <td className="px-3 py-2">{row.invoices?.warehouses?.name || "-"}</td>
                               <td className="px-3 py-2">
                                 {new Date(row.created_at).toLocaleDateString(isAr ? 'ar-EG' : 'en-US')}
                               </td>
