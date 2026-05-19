@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Package, Truck, DollarSign, FileText, ExternalLink, Loader2, UserCheck, X } from "lucide-react"
+import { Package, Truck, DollarSign, FileText, ExternalLink, Loader2, UserCheck, X, ClipboardList } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -105,6 +105,11 @@ export default function ThirdPartyInventoryPage() {
   // قائمة الفروع للفلترة
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [filterBranchId, setFilterBranchId] = useState<string>("all")
+
+  // ── History Log Tab ──
+  const [activeTab, setActiveTab] = useState<"items" | "log">("items")
+  const [logItems, setLogItems] = useState<any[]>([])
+  const [logLoading, setLogLoading] = useState(false)
 
   // التحقق من صلاحية الوصول لصفحة الفواتير
   const canAccessInvoices = canAccessPage("invoices")
@@ -601,6 +606,49 @@ export default function ThirdPartyInventoryPage() {
     }
   }, [filteredItems])
 
+  // ── Load history/log data ──
+  const loadLog = useCallback(async () => {
+    try {
+      setLogLoading(true)
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      const { data, error } = await supabase
+        .from('third_party_inventory')
+        .select(`
+          id, quantity, unit_cost, total_cost, status,
+          cleared_quantity, returned_quantity, cleared_at,
+          tracking_type, payment_status, delivery_status,
+          notes, created_at, updated_at,
+          products (name, sku, product_type),
+          invoices!inner (invoice_number, invoice_date, total_amount, status,
+            customers (name)),
+          shipping_providers (provider_name),
+          branches (name),
+          warehouses (name)
+        `)
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error("Error loading third-party log:", error)
+        return
+      }
+
+      setLogItems(data || [])
+    } catch (err) {
+      console.error("Error loading third-party log:", err)
+    } finally {
+      setLogLoading(false)
+    }
+  }, [supabase])
+
+  useEffect(() => {
+    if (activeTab === "log") {
+      loadLog()
+    }
+  }, [activeTab, loadLog])
+
   const getAvailableQty = (item: ThirdPartyItem) =>
     Number(item.quantity) - Number(item.cleared_quantity) - Number(item.returned_quantity)
 
@@ -659,6 +707,38 @@ export default function ThirdPartyInventoryPage() {
             </div>
           </div>
 
+          {/* Tab Navigation */}
+          <div className="flex gap-1 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-1">
+            <button
+              onClick={() => setActiveTab("items")}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === "items"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800"
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              {isAr ? "البضائع الحالية" : "Current Goods"}
+              {items.length > 0 && (
+                <Badge variant={activeTab === "items" ? "secondary" : "outline"} className="text-xs">
+                  {items.length}
+                </Badge>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab("log")}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === "log"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800"
+              }`}
+            >
+              <ClipboardList className="w-4 h-4" />
+              {isAr ? "سجل الحركات" : "Movement Log"}
+            </button>
+          </div>
+
+          {activeTab === "items" && (<>
           {/* Stats Cards - بطاقات الإحصائيات */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
             <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm p-2 sm:p-0">
@@ -1126,6 +1206,165 @@ export default function ThirdPartyInventoryPage() {
               </div>
             </CardContent>
           </Card>
+          </>)}
+
+          {/* ── Log Tab ── */}
+          {activeTab === "log" && (
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+              <CardHeader className="pb-2 sm:pb-4 border-b border-gray-100 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                    <ClipboardList className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <CardTitle className="text-sm sm:text-base">
+                    {isAr ? "سجل حركات البضائع لدى الغير" : "Third Party Goods Movement Log"}
+                  </CardTitle>
+                  {logItems.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">{logItems.length}</Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {logLoading ? (
+                  <div className="flex items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    {isAr ? "جاري تحميل السجل..." : "Loading log..."}
+                  </div>
+                ) : logItems.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+                    <ClipboardList className="w-10 h-10 mb-3 text-gray-300 dark:text-gray-600" />
+                    <p className="text-sm">{isAr ? "لا توجد حركات مسجلة" : "No movement records found"}</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[980px] w-full text-sm">
+                      <thead className="bg-gray-50 dark:bg-slate-800">
+                        <tr>
+                          <th className="px-3 py-2 text-right">{isAr ? "الفاتورة" : "Invoice"}</th>
+                          <th className="px-3 py-2 text-right">{isAr ? "العميل" : "Customer"}</th>
+                          <th className="px-3 py-2 text-right">{isAr ? "المنتج" : "Product"}</th>
+                          <th className="px-3 py-2 text-center">{isAr ? "الكمية" : "Qty"}</th>
+                          <th className="px-3 py-2 text-center">{isAr ? "تم التسليم" : "Cleared"}</th>
+                          <th className="px-3 py-2 text-center">{isAr ? "مرتجع" : "Returned"}</th>
+                          <th className="px-3 py-2 text-right">{isAr ? "شركة الشحن" : "Shipping"}</th>
+                          <th className="px-3 py-2 text-right">{isAr ? "الفرع" : "Branch"}</th>
+                          <th className="px-3 py-2 text-right">{isAr ? "المخزن" : "Warehouse"}</th>
+                          <th className="px-3 py-2 text-right">{isAr ? "تاريخ الإنشاء" : "Created"}</th>
+                          <th className="px-3 py-2 text-center">{isAr ? "حالة التسليم" : "Delivery"}</th>
+                          <th className="px-3 py-2 text-center">{isAr ? "حالة الدفع" : "Payment"}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                        {logItems.map((row) => {
+                          const availQty = Number(row.quantity) - Number(row.cleared_quantity) - Number(row.returned_quantity)
+                          return (
+                            <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/60">
+                              <td className="px-3 py-2 font-medium text-blue-600 dark:text-blue-400">
+                                {canAccessInvoices ? (
+                                  <Link href={`/invoices/${row.invoice_id}`} className="hover:underline">
+                                    {row.invoices?.invoice_number || "-"}
+                                  </Link>
+                                ) : (
+                                  row.invoices?.invoice_number || "-"
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                {row.invoices?.customers?.name || "-"}
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-1">
+                                  <span className="font-medium">{row.products?.name || "-"}</span>
+                                  {row.products?.product_type && (
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                      row.products.product_type === "raw_material"
+                                        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                        : row.products.product_type === "manufactured"
+                                          ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+                                          : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                    }`}>
+                                      {row.products.product_type === "raw_material" ? (isAr ? "خام" : "Raw")
+                                        : row.products.product_type === "manufactured" ? (isAr ? "مصنّع" : "Mfg")
+                                        : row.products.product_type === "purchased" ? (isAr ? "مشترى" : "Purchased")
+                                        : row.products.product_type}
+                                    </span>
+                                  )}
+                                </div>
+                                {row.products?.sku && (
+                                  <div className="text-[10px] text-gray-400">{row.products.sku}</div>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <Badge variant="default" className="bg-blue-600 hover:bg-blue-600 text-xs">
+                                  {Number(row.quantity)}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {Number(row.cleared_quantity) > 0 ? (
+                                  <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-600 text-xs">
+                                    {Number(row.cleared_quantity)}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-gray-400">0</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {Number(row.returned_quantity) > 0 ? (
+                                  <Badge variant="default" className="bg-red-600 hover:bg-red-600 text-xs">
+                                    {Number(row.returned_quantity)}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-gray-400">0</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                <Badge variant="outline" className="gap-1 text-orange-700 border-orange-300 bg-orange-50 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-700 whitespace-nowrap">
+                                  <Truck className="w-3 h-3" />
+                                  {row.shipping_providers?.provider_name || "-"}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2">{row.branches?.name || "-"}</td>
+                              <td className="px-3 py-2">{row.warehouses?.name || "-"}</td>
+                              <td className="px-3 py-2">
+                                {new Date(row.created_at).toLocaleDateString(isAr ? 'ar-EG' : 'en-US')}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
+                                  row.delivery_status === "delivered" || row.delivery_status === "with_customer"
+                                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                                    : row.delivery_status === "returned"
+                                      ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                                      : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                }`}>
+                                  {row.delivery_status === "with_customer" ? (isAr ? "لدى العميل" : "With Customer")
+                                    : row.delivery_status === "delivered" ? (isAr ? "تم التسليم" : "Delivered")
+                                    : row.delivery_status === "returned" ? (isAr ? "مرتجع" : "Returned")
+                                    : row.delivery_status === "in_transit" ? (isAr ? "في الطريق" : "In Transit")
+                                    : row.delivery_status || (isAr ? "مفتوح" : "Open")}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
+                                  row.payment_status === "paid"
+                                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                                    : row.payment_status === "partially_paid"
+                                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                      : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                                }`}>
+                                  {row.payment_status === "paid" ? (isAr ? "مدفوع" : "Paid")
+                                    : row.payment_status === "partially_paid" ? (isAr ? "مدفوع جزئياً" : "Partial")
+                                    : (isAr ? "غير مدفوع" : "Unpaid")}
+                                </span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
         </div>
       </main>
