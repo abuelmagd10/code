@@ -230,8 +230,21 @@ function SalesOrdersContent() {
     return { subtotal, total };
   }, [items, taxAmount]);
 
-  // Filtered orders - إصدار مبسط بدون فلاتر حوكمة
+  // Filtered orders — applies all 8 filter dimensions exposed in the UI.
+  // Previously, filterProducts / filterShippingProviders / filterEmployeeId
+  // existed in state and were visible in the UI + counted in activeFilterCount,
+  // but were silently ignored here — the filter pills did nothing.
   const filteredOrders = useMemo(() => {
+    // Pre-build a Set<sales_order_id, Set<product_id>> for O(1) product filter lookups
+    const orderProductsIndex = filterProducts.length > 0
+      ? orderItems.reduce<Record<string, Set<string>>>((acc, item) => {
+          if (!item.sales_order_id || !item.product_id) return acc;
+          if (!acc[item.sales_order_id]) acc[item.sales_order_id] = new Set();
+          acc[item.sales_order_id].add(item.product_id);
+          return acc;
+        }, {})
+      : null;
+
     return orders.filter((order) => {
       // Status filter - Multi-select
       if (filterStatuses.length > 0) {
@@ -252,6 +265,23 @@ function SalesOrdersContent() {
       // Customer filter - show orders for any of the selected customers
       if (filterCustomers.length > 0 && !filterCustomers.includes(order.customer_id)) return false;
 
+      // Employee filter — match the user who created the sales order
+      if (filterEmployeeId !== "all" && order.created_by_user_id !== filterEmployeeId) return false;
+
+      // Shipping provider filter — match the linked shipping provider
+      if (filterShippingProviders.length > 0) {
+        if (!order.shipping_provider_id) return false;
+        if (!filterShippingProviders.includes(order.shipping_provider_id)) return false;
+      }
+
+      // Products filter — keep orders that contain at least one selected product
+      if (orderProductsIndex) {
+        const orderProducts = orderProductsIndex[order.id];
+        if (!orderProducts) return false;
+        const hasMatch = filterProducts.some(pid => orderProducts.has(pid));
+        if (!hasMatch) return false;
+      }
+
       // Date range filter
       if (dateFrom && order.so_date < dateFrom) return false;
       if (dateTo && order.so_date > dateTo) return false;
@@ -267,7 +297,20 @@ function SalesOrdersContent() {
 
       return true;
     });
-  }, [orders, filterStatuses, filterCustomers, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
+  }, [
+    orders,
+    filterStatuses,
+    filterCustomers,
+    filterProducts,
+    filterShippingProviders,
+    filterEmployeeId,
+    searchQuery,
+    dateFrom,
+    dateTo,
+    customers,
+    linkedInvoices,
+    orderItems,
+  ]);
 
   // Pagination logic
   const {

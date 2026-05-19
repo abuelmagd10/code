@@ -4,6 +4,31 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.2.2] - 2026-05-19
+
+### 🔧 Fixed — إصلاحات
+
+- **Sales Orders page filters**: Three filters in the Sales Orders list page were defined in state and rendered in the UI (and counted in `activeFilterCount`), but were silently ignored in the actual `filteredOrders` filter function:
+  - `filterEmployeeId` (filter by sales order creator)
+  - `filterShippingProviders` (filter by shipping company)
+  - `filterProducts` (filter by ordered products)
+- **فلاتر أوامر البيع**: ثلاثة فلاتر في صفحة قائمة أوامر البيع كانت تظهر في الواجهة ومُحسَّبة في عدّاد الفلاتر النشطة، لكنها كانت تُتجاهَل في دالة الفلترة الفعلية. تم إصلاحها لتعمل: فلتر الموظف (يطابق `created_by_user_id`), شركة الشحن، والمنتجات (يحتوي الأمر على منتج محدد).
+- The products filter uses an O(1) lookup index built from `orderItems` to avoid O(N×M) scanning on every render.
+
+### 🗂️ Files Modified — ملفات معدَّلة
+
+| File | Change |
+|------|--------|
+| `app/sales-orders/page.tsx` | Apply 3 missing filters in `filteredOrders` useMemo + extend dependency array |
+| `CHANGELOG.md` | This entry |
+
+### 🛡️ Risk Assessment — تقييم المخاطر
+
+- **Production impact**: UX improvement only. Previously, clicking these filter dropdowns counted as "active" but didn't actually narrow results. Now they do.
+- **Performance**: Products filter pre-builds an index by `sales_order_id` → `Set<product_id>` for O(1) per-order lookup. No impact on render time.
+
+---
+
 ## [3.2.1] - 2026-05-19
 
 ### 🔧 Fixed — إصلاحات (Phase 4-C: HR/Payroll audit_logs sweep)
