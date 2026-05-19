@@ -812,6 +812,28 @@ export function Sidebar() {
       loadUserRoleAndBranch()
     }
     const onProfileUpdated = () => { loadUserProfile() }
+
+    // 🔄 Realtime: auto-refresh display_name when user_profiles changes (e.g. employee link from admin)
+    let profileChannel: any = null
+    const setupProfileRealtime = async () => {
+      try {
+        const { data: { user: currentUser } } = await supabaseHook.auth.getUser()
+        if (!currentUser) return
+        profileChannel = supabaseHook
+          .channel('sidebar_profile_' + currentUser.id)
+          .on('postgres_changes', {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'user_profiles',
+            filter: `user_id=eq.${currentUser.id}`,
+          }, () => {
+            loadUserProfile()
+          })
+          .subscribe()
+      } catch { }
+    }
+    setupProfileRealtime()
+
     if (typeof window !== 'undefined') {
       window.addEventListener('app_language_changed', handler)
       window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
@@ -833,6 +855,9 @@ export function Sidebar() {
         window.removeEventListener('user_context_changed', onUserContextChanged)
         window.removeEventListener('profile_updated', onProfileUpdated)
         window.removeEventListener('notifications_updated', handleNotificationsUpdate)
+      }
+      if (profileChannel) {
+        supabaseHook.removeChannel(profileChannel)
       }
     }
   }, [])
