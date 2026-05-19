@@ -10,13 +10,27 @@ type ToastFn = (props: Partial<ToastProps> & {
 type Language = 'ar' | 'en'
 
 /**
- * Auto-detect UI language from localStorage. Falls back to 'ar' (project default).
- * SSR-safe: returns 'ar' if window is unavailable.
+ * Auto-detect language to use for the toast template.
  *
- * Use this when callers don't explicitly pass a `lang` parameter — prevents
- * mixed-language toast output (e.g. "تم Save بنجاح").
+ * Strategy (content-first, settings-fallback):
+ *   1. If any of the supplied labels contains Arabic characters → 'ar'.
+ *      This preserves hard-coded Arabic callers when the UI is in English
+ *      (e.g. `toastActionSuccess(toast, "التحديث", "فاتورة المورد")` stays Arabic).
+ *   2. Else if labels contain only Latin characters → match active UI language
+ *      from localStorage (so conditional bilingual callers render correctly).
+ *   3. Else → fall back to 'ar' (project default + SSR).
+ *
+ * This eliminates both classes of mixed-language bugs:
+ *   - "تم Save بنجاح" (English label in Arabic template — pre-existing bug)
+ *   - "التحديث Successful" (Arabic label in English template — would have been a regression)
  */
-function detectLanguage(): Language {
+const ARABIC_CHAR_RE = /[؀-ۿ]/
+function detectLanguage(...labels: Array<string | undefined>): Language {
+  // 1. Content-based: any Arabic char → Arabic template
+  for (const label of labels) {
+    if (label && ARABIC_CHAR_RE.test(label)) return 'ar'
+  }
+  // 2. Latin-only or no labels → respect UI language setting
   if (typeof window === 'undefined') return 'ar'
   try {
     return localStorage.getItem('app_language') === 'en' ? 'en' : 'ar'
@@ -32,7 +46,7 @@ function detectLanguage(): Language {
  * If `lang` is omitted, the active UI language is auto-detected from localStorage.
  */
 export function toastDeleteSuccess(toast: ToastFn, resourceLabel: string, lang?: Language) {
-  const activeLang: Language = lang ?? detectLanguage()
+  const activeLang: Language = lang ?? detectLanguage(resourceLabel)
   const messages = {
     ar: {
       title: "تم الحذف",
@@ -62,7 +76,7 @@ export function toastDeleteError(
   description?: string,
   lang?: Language
 ) {
-  const activeLang: Language = lang ?? detectLanguage()
+  const activeLang: Language = lang ?? detectLanguage(resourceLabel, description)
   const messages = {
     ar: {
       title: "فشل الحذف",
@@ -95,7 +109,7 @@ export function toastActionSuccess(
   resourceLabel?: string,
   lang?: Language
 ) {
-  const activeLang: Language = lang ?? detectLanguage()
+  const activeLang: Language = lang ?? detectLanguage(actionLabel, resourceLabel)
   const messages = {
     ar: {
       title: `تم ${actionLabel}`,
@@ -126,7 +140,7 @@ export function toastActionError(
   lang?: Language,
   errorKey?: string
 ) {
-  const activeLang: Language = lang ?? detectLanguage()
+  const activeLang: Language = lang ?? detectLanguage(actionLabel, resourceLabel, description)
   let errorMessage = description
 
   // Use unified error message if errorKey is provided
