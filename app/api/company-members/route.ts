@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
 
     const { data: mems, error: membersError } = await admin
       .from("company_members")
-      .select("id, user_id, role, email, created_at, branch_id, cost_center_id, warehouse_id")
+      .select("id, user_id, role, email, created_at, branch_id, cost_center_id, warehouse_id, employee_id")
       .eq("company_id", companyId)
 
     if (membersError) {
@@ -89,6 +89,25 @@ export async function GET(req: NextRequest) {
         if (profile) {
           member.username = profile.username
           member.display_name = profile.display_name
+        }
+      }
+    }
+
+    // Resolve employee names for linked members
+    const employeeIds = list.map((m: any) => m.employee_id).filter(Boolean)
+    if (employeeIds.length > 0) {
+      const { data: employees } = await admin
+        .from("employees")
+        .select("id, full_name, job_title")
+        .in("id", [...new Set(employeeIds)])
+
+      if (employees) {
+        for (const member of list) {
+          const emp = employees.find((e: any) => e.id === member.employee_id)
+          if (emp) {
+            member.employee_name = emp.full_name
+            member.employee_job_title = emp.job_title
+          }
         }
       }
     }

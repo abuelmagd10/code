@@ -20,7 +20,8 @@ import Link from "next/link"
 import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch, Search, Copy, CreditCard } from "lucide-react"
 import SeatStatusBanner from "@/components/billing/SeatStatusBanner"
 
-type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean; username?: string; display_name?: string; branch_id?: string; cost_center_id?: string; warehouse_id?: string }
+type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean; username?: string; display_name?: string; branch_id?: string; cost_center_id?: string; warehouse_id?: string; employee_id?: string; employee_name?: string; employee_job_title?: string }
+type Employee = { id: string; full_name: string; job_title?: string; email?: string; department?: string }
 type Branch = { id: string; name: string; is_main: boolean }
 type CostCenter = { id: string; cost_center_name: string; branch_id: string }
 type WarehouseType = { id: string; name: string; branch_id: string; is_main: boolean }
@@ -151,6 +152,13 @@ export default function UsersSettingsPage() {
   const [memberBranchId, setMemberBranchId] = useState<string>("")
   const [savingMemberBranches, setSavingMemberBranches] = useState(false)
   const [resendingInvite, setResendingInvite] = useState<string | null>(null)
+
+  // 🔗 ربط العضو بالموظف
+  const [showLinkEmployeeDialog, setShowLinkEmployeeDialog] = useState(false)
+  const [linkingMember, setLinkingMember] = useState<Member | null>(null)
+  const [employeesList, setEmployeesList] = useState<Employee[]>([])
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("")
+  const [linkingEmployee, setLinkingEmployee] = useState(false)
 
   const getAppLang = () => {
     if (typeof window === "undefined") return "ar"
@@ -899,6 +907,62 @@ export default function UsersSettingsPage() {
     }
   }
 
+  // 🔗 فتح dialog ربط العضو بالموظف
+  const openLinkEmployeeDialog = async (member: Member) => {
+    setLinkingMember(member)
+    setSelectedEmployeeId(member.employee_id || "")
+    setShowLinkEmployeeDialog(true)
+
+    // Load employees list
+    try {
+      const res = await fetch("/api/hr/employees")
+      if (res.ok) {
+        const data = await res.json()
+        setEmployeesList(Array.isArray(data) ? data : data.data || [])
+      }
+    } catch (err) {
+      console.error("Error loading employees:", err)
+    }
+  }
+
+  // 🔗 حفظ ربط العضو بالموظف
+  const saveLinkEmployee = async () => {
+    if (!linkingMember) return
+    setLinkingEmployee(true)
+    try {
+      const res = await fetch("/api/company-members/link-employee", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberUserId: linkingMember.user_id,
+          employeeId: selectedEmployeeId || null,
+        }),
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || "فشل ربط العضو بالموظف")
+
+      // Update local state
+      const emp = employeesList.find(e => e.id === selectedEmployeeId)
+      setMembers(prev => prev.map(m =>
+        m.user_id === linkingMember.user_id
+          ? {
+              ...m,
+              employee_id: selectedEmployeeId || undefined,
+              employee_name: emp?.full_name,
+              display_name: emp?.full_name || m.display_name,
+            }
+          : m
+      ))
+
+      toastActionSuccess(toast, "ربط", selectedEmployeeId ? "العضو بالموظف" : "إلغاء الربط")
+      setShowLinkEmployeeDialog(false)
+    } catch (err: any) {
+      toastActionError(toast, "ربط", "العضو بالموظف", err.message)
+    } finally {
+      setLinkingEmployee(false)
+    }
+  }
+
   // 🏢 الحصول على أسماء فروع الموظف
   const getMemberBranchNames = (member: Member): string => {
     const memberAccess = userBranchAccess.filter(a => a.user_id === member.user_id && a.is_active)
@@ -1372,6 +1436,21 @@ export default function UsersSettingsPage() {
                           الفروع
                         </Button>
                       )}
+                      {/* 🔗 زر ربط بالموظف */}
+                      {canManage && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openLinkEmployeeDialog(m)}
+                          className={`gap-1 h-8 text-xs ${m.employee_id
+                            ? "text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20 border-purple-200"
+                            : "text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                          }`}
+                        >
+                          <UserCog className="w-3 h-3" />
+                          {m.employee_id ? (m.employee_name || "مرتبط") : "ربط بموظف"}
+                        </Button>
+                      )}
                       {canManage && !m.is_current && (
                         <>
                           <Select value={m.role} onValueChange={async (nr) => {
@@ -1633,6 +1712,66 @@ export default function UsersSettingsPage() {
                 {isReassigning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : "نقل البيانات والحذف نهائياً"}
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 🔗 موديال ربط العضو بالموظف */}
+        <Dialog open={showLinkEmployeeDialog} onOpenChange={(v) => { if (!v) setShowLinkEmployeeDialog(false) }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                  <UserCog className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <DialogTitle>ربط العضو بموظف</DialogTitle>
+                  <DialogDescription>
+                    {linkingMember?.display_name || linkingMember?.email}
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div>
+                <Label>اختر الموظف من سجل الموظفين</Label>
+                <p className="text-xs text-gray-500 mt-1">عند الربط سيتم تحديث اسم العضو في جميع أنحاء النظام (القائمة الجانبية، سجل المراجعة، إلخ)</p>
+              </div>
+              <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر موظفاً..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— بدون ربط —</SelectItem>
+                  {employeesList.map((emp) => (
+                    <SelectItem key={emp.id} value={emp.id}>
+                      {emp.full_name}{emp.job_title ? ` — ${emp.job_title}` : ""}{emp.department ? ` (${emp.department})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {linkingMember?.employee_id && (
+                <div className="flex items-center gap-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-xs">
+                  <Check className="w-3 h-3 text-purple-600" />
+                  <span>مرتبط حالياً بـ: <strong>{linkingMember.employee_name}</strong></span>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowLinkEmployeeDialog(false)} disabled={linkingEmployee}>
+                إلغاء
+              </Button>
+              <Button
+                onClick={() => {
+                  if (selectedEmployeeId === "__none__") setSelectedEmployeeId("")
+                  saveLinkEmployee()
+                }}
+                disabled={linkingEmployee}
+                className="bg-purple-600 hover:bg-purple-700"
+              >
+                {linkingEmployee ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : null}
+                {selectedEmployeeId && selectedEmployeeId !== "__none__" ? "ربط وتحديث الاسم" : "إلغاء الربط"}
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
 
