@@ -41,11 +41,41 @@ export async function getExchangeRate(fromCurrency: string, toCurrency: string, 
 
   const client = getClient()
 
+  // Helper: check staleness of a rate relative to today (this function has no targetDate parameter).
+  // < 24h: silent, 1-7 days: warn, > 7 days: throw RATE_TOO_OLD
+  const STALE_WARN_DAYS = 1
+  const STALE_ERROR_DAYS = 7
+  const today = new Date().toISOString().slice(0, 10)
+  const evaluateRate = (rate: number, rateDate: string, direction: 'direct' | 'reverse'): number => {
+    const daysOld = Math.floor(
+      (new Date(today).getTime() - new Date(rateDate).getTime()) / (1000 * 60 * 60 * 24)
+    )
+    const finalRate = direction === 'reverse' ? 1 / rate : rate
+    // Math.floor gives daysOld=0 for "<24h", daysOld=1 for "24-48h", etc.
+    // Use >= for warn so a 25h-old rate triggers, matching the "1 day or older" threshold.
+    if (daysOld > STALE_ERROR_DAYS) {
+      throw new ExchangeRateError(
+        'RATE_TOO_OLD',
+        `سعر الصرف ${fromCurrency}→${toCurrency} قديم (${daysOld} يوم). آخر سعر معروف: ${finalRate.toFixed(6)} بتاريخ ${rateDate}`,
+        finalRate,
+        rateDate,
+        daysOld
+      )
+    }
+    if (daysOld >= STALE_WARN_DAYS) {
+      console.warn(
+        `[currency-conversion-system] aged_rate_used: ${fromCurrency}→${toCurrency} rate=${finalRate} ` +
+        `from ${rateDate} (${daysOld} days old, threshold=${STALE_WARN_DAYS})`
+      )
+    }
+    return finalRate
+  }
+
   // Try database first - direct rate
   if (companyId) {
     const { data } = await client
       .from('exchange_rates')
-      .select('rate')
+      .select('rate, rate_date')
       .eq('company_id', companyId)
       .eq('from_currency', fromCurrency)
       .eq('to_currency', toCurrency)
@@ -53,12 +83,14 @@ export async function getExchangeRate(fromCurrency: string, toCurrency: string, 
       .limit(1)
       .maybeSingle()
 
-    if (data?.rate) return Number(data.rate)
+    if (data?.rate && data.rate_date) {
+      return evaluateRate(Number(data.rate), data.rate_date, 'direct')
+    }
 
     // Try reverse rate (1 / rate)
     const { data: reverseData } = await client
       .from('exchange_rates')
-      .select('rate')
+      .select('rate, rate_date')
       .eq('company_id', companyId)
       .eq('from_currency', toCurrency)
       .eq('to_currency', fromCurrency)
@@ -66,8 +98,8 @@ export async function getExchangeRate(fromCurrency: string, toCurrency: string, 
       .limit(1)
       .maybeSingle()
 
-    if (reverseData?.rate && Number(reverseData.rate) > 0) {
-      return 1 / Number(reverseData.rate)
+    if (reverseData?.rate && Number(reverseData.rate) > 0 && reverseData.rate_date) {
+      return evaluateRate(Number(reverseData.rate), reverseData.rate_date, 'reverse')
     }
   }
 
@@ -113,7 +145,6 @@ export async function getExchangeRate(fromCurrency: string, toCurrency: string, 
       })()
 
     if (staleRecord?.rate) {
-      const today = new Date().toISOString().slice(0, 10)
       const daysOld = Math.floor(
         (new Date(today).getTime() - new Date(staleRecord.rate_date).getTime()) / (1000 * 60 * 60 * 24)
       )
