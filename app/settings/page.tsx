@@ -850,15 +850,16 @@ export default function SettingsPage() {
       if (updateError) throw updateError
 
       // Audit log (best-effort)
-      // Schema-aware column names: target_table, old_data, new_data
-      // (NOT table_name / old_values / new_values)
+      // Schema constraints: action must be one of (INSERT, UPDATE, DELETE, SETTINGS, ...) per audit_logs_action_check.
+      // We use 'SETTINGS' for config changes and put the specific event in `reason`.
       try {
         await supabase.from('audit_logs').insert({
           company_id: companyId,
           user_id: userId,
-          action: 'fx_accounts_configured',
+          action: 'SETTINGS',
           target_table: 'companies',
           record_id: companyId,
+          reason: 'fx_accounts_configured',
           new_data: { fx_gain_account_id: fxGainAccountId, fx_loss_account_id: fxLossAccountId },
           old_data: { fx_gain_account_id: prevGain, fx_loss_account_id: prevLoss }
         })
