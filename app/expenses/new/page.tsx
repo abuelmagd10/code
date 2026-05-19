@@ -61,6 +61,7 @@ export default function NewExpensePage() {
   // Accounts
   const [expenseAccounts, setExpenseAccounts] = useState<Account[]>([])
   const [paymentAccounts, setPaymentAccounts] = useState<Account[]>([])
+  const [categoryMappings, setCategoryMappings] = useState<Record<string, string>>({})
 
   useEffect(() => {
     setHydrated(true)
@@ -155,6 +156,27 @@ export default function NewExpensePage() {
         .order("account_code")
 
       setExpenseAccounts(expAccounts || [])
+
+      // Load category → account mappings (with branch/cost_center priority)
+      const { data: mappings } = await supabase
+        .from("expense_category_account_mappings")
+        .select("expense_category, expense_account_id, branch_id, cost_center_id")
+        .eq("company_id", cid)
+        .order("branch_id", { ascending: false, nullsFirst: false })
+
+      if (mappings && mappings.length > 0) {
+        const mapObj: Record<string, string> = {}
+        for (const m of mappings) {
+          // Priority: branch+cost_center > branch > company-wide (null)
+          // First match wins (sorted: branch-specific first, then nulls)
+          if (!mapObj[m.expense_category]) {
+            if (m.branch_id === userBranchId || !m.branch_id) {
+              mapObj[m.expense_category] = m.expense_account_id
+            }
+          }
+        }
+        setCategoryMappings(mapObj)
+      }
 
       // Load payment accounts (cash/bank)
       const { data: payAccountsRaw } = await supabase
@@ -448,7 +470,14 @@ export default function NewExpensePage() {
                   <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
                     {appLang === 'en' ? 'Category' : 'التصنيف'}
                   </Label>
-                  <Select value={expenseCategory} onValueChange={setExpenseCategory}>
+                  <Select value={expenseCategory} onValueChange={(cat) => {
+                    setExpenseCategory(cat)
+                    // Auto-select expense account from mapping
+                    const mappedAccountId = categoryMappings[cat]
+                    if (mappedAccountId) {
+                      setExpenseAccountId(mappedAccountId)
+                    }
+                  }}>
                     <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
                       <SelectValue placeholder={appLang === 'en' ? 'Select category' : 'اختر التصنيف'} />
                     </SelectTrigger>

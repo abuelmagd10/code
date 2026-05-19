@@ -76,6 +76,7 @@ export default function EditExpensePage() {
   // Accounts
   const [expenseAccounts, setExpenseAccounts] = useState<Account[]>([])
   const [paymentAccounts, setPaymentAccounts] = useState<Account[]>([])
+  const [categoryMappings, setCategoryMappings] = useState<Record<string, string>>({})
 
   useEffect(() => {
     setHydrated(true)
@@ -161,6 +162,25 @@ export default function EditExpensePage() {
         .order("account_code")
 
       setExpenseAccounts(expAccounts || [])
+
+      // Load category → account mappings
+      const { data: mappings } = await supabase
+        .from("expense_category_account_mappings")
+        .select("expense_category, expense_account_id, branch_id, cost_center_id")
+        .eq("company_id", cid)
+        .order("branch_id", { ascending: false, nullsFirst: false })
+
+      if (mappings && mappings.length > 0) {
+        const mapObj: Record<string, string> = {}
+        for (const m of mappings) {
+          if (!mapObj[m.expense_category]) {
+            if (m.branch_id === userBranchId || !m.branch_id) {
+              mapObj[m.expense_category] = m.expense_account_id
+            }
+          }
+        }
+        setCategoryMappings(mapObj)
+      }
 
       const { data: payAccountsRaw } = await supabase
         .from("chart_of_accounts")
@@ -401,7 +421,14 @@ export default function EditExpensePage() {
                   <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
                     {appLang === 'en' ? 'Category' : 'التصنيف'}
                   </Label>
-                  <Select value={expenseCategory} onValueChange={setExpenseCategory}>
+                  <Select value={expenseCategory} onValueChange={(cat) => {
+                    setExpenseCategory(cat)
+                    // Auto-select expense account from mapping (only if not already set)
+                    const mappedAccountId = categoryMappings[cat]
+                    if (mappedAccountId && !expenseAccountId) {
+                      setExpenseAccountId(mappedAccountId)
+                    }
+                  }}>
                     <SelectTrigger className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600">
                       <SelectValue placeholder={appLang === 'en' ? 'Select category' : 'اختر التصنيف'} />
                     </SelectTrigger>
