@@ -850,15 +850,17 @@ export default function SettingsPage() {
       if (updateError) throw updateError
 
       // Audit log (best-effort)
+      // Schema-aware column names: target_table, old_data, new_data
+      // (NOT table_name / old_values / new_values)
       try {
         await supabase.from('audit_logs').insert({
           company_id: companyId,
           user_id: userId,
           action: 'fx_accounts_configured',
-          table_name: 'companies',
+          target_table: 'companies',
           record_id: companyId,
-          new_values: { fx_gain_account_id: fxGainAccountId, fx_loss_account_id: fxLossAccountId },
-          old_values: { fx_gain_account_id: prevGain, fx_loss_account_id: prevLoss }
+          new_data: { fx_gain_account_id: fxGainAccountId, fx_loss_account_id: fxLossAccountId },
+          old_data: { fx_gain_account_id: prevGain, fx_loss_account_id: prevLoss }
         })
       } catch { /* Don't fail if audit log fails */ }
 

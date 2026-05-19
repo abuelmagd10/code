@@ -543,15 +543,15 @@ export async function setManualExchangeRate(
 
     if (error) throw error
 
-    // Log to audit
+    // Log to audit (schema-aware: target_table, new_data — NOT table_name/new_values)
     try {
       await supabase.from('audit_logs').insert({
         company_id: companyId,
         user_id: userId,
         action: 'manual_exchange_rate',
-        table_name: 'exchange_rates',
+        target_table: 'exchange_rates',
         record_id: data.id,
-        new_values: { from_currency: fromCurrency, to_currency: toCurrency, rate, reason }
+        new_data: { from_currency: fromCurrency, to_currency: toCurrency, rate, reason }
       })
     } catch {
       // Don't fail if audit log fails
