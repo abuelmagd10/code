@@ -29,6 +29,9 @@ export async function POST(req: NextRequest) {
       return badRequestError("معرف العضو مطلوب", ["memberUserId"])
     }
 
+    // Normalize: treat "__none__" or empty string as null (unlink)
+    const normalizedEmployeeId = employeeId && employeeId !== "__none__" ? employeeId : null
+
     // Verify member belongs to this company
     const { data: member, error: memberErr } = await admin
       .from("company_members")
@@ -42,7 +45,7 @@ export async function POST(req: NextRequest) {
     }
 
     // If unlinking (employeeId is null)
-    if (!employeeId) {
+    if (!normalizedEmployeeId) {
       await admin
         .from("company_members")
         .update({ employee_id: null })
@@ -56,7 +59,7 @@ export async function POST(req: NextRequest) {
       .from("employees")
       .select("id, full_name, job_title")
       .eq("company_id", companyId)
-      .eq("id", employeeId)
+      .eq("id", normalizedEmployeeId)
       .maybeSingle()
 
     if (empErr || !employee) {
@@ -66,7 +69,7 @@ export async function POST(req: NextRequest) {
     // Link member to employee
     const { error: updateErr } = await admin
       .from("company_members")
-      .update({ employee_id: employeeId })
+      .update({ employee_id: normalizedEmployeeId })
       .eq("id", member.id)
 
     if (updateErr) {

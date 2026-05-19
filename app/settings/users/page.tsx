@@ -1762,8 +1762,35 @@ export default function UsersSettingsPage() {
               </Button>
               <Button
                 onClick={() => {
-                  if (selectedEmployeeId === "__none__") setSelectedEmployeeId("")
-                  saveLinkEmployee()
+                  // Handle __none__ synchronously before calling save
+                  if (selectedEmployeeId === "__none__") {
+                    setSelectedEmployeeId("")
+                  }
+                  // Pass the resolved value directly
+                  const resolvedId = selectedEmployeeId === "__none__" ? "" : selectedEmployeeId
+                  setLinkingEmployee(true)
+                  fetch("/api/company-members/link-employee", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      memberUserId: linkingMember?.user_id,
+                      employeeId: resolvedId || null,
+                    }),
+                  })
+                    .then(res => res.json().then(result => ({ res, result })))
+                    .then(({ res, result }) => {
+                      if (!res.ok) throw new Error(result.error || "فشل ربط العضو بالموظف")
+                      const emp = employeesList.find(e => e.id === resolvedId)
+                      setMembers(prev => prev.map(m =>
+                        m.user_id === linkingMember?.user_id
+                          ? { ...m, employee_id: resolvedId || undefined, employee_name: emp?.full_name, display_name: emp?.full_name || m.display_name }
+                          : m
+                      ))
+                      toastActionSuccess(toast, "ربط", resolvedId ? "العضو بالموظف" : "إلغاء الربط")
+                      setShowLinkEmployeeDialog(false)
+                    })
+                    .catch((err: any) => toastActionError(toast, "ربط", "العضو بالموظف", err.message))
+                    .finally(() => setLinkingEmployee(false))
                 }}
                 disabled={linkingEmployee}
                 className="bg-purple-600 hover:bg-purple-700"
