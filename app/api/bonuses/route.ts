@@ -176,20 +176,42 @@ export async function POST(req: NextRequest) {
       return apiError(HTTP_STATUS.BAD_REQUEST, "الفاتورة غير مدفوعة بعد", "Invoice is not paid yet", { status: invoice.status })
     }
 
-    // Get creator user_id - check sales order first if linked
-    let creatorUserId = invoice.created_by_user_id
-    if (!creatorUserId && invoice.sales_order_id) {
+    // Bonus attribution — ERP rule:
+    // The bonus belongs to whoever originated the deal (the salesperson on the sales order),
+    // NOT to the accounting/AR clerk who later processed the invoice. Resolution order:
+    //   1. sales_orders.created_by_user_id  (the salesperson)         ← PRIMARY
+    //   2. invoices.created_by_user_id      (fallback for invoices    ← FALLBACK ONLY
+    //                                        with no sales order — e.g. POS / walk-in sales)
+    //
+    // Previous behavior had the priority inverted (invoice creator first), so bonuses were
+    // going to the accountant who issued the invoice instead of the salesperson who closed
+    // the deal. The comment "check sales order first" has always been here — the code now
+    // matches that intent.
+    let creatorUserId: string | null = null
+    let creatorSource: 'sales_order' | 'invoice' | null = null
+
+    if (invoice.sales_order_id) {
       const { data: so } = await dbClient
         .from("sales_orders")
         .select("created_by_user_id")
         .eq("id", invoice.sales_order_id)
         .single()
-      creatorUserId = so?.created_by_user_id
+      if (so?.created_by_user_id) {
+        creatorUserId = so.created_by_user_id
+        creatorSource = 'sales_order'
+      }
+    }
+
+    if (!creatorUserId) {
+      creatorUserId = invoice.created_by_user_id
+      if (creatorUserId) creatorSource = 'invoice'
     }
 
     if (!creatorUserId) {
       return apiError(HTTP_STATUS.BAD_REQUEST, "لم يتم العثور على منشئ الفاتورة", "No creator found for this invoice")
     }
+
+    console.log(`[Bonus] Attributing invoice ${invoiceId} to user ${creatorUserId} (source: ${creatorSource})`)
 
     // Check if bonus already exists for this invoice
     const { data: existingBonus } = await dbClient

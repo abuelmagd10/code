@@ -4,6 +4,32 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.1.2] - 2026-05-19
+
+### 🔧 Fixed (Critical) — إصلاحات حرجة (Phase 4-A)
+
+- **Sales bonus attribution**: Bonuses were being attributed to the invoice creator (often an accountant or AR clerk) instead of the sales order creator (the actual salesperson who closed the deal). Fixed the priority order in `POST /api/bonuses`:
+  - **Before**: invoice.created_by_user_id → fallback to sales_orders.created_by_user_id
+  - **After**: sales_orders.created_by_user_id → fallback to invoice.created_by_user_id
+- **تأهيل بونص المبيعات للموظف الصحيح**: كان البونص يُسجَّل لمنشئ الفاتورة (محاسب/كاتب AR) بدلاً من منشئ أمر البيع (البائع الفعلي). تم عكس الأولوية: أمر البيع أولاً، الفاتورة كـ fallback فقط للفواتير بدون أمر بيع مرتبط (مثل POS).
+- The original code comment ("check sales order first") had always reflected the correct intent, but the implementation was inverted. Now the comment matches the behavior.
+- Added attribution source logging (`sales_order` vs `invoice`) for audit trail visibility.
+
+### 🗂️ Files Modified — ملفات معدَّلة
+
+| File | Change |
+|------|--------|
+| `app/api/bonuses/route.ts` | Reverse creator resolution order; sales_order takes priority over invoice |
+| `CHANGELOG.md` | This entry |
+
+### 🛡️ Risk Assessment — تقييم المخاطر
+
+- **Production impact**: Zero historical impact (commission_ledger is empty; no bonus has ever been calculated in production).
+- **Forward impact**: All new bonuses correctly attributed to the salesperson.
+- **Backward compatible**: API signature unchanged; only internal resolution logic updated. Any caller that was already passing a fully-formed invoice continues to work.
+
+---
+
 ## [3.1.1] - 2026-05-19
 
 ### 🔧 Fixed — إصلاحات (Phase 2-B)
