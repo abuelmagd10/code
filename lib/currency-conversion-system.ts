@@ -1,5 +1,6 @@
 import { getClient as getBrowserClient } from '@/lib/supabase/client'
 import { SupabaseClient } from '@supabase/supabase-js'
+import { ExchangeRateError } from '@/lib/exchange-rates'
 
 // Store the authenticated client passed from the component (falls back to singleton)
 let authClient: SupabaseClient | null = null
@@ -40,47 +41,105 @@ export async function getExchangeRate(fromCurrency: string, toCurrency: string, 
 
   const client = getClient()
 
-  try {
-    // Try database first - direct rate
-    if (companyId) {
-      const { data } = await client
-        .from('exchange_rates')
-        .select('rate')
-        .eq('company_id', companyId)
-        .eq('from_currency', fromCurrency)
-        .eq('to_currency', toCurrency)
-        .order('rate_date', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+  // Try database first - direct rate
+  if (companyId) {
+    const { data } = await client
+      .from('exchange_rates')
+      .select('rate')
+      .eq('company_id', companyId)
+      .eq('from_currency', fromCurrency)
+      .eq('to_currency', toCurrency)
+      .order('rate_date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-      if (data?.rate) return Number(data.rate)
+    if (data?.rate) return Number(data.rate)
 
-      // Try reverse rate (1 / rate)
-      const { data: reverseData } = await client
-        .from('exchange_rates')
-        .select('rate')
-        .eq('company_id', companyId)
-        .eq('from_currency', toCurrency)
-        .eq('to_currency', fromCurrency)
-        .order('rate_date', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+    // Try reverse rate (1 / rate)
+    const { data: reverseData } = await client
+      .from('exchange_rates')
+      .select('rate')
+      .eq('company_id', companyId)
+      .eq('from_currency', toCurrency)
+      .eq('to_currency', fromCurrency)
+      .order('rate_date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-      if (reverseData?.rate && Number(reverseData.rate) > 0) {
-        return 1 / Number(reverseData.rate)
-      }
+    if (reverseData?.rate && Number(reverseData.rate) > 0) {
+      return 1 / Number(reverseData.rate)
     }
+  }
 
-    // Fallback to API
+  // Fallback to API
+  try {
     const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${fromCurrency}`)
     if (res.ok) {
       const data = await res.json()
-      return data.rates?.[toCurrency] || 1
+      const apiRate = data.rates?.[toCurrency]
+      if (apiRate) return apiRate
     }
   } catch (e) {
-    console.error('Error fetching exchange rate:', e)
+    console.error('Error fetching exchange rate from API:', e)
   }
-  return 1
+
+  // API failed — try stale rate from DB (any date)
+  if (companyId) {
+    const { data: staleDirect } = await client
+      .from('exchange_rates')
+      .select('rate, rate_date')
+      .eq('company_id', companyId)
+      .eq('from_currency', fromCurrency)
+      .eq('to_currency', toCurrency)
+      .order('rate_date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const staleRecord = staleDirect
+      || await (async () => {
+        const { data: staleReverse } = await client
+          .from('exchange_rates')
+          .select('rate, rate_date')
+          .eq('company_id', companyId)
+          .eq('from_currency', toCurrency)
+          .eq('to_currency', fromCurrency)
+          .order('rate_date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (staleReverse?.rate && Number(staleReverse.rate) > 0) {
+          return { rate: 1 / Number(staleReverse.rate), rate_date: staleReverse.rate_date }
+        }
+        return null
+      })()
+
+    if (staleRecord?.rate) {
+      const today = new Date().toISOString().slice(0, 10)
+      const daysOld = Math.floor(
+        (new Date(today).getTime() - new Date(staleRecord.rate_date).getTime()) / (1000 * 60 * 60 * 24)
+      )
+
+      if (daysOld <= 7) {
+        console.warn(
+          `[currency-conversion-system] stale_rate_used: ${fromCurrency}→${toCurrency} ` +
+          `rate=${staleRecord.rate} from ${staleRecord.rate_date} (${daysOld} days old)`
+        )
+        return Number(staleRecord.rate)
+      }
+
+      throw new ExchangeRateError(
+        'RATE_TOO_OLD',
+        `سعر الصرف ${fromCurrency}→${toCurrency} قديم (${daysOld} يوم). آخر سعر معروف: ${staleRecord.rate} بتاريخ ${staleRecord.rate_date}`,
+        Number(staleRecord.rate),
+        staleRecord.rate_date,
+        daysOld
+      )
+    }
+  }
+
+  throw new ExchangeRateError(
+    'NO_RATE_AVAILABLE',
+    `لا يوجد سعر صرف لـ ${fromCurrency}→${toCurrency}. يرجى إدخال السعر يدوياً من إعدادات أسعار الصرف.`
+  )
 }
 
 // Convert amount with precision (8 decimal places for accuracy)

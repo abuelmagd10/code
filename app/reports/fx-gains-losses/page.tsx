@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import { getFXAccounts } from "@/lib/currency-service"
 import { ArrowLeft, TrendingUp, TrendingDown, Download, RefreshCw } from "lucide-react"
 import Link from "next/link"
 
@@ -57,28 +58,21 @@ export default function FXGainsLossesReportPage() {
       if (!cid) return
       setCompanyId(cid)
 
-      // ✅ جلب حسابات FX Gain/Loss
-      const { data: fxGainAccount } = await supabase
-        .from('chart_of_accounts')
-        .select('id')
-        .eq('company_id', cid)
-        .eq('account_code', '4200')
-        .single()
-
-      const { data: fxLossAccount } = await supabase
-        .from('chart_of_accounts')
-        .select('id')
-        .eq('company_id', cid)
-        .eq('account_code', '5200')
-        .single()
-
-      if (!fxGainAccount && !fxLossAccount) {
+      // ✅ جلب حسابات FX Gain/Loss (4320/5310 أو المُهيَّأة في الإعدادات)
+      let fxGainAccountId: string
+      let fxLossAccountId: string
+      try {
+        const fxAccounts = await getFXAccounts(supabase, cid)
+        fxGainAccountId = fxAccounts.gainId
+        fxLossAccountId = fxAccounts.lossId
+      } catch {
+        // FX accounts not configured — show empty report
         setEntries([])
         return
       }
 
       // ✅ جلب القيود المحاسبية (تقرير محاسبي - من journal_entries فقط)
-      const accountIds = [fxGainAccount?.id, fxLossAccount?.id].filter(Boolean)
+      const accountIds = [fxGainAccountId, fxLossAccountId]
 
       const { data: lines } = await supabase
         .from('journal_entry_lines')
@@ -109,7 +103,7 @@ export default function FXGainsLossesReportPage() {
 
       for (const line of (lines || [])) {
         const je = (line as any).journal_entries
-        const isGain = line.account_id === fxGainAccount?.id
+        const isGain = line.account_id === fxGainAccountId
         const amount = isGain ? (line.credit_amount || 0) : (line.debit_amount || 0)
 
         if (amount > 0) {
