@@ -121,6 +121,9 @@ export async function getExchangeRate(
       (new Date(targetDate).getTime() - new Date(rateDate).getTime()) / (1000 * 60 * 60 * 24)
     )
     const finalRate = direction === 'reverse' ? 1 / rate : rate
+    // Note: daysOld uses Math.floor, so daysOld=0 means "<24h", daysOld=1 means "24-48h", etc.
+    // Use >= for warn so a 25-hour-old rate (daysOld=1) triggers the warning,
+    // matching the documented "1 day or older" threshold.
     if (daysOld > STALE_ERROR_DAYS) {
       throw new ExchangeRateError(
         'RATE_TOO_OLD',
@@ -130,7 +133,7 @@ export async function getExchangeRate(
         daysOld
       )
     }
-    if (daysOld > STALE_WARN_DAYS) {
+    if (daysOld >= STALE_WARN_DAYS) {
       console.warn(
         `[exchange-rates] aged_rate_used: ${fromCurrency}→${toCurrency} rate=${finalRate} ` +
         `from ${rateDate} (${daysOld} days old, threshold=${STALE_WARN_DAYS})`
