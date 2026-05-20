@@ -4,6 +4,73 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.8.1] - 2026-05-20
+
+### 🔧 Critical Hotfix — WIP Account Conflict + 2 Bugs Discovered During Live Test
+
+اكتُشفت ٣ مشاكل أثناء محاكاة الـ hook على issue event حقيقى فى DB. تم إصلاحها فوراً.
+
+### 🐛 Bug #1: WIP account linked to inventory account (46/47 companies affected!)
+
+**السبب:** الـ migration v3.8.0 استخدم `WHERE NOT EXISTS (account_code = '1140')`. لكن حساب 1140 موجود مسبقاً فى كل الشركات الـ 47 = "المخزون". فالـ INSERT تم تخطيه، والـ UPDATE اللاحق ربط `companies.wip_account_id` بحساب المخزون الموجود.
+
+**النتيجة:** القيد ينشئ Dr 1140 / Cr 1140 (نفس الحساب من الجانبين!) — كارثة محاسبية.
+
+**الإصلاح** (`20260520000400_fix_wip_account_conflict.sql` — تم تطبيقه):
+1. فك ربط `wip_account_id` لكل الشركات اللى مربوطة بحساب `sub_type != 'work_in_process'`
+2. إنشاء حساب WIP جديد بكود **1145** (وليس 1140) مع `sub_type='work_in_process'`
+3. ربط `companies.wip_account_id` بالحساب الجديد بالـ sub_type (مش بالـ code)
+
+**التحقق:** الآن 47/47 شركة عندها WIP correct (1145 - الإنتاج تحت التشغيل) ✅
+
+### 🐛 Bug #2: `inventory_transactions.quantity` column doesn't exist
+
+**السبب:** الـ service استخدم `txn.quantity` لكن العمود الصحيح اسمه `quantity_change`.
+
+**الإصلاح:** استبدال `quantity` بـ `quantity_change` فى الـ SELECT والـ Math.abs.
+
+### 🐛 Bug #3: Validation missing — same account on both sides
+
+**الإصلاح:** إضافة فحص صريح فى `resolveManufacturingAccounts()`:
+```typescript
+if (wipAccountId === rawMaterialsAccountId) {
+  throw new Error("MANUFACTURING_ACCOUNTS_CONFLICT: ...")
+}
+```
+هذا يمنع أى deploy مستقبلى من إنتاج قيد Dr X / Cr X بنفس الحساب.
+
+### ✅ Test Verification (live simulation على شركة "تست")
+
+نُفّذت محاكاة للـ hook على issue event حقيقى موجود فى DB (cost=5 EGP). النتيجة:
+
+```
+Entry: MFG-ISSUE-SIM-* (status='draft')
+─────────────────────────────────────────────
+Dr  1145 - الإنتاج تحت التشغيل      5.00
+    Cr  1140 - المخزون                       5.00
+─────────────────────────────────────────────
+✅ Different accounts both sides
+✅ Balanced (debit = credit)
+✅ Status = draft (requires approval)
+```
+
+ملاحظة: تم soft-delete للقيود التجريبية بعد التحقق.
+
+### 📋 Files Changed
+
+- 🆕 `supabase/migrations/20260520000400_fix_wip_account_conflict.sql` (تم تطبيقه)
+- 🔧 `lib/manufacturing/manufacturing-accounting.ts`:
+  - `quantity` → `quantity_change` فى Material Issue + Product Receipt حسابات
+  - WIP lookup يستخدم 1145 بدل 1140 كـ fallback
+  - validation للحسابات المتطابقة (throws explicit error)
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: صفر — لم يتم بعد استخدام الـ hook فى production (الـ feature جديدة)
+- **Forward-safe**: حتى لو تم استخدام `companies.wip_account_id` خاطئ مرة أخرى، الـ service سيرفض ولن يُنشئ قيد سيىء
+
+---
+
 ## [3.8.0] - 2026-05-20
 
 ### 🏭 Manufacturing Phase B-1: قيود WIP المحاسبية (IAS 2 compliance)
