@@ -4,6 +4,55 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.6.3] - 2026-05-20
+
+### 🔧 Fixed (Critical) — Schema mismatch فى insertion للـ journal_entries
+
+تم اكتشاف 4 مشاكل أثناء الاختبار الحقيقى. الـ POST لـ Supabase كان يفشل بـ `PGRST204` لأن الكود كان يستخدم أعمدة غير موجودة فى schema الفعلى.
+
+### الـ schema الفعلى vs المتوقع
+
+| الكود (خطأ) | الـ schema الفعلى |
+|---|---|
+| `is_approved: false` | لا يوجد عمود — استخدم `status: 'draft'` |
+| `created_by: userId` | لا يوجد — استخدم `posted_by: userId` |
+| `branch_id` اختيارى | **NOT NULL** — لازم تمرر branch_id |
+| `reference_id: string` | **UUID فقط** — استخدم `crypto.randomUUID()` |
+| `fallback: '1210'` | 1210 = "المباني" فى بعض الشركات (مش AR!) |
+
+### الـ files المُعدّلة
+
+- **`lib/currency-service.ts`** → `revaluePeriodEndFXBalances()`:
+  - يجلب أول branch للشركة قبل الإدراج
+  - يستخدم `crypto.randomUUID()` لـ `reference_id`
+  - يستخدم `status='draft'` بدل `is_approved=false`
+  - يستخدم `posted_by` بدل `created_by`
+  - الاسم الوصفى يُحفظ فى `entry_number`
+  - lookup للحسابات بـ `sub_type` و regex على الاسم العربى (مش account_code)
+
+- **`lib/currency-service.ts`** → `performCurrencyRevaluation()`:
+  - نفس الإصلاحات (كان فيه نفس الـ bug من قبل v3.4.0)
+
+- **`lib/services/sales-invoice-payment-command.service.ts`** → `postFXPaymentAdjustment()`:
+  - نفس الإصلاحات
+  - fallback تلقائى للـ branch_id لو الـ caller ما مرّرش واحد
+
+### 🔍 كيف اكتُشفت
+
+أثناء اختبار حقيقى على شركة "تست":
+1. فاتورة USD-100 اختبارية (rate=50) أُنشئت يدوياً
+2. الـ UI Preview ✅ شغال (math صحيح)
+3. الضغط على "تنفيذ" → 400 من Supabase: `PGRST204`
+4. فحص schema الـ journal_entries كشف الـ 4 مشاكل
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: ميزة جديدة فقط، لم يُستخدم الكود السابق فى أى deploy ناجح (الـ UI نفسها لم تكن تشتغل)
+- **Backward compatible**: الـ status='draft' معترف به فعلاً (1 entry موجود فعلاً بهذه الحالة)
+- **اختبار مطلوب**: بعد deploy، الضغط على "تنفيذ" يجب أن ينجح وينشئ قيد بحالة draft
+
+---
+
 ## [3.6.2] - 2026-05-20
 
 ### 🔧 UX Fix — صفحة FX Revaluation

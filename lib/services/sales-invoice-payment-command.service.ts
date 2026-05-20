@@ -353,34 +353,54 @@ export class SalesInvoicePaymentCommandService {
     const { getFXAccounts } = await import("@/lib/currency-service")
     const { gainId, lossId } = await getFXAccounts(this.adminSupabase as any, params.companyId)
 
-    // Resolve a Cash & AR account from chart_of_accounts via sub_type
+    // Resolve AR account from chart_of_accounts — prefer sub_type, fall back to name
     const { data: accounts } = await this.adminSupabase
       .from("chart_of_accounts")
-      .select("id, sub_type, account_code")
+      .select("id, account_name, sub_type, account_code")
       .eq("company_id", params.companyId)
       .eq("is_active", true)
-    const findAcct = (subType: string, fallback?: string) => {
-      let a = (accounts as any[] | null)?.find((x: any) => x.sub_type === subType)
-      if (!a && fallback) a = (accounts as any[] | null)?.find((x: any) => x.account_code === fallback)
-      return a?.id as string | undefined
-    }
-    const arAccountId = findAcct("accounts_receivable", "1210")
-    if (!arAccountId) return
+    const arRecord = (accounts as any[] | null)?.find((x: any) => x.sub_type === "accounts_receivable")
+      || (accounts as any[] | null)?.find((x: any) => /عملاء|مدين|receivable/i.test(String(x.account_name || "")))
+    const arAccountId = arRecord?.id as string | undefined
+    if (!arAccountId) return  // can't post FX adjustment without AR account
 
     // Create journal entry — flagged as fx_payment_adjustment, requires approval
-    const reference = `FX-PAY-${params.paymentId || params.invoiceId}-${Date.now()}`
+    // Schema:
+    //   - status='draft' (no is_approved column on this table)
+    //   - branch_id is NOT NULL — fall back to the first company branch if not provided
+    //   - reference_id must be UUID — store descriptive id in entry_number instead
+    //   - posted_by (not created_by)
+    let branchId = params.branchId
+    if (!branchId) {
+      const { data: firstBranch } = await (this.adminSupabase as any)
+        .from("branches")
+        .select("id")
+        .eq("company_id", params.companyId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      branchId = firstBranch?.id || null
+    }
+    if (!branchId) return  // cannot create entry without branch
+
+    const refUuid = (typeof crypto !== "undefined" && (crypto as any).randomUUID)
+      ? (crypto as any).randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const entryNumber = `FX-PAY-${params.paymentId || params.invoiceId}-${Date.now()}`
+
     const { data: entry, error: entryErr } = await (this.adminSupabase as any)
       .from("journal_entries")
       .insert({
         company_id: params.companyId,
-        entry_date: params.paymentDate,
-        description: `فرق سعر العملة - دفعة فاتورة (${invoiceCurrency} → ${baseCurrency})`,
-        reference_type: "fx_payment_adjustment",
-        reference_id: reference,
-        is_approved: false,
-        created_by: params.userId,
-        branch_id: params.branchId,
+        branch_id: branchId,
         cost_center_id: params.costCenterId,
+        entry_date: params.paymentDate,
+        entry_number: entryNumber,
+        description: `فرق سعر العملة - دفعة فاتورة (${invoiceCurrency} → ${baseCurrency}) [${entryNumber}]`,
+        reference_type: "fx_payment_adjustment",
+        reference_id: refUuid,
+        status: "draft",
+        posted_by: params.userId,
       })
       .select()
       .single()
