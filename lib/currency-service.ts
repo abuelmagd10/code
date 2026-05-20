@@ -767,15 +767,17 @@ export async function performCurrencyRevaluation(
 
     if (linesError) throw linesError
 
-    // Log to audit
+    // Log to audit. Schema: action must be one of CHECK constraint values
+    // (INSERT/UPDATE/DELETE/SETTINGS/...). Original event name goes in `reason`.
     try {
       await supabase.from('audit_logs').insert({
         company_id: companyId,
         user_id: userId,
-        action: 'currency_revaluation',
-        table_name: 'journal_entries',
+        action: 'SETTINGS',
+        target_table: 'journal_entries',
         record_id: journalEntry.id,
-        new_values: {
+        reason: 'currency_revaluation',
+        new_data: {
           old_base_currency: oldBaseCurrency,
           new_base_currency: newBaseCurrency,
           exchange_rate: exchangeRate,

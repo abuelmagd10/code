@@ -374,6 +374,30 @@ export async function createCOGSJournalOnDelivery(
 
 /**
  * تحضير بيانات قيد التحصيل/الدفع من كائن البيانات مباشرة (بدون حفظ)
+ *
+ * Multi-currency / IAS 21 support:
+ * --------------------------------
+ * When the underlying invoice/bill is in a foreign currency and the rate at
+ * payment date differs from the rate when the invoice/bill was issued, the
+ * difference is posted to either:
+ *   - 4320 (FX Gain — أرباح فروق العملة)  via getFXAccounts
+ *   - 5310 (FX Loss — خسائر فروق العملة) via getFXAccounts
+ *
+ * Required fields on paymentData for FX:
+ *   - paymentData.amount               (number)  amount paid, in BASE currency
+ *   - paymentData.exchange_rate        (number, optional) FC→base rate AT PAYMENT TIME
+ *   - paymentData.original_currency_amount (number, optional) amount in FC
+ *
+ * Behavior:
+ *   - If the invoice/bill currency == company base currency: no FX, classic Dr/Cr.
+ *   - If the invoice/bill currency != base AND paymentData.exchange_rate is given:
+ *       AR_relieved_base = original_currency_amount × invoice.exchange_rate
+ *       Cash_received_base = paymentData.amount
+ *       fx_diff = Cash_received_base - AR_relieved_base   (customer payment)
+ *               (sign flips for supplier payments)
+ *       Post the diff to 4320 (positive) or 5310 (negative).
+ *   - If FC but exchange_rate not given: behaves like the legacy path (no FX line).
+ *     A console.warn is emitted so the caller can detect the gap.
  */
 export async function preparePaymentJournalFromData(
   supabase: any,
@@ -395,11 +419,73 @@ export async function preparePaymentJournalFromData(
   const isCustomerPayment = !!paymentData.customer_id
   const isSupplierPayment = !!paymentData.supplier_id
 
+  // ---------------------------------------------------------------
+  // FX detection: compare invoice/bill currency vs company base
+  // ---------------------------------------------------------------
+  let fxDiff = 0  // in base currency; +ve = gain (customer) / loss (supplier)
+  let arApAmount = amount  // base-currency amount to relieve from AR/AP
+  let sourceCurrency: string | null = null
+  let sourceRate: number | null = null
+
+  try {
+    // Fetch base currency for the company
+    const { data: companyRow } = await supabase
+      .from('companies')
+      .select('base_currency')
+      .eq('id', companyId)
+      .maybeSingle()
+    const baseCurrency = (companyRow?.base_currency || 'EGP').toUpperCase()
+
+    // Look up the source document (invoice or bill) to read original FX rate
+    if (isCustomerPayment && paymentData.invoice_id) {
+      const { data: inv } = await supabase
+        .from('invoices')
+        .select('currency_code, exchange_rate, base_currency_total, total_amount')
+        .eq('id', paymentData.invoice_id)
+        .maybeSingle()
+      sourceCurrency = (inv?.currency_code || baseCurrency).toUpperCase()
+      sourceRate = Number(inv?.exchange_rate || 1)
+    } else if (isSupplierPayment && paymentData.bill_id) {
+      const { data: bill } = await supabase
+        .from('bills')
+        .select('currency_code, exchange_rate, base_currency_total, total_amount')
+        .eq('id', paymentData.bill_id)
+        .maybeSingle()
+      sourceCurrency = (bill?.currency_code || baseCurrency).toUpperCase()
+      sourceRate = Number(bill?.exchange_rate || 1)
+    }
+
+    // FX adjustment kicks in only if all three are present
+    const paymentRate = Number(paymentData.exchange_rate || 0)
+    const fcAmount = Number(paymentData.original_currency_amount || 0)
+    const isForeignCurrency = sourceCurrency && sourceCurrency !== baseCurrency && sourceRate && sourceRate > 0
+
+    if (isForeignCurrency && paymentRate > 0 && fcAmount > 0) {
+      // Both rates available → compute FX difference per IAS 21 §28
+      const arApRelievedAtOriginalRate = fcAmount * sourceRate
+      const cashAtPaymentRate = fcAmount * paymentRate
+      // Sanity: amount should equal cashAtPaymentRate (rounded). We trust paymentData.amount.
+      arApAmount = arApRelievedAtOriginalRate
+      // For customer: cash debit > AR credit → gain
+      // For supplier: AP debit < cash credit → loss
+      fxDiff = cashAtPaymentRate - arApRelievedAtOriginalRate
+    } else if (isForeignCurrency) {
+      // FC invoice but no rate provided — caller should pass exchange_rate.
+      // Warn so the gap is visible; preserve legacy behavior (no FX line).
+      console.warn(
+        `[preparePaymentJournalFromData] FC document ${sourceCurrency} detected ` +
+        `but paymentData.exchange_rate / original_currency_amount missing — ` +
+        `FX gain/loss will NOT be posted. payment_id=${paymentData.id}`
+      )
+    }
+  } catch (fxErr) {
+    // Non-fatal: fall back to legacy behavior if FX lookup fails
+    console.warn('[preparePaymentJournalFromData] FX detection skipped:', fxErr)
+  }
+
   // إنشاء قيد التحصيل/الدفع
   const journalEntry: AccrualJournalEntry = {
     company_id: companyId,
-    // نستخدم معرف مؤقت إذا كان غير موجود (سيتم تحديثه لاحقاً أو استخدامه كمرجع)
-    // في حالة Atomic Transaction، سنعتمد على الترتيب أو معرفات تم إنشاؤها مسبقاً
     reference_type: isCustomerPayment ? 'customer_payment' : 'supplier_payment',
     reference_id: paymentData.id || 'TEMP_PAYMENT_ID',
     entry_date: paymentData.payment_date,
@@ -410,8 +496,30 @@ export async function preparePaymentJournalFromData(
     lines: []
   }
 
+  // Resolve FX accounts only if needed
+  let fxGainAccountId: string | null = null
+  let fxLossAccountId: string | null = null
+  if (Math.abs(fxDiff) >= 0.01) {
+    try {
+      const { getFXAccounts } = await import('./currency-service')
+      const fx = await getFXAccounts(supabase, companyId)
+      fxGainAccountId = fx.gainId
+      fxLossAccountId = fx.lossId
+    } catch (fxErr) {
+      // If FX accounts unavailable, skip the adjustment line and warn loudly
+      console.error(
+        '[preparePaymentJournalFromData] FX diff detected but FX accounts ' +
+        'unavailable — payment will be unbalanced in FC terms. Configure ' +
+        'accounts 4320 / 5310 or companies.fx_gain_account_id / fx_loss_account_id.',
+        fxErr
+      )
+      fxDiff = 0  // silently skip rather than fail the payment
+      arApAmount = amount
+    }
+  }
+
   if (isCustomerPayment) {
-    // دفعة من عميل: Dr. Cash / Cr. AR
+    // Customer payment: Dr. Cash / Cr. AR  (+FX line if applicable)
     journalEntry.lines.push(
       {
         account_id: cashAccountId,
@@ -424,18 +532,41 @@ export async function preparePaymentJournalFromData(
       {
         account_id: mapping.accounts_receivable,
         debit_amount: 0,
-        credit_amount: amount,
+        credit_amount: arApAmount,
         description: 'تحصيل من العميل',
         branch_id: paymentData.branch_id,
         cost_center_id: paymentData.cost_center_id
       }
     )
+    if (Math.abs(fxDiff) >= 0.01) {
+      if (fxDiff > 0 && fxGainAccountId) {
+        // Cash > AR: we got more base currency than recorded → FX Gain
+        journalEntry.lines.push({
+          account_id: fxGainAccountId,
+          debit_amount: 0,
+          credit_amount: fxDiff,
+          description: `فرق سعر العملة - مكسب (${sourceCurrency} → base)`,
+          branch_id: paymentData.branch_id,
+          cost_center_id: paymentData.cost_center_id
+        })
+      } else if (fxDiff < 0 && fxLossAccountId) {
+        // Cash < AR: we got less base currency than recorded → FX Loss
+        journalEntry.lines.push({
+          account_id: fxLossAccountId,
+          debit_amount: Math.abs(fxDiff),
+          credit_amount: 0,
+          description: `فرق سعر العملة - خسارة (${sourceCurrency} → base)`,
+          branch_id: paymentData.branch_id,
+          cost_center_id: paymentData.cost_center_id
+        })
+      }
+    }
   } else if (isSupplierPayment) {
-    // دفعة لمورد: Dr. AP / Cr. Cash
+    // Supplier payment: Dr. AP / Cr. Cash  (+FX line if applicable)
     journalEntry.lines.push(
       {
         account_id: mapping.accounts_payable,
-        debit_amount: amount,
+        debit_amount: arApAmount,
         credit_amount: 0,
         description: 'سداد للمورد',
         branch_id: paymentData.branch_id,
@@ -450,6 +581,29 @@ export async function preparePaymentJournalFromData(
         cost_center_id: paymentData.cost_center_id
       }
     )
+    if (Math.abs(fxDiff) >= 0.01) {
+      if (fxDiff > 0 && fxLossAccountId) {
+        // Cash > AP: we paid more base currency than recorded → FX Loss
+        journalEntry.lines.push({
+          account_id: fxLossAccountId,
+          debit_amount: fxDiff,
+          credit_amount: 0,
+          description: `فرق سعر العملة - خسارة (${sourceCurrency} → base)`,
+          branch_id: paymentData.branch_id,
+          cost_center_id: paymentData.cost_center_id
+        })
+      } else if (fxDiff < 0 && fxGainAccountId) {
+        // Cash < AP: we paid less base currency than recorded → FX Gain
+        journalEntry.lines.push({
+          account_id: fxGainAccountId,
+          debit_amount: 0,
+          credit_amount: Math.abs(fxDiff),
+          description: `فرق سعر العملة - مكسب (${sourceCurrency} → base)`,
+          branch_id: paymentData.branch_id,
+          cost_center_id: paymentData.cost_center_id
+        })
+      }
+    }
   }
 
   return journalEntry

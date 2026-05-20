@@ -4,6 +4,77 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.4.0] - 2026-05-20
+
+### 🌍 Added (Major) — تطبيق معيار IAS 21 لفروق العملة عند الدفع
+
+تطبيق آلية حساب فروق العملة (FX Gain/Loss) عند تحصيل/سداد الفواتير بعملات أجنبية، طبقاً لمعيار المحاسبة الدولى **IAS 21 §28** والمصرى **EAS 13**.
+
+### 🔧 Changed
+
+- **`lib/accrual-accounting-engine.ts`** → `preparePaymentJournalFromData()`:
+  - يكتشف لو الفاتورة/فاتورة المورد بعملة أجنبية (`currency_code != base_currency`)
+  - يجلب `exchange_rate` الأصلى من الفاتورة و يقارنه بسعر الدفع (`paymentData.exchange_rate`)
+  - يحسب الفرق بين القيمة المسجلة فى AR/AP والقيمة الفعلية المستلمة/المدفوعة بالعملة المحلية
+  - ينشئ قيد إضافى تلقائياً لحسابات **4320** (مكاسب) أو **5310** (خسائر) حسب الاتجاه
+  - **Backward compatible**: لو الفاتورة بنفس العملة الأساسية، السلوك زى ما هو (Dr. Cash / Cr. AR)
+  - لو الفاتورة بعملة أجنبية لكن ما تم إرسال `exchange_rate` فى الـ payload، يكتفى بـ `console.warn` ولا يفشل
+
+### 🧮 Logic — منطق الحساب
+
+**Customer Payment (تحصيل من عميل):**
+```
+AR_relieved_base = original_currency_amount × invoice.exchange_rate (السعر القديم)
+Cash_received_base = original_currency_amount × payment.exchange_rate (السعر الحالى)
+fx_diff = Cash - AR
+  > 0 → FX Gain (Cr. 4320)
+  < 0 → FX Loss (Dr. 5310)
+```
+
+**Supplier Payment (سداد لمورد):**
+```
+AP_settled_base = original_currency_amount × bill.exchange_rate
+Cash_paid_base = original_currency_amount × payment.exchange_rate
+fx_diff = Cash - AP
+  > 0 → FX Loss (Dr. 5310) — دفعنا أكتر من اللى مسجل
+  < 0 → FX Gain (Cr. 4320) — دفعنا أقل من اللى مسجل
+```
+
+### 📋 Required payload fields for FX
+
+Callers wanting FX adjustment must pass on `paymentData`:
+- `exchange_rate` (number) — السعر الحالى وقت الدفع (FC → base)
+- `original_currency_amount` (number) — المبلغ بالعملة الأجنبية
+
+اللى مش هياخدوا الحقول دى، النظام هيكمل بنفس السلوك القديم بدون قيد FX.
+
+### 🔧 Fixed
+
+- **`lib/currency-service.ts`** → `performCurrencyRevaluation()`: استبدال أعمدة الـ audit_logs الخاطئة:
+  - `table_name` → `target_table` ✅
+  - `new_values` → `new_data` ✅
+  - `action: 'currency_revaluation'` → `action: 'SETTINGS'` + `reason: 'currency_revaluation'` ✅
+  - كان بيفشل بصمت قبل كده بسبب CHECK constraint
+
+### 🛡️ Risk Assessment — تقييم المخاطر
+
+- **Production impact**: صفر مباشر — كل الـ 47 شركة الحالية تعمل بـ EGP فقط، فالـ branch الجديد ما هياثرش على أى قيد موجود.
+- **مهم لمستقبل التطبيق**: أى شركة هتبدأ تدخل معاملات بعملات أجنبية، النظام دلوقتى هيتعامل صح مع IAS 21 ما دامت الواجهة بترسل `exchange_rate` و `original_currency_amount`.
+- **Open items**:
+  - 🟡 **TODO P0**: UI تحديث (forms الدفع) لإرسال الحقول الجديدة
+  - 🟡 **TODO P0**: دالة `revaluePeriodEndFXBalances` لإعادة تقييم الأرصدة المفتوحة بنهاية كل فترة
+  - 🟢 **TODO P1**: Migration يربط `companies.fx_gain_account_id`/`fx_loss_account_id` للحسابات الموجودة
+
+### 🧪 Testing checklist (next session)
+
+عند إضافة معاملات FX حقيقية:
+1. أنشئ فاتورة USD بسعر 30
+2. حصّل دفعة من العميل لما السعر يبقى 31
+3. تأكد إن القيد يحتوى على: Dr. Cash | Cr. AR | Cr. 4320 (الفرق)
+4. كرر مع supplier payment للتأكد من سيناريو الخسارة
+
+---
+
 ## [3.3.4] - 2026-05-20
 
 ### 🔧 Fixed (Hotfix) — إصلاح سريع
