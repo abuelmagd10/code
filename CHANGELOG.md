@@ -4,6 +4,148 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.6.0] - 2026-05-20
+
+### 🌍 Added — استكمال IAS 21 على واجهة الفواتير والـ payment service
+
+استكمال آلية تسجيل فروق العملة عند دفع الفواتير من خلال:
+- إضافة حقول FX على نافذة تسجيل الدفع
+- تمرير الحقول عبر API
+- Hook جديد فى الـ service يُنشئ قيد FX adjustment مستقل بعد نجاح الدفع
+
+### 🔧 Changed
+
+- **`app/invoices/[id]/page.tsx`** — نافذة "تسجيل دفعة":
+  - تظهر بشكل تلقائى لو الفاتورة بعملة أجنبية (`currency_code` موجود و `exchange_rate ≠ 1`)
+  - حقلين جديدين: "المبلغ بالعملة الأجنبية" و "سعر الصرف وقت الدفع"
+  - معاينة حية للحساب: تسوية AR، النقد المستلم، الفرق
+  - رسالة واضحة: لو مكسب → 4320، لو خسارة → 5310
+  - الحقول اختيارية: لو ما تم ملؤها، السلوك زى ما هو (بدون قيد FX)
+
+- **`app/api/invoices/[id]/record-payment/route.ts`**:
+  - يقبل `exchangeRate` و `originalCurrencyAmount` فى الـ body
+  - يمررها للـ service بدون تعديل سلوك RPC الأساسى
+
+- **`lib/services/sales-invoice-payment-command.service.ts`**:
+  - `RecordInvoicePaymentCommand` فيه حقول `exchangeRate` و `originalCurrencyAmount`
+  - دالة جديدة `postFXPaymentAdjustment()` تشتغل بعد نجاح الـ RPC
+  - تجلب `invoice.exchange_rate` الأصلى وتقارنه بسعر الدفع
+  - تنشئ قيد `journal_entry` مستقل بنوع `fx_payment_adjustment`
+  - `is_approved=false` افتراضياً — يحتاج اعتماد منفصل
+  - **non-fatal**: لو فشل، الدفعة الأصلية ما تتأثرش (الـ catch بيـ log فقط)
+
+### 📐 Architecture decision — قرار معمارى
+
+DB-level RPCs (`process_invoice_payment_atomic_v2`) لا تدعم FX حالياً. بدل تعديل SQL functions (high risk)، تم اختيار **post-RPC hook** فى TypeScript:
+
+```
+[UI] → [API] → [service.recordPayment]
+                     ↓
+              [RPC: payment journal]  ← الـ flow الأساسى يكمل
+                     ↓ نجح؟
+              [postFXPaymentAdjustment]  ← قيد FX منفصل
+                     ↓
+            journal_entries (fx_payment_adjustment, unapproved)
+```
+
+**المزايا:**
+- الـ RPC القديم يفضل شغال زى ما هو (بدون مخاطر)
+- لو الـ hook فشل، الدفعة الأصلية ما تنعكس
+- القيد FX يمر بـ workflow اعتماد منفصل قبل أن يؤثر على ميزان المراجعة
+- سهل تعطيله بإزالة الـ hook لو احتجت
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: صفر — لا يوجد فواتير بعملات أجنبية فى البيانات الحالية، فالـ hook ما يشتغلش.
+- **عند استخدام FX**: 
+  - الـ UI يظهر الحقول الجديدة فقط لو الفاتورة بعملة أجنبية
+  - لو المستخدم تركهم فاضيين، نفس السلوك القديم (بدون قيد FX)
+  - لو ملاهم، يتم إنشاء قيد FX adjustment بحالة "غير معتمد" يحتاج مراجعة
+
+### 🧪 Testing scenario (when FX data exists)
+
+1. أنشئ فاتورة USD بمبلغ 100 USD، سعر صرف 30 EGP
+   → AR debit 3,000 EGP
+2. افتح "تسجيل دفعة" → الحقول الجديدة تظهر
+3. أدخل: المبلغ USD = 100، سعر الدفع = 31
+4. المعاينة تعرض: AR=3000، Cash=3100، مكسب 100 EGP → 4320
+5. اضغط حفظ → دفعة تتسجل عادى + قيد FX adjustment بحالة pending
+6. اذهب لقائمة journal_entries → اعتمد قيد `fx_payment_adjustment`
+7. ميزان المراجعة يعكس الـ 100 EGP مكسب فى حساب 4320
+
+### 📋 Remaining future work
+
+- 🟢 **Approval UI** لقيود `fx_payment_adjustment` (الأساسى موجود فى journal_entries list)
+- 🟢 **Supplier bill payment** نفس الـ flow (لسه يستخدم flow مختلف)
+- 🟢 **Period-end revaluation cron** لتشغيل إعادة التقييم تلقائياً نهاية الشهر
+
+---
+
+## [3.5.0] - 2026-05-20
+
+### 🌍 Added (Major) — إعادة تقييم نهاية الفترة طبقاً لـ IAS 21 §28
+
+استكمال متطلبات IAS 21: إضافة آلية إعادة تقييم الأرصدة النقدية المفتوحة بالعملات الأجنبية فى نهاية الفترة المالية.
+
+### 🆕 New Files
+
+- **`supabase/migrations/20260520000100_link_fx_accounts.sql`**: Migration يربط تلقائياً `companies.fx_gain_account_id` بـ account 4320 و `fx_loss_account_id` بـ account 5310 لكل الـ 47 شركة. **تم تطبيقه على Production**.
+- **`app/api/fx-revaluation/route.ts`**: API endpoint لتشغيل إعادة التقييم. يدعم `dryRun` للمعاينة و commit للتنفيذ.
+- **`app/settings/fx-revaluation/page.tsx`**: صفحة UI كاملة لإدارة العملية مع:
+  - اختيار تاريخ نهاية الفترة
+  - تعريف أسعار الإقفال يدوياً لكل عملة (أو fallback لجدول exchange_rates)
+  - زر "معاينة (محاكاة)" بدون أى تغيير على البيانات
+  - زر "تنفيذ" بعد المعاينة لإنشاء قيد محاسبى (يحتاج اعتماد منفصل)
+  - عرض تفصيلى للحسابات المُعاد تقييمها مع الفرق لكل مستند
+
+### 🆕 New Functions
+
+- **`lib/currency-service.ts`** → `revaluePeriodEndFXBalances()`:
+  - يجلب كل الفواتير المفتوحة (status ≠ paid/cancelled/draft) بعملات أجنبية
+  - يجلب كل فواتير الموردين المفتوحة بنفس الشروط
+  - يقارن السعر الأصلى لكل مستند بسعر الإقفال
+  - يحسب فرق التقييم لكل مستند ويجمعه على مستوى AR و AP منفصلة
+  - ينشئ قيد محاسبى واحد لتسوية AR + قيد آخر لـ AP (لو فيه فروق)
+  - يستخدم 4320 (مكاسب) أو 5310 (خسائر) حسب الاتجاه
+  - يدعم وضع `dryRun` للمعاينة قبل التنفيذ
+  - القيد المُنشأ `is_approved=false` ويحتاج اعتماد منفصل قبل التأثير على ميزان المراجعة
+
+### 🧮 Accounting Logic — منطق المحاسبة
+
+**AR (Accounts Receivable):**
+```
+Closing Rate > Original Rate → AR قيمته زادت → Dr. AR | Cr. 4320 (Gain)
+Closing Rate < Original Rate → AR قيمته نقصت → Dr. 5310 | Cr. AR (Loss)
+```
+
+**AP (Accounts Payable):**
+```
+Closing Rate > Original Rate → AP قيمته زادت (التزام أكبر) → Dr. 5310 | Cr. AP (Loss)
+Closing Rate < Original Rate → AP قيمته نقصت (التزام أقل) → Dr. AP | Cr. 4320 (Gain)
+```
+
+### 🔒 Security
+
+- Permission check: فقط `owner`/`admin`/`general_manager`/`gm`/`super_admin` يقدر يشغل العملية
+- القيد المُنشأ `is_approved=false` افتراضياً
+- Audit log كامل مع `target_table`, `new_data`, `reason='fx_period_end_revaluation'`
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: صفر مباشر — لا توجد فواتير بعملات أجنبية حالياً، فالـ endpoint والـ UI سيعرضون "لا توجد أرصدة" لأى شركة بتشغلهم اليوم.
+- **مستقبلاً**: عند إضافة معاملات FX، الـ workflow سيصبح:
+  1. آخر الشهر → فتح `/settings/fx-revaluation`
+  2. اختيار التاريخ + إدخال أسعار الإقفال
+  3. الضغط على "معاينة" لمعاينة الأثر
+  4. لو الأرقام مقبولة → "تنفيذ" → القيد ينتظر اعتماد
+  5. الاعتماد → الأثر يظهر فى ميزان المراجعة
+
+### ✅ Verified
+
+- Migration `20260520000100_link_fx_accounts` تم تطبيقه — كل 47 شركة عندها FX accounts مربوطة (linked_gain=47, linked_loss=47).
+
+---
+
 ## [3.4.0] - 2026-05-20
 
 ### 🌍 Added (Major) — تطبيق معيار IAS 21 لفروق العملة عند الدفع

@@ -26,6 +26,11 @@ export type RecordInvoicePaymentCommand = {
   warehouseId?: string | null
   bodyCompanyId?: string | null
   idempotencyKey?: string | null
+  // Multi-currency (IAS 21) — when both are provided AND the invoice is in a
+  // foreign currency, a separate FX adjustment journal entry is created after
+  // the main payment journal succeeds.
+  exchangeRate?: number | null
+  originalCurrencyAmount?: number | null
 }
 
 export type RecordInvoicePaymentResult = {
@@ -253,6 +258,38 @@ export class SalesInvoicePaymentCommandService {
       reason: "Invoice Payment Recorded",
     })
 
+    // ===== IAS 21 FX Adjustment Hook =====
+    // If the caller passed exchangeRate + originalCurrencyAmount AND the
+    // invoice is in a foreign currency, create a separate journal entry
+    // recording the FX gain/loss on this payment. This runs AFTER the main
+    // payment journal so it does not affect existing payment flow on failure.
+    if (
+      command.exchangeRate != null &&
+      command.exchangeRate > 0 &&
+      command.originalCurrencyAmount != null &&
+      command.originalCurrencyAmount > 0
+    ) {
+      await this.postFXPaymentAdjustment({
+        companyId: resolvedCompanyId,
+        invoiceId: command.invoiceId,
+        paymentId: result.payment_id || null,
+        paymentDate: command.paymentDate,
+        paymentExchangeRate: Number(command.exchangeRate),
+        originalCurrencyAmount: Number(command.originalCurrencyAmount),
+        userId: actor.userId,
+        branchId: command.branchId || invoice.branch_id || null,
+        costCenterId: command.costCenterId || invoice.cost_center_id || null,
+      }).catch((err) => {
+        // Non-fatal: payment already recorded, FX adjustment failed.
+        // We log loudly so it can be re-run manually.
+        console.error("[FX_ADJUSTMENT] Failed for invoice payment:", {
+          invoiceId: command.invoiceId,
+          paymentId: result.payment_id,
+          error: err?.message || err,
+        })
+      })
+    }
+
     return {
       success: true,
       paymentId: result.payment_id || null,
@@ -264,6 +301,126 @@ export class SalesInvoicePaymentCommandService {
       transactionId: result.transaction_id || null,
       eventType: result.event_type || "invoice_payment",
     }
+  }
+
+  /**
+   * Post a journal entry for FX gain/loss on an invoice payment.
+   *
+   * Runs after the main payment RPC succeeds. Reads the invoice's original
+   * exchange_rate, compares with the payment-time rate provided in the command,
+   * and posts the difference to 4320 (gain) or 5310 (loss) via getFXAccounts().
+   *
+   * Side-effect-only — does not throw upward; failures are logged.
+   */
+  private async postFXPaymentAdjustment(params: {
+    companyId: string
+    invoiceId: string
+    paymentId: string | null
+    paymentDate: string
+    paymentExchangeRate: number
+    originalCurrencyAmount: number
+    userId: string
+    branchId?: string | null
+    costCenterId?: string | null
+  }): Promise<void> {
+    // Lookup invoice's recorded currency + rate
+    const { data: inv, error: invErr } = await this.adminSupabase
+      .from("invoices")
+      .select("currency_code, exchange_rate, company_id")
+      .eq("id", params.invoiceId)
+      .maybeSingle()
+    if (invErr || !inv) return
+
+    // Company base currency for sanity check
+    const { data: company } = await this.adminSupabase
+      .from("companies")
+      .select("base_currency")
+      .eq("id", params.companyId)
+      .maybeSingle()
+    const baseCurrency = String(company?.base_currency || "EGP").toUpperCase()
+    const invoiceCurrency = String(inv.currency_code || baseCurrency).toUpperCase()
+    if (invoiceCurrency === baseCurrency) return  // not an FC invoice
+    const originalRate = Number(inv.exchange_rate || 0)
+    if (originalRate <= 0) return
+
+    // FX diff (base currency)
+    const arBase = params.originalCurrencyAmount * originalRate
+    const cashBase = params.originalCurrencyAmount * params.paymentExchangeRate
+    const fxDiff = cashBase - arBase
+    if (Math.abs(fxDiff) < 0.01) return  // rounding noise
+
+    // Resolve FX accounts
+    const { getFXAccounts } = await import("@/lib/currency-service")
+    const { gainId, lossId } = await getFXAccounts(this.adminSupabase as any, params.companyId)
+
+    // Resolve a Cash & AR account from chart_of_accounts via sub_type
+    const { data: accounts } = await this.adminSupabase
+      .from("chart_of_accounts")
+      .select("id, sub_type, account_code")
+      .eq("company_id", params.companyId)
+      .eq("is_active", true)
+    const findAcct = (subType: string, fallback?: string) => {
+      let a = (accounts as any[] | null)?.find((x: any) => x.sub_type === subType)
+      if (!a && fallback) a = (accounts as any[] | null)?.find((x: any) => x.account_code === fallback)
+      return a?.id as string | undefined
+    }
+    const arAccountId = findAcct("accounts_receivable", "1210")
+    if (!arAccountId) return
+
+    // Create journal entry — flagged as fx_payment_adjustment, requires approval
+    const reference = `FX-PAY-${params.paymentId || params.invoiceId}-${Date.now()}`
+    const { data: entry, error: entryErr } = await (this.adminSupabase as any)
+      .from("journal_entries")
+      .insert({
+        company_id: params.companyId,
+        entry_date: params.paymentDate,
+        description: `فرق سعر العملة - دفعة فاتورة (${invoiceCurrency} → ${baseCurrency})`,
+        reference_type: "fx_payment_adjustment",
+        reference_id: reference,
+        is_approved: false,
+        created_by: params.userId,
+        branch_id: params.branchId,
+        cost_center_id: params.costCenterId,
+      })
+      .select()
+      .single()
+    if (entryErr || !entry) return
+
+    const lines: any[] = []
+    if (fxDiff > 0) {
+      // Cash > AR → FX Gain
+      lines.push({
+        journal_entry_id: entry.id,
+        account_id: arAccountId,
+        debit_amount: fxDiff,
+        credit_amount: 0,
+        description: "تسوية فرق العملة - زيادة AR",
+      })
+      lines.push({
+        journal_entry_id: entry.id,
+        account_id: gainId,
+        debit_amount: 0,
+        credit_amount: fxDiff,
+        description: "مكسب فروق العملة",
+      })
+    } else {
+      const abs = Math.abs(fxDiff)
+      lines.push({
+        journal_entry_id: entry.id,
+        account_id: lossId,
+        debit_amount: abs,
+        credit_amount: 0,
+        description: "خسارة فروق العملة",
+      })
+      lines.push({
+        journal_entry_id: entry.id,
+        account_id: arAccountId,
+        debit_amount: 0,
+        credit_amount: abs,
+        description: "تسوية فرق العملة - نقص AR",
+      })
+    }
+    await (this.adminSupabase as any).from("journal_entry_lines").insert(lines)
   }
 
   private async handleRpcFailure(

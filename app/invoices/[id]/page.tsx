@@ -141,6 +141,9 @@ export default function InvoiceDetailPage() {
   const [paymentMethod, setPaymentMethod] = useState<string>("cash")
   const [paymentRef, setPaymentRef] = useState<string>("")
   const [paymentAccountId, setPaymentAccountId] = useState<string>("")
+  // Multi-currency (IAS 21) fields — shown only when invoice is in a foreign currency
+  const [paymentExchangeRate, setPaymentExchangeRate] = useState<number>(0)
+  const [paymentFCAmount, setPaymentFCAmount] = useState<number>(0)
   const [cashBankAccounts, setCashBankAccounts] = useState<any[]>([])
   const [savingPayment, setSavingPayment] = useState(false)
   // ❌ تم إزالة showCredit و creditDate - استخدم المرتجع الجزئي/الكامل بدلاً من مذكرة الدائن الكاملة
@@ -1945,6 +1948,10 @@ export default function InvoiceDetailPage() {
           branchId: invoice.branch_id || null,
           costCenterId: invoice.cost_center_id || null,
           warehouseId: invoice.warehouse_id || null,
+          // Multi-currency (IAS 21): pass when the invoice was in a foreign currency
+          // The API/service will create an FX adjustment journal entry if these are set.
+          exchangeRate: paymentExchangeRate > 0 ? paymentExchangeRate : null,
+          originalCurrencyAmount: paymentFCAmount > 0 ? paymentFCAmount : null,
         }),
       })
 
@@ -3228,6 +3235,82 @@ export default function InvoiceDetailPage() {
                   <Label>{appLang === 'en' ? 'Reference/Receipt No. (optional)' : 'مرجع/رقم إيصال (اختياري)'}</Label>
                   <Input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} />
                 </div>
+
+                {/* ===== Multi-currency / IAS 21 payment fields ===== */}
+                {/* Only shown when the invoice was issued in a foreign currency */}
+                {invoice.currency_code && invoice.exchange_rate && Number(invoice.exchange_rate) !== 1 && (
+                  <div className="space-y-3 p-3 border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 rounded-md">
+                    <div className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-300">
+                      <span>💱</span>
+                      <span>
+                        {appLang === 'en'
+                          ? `Foreign Currency Invoice (${invoice.currency_code} — original rate: ${Number(invoice.exchange_rate).toFixed(4)})`
+                          : `فاتورة بعملة أجنبية (${invoice.currency_code} — السعر الأصلى: ${Number(invoice.exchange_rate).toFixed(4)})`}
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                      {appLang === 'en'
+                        ? "Enter the payment rate and FC amount to record any FX gain/loss (IAS 21)."
+                        : "أدخل سعر الصرف وقت الدفع والمبلغ بالعملة الأجنبية لتسجيل فروق العملة (IAS 21)."}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">
+                          {appLang === 'en' ? `Amount in ${invoice.currency_code}` : `المبلغ بـ${invoice.currency_code}`}
+                        </Label>
+                        <NumericInput
+                          value={paymentFCAmount}
+                          min={0}
+                          step="0.01"
+                          onChange={(val) => setPaymentFCAmount(val)}
+                          decimalPlaces={2}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">
+                          {appLang === 'en' ? `Payment Rate (${invoice.currency_code} → base)` : `سعر الصرف وقت الدفع`}
+                        </Label>
+                        <NumericInput
+                          value={paymentExchangeRate}
+                          min={0}
+                          step="0.0001"
+                          onChange={(val) => setPaymentExchangeRate(val)}
+                          decimalPlaces={4}
+                        />
+                      </div>
+                    </div>
+                    {paymentFCAmount > 0 && paymentExchangeRate > 0 && Number(invoice.exchange_rate) > 0 && (
+                      <div className="text-xs space-y-1 pt-1 border-t border-amber-200 dark:border-amber-800">
+                        {(() => {
+                          const arBase = paymentFCAmount * Number(invoice.exchange_rate)
+                          const cashBase = paymentFCAmount * paymentExchangeRate
+                          const diff = cashBase - arBase
+                          const gain = diff > 0
+                          return (
+                            <>
+                              <div className="flex justify-between">
+                                <span>{appLang === 'en' ? 'AR relieved (original rate):' : 'تسوية الذمم (السعر الأصلى):'}</span>
+                                <span className="font-mono">{arBase.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>{appLang === 'en' ? 'Cash received (payment rate):' : 'النقد المستلم (سعر الدفع):'}</span>
+                                <span className="font-mono">{cashBase.toFixed(2)}</span>
+                              </div>
+                              <div className={`flex justify-between font-bold ${gain ? 'text-green-700' : 'text-red-700'}`}>
+                                <span>
+                                  {gain
+                                    ? (appLang === 'en' ? 'FX Gain → 4320:' : 'مكسب عملة → 4320:')
+                                    : (appLang === 'en' ? 'FX Loss → 5310:' : 'خسارة عملة → 5310:')}
+                                </span>
+                                <span className="font-mono">{Math.abs(diff).toFixed(2)}</span>
+                              </div>
+                            </>
+                          )
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowPayment(false)} disabled={savingPayment}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>

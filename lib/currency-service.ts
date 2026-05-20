@@ -829,3 +829,399 @@ async function createFXAccountsIfNeeded(
   }
 }
 
+// ========================================
+// Period-End FX Revaluation (IAS 21 §28)
+// ========================================
+
+export interface PeriodEndRevaluationDetail {
+  documentType: 'invoice' | 'bill'
+  documentId: string
+  documentNumber: string
+  currency: string
+  originalRate: number
+  closingRate: number
+  openAmountFC: number
+  bookedBaseAmount: number
+  revaluedBaseAmount: number
+  diff: number  // revalued - booked
+}
+
+export interface PeriodEndRevaluationResult {
+  success: boolean
+  error?: string
+  baseCurrency?: string
+  periodEndDate?: string
+  details: PeriodEndRevaluationDetail[]
+  totalGain: number  // accumulated gain in base currency
+  totalLoss: number  // accumulated loss in base currency (positive number)
+  revaluedDocuments: number
+  journalEntryId?: string
+  dryRun: boolean
+}
+
+/**
+ * Revalue period-end FX balances per IAS 21 §28
+ *
+ * At each reporting date, monetary items (AR, AP, cash in foreign currency)
+ * must be retranslated using the closing rate. The difference vs. the
+ * historical (transaction) rate is recognized as FX gain/loss in P&L.
+ *
+ * What this revalues:
+ *   - Open invoices (status != 'paid', != 'cancelled', != 'draft')
+ *     where currency_code != base_currency
+ *   - Open bills with the same conditions
+ *
+ * What this does NOT revalue (intentionally — future enhancement):
+ *   - Cash / bank account balances in foreign currency
+ *   - Other monetary items (loans, deposits, etc.)
+ *
+ * Closing rate source priority:
+ *   1. `closingRates` parameter (manual override per currency)
+ *   2. exchange_rates table entry with rate_date <= periodEndDate (latest)
+ *   3. throw error if no rate found
+ *
+ * @param dryRun If true, returns the calculation without creating a journal entry.
+ *               Use this to preview the impact before committing.
+ */
+export async function revaluePeriodEndFXBalances(
+  supabase: SupabaseClient,
+  params: {
+    companyId: string
+    periodEndDate: string  // ISO date YYYY-MM-DD
+    closingRates?: Record<string, number>  // { 'USD': 31.5, 'EUR': 34.2 }
+    userId?: string
+    dryRun?: boolean
+  }
+): Promise<PeriodEndRevaluationResult> {
+  const dryRun = !!params.dryRun
+  const details: PeriodEndRevaluationDetail[] = []
+  let totalGain = 0
+  let totalLoss = 0
+
+  try {
+    // 1. Get company base currency
+    const { data: company, error: compErr } = await supabase
+      .from('companies')
+      .select('base_currency')
+      .eq('id', params.companyId)
+      .single()
+    if (compErr || !company) throw new Error('Company not found')
+    const baseCurrency = (company.base_currency || 'EGP').toUpperCase()
+
+    // 2. Resolve FX accounts (will fall back to 4320/5310 if not linked)
+    const { gainId: fxGainAccountId, lossId: fxLossAccountId } =
+      await getFXAccounts(supabase, params.companyId)
+
+    // 3. Helper to look up closing rate for a currency
+    const rateCache: Record<string, number> = {}
+    const getClosingRate = async (currency: string): Promise<number> => {
+      const c = currency.toUpperCase()
+      if (c === baseCurrency) return 1
+      if (rateCache[c] != null) return rateCache[c]
+      // Manual override?
+      if (params.closingRates && params.closingRates[c] > 0) {
+        rateCache[c] = params.closingRates[c]
+        return rateCache[c]
+      }
+      // Fetch from exchange_rates table
+      const { data: rate } = await supabase
+        .from('exchange_rates')
+        .select('rate')
+        .eq('from_currency', c)
+        .eq('to_currency', baseCurrency)
+        .lte('rate_date', params.periodEndDate)
+        .order('rate_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (!rate || !rate.rate) {
+        throw new Error(
+          `No exchange rate found for ${c} → ${baseCurrency} on or before ${params.periodEndDate}. ` +
+          `Either add a rate to exchange_rates or pass closingRates.${c} in the request.`
+        )
+      }
+      rateCache[c] = Number(rate.rate)
+      return rateCache[c]
+    }
+
+    // 4. Fetch open foreign-currency invoices
+    const { data: openInvoices } = await supabase
+      .from('invoices')
+      .select('id, invoice_number, currency_code, exchange_rate, total_amount, paid_amount, base_currency_total, status')
+      .eq('company_id', params.companyId)
+      .neq('currency_code', baseCurrency)
+      .not('currency_code', 'is', null)
+      .not('status', 'in', '("paid","cancelled","draft")')
+      .or('is_deleted.is.null,is_deleted.eq.false')
+
+    for (const inv of (openInvoices || [])) {
+      const currency = String(inv.currency_code || '').toUpperCase()
+      if (!currency || currency === baseCurrency) continue
+      const originalRate = Number(inv.exchange_rate || 0)
+      if (originalRate <= 0) continue
+
+      // Open amount in foreign currency = total - paid (assume both in FC)
+      const totalFC = Number(inv.total_amount || 0)
+      const paidFC = Number(inv.paid_amount || 0)
+      const openFC = totalFC - paidFC
+      if (openFC <= 0.01) continue
+
+      const closingRate = await getClosingRate(currency)
+      const bookedBaseAmount = openFC * originalRate
+      const revaluedBaseAmount = openFC * closingRate
+      const diff = revaluedBaseAmount - bookedBaseAmount
+
+      if (Math.abs(diff) < 0.01) continue
+
+      details.push({
+        documentType: 'invoice',
+        documentId: inv.id,
+        documentNumber: String(inv.invoice_number || inv.id),
+        currency,
+        originalRate,
+        closingRate,
+        openAmountFC: openFC,
+        bookedBaseAmount,
+        revaluedBaseAmount,
+        diff,
+      })
+
+      // For AR (asset): positive diff = closing rate higher = AR worth more in base = GAIN
+      if (diff > 0) totalGain += diff
+      else totalLoss += Math.abs(diff)
+    }
+
+    // 5. Fetch open foreign-currency bills (same logic, AP side)
+    const { data: openBills } = await supabase
+      .from('bills')
+      .select('id, bill_number, currency_code, exchange_rate, total_amount, paid_amount, base_currency_total, status')
+      .eq('company_id', params.companyId)
+      .neq('currency_code', baseCurrency)
+      .not('currency_code', 'is', null)
+      .not('status', 'in', '("paid","cancelled","draft")')
+      .or('is_deleted.is.null,is_deleted.eq.false')
+
+    for (const bill of (openBills || [])) {
+      const currency = String(bill.currency_code || '').toUpperCase()
+      if (!currency || currency === baseCurrency) continue
+      const originalRate = Number(bill.exchange_rate || 0)
+      if (originalRate <= 0) continue
+
+      const totalFC = Number(bill.total_amount || 0)
+      const paidFC = Number(bill.paid_amount || 0)
+      const openFC = totalFC - paidFC
+      if (openFC <= 0.01) continue
+
+      const closingRate = await getClosingRate(currency)
+      const bookedBaseAmount = openFC * originalRate
+      const revaluedBaseAmount = openFC * closingRate
+      const diff = revaluedBaseAmount - bookedBaseAmount
+
+      if (Math.abs(diff) < 0.01) continue
+
+      details.push({
+        documentType: 'bill',
+        documentId: bill.id,
+        documentNumber: String(bill.bill_number || bill.id),
+        currency,
+        originalRate,
+        closingRate,
+        openAmountFC: openFC,
+        bookedBaseAmount,
+        revaluedBaseAmount,
+        diff,
+      })
+
+      // For AP (liability): positive diff = closing rate higher = AP worth more = LOSS
+      if (diff > 0) totalLoss += diff
+      else totalGain += Math.abs(diff)
+    }
+
+    // 6. If dryRun OR no items to revalue, return early
+    if (dryRun || details.length === 0) {
+      return {
+        success: true,
+        baseCurrency,
+        periodEndDate: params.periodEndDate,
+        details,
+        totalGain: roundToDecimals(totalGain, 2),
+        totalLoss: roundToDecimals(totalLoss, 2),
+        revaluedDocuments: details.length,
+        dryRun,
+      }
+    }
+
+    // 7. Get AR/AP mapping
+    const { data: accounts } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, sub_type, account_type')
+      .eq('company_id', params.companyId)
+      .eq('is_active', true)
+    const findAcct = (subType: string, fallback?: string) => {
+      let a = accounts?.find(x => x.sub_type === subType)
+      if (!a && fallback) a = accounts?.find(x => x.account_code === fallback)
+      return a?.id
+    }
+    const arAccountId = findAcct('accounts_receivable', '1210')
+    const apAccountId = findAcct('accounts_payable', '2110')
+    if (!arAccountId || !apAccountId) {
+      throw new Error('AR or AP account not found in chart_of_accounts')
+    }
+
+    // 8. Create journal entry header
+    const reference = `FX-REVAL-${params.periodEndDate}-${Date.now()}`
+    const { data: journalEntry, error: entryError } = await supabase
+      .from('journal_entries')
+      .insert({
+        company_id: params.companyId,
+        entry_date: params.periodEndDate,
+        description: `إعادة تقييم الأرصدة بالعملات الأجنبية - ${params.periodEndDate}`,
+        reference_type: 'fx_period_end_revaluation',
+        reference_id: reference,
+        is_approved: false,  // requires approval workflow
+        created_by: params.userId,
+      })
+      .select()
+      .single()
+    if (entryError) throw entryError
+
+    // 9. Build journal lines
+    const lines: any[] = []
+    let arNetDiff = 0  // sum of diffs on AR side
+    let apNetDiff = 0  // sum of diffs on AP side
+
+    for (const d of details) {
+      if (d.documentType === 'invoice') arNetDiff += d.diff
+      else apNetDiff += d.diff
+    }
+
+    // AR adjustment: if arNetDiff > 0, AR increases (Dr AR, Cr 4320 Gain)
+    //               if arNetDiff < 0, AR decreases (Dr 5310 Loss, Cr AR)
+    if (Math.abs(arNetDiff) >= 0.01) {
+      if (arNetDiff > 0) {
+        lines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: arAccountId,
+          debit_amount: arNetDiff,
+          credit_amount: 0,
+          description: `إعادة تقييم AR بسعر الإقفال ${params.periodEndDate}`,
+        })
+        lines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: fxGainAccountId,
+          debit_amount: 0,
+          credit_amount: arNetDiff,
+          description: `أرباح إعادة تقييم AR`,
+        })
+      } else {
+        const abs = Math.abs(arNetDiff)
+        lines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: fxLossAccountId,
+          debit_amount: abs,
+          credit_amount: 0,
+          description: `خسائر إعادة تقييم AR`,
+        })
+        lines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: arAccountId,
+          debit_amount: 0,
+          credit_amount: abs,
+          description: `إعادة تقييم AR بسعر الإقفال ${params.periodEndDate}`,
+        })
+      }
+    }
+
+    // AP adjustment: if apNetDiff > 0, AP increases (Dr 5310 Loss, Cr AP)
+    //               if apNetDiff < 0, AP decreases (Dr AP, Cr 4320 Gain)
+    if (Math.abs(apNetDiff) >= 0.01) {
+      if (apNetDiff > 0) {
+        const v = apNetDiff
+        lines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: fxLossAccountId,
+          debit_amount: v,
+          credit_amount: 0,
+          description: `خسائر إعادة تقييم AP`,
+        })
+        lines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: apAccountId,
+          debit_amount: 0,
+          credit_amount: v,
+          description: `إعادة تقييم AP بسعر الإقفال ${params.periodEndDate}`,
+        })
+      } else {
+        const abs = Math.abs(apNetDiff)
+        lines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: apAccountId,
+          debit_amount: abs,
+          credit_amount: 0,
+          description: `إعادة تقييم AP بسعر الإقفال ${params.periodEndDate}`,
+        })
+        lines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: fxGainAccountId,
+          debit_amount: 0,
+          credit_amount: abs,
+          description: `أرباح إعادة تقييم AP`,
+        })
+      }
+    }
+
+    const { error: linesError } = await supabase
+      .from('journal_entry_lines')
+      .insert(lines)
+    if (linesError) throw linesError
+
+    // 10. Audit log (correct schema)
+    try {
+      await supabase.from('audit_logs').insert({
+        company_id: params.companyId,
+        user_id: params.userId,
+        action: 'INSERT',
+        target_table: 'journal_entries',
+        record_id: journalEntry.id,
+        reason: 'fx_period_end_revaluation',
+        new_data: {
+          period_end_date: params.periodEndDate,
+          total_gain: roundToDecimals(totalGain, 2),
+          total_loss: roundToDecimals(totalLoss, 2),
+          revalued_documents: details.length,
+          documents: details.map(d => ({
+            type: d.documentType,
+            number: d.documentNumber,
+            currency: d.currency,
+            diff: roundToDecimals(d.diff, 2),
+          })),
+        },
+      })
+    } catch (auditErr) {
+      console.warn('FX revaluation audit log failed:', auditErr)
+    }
+
+    return {
+      success: true,
+      baseCurrency,
+      periodEndDate: params.periodEndDate,
+      details,
+      totalGain: roundToDecimals(totalGain, 2),
+      totalLoss: roundToDecimals(totalLoss, 2),
+      revaluedDocuments: details.length,
+      journalEntryId: journalEntry.id,
+      dryRun: false,
+    }
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+    console.error('Period-end FX revaluation error:', err)
+    return {
+      success: false,
+      error: errorMessage,
+      details,
+      totalGain,
+      totalLoss,
+      revaluedDocuments: details.length,
+      dryRun,
+    }
+  }
+}

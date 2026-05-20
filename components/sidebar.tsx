@@ -31,6 +31,7 @@ import {
   GitMerge,
   PackageCheck,
   PackagePlus,
+  Calculator,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -1188,6 +1189,7 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Cost Centers' : 'مراكز التكلفة'), href: `/cost-centers${q}`, icon: DollarSign },
                     { label: (lang === 'en' ? 'Warehouses' : 'المخازن'), href: `/warehouses${q}`, icon: Package },
                     { label: (lang === 'en' ? 'My Profile' : 'ملفي الشخصي'), href: `/settings/profile${q}`, icon: Users },
+                    { label: (lang === 'en' ? 'FX Revaluation' : 'إعادة تقييم العملات'), href: `/settings/fx-revaluation${q}`, icon: Calculator },
                   ]
                 },
               ]

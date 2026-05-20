@@ -47,6 +47,11 @@ export async function POST(
       warehouseId: body?.warehouseId || null,
       bodyCompanyId: body?.companyId || null,
       idempotencyKey: req.headers.get("Idempotency-Key"),
+      // Multi-currency (IAS 21) — optional. When both are set AND the invoice
+      // is in a foreign currency, the service will post an FX gain/loss
+      // adjustment journal entry after the main payment journal.
+      exchangeRate: body?.exchangeRate != null ? Number(body.exchangeRate) : null,
+      originalCurrencyAmount: body?.originalCurrencyAmount != null ? Number(body.originalCurrencyAmount) : null,
     }
 
     const adminSupabase = createClient(
