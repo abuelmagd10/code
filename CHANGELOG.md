@@ -6,24 +6,45 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ## [3.6.1] - 2026-05-20
 
-### 🔧 Fixed (Hotfix) — TypeScript Build Error
+### 🔧 Fixed (Hotfix) — TypeScript Build Errors
 
-- **Vercel build failed**: `lib/accrual-accounting-engine.ts:465` — `Type error: 'sourceRate' is possibly 'null'`
-- **السبب**: TypeScript ما قدرش يستنتج أن `sourceRate !== null` بعد التحقق فى متغير `isForeignCurrency`
-- **الإصلاح**: إضافة `sourceRate !== null` صراحةً فى الـ if condition بدلاً من الاعتماد على التحقق غير المباشر
-- **Backward compatible**: لا تغيير فى السلوك، فقط type narrowing صريح
+تم اكتشاف خطأين مختلفين تسببا فى فشل Vercel deploy المتكرر. تحققت من الأخطاء مباشرة من Vercel API.
+
+#### Bug #1: `lib/accrual-accounting-engine.ts:465` — `sourceRate possibly null`
+
+- **السبب**: TypeScript ما قدرش يستنتج أن `sourceRate !== null` من تحقق غير مباشر داخل متغير `isForeignCurrency`
+- **الإصلاح**: إضافة `sourceRate !== null` صراحةً فى الـ if condition
 
 ```typescript
-// قبل (يفشل فى type checking)
+// قبل
 if (isForeignCurrency && paymentRate > 0 && fcAmount > 0) {
-  const arApRelievedAtOriginalRate = fcAmount * sourceRate  // ❌ sourceRate possibly null
+  const arApRelievedAtOriginalRate = fcAmount * sourceRate  // ❌
 }
 
-// بعد (يمر type checking)
+// بعد
 if (isForeignCurrency && sourceRate !== null && paymentRate > 0 && fcAmount > 0) {
-  const arApRelievedAtOriginalRate = fcAmount * sourceRate  // ✅ TypeScript ينفع
+  const arApRelievedAtOriginalRate = fcAmount * sourceRate  // ✅
 }
 ```
+
+#### Bug #2: `app/api/fx-revaluation/route.ts:90` — Duplicate `success` key
+
+- **الخطأ من Vercel**: `'success' is specified more than once, so this usage will be overwritten`
+- **السبب**: `{ success: true, ...result }` و `result` نفسه فيه `success: boolean`
+- **الإصلاح**: `result` بالفعل يحتوى على `success: true` (تم التحقق منه فى السطر 83)، فبسطنا الـ return
+
+```typescript
+// قبل
+return NextResponse.json({ success: true, ...result })  // ❌ duplicate key
+
+// بعد
+return NextResponse.json(result)  // ✅ result already has success: true
+```
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: لا توجد تغييرات فى السلوك، فقط type narrowing وتنظيف للـ return
+- **النشر**: بعد هذا الـ hotfix، main هينجح فى البناء ويـ deploy للإنتاج
 
 ---
 
