@@ -458,9 +458,15 @@ export async function preparePaymentJournalFromData(
     // FX adjustment kicks in only if all three are present
     const paymentRate = Number(paymentData.exchange_rate || 0)
     const fcAmount = Number(paymentData.original_currency_amount || 0)
-    const isForeignCurrency = sourceCurrency && sourceCurrency !== baseCurrency && sourceRate && sourceRate > 0
+    // Narrow the types via inline checks so TypeScript can infer non-null
+    const isForeignCurrency = !!(
+      sourceCurrency &&
+      sourceCurrency !== baseCurrency &&
+      sourceRate !== null &&
+      sourceRate > 0
+    )
 
-    if (isForeignCurrency && paymentRate > 0 && fcAmount > 0) {
+    if (isForeignCurrency && sourceRate !== null && paymentRate > 0 && fcAmount > 0) {
       // Both rates available → compute FX difference per IAS 21 §28
       const arApRelievedAtOriginalRate = fcAmount * sourceRate
       const cashAtPaymentRate = fcAmount * paymentRate
