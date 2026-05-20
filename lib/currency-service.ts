@@ -688,16 +688,35 @@ export async function performCurrencyRevaluation(
     }
 
     // Create revaluation journal entry
+    // Schema: status='draft' (no is_approved), branch_id NOT NULL, reference_id UUID, posted_by
+    const { data: firstBranch } = await supabase
+      .from('branches')
+      .select('id')
+      .eq('company_id', companyId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (!firstBranch?.id) {
+      throw new Error('No branch found for company — revaluation cannot create a journal entry')
+    }
+
+    const refUuid = (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
+      ? (crypto as any).randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const entryNumber = `BASE-REVAL-${Date.now()}`
+
     const { data: journalEntry, error: entryError } = await supabase
       .from('journal_entries')
       .insert({
         company_id: companyId,
+        branch_id: firstBranch.id,
         entry_date: revaluationDate,
-        description: `إعادة تقييم العملة: ${oldBaseCurrency} → ${newBaseCurrency} بسعر ${exchangeRate}`,
+        entry_number: entryNumber,
+        description: `إعادة تقييم العملة: ${oldBaseCurrency} → ${newBaseCurrency} بسعر ${exchangeRate} (${entryNumber})`,
         reference_type: 'currency_revaluation',
-        reference_id: `REVAL-${Date.now()}`,
-        is_approved: true,
-        created_by: userId
+        reference_id: refUuid,
+        status: 'draft',  // base-currency change requires explicit approval
+        posted_by: userId
       })
       .select()
       .single()
@@ -1050,35 +1069,63 @@ export async function revaluePeriodEndFXBalances(
       }
     }
 
-    // 7. Get AR/AP mapping
+    // 7. Get AR/AP mapping — prefer sub_type lookup (most reliable)
+    // NOTE: account_code differs by chart of accounts (e.g. 1130 in one CoA,
+    // 1100 in another). Never hard-code codes; rely on sub_type and Arabic name.
     const { data: accounts } = await supabase
       .from('chart_of_accounts')
-      .select('id, account_code, sub_type, account_type')
+      .select('id, account_code, account_name, sub_type, account_type')
       .eq('company_id', params.companyId)
       .eq('is_active', true)
-    const findAcct = (subType: string, fallback?: string) => {
+    const findAcct = (subType: string, nameMatches: RegExp[]) => {
       let a = accounts?.find(x => x.sub_type === subType)
-      if (!a && fallback) a = accounts?.find(x => x.account_code === fallback)
+      if (!a) a = accounts?.find(x => nameMatches.some(re => re.test(String(x.account_name || ''))))
       return a?.id
     }
-    const arAccountId = findAcct('accounts_receivable', '1210')
-    const apAccountId = findAcct('accounts_payable', '2110')
-    if (!arAccountId || !apAccountId) {
-      throw new Error('AR or AP account not found in chart_of_accounts')
+    const arAccountId = findAcct('accounts_receivable', [/عملاء/, /مدين/i, /receivable/i])
+    const apAccountId = findAcct('accounts_payable', [/موردين/, /دائن/i, /payable/i])
+    if (!arAccountId) {
+      throw new Error('AR account not found — set sub_type="accounts_receivable" on chart_of_accounts')
+    }
+    if (!apAccountId) {
+      throw new Error('AP account not found — set sub_type="accounts_payable" on chart_of_accounts')
     }
 
     // 8. Create journal entry header
-    const reference = `FX-REVAL-${params.periodEndDate}-${Date.now()}`
+    // Schema notes:
+    //   - status = 'draft' (the table has no is_approved column; 'draft' = unapproved)
+    //   - branch_id is NOT NULL → use the first branch of the company
+    //   - reference_id must be a UUID, so we generate one and put the descriptive
+    //     identifier in entry_number / description
+    //   - posted_by (not created_by)
+    const { data: firstBranch } = await supabase
+      .from('branches')
+      .select('id')
+      .eq('company_id', params.companyId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (!firstBranch?.id) {
+      throw new Error('No branch found for this company — revaluation cannot create a journal entry')
+    }
+
+    const refUuid = (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
+      ? (crypto as any).randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const entryNumber = `FX-REVAL-${params.periodEndDate}-${Date.now()}`
+
     const { data: journalEntry, error: entryError } = await supabase
       .from('journal_entries')
       .insert({
         company_id: params.companyId,
+        branch_id: firstBranch.id,
         entry_date: params.periodEndDate,
-        description: `إعادة تقييم الأرصدة بالعملات الأجنبية - ${params.periodEndDate}`,
+        entry_number: entryNumber,
+        description: `إعادة تقييم الأرصدة بالعملات الأجنبية - ${params.periodEndDate} (${entryNumber})`,
         reference_type: 'fx_period_end_revaluation',
-        reference_id: reference,
-        is_approved: false,  // requires approval workflow
-        created_by: params.userId,
+        reference_id: refUuid,
+        status: 'draft',  // requires approval; will be set to 'posted' after review
+        posted_by: params.userId,
       })
       .select()
       .single()
