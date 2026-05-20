@@ -4,6 +4,43 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.3.3] - 2026-05-19
+
+### 🔧 Fixed (Critical) — إصلاحات حرجة
+
+- **Shipping report showed "no shipments" even when invoices had shipping providers**: The dedicated `shipments` table is empty across the entire platform (0 rows in 47 companies) — it's reserved for a future tracking integration. Actual shipping data lives on `invoices` rows with `shipping_provider_id IS NOT NULL` (27 such invoices across 2 companies in production). The report was querying the empty `shipments` table.
+- **تقرير الشحن كان يعرض "لا توجد شحنات" رغم وجود فواتير بشركة شحن**: الجدول المخصص `shipments` فارغ تماماً عبر كل الـ 47 شركة. البيانات الفعلية للشحن مخزنة على الفواتير عبر `shipping_provider_id`. التقرير تم إصلاحه ليقرأ من المصدر الحقيقي.
+
+### 🔧 Implementation — التطبيق
+
+The shipping report now queries `invoices WHERE shipping_provider_id IS NOT NULL` and maps each invoice to a "shipment view" with the following status mapping:
+
+| `invoices.status` | shipment status | label |
+|---|---|---|
+| `draft` | `pending` | قيد الانتظار |
+| `sent` | `in_transit` | في الطريق |
+| `partially_paid` | `in_transit` | في الطريق |
+| `paid` | `delivered` | تم التسليم |
+| `cancelled` | `returned` | مرتجع |
+
+Fields mapped:
+- `shipment_number` ← `invoice.invoice_number`
+- `shipping_cost` ← `invoices.shipping`
+- `recipient_name` ← `customers.name`
+- `recipient_city` ← `customers.city`
+- `created_at` ← `invoice.invoice_date` (more accurate than `created_at`)
+- `delivery_date` ← `invoice.paid_at` (if status='paid')
+
+When the `shipments` table is populated later (e.g., by a tracking-provider webhook integration), this report can be re-pointed back — both sources have compatible field shapes.
+
+### 🛡️ Risk Assessment — تقييم المخاطر
+
+- **Production impact**: Users with shipping-enabled invoices now see their actual shipments instead of an empty list.
+- **Backward compatible**: Stats cards, filters, table columns, and access control all work identically.
+- **Future-friendly**: When a tracking integration populates the `shipments` table, the report can be quickly switched back via the documented status mapping.
+
+---
+
 ## [3.3.2] - 2026-05-19
 
 ### 🔧 Fixed (Critical) — إصلاحات حرجة

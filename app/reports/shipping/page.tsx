@@ -86,10 +86,47 @@ export default function ShippingReportPage() {
   }, [permChecked, canRead, statusFilter, dateFrom, dateTo, branchFilterId])
 
   /**
-   * ✅ تحميل بيانات الشحنات
-   * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من shipments مباشرة)
-   * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
+   * Shipping report data source
+   *
+   * The dedicated `shipments` table is reserved for a future tracking integration
+   * and is empty in production today. The actual shipping data lives on
+   * `invoices` rows that have `shipping_provider_id IS NOT NULL`.
+   *
+   * Status mapping (invoice.status → shipment status):
+   *   draft        → pending      (قيد الانتظار)
+   *   sent         → in_transit   (في الطريق)
+   *   partially_paid → in_transit (في الطريق)
+   *   paid         → delivered    (تم التسليم)
+   *   cancelled    → returned     (مرتجع)
+   *
+   * If the `shipments` table is populated later, this report can be re-pointed
+   * by reverting to the previous query — both sources have compatible field shapes.
    */
+  const mapInvoiceToShipment = (inv: any): Shipment => {
+    const statusMap: Record<string, string> = {
+      draft: 'pending',
+      sent: 'in_transit',
+      partially_paid: 'in_transit',
+      paid: 'delivered',
+      cancelled: 'returned',
+    }
+    return {
+      id: inv.id,
+      invoice_id: inv.id,
+      shipment_number: inv.invoice_number || inv.id.slice(0, 8),
+      tracking_number: null,
+      tracking_url: null,
+      status: statusMap[inv.status] || inv.status || 'pending',
+      shipping_cost: Number(inv.shipping || 0),
+      recipient_name: inv.customers?.name || '',
+      recipient_city: inv.customers?.city || '',
+      created_at: inv.invoice_date || inv.created_at,
+      delivery_date: inv.status === 'paid' ? (inv.paid_at || inv.invoice_date) : null,
+      invoices: { invoice_number: inv.invoice_number, branch_id: inv.branch_id },
+      shipping_providers: inv.shipping_providers ? { provider_name: inv.shipping_providers.provider_name } : undefined,
+    }
+  }
+
   const loadData = async () => {
     try {
       setIsLoading(true)
@@ -112,40 +149,45 @@ export default function ShippingReportPage() {
         setBranches(branchesData || [])
       }
 
-      // ✅ جلب الشحنات (تقرير تشغيلي - من shipments مباشرة) مع branch من الفاتورة
-      // Note: removed `.or("is_deleted.is.null,is_deleted.eq.false")` — the
-      // shipments table has no `is_deleted` column. It uses `status` instead
-      // (with values like 'cancelled' / 'returned' that the report already
-      // filters separately when needed).
+      // Source: invoices with a linked shipping provider.
+      // (See doc comment above for the reason we don't query the empty `shipments` table.)
       let query = supabase
-        .from("shipments")
-        .select("*, invoices(invoice_number, branch_id), shipping_providers(provider_name)")
+        .from("invoices")
+        .select("id, invoice_number, status, invoice_date, total_amount, shipping, branch_id, paid_at, shipping_provider_id, customer_id, customers(name, city), shipping_providers(provider_name)")
         .eq("company_id", cid)
-        .order("created_at", { ascending: false })
+        .not("shipping_provider_id", "is", null)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .order("invoice_date", { ascending: false })
 
-      if (statusFilter !== "all") query = query.eq("status", statusFilter)
-      if (dateFrom) query = query.gte("created_at", dateFrom)
-      if (dateTo) query = query.lte("created_at", dateTo + "T23:59:59")
+      if (dateFrom) query = query.gte("invoice_date", dateFrom)
+      if (dateTo) query = query.lte("invoice_date", dateTo)
 
       const { data, error } = await query
       if (error) throw error
-      let list = data || []
-      if (branchFilterId) {
-        list = list.filter((s: any) => s.invoices?.branch_id === branchFilterId)
-      } else if (!privileged && member?.branch_id) {
-        list = list.filter((s: any) => s.invoices?.branch_id === member.branch_id)
+      let mapped: Shipment[] = (data || []).map(mapInvoiceToShipment)
+
+      // Apply status filter AFTER mapping (because we map invoice status → shipment status)
+      if (statusFilter !== "all") {
+        mapped = mapped.filter(s => s.status === statusFilter)
       }
-      setShipments(list)
+
+      // Branch filter / branch isolation
+      if (branchFilterId) {
+        mapped = mapped.filter((s: any) => s.invoices?.branch_id === branchFilterId)
+      } else if (!privileged && member?.branch_id) {
+        mapped = mapped.filter((s: any) => s.invoices?.branch_id === member.branch_id)
+      }
+
+      setShipments(mapped)
 
       // Calculate stats
-      const all = list
       setStats({
-        pending: all.filter((s: Shipment) => s.status === 'pending').length,
-        created: all.filter((s: Shipment) => s.status === 'created').length,
-        in_transit: all.filter((s: Shipment) => s.status === 'in_transit').length,
-        delivered: all.filter((s: Shipment) => s.status === 'delivered').length,
-        returned: all.filter((s: Shipment) => s.status === 'returned').length,
-        total_cost: all.reduce((sum: number, s: Shipment) => sum + (s.shipping_cost || 0), 0)
+        pending: mapped.filter((s: Shipment) => s.status === 'pending').length,
+        created: mapped.filter((s: Shipment) => s.status === 'created').length,
+        in_transit: mapped.filter((s: Shipment) => s.status === 'in_transit').length,
+        delivered: mapped.filter((s: Shipment) => s.status === 'delivered').length,
+        returned: mapped.filter((s: Shipment) => s.status === 'returned').length,
+        total_cost: mapped.reduce((sum: number, s: Shipment) => sum + (s.shipping_cost || 0), 0)
       })
     } catch (err) {
       console.error("Error loading shipments:", err)
