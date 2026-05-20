@@ -4,6 +4,85 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.7.0] - 2026-05-20
+
+### 🏭 Manufacturing — Phase A: Work Center Cost Rates Foundation
+
+بداية مرحلة جعل مديول التصنيع متوافقاً مع معيار **IAS 2 (Inventories)** ومعايير ERP enterprise العالمية (SAP/Oracle/Odoo). هذه أول مرحلة من خطة 3 مراحل لمعالجة الثغرات المكتشفة فى الفحص الشامل.
+
+### 📊 ما اكتُشف فى الفحص الشامل لمديول التصنيع
+
+**نقاط القوة (95% احترافية):**
+- 22 جدول مكتمل (BoM، Routing، Work Centers، Production Orders، MRP، Material Issue/Receipt Approvals)
+- 50+ API endpoint مع full lifecycle
+- BoM/Routing versioning مع approval workflow
+- 12 صفحة UI شاملة + 3 تقارير
+- Multi-branch + cost center governance
+
+**الثغرات الحرجة المكتشفة:**
+- 🔴 **التكامل المحاسبى غائب تماماً**: 19 أمر إنتاج + 30 inventory transaction = **0 قيد محاسبى**. كل دورة التكلفة الصناعية (Material → WIP → Finished Goods) غير مسجلة محاسبياً. انتهاك واضح لـ IAS 2.
+- 🔴 **لا cost rates على Work Centers**: لا يمكن حساب تكلفة Labor أو Manufacturing Overhead.
+- 🔴 **تقرير BoM Cost ناقص**: يعرض Material cost فقط، يتجاهل Labor و MOH (التكلفة الحقيقية = ⅓ المعروض).
+- 🟡 تقارير ناقصة: Production Variance، Work Center Utilization، WIP Aging، إلخ.
+- 🟡 لا Quality Inspection، لا Operator Time Tracking.
+
+**التقييم الإجمالى قبل هذا الإصدار:** 50% (بنية ممتازة + تكامل ضعيف).
+
+### 🆕 New Files (v3.7.0 — Phase A)
+
+- **`supabase/migrations/20260520000200_work_center_cost_rates.sql`**: Migration يضيف 6 أعمدة لـ `manufacturing_work_centers`:
+  - `labor_cost_rate` — تكلفة العمالة لكل وحدة قياس
+  - `machine_cost_rate` — تكلفة تشغيل الآلة (إهلاك + كهرباء + صيانة)
+  - `variable_overhead_rate` — الأعباء الصناعية المتغيرة
+  - `fixed_overhead_rate` — الأعباء الصناعية الثابتة
+  - `cost_rate_uom` — وحدة الأسعار (per_hour افتراضى، أو per_minute / per_unit)
+  - `cost_rates_effective_from` — تاريخ تطبيق الأسعار الحالية (لتاريخ التكلفة)
+
+**تم تطبيقه على Production** لجميع الـ 47 شركة (default = 0).
+
+### 🔧 Changed
+
+- **`app/api/manufacturing/work-centers/route.ts`** (GET + POST):
+  - SELECT جديد يضم cost rates
+  - POST يقبل الحقول الجديدة + يحدد `cost_rates_effective_from` تلقائياً
+
+- **`app/api/manufacturing/work-centers/[id]/route.ts`** (PATCH):
+  - يكتشف تغيير الأسعار ويحدّث `cost_rates_effective_from` تلقائياً
+  - يحافظ على القيم القديمة إذا لم تُمرّر فى الـ payload
+
+- **`app/manufacturing/work-centers/page.tsx`**:
+  - Interface محدّث للحقول الجديدة
+  - Form fields جديدة فى الـ dialog (Labor / Machine / Var Overhead / Fix Overhead)
+  - اختيار Cost Rate UOM
+  - Efficiency % field
+  - عرض ملخص الـ rates فى card الـ work center
+
+### 🧮 Cost Calculation Formula (للمراحل القادمة)
+
+عند تنفيذ Phase B (Production Accounting Integration)، التكلفة ستُحسب كالتالى:
+
+```
+Operation Labor Cost   = labor_time_hours   × labor_cost_rate × (100 / efficiency_percent)
+Operation Machine Cost = machine_time_hours × machine_cost_rate
+Operation Var Overhead = machine_time_hours × variable_overhead_rate
+Operation Fix Overhead = machine_time_hours × fixed_overhead_rate
+Total Operation Cost   = sum of the above
+Total Order Cost       = Material Cost (from BoM) + sum(Operation Costs)
+```
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: صفر — كل العواميد default = 0، فالحساب الحالى لا يتأثر
+- **Backward compatible**: 100% — الـ APIs القديمة لا تزال تعمل بدون cost rates
+- **مهم لمستقبل التطبيق**: هذا الـ migration أساس Phase B (قيود WIP المحاسبية) — بدونه التكلفة الصناعية مستحيلة الحساب
+
+### 📋 الخطوات القادمة (Phase B + Phase C)
+
+- 🟡 **Phase B (P0)**: قيود محاسبية تلقائية عند صرف المواد واستلام المنتج (Dr WIP / Cr Raw Materials → Dr Finished Goods / Cr WIP)
+- 🟡 **Phase C (P1)**: 3 تقارير enterprise جديدة (Production Variance، Work Center Utilization، WIP Aging)
+
+---
+
 ## [3.6.3] - 2026-05-20
 
 ### 🔧 Fixed (Critical) — Schema mismatch فى insertion للـ journal_entries
