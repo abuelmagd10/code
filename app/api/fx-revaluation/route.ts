@@ -87,7 +87,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    return NextResponse.json({ success: true, ...result })
+    // result already includes success: true at this point (checked above)
+    return NextResponse.json(result)
   } catch (err: any) {
     console.error('FX revaluation API error:', err)
     return NextResponse.json(
