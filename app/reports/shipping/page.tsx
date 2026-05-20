@@ -113,11 +113,14 @@ export default function ShippingReportPage() {
       }
 
       // ✅ جلب الشحنات (تقرير تشغيلي - من shipments مباشرة) مع branch من الفاتورة
+      // Note: removed `.or("is_deleted.is.null,is_deleted.eq.false")` — the
+      // shipments table has no `is_deleted` column. It uses `status` instead
+      // (with values like 'cancelled' / 'returned' that the report already
+      // filters separately when needed).
       let query = supabase
         .from("shipments")
         .select("*, invoices(invoice_number, branch_id), shipping_providers(provider_name)")
         .eq("company_id", cid)
-        .or("is_deleted.is.null,is_deleted.eq.false")
         .order("created_at", { ascending: false })
 
       if (statusFilter !== "all") query = query.eq("status", statusFilter)

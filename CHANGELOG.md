@@ -4,6 +4,42 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.3.2] - 2026-05-19
+
+### 🔧 Fixed (Critical) — إصلاحات حرجة
+
+- **Reports failing with 400 (PGRST 42703)**: Multiple reports were querying tables with `.or("is_deleted.is.null,is_deleted.eq.false")` even though those tables don't have an `is_deleted` column. Every load failed with `column ... is_deleted does not exist` and the report rendered empty.
+- **Schema truth table** (verified via Supabase MCP):
+  - ✅ Tables WITH `is_deleted`: `bills`, `invoices`, `journal_entries`, `payments`, `inventory_transactions`
+  - ❌ Tables WITHOUT `is_deleted` (soft-delete tracked via `status` instead): `shipments`, `sales_returns`, `purchase_orders`, `purchase_returns`, `sales_orders`
+- **Files fixed (5 buggy queries removed)**:
+  - `app/reports/shipping/page.tsx` — removed `is_deleted` filter on `shipments`
+  - `app/reports/branch-comparison/page.tsx` — removed on `sales_returns`
+  - `app/reports/branch-cost-center/page.tsx` — removed on `sales_returns`
+  - `app/reports/cost-center-analysis/page.tsx` — removed on `sales_returns`
+  - `app/reports/purchase-orders-status/page.tsx` — removed on `purchase_orders`
+- **Preserved**: queries against `invoices` / `bills` / etc. keep their `is_deleted` filter (those columns exist and are functioning).
+
+### 🛡️ Risk Assessment — تقييم المخاطر
+
+- **Production impact**: Critical. Affected reports rendered empty or showed errors. After this fix, all 5 reports load successfully against tables that lack a soft-delete column.
+- **Behavior change**: Reports now show ALL rows from `sales_returns` / `purchase_orders` / `shipments` (no soft-delete filtering possible at the column level). Companies that rely on "hide cancelled" can still filter via the `status` column at the UI layer.
+
+### 📋 Reports Health Check — فحص صحة التقارير
+
+Quick audit of report stability after this fix:
+
+| Report | Status |
+|--------|--------|
+| Shipping | ✅ now loads |
+| Branch comparison | ✅ now loads |
+| Branch / cost-center | ✅ now loads |
+| Cost center analysis | ✅ now loads |
+| Purchase orders status | ✅ now loads |
+| All other reports using `is_deleted` on `invoices`/`bills`/`payments`/`journal_entries`/`inventory_transactions` | ✅ unaffected (those columns exist) |
+
+---
+
 ## [3.3.1] - 2026-05-19
 
 ### 🔧 Fixed — إصلاحات

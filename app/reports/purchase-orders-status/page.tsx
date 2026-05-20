@@ -69,11 +69,11 @@ export default function PurchaseOrdersStatusReport() {
 
       // ✅ جلب أوامر الشراء (تقرير تشغيلي - من purchase_orders مباشرة)
       // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
+      // Note: purchase_orders has no is_deleted column — soft-delete tracked via status
       const { data: poData } = await supabase
         .from("purchase_orders")
         .select("id, po_number, po_date, due_date, supplier_id, suppliers(name), status, total_amount, currency")
         .eq("company_id", companyId)
-        .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الأوامر المحذوفة
         .order("po_date", { ascending: false })
 
       setPurchaseOrders(poData || [])

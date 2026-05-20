@@ -120,12 +120,12 @@ export default function CostCenterAnalysisPage() {
           .in("status", ["sent", "received", "paid", "partially_paid"])
 
         // ✅ جلب المرتجعات (تقرير تشغيلي - من sales_returns مباشرة)
+        // Note: sales_returns has no is_deleted column — soft-delete tracked via status
         const { data: returns } = await supabase
           .from("sales_returns")
           .select("total_amount")
           .eq("company_id", companyId)
           .eq("cost_center_id", cc.id)
-          .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء المرتجعات المحذوفة
           .gte("return_date", dateFrom)
           .lte("return_date", dateTo)
 

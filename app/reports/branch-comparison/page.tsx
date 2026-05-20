@@ -112,7 +112,7 @@ export default function BranchComparisonReportPage() {
           .select("total_amount")
           .eq("company_id", companyId)
           .eq("branch_id", branch.id)
-          .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء المرتجعات المحذوفة
+          // Note: sales_returns has no is_deleted column — soft-delete is tracked via status instead
           .gte("return_date", dateFrom)
           .lte("return_date", dateTo)
 
