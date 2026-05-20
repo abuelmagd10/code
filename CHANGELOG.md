@@ -4,6 +4,29 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.6.1] - 2026-05-20
+
+### 🔧 Fixed (Hotfix) — TypeScript Build Error
+
+- **Vercel build failed**: `lib/accrual-accounting-engine.ts:465` — `Type error: 'sourceRate' is possibly 'null'`
+- **السبب**: TypeScript ما قدرش يستنتج أن `sourceRate !== null` بعد التحقق فى متغير `isForeignCurrency`
+- **الإصلاح**: إضافة `sourceRate !== null` صراحةً فى الـ if condition بدلاً من الاعتماد على التحقق غير المباشر
+- **Backward compatible**: لا تغيير فى السلوك، فقط type narrowing صريح
+
+```typescript
+// قبل (يفشل فى type checking)
+if (isForeignCurrency && paymentRate > 0 && fcAmount > 0) {
+  const arApRelievedAtOriginalRate = fcAmount * sourceRate  // ❌ sourceRate possibly null
+}
+
+// بعد (يمر type checking)
+if (isForeignCurrency && sourceRate !== null && paymentRate > 0 && fcAmount > 0) {
+  const arApRelievedAtOriginalRate = fcAmount * sourceRate  // ✅ TypeScript ينفع
+}
+```
+
+---
+
 ## [3.6.0] - 2026-05-20
 
 ### 🌍 Added — استكمال IAS 21 على واجهة الفواتير والـ payment service
