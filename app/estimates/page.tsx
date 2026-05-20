@@ -51,6 +51,13 @@ export default function EstimatesPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [estimates, setEstimates] = useState<Estimate[]>([]);
 
+  // Filter state
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterCustomerId, setFilterCustomerId] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Estimate | null>(null);
 
@@ -61,6 +68,39 @@ export default function EstimatesPage() {
   const [notes, setNotes] = useState<string>("");
   const [items, setItems] = useState<EstimateItem[]>([]);
   const [taxAmount, setTaxAmount] = useState<number>(0);
+
+  // Filtered estimates — applies status, customer, date range, and search
+  const filteredEstimates = useMemo(() => {
+    return estimates.filter((e) => {
+      if (filterStatus !== "all" && e.status !== filterStatus) return false;
+      if (filterCustomerId !== "all" && e.customer_id !== filterCustomerId) return false;
+      if (dateFrom && e.estimate_date < dateFrom) return false;
+      if (dateTo && e.estimate_date > dateTo) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        const customerName = (customers.find(c => c.id === e.customer_id)?.name || "").toLowerCase();
+        const num = (e.estimate_number || "").toLowerCase();
+        if (!customerName.includes(q) && !num.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [estimates, filterStatus, filterCustomerId, dateFrom, dateTo, searchQuery, customers]);
+
+  const activeFilterCount = [
+    filterStatus !== "all",
+    filterCustomerId !== "all",
+    !!dateFrom,
+    !!dateTo,
+    !!searchQuery,
+  ].filter(Boolean).length;
+
+  const clearFilters = () => {
+    setFilterStatus("all");
+    setFilterCustomerId("all");
+    setDateFrom("");
+    setDateTo("");
+    setSearchQuery("");
+  };
 
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, i) => sum + i.line_total, 0);
@@ -289,6 +329,64 @@ export default function EstimatesPage() {
           </div>
         </div>
 
+        {/* Filters bar */}
+        <Card className="p-3 mb-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
+            <div className="md:col-span-2">
+              <label className="text-xs text-gray-600 dark:text-gray-400">بحث</label>
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="رقم العرض أو اسم العميل"
+                className="h-9"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-600 dark:text-gray-400">الحالة</label>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">الكل</SelectItem>
+                  <SelectItem value="draft">مسودة</SelectItem>
+                  <SelectItem value="sent">مُرسَل</SelectItem>
+                  <SelectItem value="accepted">مقبول</SelectItem>
+                  <SelectItem value="rejected">مرفوض</SelectItem>
+                  <SelectItem value="expired">منتهي</SelectItem>
+                  <SelectItem value="converted">محوَّل لأمر بيع</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-600 dark:text-gray-400">العميل</label>
+              <Select value={filterCustomerId} onValueChange={setFilterCustomerId}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">جميع العملاء</SelectItem>
+                  {customers.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-600 dark:text-gray-400">من تاريخ</label>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-600 dark:text-gray-400">إلى تاريخ</label>
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9" />
+            </div>
+          </div>
+          {activeFilterCount > 0 && (
+            <div className="flex items-center justify-between mt-3 pt-2 border-t">
+              <span className="text-xs text-gray-500">
+                {activeFilterCount} فلتر نشط — {filteredEstimates.length} من {estimates.length}
+              </span>
+              <Button variant="outline" size="sm" onClick={clearFilters}>مسح الفلاتر</Button>
+            </div>
+          )}
+        </Card>
+
         <Card className="p-3">
           {loading && <div className="text-sm">جارٍ التحميل...</div>}
           {!loading && (
@@ -305,7 +403,7 @@ export default function EstimatesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {estimates.map((e) => (
+                  {filteredEstimates.map((e) => (
                     <tr key={e.id} className="border-t">
                       <td>{e.estimate_number}</td>
                       <td>{customers.find((c) => c.id === e.customer_id)?.name || ""}</td>

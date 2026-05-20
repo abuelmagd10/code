@@ -818,6 +818,9 @@ export default function CustomersPage() {
         if (customersWithAnyInvoices.has(customer.id)) return false
       }
 
+      // فلترة حسب الموظف منشئ العميل (matches activeFilterCount expectation)
+      if (filterEmployeeId !== "all" && (customer as any).created_by_user_id !== filterEmployeeId) return false
+
       const query = searchTerm.trim().toLowerCase()
       if (!query) return true
 
@@ -840,7 +843,7 @@ export default function CustomersPage() {
         )
       }
     })
-  }, [customers, filterInvoiceStatus, customersWithAnyInvoices, searchTerm])
+  }, [customers, filterInvoiceStatus, customersWithAnyInvoices, searchTerm, filterEmployeeId])
 
   // حساب عدد الفلاتر النشطة
   const activeFilterCount = [

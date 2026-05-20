@@ -80,6 +80,11 @@ export default function ExpensesPage() {
   const [currentUserRole, setCurrentUserRole] = useState<string>("viewer")
   const [branches, setBranches] = useState<Branch[]>([])
   const [filterBranchId, setFilterBranchId] = useState<string>("all")
+  const [filterCategory, setFilterCategory] = useState<string>("all")
+  const [filterCostCenterId, setFilterCostCenterId] = useState<string>("all")
+  const [dateFrom, setDateFrom] = useState<string>("")
+  const [dateTo, setDateTo] = useState<string>("")
+  const [costCenters, setCostCenters] = useState<{ id: string; name: string }[]>([])
   const [pageSize, setPageSize] = useState(20)
 
   // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
@@ -145,6 +150,18 @@ export default function ExpensesPage() {
           .order("name")
 
         setBranches(branchesData || [])
+      }
+
+      // Load cost centers for the new filter dropdown
+      try {
+        const { data: ccData } = await supabase
+          .from("cost_centers")
+          .select("id, cost_center_name")
+          .eq("company_id", companyId)
+          .order("cost_center_name")
+        setCostCenters((ccData || []).map((cc: any) => ({ id: cc.id, name: cc.cost_center_name })))
+      } catch {
+        // cost_centers table may not exist on older DBs — silently skip
       }
 
       const visibilityRules = buildDataVisibilityFilter(context)
@@ -231,6 +248,12 @@ export default function ExpensesPage() {
     totalAmount: expenses.reduce((sum, e) => sum + (e.amount || 0), 0)
   }
 
+  // Derive unique categories from data
+  const expenseCategories = useMemo(
+    () => Array.from(new Set(expenses.map(e => (e.expense_category || '').trim()).filter(Boolean))).sort(),
+    [expenses]
+  )
+
   // Filters with useMemo
   const filteredExpenses = useMemo(() => {
     let filtered = expenses
@@ -238,6 +261,24 @@ export default function ExpensesPage() {
     // Branch filter (for admin/owner)
     if (filterBranchId && filterBranchId !== "all") {
       filtered = filtered.filter(e => e.branch_id === filterBranchId)
+    }
+
+    // Cost center filter
+    if (filterCostCenterId !== "all") {
+      filtered = filtered.filter(e => e.cost_center_id === filterCostCenterId)
+    }
+
+    // Category filter
+    if (filterCategory !== "all") {
+      filtered = filtered.filter(e => (e.expense_category || '').trim() === filterCategory)
+    }
+
+    // Date range filter
+    if (dateFrom) {
+      filtered = filtered.filter(e => e.expense_date >= dateFrom)
+    }
+    if (dateTo) {
+      filtered = filtered.filter(e => e.expense_date <= dateTo)
     }
 
     // Search filter
@@ -256,14 +297,25 @@ export default function ExpensesPage() {
     }
 
     return filtered
-  }, [expenses, searchTerm, statusFilter, filterBranchId])
+  }, [expenses, searchTerm, statusFilter, filterBranchId, filterCategory, filterCostCenterId, dateFrom, dateTo])
 
-  const activeFilterCount = statusFilter.length + (filterBranchId !== "all" ? 1 : 0)
+  const activeFilterCount =
+    statusFilter.length +
+    (filterBranchId !== "all" ? 1 : 0) +
+    (filterCategory !== "all" ? 1 : 0) +
+    (filterCostCenterId !== "all" ? 1 : 0) +
+    (dateFrom ? 1 : 0) +
+    (dateTo ? 1 : 0) +
+    (searchTerm ? 1 : 0)
 
   const clearFilters = () => {
     setStatusFilter([])
     setSearchTerm("")
     setFilterBranchId("all")
+    setFilterCategory("all")
+    setFilterCostCenterId("all")
+    setDateFrom("")
+    setDateTo("")
   }
 
   // Pagination
@@ -518,6 +570,54 @@ export default function ExpensesPage() {
                 onChange={setStatusFilter}
                 placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
               />
+
+              {/* Category Filter */}
+              <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700">
+                  <SelectValue placeholder={appLang === 'en' ? 'All Categories' : 'جميع التصنيفات'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{appLang === 'en' ? 'All Categories' : 'جميع التصنيفات'}</SelectItem>
+                  {expenseCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+
+              {/* Cost Center Filter */}
+              <Select value={filterCostCenterId} onValueChange={setFilterCostCenterId}>
+                <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700">
+                  <SelectValue placeholder={appLang === 'en' ? 'All Cost Centers' : 'جميع مراكز التكلفة'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{appLang === 'en' ? 'All Cost Centers' : 'جميع مراكز التكلفة'}</SelectItem>
+                  {costCenters.map(cc => <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+
+              {/* Date From */}
+              <div>
+                <label className="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+                  {appLang === 'en' ? 'From date' : 'من تاريخ'}
+                </label>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="dark:bg-slate-800 dark:border-slate-700"
+                />
+              </div>
+
+              {/* Date To */}
+              <div>
+                <label className="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+                  {appLang === 'en' ? 'To date' : 'إلى تاريخ'}
+                </label>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="dark:bg-slate-800 dark:border-slate-700"
+                />
+              </div>
             </div>
           </div>
         </FilterContainer>

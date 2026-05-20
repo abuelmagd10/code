@@ -4,6 +4,58 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.3.0] - 2026-05-19
+
+### 🔧 Fixed — إصلاحات
+
+- **Customers page filter**: `filterEmployeeId` was defined in state, rendered in UI, and counted in `activeFilterCount`, but was only filtering server-side at fetch time — not in the client-side `filteredCustomers` useMemo. This made the filter behavior inconsistent with the other filters (the pill appeared "active" even when the displayed list didn't update). Now applied client-side against `customer.created_by_user_id`.
+- **فلتر صفحة العملاء**: `filterEmployeeId` كان يظهر كفلتر نشط لكنه لم يُطبَّق client-side. تم توحيد السلوك ليفلتر فوراً حسب `created_by_user_id`.
+
+### ✨ Added — إضافات (Filter coverage for 4 list pages)
+
+For UX consistency across major list pages, added filters where they were missing:
+
+#### `app/estimates/page.tsx` (was: no filters at all)
+- Status filter (draft / sent / accepted / rejected / expired / converted)
+- Customer filter
+- Date range (from / to)
+- Search (estimate number, customer name)
+- Active filter counter + Clear button
+
+#### `app/suppliers/page.tsx` (was: search-only by name/email)
+- City filter (auto-derived from supplier data)
+- Payment terms filter (auto-derived)
+- Balance status filter (with debt / settled / overpaid) — uses live balance data
+- Extended search to include phone
+
+#### `app/expenses/page.tsx` (was: branch + status + search only)
+- Category filter (auto-derived from expense data)
+- Cost center filter (loaded from `cost_centers` table)
+- Date range (from / to)
+- Active filter counter updated to include all new dimensions
+
+#### `app/banking/page.tsx` (was: branch + cost center only)
+- Account type filter (cash / bank / asset / liability)
+- Search by account name or code
+
+### 🗂️ Files Modified — ملفات معدَّلة
+
+| File | Change |
+|------|--------|
+| `app/customers/page.tsx` | Apply `filterEmployeeId` client-side in `filteredCustomers` |
+| `app/estimates/page.tsx` | Add 4 filters + activeFilterCount + clearFilters + use `filteredEstimates` in table |
+| `app/suppliers/page.tsx` | Add 3 filters; extend search; derive options from data |
+| `app/expenses/page.tsx` | Add category + cost center + date range filters; load cost centers |
+| `app/banking/page.tsx` | Add account type + search filters |
+| `CHANGELOG.md` | This entry |
+
+### 🛡️ Risk Assessment — تقييم المخاطر
+
+- **UX improvement only**: No schema changes, no API changes, no behavior change for existing filters. New filters default to "all" so existing user workflows are unaffected.
+- **Performance**: All new filters use `useMemo` with proper dependency arrays. Auto-derived option lists (cities, categories, payment terms) are memoized to avoid recomputation on every render.
+
+---
+
 ## [3.2.2] - 2026-05-19
 
 ### 🔧 Fixed — إصلاحات

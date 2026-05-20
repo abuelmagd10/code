@@ -53,6 +53,10 @@ export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
+  // Additional filters
+  const [filterCity, setFilterCity] = useState<string>("all")
+  const [filterPaymentTerms, setFilterPaymentTerms] = useState<string>("all")
+  const [filterBalanceStatus, setFilterBalanceStatus] = useState<string>("all") // all | with_debt | no_debt | overpaid
 
   // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
   const [isPending, startTransition] = useTransition()
@@ -622,11 +626,42 @@ export default function SuppliersPage() {
     }
   }
 
-  const filteredSuppliers = suppliers.filter(
-    (supplier) =>
-      supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      supplier.email.toLowerCase().includes(searchTerm.toLowerCase()),
+  // Derive unique values for filter dropdowns
+  const supplierCities = useMemo(
+    () => Array.from(new Set(suppliers.map(s => (s.city || '').trim()).filter(Boolean))).sort(),
+    [suppliers]
   )
+  const supplierPaymentTerms = useMemo(
+    () => Array.from(new Set(suppliers.map(s => (s.payment_terms || '').trim()).filter(Boolean))).sort(),
+    [suppliers]
+  )
+
+  const filteredSuppliers = useMemo(() => {
+    const q = searchTerm.toLowerCase()
+    return suppliers.filter((supplier) => {
+      // Search by name, email, or phone
+      if (q) {
+        const matches =
+          supplier.name.toLowerCase().includes(q) ||
+          (supplier.email || '').toLowerCase().includes(q) ||
+          (supplier.phone || '').toLowerCase().includes(q)
+        if (!matches) return false
+      }
+      // City filter
+      if (filterCity !== "all" && (supplier.city || '').trim() !== filterCity) return false
+      // Payment terms filter
+      if (filterPaymentTerms !== "all" && (supplier.payment_terms || '').trim() !== filterPaymentTerms) return false
+      // Balance status filter
+      if (filterBalanceStatus !== "all") {
+        const b = balances[supplier.id]
+        const netPayable = b ? (b.payables - b.advances) : 0  // > 0 means we owe them
+        if (filterBalanceStatus === "with_debt" && netPayable <= 0) return false
+        if (filterBalanceStatus === "no_debt" && netPayable !== 0) return false
+        if (filterBalanceStatus === "overpaid" && netPayable >= 0) return false
+      }
+      return true
+    })
+  }, [suppliers, searchTerm, filterCity, filterPaymentTerms, filterBalanceStatus, balances])
 
   // تعريف أعمدة الجدول
   const tableColumns: DataTableColumn<Supplier>[] = useMemo(() => [
@@ -939,6 +974,33 @@ export default function SuppliersPage() {
                   }}
                   className={`flex-1 ${isPending ? 'opacity-70' : ''}`}
                 />
+              </div>
+
+              {/* Additional filters */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <Select value={filterCity} onValueChange={setFilterCity}>
+                  <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'City' : 'المدينة'} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{appLang === 'en' ? 'All cities' : 'جميع المدن'}</SelectItem>
+                    {supplierCities.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filterPaymentTerms} onValueChange={setFilterPaymentTerms}>
+                  <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Payment terms' : 'شروط الدفع'} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{appLang === 'en' ? 'All terms' : 'جميع الشروط'}</SelectItem>
+                    {supplierPaymentTerms.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filterBalanceStatus} onValueChange={setFilterBalanceStatus}>
+                  <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Balance' : 'الرصيد'} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{appLang === 'en' ? 'All balances' : 'جميع الأرصدة'}</SelectItem>
+                    <SelectItem value="with_debt">{appLang === 'en' ? 'With outstanding debt' : 'عليه ديون'}</SelectItem>
+                    <SelectItem value="no_debt">{appLang === 'en' ? 'Settled (no debt)' : 'متسوَّى'}</SelectItem>
+                    <SelectItem value="overpaid">{appLang === 'en' ? 'Overpaid (credit balance)' : 'دفعنا له زيادة'}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>

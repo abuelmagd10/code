@@ -124,6 +124,8 @@ export default function BankingPage() {
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>("all");
   const [selectedCostCenter, setSelectedCostCenter] = useState<string>("all");
+  const [selectedAccountType, setSelectedAccountType] = useState<string>("all");
+  const [accountSearchQuery, setAccountSearchQuery] = useState<string>("");
   const [showFilters, setShowFilters] = useState(false);
 
   // Listen for currency changes and reload data
@@ -391,8 +393,19 @@ export default function BankingPage() {
         (a) => a.cost_center_id === selectedCostCenter,
       );
     }
+    if (selectedAccountType !== "all") {
+      filtered = filtered.filter((a) => a.account_type === selectedAccountType);
+    }
+    if (accountSearchQuery.trim()) {
+      const q = accountSearchQuery.trim().toLowerCase();
+      filtered = filtered.filter(
+        (a) =>
+          (a.account_name || "").toLowerCase().includes(q) ||
+          (a.account_code || "").toLowerCase().includes(q),
+      );
+    }
     return filtered;
-  }, [accounts, selectedBranch, selectedCostCenter, userContext]);
+  }, [accounts, selectedBranch, selectedCostCenter, selectedAccountType, accountSearchQuery, userContext]);
 
   // Filter cost centers by selected branch
   const filteredCostCenters = useMemo(() => {
@@ -812,6 +825,34 @@ export default function BankingPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div>
+                  <Label className="mb-1 block">
+                    {appLang === "en" ? "Account Type" : "نوع الحساب"}
+                  </Label>
+                  <Select value={selectedAccountType} onValueChange={setSelectedAccountType}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={appLang === "en" ? "All Types" : "جميع الأنواع"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{appLang === "en" ? "All Types" : "جميع الأنواع"}</SelectItem>
+                      <SelectItem value="cash">{appLang === "en" ? "Cash" : "نقدية"}</SelectItem>
+                      <SelectItem value="bank">{appLang === "en" ? "Bank" : "بنك"}</SelectItem>
+                      <SelectItem value="asset">{appLang === "en" ? "Asset" : "أصل"}</SelectItem>
+                      <SelectItem value="liability">{appLang === "en" ? "Liability" : "التزام"}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="sm:col-span-2">
+                  <Label className="mb-1 block">
+                    {appLang === "en" ? "Search" : "بحث"}
+                  </Label>
+                  <Input
+                    type="text"
+                    value={accountSearchQuery}
+                    onChange={(e) => setAccountSearchQuery(e.target.value)}
+                    placeholder={appLang === "en" ? "Account name or code..." : "اسم الحساب أو الكود..."}
+                  />
                 </div>
               </div>
             )}
