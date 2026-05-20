@@ -29,11 +29,33 @@ interface WorkCenter {
   nominal_capacity_per_hour?: number | null
   available_hours_per_day?: number | null
   efficiency_percent?: number | null
+  // v3.7.0: 3-element costing rates (Material + Labor + Manufacturing Overhead)
+  labor_cost_rate?: number | null
+  machine_cost_rate?: number | null
+  variable_overhead_rate?: number | null
+  fixed_overhead_rate?: number | null
+  cost_rate_uom?: string | null
+  cost_rates_effective_from?: string | null
 }
 
 interface Branch { id: string; name: string; code: string }
 
-const EMPTY_FORM = { code: "", name: "", branch_id: "", work_center_type: "machine", status: "active", description: "", capacity_uom: "", nominal_capacity_per_hour: "", available_hours_per_day: "" }
+const EMPTY_FORM = {
+  code: "", name: "", branch_id: "", work_center_type: "machine", status: "active",
+  description: "", capacity_uom: "",
+  nominal_capacity_per_hour: "", available_hours_per_day: "",
+  efficiency_percent: "100",
+  // Cost rates default to empty (= 0). UOM defaults to per_hour
+  labor_cost_rate: "", machine_cost_rate: "",
+  variable_overhead_rate: "", fixed_overhead_rate: "",
+  cost_rate_uom: "per_hour",
+}
+
+const COST_UOM_LABELS: Record<string, string> = {
+  per_hour: "للساعة",
+  per_minute: "للدقيقة",
+  per_unit: "للوحدة",
+}
 
 const TYPE_LABELS: Record<string, string> = { machine: "آلة", production_line: "خط إنتاج", labor_group: "مجموعة عمالة" }
 const STATUS_LABELS: Record<string, string> = { active: "نشط", inactive: "غير نشط", blocked: "موقوف" }
@@ -80,7 +102,23 @@ export default function WorkCentersPage() {
   const openAdd = () => { setEditingWC(null); setFormData(EMPTY_FORM); setDialogOpen(true) }
   const openEdit = (wc: WorkCenter) => {
     setEditingWC(wc)
-    setFormData({ code: wc.code, name: wc.name, branch_id: wc.branch_id, work_center_type: wc.work_center_type, status: wc.status, description: wc.description || "", capacity_uom: wc.capacity_uom || "", nominal_capacity_per_hour: wc.nominal_capacity_per_hour?.toString() || "", available_hours_per_day: wc.available_hours_per_day?.toString() || "" })
+    setFormData({
+      code: wc.code,
+      name: wc.name,
+      branch_id: wc.branch_id,
+      work_center_type: wc.work_center_type,
+      status: wc.status,
+      description: wc.description || "",
+      capacity_uom: wc.capacity_uom || "",
+      nominal_capacity_per_hour: wc.nominal_capacity_per_hour?.toString() || "",
+      available_hours_per_day: wc.available_hours_per_day?.toString() || "",
+      efficiency_percent: wc.efficiency_percent != null ? wc.efficiency_percent.toString() : "100",
+      labor_cost_rate: wc.labor_cost_rate ? wc.labor_cost_rate.toString() : "",
+      machine_cost_rate: wc.machine_cost_rate ? wc.machine_cost_rate.toString() : "",
+      variable_overhead_rate: wc.variable_overhead_rate ? wc.variable_overhead_rate.toString() : "",
+      fixed_overhead_rate: wc.fixed_overhead_rate ? wc.fixed_overhead_rate.toString() : "",
+      cost_rate_uom: wc.cost_rate_uom || "per_hour",
+    })
     setDialogOpen(true)
   }
 
@@ -92,7 +130,18 @@ export default function WorkCentersPage() {
       setSaving(true)
       const url = editingWC ? `/api/manufacturing/work-centers/${editingWC.id}` : "/api/manufacturing/work-centers"
       const method = editingWC ? "PATCH" : "POST"
-      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...formData, nominal_capacity_per_hour: formData.nominal_capacity_per_hour || null, available_hours_per_day: formData.available_hours_per_day || null }) })
+      // Build payload — convert empty strings to null/0 for numeric fields
+      const payload = {
+        ...formData,
+        nominal_capacity_per_hour: formData.nominal_capacity_per_hour || null,
+        available_hours_per_day: formData.available_hours_per_day || null,
+        efficiency_percent: formData.efficiency_percent ? Number(formData.efficiency_percent) : 100,
+        labor_cost_rate: formData.labor_cost_rate ? Number(formData.labor_cost_rate) : 0,
+        machine_cost_rate: formData.machine_cost_rate ? Number(formData.machine_cost_rate) : 0,
+        variable_overhead_rate: formData.variable_overhead_rate ? Number(formData.variable_overhead_rate) : 0,
+        fixed_overhead_rate: formData.fixed_overhead_rate ? Number(formData.fixed_overhead_rate) : 0,
+      }
+      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       if (!res.ok) { const j = await res.json(); throw new Error(j.error || "حدث خطأ") }
       toast({ title: editingWC ? "تم التعديل" : "تم الإنشاء", description: editingWC ? "تم تعديل مركز العمل بنجاح" : "تم إنشاء مركز العمل بنجاح" })
       setDialogOpen(false)
@@ -160,6 +209,20 @@ export default function WorkCentersPage() {
                         {wc.available_hours_per_day && <span>⏱ {wc.available_hours_per_day} ساعة/يوم</span>}
                       </div>
                     )}
+                    {/* v3.7.0: Cost rates summary */}
+                    {(Number(wc.labor_cost_rate) > 0 || Number(wc.machine_cost_rate) > 0 || Number(wc.variable_overhead_rate) > 0 || Number(wc.fixed_overhead_rate) > 0) && (
+                      <div className="space-y-1 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">
+                        <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                          💰 معدلات التكلفة ({COST_UOM_LABELS[wc.cost_rate_uom || "per_hour"]})
+                        </div>
+                        <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-500">
+                          {Number(wc.labor_cost_rate) > 0 && <span>عمالة: {Number(wc.labor_cost_rate).toLocaleString()}</span>}
+                          {Number(wc.machine_cost_rate) > 0 && <span>آلة: {Number(wc.machine_cost_rate).toLocaleString()}</span>}
+                          {Number(wc.variable_overhead_rate) > 0 && <span>أعباء متغيرة: {Number(wc.variable_overhead_rate).toLocaleString()}</span>}
+                          {Number(wc.fixed_overhead_rate) > 0 && <span>أعباء ثابتة: {Number(wc.fixed_overhead_rate).toLocaleString()}</span>}
+                        </div>
+                      </div>
+                    )}
                     <div className="flex gap-2 pt-1">
                       {canUpdate && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit(wc)}><Pencil className="h-3.5 w-3.5" />تعديل</Button>}
                       {canDelete && <Button size="sm" variant="outline" className="gap-1.5 text-red-600 hover:bg-red-50" onClick={() => setDeleteId(wc.id)}><Trash2 className="h-3.5 w-3.5" />حذف</Button>}
@@ -174,7 +237,7 @@ export default function WorkCentersPage() {
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingWC ? "تعديل مركز العمل" : "إضافة مركز عمل جديد"}</DialogTitle>
           </DialogHeader>
@@ -228,6 +291,48 @@ export default function WorkCentersPage() {
               <Label>ساعات العمل / يوم</Label>
               <Input type="number" min="0" max="24" value={formData.available_hours_per_day} onChange={(e) => setFormData({ ...formData, available_hours_per_day: e.target.value })} placeholder="8" disabled={saving} />
             </div>
+            <div className="space-y-2">
+              <Label>كفاءة التشغيل % (اختياري)</Label>
+              <Input type="number" min="0" max="200" step="0.01" value={formData.efficiency_percent} onChange={(e) => setFormData({ ...formData, efficiency_percent: e.target.value })} placeholder="100" disabled={saving} />
+            </div>
+            <div className="space-y-2">
+              <Label>وحدة معدلات التكلفة</Label>
+              <Select value={formData.cost_rate_uom} onValueChange={(v) => setFormData({ ...formData, cost_rate_uom: v })} disabled={saving}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="per_hour">للساعة</SelectItem>
+                  <SelectItem value="per_minute">للدقيقة</SelectItem>
+                  <SelectItem value="per_unit">للوحدة</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* v3.7.0: Cost rates section — required for IAS 2 manufacturing costing */}
+            <div className="sm:col-span-2 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">
+              <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                💰 معدلات التكلفة ({COST_UOM_LABELS[formData.cost_rate_uom] || ""})
+              </div>
+              <p className="text-xs text-slate-500 mb-3">
+                تستخدم لحساب تكلفة عمليات الإنتاج (Labor + Manufacturing Overhead) وفقاً لمعيار IAS 2. اتركها صفر لو ما تريد تطبيق التكلفة على هذا المركز.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>معدل تكلفة العمالة</Label>
+              <Input type="number" min="0" step="0.01" value={formData.labor_cost_rate} onChange={(e) => setFormData({ ...formData, labor_cost_rate: e.target.value })} placeholder="0" disabled={saving} />
+            </div>
+            <div className="space-y-2">
+              <Label>معدل تكلفة الآلة</Label>
+              <Input type="number" min="0" step="0.01" value={formData.machine_cost_rate} onChange={(e) => setFormData({ ...formData, machine_cost_rate: e.target.value })} placeholder="0" disabled={saving} />
+            </div>
+            <div className="space-y-2">
+              <Label>الأعباء الصناعية المتغيرة</Label>
+              <Input type="number" min="0" step="0.01" value={formData.variable_overhead_rate} onChange={(e) => setFormData({ ...formData, variable_overhead_rate: e.target.value })} placeholder="0" disabled={saving} />
+            </div>
+            <div className="space-y-2">
+              <Label>الأعباء الصناعية الثابتة</Label>
+              <Input type="number" min="0" step="0.01" value={formData.fixed_overhead_rate} onChange={(e) => setFormData({ ...formData, fixed_overhead_rate: e.target.value })} placeholder="0" disabled={saving} />
+            </div>
+
             <div className="space-y-2 sm:col-span-2">
               <Label>الوصف (اختياري)</Label>
               <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="وصف مختصر لمركز العمل..." disabled={saving} rows={2} />
