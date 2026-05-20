@@ -42,7 +42,8 @@ export default function FXRevaluationPage() {
   const [periodEndDate, setPeriodEndDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   )
-  const [closingRatesText, setClosingRatesText] = useState<string>('USD=31.5\nEUR=34.2\nSAR=8.4')
+  // Start empty — the system will use the latest rates from the exchange_rates table by default
+  const [closingRatesText, setClosingRatesText] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<RevaluationResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -153,18 +154,23 @@ export default function FXRevaluationPage() {
                 />
               </div>
               <div>
-                <Label>{t("Closing Rates (one per line, e.g. USD=31.5)", "أسعار الإقفال (سطر لكل عملة، مثال: USD=31.5)")}</Label>
+                <Label>
+                  {t("Closing Rates Override (optional)", "أسعار الإقفال (اختيارى - للتجاوز اليدوى)")}
+                </Label>
                 <textarea
                   className="w-full border rounded-md p-2 text-sm dark:bg-slate-800 dark:border-slate-700 font-mono"
                   rows={4}
                   value={closingRatesText}
                   onChange={(e) => setClosingRatesText(e.target.value)}
-                  placeholder="USD=31.5&#10;EUR=34.2"
+                  placeholder={t(
+                    "Leave empty to use latest rates from exchange_rates table.\nOr override per line, e.g.:\nUSD=53.11\nEUR=58.20",
+                    "اتركه فارغاً لاستخدام أحدث الأسعار من جدول exchange_rates.\nأو تجاوز يدوياً سطر لكل عملة، مثال:\nUSD=53.11\nEUR=58.20"
+                  )}
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 font-medium">
                   {t(
-                    "If a currency is not listed, the latest rate from exchange_rates table will be used.",
-                    "أى عملة غير مذكورة هنا، هيستخدم أحدث سعر فى جدول exchange_rates."
+                    "⚠️ Only fill this if you need to override the system rates. Empty = automatic.",
+                    "⚠️ املأ فقط لو تريد تجاوز الأسعار التلقائية. فاضى = استخدام أسعار جدول exchange_rates."
                   )}
                 </p>
               </div>
