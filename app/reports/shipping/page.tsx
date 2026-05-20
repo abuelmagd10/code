@@ -121,7 +121,7 @@ export default function ShippingReportPage() {
       recipient_name: inv.customers?.name || '',
       recipient_city: inv.customers?.city || '',
       created_at: inv.invoice_date || inv.created_at,
-      delivery_date: inv.status === 'paid' ? (inv.paid_at || inv.invoice_date) : null,
+      delivery_date: inv.status === 'paid' ? (inv.updated_at || inv.invoice_date) : null,
       invoices: { invoice_number: inv.invoice_number, branch_id: inv.branch_id },
       shipping_providers: inv.shipping_providers ? { provider_name: inv.shipping_providers.provider_name } : undefined,
     }
@@ -153,7 +153,7 @@ export default function ShippingReportPage() {
       // (See doc comment above for the reason we don't query the empty `shipments` table.)
       let query = supabase
         .from("invoices")
-        .select("id, invoice_number, status, invoice_date, total_amount, shipping, branch_id, paid_at, shipping_provider_id, customer_id, customers(name, city), shipping_providers(provider_name)")
+        .select("id, invoice_number, status, invoice_date, total_amount, shipping, branch_id, updated_at, shipping_provider_id, customer_id, customers(name, city), shipping_providers(provider_name)")
         .eq("company_id", cid)
         .not("shipping_provider_id", "is", null)
         .or("is_deleted.is.null,is_deleted.eq.false")

@@ -4,6 +4,26 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.3.4] - 2026-05-20
+
+### 🔧 Fixed (Hotfix) — إصلاح سريع
+
+- **Shipping report failed with `column invoices.paid_at does not exist`**: The v3.3.3 refactor referenced a `paid_at` column that doesn't exist on the `invoices` table. Verified actual columns: `approval_date`, `display_paid`, `due_date`, `invoice_date`, `original_paid`, `paid_amount`, `updated_at` — there is no `paid_at`.
+- **تقرير الشحن كان يفشل بخطأ عمود `paid_at` غير موجود**: التحديث السابق استخدم اسم عمود غير صحيح. تم تصحيحه ليستخدم `updated_at` بدلاً منه.
+
+### 🔧 Implementation — التطبيق
+
+- Replaced `inv.paid_at` with `inv.updated_at` in `delivery_date` mapping (for invoices with status `paid`, the `updated_at` is the timestamp closest to "when it was marked paid").
+- Replaced `paid_at` with `updated_at` in the SELECT clause.
+- File: `app/reports/shipping/page.tsx` (2 changes).
+
+### 🛡️ Risk Assessment — تقييم المخاطر
+
+- **Production impact**: Report now loads without error. `delivery_date` may differ slightly from a true "paid timestamp" — but `updated_at` is the best available proxy.
+- **Backward compatible**: No schema change. UI/filters/stats logic unchanged.
+
+---
+
 ## [3.3.3] - 2026-05-19
 
 ### 🔧 Fixed (Critical) — إصلاحات حرجة
