@@ -331,14 +331,138 @@ export async function postMaterialIssueJournal(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Product Receipt: Dr Finished Goods / Cr WIP
+// Conversion Cost Calculation (Labor + Manufacturing Overhead)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ConversionCostBreakdown {
+  laborCost: number
+  machineCost: number
+  variableOverheadCost: number
+  fixedOverheadCost: number
+  totalConversionCost: number
+  operationCount: number
+  byOperation: Array<{
+    operationCode: string
+    operationName: string
+    laborMinutes: number
+    machineMinutes: number
+    laborCost: number
+    machineCost: number
+    overheadCost: number
+  }>
+}
+
+/**
+ * Calculate the total conversion cost (Labor + Overhead) for a production order
+ * by summing across all completed operations using the work_center cost rates.
+ *
+ * Formula per operation:
+ *   labor_hours        = labor_time_minutes / 60
+ *   labor_cost         = labor_hours × labor_cost_rate × (100 / efficiency_percent)
+ *   machine_hours      = machine_time_minutes / 60
+ *   machine_cost       = machine_hours × machine_cost_rate
+ *   variable_overhead  = machine_hours × variable_overhead_rate
+ *   fixed_overhead     = machine_hours × fixed_overhead_rate
+ *
+ * Only "completed" operations are included (status = 'completed').
+ */
+export async function calculateConversionCost(
+  supabase: SupabaseClient,
+  params: { companyId: string; productionOrderId: string },
+): Promise<ConversionCostBreakdown> {
+  // Fetch all completed operations with their work center rates
+  const { data: ops, error: opsErr } = await supabase
+    .from("manufacturing_production_order_operations")
+    .select(`
+      id, operation_code, operation_name, status,
+      labor_time_minutes, machine_time_minutes,
+      work_center_id,
+      manufacturing_work_centers!inner(
+        labor_cost_rate, machine_cost_rate,
+        variable_overhead_rate, fixed_overhead_rate,
+        cost_rate_uom, efficiency_percent
+      )
+    `)
+    .eq("company_id", params.companyId)
+    .eq("production_order_id", params.productionOrderId)
+    .eq("status", "completed")
+
+  if (opsErr) {
+    console.warn("[calculateConversionCost] Failed to fetch operations:", opsErr.message)
+    return { laborCost: 0, machineCost: 0, variableOverheadCost: 0, fixedOverheadCost: 0, totalConversionCost: 0, operationCount: 0, byOperation: [] }
+  }
+
+  let totalLabor = 0
+  let totalMachine = 0
+  let totalVarOh = 0
+  let totalFixOh = 0
+  const byOperation: ConversionCostBreakdown["byOperation"] = []
+
+  for (const op of (ops || [])) {
+    const wc = Array.isArray((op as any).manufacturing_work_centers)
+      ? (op as any).manufacturing_work_centers[0]
+      : (op as any).manufacturing_work_centers
+    if (!wc) continue
+
+    const laborRate = Number(wc.labor_cost_rate || 0)
+    const machineRate = Number(wc.machine_cost_rate || 0)
+    const varOhRate = Number(wc.variable_overhead_rate || 0)
+    const fixOhRate = Number(wc.fixed_overhead_rate || 0)
+    const efficiency = Number(wc.efficiency_percent || 100)
+
+    // Convert minutes to hours (default UOM is per_hour). per_minute / per_unit not supported yet
+    const laborMin = Number((op as any).labor_time_minutes || 0)
+    const machineMin = Number((op as any).machine_time_minutes || 0)
+    const laborHours = laborMin / 60
+    const machineHours = machineMin / 60
+
+    // Efficiency adjustment for labor: if efficiency=95%, actual time = planned × (100/95)
+    const efficiencyMultiplier = efficiency > 0 ? 100 / efficiency : 1
+
+    const opLabor = laborHours * laborRate * efficiencyMultiplier
+    const opMachine = machineHours * machineRate
+    const opVarOh = machineHours * varOhRate
+    const opFixOh = machineHours * fixOhRate
+
+    totalLabor += opLabor
+    totalMachine += opMachine
+    totalVarOh += opVarOh
+    totalFixOh += opFixOh
+
+    byOperation.push({
+      operationCode: String((op as any).operation_code || ""),
+      operationName: String((op as any).operation_name || ""),
+      laborMinutes: laborMin,
+      machineMinutes: machineMin,
+      laborCost: Math.round(opLabor * 100) / 100,
+      machineCost: Math.round(opMachine * 100) / 100,
+      overheadCost: Math.round((opVarOh + opFixOh) * 100) / 100,
+    })
+  }
+
+  const round = (n: number) => Math.round(n * 100) / 100
+  return {
+    laborCost: round(totalLabor),
+    machineCost: round(totalMachine),
+    variableOverheadCost: round(totalVarOh),
+    fixedOverheadCost: round(totalFixOh),
+    totalConversionCost: round(totalLabor + totalMachine + totalVarOh + totalFixOh),
+    operationCount: (ops || []).length,
+    byOperation,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Product Receipt: Dr Finished Goods / Cr WIP + Cr Wages Payable + Cr MOH Applied
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface ProductReceiptJournalResult {
   success: boolean
   journalEntryId?: string
   entryNumber?: string
-  totalCost?: number
+  totalCost?: number          // material + labor + overhead
+  materialCost?: number
+  conversionCost?: number     // labor + overhead
   lineCount?: number
   error?: string
 }
@@ -347,13 +471,16 @@ export interface ProductReceiptJournalResult {
  * Post the accounting journal for a finished-product receipt event.
  * Called AFTER `receive_manufacturing_production_order_finished_product_atomic` succeeds.
  *
- * Posts:
- *   Dr Finished Goods         <total>
- *      Cr WIP                       <total>
+ * v3.9.0 (Phase B-2): Now includes Labor + Manufacturing Overhead in addition to materials.
  *
- * Note: in this MVP we move the SAME material cost out of WIP to Finished Goods.
- * Labor/Overhead conversion costs will be added in Phase B-2 using the
- * work_center cost rates introduced in v3.7.0.
+ * Full IAS 2-compliant journal:
+ *   Dr Finished Goods                  [material + conversion]
+ *      Cr WIP                                  [material cost - relieves WIP]
+ *      Cr Wages Payable                        [labor cost - new liability]
+ *      Cr MOH Applied                          [overhead cost - new credit]
+ *
+ * The conversion cost is calculated from completed operations × work_center rates.
+ * If work centers have 0 cost rates, conversion = 0 and behavior is same as v3.8 (material only).
  */
 export async function postProductReceiptJournal(
   supabase: SupabaseClient,
@@ -386,39 +513,69 @@ export async function postProductReceiptJournal(
       return { success: true, lineCount: 0, totalCost: 0 }
     }
 
+    // ─── 1. Material cost from inventory transactions ───
     const txnIds = lines.map((l: any) => l.inventory_transaction_id).filter(Boolean)
-    if (txnIds.length === 0) {
-      return { success: true, lineCount: lines.length, totalCost: 0 }
+    let materialCost = 0
+    if (txnIds.length > 0) {
+      const { data: txns } = await supabase
+        .from("inventory_transactions")
+        .select("id, unit_cost, quantity_change, total_cost")
+        .in("id", txnIds)
+      const txnMap = new Map<string, any>()
+      for (const t of (txns || [])) txnMap.set(String(t.id), t)
+      for (const line of lines) {
+        const txn = line.inventory_transaction_id ? txnMap.get(String(line.inventory_transaction_id)) : null
+        const cost = txn
+          ? Number(txn.total_cost ?? (Number(txn.unit_cost ?? 0) * Math.abs(Number(txn.quantity_change ?? line.received_qty))))
+          : 0
+        materialCost += Math.abs(cost)
+      }
     }
+    materialCost = Math.round(materialCost * 100) / 100
 
-    const { data: txns } = await supabase
-      .from("inventory_transactions")
-      .select("id, unit_cost, quantity_change, total_cost")
-      .in("id", txnIds)
-    const txnMap = new Map<string, any>()
-    for (const t of (txns || [])) txnMap.set(String(t.id), t)
+    // ─── 2. Conversion cost from completed operations × work_center rates ───
+    const conversion = await calculateConversionCost(supabase, {
+      companyId: params.companyId,
+      productionOrderId: String(event.production_order_id),
+    })
+    const laborCost = conversion.laborCost
+    const overheadCost = conversion.machineCost + conversion.variableOverheadCost + conversion.fixedOverheadCost
+    const conversionCost = laborCost + overheadCost
+    const totalCost = Math.round((materialCost + conversionCost) * 100) / 100
 
-    let totalCost = 0
-    for (const line of lines) {
-      const txn = line.inventory_transaction_id ? txnMap.get(String(line.inventory_transaction_id)) : null
-      const cost = txn
-        ? Number(txn.total_cost ?? (Number(txn.unit_cost ?? 0) * Math.abs(Number(txn.quantity_change ?? line.received_qty))))
-        : 0
-      totalCost += Math.abs(cost)
-    }
-    totalCost = Math.round(totalCost * 100) / 100
     if (totalCost <= 0.01) {
-      return { success: true, lineCount: lines.length, totalCost: 0 }
+      return { success: true, lineCount: lines.length, totalCost: 0, materialCost: 0, conversionCost: 0 }
     }
 
+    // ─── 3. Resolve accounts (validates WIP, Raw Mat, FG; Wages/MOH may be undefined) ───
     const accounts = await resolveManufacturingAccounts(supabase, params.companyId)
+    if (conversionCost > 0.01) {
+      if (!accounts.wagesPayableAccountId) {
+        return {
+          success: false,
+          error: "MANUFACTURING_ACCOUNTS_NOT_CONFIGURED: Wages Payable account not found. " +
+            "Either configure companies.wages_payable_account_id or create account_code='2210' with sub_type='wages_payable'.",
+        }
+      }
+      if (!accounts.manufacturingOverheadAccountId) {
+        return {
+          success: false,
+          error: "MANUFACTURING_ACCOUNTS_NOT_CONFIGURED: Manufacturing Overhead Applied account not found. " +
+            "Either configure companies.manufacturing_overhead_account_id or create account_code='5410' with sub_type='manufacturing_overhead_applied'.",
+        }
+      }
+    }
+
+    // ─── 4. Create journal header ───
     const entryDate = String(event.posted_at || new Date().toISOString()).slice(0, 10)
     const header = await createEntryHeader({
       supabase,
       companyId: params.companyId,
       branchId: event.branch_id,
       entryDate,
-      description: `استلام منتج تام من الإنتاج - ${event.event_number || params.receiptEventId}`,
+      description: conversionCost > 0
+        ? `استلام منتج تام (مواد + تحويل) - ${event.event_number || params.receiptEventId}`
+        : `استلام منتج تام (مواد فقط) - ${event.event_number || params.receiptEventId}`,
       referenceType: "manufacturing_product_receipt",
       entryNumberPrefix: "MFG-RECV",
       costCenterId: event.cost_center_id,
@@ -429,24 +586,56 @@ export async function postProductReceiptJournal(
       return { success: false, error: "Failed to create journal entry header" }
     }
 
-    const { error: linesPostErr } = await supabase
-      .from("journal_entry_lines")
-      .insert([
-        {
-          journal_entry_id: header.id,
-          account_id: accounts.finishedGoodsAccountId,
-          debit_amount: totalCost,
-          credit_amount: 0,
-          description: "إدخال منتج تام إلى مخزون البضاعة الجاهزة",
-        },
-        {
-          journal_entry_id: header.id,
-          account_id: accounts.wipAccountId,
-          debit_amount: 0,
-          credit_amount: totalCost,
-          description: "تخريج تكلفة من الإنتاج تحت التشغيل",
-        },
-      ])
+    // ─── 5. Build the lines: Dr FG / Cr WIP + Cr Wages + Cr MOH ───
+    const linesToInsert: any[] = [
+      {
+        journal_entry_id: header.id,
+        account_id: accounts.finishedGoodsAccountId,
+        debit_amount: totalCost,
+        credit_amount: 0,
+        description: "إدخال منتج تام إلى مخزون البضاعة الجاهزة (مواد + تحويل)",
+      },
+    ]
+    if (materialCost > 0.01) {
+      linesToInsert.push({
+        journal_entry_id: header.id,
+        account_id: accounts.wipAccountId,
+        debit_amount: 0,
+        credit_amount: materialCost,
+        description: "تخريج تكلفة المواد من الإنتاج تحت التشغيل",
+      })
+    }
+    if (laborCost > 0.01 && accounts.wagesPayableAccountId) {
+      linesToInsert.push({
+        journal_entry_id: header.id,
+        account_id: accounts.wagesPayableAccountId,
+        debit_amount: 0,
+        credit_amount: Math.round(laborCost * 100) / 100,
+        description: "تحميل تكلفة العمالة المباشرة على الإنتاج",
+      })
+    }
+    if (overheadCost > 0.01 && accounts.manufacturingOverheadAccountId) {
+      linesToInsert.push({
+        journal_entry_id: header.id,
+        account_id: accounts.manufacturingOverheadAccountId,
+        debit_amount: 0,
+        credit_amount: Math.round(overheadCost * 100) / 100,
+        description: "تحميل الأعباء الصناعية على الإنتاج (آلة + متغيرة + ثابتة)",
+      })
+    }
+
+    // Sanity: debits must equal credits
+    const totalDebit = linesToInsert.reduce((s, l) => s + Number(l.debit_amount || 0), 0)
+    const totalCredit = linesToInsert.reduce((s, l) => s + Number(l.credit_amount || 0), 0)
+    if (Math.abs(totalDebit - totalCredit) > 0.02) {
+      await supabase.from("journal_entries").delete().eq("id", header.id)
+      return {
+        success: false,
+        error: `Journal would be unbalanced: Dr=${totalDebit} vs Cr=${totalCredit}. Aborted.`,
+      }
+    }
+
+    const { error: linesPostErr } = await supabase.from("journal_entry_lines").insert(linesToInsert)
     if (linesPostErr) {
       await supabase.from("journal_entries").delete().eq("id", header.id)
       return { success: false, error: `Failed to insert journal lines: ${linesPostErr.message}` }
@@ -457,7 +646,9 @@ export async function postProductReceiptJournal(
       journalEntryId: header.id,
       entryNumber: header.entry_number,
       totalCost,
-      lineCount: lines.length,
+      materialCost,
+      conversionCost: Math.round(conversionCost * 100) / 100,
+      lineCount: linesToInsert.length,
     }
   } catch (err: any) {
     return { success: false, error: err?.message || "Unknown error" }
