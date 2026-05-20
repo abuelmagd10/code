@@ -66,19 +66,19 @@ export async function resolveManufacturingAccounts(
   const byName = (re: RegExp) =>
     list.find((a) => re.test(String(a.account_name || "")))?.id as string | undefined
 
-  // WIP
+  // WIP — STRICT: only sub_type='work_in_process' (code-based fallback removed
+  // because 1140 collided with existing inventory account in production data)
   const wipAccountId =
     (company?.wip_account_id as string | null) ||
     bySubType("work_in_process") ||
-    byCode("1140") ||
-    byName(/الإنتاج تحت التشغيل|work[ _-]?in[ _-]?process/i)
+    byCode("1145") ||  // matches the migration's new WIP code (1145, not 1140)
+    byName(/الإنتاج تحت التشغيل/i)
 
-  // Raw Materials Inventory (asset, sub_type='inventory' or 'raw_materials')
+  // Raw Materials Inventory (asset)
   const rawMaterialsAccountId =
     bySubType("raw_materials") ||
     bySubType("inventory") ||
-    byCode("1110") ||
-    byCode("1130") ||
+    byCode("1140") ||  // fallback: 1140 is the conventional inventory code
     byName(/المخزون|inventory|raw materials/i)
 
   // Finished Goods (often same as general inventory in small ERPs)
@@ -87,6 +87,22 @@ export async function resolveManufacturingAccounts(
     bySubType("inventory") ||
     rawMaterialsAccountId ||
     byName(/finished goods|منتج تام/i)
+
+  // CRITICAL VALIDATION: WIP and Raw Materials MUST be different accounts
+  // (otherwise we'd produce Dr X / Cr X journals — same account both sides)
+  if (wipAccountId && rawMaterialsAccountId && wipAccountId === rawMaterialsAccountId) {
+    throw new Error(
+      "MANUFACTURING_ACCOUNTS_CONFLICT: WIP account and Raw Materials account " +
+      "resolved to the SAME id. Configure them separately — WIP should have " +
+      "sub_type='work_in_process' (e.g. account 1145), distinct from inventory.",
+    )
+  }
+  if (wipAccountId && finishedGoodsAccountId && wipAccountId === finishedGoodsAccountId) {
+    throw new Error(
+      "MANUFACTURING_ACCOUNTS_CONFLICT: WIP account and Finished Goods account " +
+      "resolved to the SAME id. Configure them separately.",
+    )
+  }
 
   const wagesPayableAccountId =
     (company?.wages_payable_account_id as string | null) ||
@@ -237,7 +253,7 @@ export async function postMaterialIssueJournal(
 
     const { data: txns } = await supabase
       .from("inventory_transactions")
-      .select("id, unit_cost, quantity, total_cost")
+      .select("id, unit_cost, quantity_change, total_cost")
       .in("id", txnIds)
     const txnMap = new Map<string, any>()
     for (const t of (txns || [])) txnMap.set(String(t.id), t)
@@ -247,7 +263,7 @@ export async function postMaterialIssueJournal(
       const txn = line.inventory_transaction_id ? txnMap.get(String(line.inventory_transaction_id)) : null
       // Prefer total_cost stored on the txn; otherwise compute unit_cost × qty
       const cost = txn
-        ? Number(txn.total_cost ?? (Number(txn.unit_cost ?? 0) * Math.abs(Number(txn.quantity ?? line.issued_qty))))
+        ? Number(txn.total_cost ?? (Number(txn.unit_cost ?? 0) * Math.abs(Number(txn.quantity_change ?? line.issued_qty))))
         : 0
       totalCost += Math.abs(cost)
     }
@@ -377,7 +393,7 @@ export async function postProductReceiptJournal(
 
     const { data: txns } = await supabase
       .from("inventory_transactions")
-      .select("id, unit_cost, quantity, total_cost")
+      .select("id, unit_cost, quantity_change, total_cost")
       .in("id", txnIds)
     const txnMap = new Map<string, any>()
     for (const t of (txns || [])) txnMap.set(String(t.id), t)
@@ -386,7 +402,7 @@ export async function postProductReceiptJournal(
     for (const line of lines) {
       const txn = line.inventory_transaction_id ? txnMap.get(String(line.inventory_transaction_id)) : null
       const cost = txn
-        ? Number(txn.total_cost ?? (Number(txn.unit_cost ?? 0) * Math.abs(Number(txn.quantity ?? line.received_qty))))
+        ? Number(txn.total_cost ?? (Number(txn.unit_cost ?? 0) * Math.abs(Number(txn.quantity_change ?? line.received_qty))))
         : 0
       totalCost += Math.abs(cost)
     }
