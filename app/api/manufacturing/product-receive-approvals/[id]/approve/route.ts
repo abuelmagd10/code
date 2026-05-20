@@ -99,6 +99,53 @@ export async function POST(
 
     if (receiptError) throw receiptError
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🆕 v3.8.0 — IAS 2: Post product receipt journal (Dr Finished Goods / Cr WIP)
+    // Non-fatal: failure logged but does NOT block the receipt.
+    // ─────────────────────────────────────────────────────────────────────────
+    try {
+      let receiptEventId: string | null = null
+      if (receiptResult && typeof receiptResult === "object") {
+        receiptEventId =
+          (receiptResult as any).receipt_event_id ||
+          (receiptResult as any).event_id ||
+          ((Array.isArray((receiptResult as any).events) && (receiptResult as any).events[0]?.id) ?? null)
+      }
+      if (!receiptEventId) {
+        const { data: latestEvent } = await admin
+          .from("production_order_receipt_events")
+          .select("id")
+          .eq("company_id", companyId)
+          .eq("production_order_id", approval.production_order_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        receiptEventId = latestEvent?.id ?? null
+      }
+      if (receiptEventId) {
+        const { postProductReceiptJournal } = await import("@/lib/manufacturing/manufacturing-accounting")
+        const journalResult = await postProductReceiptJournal(admin, {
+          companyId,
+          receiptEventId,
+          userId: user.id,
+        })
+        if (!journalResult.success) {
+          console.warn(
+            `[MPRA_ACCOUNTING] Product receipt journal failed for event ${receiptEventId}:`,
+            journalResult.error,
+          )
+        } else if (journalResult.totalCost && journalResult.totalCost > 0) {
+          console.log(
+            `[MPRA_ACCOUNTING] ✅ Journal ${journalResult.entryNumber} posted (draft) - ${journalResult.totalCost} EGP`,
+          )
+        }
+      } else {
+        console.warn("[MPRA_ACCOUNTING] Could not resolve receipt_event_id; skipping journal posting")
+      }
+    } catch (journalErr: any) {
+      console.error("[MPRA_ACCOUNTING] Exception while posting journal:", journalErr?.message)
+    }
+
     const approvedAtDate = new Date()
     const approvedAt = approvedAtDate.toISOString()
     const operationStartAt = new Date(approvedAtDate.getTime() - 1000).toISOString()

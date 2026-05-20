@@ -596,6 +596,57 @@ export async function POST(
     })
     if (issueError) throw issueError
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🆕 v3.8.0 — IAS 2: Post manufacturing material issue journal (Dr WIP / Cr Raw Materials)
+    // Non-fatal: failure logged but does NOT block the material issue.
+    // Created journal has status='draft' and requires approval before affecting trial balance.
+    // ─────────────────────────────────────────────────────────────────────────
+    try {
+      // Resolve the issue_event_id created by the RPC
+      let issueEventId: string | null = null
+      if (issueResult && typeof issueResult === "object") {
+        issueEventId =
+          (issueResult as any).issue_event_id ||
+          (issueResult as any).event_id ||
+          ((Array.isArray((issueResult as any).events) && (issueResult as any).events[0]?.id) ?? null)
+      }
+      if (!issueEventId) {
+        // Fallback: look up by command_key in event_number
+        const { data: latestEvent } = await admin
+          .from("production_order_issue_events")
+          .select("id")
+          .eq("company_id", companyId)
+          .eq("production_order_id", approval.production_order_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        issueEventId = latestEvent?.id ?? null
+      }
+      if (issueEventId) {
+        const { postMaterialIssueJournal } = await import("@/lib/manufacturing/manufacturing-accounting")
+        const journalResult = await postMaterialIssueJournal(admin, {
+          companyId,
+          issueEventId,
+          userId: user.id,
+        })
+        if (!journalResult.success) {
+          console.warn(
+            `[MMIA_ACCOUNTING] Material issue journal failed for event ${issueEventId}:`,
+            journalResult.error,
+          )
+        } else if (journalResult.totalCost && journalResult.totalCost > 0) {
+          console.log(
+            `[MMIA_ACCOUNTING] ✅ Journal ${journalResult.entryNumber} posted (draft) - ${journalResult.totalCost} EGP`,
+          )
+        }
+      } else {
+        console.warn("[MMIA_ACCOUNTING] Could not resolve issue_event_id; skipping journal posting")
+      }
+    } catch (journalErr: any) {
+      // Never block the material issue on accounting failure
+      console.error("[MMIA_ACCOUNTING] Exception while posting journal:", journalErr?.message)
+    }
+
     // ── تنفيذ الاعتماد ────────────────────────────────────────────────────
     const approvalStatus = finalIssueType === "full" ? "approved" : "partially_approved"
 
