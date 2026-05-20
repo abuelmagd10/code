@@ -715,6 +715,24 @@ export default function BillsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverPage, pageSize])
 
+  // 🔧 إعادة التحميل عند تغيير الفلاتر الخادمية
+  // (status/supplier/search/date) — هذه الفلاتر تُمرَّر للـ API في /api/v2/bills
+  // قبل هذا الإصلاح، تغيير الفلتر كان يُحدِّث state فقط لكن لا يُعيد التحميل،
+  // فيعرض النتائج القديمة بدون فلترة.
+  // Search query debounced بـ 400ms لتجنب إغراق الـ API.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // العودة للصفحة الأولى عند أي تغيير فلتر — وإلا قد تكون صفحة فارغة
+      if (serverPage !== 1) {
+        setServerPage(1) // سيُطلق useEffect الخاص بـ serverPage تلقائياً
+      } else {
+        loadData()
+      }
+    }, searchQuery ? 400 : 0)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterStatuses, filterSuppliers, searchQuery, dateFrom, dateTo])
+
   // تعريف أعمدة الجدول
   const tableColumns: DataTableColumn<Bill>[] = useMemo(() => [
     {

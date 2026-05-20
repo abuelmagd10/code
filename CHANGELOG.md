@@ -4,6 +4,31 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.3.1] - 2026-05-19
+
+### 🔧 Fixed — إصلاحات
+
+- **Bills (Purchase Invoices) page filters were not reactive**: The Bills page uses server-side filtering via `/api/v2/bills` and passes the active filter values (`status`, `supplier`, `search`, `dateFrom`, `dateTo`) as query parameters. However, the `useEffect` only re-ran `loadData()` when `serverPage`, `pageSize`, or `branchFilter.selectedBranchId` changed — **not** when the actual filter states changed. So a user could:
+  1. Set a status filter → state updates
+  2. The pill shows "active"
+  3. But the list keeps showing the old (unfiltered) data because no refetch happens
+- **فلاتر فواتير المشتريات لم تكن متفاعلة**: تغيير الفلاتر كان يُحدِّث state فقط لكن لا يُعيد طلب البيانات من السيرفر. النتيجة: الفلاتر تبدو نشطة لكن القائمة لا تتغيَّر.
+- **Fix**: Added a new `useEffect` watching `[filterStatuses, filterSuppliers, searchQuery, dateFrom, dateTo]`. On any change it resets to page 1 (to avoid landing on an empty page) and triggers a refetch. The `searchQuery` is debounced by 400 ms so typing doesn't flood the API.
+
+### 🗂️ Files Modified — ملفات معدَّلة
+
+| File | Change |
+|------|--------|
+| `app/bills/page.tsx` | Add reactive useEffect for server-side filter changes; debounce search by 400 ms |
+| `CHANGELOG.md` | This entry |
+
+### 🛡️ Risk Assessment — تقييم المخاطر
+
+- **UX improvement only**: Existing API contract unchanged. Filter UI unchanged. Only the timing of refetches.
+- **Performance**: Debounce on search prevents excessive requests during typing. Reset to page 1 ensures filtered results are visible immediately rather than landing on an empty page beyond the new result set.
+
+---
+
 ## [3.3.0] - 2026-05-19
 
 ### 🔧 Fixed — إصلاحات
