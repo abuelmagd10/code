@@ -25,6 +25,7 @@ import {
   getActiveCurrencies,
   type Currency,
 } from "@/lib/currency-service";
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector";
 
 type Account = {
   id: string;
@@ -732,6 +733,31 @@ export default function BankingPage() {
                       }
                     />
                   </div>
+                  {/* v3.18.0: ExchangeRateSelector — only shows when FC differs from base */}
+                  {transfer.currency !== appCurrency && (
+                    <div className="md:col-span-2">
+                      <Label className="text-sm">
+                        {appLang === "en"
+                          ? `Exchange Rate (${transfer.currency} → ${appCurrency})`
+                          : `سعر الصرف (${transfer.currency} → ${appCurrency})`}
+                      </Label>
+                      <ExchangeRateSelector
+                        fromCurrency={transfer.currency}
+                        baseCurrency={appCurrency}
+                        value={exchangeRate}
+                        onChange={(r) => {
+                          setExchangeRate(r)
+                          setBaseAmount(Math.round(transfer.amount * r * 10000) / 10000)
+                        }}
+                        onRateMetaChange={(meta) => {
+                          setExchangeRateId(meta?.rateId || null)
+                          setRateSource(meta?.source || null)
+                        }}
+                        hideLabel
+                        showPreview
+                      />
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     {permWrite ? (
                       <Button

@@ -14,6 +14,7 @@ import { ArrowLeft, Save } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { createDrawing, getShareholders } from "@/app/actions/drawings"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 
 type Account = {
     id: string
@@ -42,6 +43,8 @@ export default function NewDrawingPage() {
     const [description, setDescription] = useState("")
     const [currencyCode, setCurrencyCode] = useState("EGP")
     const [exchangeRate, setExchangeRate] = useState<number>(1)
+    // v3.18.0: base currency for FX selector (loaded from company)
+    const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
 
     useEffect(() => {
         setHydrated(true)
@@ -65,6 +68,20 @@ export default function NewDrawingPage() {
             const cid = await getActiveCompanyId(supabase)
             if (!cid) return
             setCompanyId(cid)
+
+            // v3.18.0: load company base currency for FX selector
+            try {
+                const { data: company } = await supabase
+                    .from("companies")
+                    .select("base_currency")
+                    .eq("id", cid)
+                    .maybeSingle()
+                if (company?.base_currency) {
+                    const base = String(company.base_currency).toUpperCase()
+                    setBaseCurrency(base)
+                    setCurrencyCode(base)
+                }
+            } catch {}
 
             // Load Shareholders
             const shareholdersData = await getShareholders(cid)
@@ -217,7 +234,14 @@ export default function NewDrawingPage() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <Label>{appLang === 'en' ? 'Exchange rate to company currency' : 'سعر الصرف لعملة الشركة'}</Label>
-                                    <NumericInput value={exchangeRate} onChange={v => setExchangeRate(v)} min={0.000001} step={0.01} />
+                                    <ExchangeRateSelector
+                                        fromCurrency={currencyCode}
+                                        baseCurrency={baseCurrency}
+                                        value={exchangeRate}
+                                        onChange={setExchangeRate}
+                                        hideLabel
+                                        showPreview
+                                    />
                                 </div>
                                 <div className="space-y-2">
                                     <Label>{appLang === 'en' ? 'Payment Account' : 'حساب الدفع'}</Label>

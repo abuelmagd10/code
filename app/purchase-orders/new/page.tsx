@@ -20,6 +20,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 
 interface Supplier { id: string; name: string; phone?: string | null }
 interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service'; quantity_on_hand?: number }
@@ -691,14 +692,21 @@ export default function NewPurchaseOrderPage() {
                   </div>
                 </div>
 
-                {/* Exchange Rate (manual override) */}
+                {/* v3.18.0: Exchange Rate from /settings/exchange-rates (api + manual dropdown) */}
                 {poCurrency !== baseCurrency && (
                   <div className="space-y-2">
-                    <Label>{appLang === 'en' ? 'Exchange Rate (manual)' : 'سعر الصرف (يدوي)'}</Label>
-                    <NumericInput step="0.0001" value={exchangeRate} onChange={(val) => {
-                      setExchangeRate(val)
-                      setRateSource('manual')
-                    }} decimalPlaces={4} />
+                    <Label>{appLang === 'en' ? 'Exchange Rate' : 'سعر الصرف'}</Label>
+                    <ExchangeRateSelector
+                      fromCurrency={poCurrency}
+                      baseCurrency={baseCurrency}
+                      value={exchangeRate}
+                      onChange={setExchangeRate}
+                      onRateMetaChange={(meta) => {
+                        setRateSource(meta?.source || null)
+                      }}
+                      hideLabel
+                      showPreview
+                    />
                   </div>
                 )}
 

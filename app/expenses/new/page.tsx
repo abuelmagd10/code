@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { BranchCostCenterSelectorEnhanced } from "@/components/branch-cost-center-selector-enhanced"
 import { filterCashBankAccounts } from "@/lib/accounts"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 
 type Account = {
   id: string
@@ -47,6 +48,10 @@ export default function NewExpensePage() {
   const [amount, setAmount] = useState<number>(0)
   const [currencyCode, setCurrencyCode] = useState("EGP")
   const [exchangeRate, setExchangeRate] = useState<number>(1)
+  // v3.18.0: base currency for FX dropdown (loaded from companies.base_currency)
+  const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
+  const [exchangeRateId, setExchangeRateId] = useState<string | null>(null)
+  const [rateSource, setRateSource] = useState<string | null>(null)
   const [expenseCategory, setExpenseCategory] = useState("")
   const [paymentMethod, setPaymentMethod] = useState("")
   const [expenseAccountId, setExpenseAccountId] = useState("")
@@ -85,6 +90,20 @@ export default function NewExpensePage() {
       const cid = await getActiveCompanyId(supabase)
       if (!cid) return
       setCompanyId(cid)
+
+      // v3.18.0: load company base currency for FX dropdown
+      try {
+        const { data: company } = await supabase
+          .from("companies")
+          .select("base_currency")
+          .eq("id", cid)
+          .maybeSingle()
+        if (company?.base_currency) {
+          const base = String(company.base_currency).toUpperCase()
+          setBaseCurrency(base)
+          setCurrencyCode(base)  // default expense currency = company base
+        }
+      } catch {}
 
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
@@ -293,6 +312,8 @@ export default function NewExpensePage() {
         amount,
         currency_code: currencyCode,
         exchange_rate: exchangeRate,
+        // v3.18.0: rate selected via ExchangeRateSelector dropdown
+        // (sourced from /settings/exchange-rates; metadata kept locally for audit)
         base_currency_amount: amount * (exchangeRate || 1),
         expense_category: expenseCategory || null,
         payment_method: paymentMethod || null,
@@ -431,13 +452,17 @@ export default function NewExpensePage() {
                   <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
                     {appLang === 'en' ? 'Exchange rate to base currency' : 'سعر الصرف للعملة الأساسية'}
                   </Label>
-                  <NumericInput
+                  <ExchangeRateSelector
+                    fromCurrency={currencyCode}
+                    baseCurrency={baseCurrency}
                     value={exchangeRate}
                     onChange={setExchangeRate}
-                    min={0.000001}
-                    step={0.01}
-                    placeholder="1"
-                    className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                    onRateMetaChange={(meta) => {
+                      setExchangeRateId(meta?.rateId || null)
+                      setRateSource(meta?.source || null)
+                    }}
+                    hideLabel
+                    showPreview
                   />
                 </div>
               </div>
