@@ -3317,7 +3317,7 @@ export default function InvoiceDetailPage() {
 
           {/* Dialog: Receive Payment */}
           <Dialog open={showPayment} onOpenChange={setShowPayment}>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{appLang === 'en' ? `Record payment for invoice #${invoice.invoice_number}` : `تسجيل دفعة للفاتورة #${invoice.invoice_number}`}</DialogTitle>
               </DialogHeader>

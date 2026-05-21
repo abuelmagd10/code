@@ -702,7 +702,7 @@ export default function NewPurchaseOrderPage() {
                       value={exchangeRate}
                       onChange={setExchangeRate}
                       onRateMetaChange={(meta) => {
-                        setRateSource(meta?.source || null)
+                        setRateSource(meta?.source || "manual")
                       }}
                       hideLabel
                       showPreview

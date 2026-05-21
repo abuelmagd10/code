@@ -4,6 +4,60 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.19.0] - 2026-05-21
+
+### 🐛 Hotfix — v3.18.0 Build Failure + Dialog Scroll
+
+اكتشف المستخدم 2 مشاكل بعد v3.18.0:
+
+#### 1. ❌ v3.18.0 build فشل على Vercel
+
+التحقق من Vercel API كشف الخطأ:
+```
+app/banking/page.tsx:754:41
+Type error: Argument of type 'string | null' is not assignable
+to parameter of type 'SetStateAction<string>'.
+```
+
+**السبب:** `rateSource` state معرّفة كـ `useState<string>("same_currency")` لكن الـ callback يمرر `null` لما الـ meta غير موجودة.
+
+**الإصلاح:**
+- `app/banking/page.tsx:754` — `setRateSource(meta?.source || "manual")`
+- `app/purchase-orders/new/page.tsx:705` — نفس الإصلاح
+- `app/expenses/new/page.tsx` — مش متأثر (الـ state معرّفة `string | null`)
+
+#### 2. 🐛 نوافذ الـ Dialog تخرج عن الشاشة لما المحتوى كبير
+
+أبلغ المستخدم: "نافذة الدفع عند اختيار 💱 العميل يدفع بعملة مختلفة تخرج عن الصفحة"
+
+**الإصلاح:** تعديل الـ base `DialogContent` component بدل تعديل كل ملف:
+
+```typescript
+// components/ui/dialog.tsx
+className={cn(
+  'bg-background ... max-h-[90vh] overflow-y-auto ...',
+  className,  // ← caller يقدر يعدّل
+)}
+```
+
+**النتيجة:** كل الـ 30+ Dialogs فى المشروع تستفيد تلقائياً (DRY).
+
+### 📋 Files Changed (3)
+
+| الملف | التغيير |
+|---|---|
+| `components/ui/dialog.tsx` | `max-h-[90vh] overflow-y-auto` على base DialogContent |
+| `app/banking/page.tsx` | TypeScript fix لـ setRateSource |
+| `app/purchase-orders/new/page.tsx` | نفس TypeScript fix |
+| `app/invoices/[id]/page.tsx` | إضافة `max-h-[90vh] overflow-y-auto` للـ Payment dialog (احتياطى) |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تحسين فقط (الـ build سيمر، الـ dialogs سيكون لها scroll)
+- **Backward compatible**: 100% — كل callers الـ DialogContent تستفيد بدون تعديل
+
+---
+
 ## [3.18.0] - 2026-05-21
 
 ### 🔧 Shared Component — `ExchangeRateSelector` + التطبيق فى كل المواضع
