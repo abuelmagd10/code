@@ -148,6 +148,16 @@ export default function InvoiceDetailPage() {
   const [paymentFCAmount, setPaymentFCAmount] = useState<number>(0)
   const [payInDifferentCurrency, setPayInDifferentCurrency] = useState<boolean>(false)
   const [paymentCurrency, setPaymentCurrency] = useState<string>('USD')
+  // v3.16.0: Rate source selection (from exchange_rates table, not manual input)
+  const [availableRates, setAvailableRates] = useState<Array<{
+    id: string
+    source: 'api' | 'manual'
+    rate: number
+    rate_date: string
+    label: string
+  }>>([])
+  const [selectedRateId, setSelectedRateId] = useState<string>('')
+  const [loadingRates, setLoadingRates] = useState<boolean>(false)
   const [cashBankAccounts, setCashBankAccounts] = useState<any[]>([])
   const [savingPayment, setSavingPayment] = useState(false)
   // ❌ تم إزالة showCredit و creditDate - استخدم المرتجع الجزئي/الكامل بدلاً من مذكرة الدائن الكاملة
@@ -172,14 +182,81 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     if (!invoice) return
     const isFCInvoice = !!(invoice.currency_code && invoice.exchange_rate && Number(invoice.exchange_rate) !== 1)
-    if (isFCInvoice && paymentFCAmount > 0 && paymentExchangeRate > 0) {
+    const isCrossCurrency = !isFCInvoice && payInDifferentCurrency
+    if ((isFCInvoice || isCrossCurrency) && paymentFCAmount > 0 && paymentExchangeRate > 0) {
       const computed = Math.round(paymentFCAmount * paymentExchangeRate * 100) / 100
       if (Math.abs(computed - paymentAmount) > 0.005) {
         setPaymentAmount(computed)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paymentFCAmount, paymentExchangeRate, invoice?.currency_code, invoice?.exchange_rate])
+  }, [paymentFCAmount, paymentExchangeRate, invoice?.currency_code, invoice?.exchange_rate, payInDifferentCurrency])
+
+  // v3.16.0: Fetch available exchange rates (api + manual) from /settings/exchange-rates
+  // Triggered when payment currency changes (FC invoice currency or cross-currency selection)
+  useEffect(() => {
+    if (!invoice || !showPayment) return
+    const isFCInvoice = !!(invoice.currency_code && invoice.exchange_rate && Number(invoice.exchange_rate) !== 1)
+    const fcCurrency = isFCInvoice
+      ? String(invoice.currency_code || '').toUpperCase()
+      : (payInDifferentCurrency ? paymentCurrency.toUpperCase() : '')
+    if (!fcCurrency || fcCurrency === appCurrency.toUpperCase()) {
+      setAvailableRates([])
+      setSelectedRateId('')
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      setLoadingRates(true)
+      try {
+        const { data, error } = await supabase
+          .from('exchange_rates')
+          .select('id, rate, rate_date, source')
+          .eq('from_currency', fcCurrency)
+          .eq('to_currency', appCurrency.toUpperCase())
+          .order('rate_date', { ascending: false })
+          .limit(50)
+        if (error) throw error
+        if (cancelled) return
+        // Get latest rate per source (api + manual)
+        const seenSources = new Set<string>()
+        const latestPerSource: typeof availableRates = []
+        for (const row of (data || [])) {
+          const src = String((row as any).source || 'api') as 'api' | 'manual'
+          if (seenSources.has(src)) continue
+          seenSources.add(src)
+          latestPerSource.push({
+            id: (row as any).id,
+            source: src,
+            rate: Number((row as any).rate),
+            rate_date: (row as any).rate_date,
+            label: `${src === 'manual' ? '✋ يدوى' : '🔄 لحظى (API)'} — ${Number((row as any).rate).toFixed(4)} (${(row as any).rate_date})`,
+          })
+        }
+        setAvailableRates(latestPerSource)
+        // Auto-select the API rate by default (the user can switch to manual)
+        const def = latestPerSource.find(r => r.source === 'api') || latestPerSource[0]
+        if (def) {
+          setSelectedRateId(def.id)
+          setPaymentExchangeRate(def.rate)
+        } else {
+          setSelectedRateId('')
+          setPaymentExchangeRate(0)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to load exchange rates:', err)
+          setAvailableRates([])
+          setSelectedRateId('')
+          setPaymentExchangeRate(0)
+        }
+      } finally {
+        if (!cancelled) setLoadingRates(false)
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPayment, invoice?.currency_code, paymentCurrency, payInDifferentCurrency, appCurrency])
 
   // Shipping state
   const [showShipmentDialog, setShowShipmentDialog] = useState(false)
@@ -3385,13 +3462,35 @@ export default function InvoiceDetailPage() {
                               <Label className="text-xs">
                                 {appLang === 'en' ? `Exchange Rate (${fcCurrency} → ${appCurrency})` : `سعر الصرف (${fcCurrency} → ${appCurrency})`}
                               </Label>
-                              <NumericInput
-                                value={paymentExchangeRate}
-                                min={0}
-                                step="0.0001"
-                                onChange={(val) => setPaymentExchangeRate(val)}
-                                decimalPlaces={4}
-                              />
+                              {loadingRates ? (
+                                <div className="text-xs text-gray-500 py-2">{appLang === 'en' ? 'Loading rates...' : 'جارى تحميل الأسعار...'}</div>
+                              ) : availableRates.length === 0 ? (
+                                <div className="text-xs space-y-1">
+                                  <div className="text-red-600 dark:text-red-400">
+                                    ⚠️ {appLang === 'en'
+                                      ? `No exchange rate found for ${fcCurrency} → ${appCurrency}`
+                                      : `لا يوجد سعر صرف لـ ${fcCurrency} → ${appCurrency}`}
+                                  </div>
+                                  <Link href="/settings/exchange-rates" className="text-blue-600 hover:underline text-xs inline-block">
+                                    → {appLang === 'en' ? 'Add rate in settings' : 'إضافة سعر فى الإعدادات'}
+                                  </Link>
+                                </div>
+                              ) : (
+                                <select
+                                  className="w-full border rounded px-2 py-1.5 text-sm dark:bg-slate-800 dark:border-slate-700"
+                                  value={selectedRateId}
+                                  onChange={(e) => {
+                                    const id = e.target.value
+                                    setSelectedRateId(id)
+                                    const r = availableRates.find(x => x.id === id)
+                                    if (r) setPaymentExchangeRate(r.rate)
+                                  }}
+                                >
+                                  {availableRates.map(r => (
+                                    <option key={r.id} value={r.id}>{r.label}</option>
+                                  ))}
+                                </select>
+                              )}
                             </div>
                           </div>
 
