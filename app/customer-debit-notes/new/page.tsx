@@ -26,6 +26,11 @@ type Invoice = {
   invoice_number: string
   invoice_date: string
   total_amount: number
+  // v3.11.0 — FX inheritance from source invoice
+  currency_code?: string | null
+  exchange_rate?: number | null
+  exchange_rate_id?: string | null
+  base_currency_total?: number | null
 }
 
 type ItemRow = {
@@ -238,7 +243,7 @@ export default function NewCustomerDebitNotePage() {
 
       let query = supabase
         .from('invoices')
-        .select('id, invoice_number, invoice_date, total_amount, branch_id, cost_center_id, warehouse_id, created_by_user_id')
+        .select('id, invoice_number, invoice_date, total_amount, branch_id, cost_center_id, warehouse_id, created_by_user_id, currency_code, exchange_rate, exchange_rate_id, base_currency_total')
         .eq('company_id', companyId)
         .eq('customer_id', form.customer_id)
         .in('status', ['sent', 'paid', 'partially_paid', 'overdue'])
@@ -333,6 +338,13 @@ export default function NewCustomerDebitNotePage() {
           item_type: it.item_type
         }))
 
+      // v3.11.0 — Inherit FX from source invoice (if any)
+      const sourceInvoice = invoices.find(i => i.id === form.source_invoice_id)
+      const inheritedRate = sourceInvoice?.exchange_rate && Number(sourceInvoice.exchange_rate) !== 0
+        ? Number(sourceInvoice.exchange_rate)
+        : 1
+      const inheritedCurrencyId = sourceInvoice?.exchange_rate_id || null
+
       // Call the create function
       const { data, error } = await supabase.rpc('create_customer_debit_note', {
         p_company_id: companyId,
@@ -345,6 +357,8 @@ export default function NewCustomerDebitNotePage() {
         p_reason: form.reason,
         p_items: itemsJson,
         p_notes: form.notes,
+        p_currency_id: inheritedCurrencyId,
+        p_exchange_rate: inheritedRate,
         p_created_by: userId
       })
 
@@ -426,12 +440,28 @@ export default function NewCustomerDebitNotePage() {
                     disabled={!form.customer_id}
                   >
                     <option value="">{appLang === 'en' ? 'Select invoice' : 'اختر الفاتورة'}</option>
-                    {invoices.map(inv => (
-                      <option key={inv.id} value={inv.id}>
-                        {inv.invoice_number} - {new Date(inv.invoice_date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')} - {inv.total_amount.toFixed(2)}
-                      </option>
-                    ))}
+                    {invoices.map(inv => {
+                      const isFC = inv.currency_code && inv.exchange_rate && Number(inv.exchange_rate) !== 1
+                      const label = `${inv.invoice_number} - ${new Date(inv.invoice_date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')} - ${inv.total_amount.toFixed(2)}${isFC ? ` ${inv.currency_code}` : ''}`
+                      return (
+                        <option key={inv.id} value={inv.id}>{label}</option>
+                      )
+                    })}
                   </select>
+                  {/* v3.11.0: FX inheritance indicator */}
+                  {(() => {
+                    const sel = invoices.find(i => i.id === form.source_invoice_id)
+                    if (!sel) return null
+                    const isFC = sel.currency_code && sel.exchange_rate && Number(sel.exchange_rate) !== 1
+                    if (!isFC) return null
+                    return (
+                      <div className="mt-2 p-2 border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 rounded-md text-xs text-amber-700 dark:text-amber-300">
+                        💱 {appLang === 'en'
+                          ? `Source invoice is in ${sel.currency_code} (rate: ${Number(sel.exchange_rate).toFixed(4)}). The debit note will inherit this currency and rate automatically.`
+                          : `الفاتورة المصدر بـ${sel.currency_code} (السعر: ${Number(sel.exchange_rate).toFixed(4)}). مذكرة المدين سترث نفس العملة والسعر تلقائياً.`}
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 <div className="space-y-2">

@@ -71,9 +71,11 @@ interface Payment {
   display_currency?: string;
   display_amount?: number;
   original_currency?: string;
+  original_amount?: number;
   currency_code?: string;
   exchange_rate_used?: number;
   exchange_rate?: number;
+  base_currency_amount?: number;
   branch_id?: string | null;
   cost_center_id?: string | null;
   branches?: { name: string } | null;
@@ -187,7 +189,30 @@ export default function PaymentsPage() {
     if (payment.display_currency === paymentCurrency && payment.display_amount != null) {
       return payment.display_amount
     }
+    // v3.11.0: For FX payments, prefer base_currency_amount (the correct EGP value)
+    if (payment.base_currency_amount != null && payment.base_currency_amount > 0) {
+      return payment.base_currency_amount
+    }
     return payment.amount
+  }
+
+  // v3.11.0: Smart amount display — shows currency code + base equivalent for FX payments
+  const renderPaymentAmount = (payment: Payment, baseCur: string) => {
+    const baseAmount = getDisplayAmount(payment)
+    const origAmt = Number(payment.original_amount || 0)
+    const origCur = String(payment.original_currency || payment.currency_code || '').toUpperCase()
+    const baseCurUpper = baseCur.toUpperCase()
+    const isFC = origCur && origCur !== baseCurUpper && origAmt > 0
+    if (isFC) {
+      const origSymbol = currencySymbols[origCur] || origCur
+      return (
+        <span className="inline-flex flex-col">
+          <span className="font-medium">{origAmt.toFixed(2)} {origSymbol}</span>
+          <span className="text-[10px] text-gray-500">≈ {baseAmount.toFixed(2)} {currencySymbol}</span>
+        </span>
+      )
+    }
+    return <>{baseAmount.toFixed(2)} {currencySymbol}</>
   }
 
   // New payment form states
@@ -1977,7 +2002,7 @@ export default function PaymentsPage() {
                           {(p.invoice_id && invoiceBranchMap[p.invoice_id] ? branchNames[invoiceBranchMap[p.invoice_id]] : null) || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
                         </span>
                       </td>
-                      <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
+                      <td className="px-2 py-2">{renderPaymentAmount(p, paymentCurrency)}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
                       <td className="px-2 py-2">
                         {p.invoice_id ? (
@@ -2286,10 +2311,10 @@ export default function PaymentsPage() {
                             || (appLang === 'en' ? 'Main' : 'رئيسي')}
                         </span>
                       </td>
-                      {/* ✅ Paid Amount with Overpayment badge */}
+                      {/* ✅ Paid Amount with Overpayment badge — v3.11.0 FX-aware */}
                       <td className="px-2 py-2">
                         <div className="flex flex-col gap-0.5 items-end">
-                          <span>{paidAmt.toFixed(2)} {currencySymbol}</span>
+                          {renderPaymentAmount(p, paymentCurrency)}
                           {isOverpayment && (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 whitespace-nowrap">
                               +{advanceAmt.toFixed(2)} {currencySymbol} {appLang === 'en' ? 'Advance' : 'سلفة'}
