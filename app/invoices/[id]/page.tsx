@@ -162,6 +162,21 @@ export default function InvoiceDetailPage() {
   const [nextInvoiceId, setNextInvoiceId] = useState<string | null>(null)
   const [prevInvoiceId, setPrevInvoiceId] = useState<string | null>(null)
 
+  // ── FX auto-calculation: when invoice is in FC and user fills FC amount + rate,
+  //    automatically update paymentAmount to (FC × rate) so the API receives
+  //    the correct base-currency amount.
+  useEffect(() => {
+    if (!invoice) return
+    const isFCInvoice = !!(invoice.currency_code && invoice.exchange_rate && Number(invoice.exchange_rate) !== 1)
+    if (isFCInvoice && paymentFCAmount > 0 && paymentExchangeRate > 0) {
+      const computed = Math.round(paymentFCAmount * paymentExchangeRate * 100) / 100
+      if (Math.abs(computed - paymentAmount) > 0.005) {
+        setPaymentAmount(computed)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentFCAmount, paymentExchangeRate, invoice?.currency_code, invoice?.exchange_rate])
+
   // Shipping state
   const [showShipmentDialog, setShowShipmentDialog] = useState(false)
   const [shippingProviders, setShippingProviders] = useState<any[]>([])
@@ -2071,13 +2086,14 @@ export default function InvoiceDetailPage() {
 
   // Calculate totals for payments and returns
   // 🔧 الدفعات الموجبة = المدفوع للفاتورة، الدفعات السالبة = الصرف للعميل
+  // v3.10.0: استخدم base_currency_amount لو موجود (للدفعات بعملات أجنبية)
   const totalPaidAmount = invoicePayments.reduce((sum, p) => {
-    const amt = Number(p.amount || 0)
-    return sum + (amt > 0 ? amt : 0)  // فقط الدفعات الموجبة
+    const amt = Number(p.base_currency_amount ?? p.amount ?? 0)
+    return sum + (amt > 0 ? amt : 0)
   }, 0)
   const totalRefundedToCustomer = invoicePayments.reduce((sum, p) => {
-    const amt = Number(p.amount || 0)
-    return sum + (amt < 0 ? Math.abs(amt) : 0)  // الدفعات السالبة = صرف للعميل
+    const amt = Number(p.base_currency_amount ?? p.amount ?? 0)
+    return sum + (amt < 0 ? Math.abs(amt) : 0)
   }, 0)
   // 🔧 إصلاح: المرتجعات تؤخذ من invoices.returned_amount (المصدر الموثوق)
   // لأن invoice.total_amount أصلاً تم تقليله بقيمة المرتجع
@@ -3019,7 +3035,26 @@ export default function InvoiceDetailPage() {
                                 </span>
                               </td>
                               <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{payment.reference_number || '-'}</td>
-                              <td className="px-3 py-2 font-semibold text-green-600 dark:text-green-400">{currencySymbol}{Number(payment.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                              <td className="px-3 py-2 font-semibold text-green-600 dark:text-green-400">
+                                {(() => {
+                                  // Prefer base_currency_amount (the actual EGP value);
+                                  // if absent, fall back to amount.
+                                  const baseAmount = Number(payment.base_currency_amount || payment.amount || 0)
+                                  const origAmount = Number(payment.original_amount || 0)
+                                  const origCurrency = String(payment.original_currency || payment.currency_code || '').toUpperCase()
+                                  const baseCur = appCurrency.toUpperCase()
+                                  const isFC = origCurrency && origCurrency !== baseCur && origAmount > 0
+                                  if (isFC) {
+                                    return (
+                                      <>
+                                        <span>{origAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} {origCurrency}</span>
+                                        <span className="block text-[10px] text-gray-500 font-normal">≈ {currencySymbol}{baseAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                      </>
+                                    )
+                                  }
+                                  return <>{currencySymbol}{baseAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</>
+                                })()}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -3197,16 +3232,36 @@ export default function InvoiceDetailPage() {
               <DialogHeader>
                 <DialogTitle>{appLang === 'en' ? `Record payment for invoice #${invoice.invoice_number}` : `تسجيل دفعة للفاتورة #${invoice.invoice_number}`}</DialogTitle>
               </DialogHeader>
+              {/* Detect FC invoice once for clearer logic */}
+              {(() => {
+                const isFCInvoice = !!(invoice.currency_code && invoice.exchange_rate && Number(invoice.exchange_rate) !== 1)
+                const baseCurrencySymbol = currencySymbol  // typically £ for EGP
+                return null
+              })()}
               <div className="space-y-4 py-2">
                 <div className="space-y-2" data-ai-help="invoices.payment_amount">
-                  <Label>{appLang === 'en' ? 'Amount' : 'المبلغ'}</Label>
+                  <Label>
+                    {appLang === 'en' ? 'Amount (in base currency)' : `المبلغ (بالعملة الأساسية ${appCurrency})`}
+                  </Label>
                   <NumericInput
                     value={paymentAmount}
                     min={0}
                     step="0.01"
                     onChange={(val) => setPaymentAmount(val)}
                     decimalPlaces={2}
+                    disabled={!!(invoice.currency_code && invoice.exchange_rate && Number(invoice.exchange_rate) !== 1 && paymentFCAmount > 0 && paymentExchangeRate > 0)}
                   />
+                  {invoice.currency_code && invoice.exchange_rate && Number(invoice.exchange_rate) !== 1 && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400">
+                      {paymentFCAmount > 0 && paymentExchangeRate > 0
+                        ? (appLang === 'en'
+                            ? `🔒 Auto-calculated: ${paymentFCAmount} ${invoice.currency_code} × ${paymentExchangeRate.toFixed(4)} = ${currencySymbol}${(paymentFCAmount * paymentExchangeRate).toFixed(2)}`
+                            : `🔒 محسوب تلقائياً: ${paymentFCAmount} ${invoice.currency_code} × ${paymentExchangeRate.toFixed(4)} = ${currencySymbol}${(paymentFCAmount * paymentExchangeRate).toFixed(2)}`)
+                        : (appLang === 'en'
+                            ? `⚠️ This invoice is in ${invoice.currency_code}. Fill the FX section below — base amount will be calculated automatically.`
+                            : `⚠️ هذه الفاتورة بـ${invoice.currency_code}. املأ قسم FX أدناه — سيتم حساب المبلغ بـ${appCurrency} تلقائياً.`)}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2" data-ai-help="invoices.payment_account">
                   <Label>{appLang === 'en' ? 'Payment Date' : 'تاريخ الدفع'}</Label>
