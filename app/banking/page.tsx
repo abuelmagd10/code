@@ -751,7 +751,7 @@ export default function BankingPage() {
                         }}
                         onRateMetaChange={(meta) => {
                           setExchangeRateId(meta?.rateId || null)
-                          setRateSource(meta?.source || null)
+                          setRateSource(meta?.source || "manual")
                         }}
                         hideLabel
                         showPreview
