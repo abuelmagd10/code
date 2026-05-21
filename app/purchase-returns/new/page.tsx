@@ -135,7 +135,9 @@ export default function NewPurchaseReturnPage() {
   // Multi-currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [exchangeRate, setExchangeRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
-  const baseCurrency = typeof window !== 'undefined' ? localStorage.getItem('app_currency') || 'EGP' : 'EGP'
+  // v3.21.1: baseCurrency is loaded from companies.base_currency (authoritative source),
+  // not from localStorage which can be stale across companies / sessions.
+  const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
   const currencySymbols: Record<string, string> = { EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ' }
 
   const submitPurchaseReturnCommand = async (payload: Record<string, unknown>) => {
@@ -161,6 +163,21 @@ export default function NewPurchaseReturnPage() {
       const loadedCompanyId = await getActiveCompanyId(supabase)
       if (!loadedCompanyId) return
       setCompanyId(loadedCompanyId)
+
+      // v3.21.1: Load company base currency (authoritative — not localStorage)
+      try {
+        const { data: companyBC } = await supabase
+          .from("companies")
+          .select("base_currency")
+          .eq("id", loadedCompanyId)
+          .maybeSingle()
+        if (companyBC?.base_currency) {
+          const base = String(companyBC.base_currency).toUpperCase()
+          setBaseCurrency(base)
+          // Default the return currency to the company's base currency
+          setForm(prev => ({ ...prev, currency: base }))
+        }
+      } catch {}
 
       // جلب بيانات المستخدم والدور
       const { data: { user } } = await supabase.auth.getUser()

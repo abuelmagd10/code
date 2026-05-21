@@ -4,6 +4,91 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.21.1] - 2026-05-21
+
+### 🐛 Hotfix — `baseCurrency` يستفسر من DB (وليس localStorage)
+
+سأل المستخدم سؤال محورى:
+> "هل افترضت ان العملة الاساسية هى الجنية المصرى ام انة يستمد العملة الاساسية من اعدادات التطبيق؟ ... لو مطبق فى الاعدادات ان العملة الاساسية هى الدولار، هل يتعامل التطبيق على ان العملة الاساسية هى الدولار؟"
+
+### 🔍 الفحص الجذرى
+
+`companies.base_currency` فى قاعدة البيانات هو **المصدر الموثوق الوحيد**. localStorage.app_currency مجرد تفضيل عرض UI ممكن يكون stale بعد تغيير الشركة أو تعديل الإعدادات.
+
+### 🔴 Bugs المُكتشفة
+
+#### Bug #1: `app/vendor-credits/new/page.tsx:75`
+```ts
+// قبل (خطأ):
+const baseCurrency = typeof window !== 'undefined'
+  ? localStorage.getItem('app_currency') || 'EGP'
+  : 'EGP'  // ← لا يستفسر الـ DB أبداً
+```
+
+#### Bug #2: `app/purchase-returns/new/page.tsx:138`
+نفس الـ pattern — نفس الـ bug.
+
+### ✅ الإصلاح (في كلا الملفين)
+
+```ts
+const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
+
+// فى useEffect بعد جلب companyId:
+const { data: companyBC } = await supabase
+  .from("companies")
+  .select("base_currency")
+  .eq("id", loadedCompanyId)
+  .maybeSingle()
+if (companyBC?.base_currency) {
+  setBaseCurrency(String(companyBC.base_currency).toUpperCase())
+  // ضبط الوثيقة الجديدة بالعملة الأساسية الصحيحة
+}
+```
+
+### 📊 السيناريو الذى يُحلّ
+
+| الموقف | قبل v3.21.1 | بعد v3.21.1 |
+|---|---|---|
+| الشركة base_currency = EGP | ✅ يعمل | ✅ يعمل |
+| الشركة base_currency = USD، المستخدم سجل دخول جديد | ❌ يستخدم EGP الخاطئة | ✅ USD |
+| المستخدم بدّل شركة بدون refresh | ❌ يستخدم العملة القديمة | ✅ العملة الجديدة |
+| تم تعديل base_currency بدون refresh | ❌ stale value | ✅ القيمة المُحدّثة |
+
+### 📋 Files Changed (3)
+
+| الملف | التغيير |
+|---|---|
+| `app/vendor-credits/new/page.tsx` | baseCurrency: const ← localStorage → useState ← DB |
+| `app/purchase-returns/new/page.tsx` | نفس النمط |
+| `CHANGELOG.md` | توثيق |
+
+### 🟢 صفحات صحيحة بالفعل (للتوثيق)
+
+`/expenses/new`, `/drawings/new`, `/sales-orders/[id]/edit`, `/purchase-orders/[id]/edit`, `/branches`, `/cost-centers`, `/settings/exchange-rates`, `/reports/ar-by-currency` — كلها كانت تستفسر `companies.base_currency` بشكل صحيح.
+
+### 🟡 صفحات بـ hybrid pattern (localStorage initial → DB updates)
+
+`/payments`, `/invoices/new`, `/sales-orders/new`, `/purchase-orders/new`, `/journal-entries/new` تبدأ بـ localStorage ثم تُحدّث من DB. النتيجة النهائية صحيحة — تركتها كما هى لأنها مش buggy، بس فيه ميلى ثانية initial render بقيمة localStorage. هذا قرار تصميم (تقليل flash) وليس خطأ.
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: إيجابى — يحلّ مشكلة محتملة فى الشركات التى تغيّر base_currency
+- **Backward compatible**: 100% — السلوك الافتراضى للشركات بقاعدة EGP لم يتغير
+- **No DB migrations / No breaking changes**
+
+### 🌐 ملاحظة معمارية: Multi-Base-Currency Support
+
+الـ Edge Function اليومى `update-exchange-rates` بالفعل multi-tenant:
+```ts
+const baseCurrencies = Array.from(
+  new Set(companies.map(c => c.base_currency.toUpperCase()))
+)
+// fetches every fc→base combination
+```
+فلو فيه شركتان واحدة EGP وواحدة USD، الـ cron يجيب الـ rates لكليهما يومياً تلقائياً.
+
+---
+
 ## [3.21.0] - 2026-05-21
 
 ### 🔧 ExchangeRateSelector — تطبيق شامل على باقى الصفحات المالية
