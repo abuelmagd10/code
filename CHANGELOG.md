@@ -4,6 +4,70 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.10.0] - 2026-05-21
+
+### 🔧 Critical Fix — FX Payment Amount Auto-Calculation + Display Fix
+
+اكتُشف 3 مشاكل خطيرة أثناء اختبار دفع 2 USD على فاتورة USD:
+
+### 🐛 Bug #1: Payment Amount sent as FC instead of base currency
+
+**السيناريو:**
+- المستخدم أدخل `paymentAmount = 2` (يعنى 2 USD)
+- الـ UI أرسلت `amount: 2` للـ API
+- الـ RPC `process_invoice_payment_atomic_v2` لا تدعم FX، فأخذت 2 كـ 2 EGP
+- النتيجة: قيد محاسبى خاطئ — Dr Cash 2 EGP / Cr AR 2 EGP (المفروض 106.22 و 100)
+
+**الإصلاح:**
+- إضافة `useEffect` يحسب تلقائياً `paymentAmount = paymentFCAmount × paymentExchangeRate`
+- جعل حقل المبلغ `readonly` لما الفاتورة بعملة أجنبية
+- رسالة توضيحية: "🔒 محسوب تلقائياً: 2 USD × 53.1100 = £106.22"
+- تنبيه واضح لو الحقول FC مش متعبأة
+
+### 🐛 Bug #2: Display of paid amount used wrong field
+
+**المشكلة:** جدول الدفعات استخدم `payment.amount` مع رمز العملة الأساسية، فعرض "£2.00" للدفعة الـ USD.
+
+**الإصلاح:** عرض ذكى:
+- لو دفعة بعملة أجنبية: `2.00 USD ≈ £106.22`
+- لو دفعة بالعملة الأساسية: `£106.22` (كالعادة)
+
+كذلك إصلاح `totalPaidAmount` ليستخدم `base_currency_amount` لو موجود.
+
+### 🐛 Bug #3: FX adjustment journal لم يُنشأ
+
+**المشكلة:** الـ post-RPC hook `postFXPaymentAdjustment` كان متوقعاً ينشئ قيد FX، لكن لم يُسجل أى قيد. السبب الجذرى تحت الفحص (احتمال الـ hook لم يُنفذ بسبب عدم وصول الـ exchangeRate/FCAmount صحيحين، أو فشل صامت).
+
+**الإصلاح المؤقت:** قيد تصحيح يدوى FX-PAY-ADJ-* للحالة الموجودة فى DB، يكمل الـ 104.22 EGP الناقصة + يسجل 6.22 EGP مكسب فى حساب 4320.
+
+### ✅ النتيجة بعد الإصلاح (Net journal effect)
+
+```
+الحالة الصحيحة دلوقتى:
+─────────────────────────────────────────
+Dr  1001 خزينة         106.22 EGP   (2 USD × 53.11 سعر الدفع)
+   Cr  1130 العملاء       100.00 EGP   (2 USD × 50 السعر الأصلى)
+   Cr  4320 مكسب FX         6.22 EGP   (الفرق فى الأسعار)
+─────────────────────────────────────────
+Balance ✅
+```
+
+### 📁 Files Changed
+
+- 🔧 `app/invoices/[id]/page.tsx`:
+  - useEffect جديد لـ auto-calculation للـ paymentAmount
+  - حقل المبلغ readonly + indicator واضح
+  - جدول الدفعات يعرض currency code + الـ base equivalent
+  - totalPaidAmount يستخدم base_currency_amount
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تم تصحيح القيد الموجود (FX-PAY-ADJ-* بحالة draft)
+- **Forward**: الـ UI الجديد يمنع تكرار الـ bug — المستخدم لا يستطيع إرسال مبلغ غير محول
+- **يلزم لاحقاً**: تشخيص لماذا الـ post-RPC FX hook لم يعمل (Phase B-3)
+
+---
+
 ## [3.9.0] - 2026-05-20
 
 ### 🏭 Manufacturing Phase B-2: Labor + Manufacturing Overhead Application (IAS 2 §10 Complete)
