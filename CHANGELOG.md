@@ -4,6 +4,45 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.20.0] - 2026-05-21
+
+### 🐛 Comprehensive Scroll Fix — كل النوافذ فى المشروع
+
+طلب المستخدم بعد v3.19.0:
+> "تلاحظ ايضا فى نافذة الدفع... تخرج عن الصفحة و لا تحتوى على ScrollArea. التاكد ان جميع النوافذ فى المشروع تحتوى على ScrollArea"
+
+### 🔍 Audit النوافذ الموجودة فى المشروع
+
+| Component | الحالة قبل | الحالة بعد |
+|---|---|---|
+| `components/ui/dialog.tsx` | ✅ تم فى v3.19.0 | ✅ `max-h-[90vh] overflow-y-auto` |
+| `components/ui/alert-dialog.tsx` | ❌ لا scroll | ✅ `max-h-[90vh] overflow-y-auto` |
+| `components/ui/sheet.tsx` | ❌ لا scroll | ✅ `overflow-y-auto` (+ `max-h-[90vh]` لـ top/bottom) |
+| `components/ui/drawer.tsx` | ❌ لا scroll | ✅ `overflow-y-auto` |
+
+### 📋 Files Changed (3)
+
+| الملف | التغيير |
+|---|---|
+| `components/ui/alert-dialog.tsx` | `max-h-[90vh] overflow-y-auto` على base AlertDialogContent |
+| `components/ui/sheet.tsx` | `overflow-y-auto` على base + `max-h-[90vh]` لـ top/bottom variants |
+| `components/ui/drawer.tsx` | `overflow-y-auto` على base DrawerContent |
+
+### 🎯 النتيجة (DRY Architecture)
+
+- كل الـ `AlertDialog`s الموجودة (وحوالى 20+ فى المشروع) → تستفيد تلقائياً
+- كل الـ `Sheet`s (sidebar mobile menu, settings panels, إلخ) → تستفيد تلقائياً
+- كل الـ `Drawer`s (vaul-based bottom sheets على الموبايل) → تستفيد تلقائياً
+- **مجموع النوافذ المُصلحة**: 50+ instance بتعديل 3 ملفات فقط
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تحسين بصرى فقط — لا scroll-bar يظهر إذا كان المحتوى قصير
+- **Backward compatible**: 100% — callers تقدر تعدّل عبر `className` prop
+- **No DB changes / no migrations**
+
+---
+
 ## [3.19.0] - 2026-05-21
 
 ### 🐛 Hotfix — v3.18.0 Build Failure + Dialog Scroll
