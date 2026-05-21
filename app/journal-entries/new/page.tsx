@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { filterLeafAccounts } from "@/lib/accounts"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 
 interface Account {
@@ -405,61 +406,51 @@ export default function NewJournalEntryPage() {
                     />
                   </div>
 
+                  {/* v3.21.0: Currency + ExchangeRateSelector (api/manual from /settings/exchange-rates) */}
                   <div className="space-y-2">
                     <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Currency' : 'العملة'}</Label>
-                    <div className="flex gap-2 items-center">
-                      <select
-                        className="border rounded px-3 py-2 text-sm"
-                        value={entryCurrency}
-                        onChange={async (e) => {
-                          const v = e.target.value
-                          setEntryCurrency(v)
-                          if (v === baseCurrency) {
-                            setExchangeRate(1)
-                            setExchangeRateId(undefined)
-                            setRateSource('same_currency')
-                          } else {
-                            setFetchingRate(true)
-                            try {
-                              // Use CurrencyService for rate lookup
-                              const result = await getExchangeRate(supabase, v, baseCurrency)
-                              setExchangeRate(result.rate)
-                              setExchangeRateId(result.rateId)
-                              setRateSource(result.source)
-                            } catch {
-                              // Fallback to direct API
-                              try {
-                                const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
-                                const data = await res.json()
-                                setExchangeRate(data.rates?.[baseCurrency] || 1)
-                                setRateSource('api_fallback')
-                              } catch { setExchangeRate(1) }
-                            }
-                            setFetchingRate(false)
-                          }
-                        }}
-                      >
-                        {currencies.length > 0 ? (
-                          currencies.map((c) => (
-                            <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
-                          ))
-                        ) : (
-                          Object.entries(currencySymbols).map(([code, symbol]) => (
-                            <option key={code} value={code}>{symbol} {code}</option>
-                          ))
-                        )}
-                      </select>
-                      {entryCurrency !== baseCurrency && (
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          {fetchingRate ? (appLang === 'en' ? 'Loading...' : 'جاري...') : (
-                            <>
-                              1 {entryCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}
-                              <span className="text-blue-500 ml-1">({rateSource})</span>
-                            </>
-                          )}
-                        </span>
+                    <select
+                      className="w-full border rounded px-3 py-2 text-sm"
+                      value={entryCurrency}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setEntryCurrency(v)
+                        if (v === baseCurrency) {
+                          setExchangeRate(1)
+                          setExchangeRateId(undefined)
+                          setRateSource('same_currency')
+                        }
+                      }}
+                    >
+                      {currencies.length > 0 ? (
+                        currencies.map((c) => (
+                          <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
+                        ))
+                      ) : (
+                        Object.entries(currencySymbols).map(([code, symbol]) => (
+                          <option key={code} value={code}>{symbol} {code}</option>
+                        ))
                       )}
-                    </div>
+                    </select>
+                    {entryCurrency !== baseCurrency && (
+                      <div className="pt-1">
+                        <Label className="text-xs text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                          {(hydrated && appLang === 'en') ? 'Exchange rate' : 'سعر الصرف'}
+                        </Label>
+                        <ExchangeRateSelector
+                          fromCurrency={entryCurrency}
+                          baseCurrency={baseCurrency}
+                          value={exchangeRate}
+                          onChange={setExchangeRate}
+                          onRateMetaChange={(meta) => {
+                            setExchangeRateId(meta?.rateId)
+                            setRateSource(meta?.source || 'manual')
+                          }}
+                          hideLabel
+                          showPreview
+                        />
+                      </div>
+                    )}
                     {entryCurrency !== baseCurrency && (
                       <p className="text-xs text-amber-600 dark:text-amber-400">
                         {appLang === 'en'

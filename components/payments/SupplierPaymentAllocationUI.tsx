@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
-import { getExchangeRate } from "@/lib/currency-service"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { getActiveCompanyId } from "@/lib/company"
 import { getAccessFilter, UserContext } from "@/lib/validation"
 import { notifyPaymentApprovalRequest } from "@/lib/notification-helpers"
@@ -44,7 +44,19 @@ export function SupplierPaymentAllocationUI({
   const [accountId, setAccountId] = useState("")
   const [currency, setCurrency] = useState(baseCurrency)
   const [exchangeRate, setExchangeRate] = useState(1)
-  
+  // v3.21.0: track FX selection metadata (api/manual) for audit
+  const [exchangeRateId, setExchangeRateId] = useState<string | null>(null)
+  const [rateSource, setRateSource] = useState<string | null>(null)
+
+  // Reset rate to 1 when switching back to base currency
+  useEffect(() => {
+    if (currency === baseCurrency) {
+      setExchangeRate(1)
+      setExchangeRateId(null)
+      setRateSource(null)
+    }
+  }, [currency, baseCurrency])
+
   // Allocations State
   const [bills, setBills] = useState<any[]>([])
   const [allocations, setAllocations] = useState<Record<string, number>>({})
@@ -143,6 +155,9 @@ export function SupplierPaymentAllocationUI({
           branchId,
           currencyCode: currency,
           exchangeRate,
+          // v3.21.0: persist FX selection metadata for audit
+          exchangeRateId: exchangeRateId || null,
+          rateSource: rateSource || null,
           baseCurrencyAmount: amount * exchangeRate,
           originalAmount: amount,
           originalCurrency: currency,
@@ -242,6 +257,39 @@ export function SupplierPaymentAllocationUI({
                 )}
               </select>
             </div>
+
+            {/* v3.21.0: Currency picker */}
+            <div>
+              <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
+              <select
+                className="w-full border rounded px-3 py-2 mt-1 bg-white dark:bg-slate-800"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+              >
+                {currencies.map((c: any) => <option key={c.code} value={c.code}>{c.code}</option>)}
+              </select>
+            </div>
+
+            {/* v3.21.0: ExchangeRateSelector (api/manual dropdown from /settings/exchange-rates) */}
+            {currency !== baseCurrency && (
+              <div className="md:col-span-2 lg:col-span-2">
+                <Label>{appLang === 'en' ? 'Exchange rate' : 'سعر الصرف'}</Label>
+                <div className="mt-1">
+                  <ExchangeRateSelector
+                    fromCurrency={currency}
+                    baseCurrency={baseCurrency}
+                    value={exchangeRate}
+                    onChange={setExchangeRate}
+                    onRateMetaChange={(meta) => {
+                      setExchangeRateId(meta?.rateId || null)
+                      setRateSource(meta?.source || null)
+                    }}
+                    hideLabel
+                    showPreview
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {supplierId && bills.length > 0 && (

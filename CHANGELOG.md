@@ -4,6 +4,73 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.21.0] - 2026-05-21
+
+### 🔧 ExchangeRateSelector — تطبيق شامل على باقى الصفحات المالية
+
+أبلغ المستخدم بعد v3.18.0:
+> "اى موضع فى المشروع يحتوى على مدخلات مالية ويحتوى على اختيار العملة ان يكون يستمد سعر الصرف بعد تحديد العملة من صفحة أسعار الصرف... ولكن تلاحظ انة مازال يوجد مواضع ليس مطبق بها طلبى على سبيل المثال وليس الحصر فى صفحة المدفوعات"
+
+### 🔍 جرد كامل لكل صفحات FX
+
+السلوك المطلوب فى كل مكان: عند تغيير العملة، يظهر **dropdown** يعرض آخر سعر API + آخر سعر يدوى من جدول `exchange_rates`، والمستخدم يختار بينهم (مع API كافتراضى).
+
+### 📋 Pages Updated (9 files)
+
+| الصفحة | قبل v3.21 | بعد v3.21 |
+|---|---|---|
+| `/payments` (customer + supplier) | auto-fetch + عرض السعر فقط | ✅ ExchangeRateSelector dropdown |
+| `components/payments/CustomerPaymentAllocationUI.tsx` | auto-fetch، لا اختيار | ✅ ExchangeRateSelector |
+| `components/payments/SupplierPaymentAllocationUI.tsx` | لا currency selector | ✅ Currency + ExchangeRateSelector |
+| `/invoices/new` | auto-fetch + API fallback | ✅ ExchangeRateSelector |
+| `/sales-orders/new` | auto-fetch + API fallback | ✅ ExchangeRateSelector |
+| `/sales-orders/[id]/edit` | auto-fetch | ✅ ExchangeRateSelector |
+| `/purchase-orders/[id]/edit` | auto-fetch + API fallback | ✅ ExchangeRateSelector |
+| `/journal-entries/new` | auto-fetch + API fallback | ✅ ExchangeRateSelector |
+| `/vendor-credits/new` | auto-fetch من service | ✅ ExchangeRateSelector |
+| `/purchase-returns/new` | auto-fetch من service | ✅ ExchangeRateSelector |
+
+### 🆕 Allocation UIs — تحسينات إضافية
+
+- **SupplierPaymentAllocationUI**: كان مفتقر لـ Currency picker كلياً (كان يستخدم `baseCurrency` فقط). الآن:
+  - أضيف Currency dropdown
+  - أضيف ExchangeRateSelector عند currency ≠ base
+  - الـ API body يرسل `exchangeRateId` و `rateSource` للـ audit trail
+- **CustomerPaymentAllocationUI**: نفس التحسينات
+
+### 📦 API Payload Changes
+
+دفعات العملاء والموردين الآن تُرسل:
+```typescript
+{
+  exchangeRate: number,
+  exchangeRateId: string | null,  // ← v3.21.0 جديد
+  rateSource: 'api' | 'manual' | null,  // ← v3.21.0 جديد
+  baseCurrencyAmount: number,
+  originalAmount: number,
+  originalCurrency: string,
+}
+```
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: محايد — السلوك الافتراضى (API rate) نفس السلوك السابق
+- **User experience**: تحسين — المستخدم الآن يقدر يختار بين API و Manual بدلاً من قبول الـ API ضمنياً
+- **Backward compatible**: 100% — الـ APIs السابقة كانت تتجاهل exchangeRateId/rateSource، الآن تستفيد منهم
+- **بقايا غير مستخدمة (harmless)**: حالة `fetchingRate` المحلية لم تُحذف من الـ state declarations لتجنب لمس مناطق غير ضرورية. لا تؤثر على البناء أو الـ runtime.
+
+### 🔁 صفحات لم تتغير (وفقاً للسبب)
+
+| الصفحة | السبب |
+|---|---|
+| `/invoices/[id]/page.tsx` (Payment dialog) | بالفعل تحتوى dropdown مماثل تماماً لـ ExchangeRateSelector (v3.16.0) |
+| `/expenses/new`, `/drawings/new`, `/purchase-orders/new`, `/banking` | تم فى v3.18.0 |
+| `/customer-debit-notes/new` | يرث rate من الفاتورة المصدر تلقائياً (لا user input) |
+| `/bills/[id]/edit`, `/invoices/[id]/edit` | يعرضان rate موجود فقط (read-only effectively) |
+| `/reports/*` | reports فقط، لا user input |
+
+---
+
 ## [3.20.0] - 2026-05-21
 
 ### 🐛 Comprehensive Scroll Fix — كل النوافذ فى المشروع

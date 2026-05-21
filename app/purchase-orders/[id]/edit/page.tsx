@@ -12,6 +12,7 @@ import { Trash2, Plus, Save, Loader2, ClipboardList } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
@@ -385,27 +386,14 @@ export default function EditPurchaseOrderPage() {
     }
   }, [poItems, taxInclusive, invoiceDiscount, invoiceDiscountType, invoiceDiscountPosition, shippingCharge, shippingTaxRate, adjustment])
 
-  const handleCurrencyChange = async (newCurrency: string) => {
+  // v3.21.0: Currency change just updates the code; ExchangeRateSelector
+  // (rendered when poCurrency !== baseCurrency) handles loading rates
+  // from /settings/exchange-rates and lets the user pick api/manual.
+  const handleCurrencyChange = (newCurrency: string) => {
     setPOCurrency(newCurrency)
     if (newCurrency === baseCurrency) {
       setExchangeRate(1)
       setRateSource('same_currency')
-    } else {
-      setFetchingRate(true)
-      try {
-        const result = await getExchangeRate(supabase, newCurrency, baseCurrency, new Date(), companyId)
-        setExchangeRate(result.rate)
-        setRateSource(result.source)
-      } catch {
-        // Fallback to direct API
-        try {
-          const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${newCurrency}`)
-          const data = await res.json()
-          setExchangeRate(data.rates?.[baseCurrency] || 1)
-          setRateSource('api_fallback')
-        } catch { setExchangeRate(1) }
-      }
-      setFetchingRate(false)
     }
   }
 
@@ -672,40 +660,45 @@ export default function EditPurchaseOrderPage() {
                     <Label suppressHydrationWarning>{appLang === 'en' ? 'Due Date' : 'تاريخ الاستحقاق'}</Label>
                     <Input type="date" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} disabled={!canEdit} />
                   </div>
+                  {/* v3.21.0: Currency + ExchangeRateSelector (api/manual from /settings/exchange-rates) */}
                   <div className="space-y-2">
                     <Label suppressHydrationWarning>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-                    <div className="flex gap-2">
-                      <Select value={poCurrency} onValueChange={handleCurrencyChange} disabled={!canEdit}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {currencies.length > 0 ? (
-                            currencies.map((c) => (
-                              <SelectItem key={c.code} value={c.code}>
-                                <span className="font-bold text-blue-600 mr-1">{c.symbol}</span> {c.code}
-                              </SelectItem>
-                            ))
-                          ) : (
-                            Object.entries(currencySymbols).map(([code, symbol]) => (
-                              <SelectItem key={code} value={code}>
-                                <span className="font-bold text-blue-600 mr-1">{symbol}</span> {code}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                      {poCurrency !== baseCurrency && (
-                        <div className="flex items-center text-xs text-gray-500 whitespace-nowrap">
-                          {fetchingRate ? (
-                            <span className="animate-pulse">...</span>
-                          ) : (
-                            <span>*{exchangeRate.toFixed(2)}</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    <Select value={poCurrency} onValueChange={handleCurrencyChange} disabled={!canEdit}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {currencies.length > 0 ? (
+                          currencies.map((c) => (
+                            <SelectItem key={c.code} value={c.code}>
+                              <span className="font-bold text-blue-600 mr-1">{c.symbol}</span> {c.code}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          Object.entries(currencySymbols).map(([code, symbol]) => (
+                            <SelectItem key={code} value={code}>
+                              <span className="font-bold text-blue-600 mr-1">{symbol}</span> {code}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
+                  {poCurrency !== baseCurrency && (
+                    <div className="space-y-2">
+                      <Label suppressHydrationWarning>{appLang === 'en' ? 'Exchange rate' : 'سعر الصرف'}</Label>
+                      <ExchangeRateSelector
+                        fromCurrency={poCurrency}
+                        baseCurrency={baseCurrency}
+                        value={exchangeRate}
+                        onChange={setExchangeRate}
+                        onRateMetaChange={(meta) => setRateSource(meta?.source || 'manual')}
+                        disabled={!canEdit}
+                        hideLabel
+                        showPreview
+                      />
+                    </div>
+                  )}
                   <div className="space-y-2 lg:col-span-2">
                     <Label suppressHydrationWarning>{appLang === 'en' ? 'Notes' : 'ملاحظات'}</Label>
                     <Input value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} disabled={!canEdit} />

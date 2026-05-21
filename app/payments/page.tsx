@@ -45,6 +45,7 @@ import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { SupplierPaymentAllocationUI } from "@/components/payments/SupplierPaymentAllocationUI"
 import { CustomerPaymentAllocationUI } from "@/components/payments/CustomerPaymentAllocationUI"
 import { PaymentDetailsModal } from "@/components/payments/PaymentDetailsModal"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { Eye } from "lucide-react"
 
 interface Customer { 
@@ -1871,58 +1872,46 @@ export default function PaymentsPage() {
                   <Input value={newCustPayment.ref} onChange={(e) => setNewCustPayment({ ...newCustPayment, ref: e.target.value })} placeholder="..." />
                 </div>
               )}
+              {/* v3.21.0: Currency picker + ExchangeRateSelector (api/manual dropdown) */}
               <div>
                 <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-                <div className="flex gap-2 items-center">
-                  <select className="border rounded px-2 py-1" value={paymentCurrency} onChange={async (e) => {
-                    const v = e.target.value
-                    setPaymentCurrency(v)
-                    if (v === baseCurrency) {
-                      setExchangeRate(1)
-                      setExchangeRateId(undefined)
-                      setRateSource('same_currency')
-                    } else {
-                      setFetchingRate(true)
-                      try {
-                        // Use CurrencyService for rate lookup
-                        const result = await getExchangeRate(supabase, v, baseCurrency)
-                        setExchangeRate(result.rate)
-                        setExchangeRateId(result.rateId)
-                        setRateSource(result.source)
-                      } catch {
-                        // Fallback to direct API
-                        try {
-                          const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
-                          const data = await res.json()
-                          setExchangeRate(data.rates?.[baseCurrency] || 1)
-                          setRateSource('api_fallback')
-                        } catch { setExchangeRate(1) }
-                      }
-                      setFetchingRate(false)
-                    }
-                  }}>
-                    {currencies.length > 0 ? (
-                      currencies.map((c) => (
-                        <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
-                      ))
-                    ) : (
-                      Object.entries(currencySymbols).map(([code, symbol]) => (
-                        <option key={code} value={code}>{symbol} {code}</option>
-                      ))
-                    )}
-                  </select>
-                  {paymentCurrency !== baseCurrency && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {fetchingRate ? '...' : (
-                        <>
-                          1 {paymentCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}
-                          <span className="text-blue-500 ml-1">({rateSource})</span>
-                        </>
-                      )}
-                    </span>
+                <select className="w-full border rounded px-2 py-1" value={paymentCurrency} onChange={(e) => {
+                  const v = e.target.value
+                  setPaymentCurrency(v)
+                  if (v === baseCurrency) {
+                    setExchangeRate(1)
+                    setExchangeRateId(undefined)
+                    setRateSource('same_currency')
+                  }
+                }}>
+                  {currencies.length > 0 ? (
+                    currencies.map((c) => (
+                      <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
+                    ))
+                  ) : (
+                    Object.entries(currencySymbols).map(([code, symbol]) => (
+                      <option key={code} value={code}>{symbol} {code}</option>
+                    ))
                   )}
-                </div>
+                </select>
               </div>
+              {paymentCurrency !== baseCurrency && (
+                <div>
+                  <Label>{appLang === 'en' ? 'Exchange rate' : 'سعر الصرف'}</Label>
+                  <ExchangeRateSelector
+                    fromCurrency={paymentCurrency}
+                    baseCurrency={baseCurrency}
+                    value={exchangeRate}
+                    onChange={setExchangeRate}
+                    onRateMetaChange={(meta) => {
+                      setExchangeRateId(meta?.rateId)
+                      setRateSource(meta?.source || 'manual')
+                    }}
+                    hideLabel
+                    showPreview
+                  />
+                </div>
+              )}
               <div className="flex gap-2">
                 <Button onClick={createCustomerPayment} disabled={saving || !online || !newCustPayment.customer_id || newCustPayment.amount <= 0 || !newCustPayment.account_id}>{appLang === 'en' ? 'Create' : 'إنشاء'}</Button>
               </div>
@@ -2127,58 +2116,46 @@ export default function PaymentsPage() {
                   <Input value={newSuppPayment.ref} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, ref: e.target.value })} placeholder="..." />
                 </div>
               )}
+              {/* v3.21.0: Currency picker + ExchangeRateSelector (api/manual dropdown) */}
               <div>
                 <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-                <div className="flex gap-2 items-center">
-                  <select className="border rounded px-2 py-1" value={paymentCurrency} onChange={async (e) => {
-                    const v = e.target.value
-                    setPaymentCurrency(v)
-                    if (v === baseCurrency) {
-                      setExchangeRate(1)
-                      setExchangeRateId(undefined)
-                      setRateSource('same_currency')
-                    } else {
-                      setFetchingRate(true)
-                      try {
-                        // Use CurrencyService for rate lookup
-                        const result = await getExchangeRate(supabase, v, baseCurrency)
-                        setExchangeRate(result.rate)
-                        setExchangeRateId(result.rateId)
-                        setRateSource(result.source)
-                      } catch {
-                        // Fallback to direct API
-                        try {
-                          const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
-                          const data = await res.json()
-                          setExchangeRate(data.rates?.[baseCurrency] || 1)
-                          setRateSource('api_fallback')
-                        } catch { setExchangeRate(1) }
-                      }
-                      setFetchingRate(false)
-                    }
-                  }}>
-                    {currencies.length > 0 ? (
-                      currencies.map((c) => (
-                        <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
-                      ))
-                    ) : (
-                      Object.entries(currencySymbols).map(([code, symbol]) => (
-                        <option key={code} value={code}>{symbol} {code}</option>
-                      ))
-                    )}
-                  </select>
-                  {paymentCurrency !== baseCurrency && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {fetchingRate ? '...' : (
-                        <>
-                          1 {paymentCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}
-                          <span className="text-blue-500 ml-1">({rateSource})</span>
-                        </>
-                      )}
-                    </span>
+                <select className="w-full border rounded px-2 py-1" value={paymentCurrency} onChange={(e) => {
+                  const v = e.target.value
+                  setPaymentCurrency(v)
+                  if (v === baseCurrency) {
+                    setExchangeRate(1)
+                    setExchangeRateId(undefined)
+                    setRateSource('same_currency')
+                  }
+                }}>
+                  {currencies.length > 0 ? (
+                    currencies.map((c) => (
+                      <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
+                    ))
+                  ) : (
+                    Object.entries(currencySymbols).map(([code, symbol]) => (
+                      <option key={code} value={code}>{symbol} {code}</option>
+                    ))
                   )}
-                </div>
+                </select>
               </div>
+              {paymentCurrency !== baseCurrency && (
+                <div>
+                  <Label>{appLang === 'en' ? 'Exchange rate' : 'سعر الصرف'}</Label>
+                  <ExchangeRateSelector
+                    fromCurrency={paymentCurrency}
+                    baseCurrency={baseCurrency}
+                    value={exchangeRate}
+                    onChange={setExchangeRate}
+                    onRateMetaChange={(meta) => {
+                      setExchangeRateId(meta?.rateId)
+                      setRateSource(meta?.source || 'manual')
+                    }}
+                    hideLabel
+                    showPreview
+                  />
+                </div>
+              )}
               <div className="flex gap-2 w-full md:col-span-5 mt-2">
                 <Button onClick={createSupplierPayment} disabled={saving || !online || !newSuppPayment.supplier_id || newSuppPayment.amount <= 0 || !newSuppPayment.account_id}>{appLang === 'en' ? 'Create Single Payment' : 'إنشاء دفعة لمورد'}</Button>
                 

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { getActiveCompanyId } from "@/lib/company"
-import { getExchangeRate } from "@/lib/currency-service"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { notifyPaymentApprovalRequest } from "@/lib/notification-helpers"
 
 export function CustomerPaymentAllocationUI({
@@ -43,6 +43,9 @@ export function CustomerPaymentAllocationUI({
   const [accountId, setAccountId] = useState("")
   const [currency, setCurrency] = useState(baseCurrency)
   const [exchangeRate, setExchangeRate] = useState(1)
+  // v3.21.0: track rate metadata for audit (api vs manual)
+  const [exchangeRateId, setExchangeRateId] = useState<string | null>(null)
+  const [rateSource, setRateSource] = useState<string | null>(null)
   const [reference, setReference] = useState("")
   const [notes, setNotes] = useState("")
 
@@ -81,19 +84,16 @@ export function CustomerPaymentAllocationUI({
     fetchInvoices()
   }, [customerId, open, supabase])
 
-  // Auto-load exchange rate when currency changes
+  // v3.21.0: Reset rate to 1 when switching back to base currency.
+  // The ExchangeRateSelector component handles loading rates from
+  // /settings/exchange-rates and lets the user pick between API/manual.
   useEffect(() => {
-    async function loadRate() {
-      if (currency === baseCurrency) { setExchangeRate(1); return; }
-      try {
-        const companyId = await getActiveCompanyId(supabase)
-        if (!companyId) return
-        const rateObj = await getExchangeRate(supabase, currency, baseCurrency, undefined, companyId)
-        setExchangeRate(rateObj?.rate || 1)
-      } catch { setExchangeRate(1) }
+    if (currency === baseCurrency) {
+      setExchangeRate(1)
+      setExchangeRateId(null)
+      setRateSource(null)
     }
-    loadRate()
-  }, [currency, baseCurrency, supabase])
+  }, [currency, baseCurrency])
 
   // Auto-Allocate (FIFO — oldest first)
   const handleAutoAllocate = () => {
@@ -157,6 +157,9 @@ export function CustomerPaymentAllocationUI({
           branchId: member?.branch_id || null,
           currencyCode: currency,
           exchangeRate,
+          // v3.21.0: persist FX selection metadata for audit
+          exchangeRateId: exchangeRateId || null,
+          rateSource: rateSource || null,
           baseCurrencyAmount: amount * exchangeRate,
           originalAmount: amount,
           originalCurrency: currency,
@@ -293,19 +296,35 @@ export function CustomerPaymentAllocationUI({
             {/* Currency */}
             <div>
               <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-              <div className="flex gap-2 mt-1 items-center">
-                <select
-                  className="flex-1 border rounded px-3 py-2 bg-white dark:bg-slate-800"
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                >
-                  {currencies.map((c: any) => <option key={c.code} value={c.code}>{c.code}</option>)}
-                </select>
-                {currency !== baseCurrency && (
-                  <span className="text-xs text-gray-500 whitespace-nowrap">Rate: <strong>{exchangeRate}</strong></span>
-                )}
-              </div>
+              <select
+                className="w-full border rounded px-3 py-2 mt-1 bg-white dark:bg-slate-800"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+              >
+                {currencies.map((c: any) => <option key={c.code} value={c.code}>{c.code}</option>)}
+              </select>
             </div>
+
+            {/* v3.21.0: Exchange Rate Selector (api/manual dropdown from /settings/exchange-rates) */}
+            {currency !== baseCurrency && (
+              <div>
+                <Label>{appLang === 'en' ? 'Exchange rate' : 'سعر الصرف'}</Label>
+                <div className="mt-1">
+                  <ExchangeRateSelector
+                    fromCurrency={currency}
+                    baseCurrency={baseCurrency}
+                    value={exchangeRate}
+                    onChange={setExchangeRate}
+                    onRateMetaChange={(meta) => {
+                      setExchangeRateId(meta?.rateId || null)
+                      setRateSource(meta?.source || null)
+                    }}
+                    hideLabel
+                    showPreview
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Reference */}
             <div>

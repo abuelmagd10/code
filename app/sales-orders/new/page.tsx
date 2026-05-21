@@ -21,6 +21,7 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 import { canAction, getAccessFilter } from "@/lib/authz"
@@ -1294,64 +1295,54 @@ export default function NewSalesOrderPage() {
                     <Input id="due_date" type="date" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} />
                   </div>
 
-                  {/* Currency Selection */}
+                  {/* v3.21.0: Currency + ExchangeRateSelector (api/manual from /settings/exchange-rates) */}
                   <div className="space-y-2">
                     <Label suppressHydrationWarning>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-                    <div className="flex gap-2">
-                      <Select value={soCurrency} onValueChange={async (v) => {
-                        setSoCurrency(v)
-                        if (v === baseCurrency) {
-                          setExchangeRate(1)
-                          setExchangeRateId(undefined)
-                          setRateSource('same_currency')
-                        } else {
-                          setFetchingRate(true)
-                          try {
-                            const result = await getExchangeRate(supabase, v, baseCurrency)
-                            setExchangeRate(result.rate)
-                            setExchangeRateId(result.rateId)
-                            setRateSource(result.source)
-                          } catch {
-                            try {
-                              const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
-                              const data = await res.json()
-                              setExchangeRate(data.rates?.[baseCurrency] || 1)
-                              setRateSource('api_fallback')
-                            } catch { setExchangeRate(1) }
-                          }
-                          setFetchingRate(false)
-                        }
-                      }}>
-                        <SelectTrigger className="w-[180px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {currencies.length > 0 ? (
-                            currencies.map((c) => (
-                              <SelectItem key={c.code} value={c.code}>
-                                <span className="font-bold text-blue-600 mr-1">{c.symbol}</span> {c.code}
-                              </SelectItem>
-                            ))
-                          ) : (
-                            Object.entries(currencySymbols).map(([code, symbol]) => (
-                              <SelectItem key={code} value={code}>
-                                <span className="font-bold text-blue-600 mr-1">{symbol}</span> {code}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                      {soCurrency !== baseCurrency && (
-                        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                          {fetchingRate ? (
-                            <span className="animate-pulse">{appLang === 'en' ? 'Fetching rate...' : 'جاري جلب السعر...'}</span>
-                          ) : (
-                            <span>1 {soCurrency} = {exchangeRate.toFixed(4)} {baseCurrency} <span className="text-xs ml-1 text-blue-500">({rateSource})</span></span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    <Select value={soCurrency} onValueChange={(v) => {
+                      setSoCurrency(v)
+                      if (v === baseCurrency) {
+                        setExchangeRate(1)
+                        setExchangeRateId(undefined)
+                        setRateSource('same_currency')
+                      }
+                    }}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {currencies.length > 0 ? (
+                          currencies.map((c) => (
+                            <SelectItem key={c.code} value={c.code}>
+                              <span className="font-bold text-blue-600 mr-1">{c.symbol}</span> {c.code}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          Object.entries(currencySymbols).map(([code, symbol]) => (
+                            <SelectItem key={code} value={code}>
+                              <span className="font-bold text-blue-600 mr-1">{symbol}</span> {code}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
+                  {soCurrency !== baseCurrency && (
+                    <div className="space-y-2">
+                      <Label suppressHydrationWarning>{appLang === 'en' ? 'Exchange rate' : 'سعر الصرف'}</Label>
+                      <ExchangeRateSelector
+                        fromCurrency={soCurrency}
+                        baseCurrency={baseCurrency}
+                        value={exchangeRate}
+                        onChange={setExchangeRate}
+                        onRateMetaChange={(meta) => {
+                          setExchangeRateId(meta?.rateId)
+                          setRateSource(meta?.source || 'manual')
+                        }}
+                        hideLabel
+                        showPreview
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Branch, Cost Center, and Warehouse Selection */}
