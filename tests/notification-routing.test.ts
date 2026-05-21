@@ -17,4 +17,23 @@ describe("notification routing", () => {
       `/inventory/goods-receipt?type=manufacturing&approvalId=${approvalId}`
     )
   })
+
+  // v3.15.0 — invoice ready for shipping notification must route to dispatch approvals
+  it("routes invoice 'ready for shipping' notification to dispatch-approvals page", () => {
+    const invoiceId = "22222222-2222-2222-2222-222222222222"
+
+    // Old-style event_key (sent:)
+    expect(getNotificationRoute("invoice", invoiceId, "invoice:sent:warehouse_manager")).toBe(
+      `/inventory/dispatch-approvals?invoiceId=${invoiceId}`
+    )
+
+    // New-style event_key from sales-invoice-posting-command.service
+    expect(
+      getNotificationRoute("invoice", invoiceId, `sales:invoice:${invoiceId}:warehouse_dispatch_pending:role:warehouse_manager`)
+    ).toBe(`/inventory/dispatch-approvals?invoiceId=${invoiceId}`)
+
+    // Regular invoice (no dispatch event_key) still goes to /invoices/:id
+    expect(getNotificationRoute("invoice", invoiceId)).toBe(`/invoices/${invoiceId}`)
+    expect(getNotificationRoute("invoice", invoiceId, "invoice:created")).toBe(`/invoices/${invoiceId}`)
+  })
 })

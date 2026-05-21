@@ -4,6 +4,58 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.15.0] - 2026-05-21
+
+### 🐛 Bug Fix — زر "فتح المرجع" فى إشعار "فاتورة جاهزة للشحن"
+
+اكتشفه المستخدم أثناء اختبار:
+> "الموظف يعمل أمر بيع → فاتورة تلقائية → محاسب يحولها لـ 'مرسلة' → إشعار يصل لمسؤول المخزن. زر 'فتح المرجع' يوجه إلى **/inventory** بدلاً من **صفحة موافقات الإرسال**."
+
+### 🔍 السبب الجذرى
+
+`lib/services/sales-invoice-posting-command.service.ts` ينشئ الإشعار بـ event_key:
+```
+sales:invoice:{id}:warehouse_dispatch_pending:role:warehouse_manager
+```
+
+لكن `lib/notification-routing.ts` كان يفحص فقط:
+```typescript
+if (eventKey && eventKey.includes(':sent:'))  // ← لا يطابق
+```
+
+النتيجة: الإشعار يقع فى الـ default case ويوجه لـ `/invoices/${id}` (والذى عند بعض المستخدمين قد يُعاد توجيهه لـ `/inventory` بناءً على الصلاحيات).
+
+### ✅ الإصلاح — `lib/notification-routing.ts`
+
+أصبح الـ check يدعم event_keys المختلفة:
+
+```typescript
+'invoice': (id, eventKey) => {
+  if (eventKey && (
+    eventKey.includes(':sent:') ||
+    eventKey.includes('warehouse_dispatch_pending') ||
+    eventKey.includes('dispatch_pending')
+  )) {
+    return `/inventory/dispatch-approvals?invoiceId=${id}`
+  }
+  return `/invoices/${id}`
+},
+```
+
+### 🧪 Tests Added — `tests/notification-routing.test.ts`
+
+- ✅ event_key الجديد `warehouse_dispatch_pending` يوجه لـ dispatch-approvals
+- ✅ event_key القديم `:sent:` يظل يعمل
+- ✅ الإشعارات العادية للفواتير ما زالت تذهب لـ `/invoices/:id`
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: إصلاح فقط — الإشعارات الجديدة ستوجه صح
+- **Backward compatible**: 100% — الـ event_key القديم يعمل كما كان
+- **No DB changes**
+
+---
+
 ## [3.14.0] - 2026-05-21
 
 ### 🌍 Cross-Currency Receipts Support (السيناريو الكامل)
