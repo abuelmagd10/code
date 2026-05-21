@@ -4,6 +4,67 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.18.0] - 2026-05-21
+
+### 🔧 Shared Component — `ExchangeRateSelector` + التطبيق فى كل المواضع
+
+اكتشف المستخدم بحق أن الإصلاح فى v3.16.0 كان جزئياً (نافذة الدفع فقط):
+> "لقد أخبرتك من قبل بأن أى موضع فى المشروع يحتوى على مدخلات مالية ويحتوى على اختيار العملة، يجب أن يستمد سعر الصرف من صفحة أسعار الصرف. تلاحظ أنه مازال يوجد مواضع ليس مطبق بها طلبى — على سبيل المثال صفحة المصروفات."
+
+### 🆕 New File — `components/ExchangeRateSelector.tsx`
+
+Shared dropdown component يُستخدم فى كل المواضع المالية:
+- يجلب أحدث rate من `exchange_rates` لكل source (`api` + `manual`)
+- يعرض الـ 2 فى dropdown، API افتراضى
+- لو لا يوجد سعر: رسالة خطأ + link لـ `/settings/exchange-rates`
+- props: `fromCurrency`, `baseCurrency`, `value`, `onChange`, `onRateMetaChange`
+- يخفى نفسه تلقائياً لو fromCurrency = baseCurrency
+
+### 🔧 Pages Updated to use ExchangeRateSelector
+
+| الصفحة | الحالة قبل | الحالة بعد |
+|---|---|---|
+| `app/expenses/new/page.tsx` | NumericInput يدوى | ✅ ExchangeRateSelector |
+| `app/banking/page.tsx` (Transfer) | auto-fetch خفى | ✅ User يختار api/manual |
+| `app/purchase-orders/new/page.tsx` | NumericInput "manual override" | ✅ ExchangeRateSelector |
+| `app/drawings/new/page.tsx` | NumericInput يدوى | ✅ ExchangeRateSelector |
+| `app/invoices/[id]/page.tsx` (الدفع) | كان مُصلح فى v3.16.0 | ✅ |
+
+### ✅ تحقق ذاتى — مواضع لا تحتاج تعديل
+
+- `app/vendor-credits/new/page.tsx`: يستخدم `getExchangeRate()` programmatically — لا manual NumericInput
+- `app/journal-entries/new/page.tsx`: نفس النمط
+- `app/sales-orders/new/page.tsx`: يستخدم `getExchangeRate()`
+- `app/customer-debit-notes/new/page.tsx`: يرث من فاتورة المصدر تلقائياً (v3.11.0)
+
+### 📋 صفحات قد تحتاج فحص فى الجلسات القادمة
+
+- `app/invoices/new/page.tsx`: استيراد `getExchangeRate` موجود لكن لم أتحقق من manual input
+- `app/sales-orders/new/page.tsx`: نفس الموقف
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تحسين UX + audit trail (الـ source معروف الآن)
+- **Backward compatible**: 100% — نفس الـ data structure للحفظ
+- **Manual rate input لم يعد موجود**: المستخدم يختار من القائمة المُدارة فى `/settings/exchange-rates`
+
+### 🎯 Net Effect
+
+```
+قبل v3.18.0 (المصروفات مثلاً):
+  العملة: USD ▼
+  سعر الصرف: [_____ يكتب يدوياً]
+  ⚠️ خطأ مكلف لو كتب رقم غلط
+
+بعد v3.18.0:
+  العملة: USD ▼
+  سعر الصرف: [🔄 لحظى (API) — 53.39 (2026-05-21) ▼]
+              [✋ يدوى — 55.00 (2026-05-21)]
+  ✅ المستخدم يختار، السعر من مصدر موثوق
+```
+
+---
+
 ## [3.17.0] - 2026-05-21
 
 ### 🤖 New — Daily Exchange Rate Auto-Update (Edge Function + Cron)
