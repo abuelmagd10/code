@@ -4,6 +4,65 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.16.0] - 2026-05-21
+
+### 🔧 Bug Fix — اختيار سعر الصرف من exchange_rates (لا إدخال يدوى)
+
+أصلح المستخدم فهمى:
+> "لم أطلب إدخال يدوى. أطلب أن النظام يستمد سعر الصرف من صفحة أسعار الصرف فى الإعدادات — السعر اللحظى والسعر اليدوى — والمستخدم يختار بينهم."
+
+### 🐛 الـ Bug
+
+فى v3.14.0 (Cross-Currency Receipts)، حقل "سعر الصرف" كان NumericInput يطلب من المستخدم كتابة السعر يدوياً. هذا غلط لأن:
+1. يفتح باب الأخطاء فى الإدخال
+2. يضيع الـ audit trail (لا نعرف هل السعر اللحظى أم اليدوى)
+3. يخالف الـ design الموجود فى `/settings/exchange-rates` (مصدر السعر)
+
+### ✅ الإصلاح — `app/invoices/[id]/page.tsx`
+
+**State جديد:**
+- `availableRates[]` — السعرين المتاحين للعملة المختارة (API + Manual)
+- `selectedRateId` — الـ rate المختار حالياً
+- `loadingRates` — حالة التحميل
+
+**useEffect جديد:**
+- يُفعّل عند اختيار العملة (FC invoice أو cross-currency)
+- يجلب أحدث سعر من كل source (`api` + `manual`) من جدول `exchange_rates`
+- يختار `api` تلقائياً كـ default
+
+**UI:**
+استبدال NumericInput بـ Select dropdown:
+```
+سعر الصرف (USD → EGP)
+[Select ▼]
+  🔄 لحظى (API) — 53.3900 (2026-05-21)
+  ✋ يدوى — 55.0000 (2026-05-21)
+```
+
+**حالة لا يوجد سعر:**
+```
+⚠️ لا يوجد سعر صرف لـ USD → EGP
+   → إضافة سعر فى الإعدادات   (link)
+```
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تحسين UX فقط
+- **Backward compatible**: نفس الـ payload structure للـ API
+- **يحمى من الأخطاء**: المستخدم لا يستطيع إدخال سعر خاطئ
+- **Audit trail واضح**: source معروف (api أو manual)
+
+### 🎯 السلوك الجديد:
+
+| الحالة | السلوك |
+|---|---|
+| العملة لها سعر API + Manual | dropdown بـ 2 خيارات، API افتراضى |
+| العملة لها سعر API فقط | dropdown بـ 1 خيار |
+| العملة لها سعر Manual فقط | dropdown بـ 1 خيار |
+| لا يوجد سعر للعملة | رسالة خطأ + link لإضافة سعر |
+
+---
+
 ## [3.15.0] - 2026-05-21
 
 ### 🐛 Bug Fix — زر "فتح المرجع" فى إشعار "فاتورة جاهزة للشحن"
