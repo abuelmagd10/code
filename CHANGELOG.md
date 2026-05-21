@@ -4,6 +4,94 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.17.0] - 2026-05-21
+
+### 🤖 New — Daily Exchange Rate Auto-Update (Edge Function + Cron)
+
+اقترح المستخدم تحديث أسعار الصرف تلقائياً يومياً. تم البناء على البنية الموجودة:
+
+### 🆕 Infrastructure
+
+**Supabase Edge Function:** `update-exchange-rates`
+- Deno-based, deployed to Supabase
+- يجلب أسعار من `exchangerate-api.com` (مجانى، 1500 req/month)
+- يدعم 11 عملة شائعة: USD, EUR, GBP, SAR, AED, KWD, QAR, BHD, OMR, JOD, LBP
+- يكتشف الـ base currency لكل شركة تلقائياً
+- Idempotent: لو الـ rate لليوم موجود → update بدل insert
+- Optional: CRON_SECRET للحماية من external triggers
+
+**Postgres Cron Job:** `daily-exchange-rate-update`
+- Schedule: `5 0 * * *` (كل يوم 00:05 UTC = 03:05 مصر صيفاً)
+- يستدعى الـ Edge Function عبر `pg_net.http_post`
+- نتائج الـ runs تُحفظ فى `cron.job_run_details`
+
+**Extensions enabled:**
+- `pg_net` — لاستدعاء HTTP من cron
+- `pg_cron` (كان مفعّل من قبل)
+
+### ✅ الاختبار الفعلى (نجح):
+
+تم استدعاء الـ function يدوياً اليوم. النتيجة:
+```json
+{
+  "success": true,
+  "run_date": "2026-05-21",
+  "bases_processed": 1,
+  "results": [{
+    "base_currency": "EGP",
+    "succeeded": [
+      {"currency": "USD", "rate": 53.39},
+      {"currency": "EUR", "rate": 61.85},
+      {"currency": "GBP", "rate": 71.58},
+      ... 11 currencies total
+    ]
+  }]
+}
+```
+
+تم حفظ 11 سعر جديد فى `exchange_rates` بتاريخ اليوم.
+
+### 🆕 New File
+
+- `supabase/functions/update-exchange-rates/index.ts` — Edge Function
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: الأسعار تتحدث تلقائياً يومياً — تحسين فقط
+- **Backward compatible**: 100% — الـ logic القديم (manual + on-demand fetch) لا يزال يعمل
+- **Cost**: مجانى تماماً (exchangerate-api.com free tier + Supabase cron مجانى)
+- **Fail-safe**: لو الـ API فشل، السعر القديم يبقى محفوظ ولا يُحذف
+
+### 🎯 السلوك الجديد:
+
+```
+كل يوم 00:05 UTC:
+  ↓
+pg_cron يطلق الـ HTTP request
+  ↓
+Edge Function update-exchange-rates يشتغل
+  ↓
+لكل عملة [USD, EUR, GBP, SAR, AED, KWD, QAR, BHD, OMR, JOD, LBP]:
+  ↓
+fetch from exchangerate-api.com
+  ↓
+INSERT/UPDATE فى exchange_rates (source='api')
+  ↓
+الـ UI يلتقط السعر الجديد تلقائياً فى dropdown الدفع
+```
+
+### 📊 ERP Compliance
+
+| ERP | Daily auto-update | المشروع الآن |
+|---|---|---|
+| SAP S/4HANA TR-FX | ✅ | ✅ |
+| Oracle NetSuite | ✅ | ✅ |
+| Microsoft Dynamics | ✅ | ✅ |
+| Odoo Enterprise | ✅ | ✅ |
+| QuickBooks | ✅ | ✅ |
+
+---
+
 ## [3.16.0] - 2026-05-21
 
 ### 🔧 Bug Fix — اختيار سعر الصرف من exchange_rates (لا إدخال يدوى)
