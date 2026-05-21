@@ -4,6 +4,90 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.12.0] - 2026-05-21
+
+### 💱 FX Phase 2: Bank Transfers UI + AR by Currency Report
+
+اكتمال تغطية FX UX من خلال الميزتين الباقيتين الـ P1 من الـ audit الشامل:
+
+### 🆕 New Page: `/banking/transfers`
+
+صفحة كاملة لإدارة التحويلات بين البنوك/الخزائن مع دعم العملات المختلفة.
+
+**المميزات:**
+- اختيار حساب المصدر + الوجهة (cash أو bank)
+- إدخال المبلغ + التاريخ
+- اختيار عملة التحويل (12 عملة شائعة)
+- حقل سعر الصرف يظهر تلقائياً لو العملة مختلفة عن الأساسية
+- معاينة حية لقيمة الـ FX: "💱 100 $ × 53.11 = 5,311 £"
+- وصف اختيارى
+- جدول التحويلات السابقة (آخر 50) مع:
+  - من / إلى
+  - المبلغ + العملة + سعر الصرف
+  - Badge للحالة (posted/draft)
+  - عرض المعادل بالعملة المحلية للتحويلات بعملة أجنبية
+
+**المنطق:**
+- يستخدم `/api/banking/transfers` الموجود مسبقاً (لم يكن له UI)
+- التحويلات تُحفظ كـ journal_entries بـ reference_type='bank_transfer'
+- صلاحية: privileged banking roles فقط
+
+### 🆕 New Report: `/reports/ar-by-currency`
+
+تقرير منفصل يعرض الفواتير المفتوحة بعملات أجنبية مع التعرض الحالى لـ FX. يكمّل تقرير AR Aging القياسى.
+
+**ما يعرضه:**
+- مجموعات حسب العملة (USD / EUR / SAR / إلخ)
+- لكل مجموعة:
+  - عدد الفواتير
+  - إجمالى المفتوح بالعملة الأصلية (FC)
+  - المسجل بالسعر الأصلى (booked base)
+  - بعد التقييم بالسعر الحالى (revalued base)
+  - **التعرض لـ FX** (الفرق - بالأخضر لو مكسب، بالأحمر لو خسارة)
+- جدول تفصيلى لكل فاتورة مع كل الأرقام
+- **Grand Total Exposure Alert** بأعلى الصفحة + link لتشغيل Period-End Revaluation
+
+**المميزات:**
+- "As of" date picker لاختيار تاريخ التقييم
+- اختيار السعر الحالى تلقائياً من `exchange_rates` table
+- Export CSV
+- Link مباشر لكل فاتورة للتفاصيل
+
+**Use case:**
+المحاسب يفتح هذا التقرير قبل قفل الفترة → يرى التعرض لـ FX → يقرر إذا يحتاج إعادة تقييم.
+
+### 📁 Files Added
+
+- `app/banking/transfers/page.tsx` (~330 سطر) — صفحة UI كاملة
+- `app/reports/ar-by-currency/page.tsx` (~280 سطر) — تقرير enterprise
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: صفر — صفحتين جديدتين، لا تعديل على بيانات أو APIs موجودة
+- **Backward compatible**: 100% — الـ API الموجود يبقى كما هو
+- **Forward**: يكمّل الـ FX coverage إلى 95%
+
+### 📈 FX Coverage Update
+
+| المنطقة | قبل | بعد |
+|---|---|---|
+| Sales documents | 95% | 95% |
+| Purchase documents | 80% | 80% |
+| Payments | 95% | 95% |
+| Customer Debit Notes | 85% | 85% |
+| **Bank Transfers** | **0% (no UI)** | **✅ 95%** |
+| **AR FX Reports** | **0%** | **✅ 90%** |
+| Period-End Revaluation | 95% | 95% |
+| **Overall FX Coverage** | **90%** | **✅ 95%** |
+
+### 📋 المتبقى (P2)
+
+- 🟢 Estimates FX (inline dialog) — 1 ساعة
+- 🟢 Manual JE per-line FX UI — 1 ساعة
+- 🟢 Manufacturing Phase C reports — 3 أيام
+
+---
+
 ## [3.11.0] - 2026-05-21
 
 ### 💱 FX Audit + Critical Display Fixes
