@@ -45,7 +45,14 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   // المبيعات
   'invoice': (id, eventKey) => {
     // ✅ إذا كان الإشعار خاص بموافقة إرسال المخزن، نوجه لصفحة موافقات الإرسال
-    if (eventKey && eventKey.includes(':sent:')) {
+    // يدعم event_keys مختلفة:
+    //   - الإصدار القديم: ':sent:'
+    //   - sales-invoice-posting service: 'warehouse_dispatch_pending'
+    if (eventKey && (
+      eventKey.includes(':sent:') ||
+      eventKey.includes('warehouse_dispatch_pending') ||
+      eventKey.includes('dispatch_pending')
+    )) {
       return `/inventory/dispatch-approvals?invoiceId=${id}`
     }
     return `/invoices/${id}`
