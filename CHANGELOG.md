@@ -4,6 +4,51 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.13.0] - 2026-05-21
+
+### 🔧 Refactor — إصلاح ازدواجية Bank Transfers
+
+اكتشف المستخدم بحق أن صفحة `/banking/transfers` الجديدة فى v3.12.0 **مكررة** لقسم "تحويل بين الحسابات" الموجود مسبقاً فى `/banking`. تم تصحيح هذا الخطأ المعمارى.
+
+### 🗑️ Removed
+
+- **`app/banking/transfers/page.tsx`** — حذف الصفحة المكررة
+
+### 🔧 Changed — `/banking/page.tsx` (الصفحة الموحدة)
+
+تم دمج الميزة الجديدة الوحيدة من الصفحة المحذوفة (**جدول التحويلات السابقة**) فى الصفحة الموجودة:
+
+- **State جديد**: `recentTransfers[]` + `loadingTransfers`
+- **دالة جديدة**: `loadRecentTransfers()` — تستعلم journal_entries WHERE reference_type='bank_transfer'
+- **useEffect**: يحمّل التحويلات عند توفر companyId
+- **قسم UI جديد**: "آخر التحويلات" (تحت قسم Transfer، فوق قسم Cash & Bank Accounts)
+  - يظهر فقط للأدوار المسموح بها (admin/owner/manager)
+  - جدول بـ: التاريخ، من، إلى، المبلغ، العملة، الوصف، الحالة
+  - للتحويلات بعملة أجنبية: badge أصفر + عرض سعر الصرف
+  - زر "تحديث" لإعادة التحميل
+- **التحديث التلقائى**: بعد إنشاء تحويل ينجح، `loadRecentTransfers()` يتم استدعاؤها تلقائياً
+
+### 💡 الدرس المستفاد
+
+قبل بناء أى صفحة جديدة، يجب فحص الصفحات الموجودة أولاً. الـ duplicate code يخلق:
+- تشتت للمستخدم
+- مضاعفة فى الصيانة
+- ربكة فى الـ navigation
+
+شكر خاص للمستخدم على اكتشاف هذا.
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تحسين فقط — لا تغيير فى الـ API، فقط دمج UI
+- **Backward compatible**: نفس الـ /api/banking/transfers، نفس البيانات
+- **UX**: المستخدمون اعتادوا على `/banking` بالفعل، الجدول الجديد يضيف قيمة بدون نقل
+
+### 📊 FX Coverage Status
+
+نفس v3.12.0 (95%) — لا تغيير فى التغطية، فقط تنظيف معمارى.
+
+---
+
 ## [3.12.0] - 2026-05-21
 
 ### 💱 FX Phase 2: Bank Transfers UI + AR by Currency Report
