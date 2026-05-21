@@ -72,7 +72,9 @@ export default function NewVendorCreditPage() {
   // Multi-currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [exchangeRate, setExchangeRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
-  const baseCurrency = typeof window !== 'undefined' ? localStorage.getItem('app_currency') || 'EGP' : 'EGP'
+  // v3.21.1: baseCurrency is loaded from companies.base_currency (authoritative source),
+  // not from localStorage which can be stale across companies / sessions.
+  const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
   const currencySymbols: Record<string, string> = { EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ' }
 
   useEffect(() => {
@@ -85,6 +87,21 @@ export default function NewVendorCreditPage() {
       const loadedCompanyId = await getActiveCompanyId(supabase)
       if (!loadedCompanyId) return
       setCompanyId(loadedCompanyId)
+
+      // v3.21.1: Load company base currency (authoritative — not localStorage)
+      try {
+        const { data: companyBC } = await supabase
+          .from("companies")
+          .select("base_currency")
+          .eq("id", loadedCompanyId)
+          .maybeSingle()
+        if (companyBC?.base_currency) {
+          const base = String(companyBC.base_currency).toUpperCase()
+          setBaseCurrency(base)
+          // Default new credit to use base currency
+          setCredit(c => ({ ...c, currency: base }))
+        }
+      } catch {}
 
       // 🔐 Enterprise Governance: Filter suppliers by branch for non-admin users
       const { data: memberDataVC } = await supabase
@@ -127,7 +144,8 @@ export default function NewVendorCreditPage() {
       // Load currencies
       const curr = await getActiveCurrencies(supabase, loadedCompanyId)
       if (curr.length > 0) setCurrencies(curr)
-      setCredit(c => ({ ...c, currency: baseCurrency }))
+      // v3.21.1: Credit currency default is set via setCredit in the
+      // base-currency load block above (avoids stale closure value).
     })()
   }, [])
 
