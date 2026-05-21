@@ -4,6 +4,90 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.14.0] - 2026-05-21
+
+### 🌍 Cross-Currency Receipts Support (السيناريو الكامل)
+
+تم إضافة دعم الـ Cross-Currency Receipts — السيناريو الذى وصفه المستخدم بدقة:
+
+> فاتورة 100 جنية، عميل يدفع 2 دولار × سعر الصرف = 106.22 جنية. يسدد 100 و 6.22 تصبح رصيد للعميل.
+
+### 🐛 Bug الذى تم إصلاحه
+
+**قبل v3.14.0:**
+- نافذة الدفع تعرض حقول FX **فقط إذا الفاتورة بعملة أجنبية**
+- لو الفاتورة بـ EGP، لا توجد طريقة لقبول دفع بـ USD
+- الـ DB كان يدعم السيناريو، لكن الـ UI يخفيه
+
+**بعد v3.14.0:**
+- كل الفواتير تعرض **checkbox "العميل يدفع بعملة مختلفة"**
+- لو الفاتورة بـ FC: السلوك القديم (FX gain/loss على فرق الأسعار)
+- لو الفاتورة بـ base + Toggle مفعّل: cross-currency receipt مع تحويل تلقائى
+
+### 🔧 Changed — `app/invoices/[id]/page.tsx`
+
+**State جديد:**
+- `payInDifferentCurrency` (boolean) — toggle الجديد
+- `paymentCurrency` (string) — العملة المختارة (default 'USD')
+
+**UI:**
+- Checkbox أزرق فى أعلى الـ FX section (يظهر فقط للفواتير base currency)
+- اختيار العملة من قائمة (11 عملة شائعة، باستثناء العملة الأساسية)
+- حقلى المبلغ + سعر الصرف
+- معاينة حية تختلف حسب السيناريو:
+
+**سيناريو A — فاتورة FC (نفس v3.10.0):**
+```
+AR relieved (original rate):   5,000.00 £
+Cash received (payment rate):  5,311.00 £
+FX Gain → 4320:                  311.00 £
+```
+
+**سيناريو B — Cross-currency receipt (الجديد):**
+```
+Cash received (converted):     106.22 £
+Invoice outstanding:           100.00 £
+Excess → Customer Credit:        6.22 £   ← (advance payment)
+```
+
+أو لو دفع جزئى:
+```
+Cash received (converted):      50.00 £
+Invoice outstanding:           100.00 £
+Partial payment, remaining:     50.00 £
+```
+
+### 🔧 Changed — Payload to API
+
+تم إضافة `paymentCurrency` للـ payload:
+- لو فاتورة FC: `invoice.currency_code`
+- لو cross-currency: `paymentCurrency` المختارة من القائمة
+- لو دفع عادى: `null`
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: صفر مباشر — السلوك القديم يبقى لما الـ toggle غير مفعّل
+- **Backward compatible**: 100% — الدفعات بالعملة الأساسية تعمل تماماً كما كانت
+- **DB schema**: لم يتغير (الحقول كانت موجودة بالفعل)
+
+### 📊 IFRS / ERP Compliance
+
+| السيناريو | قبل | بعد |
+|---|---|---|
+| دفع EGP على فاتورة EGP | ✅ | ✅ |
+| دفع USD على فاتورة USD مع فرق سعر | ✅ | ✅ |
+| **دفع USD على فاتورة EGP** | **❌** | **✅** |
+| الزيادة → رصيد للعميل | ✅ (يدوى) | ✅ (تلقائى) |
+
+النظام دلوقتى متوافق مع **SAP S/4HANA Treasury** + **Oracle NetSuite Multi-Book** + **IAS 21 §28**.
+
+### 📋 المتبقى للجلسات القادمة (وفقاً للتوجيه — إصلاحات فقط):
+
+- 🟡 Gap #2: Multi-currency bank accounts (إضافة currency_code لـ chart_of_accounts)
+- 🟢 Gap #3: Live rate suggestion فى الـ UI
+
+---
+
 ## [3.13.0] - 2026-05-21
 
 ### 🔧 Refactor — إصلاح ازدواجية Bank Transfers
