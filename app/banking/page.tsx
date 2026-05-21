@@ -60,6 +60,20 @@ export default function BankingPage() {
     currency: "EGP",
   });
   const [saving, setSaving] = useState(false);
+  // v3.13.0: Recent transfers history (merged from /banking/transfers)
+  const [recentTransfers, setRecentTransfers] = useState<Array<{
+    id: string
+    entry_number: string | null
+    entry_date: string
+    description: string | null
+    currency_code: string
+    exchange_rate: number
+    status: string
+    total_debit: number
+    from_account?: string
+    to_account?: string
+  }>>([])
+  const [loadingTransfers, setLoadingTransfers] = useState(false)
   const { toast } = useToast();
   const [appLang, setAppLang] = useState<"ar" | "en">("ar");
   const [hydrated, setHydrated] = useState(false);
@@ -158,6 +172,11 @@ export default function BankingPage() {
     })();
     loadData();
   }, []);
+  // v3.13.0: Load recent transfers once companyId is available
+  useEffect(() => {
+    if (companyId) loadRecentTransfers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId]);
   useEffect(() => {
     const reloadPerms = async () => {
       setPermView(await canAction(supabase, "banking", "read"));
@@ -374,6 +393,52 @@ export default function BankingPage() {
     }
   };
 
+  // v3.13.0: Load recent transfer history (from journal_entries with reference_type='bank_transfer')
+  const loadRecentTransfers = async () => {
+    if (!companyId) return
+    setLoadingTransfers(true)
+    try {
+      const { data: jeData } = await supabase
+        .from('journal_entries')
+        .select('id, entry_number, entry_date, description, currency_code, exchange_rate, status')
+        .eq('company_id', companyId)
+        .eq('reference_type', 'bank_transfer')
+        .order('entry_date', { ascending: false })
+        .limit(20)
+      const entries = (jeData || []) as any[]
+      const records: typeof recentTransfers = []
+      for (const je of entries) {
+        const { data: lines } = await supabase
+          .from('journal_entry_lines')
+          .select('debit_amount, credit_amount, account_id, chart_of_accounts(account_name, account_code)')
+          .eq('journal_entry_id', je.id)
+        let totalDebit = 0
+        let fromAccount = ''
+        let toAccount = ''
+        for (const l of (lines || [])) {
+          const dr = Number(l.debit_amount || 0)
+          const cr = Number(l.credit_amount || 0)
+          totalDebit += dr
+          const acc = Array.isArray(l.chart_of_accounts) ? l.chart_of_accounts[0] : l.chart_of_accounts
+          const name = acc?.account_name || ''
+          if (dr > 0 && !toAccount) toAccount = name
+          if (cr > 0 && !fromAccount) fromAccount = name
+        }
+        records.push({
+          ...je,
+          total_debit: totalDebit,
+          from_account: fromAccount,
+          to_account: toAccount,
+        })
+      }
+      setRecentTransfers(records)
+    } catch (err) {
+      console.error('Failed to load recent transfers:', err)
+    } finally {
+      setLoadingTransfers(false)
+    }
+  }
+
   // Filter accounts by branch and cost center
   const filteredAccounts = useMemo(() => {
     let filtered = accounts;
@@ -494,8 +559,9 @@ export default function BankingPage() {
         appLang === "en" ? "Record" : "التسجيل",
         appLang === "en" ? "Transfer" : "التحويل",
       );
-      // تحديث الأرصدة بعد التحويل
+      // تحديث الأرصدة + التحويلات السابقة بعد التحويل
       await loadData();
+      await loadRecentTransfers();
     } catch (err) {
       console.error("Error recording transfer:", err);
       toastActionError(toast, appLang === "en" ? "Transfer" : "التحويل");
@@ -735,6 +801,75 @@ export default function BankingPage() {
               </CardContent>
             </Card>
           )}
+
+        {/* v3.13.0 — Recent Transfers history (FX-aware) */}
+        {(userContext?.role === "admin" || userContext?.role === "owner" || userContext?.role === "manager") && (
+          <Card>
+            <CardContent className="pt-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold">
+                  {appLang === "en" ? "Recent Transfers" : "آخر التحويلات"}
+                  <span className="text-sm text-gray-500 mr-2">({recentTransfers.length})</span>
+                </h2>
+                <Button variant="outline" size="sm" onClick={loadRecentTransfers} disabled={loadingTransfers}>
+                  {loadingTransfers ? (appLang === "en" ? "Loading..." : "تحميل...") : (appLang === "en" ? "Refresh" : "تحديث")}
+                </Button>
+              </div>
+              {recentTransfers.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">
+                  {appLang === "en" ? "No transfers yet" : "لا توجد تحويلات بعد"}
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b dark:border-gray-700 text-xs text-gray-500">
+                        <th className="text-right py-2 px-2">{appLang === "en" ? "Date" : "التاريخ"}</th>
+                        <th className="text-right py-2 px-2">{appLang === "en" ? "From" : "من"}</th>
+                        <th className="text-right py-2 px-2">{appLang === "en" ? "To" : "إلى"}</th>
+                        <th className="text-right py-2 px-2">{appLang === "en" ? "Amount" : "المبلغ"}</th>
+                        <th className="text-right py-2 px-2">{appLang === "en" ? "Currency" : "العملة"}</th>
+                        <th className="text-right py-2 px-2">{appLang === "en" ? "Description" : "الوصف"}</th>
+                        <th className="text-right py-2 px-2">{appLang === "en" ? "Status" : "الحالة"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentTransfers.map(tr => {
+                        const isFC = tr.currency_code && tr.currency_code.toUpperCase() !== appCurrency.toUpperCase()
+                        return (
+                          <tr key={tr.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-slate-800">
+                            <td className="py-2 px-2">{tr.entry_date}</td>
+                            <td className="py-2 px-2">{tr.from_account || '-'}</td>
+                            <td className="py-2 px-2">{tr.to_account || '-'}</td>
+                            <td className="py-2 px-2 font-medium">
+                              {tr.total_debit.toLocaleString('en-US', { minimumFractionDigits: 2 })} {appCurrency}
+                              {isFC && (
+                                <span className="block text-[10px] text-gray-500">
+                                  rate: {Number(tr.exchange_rate).toFixed(4)}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 px-2">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${isFC ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>
+                                {tr.currency_code}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2 text-xs text-gray-500 max-w-xs truncate">{tr.description || '-'}</td>
+                            <td className="py-2 px-2">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${tr.status === 'posted' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
+                                {tr.status}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardContent className="pt-6 space-y-4">
