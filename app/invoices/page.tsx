@@ -79,6 +79,9 @@ interface Invoice {
   display_currency?: string
   display_total?: number
   display_paid?: number
+  // v3.22.0: Exchange rate at invoice time — used to convert payment amounts
+  // (which are stored in payment currency) into invoice currency for display.
+  exchange_rate?: number
   // Linked Sales Order
   sales_order_id?: string | null
   // Warehouse status
@@ -86,7 +89,17 @@ interface Invoice {
   approval_status?: string | null
 }
 
-type Payment = { id: string; invoice_id: string | null; amount: number }
+// v3.22.0: extended with currency_code + exchange_rate so we can convert
+// payment amounts (which may be in a different currency than the invoice)
+// to invoice-currency before aggregating into paidByInvoice.
+type Payment = {
+  id: string
+  invoice_id: string | null
+  amount: number
+  currency_code?: string | null
+  exchange_rate?: number | null
+  base_currency_amount?: number | null
+}
 
 // نوع لأرصدة العملاء الدائنة
 type CustomerCredit = {
@@ -207,16 +220,39 @@ export default function InvoicesPage() {
   const [pageSize, setPageSize] = useState(10)
 
   // تجميع المدفوعات الفعلية من جدول payments حسب الفاتورة
+  // v3.22.0: cross-currency safe — converts each payment amount from payment
+  // currency to invoice currency before summing, so a 0.2 USD payment on a
+  // 10 EGP invoice contributes ~10 EGP (not 0.2 EGP) to paidByInvoice.
+  //
+  // Formula: applied_in_invoice_ccy = payment.amount × (payment.exchange_rate / invoice.exchange_rate)
+  // where exchange_rate is FC → base. When currencies match, factor = 1.
   const paidByInvoice: Record<string, number> = useMemo(() => {
+    const invInfo: Record<string, { code: string; rate: number }> = {}
+    invoices.forEach((inv) => {
+      invInfo[inv.id] = {
+        code: String(inv.currency_code || "").toUpperCase(),
+        rate: Number(inv.exchange_rate || 1) || 1,
+      }
+    })
     const agg: Record<string, number> = {}
     payments.forEach((p) => {
       const key = p.invoice_id || ""
-      if (key) {
-        agg[key] = (agg[key] || 0) + (p.amount || 0)
+      if (!key) return
+      const pAmount = Number(p.amount || 0)
+      if (!pAmount) return
+      const inv = invInfo[key]
+      const pCurrency = String(p.currency_code || "").toUpperCase()
+      if (!inv || !pCurrency || pCurrency === inv.code) {
+        agg[key] = (agg[key] || 0) + pAmount
+        return
       }
+      // Cross-currency: convert payment amount to invoice currency
+      const pRate = Number(p.exchange_rate || 1) || 1
+      const factor = pRate / inv.rate
+      agg[key] = (agg[key] || 0) + pAmount * factor
     })
     return agg
-  }, [payments])
+  }, [payments, invoices])
 
   // ✅ قائمة الحالات المتاحة بناءً على البيانات الفعلية للشركة
   const statusOptions = useMemo(() => {
@@ -624,9 +660,12 @@ export default function InvoicesPage() {
           setActiveSalesReturnRequestsByInvoiceId({})
         }
 
+        // v3.22.0: include currency_code, exchange_rate, base_currency_amount
+        // so the paidByInvoice aggregation can convert payment amounts
+        // (in payment currency) to invoice currency before summing.
         const { data: payData } = await supabase
           .from("payments")
-          .select("id, invoice_id, amount")
+          .select("id, invoice_id, amount, currency_code, exchange_rate, base_currency_amount")
           .eq("company_id", companyId)
           .in("invoice_id", invoiceIds)
         setPayments(payData || [])

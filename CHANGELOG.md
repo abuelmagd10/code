@@ -4,6 +4,92 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.22.0] - 2026-05-21
+
+### 🐛 Critical FX Bug — paid_amount يُسجَّل بدون تحويل العملة
+
+أبلغ المستخدم:
+> "تم دفع فاتورة قيمتها 10 جنية المصرى بالدولار بدفع 0.2 ولكن تلاحظ ان فى مواضع كثيرة تم احتسابها على انها 0.2 جنية مصرى... فى جميع المواضع التى يتم فيها الدفع بغير العملة المختارة فى الاعدادات كعملة اساسية للتطبيق ان تظهر فى جميع الجداول والمواضع بالصورة الصحيحة"
+
+### 🔍 جذر المشكلة
+
+عند الدفع عبر `/payments` بعملة مختلفة عن الفاتورة:
+- المستخدم يدفع 0.20 USD على فاتورة قيمتها 10 EGP (rate 53.39)
+- التطبيق يخزّن `payment.amount = 0.20` و `payment.base_currency_amount = 10.68` (صحيح)
+- لكن `applyAllocation` فى `customer-payment-command.service.ts` كانت تضيف 0.20 (USD) مباشرة على `invoice.paid_amount` (المخزّن بعملة الفاتورة EGP) — **بدون تحويل**
+
+النتيجة: `paid_amount = 0.20 EGP` بدلاً من `10.68 EGP`.
+
+تأكدنا من الـ DB:
+```
+Invoice INV-00003: total=10 EGP, paid_amount=0.20 EGP ← خطأ
+Payment: amount=0.20 USD, rate=53.39, base=10.68 EGP
+```
+
+### ✅ الإصلاحات
+
+#### Fix #1: `lib/services/customer-payment-command.service.ts`
+
+**`applyAllocation`** — تحويل المبلغ من عملة الدفع إلى عملة الفاتورة قبل إضافته:
+```ts
+const conversionFactor = sameCurrency ? 1 : (payment.exchange_rate / invoice.exchange_rate)
+const appliedInInvoiceCurrency = amount × conversionFactor
+const newPaid = invoice.paid_amount + appliedInInvoiceCurrency
+```
+
+**`reverseApplications`** — نفس المنطق عند إلغاء التطبيق.
+
+أُضيف `currency_code` و `exchange_rate` لـ `InvoiceRow` type و `loadInvoice` SELECT.
+
+#### Fix #2: `app/invoices/page.tsx` — paidByInvoice aggregation
+
+السطر 215 كان يجمع `payment.amount` بدون تحويل، فيظهر 0.20 EGP لفاتورة 10 EGP. الآن:
+```ts
+// لكل دفعة، تُحوَّل من عملة الدفع إلى عملة الفاتورة قبل الجمع
+const factor = payment.exchange_rate / invoice.exchange_rate
+agg[invoiceId] += payment.amount × factor
+```
+أُضيف `currency_code, exchange_rate, base_currency_amount` لـ SELECT الـ payments.
+
+#### Fix #3: Data migration على Production
+
+`20260521_001_fix_cross_currency_paid_amount`:
+- يعيد حساب `paid_amount` لكل فاتورة باستخدام:
+  - `advance_applications.amount_applied × payment.exchange_rate / invoice.exchange_rate`
+  - بالإضافة للدفعات المربوطة legacy عبر `payments.invoice_id`
+- يُحدِّث `status` بناءً على الـ paid الجديد
+- يتجنب `original_paid` (حقل محمى بـ trigger `prevent_paid_invoice_modification`)
+
+**النتائج على Production:**
+
+| الفاتورة | قبل | بعد |
+|---|---|---|
+| INV-00003 | 0.20 EGP / partially_paid | 10.68 EGP / paid |
+| INV-0021 | 2100 EGP / paid | 2100 EGP / paid (لا تغيير) |
+| INV-0057 | 0.00 EGP / sent | 2100 EGP / paid |
+
+### 📋 Files Changed (3 + 1 migration)
+
+| الملف | التغيير |
+|---|---|
+| `lib/services/customer-payment-command.service.ts` | applyAllocation + reverseApplications + InvoiceRow type |
+| `app/invoices/page.tsx` | paidByInvoice aggregation + Payment/Invoice types + SELECT |
+| `supabase/migrations/20260521_001_fix_cross_currency_paid_amount.sql` | إصلاح البيانات (Applied ✅) |
+
+### ⚠️ ملاحظات
+
+- **Supplier side**: `supplier-payment-command.service.ts` يعتمد على RPC + journal triggers لتحديث `bill.paid_amount`. فحصنا الـ DB ووجدنا جميع الفواتير الموردين بنفس عملة الـ payment (EGP→EGP)، فالـ bug ما اتفعّلش هناك. لو ظهر سيناريو cross-currency للموردين مستقبلاً، نفس النمط لازم يُطبَّق.
+- **`/invoices/[id]/page.tsx`** payment dialog غير متأثر — يحسب `paymentAmount = FC × rate` فى الـ UI قبل إرساله، ويستخدم RPC مختلف (`process_invoice_payment_atomic_v2`) يقبل المبلغ المحوّل.
+- **`original_paid`**: لم نُحدّثه retroactively لأن trigger `prevent_paid_invoice_modification` يمنع. للعرض، `paid_amount` يكفى. لو احتجنا تصحيح `original_paid` للفواتير المدفوعة فى المستقبل، نحتاج temporary disable للـ trigger.
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: إيجابى — يحلّ مشكلة عرض خطيرة فى الدفعات الـ FX
+- **Backward compatible**: 100% — نفس السلوك للدفعات بنفس العملة
+- **Data fixed retroactively**: نعم، 2 فواتير على Production تم تصحيحها
+
+---
+
 ## [3.21.1] - 2026-05-21
 
 ### 🐛 Hotfix — `baseCurrency` يستفسر من DB (وليس localStorage)

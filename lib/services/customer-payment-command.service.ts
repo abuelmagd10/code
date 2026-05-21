@@ -83,6 +83,10 @@ type InvoiceRow = {
   branch_id: string | null
   cost_center_id: string | null
   warehouse_id: string | null
+  // v3.22.0: needed to convert payment FC amount → invoice currency before
+  // incrementing paid_amount (which is stored in invoice currency).
+  currency_code: string | null
+  exchange_rate: number | null
 }
 
 type ApplicationRow = {
@@ -370,8 +374,25 @@ export class CustomerPaymentCommandService {
     if (applications.some((item) => item.invoice_id === invoiceId)) throw new Error("This customer payment is already allocated to the selected invoice")
     const totalAppliedBefore = applications.reduce((sum, item) => sum + asNumber(item.amount_applied), 0)
     if (amount > Math.max(asNumber(payment.amount) - totalAppliedBefore, 0) + 0.01) throw new Error("Allocation amount exceeds the remaining unallocated payment balance")
+
+    // ─── v3.22.0: Cross-currency conversion ────────────────────────────────────
+    // `amount` arrives in the PAYMENT's currency (e.g. 0.20 USD).
+    // `invoice.paid_amount` is stored in the INVOICE's currency (e.g. EGP).
+    // We convert: applied_invoice_ccy = amount × (payment_rate / invoice_rate)
+    //   - payment_rate: payment.currency_code → base
+    //   - invoice_rate: invoice.currency_code → base
+    // When both currencies match the rates cancel out (factor = 1).
+    const paymentRate = asNumber(payment.exchange_rate ?? 1) || 1
+    const invoiceRate = asNumber(invoice.exchange_rate ?? 1) || 1
+    const paymentCurrency = String(payment.currency_code || "").toUpperCase()
+    const invoiceCurrency = String(invoice.currency_code || "").toUpperCase()
+    const sameCurrency = !paymentCurrency || !invoiceCurrency || paymentCurrency === invoiceCurrency
+    const conversionFactor = sameCurrency ? 1 : (paymentRate / invoiceRate)
+    const appliedInInvoiceCurrency = Math.round(asNumber(amount) * conversionFactor * 10000) / 10000
+    // ─────────────────────────────────────────────────────────────────────────
+
     const outstanding = Math.max(asNumber(invoice.total_amount) - asNumber(invoice.returned_amount) - asNumber(invoice.paid_amount), 0)
-    if (amount > outstanding + 0.01) throw new Error("Allocation amount exceeds the invoice outstanding balance")
+    if (appliedInInvoiceCurrency > outstanding + 0.01) throw new Error("Allocation amount exceeds the invoice outstanding balance")
 
     const { data: application, error } = await this.adminSupabase.from("advance_applications").insert({
       company_id: actor.companyId,
@@ -380,19 +401,22 @@ export class CustomerPaymentCommandService {
       payment_id: paymentId,
       invoice_id: invoiceId,
       bill_id: null,
+      // amount_applied stays in payment currency (used to track allocated portion
+      // of payment.amount which is in payment currency)
       amount_applied: asNumber(amount),
       applied_date: payment.payment_date,
       notes: "تطبيق دفعة عميل على فاتورة مبيعات",
     }).select("id").single()
     if (error || !application?.id) throw new Error(error?.message || "Failed to create customer payment application")
 
-    const newPaid = asNumber(invoice.paid_amount) + asNumber(amount)
-    const newOriginalPaid = asNumber(invoice.original_paid ?? invoice.paid_amount) + asNumber(amount)
+    // paid_amount is in invoice currency — use the converted value
+    const newPaid = asNumber(invoice.paid_amount) + appliedInInvoiceCurrency
+    const newOriginalPaid = asNumber(invoice.original_paid ?? invoice.paid_amount) + appliedInInvoiceCurrency
     const netInvoiceAmount = Math.max(asNumber(invoice.total_amount) - asNumber(invoice.returned_amount), 0)
     const { error: invoiceError } = await this.adminSupabase.from("invoices").update({
       paid_amount: newPaid,
       original_paid: newOriginalPaid,
-      status: newPaid >= netInvoiceAmount ? "paid" : "partially_paid",
+      status: newPaid >= netInvoiceAmount - 0.01 ? "paid" : "partially_paid",
     }).eq("company_id", actor.companyId).eq("id", invoiceId)
     if (invoiceError) throw new Error(invoiceError.message || "Failed to update invoice settlement")
 
@@ -546,8 +570,19 @@ export class CustomerPaymentCommandService {
     }
     for (const application of effectiveApplications) {
       const invoice = await this.loadInvoice(payment.company_id, application.invoice_id)
-      const newPaid = Math.max(asNumber(invoice.paid_amount) - asNumber(application.amount_applied), 0)
-      const newOriginalPaid = Math.max(asNumber(invoice.original_paid ?? invoice.paid_amount) - asNumber(application.amount_applied), 0)
+
+      // v3.22.0: convert allocation amount from payment currency to invoice
+      // currency (mirrors logic in applyAllocation).
+      const paymentRate = asNumber(payment.exchange_rate ?? 1) || 1
+      const invoiceRate = asNumber(invoice.exchange_rate ?? 1) || 1
+      const paymentCurrency = String(payment.currency_code || "").toUpperCase()
+      const invoiceCurrency = String(invoice.currency_code || "").toUpperCase()
+      const sameCurrency = !paymentCurrency || !invoiceCurrency || paymentCurrency === invoiceCurrency
+      const conversionFactor = sameCurrency ? 1 : (paymentRate / invoiceRate)
+      const appliedInInvoiceCurrency = Math.round(asNumber(application.amount_applied) * conversionFactor * 10000) / 10000
+
+      const newPaid = Math.max(asNumber(invoice.paid_amount) - appliedInInvoiceCurrency, 0)
+      const newOriginalPaid = Math.max(asNumber(invoice.original_paid ?? invoice.paid_amount) - appliedInInvoiceCurrency, 0)
       const { error } = await this.adminSupabase.from("invoices").update({
         paid_amount: newPaid,
         original_paid: newOriginalPaid,
@@ -572,7 +607,8 @@ export class CustomerPaymentCommandService {
   private async loadInvoice(companyId: string, invoiceId: string): Promise<InvoiceRow> {
     const { data, error } = await this.adminSupabase.from("invoices").select(`
       id, company_id, customer_id, invoice_number, invoice_date, status, total_amount, paid_amount,
-      original_paid, returned_amount, subtotal, tax_amount, shipping, branch_id, cost_center_id, warehouse_id
+      original_paid, returned_amount, subtotal, tax_amount, shipping, branch_id, cost_center_id, warehouse_id,
+      currency_code, exchange_rate
     `).eq("company_id", companyId).eq("id", invoiceId).maybeSingle()
     if (error || !data) throw new Error(error?.message || "Invoice not found")
     return data as InvoiceRow
