@@ -14,6 +14,7 @@ import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 
@@ -130,18 +131,13 @@ export default function NewVendorCreditPage() {
     })()
   }, [])
 
-  // Update exchange rate when currency changes
+  // v3.21.0: Reset rate to 1 for same-currency; ExchangeRateSelector
+  // handles loading rates from /settings/exchange-rates (api + manual).
   useEffect(() => {
-    const updateRate = async () => {
-      if (credit.currency === baseCurrency) {
-        setExchangeRate({ rate: 1, rateId: null, source: 'same_currency' })
-      } else if (companyId) {
-        const result = await getExchangeRate(supabase, credit.currency, baseCurrency, undefined, companyId)
-        setExchangeRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
-      }
+    if (credit.currency === baseCurrency) {
+      setExchangeRate({ rate: 1, rateId: null, source: 'same_currency' })
     }
-    updateRate()
-  }, [credit.currency, companyId, baseCurrency])
+  }, [credit.currency, baseCurrency])
 
   const subtotal = useMemo(() => items.reduce((sum, it) => sum + Number(it.line_total || 0), 0), [items])
   const shippingTax = useMemo(() => (credit.shipping || 0) * (Number(credit.shipping_tax_rate || 0) / 100), [credit.shipping, credit.shipping_tax_rate])
@@ -309,10 +305,28 @@ export default function NewVendorCreditPage() {
                 </div>
               </div>
 
-              {credit.currency !== baseCurrency && total > 0 && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
-                  <div>سعر الصرف: <strong>1 {credit.currency} = {exchangeRate.rate.toFixed(4)} {baseCurrency}</strong> ({exchangeRate.source})</div>
-                  <div>المبلغ الأساسي: <strong>{(total * exchangeRate.rate).toFixed(2)} {baseCurrency}</strong></div>
+              {/* v3.21.0: ExchangeRateSelector (api/manual dropdown from /settings/exchange-rates) */}
+              {credit.currency !== baseCurrency && (
+                <div className="space-y-2">
+                  <Label>سعر الصرف</Label>
+                  <ExchangeRateSelector
+                    fromCurrency={credit.currency}
+                    baseCurrency={baseCurrency}
+                    value={exchangeRate.rate}
+                    onChange={(r) => setExchangeRate(prev => ({ ...prev, rate: r }))}
+                    onRateMetaChange={(meta) => setExchangeRate({
+                      rate: meta?.rate ?? 1,
+                      rateId: meta?.rateId ?? null,
+                      source: meta?.source ?? 'manual',
+                    })}
+                    hideLabel
+                    showPreview
+                  />
+                  {total > 0 && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
+                      <div>المبلغ الأساسى: <strong>{(total * exchangeRate.rate).toFixed(2)} {baseCurrency}</strong></div>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
@@ -94,6 +95,10 @@ export default function EditSalesOrderPage() {
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [soCurrency, setSOCurrency] = useState<string>("SAR")
   const [exchangeRate, setExchangeRate] = useState<number>(1)
+  // v3.21.0: FX selection metadata (api/manual) for audit
+  const [exchangeRateId, setExchangeRateId] = useState<string | null>(null)
+  const [rateSource, setRateSource] = useState<string | null>(null)
+  const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
 
   // 🔐 Branch-specific stock quantities map
   const [branchStockMap, setBranchStockMap] = useState<Record<string, number>>({})
@@ -260,6 +265,16 @@ export default function EditSalesOrderPage() {
       // Load currencies
       const activeCurrencies = await getActiveCurrencies(supabase, activeCompanyId)
       setCurrencies(activeCurrencies)
+
+      // v3.21.0: Load base currency for ExchangeRateSelector
+      try {
+        const { data: company } = await supabase
+          .from('companies')
+          .select('base_currency')
+          .eq('id', activeCompanyId)
+          .single()
+        if (company?.base_currency) setBaseCurrency(company.base_currency)
+      } catch {}
 
       const { data: customersData } = await supabase
         .from("customers")
@@ -682,15 +697,19 @@ export default function EditSalesOrderPage() {
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* v3.21.0: Currency + ExchangeRateSelector (api/manual from /settings/exchange-rates) */}
                   <div className="space-y-2">
                     <Label suppressHydrationWarning>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
                     <select
                       value={soCurrency}
-                      onChange={async (e) => {
+                      onChange={(e) => {
                         const newCurrency = e.target.value
                         setSOCurrency(newCurrency)
-                        const { rate } = await getExchangeRate(supabase, 'SAR', newCurrency, new Date(), companyId)
-                        setExchangeRate(rate)
+                        if (newCurrency === baseCurrency) {
+                          setExchangeRate(1)
+                          setExchangeRateId(null)
+                          setRateSource(null)
+                        }
                       }}
                       className="w-full px-3 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white"
                     >
@@ -699,6 +718,23 @@ export default function EditSalesOrderPage() {
                       ))}
                     </select>
                   </div>
+                  {soCurrency !== baseCurrency && (
+                    <div className="space-y-2">
+                      <Label suppressHydrationWarning>{appLang === 'en' ? 'Exchange rate' : 'سعر الصرف'}</Label>
+                      <ExchangeRateSelector
+                        fromCurrency={soCurrency}
+                        baseCurrency={baseCurrency}
+                        value={exchangeRate}
+                        onChange={setExchangeRate}
+                        onRateMetaChange={(meta) => {
+                          setExchangeRateId(meta?.rateId || null)
+                          setRateSource(meta?.source || null)
+                        }}
+                        hideLabel
+                        showPreview
+                      />
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label suppressHydrationWarning>{appLang === 'en' ? 'Notes' : 'ملاحظات'}</Label>
                     <Input value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />

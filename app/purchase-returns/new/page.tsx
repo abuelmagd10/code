@@ -11,6 +11,7 @@ import { Trash2, Plus, Warehouse, AlertTriangle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { getActiveCompanyId } from "@/lib/company"
 import { canReturnBill, getBillOperationError, billRequiresJournalEntries } from "@/lib/validation"
 import { validatePurchaseReturnStock, formatStockShortageMessage } from "@/lib/purchase-return-validation"
@@ -417,18 +418,13 @@ export default function NewPurchaseReturnPage() {
     })()
   }, [isPrivileged, companyId, billItems, form.bill_id])
 
-  // Update exchange rate when currency changes
+  // v3.21.0: Reset rate to 1 for same currency; ExchangeRateSelector handles
+  // loading rates from /settings/exchange-rates (api + manual).
   useEffect(() => {
-    const updateRate = async () => {
-      if (form.currency === baseCurrency) {
-        setExchangeRate({ rate: 1, rateId: null, source: 'same_currency' })
-      } else if (companyId) {
-        const result = await getExchangeRate(supabase, form.currency, baseCurrency, undefined, companyId)
-        setExchangeRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
-      }
+    if (form.currency === baseCurrency) {
+      setExchangeRate({ rate: 1, rateId: null, source: 'same_currency' })
     }
-    updateRate()
-  }, [form.currency, companyId, baseCurrency])
+  }, [form.currency, baseCurrency])
 
   // Load bill items when bill is selected + تهيئة المخزن الافتراضي والتخصيصات
   useEffect(() => {
@@ -1616,6 +1612,25 @@ export default function NewPurchaseReturnPage() {
                       </>
                     )}
                   </select>
+                </div>
+              )}
+              {/* v3.21.0: ExchangeRateSelector (api/manual from /settings/exchange-rates) */}
+              {isBillPaid && form.currency !== baseCurrency && (
+                <div>
+                  <Label>{appLang === 'en' ? 'Exchange rate' : 'سعر الصرف'}</Label>
+                  <ExchangeRateSelector
+                    fromCurrency={form.currency}
+                    baseCurrency={baseCurrency}
+                    value={exchangeRate.rate}
+                    onChange={(r) => setExchangeRate(prev => ({ ...prev, rate: r }))}
+                    onRateMetaChange={(meta) => setExchangeRate({
+                      rate: meta?.rate ?? 1,
+                      rateId: meta?.rateId ?? null,
+                      source: meta?.source ?? 'manual',
+                    })}
+                    hideLabel
+                    showPreview
+                  />
                 </div>
               )}
               <div className={isBillPaid ? 'md:col-span-2' : 'md:col-span-3'}>
