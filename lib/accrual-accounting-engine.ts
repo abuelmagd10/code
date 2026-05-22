@@ -112,12 +112,13 @@ export async function prepareInvoiceRevenueJournal(
   companyId: string,
   options?: { allowDraft?: boolean }
 ): Promise<AccrualJournalEntry | null> {
-  // الحصول على بيانات الفاتورة
+  // v3.23.0: load FX context so we can post the journal in BASE CURRENCY (IAS 21)
   const { data: invoice, error: invoiceError } = await supabase
     .from("invoices")
     .select(`
       id, invoice_number, invoice_date, status,
       subtotal, tax_amount, total_amount, shipping,
+      currency_code, exchange_rate, base_currency_total,
       branch_id, cost_center_id, customer_id
     `)
     .eq("id", invoiceId)
@@ -136,11 +137,28 @@ export async function prepareInvoiceRevenueJournal(
   // الحصول على خريطة الحسابات
   const mapping = await getAccrualAccountMapping(supabase, companyId)
 
-  // حساب المبالغ
-  const netAmount = Number(invoice.subtotal || 0)
-  const vatAmount = Number(invoice.tax_amount || 0)
-  const shippingAmount = Number(invoice.shipping || 0)
-  const totalAmount = Number(invoice.total_amount || 0)
+  // ─── v3.23.0: IAS 21 — journal entries MUST be in base currency ────────────
+  // For FC invoices, multiply FC amounts by exchange_rate to get base values.
+  // We also record original_* + exchange_rate_used for IAS 21 disclosure.
+  const fxRate = Number(invoice.exchange_rate || 1) || 1
+  const invoiceCurrency = String(invoice.currency_code || '').toUpperCase()
+  const isFC = !!invoiceCurrency && fxRate !== 1
+
+  // Raw FC amounts (as entered)
+  const fcNet = Number(invoice.subtotal || 0)
+  const fcVat = Number(invoice.tax_amount || 0)
+  const fcShipping = Number(invoice.shipping || 0)
+  const fcTotal = Number(invoice.total_amount || 0)
+
+  // Base currency amounts (what the GL stores)
+  const round2 = (n: number) => Math.round(n * 100) / 100
+  const netAmount = isFC ? round2(fcNet * fxRate) : fcNet
+  const vatAmount = isFC ? round2(fcVat * fxRate) : fcVat
+  const shippingAmount = isFC ? round2(fcShipping * fxRate) : fcShipping
+  const totalAmount = isFC
+    ? (Number(invoice.base_currency_total || 0) || round2(fcTotal * fxRate))
+    : fcTotal
+  // ────────────────────────────────────────────────────────────────────────────
 
   // إنشاء القيد المحاسبي
   const journalEntry: AccrualJournalEntry = {
@@ -154,17 +172,22 @@ export async function prepareInvoiceRevenueJournal(
     lines: []
   }
 
-  // مدين: العملاء (Accounts Receivable) - إجمالي الفاتورة
+  // مدين: العملاء (Accounts Receivable) - إجمالي الفاتورة (base currency)
   journalEntry.lines.push({
     account_id: mapping.accounts_receivable,
     debit_amount: totalAmount,
     credit_amount: 0,
     description: 'مستحق من العميل',
     branch_id: invoice.branch_id,
-    cost_center_id: invoice.cost_center_id
-  })
+    cost_center_id: invoice.cost_center_id,
+    // v3.23.0: IAS 21 disclosure — keep the original FC values
+    original_debit: isFC ? fcTotal : null,
+    original_credit: isFC ? 0 : null,
+    original_currency: isFC ? invoiceCurrency : null,
+    exchange_rate_used: isFC ? fxRate : 1,
+  } as any)
 
-  // دائن: إيرادات المبيعات (Sales Revenue) - صافي المبلغ
+  // دائن: إيرادات المبيعات (Sales Revenue) - صافي المبلغ (base currency)
   if (netAmount > 0) {
     journalEntry.lines.push({
       account_id: mapping.sales_revenue,
@@ -172,8 +195,12 @@ export async function prepareInvoiceRevenueJournal(
       credit_amount: netAmount,
       description: 'إيراد المبيعات',
       branch_id: invoice.branch_id,
-      cost_center_id: invoice.cost_center_id
-    })
+      cost_center_id: invoice.cost_center_id,
+      original_debit: isFC ? 0 : null,
+      original_credit: isFC ? fcNet : null,
+      original_currency: isFC ? invoiceCurrency : null,
+      exchange_rate_used: isFC ? fxRate : 1,
+    } as any)
   }
 
   // دائن: ضريبة القيمة المضافة (إذا وجدت)
@@ -184,21 +211,28 @@ export async function prepareInvoiceRevenueJournal(
       credit_amount: vatAmount,
       description: 'ضريبة القيمة المضافة',
       branch_id: invoice.branch_id,
-      cost_center_id: invoice.cost_center_id
-    })
+      cost_center_id: invoice.cost_center_id,
+      original_debit: isFC ? 0 : null,
+      original_credit: isFC ? fcVat : null,
+      original_currency: isFC ? invoiceCurrency : null,
+      exchange_rate_used: isFC ? fxRate : 1,
+    } as any)
   }
 
   // دائن: إيراد الشحن (إذا وجد)
   if (shippingAmount > 0) {
-    // يمكن استخدام حساب إيراد منفصل للشحن أو نفس حساب المبيعات
     journalEntry.lines.push({
-      account_id: mapping.sales_revenue, // أو حساب منفصل للشحن
+      account_id: mapping.sales_revenue,
       debit_amount: 0,
       credit_amount: shippingAmount,
       description: 'إيراد الشحن',
       branch_id: invoice.branch_id,
-      cost_center_id: invoice.cost_center_id
-    })
+      cost_center_id: invoice.cost_center_id,
+      original_debit: isFC ? 0 : null,
+      original_credit: isFC ? fcShipping : null,
+      original_currency: isFC ? invoiceCurrency : null,
+      exchange_rate_used: isFC ? fxRate : 1,
+    } as any)
   }
 
   return journalEntry
@@ -415,7 +449,14 @@ export async function preparePaymentJournalFromData(
     throw new Error('Cash/Bank account not found')
   }
 
-  const amount = Number(paymentData.amount || 0)
+  // v3.23.0: Normalize amount to BASE CURRENCY (IAS 21).
+  // Some callers (e.g. /payments page) pass paymentData.amount in FC while
+  // paymentData.base_currency_amount holds the converted value. Trust the
+  // base_currency_amount when it's present and the payment currency differs
+  // from the company base currency.
+  const fcAmountIn = Number(paymentData.amount || 0)
+  const baseAmountIn = Number(paymentData.base_currency_amount || 0)
+  const paymentCurrencyIn = String(paymentData.currency_code || '').toUpperCase()
   const isCustomerPayment = !!paymentData.customer_id
   const isSupplierPayment = !!paymentData.supplier_id
 
@@ -423,6 +464,8 @@ export async function preparePaymentJournalFromData(
   // FX detection: compare invoice/bill currency vs company base
   // ---------------------------------------------------------------
   let fxDiff = 0  // in base currency; +ve = gain (customer) / loss (supplier)
+  // Will be set below once we know the base currency code.
+  let amount = fcAmountIn
   let arApAmount = amount  // base-currency amount to relieve from AR/AP
   let sourceCurrency: string | null = null
   let sourceRate: number | null = null
@@ -435,6 +478,19 @@ export async function preparePaymentJournalFromData(
       .eq('id', companyId)
       .maybeSingle()
     const baseCurrency = (companyRow?.base_currency || 'EGP').toUpperCase()
+
+    // v3.23.0: If the payment is in FC and base_currency_amount is set,
+    // use it as the authoritative base-currency amount. This rescues callers
+    // that send paymentData.amount in FC instead of base.
+    if (
+      paymentCurrencyIn &&
+      paymentCurrencyIn !== baseCurrency &&
+      baseAmountIn > 0 &&
+      Math.abs(baseAmountIn - fcAmountIn) > 0.01
+    ) {
+      amount = baseAmountIn
+      arApAmount = baseAmountIn
+    }
 
     // Look up the source document (invoice or bill) to read original FX rate
     if (isCustomerPayment && paymentData.invoice_id) {
@@ -732,12 +788,13 @@ export async function createPurchaseInventoryJournal(
   companyId: string
 ): Promise<string | null> {
   try {
-    // الحصول على بيانات فاتورة الشراء
+    // v3.23.0: load FX context so we can post the journal in BASE CURRENCY (IAS 21)
     const { data: bill, error: billError } = await supabase
       .from("bills")
       .select(`
         id, bill_number, bill_date, status,
         subtotal, tax_amount, total_amount, shipping, adjustment,
+        currency_code, exchange_rate, base_currency_total,
         branch_id, cost_center_id, supplier_id
       `)
       .eq("id", billId)
@@ -763,14 +820,26 @@ export async function createPurchaseInventoryJournal(
     // الحصول على خريطة الحسابات
     const mapping = await getAccrualAccountMapping(supabase, companyId)
 
-    // حساب المبالغ
-    // ✅ total_amount = subtotal + tax_amount + shipping + adjustment
-    // حيث tax_amount يتضمن shippingTax بالفعل
-    const netAmount = Number(bill.subtotal || 0)
-    const vatAmount = Number(bill.tax_amount || 0)
-    const shippingAmount = Number((bill as any).shipping || 0)
-    const adjustmentAmount = Number((bill as any).adjustment || 0)
-    const totalAmount = Number(bill.total_amount || 0)
+    // ─── v3.23.0: IAS 21 — convert FC bill amounts to base currency ────────────
+    const billFxRate = Number((bill as any).exchange_rate || 1) || 1
+    const billCurrency = String((bill as any).currency_code || '').toUpperCase()
+    const billIsFC = !!billCurrency && billFxRate !== 1
+
+    const fcBillNet = Number(bill.subtotal || 0)
+    const fcBillVat = Number(bill.tax_amount || 0)
+    const fcBillShip = Number((bill as any).shipping || 0)
+    const fcBillAdj = Number((bill as any).adjustment || 0)
+    const fcBillTotal = Number(bill.total_amount || 0)
+
+    const round2 = (n: number) => Math.round(n * 100) / 100
+    const netAmount = billIsFC ? round2(fcBillNet * billFxRate) : fcBillNet
+    const vatAmount = billIsFC ? round2(fcBillVat * billFxRate) : fcBillVat
+    const shippingAmount = billIsFC ? round2(fcBillShip * billFxRate) : fcBillShip
+    const adjustmentAmount = billIsFC ? round2(fcBillAdj * billFxRate) : fcBillAdj
+    const totalAmount = billIsFC
+      ? (Number((bill as any).base_currency_total || 0) || round2(fcBillTotal * billFxRate))
+      : fcBillTotal
+    // ──────────────────────────────────────────────────────────────────────────
 
     // إنشاء قيد الشراء
     const journalEntry: AccrualJournalEntry = {
@@ -833,19 +902,20 @@ export async function createPurchaseInventoryJournal(
       })
     }
 
-    // دائن: الموردين (Accounts Payable) - إجمالي المبلغ
-    // ✅ total_amount = subtotal + tax_amount + shipping + adjustment
-    // الجانب المدين: subtotal + tax_amount + shipping + adjustment = total_amount
-    // الجانب الدائن: total_amount
-    // القيد متوازن ✅
+    // دائن: الموردين (Accounts Payable) - إجمالي المبلغ بالعملة الأساسية
+    // v3.23.0: includes original FC values for IAS 21 disclosure when bill is FC
     journalEntry.lines.push({
       account_id: mapping.accounts_payable,
       debit_amount: 0,
       credit_amount: totalAmount,
       description: 'مستحق للمورد',
       branch_id: bill.branch_id,
-      cost_center_id: bill.cost_center_id
-    })
+      cost_center_id: bill.cost_center_id,
+      original_debit: billIsFC ? 0 : null,
+      original_credit: billIsFC ? fcBillTotal : null,
+      original_currency: billIsFC ? billCurrency : null,
+      exchange_rate_used: billIsFC ? billFxRate : 1,
+    } as any)
 
     // حفظ القيد في قاعدة البيانات
     try {
@@ -1048,13 +1118,18 @@ async function saveJournalEntry(
       cost_center_id: journalEntry.cost_center_id,
       warehouse_id: journalEntry.warehouse_id ?? null,
     },
-    journalEntry.lines.map((line) => ({
+    journalEntry.lines.map((line: any) => ({
       account_id: line.account_id,
       debit_amount: line.debit_amount,
       credit_amount: line.credit_amount,
       description: line.description,
       branch_id: line.branch_id,
       cost_center_id: line.cost_center_id,
+      // v3.23.0: pass IAS 21 FX disclosure columns when set by FC-aware preparers
+      ...(line.original_debit != null ? { original_debit: line.original_debit } : {}),
+      ...(line.original_credit != null ? { original_credit: line.original_credit } : {}),
+      ...(line.original_currency ? { original_currency: line.original_currency } : {}),
+      ...(line.exchange_rate_used != null ? { exchange_rate_used: line.exchange_rate_used } : {}),
     }))
   )
 

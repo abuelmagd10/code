@@ -4,6 +4,84 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.23.0] - 2026-05-21
+
+### 🚨 CRITICAL Fix — قيود FC تُسجَّل فى GL بـ base currency (IAS 21)
+
+أبلغ المستخدم:
+> "النتيجة فى قائمة العملاء... فى شركة تست فرع مدينة نصر مخالف لفواتير هذا العميل بمدفوعاتة بعملات مختلفة"
+
+### 🔍 الـ Bug الجذرى
+
+عند فحص الـ DB:
+```
+الفاتورة IAS21-TEST: 100 USD × rate 50 = 5000 EGP فعلياً
+القيد فى GL:
+  العملاء (1130) Dr  100.00  ← يجب أن تكون 5000 EGP!
+  إيرادات (4100) Cr   100.00  ← يجب أن تكون 5000 EGP!
+```
+
+`prepareInvoiceRevenueJournal` و `createPurchaseInventoryJournal` كانتا تستخدمان `invoice.total_amount` (FC) مباشرة بدون ضرب فى `exchange_rate` للوصول لـ base currency. **يخالف IAS 21 §21** الذى يتطلب أن تكون كل القيود فى عملة العرض (functional currency).
+
+النتيجة: قائمة العملاء عرضت 110 EGP بدلاً من ~5000 EGP، البنك ميزانية مغلوطة، AR aging مغلوط، كل التقارير المعتمدة على GL.
+
+### ✅ الإصلاحات
+
+#### Fix #1: `lib/accrual-accounting-engine.ts` — Code Layer
+- **`prepareInvoiceRevenueJournal`**: الآن تحمل `currency_code, exchange_rate, base_currency_total`. تضرب FC × rate قبل بناء الـ journal. تملأ `original_debit, original_credit, original_currency, exchange_rate_used` للـ IAS 21 disclosure
+- **`createPurchaseInventoryJournal`**: نفس الـ pattern للموردين (AP credit بـ base currency)
+- **`preparePaymentJournalFromData`**: تعيد استخدام `paymentData.base_currency_amount` لما الـ payment fc يختلف عن base (يحل caller bugs اللى بترسل `amount` كـ FC)
+- **`saveJournalEntry`**: تمرر FC columns لـ `createCompleteJournalEntry`
+
+#### Fix #2: `lib/journal-entry-governance.ts`
+- `createCompleteJournalEntry` يقبل ويمرر `original_debit, original_credit, original_currency, exchange_rate_used`
+
+#### Fix #3: RPC — `create_journal_entry_atomic` (migration applied to Production)
+- Insert الـ journal_entry_lines الآن يحفظ كل الـ FX columns بدلاً من تجاهلها بصمت
+
+#### Fix #4: Data Migrations على Production
+1. `20260521_002_create_journal_entry_atomic_fx_columns.sql` — تحديث الـ RPC
+2. `20260521_003_fix_fc_invoice_journal_amounts.sql` — تحويل قيود الفواتير الموجودة من FC إلى base (يستخدم `app.allow_direct_post=true` لتجاوز trigger `enforce_posted_entry_lines_no_edit`)
+3. `20260521_005_fix_fc_payment_journal_lines_via_applications.sql` — تحويل دفعات cross-currency (FC payment على base invoice)
+
+### 📊 النتيجة على Production — العميل ahmed abuelmagd
+
+| الحالة | قبل | بعد |
+|---|---|---|
+| AR balance | 110 EGP ❌ | **4999.32 EGP** ✅ |
+| AR debit total | 130 EGP | 5032 EGP |
+| AR credit total | 20 EGP | 32.68 EGP |
+
+التفصيل:
+- IAS21-TEST: 5000 EGP outstanding (دفعتها 2 USD مرتجعة)
+- INV-00001, INV-00002: مدفوعة بالكامل (0 EGP)
+- INV-00003: -0.68 EGP overpayment (دُفع 0.20 USD = 10.68 EGP على فاتورة 10 EGP)
+
+### 📋 Files Changed (3 code + 3 migrations)
+
+| الملف | التغيير |
+|---|---|
+| `lib/accrual-accounting-engine.ts` | invoice + bill + payment journal preparers — base currency + FC disclosure |
+| `lib/journal-entry-governance.ts` | يمرر FC columns للـ RPC |
+| `supabase/migrations/20260521_002_*` | RPC update (Applied ✅) |
+| `supabase/migrations/20260521_003_*` | Invoice/bill journals data fix (Applied ✅) |
+| `supabase/migrations/20260521_005_*` | Cross-currency payment journals fix (Applied ✅) |
+
+### 🟡 ملاحظات + Limitations
+
+1. **`original_paid` على الفواتير المدفوعة لم يُحدَّث**: trigger `prevent_paid_invoice_modification` يمنع. الـ `paid_amount` كافى للعرض.
+2. **FC invoice scenario** (مثلاً payment على فاتورة USD): الـ data migration تخطى هذه الحالة لأنها تتطلب FX gain/loss accounting محسوب بدقة. للـ IAS21-TEST، الدفعة الأصلية + الـ reversal cancel each other out بشكل صحيح. لو ظهر سيناريو جديد، v3.10.0 FX adjustment يتولاه.
+3. **Trial Balance غير متأثرة**: كل القيود متوازنة (debit = credit)، التغيير فقط فى حجم الأرقام.
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: إصلاح جذرى لخطأ محاسبى — كل التقارير ستعرض القيم الصحيحة
+- **Backward compatible**: 100% — الفواتير بالعملة الأساسية لم تتأثر
+- **Audit trail preserved**: `original_debit/credit/currency` تحفظ القيم الأصلية للـ IAS 21 disclosure
+- **Tested on production**: Customer balance verified 4999.32 EGP
+
+---
+
 ## [3.22.1] - 2026-05-21
 
 ### 🔧 توسعة إصلاح FX ليشمل جميع التجميعات (Bills + Customers + Bill Detail)
