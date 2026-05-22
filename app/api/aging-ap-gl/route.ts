@@ -90,21 +90,35 @@ export async function GET(req: NextRequest) {
 
     const paymentJournalIds = (paymentJournals || []).map((j: any) => j.id)
     const paymentReferenceIds = (paymentJournals || []).map((j: any) => String(j.reference_id || ""))
-    const { data: paymentAllocations } = paymentReferenceIds.length > 0
-      ? await supabase
-          .from("payment_allocations")
-          .select("id, bill_id")
-          .in("id", paymentReferenceIds)
-      : { data: [] as any[] }
+    // v3.23.4: bill_payment.reference_id may be one of:
+    //  - payment_allocations.id (modern allocation flow)
+    //  - payments.id (legacy direct link to a payment record)
+    //  - bills.id (legacy direct, when payment applied to a single bill)
+    // Resolve all three paths so AP debits are properly attributed.
+    const [{ data: paymentAllocations }, { data: paymentRows }] = paymentReferenceIds.length > 0
+      ? await Promise.all([
+          supabase.from("payment_allocations").select("id, bill_id").in("id", paymentReferenceIds),
+          supabase.from("payments").select("id, bill_id").in("id", paymentReferenceIds),
+        ])
+      : [{ data: [] as any[] }, { data: [] as any[] }]
 
     const allocationToBill = new Map(
       (paymentAllocations || []).map((allocation: any) => [String(allocation.id), String(allocation.bill_id)])
+    )
+    const paymentToBill = new Map(
+      (paymentRows || [])
+        .filter((p: any) => p.bill_id)
+        .map((p: any) => [String(p.id), String(p.bill_id)])
     )
 
     const paymentJournalToBill: Record<string, string> = {}
     for (const journal of paymentJournals || []) {
       const referenceId = String(journal.reference_id || "")
-      paymentJournalToBill[journal.id] = allocationToBill.get(referenceId) || referenceId
+      // Priority: allocation → payment.bill_id → direct bill link (fallback)
+      paymentJournalToBill[journal.id] =
+        allocationToBill.get(referenceId) ||
+        paymentToBill.get(referenceId) ||
+        referenceId
     }
 
     // ✅ Step 4: Get posted purchase_return journals (reference_id = purchase_return.id)
