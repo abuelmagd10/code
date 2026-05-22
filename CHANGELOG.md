@@ -4,6 +4,72 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.1] - 2026-05-22
+
+### 🐛 Landing Page Hotfix — إخفاء Sidebar + إضافة info@7esab.com
+
+أبلغ المستخدم بأمرين:
+1. **الـ Sidebar الخاص بالمستخدم المُسجَّل ظاهر على الصفحة التعريفية** (bug)
+2. الحاجة لإضافة `info@7esab.com` للتواصل
+
+### 🔍 السبب
+
+`components/SidebarLayoutProvider.tsx` كان يخفى الـ sidebar فقط للـ auth pages. الصفحة الرئيسية `/` لم تكن مستثناة، فالـ Sidebar كان يظهر بجانب الصفحة التعريفية للزوار.
+
+### ✅ الإصلاح
+
+#### 1. SidebarLayoutProvider
+
+```ts
+// قبل:
+const PATHS_WITHOUT_SIDEBAR = ["/auth/login", ...]
+const shouldHide = PATHS_WITHOUT_SIDEBAR.some((p) => 
+  pathname === p || pathname.startsWith(p + "/")
+)
+// المشكلة: "/" + "/" → "//" يطابق كل شىء بـ startsWith
+
+// بعد:
+const EXACT_HIDE_PATHS = ["/"]  // exact match فقط
+const PREFIX_HIDE_PATHS = ["/auth/login", ...]  // prefix match
+if (EXACT_HIDE_PATHS.includes(pathname)) return null
+if (PREFIX_HIDE_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return null
+```
+
+#### 2. إضافة info@7esab.com
+
+- **Final CTA section**: قسم "للتواصل" مع `<a href="mailto:info@7esab.com">`
+- **Talk to Expert button**: غيرناه من Link لـ `mailto:info@7esab.com`
+- **Footer — Logo column**: إضافة email link تحت description
+- **Footer — Support column**: استبدال "تواصل معنا #" بـ `info@7esab.com`
+
+### 📋 Files Changed (8)
+
+| الملف | التغيير |
+|---|---|
+| `components/SidebarLayoutProvider.tsx` | فصل EXACT vs PREFIX hide paths |
+| `app/page.tsx` | 4× mailto:info@7esab.com (CTA + Footer × 2) |
+| `components/landing/HeroSection.tsx` | rewritten (Python script - filesystem tool stability) |
+| `components/landing/ERPModulesSection.tsx` | rewritten |
+| `components/landing/MultiCurrencySection.tsx` | rewritten |
+| `components/landing/SecuritySection.tsx` | rewritten |
+| `components/landing/IndustriesSection.tsx` | rewritten |
+| `CHANGELOG.md` | توثيق |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: الصفحة التعريفية تظهر بشكل صحيح للزوار (بدون sidebar)
+- **Backward compatible**: 100% — المستخدمون المُسجَّلون يستمرون فى رؤية الـ sidebar على الصفحات الداخلية
+- **No DB changes**
+
+### ✅ Verification
+
+```
+$ babel parse all 7 files       →  ALL OK
+$ npm run typecheck:release      →  exit 0 (no errors)
+```
+
+---
+
 ## [3.28.0] - 2026-05-22
 
 ### 🌐 Landing Page Redesign — Enterprise ERP World-Class Edition

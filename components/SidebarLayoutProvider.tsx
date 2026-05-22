@@ -3,21 +3,8 @@
 import { usePathname } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 
-/**
- * SidebarLayoutProvider — يعرض الـ Sidebar مرة واحدة ثابتة لكل جلسة المستخدم
- *
- * المنطق:
- * - يظهر في جميع الصفحات عدا صفحات المصادقة وSaaS Admin
- * - بما أن هذا Component في app/layout.tsx، فهو لا يُعاد إنشاؤه عند Navigation
- * - حالة الـ Sidebar (notifications, user data, expanded items) تُحفَظ بين الصفحات
- *
- * الصفحات المستثناة (بدون Sidebar):
- * - صفحات تسجيل الدخول والتسجيل
- * - صفحة الـ onboarding
- * - منطقة SaaS Admin (لها واجهتها الخاصة)
- */
-
-const PATHS_WITHOUT_SIDEBAR: string[] = [
+const EXACT_HIDE_PATHS = ["/"]
+const PREFIX_HIDE_PATHS = [
   "/auth/login",
   "/auth/sign-up",
   "/auth/sign-up-success",
@@ -28,12 +15,10 @@ const PATHS_WITHOUT_SIDEBAR: string[] = [
 
 export function SidebarLayoutProvider() {
   const pathname = usePathname()
-
-  const shouldHide = PATHS_WITHOUT_SIDEBAR.some(
+  const isExactHide = EXACT_HIDE_PATHS.includes(pathname)
+  const isPrefixHide = PREFIX_HIDE_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/")
   )
-
-  if (shouldHide) return null
-
+  if (isExactHide || isPrefixHide) return null
   return <Sidebar />
 }
