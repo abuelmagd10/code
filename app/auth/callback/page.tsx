@@ -83,7 +83,7 @@ function CallbackInner() {
         address: '',
         phone: '',
         email: '',
-        tax_number: '',
+        tax_id: '',
         logo_url: ''
       })
       .select('id')
