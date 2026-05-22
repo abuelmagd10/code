@@ -475,17 +475,30 @@ export default function CustomersPage() {
           if (usedAmt > 0) disbursedMap[cid] = (disbursedMap[cid] || 0) + usedAmt
         })
 
-      // v3.26.2: invoice overpayments are ALSO customer credit.
-      // For every invoice where paid_amount > (total_amount - returned_amount),
-      // the surplus becomes a credit balance for that customer.
-      // Without this, the "الرصيد" column missed credit from overpaid invoices
-      // (e.g., 0.20 USD payment on 10 EGP invoice → 0.68 EGP surplus that
-      // was previously hidden everywhere).
+      // v3.26.3: invoice overpayments — ONLY true overpayments (paid > total).
+      // BUG fix from v3.26.2: previously formula was `paid - (total - returned)`
+      // which double-counted returned amounts. Customer returns (المرتجعات)
+      // already create entries in customer_credits via SR refund_method='credit_note'
+      // — including returned_amount in the overpayment formula counted the same
+      // refund TWICE (once as customer_credit, once as "surplus over net invoice").
+      //
+      // True overpayment definition: customer paid MORE than the original invoice
+      // total. The fact that some items were later returned is irrelevant to this
+      // calculation; the return refund is tracked separately in customer_credits
+      // (already aggregated into `credits` above).
+      //
+      // Example INV-0031 (مى حسن): total=5000, paid=5000, returned=250
+      //   - v3.26.2 buggy: surplus = 5000 - (5000-250) = 250 ← WRONG
+      //   - v3.26.3 fixed: surplus = 5000 - 5000 = 0    ← CORRECT
+      //   - The 250 EGP credit from the return is already in customer_credits (used)
+      //
+      // Example INV-00003 (ahmed): total=10, paid=10.68, returned=0
+      //   - v3.26.3: surplus = 10.68 - 10 = 0.68 ← CORRECT (true overpayment)
       const overpaymentMap: Record<string, number> = {}
       try {
         const { data: paidInvoices } = await supabase
           .from("invoices")
-          .select("customer_id, total_amount, paid_amount, returned_amount, status")
+          .select("customer_id, total_amount, paid_amount, status")
           .eq("company_id", activeCompanyId)
           .in("status", ["paid", "partially_paid"])
 
@@ -494,9 +507,9 @@ export default function CustomersPage() {
           if (!cid) continue
           const total = Number((inv as any).total_amount || 0)
           const paid = Number((inv as any).paid_amount || 0)
-          const returned = Number((inv as any).returned_amount || 0)
-          const net = Math.max(0, total - returned)
-          const surplus = paid - net
+          // True overpayment: paid in excess of the ORIGINAL invoice total
+          // (returns are tracked separately via customer_credits)
+          const surplus = paid - total
           if (surplus > 0.005) {
             overpaymentMap[cid] = (overpaymentMap[cid] || 0) + surplus
           }

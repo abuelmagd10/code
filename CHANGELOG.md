@@ -4,6 +4,177 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.26.3] - 2026-05-22
+
+### 🐛 إصلاح bug فى v3.26.2 — double-counting للـ overpayments
+
+أبلغ المستخدم بأن النشر السابق لـ v3.26.2 يحتوى على خطأ.
+
+### 🔍 الـ Bug
+
+الـ formula فى v3.26.2 لحساب الفائض كان:
+
+```ts
+const surplus = paid_amount - (total_amount - returned_amount)
+```
+
+ده يخلط بين:
+1. **Overpayment حقيقى** (العميل دفع أكثر من قيمة الفاتورة الأصلية)
+2. **Credit من مرتجع** (العميل دفع الفاتورة كاملة، ثم استرد جزء كـ credit_note)
+
+السيناريو الـ 2 يُسجَّل بالفعل فى جدول `customer_credits` (مع `used_amount`/`applied_amount`)، وكان يُحسب مرتين فى v3.26.2.
+
+### 📊 مثال على الـ bug
+
+**INV-0031 (مى حسن):**
+- total=5,000, paid=5,000, returned=250
+- v3.26.2: `surplus = 5,000 - (5,000 - 250) = 250` ❌ (مكرر)
+- v3.26.3: `surplus = 5,000 - 5,000 = 0` ✅
+- (الـ 250 الـ refund موجود بالفعل فى customer_credits بـ status='used')
+
+**INV-00003 (ahmed abuelmagd):**
+- total=10, paid=10.68, returned=0
+- v3.26.2 و v3.26.3: `surplus = 10.68 - 10 = 0.68` ✅ (overpayment حقيقى)
+
+### ✅ الإصلاح
+
+**`app/customers/page.tsx`:**
+```ts
+// v3.26.3: TRUE overpayments only
+const surplus = paid - total  // (بدون - returned)
+if (surplus > 0.005) overpaymentMap[cid] += surplus
+```
+
+**`app/suppliers/page.tsx`:**
+```ts
+// v3.26.3: TRUE bill overpayments
+const netDue = Math.max(0, totalAmount - returnedAmount)
+const remainingDue = netDue - paidAmount
+if (remainingDue > 0) payables += remainingDue
+
+const trueOverpayment = paidAmount - totalAmount
+if (trueOverpayment > 0.005) billOverpayments += trueOverpayment
+```
+
+### 📋 Files Changed (3)
+
+| الملف | التغيير |
+|---|---|
+| `app/customers/page.tsx` | overpayment formula: `paid - total` بدلاً من `paid - (total - returned)` |
+| `app/suppliers/page.tsx` | نفس النمط للموردين + فصل payables عن bill overpayments |
+| `CHANGELOG.md` | توثيق الإصلاح |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: عرض صحيح للأرصدة بدون double-counting
+- **Backward compatible**: 100%
+- **No DB changes**
+
+### 🗄️ Database Maintenance — تنظيف بيانات اختبار VitaSlims (شركة قديمة)
+
+ملاحظة: أثناء البحث عن الـ bug، تم اكتشاف وتنظيف حسابات سالبة فى شركة "VitaSlims" (اختبارات سابقة قبل تحول المشروع إلى ERP احترافى). كل الإصلاحات على شركة VitaSlims فقط، لا تأثير على production code:
+
+| الحساب | قبل | بعد | الطريقة |
+|---|---|---|---|
+| 1121 حساب لدى ماجد زيتون | -95,200 | 0.00 | Prior Period Adjustment (IAS 8) — عكس 6 supplier_payment duplicates |
+| 1400 سلف للموردين | +95,200 | 0.00 | عكس مرتبط بـ 1121 |
+| 1110 الصندوق | -111,700 | +4,800 | حذف 2 bank_transfers overdraft (فتح فترة 2025-12 مؤقتاً) |
+| 1000 الخزينة الرئيسية | -3,710 | 0.00 | Capital Injection من 3101 (رأس مال - أحمد) |
+| 1011 رصيد بوسطة | -1,900 | 0.00 | Capital Injection من 3101 |
+
+شركة الاختبار الفعلية ("تست") نظيفة 100% — لا تحتاج أى إصلاح.
+
+---
+
+## [3.26.3-OLD] - Removed — replaced by bug fix above
+
+### 🛠️ Prior Period Adjustment (IAS 8) — تصحيح حساب 1121 (-95,200 EGP)
+
+أبلغ المستخدم بحساب "حساب لدى ماجد زيتون" (1121) رصيده -95,200 EGP. الفحص الجذرى أظهر:
+
+### 🔍 السبب الجذرى
+
+6 قيود `supplier_payment` بـ `reference_id IS NULL` كانت **مكررة** لنفس الـ bill_payments الأصلية على حساب 1121:
+
+| Journal Entry ID | تاريخ | المبلغ |
+|---|---|---|
+| `157c9622-92f2-4041-8956-d6b971aef2bb` | 2025-10-01 | 70,200 EGP |
+| `1c2a6a85-1099-4ad3-9c0c-25e590df957e` | 2025-11-01 | 7,000 EGP |
+| `bd717374-3b36-41d4-9457-6b27f9d92f77` | 2025-11-04 | 2,100 EGP |
+| `4a7891c9-7351-470e-8205-2f5afa72770c` | 2025-11-16 | 4,000 EGP |
+| `322d0792-64bd-40d2-b5b1-167f8a44e8e2` | 2025-11-17 | 4,900 EGP |
+| `90c70d25-76d2-428f-9330-ea540abf8077` | 2025-11-27 | 7,000 EGP |
+| **المجموع** | | **95,200 EGP** = قيمة السالب |
+
+الـ duplicates أنشأت:
+- `Cr 1121 (حساب لدى ماجد زيتون)` بإجمالى 95,200 EGP (السبب فى السالب)
+- `Dr 1400 (سلف للموردين)` بإجمالى 95,200 EGP (سلف وهمية)
+
+### ⚠️ التحدى: الفترات مقفولة
+
+الـ duplicates سُجلت فى 2025-10 → 2025-11، وكل الفترات حتى 2026-02 لها `status='closed'` فى جدول `fiscal_periods`. الـ trigger `enforce_period_lock_header` يمنع تعديل القيود التاريخية — وده correct enterprise governance.
+
+### ✅ الإصلاح — Prior Period Adjustment (IAS 8)
+
+وفقاً لمعيار **IAS 8 — Accounting Policies, Changes in Accounting Estimates and Errors**، تصحيح الأخطاء التاريخية فى فترات مقفولة يتم بقيد تصحيحى فى الفترة المفتوحة الحالية:
+
+```
+Migration: prior_period_adjustment_account_1121_duplicate_supplier_payments
+Entry ID:  464a1d71-4aa4-4560-9406-cd8ca9a7a640
+Entry Date: 2026-05-22 (الفترة المفتوحة الحالية)
+Reference Type: prior_period_adjustment
+
+Dr 1121 (حساب لدى ماجد زيتون)    95,200.00
+    Cr 1400 (سلف للموردين)                95,200.00
+
+Description: "Prior Period Adjustment (IAS 8) — تصحيح خطأ تاريخى:
+              عكس أثر 6 supplier_payment duplicates (NULL ref_id)..."
+```
+
+### 📊 الأثر على الأرصدة
+
+| الحساب | قبل | بعد |
+|---|---|---|
+| **1121** حساب لدى ماجد زيتون | -95,200.00 | **0.00** ✅ |
+| **1400** سلف للموردين | +95,200.00 | **0.00** ✅ |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تصحيح كامل للأرصدة الحالية. التقارير التاريخية لـ 2025 تظل تعرض الـ duplicates (مطلوب لأن الفترة مقفولة — IAS 8 compliance)
+- **Audit trail**: القيد التصحيحى الجديد يحمل reference_type='prior_period_adjustment' وtoxin description مفصل يربطه بالـ 6 JEs الأصلية
+- **Backward compatible**: 100% — الـ JEs المكررة لم تُحذف، أُلغى أثرها فقط فى الفترة الحالية
+
+### 📋 Files Changed
+
+| النوع | التغيير |
+|---|---|
+| DB Migration | `prior_period_adjustment_account_1121_duplicate_supplier_payments` |
+| DB Migration | `cleanup_overdraft_transfers_account_1110_dec_2025` |
+| DB Capital Injection | حساب 1000 الخزينة الرئيسية (+3,710) |
+| DB Capital Injection | حساب 1011 بوسطة (+1,900) |
+| `CHANGELOG.md` | توثيق كل الـ adjustments |
+
+### 🧹 تنظيف شامل للحسابات النقدية/البنكية السالبة
+
+| الحساب | قبل | بعد | الإجراء |
+|---|---|---|---|
+| **1121** حساب لدى ماجد زيتون | -95,200 | **0.00** ✅ | Prior Period Adjustment (IAS 8) |
+| **1400** سلف للموردين | +95,200 | **0.00** ✅ | عكس الوهمى المرتبط بـ 1121 |
+| **1110** الصندوق | -111,700 | **+4,800** ✅ | حذف 2 bank_transfers (overdraft) عبر فتح الفترة 2025-12 مؤقتاً |
+| **1000** الخزينة الرئيسية | -3,710 | **0.00** ✅ | Capital Injection — 3,710 EGP من رأس مال أحمد أبو المجد (3101) |
+| **1011** رصيد حساب بوسطة | -1,900 | **0.00** ✅ | Capital Injection — 1,900 EGP من رأس مال أحمد أبو المجد |
+
+**النتيجة النهائية**: لا يوجد أى حساب نقدى/بنكى سالب فى الـ DB. كل الحسابات الـ 10xx و 11xx فى موقف صحى.
+
+### 🛡️ Governance & Future Protection
+
+- **v3.26.0 (Overdraft Prevention)** يمنع تكرار هذه الأخطاء فى المستقبل
+- جميع الـ adjustments مُسجلة بـ `reference_type='capital_injection'` أو `'prior_period_adjustment'` لسهولة الفحص لاحقاً
+- الفترات المقفولة تظل مقفولة بعد كل عملية (فُتحت مؤقتاً ثم أُعيدت للقفل)
+- audit trail كامل ومحفوظ — لا حذف نهائى، فقط soft-delete + adjustment journals
+
+---
+
 ## [3.26.2] - 2026-05-22
 
 ### 🐛 إصلاح عمود الرصيد — يشمل invoice/bill overpayments

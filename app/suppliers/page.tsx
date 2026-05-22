@@ -453,27 +453,34 @@ export default function SuppliersPage() {
 
         if (billsError) {
           console.error(`❌ خطأ في جلب فواتير المورد ${supplier.name}:`, billsError)
-        // v3.26.2: track bill overpayments separately so they surface in
-        // "مستحقات لنا (سلفة مورد)" column instead of being silently dropped.
+        // v3.26.3: track TRUE bill overpayments (paid > total) — mirrors customer
+        // overpayment fix. BUG in v3.26.2: subtracting returned_amount double-counted
+        // purchase returns that are already tracked via vendor_credits.
+        //
+        // Payables = ما علينا للمورد (لم يدفع بعد)
+        //          = (total - returned) - paid   if positive
+        // True overpayment = paid > total (paid in excess of ORIGINAL bill total)
+        // Returns are handled separately via vendor_credits, NOT here.
         let billOverpayments = 0
         if (bills && bills.length > 0) {
           for (const bill of bills) {
-            // ✅ حساب المتبقي من الفاتورة = إجمالي الفاتورة الأساسي - المدفوع - قيمة المرتجعات
-            // ملاحظة: total_amount يمثل القيمة الأصلية للفاتورة. المرتجعات تسجل في returned_amount.
             const totalAmount = Number(bill.total_amount || 0)
             const paidAmount = Number(bill.paid_amount || 0)
             const returnedAmount = Number(bill.returned_amount || 0)
-            const remaining = totalAmount - paidAmount - returnedAmount
+            const netDue = Math.max(0, totalAmount - returnedAmount)
+            const remainingDue = netDue - paidAmount
 
-            // المطلوبات = ما علينا للمورد (موجب فقط).
-            // السالب (دفعنا أكثر) → فائض يُحسب فى "مستحقات لنا".
-            if (remaining > 0) {
-              payables += remaining
-            } else if (remaining < -0.005) {
-              billOverpayments += Math.abs(remaining)
+            if (remainingDue > 0) {
+              // لازلنا مدينين للمورد
+              payables += remainingDue
+            }
+            // True overpayment: دفعنا أكثر من إجمالى الفاتورة الأصلية
+            const trueOverpayment = paidAmount - totalAmount
+            if (trueOverpayment > 0.005) {
+              billOverpayments += trueOverpayment
             }
           }
-          console.log(`📋 ${supplier.name}: ${bills.length} فاتورة، مطلوبات: ${payables.toFixed(2)}, مستحقات لنا (overpayments): ${billOverpayments.toFixed(2)}`)
+          console.log(`📋 ${supplier.name}: ${bills.length} فاتورة، مطلوبات: ${payables.toFixed(2)}, مستحقات لنا (true overpayments): ${billOverpayments.toFixed(2)}`)
         }
 
         // حساب الرصيد المدين من إشعارات الدائن (vendor_credits)
@@ -501,7 +508,8 @@ export default function SuppliersPage() {
         newBalances[supplier.id] = {
           advances: 0, // يمكن إضافة حساب السلف لاحقاً
           payables,
-          // v3.26.2: مستحقات لنا = vendor credits + فائض الدفع على الفواتير
+          // v3.26.3: مستحقات لنا = vendor credits + فائض الدفع الحقيقى على الفواتير
+          // (v3.26.2 كان يحسب الـ returns مرتين - مرة هنا ومرة فى vendor_credits)
           debitCredits: debitCreditsTotal + billOverpayments,
         }
 
