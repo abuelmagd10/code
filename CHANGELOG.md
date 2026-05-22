@@ -46,11 +46,30 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ### 📊 النتيجة على Production — العميل ahmed abuelmagd
 
-| الحالة | قبل | بعد |
-|---|---|---|
-| AR balance | 110 EGP ❌ | **4999.32 EGP** ✅ |
-| AR debit total | 130 EGP | 5032 EGP |
-| AR credit total | 20 EGP | 32.68 EGP |
+| الحالة | قبل | مرحلى | نهائى |
+|---|---|---|---|
+| AR balance | 110 EGP ❌ | 4999.32 EGP | **4899.32 EGP** ✅ |
+
+### 🔧 Migration إضافى — `20260521_006_repair_ias21_test_payment_state.sql`
+
+اكتشف المستخدم تناقض: يرى دفعة 2 USD على IAS21-TEST فى قائمة `/payments`، لكن الـ customer balance لا يعكسها. الفحص كشف:
+
+- القيد الأصلى للدفعة (`77dc3f52`): posted لكن بـ FC (2 EGP بدل 106.22)
+- FX adjustment delta (`9e9c040a`): **draft فقط** — أُنشئت لكن لم تُنشَر
+- Reversal كاملة (`384a8785`): posted — ألغت كل أثر القيد الأصلى
+
+النتيجة: الدفعة موجودة فى الـ list (status=approved) لكن أثرها فى GL = 0.
+
+**الإصلاح:**
+1. Soft-delete الـ reversal (`is_deleted=true`)
+2. Post الـ FX adjustment (draft → posted)
+
+النتيجة المحاسبية الصحيحة (IAS 21 §28):
+```
+Dr Cash 106.22 EGP   (2 USD × 53.11 سعر الدفع)
+Cr AR    100.00 EGP  (2 USD × 50.00 سعر الفاتورة الأصلى)
+Cr FX Gain 6.22 EGP  (فرق فروق العملة)
+```
 
 التفصيل:
 - IAS21-TEST: 5000 EGP outstanding (دفعتها 2 USD مرتجعة)
