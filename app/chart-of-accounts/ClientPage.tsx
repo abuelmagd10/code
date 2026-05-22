@@ -164,7 +164,13 @@ function ChartOfAccountsPage() {
     branch_id: "",
     cost_center_id: "",
     normal_balance: "debit", // القيمة الافتراضية للأصول
+    // v3.24.0: account currency — relevant for bank/cash sub-types.
+    // Empty string = use company base currency (default).
+    currency_code: "",
   })
+  // v3.24.0: list of active currencies from /settings/exchange-rates
+  const [availableCurrencies, setAvailableCurrencies] = useState<Array<{ code: string; name?: string; symbol?: string }>>([])
+  const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
@@ -499,6 +505,12 @@ function ChartOfAccountsPage() {
       }
 
       setEditingId(null)
+      // v3.24.0: load currencies for the quick-add form too
+      try {
+        if (companyId && availableCurrencies.length === 0) {
+          await loadCurrencies(companyId)
+        }
+      } catch {}
       setFormData({
         account_code: type === "bank" ? "1010" : "1000",
         account_name: type === "bank" ? "حساب بنكي" : "خزينة الشركة",
@@ -513,6 +525,7 @@ function ChartOfAccountsPage() {
         branch_id: "",
         cost_center_id: "",
         normal_balance: "debit", // الأصول دائماً debit
+        currency_code: "", // default to base currency
       })
       setIsDialogOpen(true)
     } catch (error) {
@@ -558,6 +571,39 @@ function ChartOfAccountsPage() {
       console.error("Error loading branches and cost centers:", error)
       // في حالة انقطاع الاتصال، لا نوقف التطبيق
       // فقط نسجل الخطأ ونستمر
+    }
+  }
+
+  // v3.24.0: load active currencies (for bank/cash account currency picker)
+  // + company base currency.
+  const loadCurrencies = async (companyId: string) => {
+    try {
+      const [{ data: companyRow }, { data: currencyRows }] = await Promise.all([
+        supabase.from("companies").select("base_currency").eq("id", companyId).maybeSingle(),
+        // Active currencies = those that have at least one rate row in /settings/exchange-rates,
+        // PLUS the company base currency itself.
+        supabase
+          .from("exchange_rates")
+          .select("from_currency, to_currency")
+          .eq("company_id", companyId)
+          .limit(500),
+      ])
+      const base = String(companyRow?.base_currency || "EGP").toUpperCase()
+      setBaseCurrency(base)
+      const codes = new Set<string>([base])
+      for (const r of currencyRows || []) {
+        if ((r as any).from_currency) codes.add(String((r as any).from_currency).toUpperCase())
+        if ((r as any).to_currency) codes.add(String((r as any).to_currency).toUpperCase())
+      }
+      const symbols: Record<string, string> = {
+        EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+        KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل',
+      }
+      const list = Array.from(codes).sort().map(code => ({ code, symbol: symbols[code] || code }))
+      setAvailableCurrencies(list)
+    } catch (err) {
+      console.warn("Failed to load currencies for account form:", err)
+      setAvailableCurrencies([{ code: "EGP", symbol: "£" }])
     }
   }
 
@@ -826,6 +872,12 @@ function ChartOfAccountsPage() {
         opening_balance: formData.opening_balance,
         branch_id: (formData.is_bank || formData.is_cash) ? effectiveBranchId : null,
         cost_center_id: (formData.is_bank || formData.is_cash) && formData.cost_center_id ? formData.cost_center_id : null,
+        // v3.24.0: persist account currency for bank/cash accounts.
+        // Stored in `original_currency` (the canonical FX column on chart_of_accounts).
+        // Empty/null = inherits company base currency.
+        original_currency: (formData.is_bank || formData.is_cash) && formData.currency_code
+          ? formData.currency_code.toUpperCase()
+          : null,
       }
 
       if (editingId) {
@@ -854,6 +906,7 @@ function ChartOfAccountsPage() {
         branch_id: "",
         cost_center_id: "",
         normal_balance: "debit",
+        currency_code: "",
       })
       setFormErrors({})
       loadAccounts()
@@ -865,15 +918,18 @@ function ChartOfAccountsPage() {
 
   const handleEdit = async (account: Account) => {
     try {
-      // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
+      // التأكد من تحميل الفروع ومراكز التكلفة + العملات قبل فتح النموذج
       try {
         const companyId = companyIdState || await getActiveCompanyId(supabase)
         if (companyId && (branches.length === 0 || costCenters.length === 0)) {
           await loadBranchesAndCostCenters(companyId)
         }
+        // v3.24.0: load currencies if not loaded yet
+        if (companyId && availableCurrencies.length === 0) {
+          await loadCurrencies(companyId)
+        }
       } catch (error) {
-        // في حالة انقطاع الاتصال، نفتح النموذج بدون تحميل الفروع ومراكز التكلفة
-        console.warn("Could not load branches and cost centers, continuing anyway:", error)
+        console.warn("Could not load branches/cost centers/currencies, continuing anyway:", error)
       }
 
       setFormData({
@@ -890,6 +946,8 @@ function ChartOfAccountsPage() {
         branch_id: account.branch_id || "",
         cost_center_id: account.cost_center_id || "",
         normal_balance: account.account_type === 'asset' || account.account_type === 'expense' ? 'debit' : 'credit',
+        // v3.24.0: preload existing account currency
+        currency_code: String((account as any).original_currency || "").toUpperCase(),
       })
       setEditingId(account.id)
       setIsDialogOpen(true)
@@ -1076,17 +1134,21 @@ function ChartOfAccountsPage() {
                     <Button data-ai-help="chart_of_accounts.new_account_button" onClick={async () => {
                       try {
                         setEditingId(null)
-                        setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0, branch_id: "", cost_center_id: "", normal_balance: "debit" })
+                        setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0, branch_id: "", cost_center_id: "", normal_balance: "debit", currency_code: "" })
                         setFormErrors({})
-                        // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
+                        // التأكد من تحميل الفروع ومراكز التكلفة + العملات قبل فتح النموذج
                         try {
                           const companyId = companyIdState || await getActiveCompanyId(supabase)
                           if (companyId && (branches.length === 0 || costCenters.length === 0)) {
                             await loadBranchesAndCostCenters(companyId)
                           }
+                          // v3.24.0: load currencies for the account form
+                          if (companyId && availableCurrencies.length === 0) {
+                            await loadCurrencies(companyId)
+                          }
                         } catch (error) {
                           // في حالة انقطاع الاتصال، نفتح النموذج بدون تحميل الفروع ومراكز التكلفة
-                          console.warn("Could not load branches and cost centers, continuing anyway:", error)
+                          console.warn("Could not load branches/cost centers/currencies, continuing anyway:", error)
                         }
                       } catch (error) {
                         console.error("Error opening new account form:", error)
@@ -1146,6 +1208,36 @@ function ChartOfAccountsPage() {
                           <input id="is_cash" type="checkbox" checked={formData.is_cash} onChange={(e) => setFormData({ ...formData, is_cash: e.target.checked, sub_type: e.target.checked ? "cash" : formData.sub_type === "cash" ? "" : formData.sub_type })} />
                         </div>
                       </div>
+                      {/* v3.24.0: Account currency — يظهر لحسابات البنك/الخزينة فقط */}
+                      {(formData.is_bank || formData.is_cash) && (
+                        <div className="space-y-2" data-ai-help="chart_of_accounts.account_currency">
+                          <Label htmlFor="account_currency">
+                            {appLang === 'en' ? 'Account Currency' : 'عملة الحساب'}
+                          </Label>
+                          <select
+                            id="account_currency"
+                            value={formData.currency_code || ""}
+                            onChange={(e) => setFormData({ ...formData, currency_code: e.target.value })}
+                            className="w-full px-3 py-2 border rounded-lg"
+                          >
+                            <option value="">
+                              {appLang === 'en'
+                                ? `Default (company base: ${baseCurrency})`
+                                : `الافتراضى (عملة الشركة: ${baseCurrency})`}
+                            </option>
+                            {availableCurrencies.map((c) => (
+                              <option key={c.code} value={c.code}>
+                                {c.symbol} {c.code}{c.code === baseCurrency ? (appLang === 'en' ? ' (base)' : ' (الأساسية)') : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {appLang === 'en'
+                              ? 'العملات تأتى من /settings/exchange-rates. اختار "الافتراضى" لاستخدام العملة الأساسية للشركة.'
+                              : 'العملات المتاحة تأتى من إعدادات أسعار الصرف. اختر "الافتراضى" لاستخدام عملة الشركة.'}
+                          </p>
+                        </div>
+                      )}
                       {/* Branch and Cost Center for Bank/Cash accounts */}
                       {(formData.is_bank || formData.is_cash) && (
                         <>

@@ -4,6 +4,70 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.24.0] - 2026-05-21
+
+### 🆕 Feature — تحديد عملة الحساب البنكى/الخزينة عند الإنشاء
+
+طلب المستخدم:
+> "يوجد فى المشروع انشاء حساب صرف (حساب بنكي / خزينة الشركة) يمكن تحديد عملة الحساب بعملة مختلفة (يتم الاختيار من العملات المتوفرة فى صفحة صرف العملات المتواجدة فى الاعدادات) عن عملة التطبيق المحدد فى الاعدادات"
+
+### 🔍 الحالة قبل
+
+- ✅ **DB schema**: `chart_of_accounts.original_currency` موجود بالفعل
+- ❌ **UI form**: لا يحتوى currency picker — كل الحسابات تستخدم عملة الشركة الأساسية ضمنياً
+- ❌ **Quick Add buttons**: حساب بنكى/خزينة سريعة بدون عملة
+
+### ✅ الإصلاح فى `app/chart-of-accounts/ClientPage.tsx`
+
+1. **Form state**: إضافة `currency_code` لـ `formData`
+2. **Currencies state**: `availableCurrencies` يُحمَّل من `exchange_rates` table (نفس المصدر اللى تستخدمه `/settings/exchange-rates`)
+3. **Base currency state**: يُقرأ من `companies.base_currency` (المصدر الموثوق)
+4. **UI field**: select dropdown يظهر **فقط** للحسابات البنكية/الخزينة (`is_bank || is_cash`)
+   - الخيار الافتراضى: "الافتراضى (عملة الشركة: EGP)" = NULL فى DB
+   - الخيارات الأخرى: كل عملة موجودة فى exchange_rates + العملة الأساسية
+   - يُميّز العملة الأساسية بـ "(الأساسية)"
+5. **Persistence**: يُحفظ فى `chart_of_accounts.original_currency` (الـ canonical FX column)
+6. **Edit**: نموذج التعديل يُحمّل العملة الموجودة، Quick Add buttons أيضاً تحمل القائمة
+
+### 📋 السلوك
+
+```
+المستخدم يضغط "حساب بنكى سريع" أو "حساب جديد" + يحدد "حساب بنكى"
+  ↓
+يظهر حقل "عملة الحساب" مع خيارات:
+  - الافتراضى (عملة الشركة: EGP)
+  - £ EGP (الأساسية)
+  - $ USD
+  - € EUR
+  - ﷼ SAR
+  - ... إلخ (حسب exchange_rates table)
+  ↓
+عند الحفظ: original_currency = الكود المختار، أو NULL لو "الافتراضى"
+```
+
+### 🟡 ملاحظة - استخدام العملة على الحساب
+
+الحقل `original_currency` على حساب البنك/الخزينة يخدم كـ **metadata** يحدد بأى عملة يُحتفظ بالأموال فعلياً. الـ accounting journals تظل دائماً فى base currency (IAS 21) مع تتبع FC على `journal_entry_lines.original_*`.
+
+استخدامات مستقبلية للقيمة المحفوظة:
+- عرض رصيد الحساب بعملته الأصلية فى Banking page
+- تنبيه عند صرف من/إلى حساب بعملة مختلفة عن العملية
+- FX revaluation للحسابات الدولارية فى نهاية الفترة
+
+### 📋 Files Changed (1)
+
+| الملف | التغيير |
+|---|---|
+| `app/chart-of-accounts/ClientPage.tsx` | currency picker للحسابات البنكية/الخزينة |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: feature إضافى — السلوك الحالى للحسابات الموجودة لا يتأثر
+- **Backward compatible**: 100% — الحسابات بدون `original_currency` تُعامل كـ base currency
+- **No DB changes**: الـ schema موجود بالفعل
+
+---
+
 ## [3.23.6] - 2026-05-21
 
 ### ⏮️ Revert v3.23.3 + v3.23.5 — الذمم لا تعرض السالب (تصحيح مفهومى)
