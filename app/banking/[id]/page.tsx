@@ -17,7 +17,18 @@ import { Filter, X, Search, Calendar, Check, Ban } from "lucide-react"
 import { usePermissions } from "@/lib/permissions-context"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
-type Account = { id: string; account_code: string | null; account_name: string; account_type: string; branch_id?: string | null; cost_center_id?: string | null; branch_name?: string; cost_center_name?: string }
+type Account = {
+  id: string;
+  account_code: string | null;
+  account_name: string;
+  account_type: string;
+  branch_id?: string | null;
+  cost_center_id?: string | null;
+  branch_name?: string;
+  cost_center_name?: string;
+  // v3.25.2: native currency of bank/cash account (set in chart-of-accounts)
+  original_currency?: string | null;
+}
 type BankVoucherRequest = {
   id: string;
   voucher_type: 'deposit' | 'withdraw';
@@ -45,6 +56,10 @@ type Line = {
   display_debit?: number | null;
   display_credit?: number | null;
   display_currency?: string | null;
+  // v3.25.2: native currency tracking for FC accounts (IAS 21 disclosure)
+  original_debit?: number | null;
+  original_credit?: number | null;
+  original_currency?: string | null;
 }
 
 export default function BankAccountDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -167,7 +182,8 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       // ✅ Always fetch from Supabase to ensure we have the latest data
       const { data: accData, error: accError } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type, branch_id, cost_center_id, branches(name), cost_centers(cost_center_name)")
+        // v3.25.2: fetch original_currency so we can render FC account in native currency
+        .select("id, account_code, account_name, account_type, branch_id, cost_center_id, original_currency, branches(name), cost_centers(cost_center_name)")
         .eq("id", accountId)
         .single()
 
@@ -205,7 +221,8 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         // ✅ Filter out deleted journal entries
         const { data: directLines } = await supabase
           .from("journal_entry_lines")
-          .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, journal_entries!inner(entry_date, description, company_id, deleted_at)")
+          // v3.25.2: include original_debit/credit/currency for FC native display
+          .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, original_debit, original_credit, original_currency, journal_entries!inner(entry_date, description, company_id, deleted_at)")
           .eq("account_id", accountId)
           .is("journal_entries.deleted_at", null)
           .order("id", { ascending: false })
@@ -237,6 +254,22 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       return sum + debit - credit
     }, 0)
   }, [lines, appCurrency])
+
+  // v3.25.2: native-currency balance for FC accounts (USD bank, etc.)
+  // Sums original_debit - original_credit across all lines on this account.
+  const nativeBalance = useMemo(() => {
+    if (!account?.original_currency) return null
+    if (!Array.isArray(lines) || lines.length === 0) return 0
+    return lines.reduce((sum, l) => {
+      const od = Number(l.original_debit || 0)
+      const oc = Number(l.original_credit || 0)
+      return sum + od - oc
+    }, 0)
+  }, [lines, account?.original_currency])
+
+  const isFCAccount = !!account?.original_currency && String(account.original_currency).toUpperCase() !== appCurrency.toUpperCase()
+  const nativeCurrencyCode = String(account?.original_currency || '').toUpperCase()
+  const nativeCurrencySymbol = currencySymbols[nativeCurrencyCode] || nativeCurrencyCode
 
   // Transaction type options
   const transactionTypeOptions = useMemo(() => {
@@ -433,11 +466,33 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                       </div>
                     )}
                   </div>
-                  <div className={`text-2xl font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(balance)} {currencySymbol}
+                  {/* v3.25.2: FC accounts show native currency as primary, base as reference */}
+                  <div className="flex flex-col items-end">
+                    {isFCAccount && nativeBalance != null ? (
+                      <>
+                        <div
+                          className={`text-2xl font-bold ${nativeBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                          title={appLang === 'en' ? "Balance in account's native currency" : 'الرصيد بعملة الحساب الأصلية'}
+                        >
+                          {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(nativeBalance)} {nativeCurrencySymbol}
+                        </div>
+                        <div
+                          className="text-sm text-gray-500 dark:text-gray-400 mt-1"
+                          title={appLang === 'en' ? `Equivalent in ${appCurrency}` : `المعادل بـ ${appCurrency}`}
+                        >
+                          ≈ {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(balance)} {currencySymbol}
+                        </div>
+                      </>
+                    ) : (
+                      <div className={`text-2xl font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(balance)} {currencySymbol}
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">عدد الحركات: {lines.length} | العملة: {appCurrency}</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                  عدد الحركات: {lines.length} | العملة: {isFCAccount ? `${nativeCurrencyCode} (${appCurrency} مرجع)` : appCurrency}
+                </div>
               </>
             ) : (
               <div>الحساب غير موجود</div>
@@ -677,28 +732,59 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                 </thead>
                 <tbody>
                   {(() => {
-                    // Calculate running balance from oldest to newest (using display amounts)
+                    // v3.25.2: for FC accounts, the table columns show native-currency amounts
+                    // (debit/credit/running balance in account's own currency). Base equivalent
+                    // is shown as a small reference under each value.
                     const sortedLines = [...filteredLines].reverse()
                     let runningBalance = 0
+                    let runningNative = 0
                     const linesWithBalance = sortedLines.map(l => {
                       const debit = getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency)
                       const credit = getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency)
                       runningBalance += debit - credit
-                      return { ...l, runningBalance, displayDebit: debit, displayCredit: credit }
+                      const nDebit = Number(l.original_debit || 0)
+                      const nCredit = Number(l.original_credit || 0)
+                      runningNative += nDebit - nCredit
+                      return { ...l, runningBalance, runningNative, displayDebit: debit, displayCredit: credit, nativeDebit: nDebit, nativeCredit: nCredit }
                     })
-                    // Reverse back to show newest first
-                    return linesWithBalance.reverse().map(l => (
+                    return linesWithBalance.reverse().map(l => {
+                      const debitPrimary = isFCAccount ? l.nativeDebit : l.displayDebit
+                      const creditPrimary = isFCAccount ? l.nativeCredit : l.displayCredit
+                      const balancePrimary = isFCAccount ? l.runningNative : l.runningBalance
+                      const primarySymbol = isFCAccount ? nativeCurrencySymbol : currencySymbol
+                      return (
                       <tr key={l.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
                         <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{l.journal_entries?.entry_date || '-'}</td>
                         <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden sm:table-cell max-w-[150px] truncate">{l.description || "-"}</td>
                         <td className="px-3 py-3 text-gray-500 dark:text-gray-400 hidden lg:table-cell text-xs max-w-[150px] truncate">{l.journal_entries?.description || "-"}</td>
-                        <td className="px-3 py-3 text-green-600 dark:text-green-400">{l.displayDebit > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.displayDebit) + ' ' + currencySymbol : '-'}</td>
-                        <td className="px-3 py-3 text-red-600 dark:text-red-400">{l.displayCredit > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.displayCredit) + ' ' + currencySymbol : '-'}</td>
-                        <td className={`px-3 py-3 font-medium hidden sm:table-cell ${l.runningBalance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                          {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.runningBalance)} {currencySymbol}
+                        <td className="px-3 py-3 text-green-600 dark:text-green-400">
+                          {debitPrimary > 0 ? (
+                            <>
+                              {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(debitPrimary)} {primarySymbol}
+                              {isFCAccount && l.displayDebit > 0 && (
+                                <div className="text-[10px] text-gray-400">≈ {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.displayDebit)} {currencySymbol}</div>
+                              )}
+                            </>
+                          ) : '-'}
+                        </td>
+                        <td className="px-3 py-3 text-red-600 dark:text-red-400">
+                          {creditPrimary > 0 ? (
+                            <>
+                              {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(creditPrimary)} {primarySymbol}
+                              {isFCAccount && l.displayCredit > 0 && (
+                                <div className="text-[10px] text-gray-400">≈ {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.displayCredit)} {currencySymbol}</div>
+                              )}
+                            </>
+                          ) : '-'}
+                        </td>
+                        <td className={`px-3 py-3 font-medium hidden sm:table-cell ${balancePrimary >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(balancePrimary)} {primarySymbol}
+                          {isFCAccount && (
+                            <div className="text-[10px] text-gray-400 font-normal">≈ {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.runningBalance)} {currencySymbol}</div>
+                          )}
                         </td>
                       </tr>
-                    ))
+                    )})
                   })()}
                   {filteredLines.length === 0 && !loading && (
                     <tr>

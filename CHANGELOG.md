@@ -4,6 +4,54 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.25.2] - 2026-05-22
+
+### 🆕 تطبيق native currency على banking/[id] + dashboard widget
+
+استكمال v3.25.1 — الصفحات الإضافية اللى تعرض رصيد بنكى/خزينة الآن تعرض FC accounts بعملتها الأصلية.
+
+### 📋 Files Changed (3)
+
+| الملف | التغيير |
+|---|---|
+| `app/banking/[id]/page.tsx` | تفاصيل الحساب: header balance + transactions table بـ FC primary + base reference |
+| `app/dashboard/_widgets/BankCashWidget.tsx` | يجلب `original_currency` ويحسب `nativeBalance` |
+| `components/DashboardBankCash.tsx` | عرض FC accounts بنمط primary native + reference base |
+
+### 🔧 تفاصيل
+
+**`app/banking/[id]/page.tsx`:**
+- `Account` و `Line` types: إضافة `original_currency` + `original_debit/credit/currency`
+- SELECTs تجلب الأعمدة الجديدة
+- `nativeBalance` computed من `SUM(original_debit) - SUM(original_credit)`
+- Balance card: FC accounts → primary native + base equivalent (`≈ £ ...`)
+- Transactions table: كل cell debit/credit/running يعرض FC primary مع base reference
+
+**`app/dashboard/_widgets/BankCashWidget.tsx`:**
+- SELECT chart_of_accounts: `original_currency`
+- balance loop: `nativeBalanceMap` بالتوازى مع `balanceMap`
+
+**`components/DashboardBankCash.tsx`:**
+- `BankAccount` interface: `nativeBalance` + `nativeCurrency`
+- العرض: FC primary + base reference (≈)
+
+### 🟡 Next Steps (لم تُنفذ بعد)
+
+| الصفحة | الأولوية |
+|---|---|
+| `app/reports/bank-accounts-by-branch/page.tsx` | MEDIUM |
+| `app/reports/bank-reconciliation/page.tsx` | MEDIUM |
+| `app/payments/page.tsx` (account picker hint) | MEDIUM |
+| `app/chart-of-accounts/ClientPage.tsx` (tree column) | LOW |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: حسابات base currency تظل كما هى تماماً
+- **FC accounts**: عرض موحّد عبر كل صفحات الـ banking + dashboard
+- **No DB changes**
+
+---
+
 ## [3.25.1] - 2026-05-22
 
 ### 🆕 عرض رصيد الحسابات البنكية FC بعملتها الأصلية

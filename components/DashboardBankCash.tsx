@@ -12,6 +12,10 @@ interface BankAccount {
   balance: number
   display_opening_balance?: number | null
   display_currency?: string | null
+  // v3.25.2: account's native currency + balance for FC accounts (USD, EUR, etc.)
+  // When set, the dashboard renders this account in its native currency.
+  nativeBalance?: number | null
+  nativeCurrency?: string | null
 }
 
 interface AssetAccount {
@@ -125,13 +129,31 @@ export default function DashboardBankCash({
                     const acc = rawById.get(a.id)
                     const label = acc?.account_name || a.name
                     const displayAmount = getAccountDisplayAmount(a)
+                    // v3.25.2: FC accounts show their native currency as primary
+                    const isFCAccount = !!a.nativeCurrency && a.nativeCurrency.toUpperCase() !== appCurrency.toUpperCase()
+                    const nativeSymbol = isFCAccount && a.nativeCurrency
+                      ? (currencySymbols[a.nativeCurrency] || a.nativeCurrency)
+                      : ''
                     return (
                       <div key={a.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-800 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
                         <div className="flex items-center gap-2">
                           <Banknote className="w-4 h-4 text-teal-500" />
                           <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
                         </div>
-                        <span className="font-bold text-gray-900 dark:text-white">{formatNumber(displayAmount)} <span className="text-xs text-gray-400 dark:text-gray-500">{currency}</span></span>
+                        {isFCAccount && a.nativeBalance != null ? (
+                          <div className="flex flex-col items-end">
+                            <span className="font-bold text-gray-900 dark:text-white" title="Balance in account's native currency">
+                              {formatNumber(a.nativeBalance)} <span className="text-xs text-gray-400 dark:text-gray-500">{nativeSymbol}</span>
+                            </span>
+                            <span className="text-[10px] text-gray-400 dark:text-gray-500" title={`Equivalent in ${appCurrency}`}>
+                              ≈ {formatNumber(displayAmount)} {currency}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="font-bold text-gray-900 dark:text-white">
+                            {formatNumber(displayAmount)} <span className="text-xs text-gray-400 dark:text-gray-500">{currency}</span>
+                          </span>
+                        )}
                       </div>
                     )
                   })}
