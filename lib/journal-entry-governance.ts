@@ -206,6 +206,12 @@ export async function createCompleteJournalEntry(
     description?: string
     branch_id?: string | null
     cost_center_id?: string | null
+    // v3.23.0: IAS 21 disclosure — original (FC) values + rate that produced
+    // debit_amount/credit_amount in base currency.
+    original_debit?: number | null
+    original_credit?: number | null
+    original_currency?: string | null
+    exchange_rate_used?: number | null
   }>
 ): Promise<{ success: boolean; entryId?: string; error?: string }> {
   // 1. التحقق من توازن السطور
@@ -235,7 +241,12 @@ export async function createCompleteJournalEntry(
     credit_amount:   line.credit_amount,
     description:     line.description || null,
     branch_id:       line.branch_id || entry.branch_id || null,
-    cost_center_id:  line.cost_center_id || entry.cost_center_id || null
+    cost_center_id:  line.cost_center_id || entry.cost_center_id || null,
+    // v3.23.0: pass IAS 21 FX columns when provided (RPC ignores unknown keys safely)
+    ...(line.original_debit != null ? { original_debit: line.original_debit } : {}),
+    ...(line.original_credit != null ? { original_credit: line.original_credit } : {}),
+    ...(line.original_currency ? { original_currency: line.original_currency } : {}),
+    ...(line.exchange_rate_used != null ? { exchange_rate_used: line.exchange_rate_used } : {}),
   }))
 
   const { data: rpcResult, error: rpcError } = await supabase.rpc(
