@@ -4,6 +4,54 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.23.2] - 2026-05-21
+
+### 🔧 Mirror Fix على جانب الموردين — `fn_recalc_bill_paid_status`
+
+سأل المستخدم:
+> "وهل هذة المشكلة متواجدة ايضا فى صفحة الموردين"
+
+### 🔍 الفحص
+
+`app/suppliers/page.tsx` يحسب الذمم الدائنة بطريقة مختلفة عن العملاء:
+```ts
+payables = SUM(bill.total_amount - bill.paid_amount - bill.returned_amount)
+```
+يقرأ `bill.paid_amount` مباشرة من جدول `bills` — **لا attribution issue هنا**.
+
+**لكن** الـ DB function `fn_recalc_bill_paid_status` التى تحدّث `bill.paid_amount` تجمع `payment_allocations.allocated_amount + payments.amount` بدون تحويل عملة — **نفس الـ bug القديم على جانب العملاء بالضبط**.
+
+### 🟡 لماذا لم يظهر الـ bug حتى الآن؟
+
+كل الـ bills الحالية على Production فى عملة الـ base (EGP) ودفعاتها أيضاً EGP. الـ factor = 1 فلا يحدث تشويه. لكن أول دفعة cross-currency لمورد كانت ستُسجَّل خطأ.
+
+### ✅ الإصلاح
+
+`fn_recalc_bill_paid_status` الآن:
+- يجلب `bill.currency_code` و `bill.exchange_rate`
+- لكل allocation/payment، يطبق الـ conversion factor: `payment.exchange_rate / bill.exchange_rate`
+- لو عملات متطابقة → factor = 1 (نفس السلوك السابق)
+
+```sql
+applied_in_bill_ccy = allocated_amount ×
+  CASE WHEN payment.currency = bill.currency THEN 1
+       ELSE payment.exchange_rate / bill.exchange_rate END
+```
+
+### 📋 Files Changed (1 migration)
+
+| الملف | التغيير |
+|---|---|
+| `supabase/migrations/20260521_007_fn_recalc_bill_paid_status_fx_aware.sql` | RPC update (Applied ✅) |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: لا تأثير على بيانات الـ bills الحالية (كلها same-currency)
+- **Backward compatible**: 100% — السلوك نفسه للـ EGP→EGP bills
+- **Defensive**: يحمى من bug محتمل قبل وقوعه
+
+---
+
 ## [3.23.1] - 2026-05-21
 
 ### 🐛 Hotfix — customers/page receivable attribution عبر advance_applications
