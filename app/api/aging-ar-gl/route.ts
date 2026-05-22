@@ -90,8 +90,39 @@ export async function GET(req: NextRequest) {
 
     const paymentJournalIds = (paymentJournals || []).map((j: any) => j.id)
     const paymentJournalToInvoice: Record<string, string> = {}
+    // v3.23.4: payment_journal.reference_id may be one of:
+    //  - payment.id (legacy direct link)
+    //  - advance_application.id (modern allocation flow)
+    //  - invoice.id (legacy direct, when payment was applied to a single invoice)
+    // Resolve all three paths so AR credits are properly attributed.
+    const paymentRefIds = Array.from(new Set((paymentJournals || []).map((j: any) => j.reference_id).filter(Boolean)))
+    const refToInvoiceFromPayments: Record<string, string> = {}
+    const refToInvoiceFromApplications: Record<string, string> = {}
+    const knownInvoiceIds = new Set<string>()
+    if (paymentRefIds.length > 0) {
+      const [{ data: payRows }, { data: appRows }, { data: invRows }] = await Promise.all([
+        supabase.from("payments").select("id, invoice_id").in("id", paymentRefIds),
+        supabase.from("advance_applications").select("id, invoice_id").in("id", paymentRefIds),
+        supabase.from("invoices").select("id").in("id", paymentRefIds),
+      ])
+      for (const p of payRows || []) {
+        if ((p as any).invoice_id) refToInvoiceFromPayments[(p as any).id] = (p as any).invoice_id
+      }
+      for (const a of appRows || []) {
+        if ((a as any).invoice_id) refToInvoiceFromApplications[(a as any).id] = (a as any).invoice_id
+      }
+      for (const i of invRows || []) {
+        knownInvoiceIds.add((i as any).id)
+      }
+    }
     for (const j of paymentJournals || []) {
-      paymentJournalToInvoice[j.id] = j.reference_id
+      const refId = j.reference_id
+      // Resolution priority: payment.invoice_id → application.invoice_id → direct invoice link
+      const resolved =
+        refToInvoiceFromPayments[refId] ||
+        refToInvoiceFromApplications[refId] ||
+        (knownInvoiceIds.has(refId) ? refId : refId) // fallback to refId itself
+      paymentJournalToInvoice[j.id] = resolved
     }
 
     // ✅ Step 4: Get posted sales_return journals (reference_id = sales_return.id)

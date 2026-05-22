@@ -4,6 +4,84 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.23.4] - 2026-05-21
+
+### 🔍 فحص الـ UI الفعلى على Production — اكتشاف bugs اتنين إضافية
+
+استخدمنا Claude in Chrome للتنقل فى الـ UI الحى والتحقق من السلوك الفعلى.
+
+### ✅ ما لاحظناه (صحيح)
+
+- `/invoices`: INV-00003 يعرض `المدفوع £10.68 / المتبقى £0.00 / رصيد دائن £0.68 / مدفوعة` ✅
+- `/invoices/[id]`: تفاصيل الفاتورة كاملة + سعر صرف صحيح ✅
+- `/payments`: الدفعة 0.20 USD ≈ £10.68 تعرض مع الـ FX equivalent ✅
+
+### 🐛 ما اكتشفناه
+
+#### Bug #1 — `/customers` يخفى القيم السالبة كـ "—"
+
+العرض كان:
+```tsx
+{rec > 0 ? `${rec} ${currencySymbol}` : '—'}
+```
+لو العميل overpaid (الذمم سالبة)، يعرض "—" بدل القيمة الفعلية. الإجمالى يحسب صحيح لكن الـ row الفردى يخفى.
+
+**الإصلاح**: عرض السالب باللون الأخضر مع tooltip "رصيد دائن (دفع زائد)":
+```tsx
+if (Math.abs(rec) < 0.005) return '—'
+const isCredit = rec < 0
+return <span className={isCredit ? 'text-green' : 'text-red'}>{rec} {currencySymbol}</span>
+```
+
+#### Bug #2 — `/reports/aging-ar` و `/reports/aging-ap` بنفس attribution gap
+
+الـ GL APIs (`api/aging-ar-gl`, `api/aging-ap-gl`) كانت تفترض `payment_journal.reference_id = invoice/bill id` دائماً. لكن فى الواقع reference_id ممكن يكون:
+- `payments.id` (legacy)
+- `advance_applications.id` (customer modern)
+- `payment_allocations.id` (supplier modern)
+- `invoices.id` / `bills.id` (direct)
+
+النتيجة: INV-00002 (مدفوعة بـ 10 EGP) ظهرت فى الـ aging بـ outstanding 10 EGP لأن الـ payment credit لم تُربط بها.
+
+**الإصلاح**: الـ APIs الآن تحل reference_id عبر 3 مسارات بالترتيب:
+- AR: `payments.invoice_id` → `advance_applications.invoice_id` → direct invoice
+- AP: `payment_allocations.bill_id` → `payments.bill_id` → direct bill
+
+### 📋 Files Changed (3)
+
+| الملف | التغيير |
+|---|---|
+| `app/customers/page.tsx` | Receivables display: عرض السالب باللون الأخضر |
+| `app/api/aging-ar-gl/route.ts` | 3-path resolution لـ payment journal references |
+| `app/api/aging-ap-gl/route.ts` | نفس الـ pattern للموردين |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تصحيح عرض — لا تأثير على بيانات
+- **Backward compatible**: 100% — الـ fallbacks تظل تعمل
+- **No DB changes**
+
+### 📝 Lessons Learned (Documented)
+
+1. **`journal_entries.reference_id` لا يحمل معنى ثابت** — حسب نوع القيد ممكن يشير لجداول مختلفة. أى UI/API يحاول الـ attribution لازم يفحص كل المسارات الممكنة.
+2. **عرض القيم السالبة مهم** — overpayments / customer credits معلومة قيمة، إخفاؤها يضلل المستخدم.
+3. **الـ FX bugs تتراكم فى طبقات** — كل layer من الـ stack (UI → service → RPC → GL) ممكن يحمل bug FX مستقل.
+
+---
+
+## [3.23.3] - 2026-05-21
+
+### 🐛 إصلاح عرض الـ Receivables السالبة (customer credit)
+
+استكشاف عبر browser tools كشف أن `app/customers/page.tsx` كان يعرض "—" لأى عميل بـ receivable ≤ 0، حتى لو السالب يمثّل overpayment (customer credit).
+
+`format` للـ Receivables column الآن:
+- `Math.abs(rec) < 0.005` → "—" (effectively zero)
+- `rec > 0` → اللون الأحمر (مدين)
+- `rec < 0` → اللون الأخضر + tooltip "رصيد دائن (دفع زائد)"
+
+---
+
 ## [3.23.2] - 2026-05-21
 
 ### 🔧 Mirror Fix على جانب الموردين — `fn_recalc_bill_paid_status`
