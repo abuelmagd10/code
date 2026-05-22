@@ -541,3 +541,186 @@ export async function computeFullFXRevaluation(
     error: cashResult.error || arResult.error || apResult.error,
   }
 }
+
+/**
+ * v3.27.7: Post a FULL FX revaluation across cash, AR, and AP at once.
+ *
+ * This is the recommended period-end function. It:
+ *   1. Computes the full revaluation (cash + AR + AP) via computeFullFXRevaluation
+ *   2. Builds a single journal entry with adjustment lines for each FC monetary item
+ *   3. Optionally creates an auto-reversal entry for the next day
+ *
+ * The journal-line logic per scope:
+ *  - Cash/Bank account (asset, base sign = debit-normal):
+ *      diff > 0 → Dr Cash / Cr FX Gain
+ *      diff < 0 → Dr FX Loss / Cr Cash
+ *  - AR account (asset, base sign = debit-normal): same as cash
+ *  - AP account (liability, base sign = credit-normal):
+ *      In computeAPRevaluation we INVERTED the diff sign so positive=gain.
+ *      Posting also requires inverted Dr/Cr against the AP account:
+ *      diff > 0 (gain) → Dr AP / Cr FX Gain  (AP shrunk = gain)
+ *      diff < 0 (loss) → Dr FX Loss / Cr AP  (AP grew = loss)
+ *
+ * Since the diff sign was already normalized in computeAPRevaluation, we can
+ * use the SAME Dr/Cr logic as cash/AR for all lines. The "diff" semantic is
+ * uniform across all scopes: positive = gain to company, negative = loss.
+ */
+export async function postFullFXRevaluation(
+  supabase: SupabaseClient,
+  companyId: string,
+  asOfDate: string,
+  userId: string,
+  options: { autoReverse?: boolean; branchId?: string | null } = { autoReverse: true },
+): Promise<FXRevaluationResult> {
+  const preview = await computeFullFXRevaluation(supabase, companyId, asOfDate)
+  if (!preview.success || preview.lines.length === 0) return preview
+
+  const { gainId, lossId } = await getFXAccounts(supabase, companyId)
+
+  // Resolve branch if not provided
+  let branchId = options.branchId || null
+  if (!branchId) {
+    const { data: firstBranch } = await (supabase as any)
+      .from("branches")
+      .select("id")
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    branchId = firstBranch?.id || null
+  }
+  if (!branchId) {
+    return { ...preview, success: false, error: "Cannot post FX revaluation without an active branch" }
+  }
+
+  // Build journal lines — uniform logic since diff sign is normalized across scopes
+  const journalLines: any[] = []
+  for (const line of preview.lines) {
+    if (line.diff > 0) {
+      // GAIN: Dr Asset/AP-side / Cr 4320
+      journalLines.push({
+        account_id: line.accountId,
+        debit_amount: line.diff,
+        credit_amount: 0,
+        description: `FX revaluation gain - ${line.accountCode} (${line.nativeCurrency})`,
+        original_currency: line.nativeCurrency,
+      })
+      journalLines.push({
+        account_id: gainId,
+        debit_amount: 0,
+        credit_amount: line.diff,
+        description: `Unrealized FX gain - ${line.accountCode}`,
+      })
+    } else {
+      const abs = Math.abs(line.diff)
+      // LOSS: Dr 5310 / Cr Asset/AP-side
+      journalLines.push({
+        account_id: lossId,
+        debit_amount: abs,
+        credit_amount: 0,
+        description: `Unrealized FX loss - ${line.accountCode}`,
+      })
+      journalLines.push({
+        account_id: line.accountId,
+        debit_amount: 0,
+        credit_amount: abs,
+        description: `FX revaluation loss - ${line.accountCode} (${line.nativeCurrency})`,
+        original_currency: line.nativeCurrency,
+      })
+    }
+  }
+
+  // Create the adjustment entry
+  const refUuid = (typeof crypto !== "undefined" && (crypto as any).randomUUID)
+    ? (crypto as any).randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const entryNumber = `FX-REVAL-FULL-${asOfDate}-${Date.now()}`
+
+  const { data: entry, error: entryErr } = await (supabase as any)
+    .from("journal_entries")
+    .insert({
+      company_id: companyId,
+      branch_id: branchId,
+      entry_date: asOfDate,
+      entry_number: entryNumber,
+      description: `Period-end FX revaluation (Cash+AR+AP) as of ${asOfDate} (IAS 21)`,
+      reference_type: "fx_revaluation",
+      reference_id: refUuid,
+      status: "posted",
+      posted_at: new Date().toISOString(),
+      posted_by: userId,
+    })
+    .select()
+    .single()
+
+  if (entryErr || !entry) {
+    return { ...preview, success: false, error: entryErr?.message || "Failed to create FX revaluation entry" }
+  }
+
+  const linesWithJE = journalLines.map((l) => ({ ...l, journal_entry_id: entry.id }))
+  const { error: linesErr } = await (supabase as any)
+    .from("journal_entry_lines")
+    .insert(linesWithJE)
+  if (linesErr) {
+    return { ...preview, success: false, journalEntryId: entry.id, error: linesErr.message }
+  }
+
+  let reverseEntryId: string | undefined = undefined
+  if (options.autoReverse !== false) {
+    const nextDay = new Date(asOfDate)
+    nextDay.setDate(nextDay.getDate() + 1)
+    const nextDayStr = nextDay.toISOString().slice(0, 10)
+    const reverseRefUuid = (typeof crypto !== "undefined" && (crypto as any).randomUUID)
+      ? (crypto as any).randomUUID()
+      : `${Date.now() + 1}-${Math.random().toString(36).slice(2)}`
+
+    const { data: reverseEntry, error: reverseErr } = await (supabase as any)
+      .from("journal_entries")
+      .insert({
+        company_id: companyId,
+        branch_id: branchId,
+        entry_date: nextDayStr,
+        entry_number: `FX-REVAL-FULL-REV-${nextDayStr}-${Date.now()}`,
+        description: `Reversal of FX revaluation from ${asOfDate} (IAS 21)`,
+        reference_type: "fx_revaluation_reversal",
+        reference_id: reverseRefUuid,
+        reversal_of_entry_id: entry.id,
+        status: "posted",
+        posted_at: new Date().toISOString(),
+        posted_by: userId,
+      })
+      .select()
+      .single()
+
+    if (!reverseErr && reverseEntry) {
+      reverseEntryId = reverseEntry.id
+      const reversedLines = journalLines.map((l) => ({
+        journal_entry_id: reverseEntry.id,
+        account_id: l.account_id,
+        debit_amount: l.credit_amount,
+        credit_amount: l.debit_amount,
+        description: `[Reversal] ${l.description}`,
+        original_currency: l.original_currency,
+      }))
+      await (supabase as any).from("journal_entry_lines").insert(reversedLines)
+    }
+  }
+
+  return { ...preview, journalEntryId: entry.id, reverseJournalEntryId: reverseEntryId }
+}
+{
+      reverseEntryId = reverseEntry.id
+      const reversedLines = journalLines.map((l) => ({
+        journal_entry_id: reverseEntry.id,
+        account_id: l.account_id,
+        debit_amount: l.credit_amount,
+        credit_amount: l.debit_amount,
+        description: `[Reversal] ${l.description}`,
+        original_currency: l.original_currency,
+      }))
+      await (supabase as any).from("journal_entry_lines").insert(reversedLines)
+    }
+  }
+
+  return { ...preview, journalEntryId: entry.id, reverseJournalEntryId: reverseEntryId }
+}

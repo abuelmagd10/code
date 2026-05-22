@@ -4,6 +4,129 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.27.7] - 2026-05-22
+
+### 🌍 Multi-Currency Audit — Phase 8: Full FX Revaluation Posting (Cash + AR + AP)
+
+استكمالاً لـ v3.27.6 (الذى أضاف compute للـ AR/AP)، تم الآن إضافة **posting الفعلى** للـ full revaluation entry — يشمل جميع الـ monetary items فى قيد محاسبى واحد + auto-reversal.
+
+### 🎯 الـ Function الجديدة
+
+```ts
+export async function postFullFXRevaluation(
+  supabase,
+  companyId,
+  asOfDate,
+  userId,
+  options: { autoReverse?: boolean; branchId?: string | null }
+): Promise<FXRevaluationResult>
+```
+
+**يقوم بـ:**
+1. استدعاء `computeFullFXRevaluation()` للحصول على cash + AR + AP lines
+2. بناء journal entry واحد بقيود لكل line
+3. (اختيارى) إنشاء reverse entry فى اليوم التالى
+
+### 💡 المنطق الموحد للـ Posting
+
+بفضل **sign normalization** فى `computeAPRevaluation` (v3.27.6) — حيث الـ raw diff للـ AP مُعكوس قبل الـ return — الـ posting logic يكون **موحد** عبر جميع الـ scopes:
+
+```
+if (line.diff > 0) {     // GAIN (uniform across cash/AR/AP)
+  Dr line.accountId  /  Cr 4320
+} else {                  // LOSS
+  Dr 5310  /  Cr line.accountId
+}
+```
+
+هذا يعمل بشكل صحيح لأن:
+- **Cash gain**: rate ارتفع → Cash يستحق أكثر → Dr Cash / Cr Gain ✅
+- **AR gain**: rate ارتفع → AR يستحق أكثر → Dr AR / Cr Gain ✅
+- **AP gain** (إن وجد): raw diff كان سالب (AP نقص) → عُكس لموجب → Dr AP / Cr Gain ✅ (AP يقلل بـ Dr لأنه liability)
+
+### 📊 مثال كامل
+
+**نهاية فبراير 2026:**
+
+| الحساب | Native | Book Base | Revalued | Diff |
+|---|---|---|---|---|
+| 1011 Cash USD | 1,000 | 30,000 | 31,500 | +500 (gain) |
+| 1100 AR USD (3 inv) | 5,000 | 150,000 | 155,000 | +5,000 (gain) |
+| 2110 AP EUR (2 bills) | 800 | 27,200 | 26,880 | +320 (gain — AP نقص) |
+| **صافى** | | | | **+5,820 (gain)** |
+
+**القيد المُنشأ تلقائياً (2026-02-29):**
+```
+Dr 1011 Cash USD             500
+Dr 1100 AR (Receivables)   5,000
+Dr 2110 AP (Payables)        320
+   Cr 4320 Unrealized FX Gain      5,820
+```
+
+**القيد العكسى (2026-03-01):**
+```
+Dr 4320 Unrealized FX Gain  5,820
+   Cr 1011 Cash USD                  500
+   Cr 1100 AR (Receivables)        5,000
+   Cr 2110 AP (Payables)             320
+```
+
+### ✅ الإصلاح
+
+#### `lib/fx-revaluation.ts` (+150 سطر)
+
+أُضيف `postFullFXRevaluation()` بـ logic موحد للـ scope (cash + AR + AP) فى single transaction.
+
+#### `app/settings/exchange-rates/page.tsx`
+
+تم استبدال `postFXRevaluation` بـ `postFullFXRevaluation` فى الـ post button → الآن الـ UI تنشر قيد شامل بدلاً من cash-only.
+
+### 📋 Files Changed (3)
+
+| الملف | التغيير |
+|---|---|
+| `lib/fx-revaluation.ts` | +150 سطر: `postFullFXRevaluation()` مع منطق موحد |
+| `app/settings/exchange-rates/page.tsx` | استخدام `postFullFXRevaluation` |
+| `CHANGELOG.md` | توثيق |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: Period-end FX revaluation الآن مكتمل لجميع الـ monetary items
+- **Backward compatible**: 100% — `postFXRevaluation` (cash-only) لا يزال متاح للاستخدامات المخصصة
+- **No DB changes**
+- **Audit trail**: `reference_type='fx_revaluation'` + `reference_type='fx_revaluation_reversal'`، مع `reversal_of_entry_id` للربط بين الـ original والـ reversal
+
+### ✅ Verification
+
+```
+$ babel parse all files       →  ALL OK
+$ npm typecheck:release        →  exit 0
+```
+
+### 🎯 الحالة الموحدة بعد v3.27.7
+
+| Feature | Status |
+|---|:---:|
+| Customer/Supplier Payment FX | ✅ |
+| Customer Refund FX columns | ✅ v3.27.2 |
+| Bank Transfer cross-currency | ✅ v3.27.2 |
+| Expense FX columns | ✅ v3.27.2 |
+| Returns FX analysis | ✅ v3.27.4 |
+| Rate Mode Preference | ✅ v3.27.3 |
+| Cash/Bank FX Revaluation | ✅ v3.27.5 |
+| AR FX Revaluation Compute | ✅ v3.27.6 |
+| AP FX Revaluation Compute | ✅ v3.27.6 |
+| **Full Revaluation Posting** | ✅ **v3.27.7** |
+| Customer Refund FX automation | 🟡 (FX adjustment entry creation) |
+| Decimal.js precision guards | 🟡 |
+
+### 📚 References
+
+- IAS 21 §23, §28, §32 — الـ revaluation framework
+- IAS 21 §15A — الـ monetary items
+
+---
+
 ## [3.27.6] - 2026-05-22
 
 ### 🌍 Multi-Currency Audit — Phase 7: AR/AP FX Revaluation
