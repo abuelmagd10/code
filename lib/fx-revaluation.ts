@@ -317,3 +317,227 @@ export async function postFXRevaluation(
 
   return { ...preview, journalEntryId: entry.id, reverseJournalEntryId: reverseEntryId }
 }
+
+/**
+ * v3.27.6: Compute AR revaluation — open foreign-currency invoices.
+ *
+ * For each open FC invoice (status in 'sent','partially_paid','overdue'),
+ * the AR exposure in BASE currency was booked at the invoice's original rate.
+ * At period-end, the outstanding amount should be revalued at the current rate.
+ */
+export async function computeARRevaluation(
+  supabase: SupabaseClient,
+  companyId: string,
+  asOfDate: string,
+): Promise<FXRevaluationResult> {
+  try {
+    const baseCurrency = await getBaseCurrency(supabase, companyId)
+
+    const { data: accounts } = await supabase
+      .from("chart_of_accounts")
+      .select("id, account_code, account_name, sub_type")
+      .eq("company_id", companyId)
+      .eq("is_active", true)
+    const arRecord = (accounts as any[] | null)?.find((x: any) => x.sub_type === "accounts_receivable")
+      || (accounts as any[] | null)?.find((x: any) => /receivable|عملاء|مدين/i.test(String(x.account_name || "")))
+    if (!arRecord) {
+      return { success: true, asOfDate, baseCurrency, lines: [], totalGain: 0, totalLoss: 0 }
+    }
+
+    const { data: invoices } = await supabase
+      .from("invoices")
+      .select("id, currency_code, exchange_rate, total_amount, paid_amount, returned_amount, status")
+      .eq("company_id", companyId)
+      .lte("invoice_date", asOfDate)
+      .in("status", ["sent", "partially_paid", "overdue", "pending"])
+
+    if (!invoices || invoices.length === 0) {
+      return { success: true, asOfDate, baseCurrency, lines: [], totalGain: 0, totalLoss: 0 }
+    }
+
+    const byCurrency = new Map<string, { totalOutstandingNative: number; totalBookBase: number; invoiceCount: number }>()
+    for (const inv of invoices as any[]) {
+      const cur = String(inv.currency_code || baseCurrency).toUpperCase()
+      if (cur === baseCurrency.toUpperCase()) continue
+      const rate = Number(inv.exchange_rate || 0)
+      if (rate <= 0) continue
+      const total = Number(inv.total_amount || 0)
+      const paid = Number(inv.paid_amount || 0)
+      const returned = Number(inv.returned_amount || 0)
+      const outstanding = Math.max(0, total - paid - returned)
+      if (outstanding < 0.01) continue
+      const outstandingNative = outstanding / rate
+      const bookBase = outstanding
+      const existing = byCurrency.get(cur) || { totalOutstandingNative: 0, totalBookBase: 0, invoiceCount: 0 }
+      existing.totalOutstandingNative += outstandingNative
+      existing.totalBookBase += bookBase
+      existing.invoiceCount += 1
+      byCurrency.set(cur, existing)
+    }
+
+    if (byCurrency.size === 0) {
+      return { success: true, asOfDate, baseCurrency, lines: [], totalGain: 0, totalLoss: 0 }
+    }
+
+    const lines: FXRevaluationLine[] = []
+    let totalGain = 0
+    let totalLoss = 0
+    const byCurEntries = Array.from(byCurrency.entries())
+    for (const [cur, agg] of byCurEntries) {
+      let currentRate = 0
+      try {
+        const r = await getExchangeRate(supabase, cur, baseCurrency, new Date(asOfDate), companyId)
+        currentRate = Number(r?.rate || 0)
+      } catch { continue }
+      if (currentRate <= 0) continue
+
+      const revaluedBase = Number((agg.totalOutstandingNative * currentRate).toFixed(2))
+      const diff = Number((revaluedBase - agg.totalBookBase).toFixed(2))
+      if (Math.abs(diff) < 0.01) continue
+
+      lines.push({
+        accountId: arRecord.id,
+        accountCode: String(arRecord.account_code || ""),
+        accountName: arRecord.account_name + " (" + cur + " - " + agg.invoiceCount + " inv)",
+        nativeBalance: Number(agg.totalOutstandingNative.toFixed(8)),
+        nativeCurrency: cur,
+        bookValueBase: Number(agg.totalBookBase.toFixed(2)),
+        revaluedValueBase: revaluedBase,
+        diff,
+      })
+
+      if (diff > 0) totalGain += diff
+      else totalLoss += Math.abs(diff)
+    }
+
+    return { success: true, asOfDate, baseCurrency, lines, totalGain, totalLoss }
+  } catch (e: any) {
+    return { success: false, asOfDate, baseCurrency: "EGP", lines: [], totalGain: 0, totalLoss: 0, error: e?.message || String(e) }
+  }
+}
+
+/**
+ * v3.27.6: Compute AP revaluation — open foreign-currency bills.
+ * Note: for AP, a positive base diff means we OWE MORE (a loss for us).
+ * We invert the sign so downstream "positive diff = gain" logic works uniformly.
+ */
+export async function computeAPRevaluation(
+  supabase: SupabaseClient,
+  companyId: string,
+  asOfDate: string,
+): Promise<FXRevaluationResult> {
+  try {
+    const baseCurrency = await getBaseCurrency(supabase, companyId)
+
+    const { data: accounts } = await supabase
+      .from("chart_of_accounts")
+      .select("id, account_code, account_name, sub_type")
+      .eq("company_id", companyId)
+      .eq("is_active", true)
+    const apRecord = (accounts as any[] | null)?.find((x: any) => x.sub_type === "accounts_payable")
+      || (accounts as any[] | null)?.find((x: any) => /payable|موردين|دائن/i.test(String(x.account_name || "")))
+    if (!apRecord) {
+      return { success: true, asOfDate, baseCurrency, lines: [], totalGain: 0, totalLoss: 0 }
+    }
+
+    const { data: bills } = await supabase
+      .from("bills")
+      .select("id, currency_code, exchange_rate, total_amount, paid_amount, returned_amount, status")
+      .eq("company_id", companyId)
+      .lte("bill_date", asOfDate)
+      .in("status", ["received", "partially_paid", "overdue", "pending"])
+
+    if (!bills || bills.length === 0) {
+      return { success: true, asOfDate, baseCurrency, lines: [], totalGain: 0, totalLoss: 0 }
+    }
+
+    const byCurrency = new Map<string, { totalOutstandingNative: number; totalBookBase: number; billCount: number }>()
+    for (const bill of bills as any[]) {
+      const cur = String(bill.currency_code || baseCurrency).toUpperCase()
+      if (cur === baseCurrency.toUpperCase()) continue
+      const rate = Number(bill.exchange_rate || 0)
+      if (rate <= 0) continue
+      const total = Number(bill.total_amount || 0)
+      const paid = Number(bill.paid_amount || 0)
+      const returned = Number(bill.returned_amount || 0)
+      const outstanding = Math.max(0, total - paid - returned)
+      if (outstanding < 0.01) continue
+      const outstandingNative = outstanding / rate
+      const bookBase = outstanding
+      const existing = byCurrency.get(cur) || { totalOutstandingNative: 0, totalBookBase: 0, billCount: 0 }
+      existing.totalOutstandingNative += outstandingNative
+      existing.totalBookBase += bookBase
+      existing.billCount += 1
+      byCurrency.set(cur, existing)
+    }
+
+    if (byCurrency.size === 0) {
+      return { success: true, asOfDate, baseCurrency, lines: [], totalGain: 0, totalLoss: 0 }
+    }
+
+    const lines: FXRevaluationLine[] = []
+    let totalGain = 0
+    let totalLoss = 0
+    const byCurEntries = Array.from(byCurrency.entries())
+    for (const [cur, agg] of byCurEntries) {
+      let currentRate = 0
+      try {
+        const r = await getExchangeRate(supabase, cur, baseCurrency, new Date(asOfDate), companyId)
+        currentRate = Number(r?.rate || 0)
+      } catch { continue }
+      if (currentRate <= 0) continue
+
+      const revaluedBase = Number((agg.totalOutstandingNative * currentRate).toFixed(2))
+      const rawDiff = Number((revaluedBase - agg.totalBookBase).toFixed(2))
+      // Invert sign for AP: revalued > book means we OWE more = LOSS
+      const diff = -rawDiff
+      if (Math.abs(diff) < 0.01) continue
+
+      lines.push({
+        accountId: apRecord.id,
+        accountCode: String(apRecord.account_code || ""),
+        accountName: apRecord.account_name + " (" + cur + " - " + agg.billCount + " bill)",
+        nativeBalance: Number(agg.totalOutstandingNative.toFixed(8)),
+        nativeCurrency: cur,
+        bookValueBase: Number(agg.totalBookBase.toFixed(2)),
+        revaluedValueBase: revaluedBase,
+        diff,
+      })
+
+      if (diff > 0) totalGain += diff
+      else totalLoss += Math.abs(diff)
+    }
+
+    return { success: true, asOfDate, baseCurrency, lines, totalGain, totalLoss }
+  } catch (e: any) {
+    return { success: false, asOfDate, baseCurrency: "EGP", lines: [], totalGain: 0, totalLoss: 0, error: e?.message || String(e) }
+  }
+}
+
+/**
+ * v3.27.6: Compute full period-end FX revaluation across all monetary items.
+ */
+export async function computeFullFXRevaluation(
+  supabase: SupabaseClient,
+  companyId: string,
+  asOfDate: string,
+): Promise<FXRevaluationResult> {
+  const cashResult = await computeFXRevaluation(supabase, companyId, asOfDate)
+  const arResult = await computeARRevaluation(supabase, companyId, asOfDate)
+  const apResult = await computeAPRevaluation(supabase, companyId, asOfDate)
+
+  const lines = [...cashResult.lines, ...arResult.lines, ...apResult.lines]
+  const totalGain = cashResult.totalGain + arResult.totalGain + apResult.totalGain
+  const totalLoss = cashResult.totalLoss + arResult.totalLoss + apResult.totalLoss
+  const baseCurrency = cashResult.baseCurrency || arResult.baseCurrency || apResult.baseCurrency
+
+  return {
+    success: cashResult.success && arResult.success && apResult.success,
+    asOfDate,
+    baseCurrency,
+    lines,
+    totalGain,
+    totalLoss,
+    error: cashResult.error || arResult.error || apResult.error,
+  }
+}
