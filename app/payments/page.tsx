@@ -150,6 +150,8 @@ export default function PaymentsPage() {
   const [online, setOnline] = useState<boolean>(true)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  // v3.26.0: account balances cache for available-balance display + overdraft warning
+  const [accountBalances, setAccountBalances] = useState<Record<string, number>>({})
   const [accounts, setAccounts] = useState<Account[]>([])
   const [customerPayments, setCustomerPayments] = useState<Payment[]>([])
   const [supplierPayments, setSupplierPayments] = useState<Payment[]>([])
@@ -568,6 +570,19 @@ export default function PaymentsPage() {
         }
 
         setAccounts(cashBankAccounts as any)
+
+        // v3.26.0: compute balances for cash/bank accounts for available-balance UI
+        try {
+          const today = new Date().toISOString().slice(0, 10)
+          const balances = await computeLeafAccountBalancesAsOf(supabase, activeCompanyId, today)
+          const accBalMap: Record<string, number> = {}
+          for (const b of balances) {
+            accBalMap[b.account_id] = b.balance
+          }
+          setAccountBalances(accBalMap)
+        } catch (err) {
+          console.warn("Failed to compute account balances:", err)
+        }
 
         // 🔐 ERP Access Control - جلب المدفوعات مع تطبيق الصلاحيات
         // Owner/Admin/General Manager: يرون جميع المدفوعات
@@ -2133,6 +2148,26 @@ export default function PaymentsPage() {
                       ℹ️ {appLang === 'en'
                         ? `Account currency: ${accCcy} — different from payment currency (${payCcy}). Conversion applied via Exchange Rates.`
                         : `عملة الحساب: ${accCcy} — مختلفة عن عملة الدفع (${payCcy}). سيتم التحويل تلقائياً من صفحة أسعار الصرف.`}
+                    </div>
+                  )
+                })()}
+                {/* v3.26.0: show available balance + overdraft warning for SUPPLIER (cash outflow) */}
+                {(() => {
+                  const selectedAcc = accounts.find((a) => a.id === newSuppPayment.account_id) as any
+                  if (!selectedAcc) return null
+                  const accBal = accountBalances[newSuppPayment.account_id] ?? 0
+                  const accCcy = String(selectedAcc?.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()
+                  const accSymbol = currencySymbols[accCcy] || accCcy
+                  const willOverdraft = Number(newSuppPayment.amount || 0) > 0 && (accBal - Number(newSuppPayment.amount || 0)) < -0.01
+                  return (
+                    <div className={`text-[11px] mt-1 px-2 py-1 rounded border ${willOverdraft ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'}`}>
+                      💰 {appLang === 'en' ? 'Available' : 'الرصيد المتاح'}:{' '}
+                      <strong>{accBal.toLocaleString('en-US', { minimumFractionDigits: 2 })} {accSymbol}</strong>
+                      {willOverdraft && (
+                        <span className="ms-2 font-bold">
+                          ⚠️ {appLang === 'en' ? 'INSUFFICIENT FUNDS' : 'الرصيد غير كافٍ'}
+                        </span>
+                      )}
                     </div>
                   )
                 })()}

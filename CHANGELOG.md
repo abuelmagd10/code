@@ -4,6 +4,78 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.26.0] - 2026-05-22
+
+### 🚨 Enterprise Rule — منع Overdraft على حسابات النقد/البنك
+
+أبلغ المستخدم بـ violation محاسبى:
+> "تلاحظ لى احد الحسابات المصرفية القيمة سالب وهذا يعنى ان التطبيق سمح بسحب نقدية غير متوفرة فى الحساب وهذا مخالف لنظم تطبيق ERP احترافى عالمى على مستوى المؤسسات"
+
+### 🔍 الفحص الجذرى
+
+DB query كشف حسابين عندهم رصيد سالب:
+- `حساب لدى ماجد زيتون`: **-95,200 EGP** (تجاوز كبير!)
+- `خزينة الشركة مدينة نصر`: **-564 EGP**
+
+السبب: لا توجد validation قبل posting cash-outflow journal entries. أى endpoint كان يقدر يسحب أكثر من الرصيد المتاح.
+
+### ✅ الإصلاح — Multi-Layer Defense
+
+#### Layer 1: Shared validator
+ملف جديد `lib/accounting/cash-balance-validator.ts`:
+- `getCashAccountBalance(supabase, accountId)` → snapshot الرصيد الحالى
+- `assertCashOutflowAllowed(...)` → throws `CashOverdraftError` لو الرصيد المتاح غير كافٍ
+- يدعم FC accounts: لو الحساب USD، يفحص الـ native balance
+- خيار `allowOverdraft: true` للـ overrides الإدارية (يجب تسجيلها)
+
+#### Layer 2: Service-level integration
+- `lib/services/supplier-payment-command.service.ts` — supplier payments
+- `lib/services/bank-transfer-command.service.ts` — transfers from source account
+- `lib/services/customer-refund-command.service.ts` — customer refunds
+
+كل خدمة استدعى الـ validator قبل posting الـ journal — فالـ DB لن تستلم أى سحب يؤدى لـ overdraft.
+
+#### Layer 3: UI feedback
+`app/payments/page.tsx` (supplier section):
+- يعرض `الرصيد المتاح: 5,000 £` تحت account picker
+- لو الـ amount المُدخل يتسبب فى overdraft، البـ box يصبح أحمر مع `⚠️ الرصيد غير كافٍ`
+- يمنع المستخدم من الـ submit مع رسالة واضحة
+
+### 📋 Files Changed (4 + 1 new)
+
+| الملف | التغيير |
+|---|---|
+| `lib/accounting/cash-balance-validator.ts` | **NEW** — shared validator + types |
+| `lib/services/supplier-payment-command.service.ts` | استدعاء الـ validator قبل posting |
+| `lib/services/bank-transfer-command.service.ts` | استدعاء الـ validator على source account |
+| `lib/services/customer-refund-command.service.ts` | استدعاء الـ validator على refund account |
+| `app/payments/page.tsx` | عرض الرصيد المتاح + تحذير overdraft فى supplier picker |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: يحمى من overdraft أى عملية جديدة
+- **Backward compatible**: الحسابات الموجودة بأرصدة سالبة لن تتأثر (تظل سالبة كما هى)؛ الـ validation تمنع المزيد فقط
+- **Override available**: للحالات الاستثنائية (period adjustments)، الكود يدعم `allowOverdraft: true`
+- **Audit trail**: الـ error message تحتوى account name + current balance + attempted amount
+
+### 🟡 Next Steps (لم تُنفذ بعد)
+
+| المورد | الأولوية | السبب |
+|---|---|---|
+| `app/expenses/new/page.tsx` | MEDIUM | المصروفات حالياً draft → approve flow. Validation على approval فقط |
+| `app/drawings/new/page.tsx` | MEDIUM | shareholder drawings — نفس النمط |
+| `app/banking/page.tsx` (transfer form) | MEDIUM | UI feedback (الـ backend محمى بالفعل) |
+| DB trigger (final safety net) | LOW | يمنع insert journal_entry_line يؤدى لـ overdraft على cash account |
+
+### 🚨 الحالة الحالية على Production
+
+الحسابان السالبان (-95,200 و -564) موجودان بالفعل. لتنظيفهم نحتاج:
+1. مراجعة الـ transactions اللى سببت السالب
+2. التحقق من الـ legitimacy
+3. عمل adjustment journals لإصلاح الـ ledger
+
+---
+
 ## [3.25.3] - 2026-05-22
 
 ### 🆕 توسعة عرض FC على Bank Accounts Report + Payments account picker

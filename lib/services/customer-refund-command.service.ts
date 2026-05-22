@@ -61,6 +61,18 @@ export class CustomerRefundCommandService {
     if (!Number.isFinite(command.amount) || command.amount <= 0) throw new Error("Refund amount must be greater than zero")
     if (!Number.isFinite(command.baseAmount) || command.baseAmount <= 0) throw new Error("Refund base amount must be greater than zero")
 
+    // v3.26.0: Enterprise rule — prevent cash overdraft on customer refunds
+    {
+      const { assertCashOutflowAllowed } = await import("@/lib/accounting/cash-balance-validator")
+      await assertCashOutflowAllowed(this.adminSupabase, {
+        accountId: command.refundAccountId,
+        amount: command.baseAmount,
+        nativeAmount: command.amount,
+        companyId: command.companyId,
+        description: `Customer refund ${command.customerId}`,
+      })
+    }
+
     const existingTrace = await this.findTraceByIdempotency(command.companyId, options.idempotencyKey)
     if (existingTrace) {
       if (existingTrace.request_hash && existingTrace.request_hash !== options.requestHash) {

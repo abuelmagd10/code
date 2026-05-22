@@ -301,6 +301,19 @@ export class SupplierPaymentCommandService {
 
     const branchId = await this.resolveBranchId(actor.companyId, command.branchId || null, command.allocations)
 
+    // v3.26.0: Enterprise rule — prevent cash overdraft on supplier payments
+    // Block if the chosen cash/bank account would go negative after this payment.
+    if (command.accountId) {
+      const { assertCashOutflowAllowed } = await import("@/lib/accounting/cash-balance-validator")
+      await assertCashOutflowAllowed(this.adminSupabase, {
+        accountId: command.accountId,
+        amount: Number(command.baseCurrencyAmount ?? command.amount ?? 0),
+        nativeAmount: command.originalAmount ?? command.amount,
+        companyId: actor.companyId,
+        description: `Supplier payment ${command.supplierId}`,
+      })
+    }
+
     const { data: paymentIdData, error: createError } = await this.authSupabase.rpc("process_supplier_payment_allocation", {
       p_company_id: actor.companyId,
       p_supplier_id: command.supplierId,

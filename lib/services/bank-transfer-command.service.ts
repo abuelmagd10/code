@@ -92,6 +92,16 @@ export class BankTransferCommandService {
     const finalBaseAmount = Number(command.baseAmount || command.amount)
     if (!Number.isFinite(finalBaseAmount) || finalBaseAmount <= 0) throw new Error("Transfer base amount must be greater than zero")
 
+    // v3.26.0: Enterprise rule — prevent overdraft on source account
+    const { assertCashOutflowAllowed } = await import("@/lib/accounting/cash-balance-validator")
+    await assertCashOutflowAllowed(this.adminSupabase, {
+      accountId: command.fromAccountId,
+      amount: finalBaseAmount,
+      nativeAmount: command.amount,
+      companyId: command.companyId,
+      description: `Bank transfer to ${command.toAccountId}`,
+    })
+
     let traceId: string | null = null
     let journalEntryId: string | null = null
     try {
