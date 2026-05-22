@@ -13,8 +13,8 @@ import { getActiveCompanyId } from "@/lib/company"
 import { useToast } from "@/hooks/use-toast"
 import { RefreshCw, Plus, Trash2, ArrowLeft, Globe, Edit2, History, AlertCircle, Loader2, Coins } from "lucide-react"
 import Link from "next/link"
-import { CURRENCIES, getBaseCurrency, fetchExchangeRateFromAPI, getCurrencySymbol } from "@/lib/exchange-rates"
-import { setManualExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { CURRENCIES, fetchExchangeRateFromAPI, getCurrencySymbol } from "@/lib/exchange-rates"
+import { setManualExchangeRate, getActiveCurrencies, getBaseCurrency, type Currency } from "@/lib/currency-service"
 import { Textarea } from "@/components/ui/textarea"
 
 interface ExchangeRateRow {
@@ -66,7 +66,9 @@ export default function ExchangeRatesPage() {
         const cid = await getActiveCompanyId(supabase)
         if (cid) {
           setCompanyId(cid)
-          const base = getBaseCurrency()
+          // v3.27.0: use DB-backed getBaseCurrency (reads companies.base_currency)
+          // to avoid localStorage staleness when switching companies.
+          const base = await getBaseCurrency(supabase, cid)
           setBaseCurrency(base)
           setNewToCurrency(base)
           setOverrideToCurrency(base)

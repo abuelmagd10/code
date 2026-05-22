@@ -45,10 +45,27 @@ export interface ExchangeRate {
   source: 'manual' | 'api' | 'exchangerate-api'
 }
 
-// Get the base currency from localStorage or default
+/**
+ * @deprecated v3.27.0 — localStorage-based getBaseCurrency is unsafe for multi-company.
+ *   Use `getBaseCurrency(supabase, companyId)` from `lib/currency-service.ts` instead.
+ *
+ * This sync version is kept as fallback for client-only code paths that don't yet have
+ * supabase context. It reads from localStorage which may be stale or out of sync with
+ * the actual company.base_currency in the DB. NEVER use this for financial calculations
+ * or anything that needs to know the "true" base currency.
+ *
+ * Returns the cached app_currency from localStorage, or 'EGP' as last resort.
+ */
 export function getBaseCurrency(): string {
   if (typeof window === 'undefined') return 'EGP'
   try {
+    // Log a warning in dev to help find remaining call sites
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(
+        '[exchange-rates] getBaseCurrency() from lib/exchange-rates is deprecated. ' +
+        'Use the async version from lib/currency-service.ts with supabase+companyId.'
+      )
+    }
     return localStorage.getItem('app_currency') || 'EGP'
   } catch {
     return 'EGP'
