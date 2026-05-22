@@ -4,6 +4,67 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.26.4] - 2026-05-22
+
+### 🐛 إصلاح syntax bug pre-existing فى app/suppliers/page.tsx
+
+أبلغ المستخدم بفشل CI و Vercel deployment على v3.26.3:
+> "Some checks were not successful — CI Run Tests Failing, Vercel Deployment failed"
+
+### 🔍 الـ Bug
+
+GitHub Actions أظهرت:
+- `app/suppliers/page.tsx#L526` — 'try' expected
+- `app/suppliers/page.tsx#L532` — 'catch' or 'finally' expected
+- `app/suppliers/page.tsx#L1292` — '}' expected
+
+الفحص أظهر أن الـ `if (billsError)` block ينقصه closing brace `}`:
+
+```ts
+// قبل (broken since v3.26.2 or earlier):
+if (billsError) {
+  console.error(`❌ خطأ في جلب فواتير المورد ${supplier.name}:`, billsError)
+// no closing brace! ← الـ TypeScript يفقد الـ stack
+let billOverpayments = 0
+```
+
+الـ Next.js dev server كان يقبل هذا (parser أكثر تسامحاً)، لكن `typecheck:release` فى CI كشفه. ولأن CI يحظر النشر، الـ Vercel deployment فشل.
+
+### ✅ الإصلاح
+
+```ts
+// بعد v3.26.4:
+if (billsError) {
+  console.error(`❌ خطأ في جلب فواتير المورد ${supplier.name}:`, billsError)
+  continue   // skip this supplier on error
+}
+```
+
+إضافة `continue` + closing brace `}` للـ if block. هذا أيضاً يحسن السلوك المنطقى — لو فشل تحميل فواتير مورد ما، نتخطاه بدلاً من معالجة `bills=null` ثم crash.
+
+### 📋 Files Changed (2)
+
+| الملف | التغيير |
+|---|---|
+| `app/suppliers/page.tsx` | إضافة `continue` + `}` فى `if (billsError)` block |
+| `CHANGELOG.md` | توثيق الإصلاح |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: فك حصار CI/Vercel deployment لكل التغييرات اللاحقة
+- **Logic improvement**: التعامل الصحيح مع bills query failure (skip vs continue with null)
+- **Backward compatible**: 100%
+- **No DB changes**
+
+### ✅ Verification
+
+```bash
+$ npm run typecheck:release  # exit 0 — لا أخطاء
+$ node -e "babel.parse(...)"  # ALL 15 FILES OK
+```
+
+---
+
 ## [3.26.3] - 2026-05-22
 
 ### 🐛 إصلاح bug فى v3.26.2 — double-counting للـ overpayments
