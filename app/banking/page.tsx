@@ -38,6 +38,9 @@ type Account = {
   cost_center_id?: string | null;
   branch_name?: string;
   cost_center_name?: string;
+  // v3.25.1: account's native currency (set via chart-of-accounts picker).
+  // null/empty means account is in company base currency.
+  original_currency?: string | null;
 };
 type Branch = { id: string; name: string; code: string };
 type CostCenter = {
@@ -51,6 +54,8 @@ export default function BankingPage() {
   const supabase = useSupabase();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [balances, setBalances] = useState<Record<string, number>>({});
+  // v3.25.1: native-currency balance for FC accounts (USD/EUR/etc bank accounts)
+  const [nativeBalances, setNativeBalances] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [transfer, setTransfer] = useState({
     from_id: "",
@@ -317,8 +322,10 @@ export default function BankingPage() {
       if (loadedAccounts.length === 0) {
         const { data: accs } = await supabase
           .from("chart_of_accounts")
+          // v3.25.1: include original_currency so FC bank/cash accounts can display
+          // their balance in their native currency.
           .select(
-            "id, account_code, account_name, account_type, sub_type, parent_id, opening_balance, branch_id, cost_center_id, branches(name), cost_centers(cost_center_name)",
+            "id, account_code, account_name, account_type, sub_type, parent_id, opening_balance, branch_id, cost_center_id, original_currency, branches(name), cost_centers(cost_center_name)",
           )
           .eq("company_id", cid)
           .eq("is_active", true);
@@ -345,10 +352,11 @@ export default function BankingPage() {
 
       // Calculate balances from journal entry lines (real-time) - with multi-currency support
       // ✅ Filter out deleted journal entries
+      // v3.25.1: include original_debit/credit so FC accounts can be shown in native ccy
       const { data: journalLines } = await supabase
         .from("journal_entry_lines")
         .select(
-          "account_id, debit_amount, credit_amount, display_debit, display_credit, display_currency, journal_entries!inner(deleted_at)",
+          "account_id, debit_amount, credit_amount, display_debit, display_credit, display_currency, original_debit, original_credit, original_currency, journal_entries!inner(deleted_at)",
         )
         .is("journal_entries.deleted_at", null);
 
@@ -356,13 +364,19 @@ export default function BankingPage() {
 
       // ✅ Initialize balance map with opening balances
       const balanceMap: Record<string, number> = {};
+      // v3.25.1: also track native-currency balances per FC account
+      const nativeBalanceMap: Record<string, number> = {};
       for (const acc of loadedAccounts) {
         balanceMap[acc.id] = Number((acc as any).opening_balance || 0);
+        // FC accounts: opening_balance is assumed to be in account currency
+        if ((acc as any).original_currency) {
+          nativeBalanceMap[acc.id] = Number((acc as any).opening_balance || 0);
+        }
       }
 
       if (journalLines) {
-        const lineTotals: Record<string, { debit: number; credit: number }> =
-          {};
+        const lineTotals: Record<string, { debit: number; credit: number }> = {};
+        const nativeLineTotals: Record<string, { debit: number; credit: number }> = {};
         for (const line of journalLines) {
           if (!lineTotals[line.account_id]) {
             lineTotals[line.account_id] = { debit: 0, credit: 0 };
@@ -380,15 +394,32 @@ export default function BankingPage() {
               : Number(line.credit_amount || 0);
           lineTotals[line.account_id].debit += debit;
           lineTotals[line.account_id].credit += credit;
+
+          // v3.25.1: accumulate native debits/credits for FC tracking
+          const od = Number((line as any).original_debit || 0)
+          const oc = Number((line as any).original_credit || 0)
+          if (od !== 0 || oc !== 0) {
+            if (!nativeLineTotals[line.account_id]) {
+              nativeLineTotals[line.account_id] = { debit: 0, credit: 0 }
+            }
+            nativeLineTotals[line.account_id].debit += od
+            nativeLineTotals[line.account_id].credit += oc
+          }
         }
         for (const [accId, totals] of Object.entries(lineTotals)) {
           // ✅ For asset accounts (cash/bank), balance = opening_balance + (debit - credit)
           const movement = totals.debit - totals.credit;
           balanceMap[accId] = (balanceMap[accId] || 0) + movement;
         }
+        // v3.25.1: same for native balances (only FC accounts touched here)
+        for (const [accId, totals] of Object.entries(nativeLineTotals)) {
+          if (nativeBalanceMap[accId] === undefined) continue // account is not FC
+          nativeBalanceMap[accId] += totals.debit - totals.credit
+        }
       }
 
       setBalances(balanceMap);
+      setNativeBalances(nativeBalanceMap);
     } finally {
       setLoading(false);
     }
@@ -1025,6 +1056,14 @@ export default function BankingPage() {
                   appLang === "en" ? "en-EG" : "ar-EG",
                   { minimumFractionDigits: 2, maximumFractionDigits: 2 },
                 ).format(Math.abs(balance));
+                // v3.25.1: native-currency balance for FC accounts
+                const nativeCcy = String((a as any).original_currency || "").toUpperCase();
+                const isFCAccount = !!nativeCcy && nativeCcy !== appCurrency.toUpperCase();
+                const nativeBalance = nativeBalances[a.id];
+                const formattedNativeBalance = isFCAccount && nativeBalance != null
+                  ? new Intl.NumberFormat(appLang === "en" ? "en-EG" : "ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(nativeBalance))
+                  : null;
+                const nativeSymbol = currencySymbols[nativeCcy] || nativeCcy;
                 return (
                   <a
                     key={a.id}
@@ -1057,11 +1096,30 @@ export default function BankingPage() {
                           </div>
                         )}
                       </div>
-                      <div
-                        className={`text-lg font-bold ${balance >= 0 ? "text-green-600" : "text-red-600"}`}
-                      >
-                        {balance < 0 ? "-" : ""}
-                        {formattedBalance} {currencySymbol}
+                      <div className="flex flex-col items-end">
+                        {/* v3.25.1: native currency balance shown PRIMARY for FC accounts */}
+                        {isFCAccount && formattedNativeBalance != null ? (
+                          <>
+                            <div
+                              className={`text-lg font-bold ${(nativeBalance ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}
+                              title={appLang === "en" ? "Balance in account's native currency" : "الرصيد بعملة الحساب الأصلية"}
+                            >
+                              {(nativeBalance ?? 0) < 0 ? "-" : ""}
+                              {formattedNativeBalance} {nativeSymbol}
+                            </div>
+                            <div
+                              className="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
+                              title={appLang === "en" ? `Equivalent in ${appCurrency}` : `المعادل بـ ${appCurrency}`}
+                            >
+                              ≈ {balance < 0 ? "-" : ""}{formattedBalance} {currencySymbol}
+                            </div>
+                          </>
+                        ) : (
+                          <div className={`text-lg font-bold ${balance >= 0 ? "text-green-600" : "text-red-600"}`}>
+                            {balance < 0 ? "-" : ""}
+                            {formattedBalance} {currencySymbol}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div

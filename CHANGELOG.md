@@ -4,6 +4,72 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.25.1] - 2026-05-22
+
+### 🆕 عرض رصيد الحسابات البنكية FC بعملتها الأصلية
+
+طلب المستخدم:
+> "بالنسبة عند انشاء حساب بنكى بعملة غير عملة التطبيق شاشات العرض الخاص بهذا الحساب يجب ان تكون موضحة بعملة الحساب"
+
+### 🔧 التغييرات
+
+#### `lib/ledger.ts`
+
+**`getJournalLines`**: تجلب الآن `original_debit, original_credit, original_currency` بالإضافة للأعمدة الأساسية.
+
+**`computeLeafAccountBalancesAsOf`**: تُعيد الآن لكل حساب:
+- `balance` (base currency — كما كانت)
+- `native_balance` (بعملة الحساب الأصلية، فقط لو `original_currency` مضبوط)
+- `native_currency` (كود العملة الأصلية)
+- `sub_type` (لتمييز bank/cash)
+
+```ts
+// لحساب FC، يجمع original_debit - original_credit
+const nMov = isDebitNature ? (nag.debit - nag.credit) : (nag.credit - nag.debit)
+nativeBalance = opening_balance + nMov
+```
+
+#### `app/banking/page.tsx`
+
+- يجلب `original_currency` فى SELECT للحسابات
+- يحسب `nativeBalances` map (موازى للـ `balances` الأساسى) من `original_debit/credit` لكل دفعة على حساب FC
+- العرض: لو الحساب FC، يعرض **بالعملة الأصلية** كرقم أساسى + المعادل بالعملة الأساسية كـ "≈" تحتها
+
+```
+🏦 USD Bank Account              $ 1,000.00  ← الرقم الأساسى الواضح
+                                  ≈ £ 53,110.00  ← المعادل بـ EGP (مرجعى)
+```
+
+### 📋 Files Changed (2)
+
+| الملف | التغيير |
+|---|---|
+| `lib/ledger.ts` | `getJournalLines` + `computeLeafAccountBalancesAsOf` يدعمان FC native balance |
+| `app/banking/page.tsx` | عرض الرصيد بعملة الحساب الأصلية لحسابات FC |
+
+### 🟡 Next Steps (مكتشفة فى الـ audit، لم تُنفذ بعد فى v3.25.1)
+
+الصفحات التالية تعرض رصيد بنكى وتحتاج نفس التحديث:
+
+| الصفحة | الأولوية |
+|---|---|
+| `app/banking/[id]/page.tsx` (تفاصيل الحساب + transactions) | HIGH |
+| `app/dashboard/_widgets/BankCashWidget.tsx` | HIGH |
+| `app/reports/bank-accounts-by-branch/page.tsx` | MEDIUM |
+| `app/reports/bank-reconciliation/page.tsx` | MEDIUM |
+| `app/payments/page.tsx` (account picker hint) | MEDIUM |
+| `app/chart-of-accounts/ClientPage.tsx` (tree balance column) | LOW |
+
+كل الصفحات الباقية يمكن تحديثها بنفس النمط: استخدام `computeLeafAccountBalancesAsOf` (التى ترجع الآن `native_balance/native_currency`) واستبدال عرض الرصيد البسيط بالنمط الـ "primary native + reference base".
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: حسابات base currency تظل كما هى تماماً
+- **FC accounts**: عرض جديد محسّن (الرقم الأساسى بالعملة الأصلية + ref بالـ base)
+- **No DB changes**
+
+---
+
 ## [3.25.0] - 2026-05-22
 
 ### 🌍 توحيد منطق العملات - Enterprise FX Pattern مكتمل
