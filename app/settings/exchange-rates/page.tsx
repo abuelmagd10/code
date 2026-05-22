@@ -15,7 +15,7 @@ import { RefreshCw, Plus, Trash2, ArrowLeft, Globe, Edit2, History, AlertCircle,
 import Link from "next/link"
 import { CURRENCIES, fetchExchangeRateFromAPI, getCurrencySymbol } from "@/lib/exchange-rates"
 import { setManualExchangeRate, getActiveCurrencies, getBaseCurrency, getRateMode, setRateMode, type Currency } from "@/lib/currency-service"
-import { computeFXRevaluation, postFXRevaluation, type FXRevaluationResult } from "@/lib/fx-revaluation"
+import { computeFXRevaluation, computeFullFXRevaluation, postFXRevaluation, type FXRevaluationResult } from "@/lib/fx-revaluation"
 import { Textarea } from "@/components/ui/textarea"
 
 interface ExchangeRateRow {
@@ -415,7 +415,7 @@ export default function ExchangeRatesPage() {
                     setRevalLoading(true)
                     setShowRevalModal(true)
                     try {
-                      const r = await computeFXRevaluation(supabase, companyId, revalAsOfDate)
+                      const r = await computeFullFXRevaluation(supabase, companyId, revalAsOfDate)
                       setRevalPreview(r)
                     } finally { setRevalLoading(false) }
                   }}

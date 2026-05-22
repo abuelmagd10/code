@@ -4,6 +4,131 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.27.6] - 2026-05-22
+
+### 🌍 Multi-Currency Audit — Phase 7: AR/AP FX Revaluation
+
+استكمالاً لـ v3.27.5 (cash/bank revaluation)، تم توسعة الـ revaluation لتشمل **الذمم المدينة (AR) والذمم الدائنة (AP)** بعملات أجنبية — مما يكمل متطلبات IAS 21 لكل الـ monetary items.
+
+### 🎯 الـ Scope الجديد
+
+#### AR Revaluation (الذمم المدينة)
+
+لكل فاتورة مفتوحة بعملة أجنبية:
+- **Outstanding native** = (total − paid − returned) / invoice_rate
+- **Book base** = outstanding بالـ base currency بسعر الفاتورة الأصلى
+- **Revalued base** = outstanding_native × current_rate
+- **Diff > 0** → AR زاد بالـ base = **Unrealized FX Gain** (سندفع أكثر لو دفع العميل الآن)
+
+#### AP Revaluation (الذمم الدائنة)
+
+نفس الـ pattern للموردين، لكن مع **عكس الإشارة**:
+- **Diff > 0 (raw)** → AP زاد بالـ base = نحن **ندين بأكثر** = **FX Loss** (للشركة)
+- لذلك نُعكس الإشارة فى الـ return لكى يبقى منطق "positive = gain" موحد على مستوى الـ system
+
+### 📊 مثال
+
+**Customer Invoice INV-001:**
+```
+Total: USD 1,000 @ rate 30  →  AR = 30,000 EGP (book)
+Paid: 0, returned: 0  →  Outstanding native = 1,000 USD
+نهاية الفترة: rate = 31  →  Revalued = 31,000 EGP
+Unrealized Gain = +1,000 EGP
+```
+
+**Supplier Bill BILL-001:**
+```
+Total: USD 500 @ rate 30  →  AP = 15,000 EGP (book)
+Paid: 0  →  Outstanding native = 500 USD
+نهاية الفترة: rate = 31  →  Revalued = 15,500 EGP
+نحن ندين بـ 500 EGP أكثر  →  Unrealized Loss = −500 EGP
+```
+
+**صافى الـ Period:** +1,000 − 500 = **+500 EGP** unrealized gain
+
+### ✅ الإصلاح
+
+#### `lib/fx-revaluation.ts` (+225 سطر)
+
+**دوال جديدة:**
+```ts
+// AR revaluation للفواتير المفتوحة بعملة أجنبية
+export async function computeARRevaluation(supabase, companyId, asOfDate)
+
+// AP revaluation لفواتير الشراء المفتوحة بعملة أجنبية
+export async function computeAPRevaluation(supabase, companyId, asOfDate)
+
+// Combined: cash + AR + AP فى نتيجة واحدة
+export async function computeFullFXRevaluation(supabase, companyId, asOfDate)
+```
+
+**خصائص الـ implementation:**
+- يجمع الفواتير حسب الـ currency (بدلاً من سطر لكل فاتورة) → modal أنظف
+- يستخدم `getExchangeRate()` الذى يحترم rate_mode من v3.27.3
+- يتجاهل الفواتير بسعر صرف صفر أو outstanding < 0.01
+- يكتشف AR/AP accounts عبر `sub_type` ثم fallback عبر name match (Arabic + English)
+- يُجمع الـ display name مع `(currency - N invoice/bill)` للوضوح
+
+#### `app/settings/exchange-rates/page.tsx`
+
+**التغيير**: استبدال `computeFXRevaluation` بـ `computeFullFXRevaluation` فى الـ preview button → الآن الـ revaluation modal يعرض cash + AR + AP معاً.
+
+### 🎨 الـ UI بعد التحديث
+
+```
+┌──────────────────────────────────────────────────────┐
+│ 🔄 معاينة إعادة التقييم 2026-02-29              ✕  │
+├──────────────────────────────────────────────────────┤
+│ الحساب                  │ Native │ دفترى  │ بعد   │ │
+│ 1011 خزينة USD          │ 1,000  │ 30,000 │ 31,500│ +500│
+│ 1012 خزينة EUR          │   500  │ 17,000 │ 16,800│ -200│
+│ 1100 الذمم (USD - 3 inv)│ 5,000  │150,000 │155,000│+5,000│
+│ 2110 الموردين (EUR-2)   │   800  │ 27,200 │ 26,880│ -320│
+│                              صافى: +4,980 EGP       │
+└──────────────────────────────────────────────────────┘
+```
+
+### 📋 Files Changed (2)
+
+| الملف | التغيير |
+|---|---|
+| `lib/fx-revaluation.ts` | +225 سطر: `computeARRevaluation`, `computeAPRevaluation`, `computeFullFXRevaluation` |
+| `app/settings/exchange-rates/page.tsx` | استخدام `computeFullFXRevaluation` بدلاً من cash-only |
+| `CHANGELOG.md` | توثيق |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تغطية كاملة لجميع الـ monetary items بعملة أجنبية (IAS 21 compliant)
+- **Backward compatible**: 100% — الـ `computeFXRevaluation` الأصلى لا يزال متاح للـ cash-only revaluation
+- **No DB changes** — يستخدم schema موجود (invoices, bills, chart_of_accounts)
+- **Posting logic غير متأثر** — `postFXRevaluation` لا يزال يعمل (لكن حالياً يقتصر على نتائج cash). الـ AR/AP posting سيُضاف فى v3.27.7+
+
+### 🎯 الحالة الموحدة بعد v3.27.6
+
+| Feature / Surface | الحالة |
+|---|:---:|
+| Customer Invoice Payment FX | ✅ |
+| Supplier Bill Payment FX | ✅ v3.27.1 |
+| Customer Refund FX columns | ✅ v3.27.2 |
+| Bank Transfer cross-currency | ✅ v3.27.2 |
+| Expense FX columns | ✅ v3.27.2 |
+| Sales/Purchase Returns | ✅ v3.27.4 (analysis) |
+| Rate Mode Preference | ✅ v3.27.3 |
+| Cash/Bank FX Revaluation | ✅ v3.27.5 |
+| **AR FX Revaluation** | ✅ **v3.27.6** |
+| **AP FX Revaluation** | ✅ **v3.27.6** |
+| **Combined Full Revaluation** | ✅ **v3.27.6** |
+| AR/AP Revaluation Posting | 🟡 preview فقط — posting للـ v3.27.7+ |
+| Decimal.js precision | 🟡 للـ v3.27.8+ |
+
+### 📚 References
+
+- IAS 21 §23: Monetary items denominated in foreign currency
+- IAS 21 §28: Period-end translation
+- IAS 21 §32: Recognition of exchange differences in P&L
+
+---
+
 ## [3.27.5] - 2026-05-22
 
 ### 🌍 Multi-Currency Audit — Phase 6: Period-end FX Revaluation (IAS 21 Part B)
