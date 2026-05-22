@@ -580,6 +580,46 @@ export async function preparePaymentJournalFromData(
     }
   }
 
+  // v3.25.0: Look up cash/bank account currency so we can record `original_debit`
+  // on the cash leg in the account's own currency (per Enterprise FX Pattern §3).
+  // Reads from chart_of_accounts.original_currency (set by user via v3.24.0 picker).
+  let cashAccountCurrency: string | null = null
+  let cashAccountInAcctCcy: number = amount       // default: account is in base, value equal
+  let cashAccountToBaseRate: number = 1
+  try {
+    const baseCurrencyForAcct = await (async () => {
+      try {
+        const { data: c } = await supabase.from('companies').select('base_currency').eq('id', companyId).maybeSingle()
+        return String((c as any)?.base_currency || 'EGP').toUpperCase()
+      } catch { return 'EGP' }
+    })()
+    const { data: cashAcct } = await supabase
+      .from('chart_of_accounts')
+      .select('original_currency')
+      .eq('id', cashAccountId)
+      .maybeSingle()
+    const ac = String((cashAcct as any)?.original_currency || '').toUpperCase()
+    if (ac && ac !== baseCurrencyForAcct) {
+      // Account is in FC — look up rate to base
+      const { data: acctRateRow } = await supabase
+        .from('exchange_rates')
+        .select('rate')
+        .eq('from_currency', ac)
+        .eq('to_currency', baseCurrencyForAcct)
+        .order('rate_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const acctRate = Number((acctRateRow as any)?.rate || 1) || 1
+      cashAccountCurrency = ac
+      cashAccountToBaseRate = acctRate
+      // amount (base) / acctRate = amount in account currency
+      cashAccountInAcctCcy = Math.round((amount / acctRate) * 10000) / 10000
+    }
+  } catch (acctErr) {
+    // non-fatal: omit account-currency FC tracking
+    console.warn('[preparePaymentJournalFromData] could not load cash account currency:', acctErr)
+  }
+
   if (isCustomerPayment) {
     // Customer payment: Dr. Cash / Cr. AR  (+FX line if applicable)
     journalEntry.lines.push(
@@ -589,8 +629,13 @@ export async function preparePaymentJournalFromData(
         credit_amount: 0,
         description: 'تحصيل نقدي',
         branch_id: paymentData.branch_id,
-        cost_center_id: paymentData.cost_center_id
-      },
+        cost_center_id: paymentData.cost_center_id,
+        // v3.25.0: record cash side in account's own currency (IAS 21 disclosure)
+        original_debit: cashAccountCurrency ? cashAccountInAcctCcy : null,
+        original_credit: cashAccountCurrency ? 0 : null,
+        original_currency: cashAccountCurrency,
+        exchange_rate_used: cashAccountCurrency ? cashAccountToBaseRate : 1,
+      } as any,
       {
         account_id: mapping.accounts_receivable,
         debit_amount: 0,
@@ -640,8 +685,13 @@ export async function preparePaymentJournalFromData(
         credit_amount: amount,
         description: 'دفع نقدي',
         branch_id: paymentData.branch_id,
-        cost_center_id: paymentData.cost_center_id
-      }
+        cost_center_id: paymentData.cost_center_id,
+        // v3.25.0: cash side in account's own currency
+        original_debit: cashAccountCurrency ? 0 : null,
+        original_credit: cashAccountCurrency ? cashAccountInAcctCcy : null,
+        original_currency: cashAccountCurrency,
+        exchange_rate_used: cashAccountCurrency ? cashAccountToBaseRate : 1,
+      } as any
     )
     if (Math.abs(fxDiff) >= 0.01) {
       if (fxDiff > 0 && fxLossAccountId) {
