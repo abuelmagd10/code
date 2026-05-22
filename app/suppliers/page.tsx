@@ -453,6 +453,9 @@ export default function SuppliersPage() {
 
         if (billsError) {
           console.error(`❌ خطأ في جلب فواتير المورد ${supplier.name}:`, billsError)
+          continue
+        }
+
         // v3.26.3: track TRUE bill overpayments (paid > total) — mirrors customer
         // overpayment fix. BUG in v3.26.2: subtracting returned_amount double-counted
         // purchase returns that are already tracked via vendor_credits.
