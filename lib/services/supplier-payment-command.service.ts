@@ -1241,12 +1241,198 @@ export class SupplierPaymentCommandService {
       await this.linkTrace(traceId, "journal_entry", billPaymentJournalId, "journal_entry", BILL_PAYMENT_EVENT)
     }
 
+    // ===== v3.27.1 IAS 21 FX Adjustment Hook (Supplier-side) =====
+    // For each bill in this payment that is in a foreign currency, post the
+    // FX gain/loss arising from the difference between:
+    //   - the rate stored on the bill (when it was created)
+    //   - the rate at payment time (from payment.exchange_rate)
+    // Mirrors sales-invoice-payment-command.postFXPaymentAdjustment().
+    //
+    // Side-effect only: failures are logged but do not affect the main payment.
+    if (
+      payment.exchange_rate != null &&
+      Number(payment.exchange_rate) > 0 &&
+      allocations.length > 0
+    ) {
+      for (const allocation of allocations) {
+        await this.postFXBillPaymentAdjustment({
+          companyId: payment.company_id,
+          billId: allocation.bill_id,
+          paymentId: payment.id,
+          allocatedAmount: asNumber(allocation.allocated_amount),
+          paymentDate: payment.payment_date,
+          paymentExchangeRate: Number(payment.exchange_rate),
+          userId: actor.actorId,
+          branchId: payment.branch_id || allocation.bills?.branch_id || actor.actorBranchId || null,
+          costCenterId: payment.cost_center_id || allocation.bills?.cost_center_id || null,
+        }).catch((err) => {
+          console.error("[FX_ADJUSTMENT_BILL] Failed for bill payment:", {
+            billId: allocation.bill_id,
+            paymentId: payment.id,
+            error: err?.message || err,
+          })
+        })
+      }
+    }
+
     return {
       traceId: supplierTraceId,
       journalEntryIds: mainJournalEntryId ? [mainJournalEntryId] : [],
       billPaymentTraceIds,
       billPaymentJournalIds,
     }
+  }
+
+  /**
+   * v3.27.1: Post FX gain/loss adjustment for a bill payment.
+   *
+   * Mirrors sales-invoice-payment-command.postFXPaymentAdjustment() but for the
+   * supplier-side AP accounting. Reads the bill's original currency + rate,
+   * compares with the payment-time rate, and posts the FX difference to
+   * 4320 (gain) or 5310 (loss) via getFXAccounts().
+   *
+   * Bill in FC USD 1000 @ rate 30 → AP credited EGP 30,000
+   * Payment at rate 31           → Cash debited EGP 31,000 (paid 1000 more in base)
+   * Diff EGP 1000 = FX LOSS (we paid more base currency than booked)
+   *
+   * Side-effect only — does not throw upward; failures are logged.
+   */
+  private async postFXBillPaymentAdjustment(params: {
+    companyId: string
+    billId: string
+    paymentId: string
+    allocatedAmount: number
+    paymentDate: string
+    paymentExchangeRate: number
+    userId: string
+    branchId?: string | null
+    costCenterId?: string | null
+  }): Promise<void> {
+    // Lookup bill's recorded currency + rate + total
+    const { data: bill, error: billErr } = await this.adminSupabase
+      .from("bills")
+      .select("currency_code, exchange_rate, original_amount, total_amount, company_id, branch_id, cost_center_id")
+      .eq("id", params.billId)
+      .maybeSingle()
+    if (billErr || !bill) return
+
+    // Company base currency
+    const { data: company } = await this.adminSupabase
+      .from("companies")
+      .select("base_currency")
+      .eq("id", params.companyId)
+      .maybeSingle()
+    const baseCurrency = String(company?.base_currency || "EGP").toUpperCase()
+    const billCurrency = String(bill.currency_code || baseCurrency).toUpperCase()
+    if (billCurrency === baseCurrency) return  // not an FC bill, no FX adjustment
+
+    const originalRate = Number(bill.exchange_rate || 0)
+    if (originalRate <= 0) return
+    if (params.paymentExchangeRate <= 0) return
+
+    // The allocated_amount is in BASE currency (post-rate at payment time).
+    // Compute the FC portion of this allocation, then re-value at original rate.
+    //   fcAmountAllocated = allocated_amount / payment_rate
+    //   apBase            = fcAmountAllocated * original_rate
+    //   cashBase          = allocated_amount   (already in base, at payment rate)
+    //   fxDiff            = cashBase - apBase
+    //   if fxDiff > 0  → paid more base than booked → FX LOSS  (Dr 5310)
+    //   if fxDiff < 0  → paid less base than booked → FX GAIN  (Cr 4320)
+    const fcAmountAllocated = params.allocatedAmount / params.paymentExchangeRate
+    const apBase = fcAmountAllocated * originalRate
+    const cashBase = params.allocatedAmount
+    const fxDiff = cashBase - apBase
+    if (Math.abs(fxDiff) < 0.01) return  // rounding noise
+
+    // Resolve FX accounts
+    const { getFXAccounts } = await import("@/lib/currency-service")
+    const { gainId, lossId } = await getFXAccounts(this.adminSupabase as any, params.companyId)
+
+    // Resolve AP account from chart_of_accounts
+    const { data: accounts } = await this.adminSupabase
+      .from("chart_of_accounts")
+      .select("id, account_name, sub_type, account_code")
+      .eq("company_id", params.companyId)
+      .eq("is_active", true)
+    const apRecord = (accounts as any[] | null)?.find((x: any) => x.sub_type === "accounts_payable")
+      || (accounts as any[] | null)?.find((x: any) => /موردين|دائن|payable/i.test(String(x.account_name || "")))
+    const apAccountId = apRecord?.id as string | undefined
+    if (!apAccountId) return
+
+    // Resolve branch (required NOT NULL)
+    let branchId = params.branchId || bill.branch_id || null
+    if (!branchId) {
+      const { data: firstBranch } = await (this.adminSupabase as any)
+        .from("branches")
+        .select("id")
+        .eq("company_id", params.companyId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      branchId = firstBranch?.id || null
+    }
+    if (!branchId) return
+
+    const refUuid = (typeof crypto !== "undefined" && (crypto as any).randomUUID)
+      ? (crypto as any).randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const entryNumber = `FX-BILL-${params.paymentId}-${params.billId.slice(0, 8)}-${Date.now()}`
+
+    const { data: entry, error: entryErr } = await (this.adminSupabase as any)
+      .from("journal_entries")
+      .insert({
+        company_id: params.companyId,
+        branch_id: branchId,
+        cost_center_id: params.costCenterId || bill.cost_center_id || null,
+        entry_date: params.paymentDate,
+        entry_number: entryNumber,
+        description: `فرق سعر العملة - دفعة فاتورة شراء (${billCurrency} → ${baseCurrency}) [${entryNumber}]`,
+        reference_type: "fx_bill_payment_adjustment",
+        reference_id: refUuid,
+        status: "draft",
+        posted_by: params.userId,
+      })
+      .select()
+      .single()
+    if (entryErr || !entry) return
+
+    const lines: any[] = []
+    if (fxDiff > 0) {
+      // Cash > AP → FX Loss (paid more base than booked liability)
+      // Dr FX Loss (5310) / Cr AP (to reduce AP residual to zero in base terms)
+      lines.push({
+        journal_entry_id: entry.id,
+        account_id: lossId,
+        debit_amount: fxDiff,
+        credit_amount: 0,
+        description: "خسارة فروق العملة - سداد فاتورة شراء",
+      })
+      lines.push({
+        journal_entry_id: entry.id,
+        account_id: apAccountId,
+        debit_amount: 0,
+        credit_amount: fxDiff,
+        description: "تسوية فرق العملة - الموردين",
+      })
+    } else {
+      // Cash < AP → FX Gain (paid less base than booked liability)
+      const abs = Math.abs(fxDiff)
+      lines.push({
+        journal_entry_id: entry.id,
+        account_id: apAccountId,
+        debit_amount: abs,
+        credit_amount: 0,
+        description: "تسوية فرق العملة - الموردين",
+      })
+      lines.push({
+        journal_entry_id: entry.id,
+        account_id: gainId,
+        debit_amount: 0,
+        credit_amount: abs,
+        description: "ربح فروق العملة - سداد فاتورة شراء",
+      })
+    }
+    await (this.adminSupabase as any).from("journal_entry_lines").insert(lines)
   }
 
   private async resolveBranchId(companyId: string, requestedBranchId: string | null, allocations: SupplierPaymentAllocationCommand[]) {
