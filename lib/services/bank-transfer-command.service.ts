@@ -175,8 +175,8 @@ export class BankTransferCommandService {
         // Cross-currency: native = baseAmount / rate(accountCurrency → base)
         try {
           const { getExchangeRate } = await import("@/lib/currency-service")
-          const rate = await getExchangeRate(this.adminSupabase, command.companyId, accountCurrency, baseCurrency)
-          if (rate && rate > 0) {
+          const _rateResult: any = await getExchangeRate(this.adminSupabase, accountCurrency, baseCurrency, undefined, command.companyId); const rate = Number(_rateResult?.rate || 0)
+          if (rate > 0) {
             return { native: Number((finalBaseAmount / rate).toFixed(8)), rate }
           }
         } catch (err) {
