@@ -12,12 +12,21 @@ import { Building2, Landmark, MapPin, TrendingUp, TrendingDown, Wallet, ArrowLef
 
 type Branch = { id: string; name: string; code: string }
 type CostCenter = { id: string; cost_center_name: string; cost_center_code: string; branch_id: string }
-type BankAccount = { 
-  id: string; account_code: string | null; account_name: string; 
+type BankAccount = {
+  id: string; account_code: string | null; account_name: string;
   branch_id: string | null; cost_center_id: string | null;
   branch_name?: string; cost_center_name?: string;
+  // v3.25.3: native currency of the account (USD/EUR/etc) — null = base
+  original_currency?: string | null;
 }
-type JournalLine = { account_id: string; debit_amount: number; credit_amount: number }
+type JournalLine = {
+  account_id: string;
+  debit_amount: number;
+  credit_amount: number;
+  // v3.25.3: FC tracking for native-currency display
+  original_debit?: number | null;
+  original_credit?: number | null;
+}
 
 export default function BankAccountsByBranchReport() {
   const supabase = useSupabase()
@@ -55,12 +64,14 @@ export default function BankAccountsByBranchReport() {
       if (!cid) return
 
       // ✅ جلب القيود المحاسبية (تقرير محاسبي - من journal_entries فقط)
+      // v3.25.3: include original_currency on accounts + original_debit/credit on lines
+      // for native FC balance display.
       const [branchRes, ccRes, accRes, linesRes] = await Promise.all([
         supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true),
         supabase.from("cost_centers").select("id, cost_center_name, cost_center_code, branch_id").eq("company_id", cid).eq("is_active", true),
-        supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id, cost_center_id, branches(name), cost_centers(cost_center_name)").eq("company_id", cid),
+        supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id, cost_center_id, original_currency, branches(name), cost_centers(cost_center_name)").eq("company_id", cid),
         supabase.from("journal_entry_lines")
-          .select("account_id, debit_amount, credit_amount, journal_entries!inner(deleted_at)")
+          .select("account_id, debit_amount, credit_amount, original_debit, original_credit, journal_entries!inner(deleted_at)")
           .is("journal_entries.deleted_at", null), // ✅ استثناء القيود المحذوفة
       ])
 
@@ -86,15 +97,21 @@ export default function BankAccountsByBranchReport() {
   useEffect(() => { setSelectedCostCenter("all") }, [selectedBranch])
 
   // Calculate balances per account
+  // v3.25.3: also accumulate native (original_*) balance for FC accounts
   const accountBalances = useMemo(() => {
-    const balanceMap: Record<string, { debit: number; credit: number; balance: number }> = {}
+    const balanceMap: Record<string, { debit: number; credit: number; balance: number; nativeDebit: number; nativeCredit: number; nativeBalance: number }> = {}
     for (const line of journalLines) {
-      if (!balanceMap[line.account_id]) balanceMap[line.account_id] = { debit: 0, credit: 0, balance: 0 }
+      if (!balanceMap[line.account_id]) {
+        balanceMap[line.account_id] = { debit: 0, credit: 0, balance: 0, nativeDebit: 0, nativeCredit: 0, nativeBalance: 0 }
+      }
       balanceMap[line.account_id].debit += Number(line.debit_amount || 0)
       balanceMap[line.account_id].credit += Number(line.credit_amount || 0)
+      balanceMap[line.account_id].nativeDebit += Number((line as any).original_debit || 0)
+      balanceMap[line.account_id].nativeCredit += Number((line as any).original_credit || 0)
     }
     for (const accId of Object.keys(balanceMap)) {
       balanceMap[accId].balance = balanceMap[accId].debit - balanceMap[accId].credit
+      balanceMap[accId].nativeBalance = balanceMap[accId].nativeDebit - balanceMap[accId].nativeCredit
     }
     return balanceMap
   }, [journalLines])
@@ -276,7 +293,11 @@ export default function BankAccountsByBranchReport() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredAccounts.map(acc => {
-                  const bal = accountBalances[acc.id] || { debit: 0, credit: 0, balance: 0 }
+                  const bal = accountBalances[acc.id] || { debit: 0, credit: 0, balance: 0, nativeDebit: 0, nativeCredit: 0, nativeBalance: 0 }
+                  // v3.25.3: FC account → render native currency as primary, base as reference
+                  const nativeCcy = String((acc as any).original_currency || '').toUpperCase()
+                  const isFCAccount = !!nativeCcy && nativeCcy !== appCurrency.toUpperCase()
+                  const nativeSymbol = currencySymbols[nativeCcy] || nativeCcy
                   return (
                     <a key={acc.id} href={`/banking/${acc.id}`} className="border rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors block">
                       <div className="flex justify-between items-start mb-2">
@@ -284,9 +305,26 @@ export default function BankAccountsByBranchReport() {
                           <div className="font-medium truncate">{acc.account_name}</div>
                           <div className="text-xs text-gray-500">{acc.account_code || ''}</div>
                         </div>
-                        <div className={`text-lg font-bold ${bal.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {formatNumber(bal.balance)} {currencySymbol}
-                        </div>
+                        {isFCAccount ? (
+                          <div className="flex flex-col items-end">
+                            <div
+                              className={`text-lg font-bold ${bal.nativeBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                              title={appLang === 'en' ? "Balance in account's native currency" : 'الرصيد بعملة الحساب الأصلية'}
+                            >
+                              {formatNumber(bal.nativeBalance)} {nativeSymbol}
+                            </div>
+                            <div
+                              className="text-[10px] text-gray-500 dark:text-gray-400"
+                              title={appLang === 'en' ? `Equivalent in ${appCurrency}` : `المعادل بـ ${appCurrency}`}
+                            >
+                              ≈ {formatNumber(bal.balance)} {currencySymbol}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={`text-lg font-bold ${bal.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatNumber(bal.balance)} {currencySymbol}
+                          </div>
+                        )}
                       </div>
                       {(acc.branch_name || acc.cost_center_name) && (
                         <div className="flex items-center gap-2 text-xs">

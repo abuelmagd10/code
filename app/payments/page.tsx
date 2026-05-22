@@ -121,7 +121,15 @@ interface BillRow {
   branch_id?: string | null;
   branches?: { name: string } | null;
 }
-interface Account { id: string; account_code: string; account_name: string; account_type: string }
+interface Account {
+  id: string;
+  account_code: string;
+  account_name: string;
+  account_type: string;
+  sub_type?: string | null;
+  // v3.25.3: native currency of the account (USD/EUR/etc) — null = base
+  original_currency?: string | null;
+}
 
 type SupplierPaymentApiResult = {
   success: boolean
@@ -540,7 +548,8 @@ export default function PaymentsPage() {
         // 🔐 ERP Access Control - جلب الحسابات مع تصفية حسب سياق المستخدم
         let accountsQuery = supabase
           .from("chart_of_accounts")
-          .select("id, account_code, account_name, account_type, sub_type, branch_id, cost_center_id, parent_id")
+          // v3.25.3: include original_currency so we can hint payment forms about FC accounts
+          .select("id, account_code, account_name, account_type, sub_type, branch_id, cost_center_id, parent_id, original_currency")
           .eq("company_id", activeCompanyId)
           .eq("is_active", true)
 
@@ -1841,10 +1850,29 @@ export default function PaymentsPage() {
                   }}
                 >
                   <option value="">{appLang === 'en' ? 'Select payment account' : 'اختر حساب الدفع'}</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>
-                  ))}
+                  {accounts.map((a) => {
+                    // v3.25.3: surface the account's native currency in the option label
+                    const ccy = String((a as any).original_currency || '').toUpperCase()
+                    const ccySuffix = ccy && ccy !== baseCurrency.toUpperCase() ? ` — ${ccy}` : ''
+                    return (
+                      <option key={a.id} value={a.id}>{a.account_name} ({a.account_code}){ccySuffix}</option>
+                    )
+                  })}
                 </select>
+                {/* v3.25.3: warn when account currency ≠ payment currency */}
+                {(() => {
+                  const selectedAcc = accounts.find((a) => a.id === newCustPayment.account_id) as any
+                  const accCcy = String(selectedAcc?.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()
+                  const payCcy = paymentCurrency.toUpperCase()
+                  if (!selectedAcc || accCcy === payCcy) return null
+                  return (
+                    <div className="text-[11px] mt-1 px-2 py-1 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                      ℹ️ {appLang === 'en'
+                        ? `Account currency: ${accCcy} — different from payment currency (${payCcy}). Conversion applied via Exchange Rates.`
+                        : `عملة الحساب: ${accCcy} — مختلفة عن عملة الدفع (${payCcy}). سيتم التحويل تلقائياً من صفحة أسعار الصرف.`}
+                    </div>
+                  )
+                })()}
               </div>
               <div>
                 <Label>{appLang === 'en' ? 'Amount' : 'المبلغ'}</Label>
@@ -2085,10 +2113,29 @@ export default function PaymentsPage() {
                   }}
                 >
                   <option value="">{appLang === 'en' ? 'Select payment account' : 'اختر حساب السداد'}</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>
-                  ))}
+                  {accounts.map((a) => {
+                    // v3.25.3: surface account currency in label
+                    const ccy = String((a as any).original_currency || '').toUpperCase()
+                    const ccySuffix = ccy && ccy !== baseCurrency.toUpperCase() ? ` — ${ccy}` : ''
+                    return (
+                      <option key={a.id} value={a.id}>{a.account_name} ({a.account_code}){ccySuffix}</option>
+                    )
+                  })}
                 </select>
+                {/* v3.25.3: hint when account currency ≠ payment currency */}
+                {(() => {
+                  const selectedAcc = accounts.find((a) => a.id === newSuppPayment.account_id) as any
+                  const accCcy = String(selectedAcc?.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()
+                  const payCcy = paymentCurrency.toUpperCase()
+                  if (!selectedAcc || accCcy === payCcy) return null
+                  return (
+                    <div className="text-[11px] mt-1 px-2 py-1 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                      ℹ️ {appLang === 'en'
+                        ? `Account currency: ${accCcy} — different from payment currency (${payCcy}). Conversion applied via Exchange Rates.`
+                        : `عملة الحساب: ${accCcy} — مختلفة عن عملة الدفع (${payCcy}). سيتم التحويل تلقائياً من صفحة أسعار الصرف.`}
+                    </div>
+                  )
+                })()}
               </div>
               <div>
                 <Label>{appLang === 'en' ? 'Amount' : 'المبلغ'}</Label>
