@@ -4,6 +4,54 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.24.1] - 2026-05-21
+
+### 🐛 Hotfix — v3.24.0 build error على Vercel
+
+أبلغ المستخدم بفشل النشر للـ PR #34. التحقق المحلى عبر `tsc --noEmit` كشف الخطأ:
+
+```
+app/chart-of-accounts/ClientPage.tsx(510,13): error TS2304: Cannot find name 'companyId'.
+app/chart-of-accounts/ClientPage.tsx(511,32): error TS2304: Cannot find name 'companyId'.
+```
+
+### 🔍 السبب
+
+فى `quickAdd()` كنت قد أضفت كتلة `try` ثانية بعد كتلة الـ branches/cost-centers لتحميل العملات. لكن `companyId` كانت معرفة بـ `const` داخل الكتلة الأولى — فخرجت من الـ scope قبل كتلتى.
+
+### ✅ الإصلاح
+
+دمجت الكتلتين فى try واحد بحيث يكون `companyId` متاحاً لكلا الـ loads:
+
+```ts
+try {
+  const companyId = companyIdState || await getActiveCompanyId(supabase)
+  if (companyId) {
+    if (branches.length === 0 || costCenters.length === 0) {
+      await loadBranchesAndCostCenters(companyId)
+    }
+    if (availableCurrencies.length === 0) {
+      await loadCurrencies(companyId)
+    }
+  }
+} catch (error) {
+  console.warn("Could not load branches/cost centers/currencies, continuing anyway:", error)
+}
+```
+
+### 📋 Files Changed (1)
+
+| الملف | التغيير |
+|---|---|
+| `app/chart-of-accounts/ClientPage.tsx` | دمج try blocks فى quickAdd لتثبيت scope الـ companyId |
+
+### 🛡️ Risk Assessment
+
+- TS check: نظيف ✅
+- Logic unchanged: نفس السلوك المقصود فى v3.24.0
+
+---
+
 ## [3.24.0] - 2026-05-21
 
 ### 🆕 Feature — تحديد عملة الحساب البنكى/الخزينة عند الإنشاء
